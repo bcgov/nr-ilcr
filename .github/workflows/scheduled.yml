@@ -36,6 +36,7 @@ jobs:
 
   ageOutPRs:
     name: PR Deployment Purge
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     env:
       # https://tecadmin.net/getting-yesterdays-date-in-bash/
       CUTOFF: "1 week ago"
@@ -91,6 +92,7 @@ jobs:
 
   schema-spy:
     name: SchemaSpy
+    if: ${{ vars.ENABLE_SCHEMA_SPY == 'true' }}
     permissions:
       contents: write
       pages: write
@@ -99,6 +101,7 @@ jobs:
   # Run sequentially to reduce chances of rate limiting
   zap:
     name: ZAP Scans
+    if: ${{ vars.ENABLE_ZAP_SCAN == 'true' }}
     permissions:
       issues: write
     runs-on: ubuntu-24.04
@@ -109,4 +112,4 @@ jobs:
           allow_issue_writing: true
           issue_title: "ZAP Security Report"
           token: ${{ secrets.GITHUB_TOKEN }}
-          target: https://${{ github.event.repository.name }}-test.apps.silver.devops.gov.bc.ca
+          target: https://${{ github.event.repository.name }}-test.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}

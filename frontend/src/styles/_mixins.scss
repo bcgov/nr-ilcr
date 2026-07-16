@@ -1,0 +1,6 @@
+@use '@carbon/react/scss/spacing' as *;
+
+@mixin page-band {
+  border-block-end: 0.0625rem solid var(--cds-border-subtle);
+  padding-block: $spacing-07;
+}

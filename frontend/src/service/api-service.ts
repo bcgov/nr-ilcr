@@ -18,6 +18,7 @@ class APIService {
       },
       (error) => {
         console.error(error)
+        return Promise.reject(error)
       },
     )
   }

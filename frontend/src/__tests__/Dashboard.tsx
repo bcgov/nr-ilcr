@@ -4,6 +4,6 @@ import Dashboard from '@/components/Dashboard'
 describe('Simple working test', () => {
   it('the title is visible', () => {
     render(<Dashboard />)
-    expect(screen.getByText(/QuickStart OpenShift/i)).toBeInTheDocument()
+    expect(screen.getByText(/ILCR Workspace/i)).toBeInTheDocument()
   })
 })

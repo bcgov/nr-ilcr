@@ -31,10 +31,10 @@ jobs:
         uses: bcgov/action-get-pr@28b0adf8e4d40720d41f9c87356ce24b0a4bd6af # v0.3.1
   deploy-test:
     name: TEST Deploys (${{ needs.init.outputs.pr }})
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
-      db_password: ${{ secrets.db_password }}
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
@@ -44,6 +44,7 @@ jobs:
 
   tests:
     name: Tests
+    if: needs.deploy-test.result == 'success'
     needs: [deploy-test]
     uses: ./.github/workflows/reusable-tests.yml
     with:
@@ -51,10 +52,10 @@ jobs:
 
   deploy-prod:
     name: PROD Deploys (${{ needs.init.outputs.pr }})
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [tests, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
-      db_password: ${{ secrets.db_password }}
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
@@ -68,6 +69,7 @@ jobs:
   # there to customize the alert set.
   monitor-prod:
     name: Sysdig Monitor (PROD)
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [deploy-prod]
     runs-on: ubuntu-24.04
     environment: prod
@@ -84,13 +86,14 @@ jobs:
 
   promote:
     name: Promote Images
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [deploy-prod, init]
     runs-on: ubuntu-slim
     permissions:
       packages: write
     strategy:
       matrix:
-        package: [migrations, backend, frontend]
+        package: [backend, frontend]
     timeout-minutes: 1
     steps:
       - uses: shrink/actions-docker-registry-tag@e6aaef25c595b6e0edd18bf4c7dbfea3abd43299 # v5

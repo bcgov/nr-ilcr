@@ -1,0 +1,93 @@
+@use '@bcgov-nr/nr-theme/design-tokens/type-family.scss' as types;
+@use '@carbon/type/scss/font-family.scss' with (
+  $font-families: types.$type-family,
+  $font-weights: types.$font-weights
+);
+
+@use '@bcgov-nr/nr-theme/design-tokens/light-theme.scss' as light;
+@use '@bcgov-nr/nr-theme/design-tokens/dark-theme.scss' as dark;
+@use '@carbon/react/scss/themes';
+@use '@carbon/react/scss/theme' with (
+  $fallback: themes.$white,
+  $theme: light.$light-theme
+);
+@use '@carbon/react';
+@use '@carbon/styles/scss/grid';
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/breakpoint' as *;
+@use './variables' as variables;
+
+@include grid.flex-grid();
+
+:root[data-carbon-theme='g10'] {
+  --cds-grid-gutter: 0;
+  @include theme.theme(light.$light-theme);
+}
+
+:root[data-carbon-theme='g100'] {
+  --cds-grid-gutter: 0;
+  @include theme.theme(dark.$dark-theme);
+}
+
+.#{variables.$bcgov-prefix}--btn,
+.#{variables.$bcgov-prefix}--tile,
+.#{variables.$bcgov-prefix}--tag,
+.#{variables.$bcgov-prefix}--modal-container {
+  border-radius: 0.25rem;
+}
+
+.#{variables.$bcgov-prefix}--content {
+  background: var(--cds-background);
+  min-height: 100vh;
+  padding: 0;
+}
+
+.#{variables.$bcgov-prefix}--header {
+  background-color: var(--cds-background-brand);
+}
+
+.#{variables.$bcgov-prefix}--header__name {
+  color: var(--cds-text-on-color);
+  font-family: 'BC Sans', 'Noto Sans', Verdana, Arial, sans-serif;
+  font-weight: 700;
+}
+
+.#{variables.$bcgov-prefix}--header__menu-toggle,
+.#{variables.$bcgov-prefix}--header__action {
+  color: var(--cds-text-on-color);
+}
+
+.#{variables.$bcgov-prefix}--header__menu-toggle svg,
+.#{variables.$bcgov-prefix}--header__action svg {
+  fill: currentColor;
+}
+
+.#{variables.$bcgov-prefix}--header ~ .#{variables.$bcgov-prefix}--side-nav {
+  inset-block-start: 3.5rem;
+}
+
+.#{variables.$bcgov-prefix}--side-nav__link {
+  height: 3rem;
+}
+
+.#{variables.$bcgov-prefix}--side-nav__icon svg {
+  fill: var(--cds-link-primary);
+}
+
+label.#{variables.$bcgov-prefix}--label,
+legend.#{variables.$bcgov-prefix}--label {
+  color: var(--cds-text-primary);
+}
+
+@media (min-width: 42rem) {
+  .#{variables.$bcgov-prefix}--grid--no-gutter {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+@include breakpoint(lg) {
+  .app-content--with-nav {
+    margin-inline-start: 16rem;
+  }
+}

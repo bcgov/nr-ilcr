@@ -13,7 +13,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   backend-tests:
@@ -21,41 +22,26 @@ jobs:
     if: (! github.event.pull_request.draft)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: default
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    env:
+      SONAR_TOKEN: ${{ secrets.sonar_token_backend }}
     steps:
-      - uses: bcgov/action-test-and-analyse@8f699e3fd3fadd9a6adf6f4b1f2638ef7ecfefb9 # v2.0.0
-        env:
-          sonar_token: ${{ secrets.sonar_token_backend }}
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
-          commands: |
-            npm ci
-            npm run lint
-            npm run format:check
-            npm run test:cov
-          dir: backend
-          node_version: "22"
-          sonar_args: >
-            -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts
-            -Dsonar.organization=bcgov-sonarcloud
-            -Dsonar.projectKey=quickstart-openshift_backend
-            -Dsonar.sources=src
-            -Dsonar.test.inclusions=**/*spec.ts
-            -Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info
-          sonar_token: ${{ env.sonar_token }}
-          dep_scan: warn
-          supply_scan: true
-          triggers: ('backend/')
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run Maven verify
+        working-directory: backend
+        run: mvn -B -ntp verify
+      - name: Run backend Sonar analysis
+        if: ${{ env.SONAR_TOKEN != '' }}
+        working-directory: backend
+        run: >
+          mvn -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+          -Dsonar.organization=bcgov-sonarcloud
+          -Dsonar.projectKey=nr-ilcr_backend
+          -Dsonar.host.url=https://sonarcloud.io
 
   frontend-tests:
     name: Frontend Tests
@@ -77,7 +63,7 @@ jobs:
           sonar_args: >
             -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts,**/*test.tsx,**/routeTree.gen.ts
             -Dsonar.organization=bcgov-sonarcloud
-            -Dsonar.projectKey=quickstart-openshift_frontend
+            -Dsonar.projectKey=nr-ilcr_frontend
             -Dsonar.sources=src
             -Dsonar.test.inclusions=**/*spec.ts,**/*test.tsx
             -Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info
@@ -90,8 +76,8 @@ jobs:
   trivy:
     name: Trivy Security Scan
     if: (! github.event.pull_request.draft)
-    continue-on-error: true
     permissions:
+      contents: read
       security-events: write
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -117,7 +103,7 @@ jobs:
           severity: "CRITICAL,HIGH"
           trivyignores: ".github/.trivyignore"
           cache-dir: .trivycache
-          skip-dirs: "**/node_modules,**/coverage,**/dist,.git"
+          skip-dirs: "**/node_modules,**/coverage,**/dist,**/target,.git"
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -132,7 +118,7 @@ jobs:
   # ==========================================================================
   results:
     name: Analysis Results
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-tests, frontend-tests, trivy]
     if: always() && (! github.event.pull_request.draft)
     runs-on: ubuntu-slim
     timeout-minutes: 1

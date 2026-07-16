@@ -13,6 +13,7 @@ jobs:
   # https://github.com/bcgov/action-builder-ghcr
   builds:
     name: Builds
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     permissions:
       attestations: write
       id-token: write
@@ -20,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        package: [backend, frontend, migrations]
+        package: [backend, frontend]
     timeout-minutes: 10
     steps:
       - uses: bcgov/action-builder-ghcr@cb2629351c87dd1c2130073e4ebb7233a9653a63 # v4.4.1
@@ -28,23 +29,23 @@ jobs:
           package: ${{ matrix.package }}
           tags: ${{ github.event.number }}
           tag_fallback: latest
-          triggers: ('${{ matrix.package }}/', '.github/workflows/')
+          triggers: ('${{ matrix.package }}/', 'common/', '.github/workflows/')
 
   deploys:
     name: Deploys (${{ github.event.number }})
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [builds]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
-      db_password: ${{ secrets.db_password }}
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
       target: ${{ github.event.number }}
-      triggers: ('backend/', 'frontend/', 'migrations/', 'common/', '.github/workflows/')
+      triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
 
   tests:
      name: Tests
-     if: needs.deploys.outputs.triggered == 'true'
+     if: needs.deploys.result == 'success' && needs.deploys.outputs.triggered == 'true'
      needs: [deploys]
      uses: ./.github/workflows/reusable-tests.yml
 

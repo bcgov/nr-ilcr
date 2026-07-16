@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite'
-import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
@@ -13,7 +12,7 @@ export default defineConfig({
     react(),
   ],
   server: {
-    port: parseInt(process.env.PORT),
+    port: Number.parseInt(process.env.PORT ?? '3000', 10),
     fs: {
       // Allow serving files from one level up to the project root
       allow: ['..'],
@@ -21,17 +20,15 @@ export default defineConfig({
     proxy: {
       // Proxy API requests to the backend
       '/api': {
-        target: 'http://localhost:3001',
+        target: process.env.BACKEND_URL ?? 'http://localhost:3001',
         changeOrigin: true,
       },
     },
   },
   resolve: {
     // https://vitejs.dev/config/shared-options.html#resolve-alias
+    alias: [{ find: /^~(.+)$/, replacement: '$1' }],
     tsconfigPaths: true,
-    alias: {
-      '~bootstrap': fileURLToPath(new URL('./node_modules/bootstrap', import.meta.url)),
-    },
     extensions: ['.js', '.json', '.jsx', '.mjs', '.ts', '.tsx', '.vue'],
   },
   build: {

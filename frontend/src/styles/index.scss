@@ -1,0 +1,125 @@
+@use './variables' as *;
+@use './mixins' as *;
+@use './overrides';
+
+body {
+  background: var(--cds-background);
+  color: var(--cds-text-primary);
+  font-family: 'BC Sans', 'Noto Sans', Verdana, Arial, sans-serif;
+  margin: 0;
+}
+
+.app-content {
+  margin-block-start: 3rem;
+}
+
+.app-page {
+  padding-block-end: 3rem;
+}
+
+.app-page__header {
+  border-block-end: 0.0625rem solid var(--cds-border-subtle);
+  padding: 2rem 1rem;
+}
+
+.app-page__body {
+  padding: 1.5rem 1rem;
+}
+
+.app-page__title {
+  margin: 0;
+}
+
+.app-page__subtitle {
+  color: var(--cds-text-secondary);
+  margin-block-start: 0.5rem;
+  max-width: 52rem;
+}
+
+.app-section {
+  margin-block-start: 1rem;
+}
+
+.app-role-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 0.75rem;
+}
+
+.mock-user-selector {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  height: 3rem;
+  min-width: 0;
+  padding-inline: 0.5rem;
+}
+
+.mock-user-selector__label {
+  color: var(--cds-text-on-color);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.mock-user-selector__select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--cds-text-on-color);
+  cursor: pointer;
+  font: inherit;
+  max-width: min(15rem, 36vw);
+  min-width: 8rem;
+  outline: 0;
+  padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+  text-overflow: ellipsis;
+}
+
+.mock-user-selector__select:focus {
+  outline: 0.125rem solid var(--cds-focus);
+  outline-offset: -0.125rem;
+}
+
+.mock-user-selector__select option {
+  background: var(--cds-layer-01);
+  color: var(--cds-text-primary);
+}
+
+.mock-user-selector__caret {
+  color: var(--cds-text-on-color);
+  margin-inline-start: -1.5rem;
+  pointer-events: none;
+}
+
+.dashboard-summary {
+  height: 100%;
+}
+
+.dashboard-summary__meta {
+  color: var(--cds-text-secondary);
+  margin-block-start: 0.25rem;
+}
+
+.dashboard-details {
+  background: var(--cds-layer-01);
+  overflow: auto;
+  padding: 1rem;
+}
+
+@media (max-width: 41.98rem) {
+  .mock-user-selector__label {
+    block-size: 1px;
+    clip: rect(0 0 0 0);
+    inline-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+  }
+
+  .mock-user-selector__select {
+    max-width: 42vw;
+    min-width: 6.5rem;
+  }
+}

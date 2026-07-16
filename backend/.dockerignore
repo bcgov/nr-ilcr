@@ -10,9 +10,10 @@ CONTRIBUTING*
 LICENSE*
 SECURITY*
 
-# Node exclusions
-dist
-node_modules
+# Java/Maven exclusions
+target
+.mvn/wrapper/maven-wrapper.jar
+*.iml
 
 # App-specific exclusions
 coverage

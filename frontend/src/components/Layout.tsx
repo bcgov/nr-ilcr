@@ -1,28 +1,62 @@
 import type { FC } from 'react'
-import { Footer, Header } from '@bcgov/design-system-react-components'
-import { Link } from '@tanstack/react-router'
-import { Button } from 'react-bootstrap'
+import { useState } from 'react'
+import {
+  Content,
+  Header,
+  HeaderGlobalBar,
+  HeaderMenuButton,
+  HeaderName,
+  SideNav,
+  SideNavItems,
+  SideNavLink,
+  SkipToContent,
+} from '@carbon/react'
+import { Document, Home, UserMultiple } from '@carbon/icons-react'
+import MockUserSelector from '@/components/MockUserSelector'
+import ThemeToggle from '@/components/ThemeToggle'
 
 type Props = {
   children: React.ReactNode
 }
 
 const Layout: FC<Props> = ({ children }) => {
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false)
+
   return (
-    <div className="d-flex flex-column min-vh-100">
-      <Header title={'QuickStart OpenShift'}>
-        {' '}
-        <Link to="/">
-          <Button variant="light" size="lg">
-            <i className="bi bi-house-door-fill" />
-          </Button>
-        </Link>
+    <>
+      <Header aria-label="Interior Logging Cost Reports (ILCR)">
+        <SkipToContent />
+        <HeaderMenuButton
+          aria-label={isSideNavExpanded ? 'Close menu' : 'Open menu'}
+          isActive={isSideNavExpanded}
+          isCollapsible
+          onClick={() => setIsSideNavExpanded((current) => !current)}
+        />
+        <HeaderName href="/" prefix="">
+          Interior Logging Cost Reports
+        </HeaderName>
+        <HeaderGlobalBar>
+          <MockUserSelector />
+          <ThemeToggle />
+        </HeaderGlobalBar>
+        <SideNav expanded={isSideNavExpanded} isPersistent={isSideNavExpanded} isChildOfHeader>
+          <SideNavItems>
+            <SideNavLink href="/" renderIcon={Home} isActive>
+              Dashboard
+            </SideNavLink>
+            <SideNavLink href="/" renderIcon={Document}>
+              Submissions
+            </SideNavLink>
+            <SideNavLink href="/" renderIcon={UserMultiple}>
+              Mill Associations
+            </SideNavLink>
+          </SideNavItems>
+        </SideNav>
       </Header>
-      <div className="d-flex flex-grow-1 align-items-start justify-content-center mt-5 mb-5 ml-1 mr-1">
+      <Content className={`app-content ${isSideNavExpanded ? 'app-content--with-nav' : ''}`}>
         {children}
-      </div>
-      <Footer />
-    </div>
+      </Content>
+    </>
   )
 }
 

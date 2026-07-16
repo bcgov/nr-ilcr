@@ -1,6 +1,5 @@
 import { vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, waitFor, userEvent } from '@/test-utils'
 import Dashboard from '@/components/Dashboard'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -10,7 +9,7 @@ vi.mock('@tanstack/react-router', () => ({
 describe('Dashboard', () => {
   test('renders a heading with the correct text', () => {
     render(<Dashboard />)
-    expect(screen.getByText(/Employee ID/i)).toBeInTheDocument()
+    expect(screen.getByText(/ILCR Workspace/i)).toBeInTheDocument()
   })
 
   test('opens and closes the row details modal', async () => {
@@ -23,8 +22,7 @@ describe('Dashboard', () => {
 
     expect(screen.getByText(/Row Details/i)).toBeInTheDocument()
 
-    const closeButtons = screen.getAllByRole('button', { name: 'Close' })
-    await user.click(closeButtons.at(-1)!)
+    await user.click(screen.getByRole('button', { name: /close/i }))
     await waitFor(() => {
       expect(screen.queryByText(/Row Details/i)).not.toBeInTheDocument()
     })

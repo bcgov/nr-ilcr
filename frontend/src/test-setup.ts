@@ -3,13 +3,20 @@ import { afterAll, afterEach, beforeAll } from 'vitest'
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
 
+class ResizeObserverMock implements ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver = ResizeObserverMock
+
 const users = [
   {
     id: 1,
-    name: 'first post title',
-    email: 'first post body',
+    name: 'ILCR Developer',
+    email: 'ilcr.dev@gov.bc.ca',
   },
-  // ...
 ]
 
 export const restHandlers = [

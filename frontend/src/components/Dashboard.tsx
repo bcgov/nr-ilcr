@@ -2,37 +2,35 @@ import type { FC } from 'react'
 import type { AxiosResponse } from '~/axios'
 import type UserDto from '@/interfaces/UserDto'
 import { useEffect, useState } from 'react'
-import { Table, Modal, Button } from 'react-bootstrap'
+import {
+  Button,
+  Column,
+  DataTable,
+  Grid,
+  Modal,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tag,
+  Tile,
+} from '@carbon/react'
 import apiService from '@/service/api-service'
+import useMockAuth from '@/context/auth/useMockAuth'
 
-type ModalProps = {
-  show: boolean
-  onHide: () => void
-  user?: UserDto
-}
-
-const ModalComponent: FC<ModalProps> = ({ show, onHide, user }) => {
-  return (
-    <Modal
-      show={show}
-      onHide={onHide}
-      size="lg"
-      aria-labelledby="contained-modal-title-vcenter"
-      centered
-    >
-      <Modal.Header closeButton>
-        <Modal.Title id="contained-modal-title-vcenter">Row Details</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>{JSON.stringify(user)}</Modal.Body>
-      <Modal.Footer>
-        <Button onClick={onHide}>Close</Button>
-      </Modal.Footer>
-    </Modal>
-  )
-}
+const headers = [
+  { key: 'id', header: 'User ID' },
+  { key: 'name', header: 'Name' },
+  { key: 'email', header: 'Email' },
+  { key: 'actions', header: '' },
+]
 
 const Dashboard: FC = () => {
-  const [data, setData] = useState<any>([])
+  const { user } = useMockAuth()
+  const [data, setData] = useState<UserDto[]>([])
   const [selectedUser, setSelectedUser] = useState<UserDto | undefined>(undefined)
 
   useEffect(() => {
@@ -56,37 +54,107 @@ const Dashboard: FC = () => {
       })
   }, [])
 
-  const handleClose = () => {
-    setSelectedUser(undefined)
-  }
+  const rows = data.map((item) => ({
+    ...item,
+    id: String(item.id),
+  }))
 
   return (
-    <div className="min-vh-45 mh-45 mw-50 ml-4">
-      <Table striped bordered hover>
-        <thead>
-          <tr>
-            <th>Employee ID</th>
-            <th>Employee Name</th>
-            <th>Employee Email</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((user: UserDto) => (
-            <tr key={user.id}>
-              <td>{user.id}</td>
-              <td>{user.name}</td>
-              <td>{user.email}</td>
-              <td className="text-center">
-                <Button variant="secondary" size="sm" onClick={() => setSelectedUser(user)}>
-                  View Details
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-      <ModalComponent show={!!selectedUser} onHide={handleClose} user={selectedUser} />
+    <div className="app-page">
+      <Grid fullWidth className="app-page__header">
+        <Column sm={4} md={8} lg={16}>
+          <h1 className="app-page__title">ILCR Workspace</h1>
+          <p className="app-page__subtitle">
+            Interior Logging Cost Reports modernization scaffold for React and Spring Boot delivery.
+          </p>
+        </Column>
+      </Grid>
+
+      <Grid fullWidth className="app-page__body">
+        <Column sm={4} md={4} lg={5}>
+          <Tile className="dashboard-summary">
+            <h2>{user.displayName}</h2>
+            <p className="dashboard-summary__meta">{user.email}</p>
+            <div className="app-role-tags" aria-label="Current mock roles">
+              {user.roles.map((role) => (
+                <Tag key={role} type={role === 'ILCR_ADMIN' ? 'purple' : 'teal'}>
+                  {role}
+                </Tag>
+              ))}
+            </div>
+          </Tile>
+        </Column>
+
+        <Column sm={4} md={4} lg={11}>
+          <DataTable rows={rows} headers={headers}>
+            {({
+              rows: tableRows,
+              headers: tableHeaders,
+              getHeaderProps,
+              getRowProps,
+              getTableProps,
+            }) => (
+              <TableContainer
+                title="Scaffold Users"
+                description="Temporary API contract for local development."
+              >
+                <Table {...getTableProps()}>
+                  <TableHead>
+                    <TableRow>
+                      {tableHeaders.map((header) => {
+                        const { key: headerKey, ...headerProps } = getHeaderProps({ header })
+                        return (
+                          <TableHeader key={headerKey} {...headerProps}>
+                            {header.header}
+                          </TableHeader>
+                        )
+                      })}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {tableRows.map((row) => {
+                      const { key: rowKey, ...rowProps } = getRowProps({ row })
+                      return (
+                        <TableRow key={rowKey} {...rowProps}>
+                          {row.cells.map((cell) => {
+                            if (cell.info.header === 'actions') {
+                              const rowUser = data.find((item) => String(item.id) === row.id)
+                              return (
+                                <TableCell key={cell.id}>
+                                  <Button
+                                    kind="secondary"
+                                    size="sm"
+                                    onClick={() => setSelectedUser(rowUser)}
+                                  >
+                                    View details
+                                  </Button>
+                                </TableCell>
+                              )
+                            }
+
+                            return <TableCell key={cell.id}>{cell.value}</TableCell>
+                          })}
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </DataTable>
+        </Column>
+      </Grid>
+
+      {selectedUser && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Row Details"
+          onRequestClose={() => setSelectedUser(undefined)}
+        >
+          <pre className="dashboard-details">{JSON.stringify(selectedUser, null, 2)}</pre>
+        </Modal>
+      )}
     </div>
   )
 }

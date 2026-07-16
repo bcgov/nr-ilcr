@@ -22,9 +22,6 @@ on:
         type: string
 
     secrets:
-      db_password:
-        description: Database password
-        required: true
       oc_namespace:
         description: OpenShift namespace
         required: true
@@ -55,8 +52,7 @@ jobs:
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           overwrite: true
-          parameters: -p DB_PASSWORD="${{ secrets.db_password }}"
-            -p ZONE="${{ inputs.target }}"
+          parameters: -p ZONE="${{ inputs.target }}"
             -p NAME="${{ github.event.repository.name }}"
           triggers: ${{ inputs.triggers }}
           debug: true
@@ -69,11 +65,8 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        name: [database, backend, frontend]
+        name: [backend, frontend]
         include:
-          - name: database
-            file: common/openshift.database.yml
-            parameters: -p DB_PVC_SIZE="256Mi"
           - name: backend
             file: backend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
