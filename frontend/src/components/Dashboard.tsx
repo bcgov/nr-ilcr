@@ -1,5 +1,4 @@
 import type { FC } from 'react'
-import type { AxiosResponse } from '~/axios'
 import type UserDto from '@/interfaces/UserDto'
 import { useEffect, useState } from 'react'
 import {
@@ -20,6 +19,9 @@ import {
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import useMockAuth from '@/context/auth/useMockAuth'
+import EmptySection from '@/components/core/EmptySection'
+import LoadingScreen from '@/components/core/LoadingScreen'
+import PageTitle from '@/components/core/PageTitle'
 
 const headers = [
   { key: 'id', header: 'User ID' },
@@ -31,26 +33,26 @@ const headers = [
 const Dashboard: FC = () => {
   const { user } = useMockAuth()
   const [data, setData] = useState<UserDto[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<UserDto | undefined>(undefined)
 
   useEffect(() => {
     apiService
       .getAxiosInstance()
-      .get('/v1/users')
-      .then((response: AxiosResponse) => {
-        const users: UserDto[] = []
-        for (const user of response.data) {
-          const userDto = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-          }
-          users.push(userDto)
-        }
+      .get<UserDto[]>('/v1/users')
+      .then((response) => {
+        const users = response.data.map(({ id, name, email }) => ({
+          id,
+          name,
+          email,
+        }))
         setData(users)
       })
-      .catch((error) => {
-        console.error(error)
+      .catch(() => {
+        setData([])
+      })
+      .finally(() => {
+        setIsLoading(false)
       })
   }, [])
 
@@ -62,12 +64,10 @@ const Dashboard: FC = () => {
   return (
     <div className="app-page">
       <Grid fullWidth className="app-page__header">
-        <Column sm={4} md={8} lg={16}>
-          <h1 className="app-page__title">ILCR Workspace</h1>
-          <p className="app-page__subtitle">
-            Interior Logging Cost Reports modernization scaffold for React and Spring Boot delivery.
-          </p>
-        </Column>
+        <PageTitle
+          title="ILCR Workspace"
+          subtitle="Interior Logging Cost Reports modernization scaffold for React and Spring Boot delivery."
+        />
       </Grid>
 
       <Grid fullWidth className="app-page__body">
@@ -86,62 +86,71 @@ const Dashboard: FC = () => {
         </Column>
 
         <Column sm={4} md={4} lg={11}>
-          <DataTable rows={rows} headers={headers}>
-            {({
-              rows: tableRows,
-              headers: tableHeaders,
-              getHeaderProps,
-              getRowProps,
-              getTableProps,
-            }) => (
-              <TableContainer
-                title="Scaffold Users"
-                description="Temporary API contract for local development."
-              >
-                <Table {...getTableProps()}>
-                  <TableHead>
-                    <TableRow>
-                      {tableHeaders.map((header) => {
-                        const { key: headerKey, ...headerProps } = getHeaderProps({ header })
+          {isLoading ? (
+            <LoadingScreen label="Loading scaffold users" />
+          ) : rows.length === 0 ? (
+            <EmptySection
+              title="No scaffold users"
+              description="The local read-only users API returned no records."
+            />
+          ) : (
+            <DataTable rows={rows} headers={headers}>
+              {({
+                rows: tableRows,
+                headers: tableHeaders,
+                getHeaderProps,
+                getRowProps,
+                getTableProps,
+              }) => (
+                <TableContainer
+                  title="Scaffold Users"
+                  description="Temporary API contract for local development."
+                >
+                  <Table {...getTableProps()}>
+                    <TableHead>
+                      <TableRow>
+                        {tableHeaders.map((header) => {
+                          const { key: headerKey, ...headerProps } = getHeaderProps({ header })
+                          return (
+                            <TableHeader key={headerKey} {...headerProps}>
+                              {header.header}
+                            </TableHeader>
+                          )
+                        })}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {tableRows.map((row) => {
+                        const { key: rowKey, ...rowProps } = getRowProps({ row })
                         return (
-                          <TableHeader key={headerKey} {...headerProps}>
-                            {header.header}
-                          </TableHeader>
+                          <TableRow key={rowKey} {...rowProps}>
+                            {row.cells.map((cell) => {
+                              if (cell.info.header === 'actions') {
+                                const rowUser = data.find((item) => String(item.id) === row.id)
+                                return (
+                                  <TableCell key={cell.id}>
+                                    <Button
+                                      kind="secondary"
+                                      size="sm"
+                                      onClick={() => setSelectedUser(rowUser)}
+                                    >
+                                      View details
+                                    </Button>
+                                  </TableCell>
+                                )
+                              }
+
+                              return <TableCell key={cell.id}>{cell.value}</TableCell>
+                            })}
+                          </TableRow>
                         )
                       })}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {tableRows.map((row) => {
-                      const { key: rowKey, ...rowProps } = getRowProps({ row })
-                      return (
-                        <TableRow key={rowKey} {...rowProps}>
-                          {row.cells.map((cell) => {
-                            if (cell.info.header === 'actions') {
-                              const rowUser = data.find((item) => String(item.id) === row.id)
-                              return (
-                                <TableCell key={cell.id}>
-                                  <Button
-                                    kind="secondary"
-                                    size="sm"
-                                    onClick={() => setSelectedUser(rowUser)}
-                                  >
-                                    View details
-                                  </Button>
-                                </TableCell>
-                              )
-                            }
-
-                            return <TableCell key={cell.id}>{cell.value}</TableCell>
-                          })}
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </DataTable>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </DataTable>
+          )}
         </Column>
       </Grid>
 

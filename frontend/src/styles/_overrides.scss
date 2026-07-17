@@ -6,14 +6,25 @@
 
 @use '@bcgov-nr/nr-theme/design-tokens/light-theme.scss' as light;
 @use '@bcgov-nr/nr-theme/design-tokens/dark-theme.scss' as dark;
+@use '@bcgov-nr/nr-theme/design-tokens/colors.scss' as colors;
+@use '@carbon/themes/scss/utilities';
 @use '@carbon/react/scss/themes';
 @use '@carbon/react/scss/theme' with (
   $fallback: themes.$white,
   $theme: light.$light-theme
 );
+@use '@carbon/react/scss/components/button/tokens' as button-tokens;
+@use '@bcgov-nr/nr-theme/design-tokens/light-buttons.scss' as light-button-overrides;
+@use '@bcgov-nr/nr-theme/design-tokens/dark-buttons.scss' as dark-button-overrides;
+@use '@carbon/react/scss/components/tag/tokens' as tag-tokens;
+@use '@bcgov-nr/nr-theme/design-tokens/light-tags.scss' as light-tag-overrides;
+@use '@bcgov-nr/nr-theme/design-tokens/dark-tags.scss' as dark-tag-overrides;
+@use '@carbon/react/scss/components/notification/tokens' as notification-tokens;
+@use '@bcgov-nr/nr-theme/design-tokens/light-notifications.scss' as light-notification-overrides;
+@use '@bcgov-nr/nr-theme/design-tokens/dark-notifications.scss' as dark-notification-overrides;
 @use '@carbon/react';
 @use '@carbon/styles/scss/grid';
-@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/styles/scss/spacing' as *;
 @use '@carbon/react/scss/breakpoint' as *;
 @use './variables' as variables;
 
@@ -21,19 +32,66 @@
 
 :root[data-carbon-theme='g10'] {
   --cds-grid-gutter: 0;
+  $button-theme-tokens: utilities.merge(
+    button-tokens.$button-tokens,
+    light-button-overrides.$light-button-token-overrides
+  );
+  $tag-theme-tokens: utilities.merge(tag-tokens.$tag-tokens, light-tag-overrides.$light-tag-token-overrides);
+  $notification-theme-tokens: utilities.merge(
+    notification-tokens.$notification-tokens,
+    light-notification-overrides.$light-notification-token-overrides
+  );
+
+  @include theme.add-component-tokens($button-theme-tokens);
+  @include theme.add-component-tokens($tag-theme-tokens);
+  @include theme.add-component-tokens($notification-theme-tokens);
   @include theme.theme(light.$light-theme);
 }
 
 :root[data-carbon-theme='g100'] {
   --cds-grid-gutter: 0;
+  $button-theme-tokens: utilities.merge(
+    button-tokens.$button-tokens,
+    dark-button-overrides.$dark-button-token-overrides
+  );
+  $tag-theme-tokens: utilities.merge(tag-tokens.$tag-tokens, dark-tag-overrides.$dark-tag-token-overrides);
+  $notification-theme-tokens: utilities.merge(
+    notification-tokens.$notification-tokens,
+    dark-notification-overrides.$dark-notification-token-overrides
+  );
+
+  @include theme.add-component-tokens($button-theme-tokens);
+  @include theme.add-component-tokens($tag-theme-tokens);
+  @include theme.add-component-tokens($notification-theme-tokens);
   @include theme.theme(dark.$dark-theme);
 }
 
-.#{variables.$bcgov-prefix}--btn,
-.#{variables.$bcgov-prefix}--tile,
-.#{variables.$bcgov-prefix}--tag,
-.#{variables.$bcgov-prefix}--modal-container {
+.#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
+}
+
+.#{variables.$bcgov-prefix}--text-input,
+.#{variables.$bcgov-prefix}--text-area,
+.#{variables.$bcgov-prefix}--select-input,
+.#{variables.$bcgov-prefix}--list-box,
+.#{variables.$bcgov-prefix}--list-box__field,
+.#{variables.$bcgov-prefix}--date-picker__input,
+.#{variables.$bcgov-prefix}--search-input {
+  border-top-left-radius: 0.25rem;
+  border-top-right-radius: 0.25rem;
+}
+
+.#{variables.$bcgov-prefix}--list-box__menu,
+.#{variables.$bcgov-prefix}--modal-container,
+.#{variables.$bcgov-prefix}--number__control-btn,
+.#{variables.$bcgov-prefix}--tag,
+.#{variables.$bcgov-prefix}--tile {
+  border-radius: 0.25rem;
+}
+
+.#{variables.$bcgov-prefix}--modal-container,
+.#{variables.$bcgov-prefix}--modal-content {
+  overflow: visible;
 }
 
 .#{variables.$bcgov-prefix}--content {
@@ -42,24 +100,33 @@
   padding: 0;
 }
 
-.#{variables.$bcgov-prefix}--header {
+.#{variables.$bcgov-prefix}--header ~ .#{variables.$bcgov-prefix}--content {
+  margin-block-start: $layout-05;
+}
+
+.bc-header {
   background-color: var(--cds-background-brand);
-}
 
-.#{variables.$bcgov-prefix}--header__name {
-  color: var(--cds-text-on-color);
-  font-family: 'BC Sans', 'Noto Sans', Verdana, Arial, sans-serif;
-  font-weight: 700;
-}
+  .#{variables.$bcgov-prefix}--header__name {
+    color: colors.$white;
+    font-family: 'BC Sans', 'Noto Sans', Verdana, Arial, sans-serif;
+    font-weight: 700;
+    margin-inline-start: $spacing-05;
 
-.#{variables.$bcgov-prefix}--header__menu-toggle,
-.#{variables.$bcgov-prefix}--header__action {
-  color: var(--cds-text-on-color);
-}
+    &:hover {
+      color: colors.$white;
+    }
+  }
 
-.#{variables.$bcgov-prefix}--header__menu-toggle svg,
-.#{variables.$bcgov-prefix}--header__action svg {
-  fill: currentColor;
+  .#{variables.$bcgov-prefix}--header__menu-toggle,
+  .#{variables.$bcgov-prefix}--header__action {
+    color: colors.$white;
+
+    path,
+    svg {
+      fill: currentColor;
+    }
+  }
 }
 
 .#{variables.$bcgov-prefix}--header ~ .#{variables.$bcgov-prefix}--side-nav {
@@ -70,8 +137,13 @@
   height: 3rem;
 }
 
+.#{variables.$bcgov-prefix}--side-nav__link-text svg,
 .#{variables.$bcgov-prefix}--side-nav__icon svg {
-  fill: var(--cds-link-primary);
+  fill: var(--cds-link-primary) !important;
+}
+
+.#{variables.$bcgov-prefix}--side-nav__link--current .#{variables.$bcgov-prefix}--side-nav__link-text {
+  font-weight: 400;
 }
 
 label.#{variables.$bcgov-prefix}--label,
@@ -79,15 +151,24 @@ legend.#{variables.$bcgov-prefix}--label {
   color: var(--cds-text-primary);
 }
 
+.#{variables.$bcgov-prefix}--date-picker__input,
+.#{variables.$bcgov-prefix}--date-picker-container,
+.#{variables.$bcgov-prefix}--date-picker--single,
+.#{variables.$bcgov-prefix}--date-picker-input__wrapper {
+  inline-size: 100%;
+  min-inline-size: 0;
+  width: 100% !important;
+}
+
 @media (min-width: 42rem) {
   .#{variables.$bcgov-prefix}--grid--no-gutter {
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-inline: $spacing-05;
   }
 }
 
 @include breakpoint(lg) {
-  .app-content--with-nav {
+  .#{variables.$bcgov-prefix}--header:has(.#{variables.$bcgov-prefix}--side-nav--expanded)
+    ~ .#{variables.$bcgov-prefix}--content {
     margin-inline-start: 16rem;
   }
 }

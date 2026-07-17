@@ -1,4 +1,4 @@
-import type { AxiosInstance } from 'axios'
+import type { AxiosInstance, AxiosResponse } from 'axios'
 import axios from 'axios'
 
 class APIService {
@@ -12,12 +12,16 @@ class APIService {
       },
     })
     this.client.interceptors.response.use(
-      (config) => {
-        console.info(`received response status: ${config.status} , data: ${config.data}`)
-        return config
+      (response: AxiosResponse) => {
+        console.info(`received response status: ${response.status}`)
+        return response
       },
-      (error) => {
-        console.error(error)
+      (error: unknown) => {
+        if (axios.isAxiosError(error)) {
+          console.error(`API response error status: ${error.response?.status ?? 'unknown'}`)
+        } else {
+          console.error('API response error')
+        }
         return Promise.reject(error)
       },
     )

@@ -1,0 +1,15 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.app-content {
+  min-height: 100vh;
+}
+
+.layout-toast-container {
+  bottom: $spacing-05;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  position: fixed;
+  right: $spacing-05;
+  z-index: 9001;
+}

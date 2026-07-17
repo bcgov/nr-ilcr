@@ -2,7 +2,6 @@ import { StrictMode } from 'react'
 import * as ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import AppProviders from '@/app/AppProviders'
-import '@bcgov/bc-sans/css/BC_Sans.css'
 import '@/styles/index.scss'
 
 // Import the generated route tree

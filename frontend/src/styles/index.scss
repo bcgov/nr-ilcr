@@ -1,6 +1,9 @@
 @use './variables' as *;
 @use './mixins' as *;
 @use './overrides';
+@use './custom';
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/type';
 
 body {
   background: var(--cds-background);
@@ -9,56 +12,43 @@ body {
   margin: 0;
 }
 
-.app-content {
-  margin-block-start: 3rem;
-}
-
 .app-page {
-  padding-block-end: 3rem;
+  padding-block-end: $spacing-09;
 }
 
 .app-page__header {
-  border-block-end: 0.0625rem solid var(--cds-border-subtle);
-  padding: 2rem 1rem;
+  @include page-band;
+  padding-inline: $spacing-05;
 }
 
 .app-page__body {
-  padding: 1.5rem 1rem;
-}
-
-.app-page__title {
-  margin: 0;
-}
-
-.app-page__subtitle {
-  color: var(--cds-text-secondary);
-  margin-block-start: 0.5rem;
-  max-width: 52rem;
+  padding-block: $spacing-06;
+  padding-inline: $spacing-05;
 }
 
 .app-section {
-  margin-block-start: 1rem;
+  margin-block-start: $spacing-05;
 }
 
 .app-role-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-block-start: 0.75rem;
+  gap: $spacing-03;
+  margin-block-start: $spacing-04;
 }
 
 .mock-user-selector {
   align-items: center;
   display: flex;
-  gap: 0.5rem;
+  gap: $spacing-03;
   height: 3rem;
   min-width: 0;
-  padding-inline: 0.5rem;
+  padding-inline: $spacing-03;
 }
 
 .mock-user-selector__label {
   color: var(--cds-text-on-color);
-  font-size: 0.875rem;
+  @include type.type-style('label-01');
   white-space: nowrap;
 }
 
@@ -72,7 +62,8 @@ body {
   max-width: min(15rem, 36vw);
   min-width: 8rem;
   outline: 0;
-  padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+  padding-block: $spacing-03;
+  padding-inline: $spacing-03 $spacing-07;
   text-overflow: ellipsis;
 }
 
@@ -88,7 +79,7 @@ body {
 
 .mock-user-selector__caret {
   color: var(--cds-text-on-color);
-  margin-inline-start: -1.5rem;
+  margin-inline-start: -$spacing-07;
   pointer-events: none;
 }
 
@@ -96,15 +87,20 @@ body {
   height: 100%;
 }
 
+.dashboard-summary h2 {
+  @include type.type-style('heading-03');
+  margin: 0;
+}
+
 .dashboard-summary__meta {
   color: var(--cds-text-secondary);
-  margin-block-start: 0.25rem;
+  margin-block-start: $spacing-02;
 }
 
 .dashboard-details {
   background: var(--cds-layer-01);
   overflow: auto;
-  padding: 1rem;
+  padding: $spacing-05;
 }
 
 @media (max-width: 41.98rem) {
@@ -120,6 +116,6 @@ body {
 
   .mock-user-selector__select {
     max-width: 42vw;
-    min-width: 6.5rem;
+    min-width: 6rem;
   }
 }

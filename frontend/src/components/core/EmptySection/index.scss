@@ -1,0 +1,29 @@
+@use '@carbon/type';
+@use '@carbon/react/scss/spacing' as *;
+
+.empty-section {
+  align-items: center;
+  background: var(--cds-layer-01);
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  padding: $spacing-07 $spacing-05;
+  text-align: center;
+
+  &__pictogram {
+    color: var(--cds-icon-secondary);
+    inline-size: 8rem;
+    max-inline-size: 100%;
+  }
+
+  h2 {
+    @include type.type-style('heading-03');
+    margin: 0;
+  }
+
+  p {
+    color: var(--cds-text-secondary);
+    margin: 0;
+    max-inline-size: 34rem;
+  }
+}
