@@ -5,7 +5,7 @@ This repository is the local-development scaffold for rebuilding ILCR as a React
 ## Stack
 
 - Frontend: React, TypeScript, Vite, TanStack Router, Carbon, BC Gov NR theme
-- Backend: Java 21, Spring Boot 4, Maven, executable JAR
+- Backend: Java 21, Spring Boot 4.0.6, Maven, executable JVM JAR, JDBC/Hikari Oracle integration
 - Local platform: direct Maven/npm runs or Docker Compose with backend, frontend, optional Caddy, and sanitized Oracle env wiring
 - Target platform: OpenShift Gold using `backend` and `frontend` deployment packages. Gold is the only intended OpenShift target, but it is not required for current local development.
 
@@ -65,7 +65,24 @@ docker compose up --build backend frontend
 
 The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:3001` and runs inside the container on port `8080`.
 
-The scaffold includes sanitized Oracle-style datasource environment variables for upcoming repository work. The current `/api/v1/users` scaffold is read-only in memory and does not connect to Oracle yet.
+The current `/api/v1/users` scaffold is read-only in memory. Oracle is available as an opt-in local datasource so repository work can start without forcing every backend boot to validate a database connection.
+
+To validate Oracle on backend startup, put local values in ignored `.env` and set `ILCR_DATASOURCE_ENABLED=true` for Docker Compose:
+
+```powershell
+SPRING_DATASOURCE_URL=jdbc:oracle:thin:@//<host>:1521/<service-name>
+SPRING_DATASOURCE_USERNAME=<username>
+SPRING_DATASOURCE_PASSWORD=<password>
+ILCR_DATASOURCE_ENABLED=true
+```
+
+For direct Maven runs, the `oracle` Spring profile also enables the datasource:
+
+```powershell
+cd backend
+$env:SPRING_PROFILES_ACTIVE = "local,oracle"
+mvn spring-boot:run
+```
 
 Do not commit real database passwords. Put local values in `.env`; the file is git-ignored.
 
@@ -76,6 +93,8 @@ The repository tracks source, deploy templates, and safe examples such as `.env.
 If a local setting is needed by the team, add a sanitized example to `.env.example` or this README instead of committing a developer-specific `.env`.
 
 ## Backend Notes
+
+The backend follows the proven CSP-style JVM deployment path: Spring Boot 4, executable JAR, JDBC/Hikari for Oracle access, Log4j2 logging, actuator health, Maven verification, and CycloneDX SBOM generation. Graal/native-image support is intentionally not part of this scaffold.
 
 The `/api/v1/users` controller is intentionally temporary and read-only. It preserves a simple frontend and integration-test contract so the team can start wiring real ILCR slices without exposing mutable unauthenticated demo state. Replace it with domain endpoints as ILCR features are implemented.
 

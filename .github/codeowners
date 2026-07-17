@@ -1,7 +1,7 @@
 # Matched against repo root (asterisk)
-# *                         @mishraomp @DerekRoberts
+*                         @paulushcgcj @gpascucci @SScholefield @adityaravi12
 
 # Matched against directories
-# /.github/workflows/       @mishraomp @DerekRoberts
+/.github/workflows/       @paulushcgcj @DerekRoberts
 
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
