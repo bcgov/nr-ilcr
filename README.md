@@ -24,7 +24,7 @@ Prerequisites:
 
 - JDK 21
 - Maven 3.9+
-- Node 22+
+- Node 24+
 - Docker or Podman for the full local stack
 - Optional Oracle dev DB credentials in a local, ignored `.env`
 

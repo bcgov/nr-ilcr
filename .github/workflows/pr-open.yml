@@ -10,6 +10,19 @@ concurrency:
 permissions: {}
 
 jobs:
+  # ZONE for OpenShift objects is the PR number mapped into 1-50, capping how
+  # many PR environments can exist at once. Images keep the real PR number.
+  init:
+    name: Initialize
+    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    outputs:
+      zone: ${{ steps.zone.outputs.zone }}
+    steps:
+      - id: zone
+        run: echo "zone=$(( (${{ github.event.number }} - 1) % 50 + 1 ))" >> $GITHUB_OUTPUT
+
   # https://github.com/bcgov/action-builder-ghcr
   builds:
     name: Builds
@@ -30,24 +43,28 @@ jobs:
           tags: ${{ github.event.number }}
           tag_fallback: latest
           triggers: ('${{ matrix.package }}/', 'common/', '.github/workflows/')
+          build_args: |
+            BUILDKIT_INLINE_CACHE=1
 
   deploys:
     name: Deploys (${{ github.event.number }})
     if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
-    needs: [builds]
+    needs: [builds, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
-      target: ${{ github.event.number }}
+      target: ${{ needs.init.outputs.zone }}
       triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
 
   tests:
      name: Tests
      if: needs.deploys.result == 'success' && needs.deploys.outputs.triggered == 'true'
-     needs: [deploys]
+     needs: [deploys, init]
      uses: ./.github/workflows/reusable-tests.yml
+     with:
+       target: ${{ needs.init.outputs.zone }}
 
   # ==========================================================================
   # WARNING: This job acts as the required merge gate for this workflow.
@@ -56,7 +73,7 @@ jobs:
   # ==========================================================================
   results:
     name: PR Results
-    needs: [builds, deploys, tests]
+    needs: [init, builds, deploys, tests]
     if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 1
