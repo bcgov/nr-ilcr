@@ -13,55 +13,64 @@ x-postgres-vars: &postgres-vars
   POSTGRES_DATABASE: *POSTGRES_DATABASE
 
 services:
-  database:
-    image: postgis/postgis:17-3.4 # if using crunchy , make sure to align with crunchy version, currently it is at 16 and postgis 3.3
-    container_name: database
+  # Oracle Legacy Database Service
+  # We use by default the docker image we build locally, but you can
+  # uncomment the image line to use the official image from Docker Hub,
+  # and comment out the build section.
+  legacydb:
+    container_name: oracle
+    #build:
+    #  context: legacydb
+    #  dockerfile: Dockerfile
     environment:
-      <<: *postgres-vars
+      # Use an environment variable for the Oracle password. Set APP_USER_PASSWORD in your .env file or environment.
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+      APP_USER: THE
+      ORACLE_RANDOM_PASSWORD: yes
+    platform: "linux/amd64"
+    # This image is basically the same used in the Dockerfile, but prebuilt and
+    # available in Docker Hub for convenience.
+    image: gvenzl/oracle-free:23.9-slim-faststart
+    ports: [1521:1521]
+    volumes: [/opt/oracle/oradata]
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", *POSTGRES_USER]
-    ports: ["5432:5432"]
+      test: [ "CMD-SHELL", "healthcheck.sh" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    <<: *defaults
 
-  migrations:
-    image: flyway/flyway:12-alpine
-    container_name: migrations
-    command: info migrate info
-    volumes: ["./migrations/sql:/flyway/sql:ro"]
-    environment:
-      FLYWAY_URL: jdbc:postgresql://database:5432/postgres
-      FLYWAY_USER: *POSTGRES_USER
-      FLYWAY_PASSWORD: *POSTGRES_PASSWORD
-      FLYWAY_BASELINE_ON_MIGRATE: true
-      FLYWAY_DEFAULT_SCHEMA: users
+  # Flyway service to initialize/migrate the legacy Oracle DB
+  # It depends on the legacydb service to ensure the DB is up before running migrations
+  legacyflyway:
+    container_name: flyway
+    image: flyway/flyway
+    command: -url=jdbc:oracle:thin:@legacydb:1521/FREEPDB1 -user=THE -password=${APP_USER_PASSWORD} -connectRetries=60 migrate
+    volumes: [./backend/src/test/resources/db/migration:/flyway/sql]
+    depends_on:
+      legacydb:
+        condition: service_healthy
+    <<: *defaults
+
+  # Backend Service
+  # We use by default the docker image we build locally, but you can
+  # uncomment the image line to use the official image from GitHub Container Registry,
+  # and comment out the build section.
+  backend:
+    container_name: backend
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    # When using the image from the registry, replace XXX with the desired tag
+    #image: ghcr.io/bcgov/nr-waste-plus/backend:XXX
+    ports: [8080:8080]
+    # We map the volume to override the default configuration with our local config
+    # It is easier than passing everything as environment variables
+    volumes: [./backend/config:/app/config]
     depends_on:
       database:
         condition: service_healthy
-
-  schemaspy:
-    image: schemaspy/schemaspy:7.0.2
-    profiles: ["schemaspy"]
-    container_name: schemaspy
-    command: -t pgsql11 -db postgres -host database -port 5432 -u postgres -p default -schemas users
-    depends_on:
-      migrations:
-        condition: service_completed_successfully
-    volumes: ["./output:/output"]
-
-  backend:
-    container_name: backend
-    depends_on:
-      migrations:
-        condition: service_started
-    entrypoint: sh -c "npm i && npm run start:dev"
-    environment:
-      <<: *postgres-vars
-      NODE_ENV: development
-    image: *node-image
-    ports: ["3001:3000"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api"]
-    working_dir: "/app"
-    volumes: ["./backend:/app", "/app/node_modules"]
+    <<: *defaults
 
   frontend:
     container_name: frontend
