@@ -1,0 +1,161 @@
+# General application
+server:
+  error:
+    include-message: always
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+
+spring:
+  application:
+    name: nr-waste-plus-legacy
+  mvc:
+    problemdetails:
+      enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: https://cognito-idp.${COGNITO_REGION:region}.amazonaws.com/${COGNITO_USER_POOL:usrpool}/.well-known/jwks.json
+          issuer-uri: https://cognito-idp.${COGNITO_REGION:region}.amazonaws.com/${COGNITO_USER_POOL:usrpool}
+  datasource:
+    url: jdbc:oracle:thin:@tcps://${ca.bc.gov.nrs.oracle.host}:${ca.bc.gov.nrs.oracle.port}/${ca.bc.gov.nrs.oracle.service}?javax.net.ssl.trustStore=${ca.bc.gov.nrs.oracle.keystore}&javax.net.ssl.trustStorePassword=${ca.bc.gov.nrs.oracle.secret}&javax.net.ssl.keyStore=${ca.bc.gov.nrs.oracle.keystore}&javax.net.ssl.keyStorePassword=${ca.bc.gov.nrs.oracle.secret}
+    username: ${ca.bc.gov.nrs.oracle.username}
+    password: ${ca.bc.gov.nrs.oracle.password}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      jdbcUrl: ${spring.datasource.url}
+      username: ${spring.datasource.username}
+      password: ${spring.datasource.password}
+      connectionTimeout: 30000 # 30 seconds
+      idleTimeout: 60000 # 1 minute
+      maxLifetime: 180000 # 3 minutes
+      keepaliveTime: 60000 # 1 minute
+      poolName: HRSOracleConnPool
+      minimumIdle: 1
+      maximumPoolSize: 5
+      leakDetectionThreshold: 60000
+      connection-test-query: SELECT 1 FROM DUAL
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.OracleDialect
+  http:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+    log:
+      slf4j:
+        whitelisted-mdc-keys:
+          - X-TRACE-ID
+          - X-USER
+
+# Actuator and ops
+management:
+  enable-native-support: true
+  endpoint:
+    metrics:
+      enabled: false
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  endpoints:
+    web:
+      path-mapping:
+        prometheus: metrics
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics,otlp,tracing,httptrace,prometheus
+  httpexchanges:
+    recording:
+      include: principal,request-headers,response-headers,cookie-headers,time-taken,authorization-header,remote-address,session-id
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  observations:
+    annotations:
+      enabled: true
+    key-values:
+      zone: ${APP_ZONE:local}
+      name: ${spring.application.name}
+  tracing:
+    enabled: true
+    propagation:
+      type: B3
+    sampling:
+      probability: 0.7
+    baggage:
+      enabled: true
+      correlation:
+        enabled: true
+        fields:
+          - X-B3-TraceId
+          - X-B3-SpanId
+        remote-fields:
+          - X-B3-TraceId
+          - X-B3-SpanId
+  otlp:
+    metrics:
+      export:
+        enabled: false
+    tracing:
+      export:
+        enabled: false
+    logging:
+      export:
+        enabled: false
+
+ca:
+  bc:
+    gov:
+      nrs:
+        self-uri: ${SELF_URI:http://localhost:8080}
+        environment: ${SECURITY_ENV:local}
+        districts: ${ALLOWED_DISTRICTS:DCK,DSQ,DVA,DKM,DSC,DFN,DSI,DCR,DMK,DQC,DKA,DCS,DOS,DSE,DCC,DMH,DQU,DNI,DND,DRM,DPG,DSS,DPC}
+        oracle:
+          keystore: ${ORACLEDB_KEYSTORE:jssecacerts.jks}
+          secret: ${ORACLEDB_SECRET:changeit}
+          service: ${ORACLEDB_SERVICENAME:fsa-forest}
+          database: ${ORACLEDB_DATABASE:fsa-forest}
+          host: ${ORACLEDB_HOST:localhost}
+          port: ${ORACLEDB_PORT:1543}
+          username: ${ORACLEDB_USER:user}
+          password: ${ORACLEDB_PASSWORD:passwd}
+info:
+  app:
+    name: ${spring.application.name}
+    zone: ${APP_ZONE:local}
+    version: ${APP_VERSION:0.0.1-SNAPSHOT}
+
+logging:
+  level:
+    ca.bc.gov.restapi.results: ${LOGGING_LEVEL:INFO}
+  pattern:
+    correlation: "[${spring.application.name:},%X{${X-B3-TraceId:traceId}:-},%X{${X-B3-SpanId:spanId}:-}] "
+
+# Profile Specific Properties
+---
+spring:
+  config:
+    activate:
+      on-profile: container
+  sleuth:
+    propagation-keys:
+      - X-TRACE-ID
+      - X-USER
+    baggage-keys:
+      - X-TRACE-ID
+      - X-USER
+    log:
+      slf4j:
+        whitelisted-mdc-keys:
+          - X-TRACE-ID
+          - X-USER
+
+logging:
+  pattern:
+    console: '{"time": "%d{${LOG_DATEFORMAT_PATTERN:yyyy-MM-dd HH:mm:ss.SSS}}", "level": "${LOG_LEVEL:%5p}", "app":"${spring.application.name:-}", "user":"%X{X-USER:-}", "traceId":"%X{${X-TRACE-ID:traceId}:-}", "spanId":"%X{spanId:-}", "pid": "${PID: }", "thread": "%t", "source": "%logger{63}:%L", "message": "%m", "exception":"${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"}%n'

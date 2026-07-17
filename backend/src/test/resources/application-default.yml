@@ -1,0 +1,37 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://aws-cognito-issuer-uri.aws.com
+          jwk-set-uri: https://aws-cognito-issuer-uri.aws.com/.well-known/jwks.json
+  flyway:
+    schemas: THE
+    default-schema: THE
+    enabled: true
+  jpa:
+    show-sql: true
+  datasource:
+    hikari:
+      connectionTimeout: 3000000
+      idleTimeout: 1200000
+      maxLifetime: 3600000
+      keepaliveTime: 1800000
+      leakDetectionThreshold: 3000000
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Feature flags for testing
+features:
+  flags:
+    enabled-flag: true
+    disabled-flag: false
+
+logging:
+  level:
+    #root: DEBUG
+    org.springframework.web.client: DEBUG
+    org.springframework.http.client: DEBUG

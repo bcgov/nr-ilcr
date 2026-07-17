@@ -1,0 +1,49 @@
+name: Reusable Backend Tests and Analysis
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  tests-java:
+    name: Backend Tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    permissions:
+      pull-requests: write
+    runs-on: ubuntu-24.04
+    env:
+      NLS_DATE_FORMAT: "YYYY-MM-DD"
+    steps:
+      - uses: bcgov/action-test-and-analyse-java@7c7309721cae054b3e837c723afa4efb4b1a256d # v1.1.0
+        name: Backend Coverage
+        with:
+          commands: |
+            mvn -B verify -P all-tests checkstyle:checkstyle -Dcheckstyle.skip=false --file pom.xml
+          dir: backend
+          java-cache: maven
+          java-distribution: temurin
+          java-version: "21"
+          sonar_args: >
+            -Dsonar.organization=bcgov-sonarcloud
+            -Dsonar.projectKey=nr-ilcr-backend
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/coverage-reports/merged-test-report/jacoco.xml
+            -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml
+            -Dsonar.coverage.exclusions=**/src/test/**,**/configuration/**,**/exception/**,**/dto/**,**/entity/**,**/repository/**,**/security/**,**/*$*Builder*,**/BackendApplication*,**/*Constants.*
+          sonar_token: ${{ secrets.SONAR_TOKEN_BACKEND }}
+          triggers: ('backend/')
+
+      - name: Archive CycloneDX
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: cyclone-backend
+          path: |
+            backend/target/bom.json
+          retention-days: 5
+
+      - name: Checkstyle report
+        continue-on-error: true
+        uses: jwgmeligmeyling/checkstyle-github-action@master
+        with:
+          path: backend/**/checkstyle-result.xml

@@ -1,35 +1,30 @@
+### Builder
+# Use GraalVM Native Image with Java 21 (LTS) to satisfy connectivity with Oracle DB
+FROM ghcr.io/graalvm/native-image-community:21 AS build
+
+# Copy
+WORKDIR /app
+COPY pom.xml mvnw ./
+COPY src ./src
+COPY .mvn/ ./.mvn
+
 # Build
-FROM node:24.18.0-slim AS build
+RUN ./mvnw -Pnative package -DskipTests -Dskip.unit.tests=true -Dspring-boot.run.profiles=prod
 
-# Copy, build static files; see .dockerignore for exclusions
+### Deployer
+FROM gcr.io/distroless/java-base:nonroot
+ARG PORT=9090
+
+# Copy
 WORKDIR /app
-COPY . ./
-ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
-RUN npm run deploy
+COPY --from=build /app/target/nr-ilcr-backend ./nr-ilcr-backend
 
-# Dependencies
-FROM node:24.18.0-slim AS dependencies
+# User, port and health check
+USER 1001
+EXPOSE ${PORT}
+HEALTHCHECK CMD curl -f http://localhost:${PORT}/actuator/health | grep '"status":"UP"'
 
-# Copy, build static files; see .dockerignore for exclusions
-WORKDIR /app
-COPY . ./
-ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
-RUN npm ci --ignore-scripts --no-update-notifier --omit=dev
+ENV SPRING_PROFILES_ACTIVE=container,prod
 
-# Deploy using minimal Distroless image
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
-ENV NODE_ENV=production
-
-# Copy app and dependencies
-WORKDIR /app
-COPY --from=dependencies /app/node_modules ./node_modules
-COPY --from=build /app/generated ./generated
-COPY --from=build /app/dist ./dist
-
-# Boilerplate, not used in OpenShift/Kubernetes
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost:3000/api
-
-# Nonroot user, limit heap size to 150 MB
-USER nonroot
-CMD ["--max-old-space-size=150", "/app/dist/main"]
+# Startup
+ENTRYPOINT ["/app/nr-ilcr-backend"]

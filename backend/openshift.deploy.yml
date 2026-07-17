@@ -1,45 +1,70 @@
 apiVersion: template.openshift.io/v1
 kind: Template
+labels:
+  app: ${NAME}-${ZONE}
+  app.kubernetes.io/part-of: ${NAME}-${ZONE}
 parameters:
   - name: NAME
     description: Module name
-    required: true
+    value: nr-ilcr
   - name: COMPONENT
     description: Component name
     value: backend
   - name: ZONE
     description: Deployment zone, e.g. pr-### or prod
     required: true
-  - name: IMAGE_TAG
-    description: Image tag to use
+  - name: TAG
+    description: Image tag; e.g. PR number, latest or prod
     required: true
   - name: REGISTRY
-    description: Container registry to import from
+    description: Container registry to import from (internal is image-registry.openshift-image-registry.svc:5000)
     value: ghcr.io
-  - name: ORG_NAME
+  - name: ORG
     description: Organization name
     value: bcgov
   - name: DOMAIN
-    value: apps.silver.devops.gov.bc.ca
+    value: apps.gold.devops.gov.bc.ca
+  - name: ORACLEDB_KEYSTORE
+    description: Oracle database keystore file
+  - name: ORACLEDB_PORT
+    description: Oracle database port
+    value: "1543"
   - name: MIN_REPLICAS
-    description: The minimum amount of replicas for the horizontal pod autoscaler.
-    value: "3"
+    description: Minimum replicas for the horizontal pod autoscaler
+    value: "2"
   - name: MAX_REPLICAS
-    description: The maximum amount of replicas for the horizontal pod autoscaler.
-    value: "7"
+    description: Maximum replicas for the horizontal pod autoscaler
+    value: "5"
   - name: CPU_REQUEST
-    value: "100m"
+    value: 75m
   - name: MEMORY_REQUEST
-    value: "128Mi"
-  - name: MEMORY_LIMIT
-    description: Memory limit for the container (bounds the pod's working set).
-    value: "4Gi"
-  - name: LOG_LEVEL
-    description: Application log level (debug|info|warn|error)
-    value: "info"
+    value: 200Mi
+  - name: CERT_PVC_SIZE
+    description: The amount of storage the cert PVC should have
+    value: 25Mi
+  - name: RANDOM_EXPRESSION
+    description: Random expression to make sure deployments update
+    from: "[a-zA-Z0-9]{32}"
+    generate: expression
+  - name: COGNITO_REGION
+    description: Cognito region to be used
+    value: 'ca-central-1'
 objects:
-  - apiVersion: apps/v1
-    kind: Deployment
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${NAME}-${ZONE}
+      name: ${NAME}-${ZONE}-${COMPONENT}
+    spec:
+      accessModes:
+        - ReadWriteMany
+      resources:
+        requests:
+          storage: ${CERT_PVC_SIZE}
+      storageClassName: netapp-file-standard
+  - kind: Deployment
+    apiVersion: apps/v1
     metadata:
       labels:
         app: ${NAME}-${ZONE}
@@ -50,8 +75,15 @@ objects:
           deployment: ${NAME}-${ZONE}-${COMPONENT}
       strategy:
         type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 1
+          maxSurge: 1
       template:
         metadata:
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9000"
+            prometheus.io/path: "/metrics"
           labels:
             app: ${NAME}-${ZONE}
             deployment: ${NAME}-${ZONE}-${COMPONENT}
@@ -66,159 +98,139 @@ objects:
                       matchLabels:
                         deployment: ${NAME}-${ZONE}-${COMPONENT}
                     topologyKey: kubernetes.io/hostname
+          volumes:
+            - name: ${NAME}-${ZONE}-certs
+              persistentVolumeClaim:
+                claimName: ${NAME}-${ZONE}-${COMPONENT}
           initContainers:
-            - name: wait-for-db
-              image: ${REGISTRY}/${ORG_NAME}/${NAME}/migrations:${IMAGE_TAG}
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  echo "Waiting for database to be reachable..."
-                  max_retries=30
-                  attempt=1
-                  until nc -z -v -w3 ${NAME}-${ZONE}-database 5432; do
-                    if [ "$attempt" -ge "$max_retries" ]; then
-                      echo "ERROR: Database ${NAME}-${ZONE}-database:5432 is not reachable after ${max_retries} attempts." >&2
-                      exit 1
-                    fi
-                    echo "Database not ready (attempt ${attempt}/${max_retries}), sleeping..."
-                    attempt=$((attempt + 1))
-                    sleep 2
-                  done
-                  echo "Database is UP!"
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-                seccompProfile:
-                  type: RuntimeDefault
-              volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-            - name: migrations
-              image: ${REGISTRY}/${ORG_NAME}/${NAME}/migrations:${IMAGE_TAG}
+            - name: ${NAME}-init
+              image: ${REGISTRY}/bcgov/nr-forest-client-commons/certextractor:0.2.0
               imagePullPolicy: Always
               env:
-                - name: POSTGRES_DATABASE
+                - name: ORACLEDB_HOST
                   valueFrom:
                     secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-name
-                - name: FLYWAY_URL
-                  value: jdbc:postgresql://${NAME}-${ZONE}-database:5432/$(POSTGRES_DATABASE)
-                - name: FLYWAY_USER
+                      name: ${NAME}-${ZONE}
+                      key: oracle-host
+                - name: ORACLEDB_SECRET
                   valueFrom:
                     secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-user
-                - name: FLYWAY_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-password
-                - name: FLYWAY_DEFAULT_SCHEMA
-                  value: "users"
-                - name: FLYWAY_BASELINE_ON_MIGRATE
-                  value: "true"
-              resources:
-                requests:
-                  cpu: 10m
-                  memory: 50Mi
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-                seccompProfile:
-                  type: RuntimeDefault
+                      name: ${NAME}-${ZONE}
+                      key: oracle-secret
+                - name: ORACLEDB_PORT
+                  value: ${ORACLEDB_PORT}
               volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-          containers:
-            - name: ${NAME}
-              image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
-              imagePullPolicy: Always
-              ports:
-                - name: http
-                  containerPort: 3000
-              env:
-                - name: LOG_LEVEL
-                  value: ${LOG_LEVEL}
-                - name: POSTGRES_HOST
-                  value: ${NAME}-${ZONE}-database
-                - name: POSTGRES_PORT
-                  value: "5432"
-                - name: POSTGRES_DATABASE
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-name
-                - name: POSTGRES_USER
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-user
-                - name: POSTGRES_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: ${NAME}-${ZONE}-database
-                      key: database-password
-                - name: POSTGRES_SCHEMA
-                  value: "users"
+                - name: ${NAME}-${ZONE}-certs
+                  mountPath: /cert
               resources:
                 requests:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
-                limits:
-                  memory: ${MEMORY_LIMIT}
-              securityContext:
-                allowPrivilegeEscalation: false
-                runAsNonRoot: true
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-                seccompProfile:
-                  type: RuntimeDefault
-              volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-              startupProbe:
-                httpGet:
-                  path: /api/health
-                  port: http
-                periodSeconds: 5
-                failureThreshold: 30
+          containers:
+            - image: ${REGISTRY}/${ORG}/${NAME}/${COMPONENT}:${TAG}
+              imagePullPolicy: Always
+              name: ${NAME}
+              env:
+                - name: SELF_URI
+                  value: https://${NAME}-${ZONE}-${COMPONENT}.${DOMAIN}
+                - name: SECURITY_ENV
+                  value: ${ZONE}
+                - name: ORACLEDB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-user
+                - name: ORACLEDB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-password
+                - name: ORACLEDB_DATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-database
+                - name: ORACLEDB_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-host
+                - name: ORACLEDB_SERVICENAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-service
+                - name: ORACLEDB_PORT
+                  value: ${ORACLEDB_PORT}
+                - name: SPRING_PROFILES_ACTIVE
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: spring-profiles-active
+                - name: ORACLEDB_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: oracle-secret
+                - name: ORACLEDB_KEYSTORE
+                  value: /cert/jssecacerts
+                - name: TZ
+                  value: America/Vancouver
+                - name: COGNITO_USER_POOL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}
+                      key: cognito-user-pool
+                - name: COGNITO_REGION
+                  value: ${COGNITO_REGION}
+                - name: RANDOM_EXPRESSION
+                  value: ${RANDOM_EXPRESSION}
+              ports:
+                - containerPort: 9090
+                  protocol: TCP
+              resources:
+                requests:
+                  cpu: ${CPU_REQUEST}
+                  memory: ${MEMORY_REQUEST}
               readinessProbe:
+                successThreshold: 1
+                failureThreshold: 30
                 httpGet:
-                  path: /api/health
-                  port: http
-                periodSeconds: 5
-                failureThreshold: 3
+                  path: /actuator/health
+                  port: 9090
+                  scheme: HTTP
+                initialDelaySeconds: 3
+                periodSeconds: 30
+                timeoutSeconds: 5
               livenessProbe:
+                successThreshold: 1
+                failureThreshold: 15
                 httpGet:
-                  path: /api
-                  port: http
-                periodSeconds: 10
-                failureThreshold: 3
-          volumes:
-            - name: tmp
-              emptyDir:
-                medium: Memory
-                sizeLimit: 256Mi
-  - apiVersion: v1
-    kind: Service
+                  path: /actuator/health
+                  port: 9090
+                  scheme: HTTP
+                initialDelaySeconds: 3
+                periodSeconds: 30
+                timeoutSeconds: 5
+              lifecycle:
+                preStop:
+                  exec:
+                    command: ["/bin/sleep", "10"]
+              volumeMounts:
+                - mountPath: /cert
+                  name: ${NAME}-${ZONE}-certs
+  - kind: Service
+    apiVersion: v1
     metadata:
       labels:
         app: ${NAME}-${ZONE}
       name: ${NAME}-${ZONE}-${COMPONENT}
     spec:
       ports:
-        - name: http
+        - name: 9090-tcp
+          protocol: TCP
           port: 80
-          targetPort: 3000
+          targetPort: 9090
       selector:
         deployment: ${NAME}-${ZONE}-${COMPONENT}
   - apiVersion: autoscaling/v2

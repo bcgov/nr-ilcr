@@ -18,94 +18,30 @@ permissions: {}
 jobs:
   backend-tests:
     name: Backend Tests
-    if: (! github.event.pull_request.draft)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: default
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    steps:
-      - uses: bcgov/action-test-and-analyse@8f699e3fd3fadd9a6adf6f4b1f2638ef7ecfefb9 # v2.0.0
-        env:
-          sonar_token: ${{ secrets.sonar_token_backend }}
-        with:
-          commands: |
-            npm ci
-            npm run lint
-            npm run format:check
-            npm run test:cov
-          dir: backend
-          node_version: "22"
-          sonar_args: >
-            -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts
-            -Dsonar.organization=bcgov-sonarcloud
-            -Dsonar.projectKey=quickstart-openshift_backend
-            -Dsonar.sources=src
-            -Dsonar.test.inclusions=**/*spec.ts
-            -Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info
-          sonar_token: ${{ env.sonar_token }}
-          dep_scan: warn
-          supply_scan: true
-          triggers: ('backend/')
-
-  frontend-tests:
-    name: Frontend Tests
-    if: (! github.event.pull_request.draft)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: bcgov/action-test-and-analyse@8f699e3fd3fadd9a6adf6f4b1f2638ef7ecfefb9 # v2.0.0
-        env:
-          sonar_token: ${{ secrets.sonar_token_frontend }}
-        with:
-          commands: |
-            npm ci
-            npm run lint
-            npm run format:check
-            npm run test:cov
-          dir: frontend
-          node_version: "22"
-          sonar_args: >
-            -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts,**/*test.tsx,**/routeTree.gen.ts
-            -Dsonar.organization=bcgov-sonarcloud
-            -Dsonar.projectKey=quickstart-openshift_frontend
-            -Dsonar.sources=src
-            -Dsonar.test.inclusions=**/*spec.ts,**/*test.tsx
-            -Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info
-          sonar_token: ${{ env.sonar_token }}
-          dep_scan: warn
-          supply_scan: true
-          triggers: ('frontend/')
-
-  # https://github.com/marketplace/actions/aqua-security-trivy
-  trivy:
-    name: Trivy Security Scan
-    if: (! github.event.pull_request.draft)
-    continue-on-error: true
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     permissions:
+      pull-requests: write
+    secrets: inherit
+    uses: ./.github/workflows/reusable-tests-be.yml
+
+  tests-frontend:
+    name: Frontend Unit Tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    secrets: inherit
+    permissions:
+      contents: write
+      checks: write
+    uses: ./.github/workflows/reusable-tests-fe.yml
+
+  trivy:
+    name: Repository Report
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    permissions:
+      contents: read
       security-events: write
-    runs-on: ubuntu-slim
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-
-      - name: Cache Trivy DB
-        uses: actions/cache@v6
-        with:
-          path: .trivycache
-          key: ${{ runner.os }}-trivy-v0.36.0-cache-v1
-          restore-keys: |
-            ${{ runner.os }}-trivy-
-
       - name: Run Trivy vulnerability scanner in repo mode
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -115,15 +51,44 @@ jobs:
           scan-type: "fs"
           scanners: "vuln,secret,misconfig"
           severity: "CRITICAL,HIGH"
-          trivyignores: ".github/.trivyignore"
-          cache-dir: .trivycache
-          skip-dirs: "**/node_modules,**/coverage,**/dist,.git"
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
-          category: "trivy"
           sarif_file: "trivy-results.sarif"
+
+  cve-lite:
+    name: CVE Lite Scan (${{ matrix.folder }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    permissions:
+      contents: read
+      security-events: write
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        folder: [cypress, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Run cve-lite-cli SARIF scan (${{ matrix.folder }})
+        run: npx --yes cve-lite-cli@1.25.0 "${{ matrix.folder }}" --sarif --check-overrides
+      - name: Locate SARIF file
+        id: locate
+        run: |
+          sarif_file=$(ls ${{ github.workspace }}/cve-lite-scan-*.sarif 2>/dev/null | head -1)
+          if [ -z "$sarif_file" ]; then
+            echo "::error::No SARIF file found in ${{ github.workspace }}"
+            exit 1
+          fi
+          echo "path=$sarif_file" >> $GITHUB_OUTPUT
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.locate.outputs.path }}
+          category: "cve-lite-${{ matrix.folder }}"
 
   # ==========================================================================
   # WARNING: This job acts as the required merge gate for this workflow.
@@ -132,9 +97,9 @@ jobs:
   # ==========================================================================
   results:
     name: Analysis Results
-    needs: [backend-tests, frontend-tests]
-    if: always() && (! github.event.pull_request.draft)
-    runs-on: ubuntu-slim
+    needs: [backend-tests, tests-frontend, trivy, cve-lite]
+    if: always()
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
       - name: Log Job Results Context
