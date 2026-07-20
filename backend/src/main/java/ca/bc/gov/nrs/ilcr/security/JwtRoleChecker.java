@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * and identity provider.
  *
  * <p>Provides convenience methods used in {@code @PreAuthorize} annotations (for example:
- * {@code @auth.hasConcreteRole(@roles.VIEWER)}).
+ * {@code @auth.hasConcreteRole(@roles.ADMIN)}).
  * </p>
  */
 @Component

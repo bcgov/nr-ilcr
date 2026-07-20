@@ -9,9 +9,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.util.StringUtils;
 
 @Configuration
+@EnableTransactionManagement
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class DataSourceConfiguration {
 
@@ -57,6 +62,31 @@ public class DataSourceConfiguration {
     @Bean
     public JdbcTemplate jdbcTemplate(DataSource dataSource) {
         return new JdbcTemplate(dataSource);
+    }
+
+    /**
+     * JdbcClient is the data-access idiom for all new ILCR repositories (AD-3): named parameters
+     * and record row-mapping. The JdbcTemplate bean above is retained only for OracleHealthIndicator;
+     * new code must use this JdbcClient.
+     */
+    @Bean
+    public JdbcClient jdbcClient(DataSource dataSource) {
+        return JdbcClient.create(dataSource);
+    }
+
+    /**
+     * Transaction manager bound to the same {@link Primary} {@code DataSource} the {@link JdbcClient}
+     * uses, so {@code @Transactional} service methods (Story 2.1 write path, AR11) roll back the whole
+     * unit of work on failure. Defined explicitly (rather than relying on auto-configuration) so the
+     * manager and the JdbcClient provably share one DataSource instance — otherwise writes autocommit
+     * and never roll back.
+     *
+     * @param dataSource the primary ILCR datasource
+     * @return the JDBC transaction manager
+     */
+    @Bean
+    public PlatformTransactionManager transactionManager(DataSource dataSource) {
+        return new DataSourceTransactionManager(dataSource);
     }
 
     private static void requireProperty(String propertyName, String value) {

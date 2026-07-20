@@ -127,6 +127,27 @@
       fill: currentColor;
     }
   }
+
+  // Side-nav open/close toggle: keep the icon white on the brand header in every state. Carbon gives
+  // the trigger a light background when it is active (side nav expanded) and on hover, which hid the
+  // white icon; force a translucent overlay instead so the icon is always visible.
+  .#{variables.$bcgov-prefix}--header__menu-trigger {
+    color: colors.$white;
+    background-color: transparent;
+
+    path,
+    svg {
+      fill: currentColor;
+    }
+
+    &:hover,
+    &:active,
+    &:focus,
+    &.#{variables.$bcgov-prefix}--header__action--active {
+      background-color: rgba(255, 255, 255, 0.16);
+      color: colors.$white;
+    }
+  }
 }
 
 .#{variables.$bcgov-prefix}--header ~ .#{variables.$bcgov-prefix}--side-nav {
