@@ -32,7 +32,6 @@ import './index.scss'
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -252,13 +251,8 @@ const Schedule1: FC = () => {
   }
 
   const handleOtherCosts = () => {
-    // S08: before the schedule is saved/open, opening Other Costs is blocked with ALT-001. In the
-    // current backend model an openable schedule is always saved (GET 404s for no summary), so this
-    // guard is effectively unreachable; the enabled link's navigation to the sub-page is Story 2.5.
-    if (!data) {
-      window.alert(ALT_SAVE_BEFORE_OTHER_COSTS)
-    }
-    // else: no navigation yet (Story 2.5 wires the sub-page).
+    // Story 2.5 wires navigation to the Other Costs sub-page. The button is only rendered for an
+    // editable (already-saved) schedule, so no "save before opening" guard is needed here.
   }
 
   const header = (
