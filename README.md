@@ -37,7 +37,6 @@ mvn spring-boot:run
 
 The backend listens on `http://localhost:8080` by default.
 
-- Service root: `GET /api`
 - Health: `GET /api/health`
 - Temporary scaffold users API: `GET /api/v1/users`, `GET /api/v1/users/{id}`
 
