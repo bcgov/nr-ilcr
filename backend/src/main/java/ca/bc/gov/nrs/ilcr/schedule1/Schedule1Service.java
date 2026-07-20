@@ -77,8 +77,6 @@ public class Schedule1Service {
         throw new StaleRevisionException();
       }
       writeWritableDetails(summaryId, request, user);
-    } catch (StaleRevisionException ex) {
-      throw ex;
     } catch (DataAccessException ex) {
       // Never log cost/volume values (AD-11) — action + status + exception type only.
       log.warn("Schedule 1 save failed for mill {} year {} [{}]",
