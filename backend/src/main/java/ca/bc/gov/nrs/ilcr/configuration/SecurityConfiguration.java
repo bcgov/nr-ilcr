@@ -2,7 +2,7 @@ package ca.bc.gov.nrs.ilcr.configuration;
 
 import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
-import ca.bc.gov.nrs.ilcr.security.MockPrincipalFilter;
+import ca.bc.gov.nrs.ilcr.security.LocalDevPrincipalFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -32,7 +32,7 @@ public class SecurityConfiguration {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             @Value("${ilcr.security.enabled:false}") boolean securityEnabled,
-            @Value("${ilcr.security.mock-role:ILCR_SUBMITTER}") String mockRoleName,
+            @Value("${ilcr.security.local-dev-role:ILCR_SUBMITTER}") String localDevRoleName,
             CognitoGroupsJwtAuthenticationConverter cognitoGroupsConverter
     ) throws Exception {
         http
@@ -62,12 +62,12 @@ public class SecurityConfiguration {
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {
-            // Dev/UAT: seed a mock principal so @PreAuthorize action checks run identically with
-            // security off (AD-7). Requests are permitted at the request level; method security
-            // still evaluates against the mock authority.
-            Role mockRole = Role.fromValue(mockRoleName);
+            // Local dev: seed a placeholder principal so @PreAuthorize action checks run while
+            // FAM/JWT integration is disabled. Requests are permitted at the request level; method
+            // security still evaluates against the configured local-dev authority.
+            Role localDevRole = Role.fromValue(localDevRoleName);
             http.addFilterBefore(
-                    new MockPrincipalFilter(mockRole != null ? mockRole : Role.SUBMITTER),
+                    new LocalDevPrincipalFilter(localDevRole != null ? localDevRole : Role.SUBMITTER),
                     UsernamePasswordAuthenticationFilter.class);
             http.authorizeHttpRequests(authorize -> authorize
                     .requestMatchers(PUBLIC_PATHS).permitAll()

@@ -13,17 +13,17 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Dev/UAT mock principal used ONLY when {@code ilcr.security.enabled=false} (AD-7). Seeds the
- * SecurityContext with a configurable role authority (default SUBMITTER) so the SAME
- * {@code @PreAuthorize} action checks run with security off — business logic never branches on the
- * toggle. Never registered when security is enabled.
+ * Local-development principal bridge used ONLY when {@code ilcr.security.enabled=false} (AD-7).
+ * Seeds the SecurityContext with a configurable role authority (default SUBMITTER) so the same
+ * {@code @PreAuthorize} action checks run until FAM/JWT wiring is enabled. Never registered when
+ * security is enabled.
  */
-public class MockPrincipalFilter extends OncePerRequestFilter {
+public class LocalDevPrincipalFilter extends OncePerRequestFilter {
 
-  private final Role mockRole;
+  private final Role localDevRole;
 
-  public MockPrincipalFilter(Role mockRole) {
-    this.mockRole = mockRole;
+  public LocalDevPrincipalFilter(Role localDevRole) {
+    this.localDevRole = localDevRole;
   }
 
   @Override
@@ -32,9 +32,9 @@ public class MockPrincipalFilter extends OncePerRequestFilter {
       throws ServletException, IOException {
     if (SecurityContextHolder.getContext().getAuthentication() == null) {
       var authentication = new UsernamePasswordAuthenticationToken(
-          "dev-" + mockRole.name().toLowerCase(java.util.Locale.ROOT),
+          "dev-" + localDevRole.name().toLowerCase(java.util.Locale.ROOT),
           "N/A",
-          List.of(new SimpleGrantedAuthority(mockRole.name())));
+          List.of(new SimpleGrantedAuthority(localDevRole.name())));
       SecurityContextHolder.getContext().setAuthentication(authentication);
     }
     filterChain.doFilter(request, response);
