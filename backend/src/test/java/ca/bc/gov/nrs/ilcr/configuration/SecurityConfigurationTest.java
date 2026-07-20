@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,9 @@ class SecurityConfigurationTest {
 
   @MockitoBean
   private JdbcClient jdbcClient;
+
+  @MockitoBean
+  private Schedule1Repository schedule1Repository;
 
   @MockitoBean
   private JwtDecoder jwtDecoder;

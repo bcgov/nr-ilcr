@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -15,6 +16,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private JdbcClient jdbcClient;
+
+  @MockitoBean
+  private Schedule1Repository schedule1Repository;
 
   @Test
   void contextLoads() {

@@ -65,9 +65,8 @@ public class DataSourceConfiguration {
     }
 
     /**
-     * JdbcClient is the data-access idiom for all new ILCR repositories (AD-3): named parameters
-     * and record row-mapping. The JdbcTemplate bean above is retained only for OracleHealthIndicator;
-     * new code must use this JdbcClient.
+     * JdbcClient is retained for legacy Oracle access patterns that do not map cleanly to Spring Data
+     * JDBC repositories, such as projection-heavy queries or future PL/SQL / REF-CURSOR calls.
      */
     @Bean
     public JdbcClient jdbcClient(DataSource dataSource) {
