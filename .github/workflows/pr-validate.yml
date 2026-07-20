@@ -15,7 +15,7 @@ jobs:
   # pr-open.yml), so the deployment links must use that zone.
   init:
     name: Initialize
-    if: (! github.event.pull_request.draft) && vars.ENABLE_OPENSHIFT_DEPLOY == 'true'
+    if: (! github.event.pull_request.draft)
     runs-on: ubuntu-slim
     timeout-minutes: 1
     outputs:
