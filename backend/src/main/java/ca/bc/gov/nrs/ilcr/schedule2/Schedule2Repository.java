@@ -199,4 +199,136 @@ public class Schedule2Repository {
     BigDecimal value = rs.getBigDecimal(column);
     return value == null ? null : value.intValue();
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // Write path (Story 3.2) — AD-3 dumb SQL; transaction boundary + rules live in Schedule2Service.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Insert a new, empty category-{@code "2"} report summary for a mill/year at {@code REVISION_COUNT}
+   * 0 and return its generated id (the Schedule 2 create-on-absent divergence — Schedule 2 never
+   * 404s). The freshly-inserted revision 0 is then bumped to 1 by the normal {@link #bumpRevision}
+   * write, so a saved Schedule 2 always reads back with a non-null, monotonically-increasing revision.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param comments the entered comments (nullable)
+   * @param user the acting user id (audit)
+   * @return the generated {@code ILCR_REPORT_SUMMARY_ID}
+   */
+  public int insertSummary(long millId, int year, String comments, String user) {
+    int summaryId = jdbcClient.sql("SELECT THE.ILCR_REPORT_SUMMARY_SEQ.NEXTVAL FROM DUAL")
+        .query(Integer.class)
+        .single();
+    jdbcClient.sql(
+            """
+            INSERT INTO THE.ILCR_REPORT_SUMMARY
+                (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
+            VALUES
+                (:id, :year, :millId, :categoryId, :comments, 0, :user, SYSTIMESTAMP)
+            """)
+        .param("id", summaryId)
+        .param("year", year)
+        .param("millId", millId)
+        .param("categoryId", SCHEDULE_2_CATEGORY)
+        .param("comments", comments)
+        .param("user", user)
+        .update();
+    return summaryId;
+  }
+
+  /**
+   * Optimistic-lock bump of the summary (AR11): increments {@code REVISION_COUNT} and updates
+   * {@code COMMENTS} + audit columns ONLY when the stored revision still matches
+   * {@code expectedRevision}.
+   *
+   * @param summaryId the summary PK
+   * @param expectedRevision the revision the caller last read
+   * @param comments the new comments (nullable)
+   * @param user the acting user id (audit)
+   * @return rows affected — {@code 1} on success, {@code 0} when the revision is stale (→ 409)
+   */
+  public int bumpRevision(int summaryId, int expectedRevision, String comments, String user) {
+    return jdbcClient.sql(
+            """
+            UPDATE THE.ILCR_REPORT_SUMMARY
+               SET REVISION_COUNT = REVISION_COUNT + 1,
+                   COMMENTS = :comments,
+                   UPDATE_USERID = :user,
+                   UPDATE_TIMESTAMP = SYSTIMESTAMP
+             WHERE ILCR_REPORT_SUMMARY_ID = :id
+               AND REVISION_COUNT = :expectedRevision
+            """)
+        .param("comments", comments)
+        .param("user", user)
+        .param("id", summaryId)
+        .param("expectedRevision", expectedRevision)
+        .update();
+  }
+
+  /**
+   * Upsert a Schedule 2 detail row by {@code (summaryId, costItemCode)}. Update-in-place first; insert
+   * only when absent (preserves audit continuity — no delete/re-insert churn). Unlike Schedule 1's
+   * fixed-detail upsert, Schedule 2 has NO {@code ITEM_DESCRIPTION} itemization, so this is a plain
+   * key match. A null {@code volume}/{@code cost} is still written so clearing a field persists null.
+   *
+   * @param summaryId the summary PK
+   * @param costItemCode the Schedule 2 cost-item id (25 or 26)
+   * @param volume the entered volume (nullable; only item 26 carries a volume)
+   * @param cost the entered cost (nullable)
+   * @param user the acting user id (audit)
+   */
+  public void upsertDetail(
+      int summaryId, int costItemCode, BigDecimal volume, Integer cost, String user) {
+    int updated = jdbcClient.sql(
+            """
+            UPDATE THE.ILCR_COST_REPORT_DETAIL
+               SET VOLUME = :volume,
+                   COST = :cost,
+                   UPDATE_USERID = :user,
+                   UPDATE_TIMESTAMP = SYSTIMESTAMP
+             WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
+               AND ILCR_REPORT_COST_ITEM_ID = :code
+            """)
+        .param("volume", volume)
+        .param("cost", cost)
+        .param("user", user)
+        .param("summaryId", summaryId)
+        .param("code", costItemCode)
+        .update();
+
+    if (updated == 0) {
+      jdbcClient.sql(
+              """
+              INSERT INTO THE.ILCR_COST_REPORT_DETAIL
+                  (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
+                   VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+              VALUES
+                  (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :code,
+                   :volume, :cost, NULL, :user, SYSTIMESTAMP)
+              """)
+          .param("summaryId", summaryId)
+          .param("code", costItemCode)
+          .param("volume", volume)
+          .param("cost", cost)
+          .param("user", user)
+          .update();
+    }
+  }
+
+  /**
+   * Delete every cost-report-detail row for a summary (items 25/26), then the summary row itself
+   * (whole-schedule delete). Idempotency (Draft + no summary → no-op 200) is handled in the service.
+   *
+   * @param summaryId the summary PK
+   */
+  public void deleteSchedule(int summaryId) {
+    jdbcClient.sql("DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE ILCR_REPORT_SUMMARY_ID = :id")
+        .param("id", summaryId)
+        .update();
+    jdbcClient.sql("DELETE FROM THE.ILCR_REPORT_SUMMARY WHERE ILCR_REPORT_SUMMARY_ID = :id")
+        .param("id", summaryId)
+        .update();
+  }
 }

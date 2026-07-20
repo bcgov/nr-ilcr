@@ -1,39 +1,46 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.api.Schedule2Api;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Schedule 2 endpoints. Authorizes by naming the {@code VIEW_SCHEDULE} action (AD-7), delegates all
- * mill/year validation to {@link MillContextService} (AD-4), and never touches repositories directly
- * (AD-1 layering). The read-only {@code editable} flag is derived from the caller's
- * {@code EDIT_SCHEDULE} permission, computed server-side (AD-5).
+ * Schedule 2 endpoints. Authorizes by naming the schedule action (AD-7), delegates all mill/year
+ * validation to {@link MillContextService} (AD-4), and never touches repositories directly (AD-1
+ * layering). The read-only {@code editable} flag is derived from the caller's {@code EDIT_SCHEDULE}
+ * permission, computed server-side (AD-5).
  *
- * <p>Read-only slice: no write path (PUT/DELETE/check-status deferred to Story 3.2). A valid, active
- * mill/year with no saved Schedule 2 returns a 200 empty editable document — the single deliberate
- * divergence from Schedule 1's read (which 404s on a missing summary), so this uses
- * {@link MillContextService#validateMillYearActive} instead of {@code validateScheduleViewable}.
+ * <p>The read (GET) never 404s on a missing Schedule 2 summary — the single deliberate divergence
+ * from Schedule 1's read — so it uses {@link MillContextService#validateMillYearActive} instead of
+ * {@code validateScheduleViewable}. The write path (PUT/DELETE) uses the same no-summary-required
+ * context guard: SAVE creates the summary when absent and DELETE is idempotent, so neither 404s.
  */
 @RestController
+@RequiredArgsConstructor
 public class Schedule2Controller implements Schedule2Api {
+
+  private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
+  private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
   private final MillContextService millContextService;
   private final Schedule2Service schedule2Service;
   private final SchedulePermissions permissions;
+  private final MessageSource messageSource;
 
-  public Schedule2Controller(
-      MillContextService millContextService,
-      Schedule2Service schedule2Service,
-      SchedulePermissions permissions) {
-    this.millContextService = millContextService;
-    this.schedule2Service = schedule2Service;
-    this.permissions = permissions;
+  /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
+  private MessageInfo message(String key) {
+    return new MessageInfo(key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -44,5 +51,25 @@ public class Schedule2Controller implements Schedule2Api {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(schedule2Service.getSchedule2(millId, year, callerMayEdit));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule2Response> saveSchedule2(
+      long millId, int year, Schedule2Request request, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule2Response saved = schedule2Service.saveSchedule2(millId, year, request, callerMayEdit, user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<MessageResponse> deleteSchedule2(
+      long millId, int year, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    schedule2Service.deleteSchedule2(millId, year);
+    return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
   }
 }

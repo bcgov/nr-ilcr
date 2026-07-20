@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule2.dto;
 
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+
 /**
  * The Schedule 2 (Purchased/Private Log Costs) aggregate document (AD-5, AD-12) — the pinned GET
  * response, frozen for all Schedule 2 stories. Every derived/read-only field ({@code perUnit},
@@ -12,8 +14,13 @@ package ca.bc.gov.nrs.ilcr.schedule2.dto;
  * are carried/computed. When the Schedule 3 source data is absent the carried/derived figures are
  * null and (with the app-wide Jackson {@code non_null} inclusion) omitted from the JSON.
  *
- * <p>{@code revisionCount} is the optimistic-lock token echoed for the (deferred) Story 3.2 write —
- * null/0 when the schedule is unsaved.
+ * <p>{@code revisionCount} is the optimistic-lock token echoed for the Story 3.2 write — null when
+ * the schedule is unsaved, then the bumped count after a save.
+ *
+ * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson {@code non_null}
+ * omits it) and carrying the resolved success {@link MessageInfo} on the PUT save echo. Adding it is
+ * an additive, backward-compatible extension of the frozen read contract (same pattern as
+ * {@code Schedule1Response}).
  */
 public record Schedule2Response(
     long millId,
@@ -28,5 +35,14 @@ public record Schedule2Response(
     CostBlock lessLogSales,
     CostBlock netPurchased,
     CostBlock totalCompanyLogging,
-    CostBlock totalAverage) {
+    CostBlock totalAverage,
+    MessageInfo message) {
+
+  /** A copy of this document carrying the given success message (for the PUT echo, AD-8). */
+  public Schedule2Response withMessage(MessageInfo message) {
+    return new Schedule2Response(
+        millId, year, trackStatus, editable, revisionCount, comments,
+        purchasedLogCost, purchasedWoodOverhead, subtotal, lessLogSales,
+        netPurchased, totalCompanyLogging, totalAverage, message);
+  }
 }

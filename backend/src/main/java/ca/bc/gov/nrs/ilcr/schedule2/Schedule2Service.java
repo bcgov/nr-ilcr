@@ -1,13 +1,19 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
  * either operand is null or the denominator is zero.
  */
 @Service
+@Slf4j
 public class Schedule2Service {
 
   private static final String STATUS_DRAFT = "D";
@@ -45,6 +52,99 @@ public class Schedule2Service {
 
   public Schedule2Service(Schedule2Repository repository) {
     this.repository = repository;
+  }
+
+  /**
+   * Persist the two entered Schedule 2 line items (25/26) + comments for a mill/year and return the
+   * recomputed document (S12). The mill/year context is already validated in the controller (AD-4).
+   * Enforces the server-side Draft gate (AD-9) and optimistic-lock concurrency (AR11).
+   *
+   * <p>The Schedule 2 divergence from Schedule 1: SAVE <em>creates the summary when none exists</em>
+   * ({@link #getOrCreateEditableSummary}) — Schedule 2 never 404s. A brand-new summary is inserted at
+   * revision 0 and then bumped to 1 by the same optimistic-lock write used for updates, so the read
+   * always sees a consistent, monotonically-increasing {@code revisionCount}. A null client
+   * {@code revisionCount} means "new/unsaved" and matches the freshly-inserted 0.
+   *
+   * <p>The whole method is one transaction: a persistence failure rolls back completely and surfaces
+   * as 500 ({@code scheduleNotSavedErrorMsg}).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the entered fields + optimistic-lock token
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable} flag)
+   * @param user the acting user id (audit columns)
+   * @return the recomputed aggregate document (incremented {@code revisionCount})
+   */
+  @Transactional
+  public Schedule2Response saveSchedule2(
+      long millId, int year, Schedule2Request request, boolean callerMayEdit, String user) {
+    int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+    int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+    try {
+      int bumped = repository.bumpRevision(summaryId, expectedRevision, request.comments(), user);
+      if (bumped == 0) {
+        throw new StaleRevisionException();
+      }
+      // item 25 — cost only (its volume is carried from Schedule 3, never entered here).
+      repository.upsertDetail(summaryId, ITEM_PURCHASED_LOG_COST, null,
+          request.purchasedLogCostCost(), user);
+      // item 26 — volume + cost.
+      repository.upsertDetail(summaryId, ITEM_LESS_LOG_SALES,
+          request.lessLogSalesVolume(), request.lessLogSalesCost(), user);
+    } catch (StaleRevisionException ex) {
+      throw ex;
+    } catch (DataAccessException ex) {
+      // Never log cost/volume values (AD-11) — action + status + exception type only.
+      log.warn("Schedule 2 save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule2(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year. Enforces the same Draft gate
+   * as save. Idempotent: a Draft mill with no category-{@code "2"} summary is a no-op that still
+   * returns 200 (never 404). Context is already validated in the controller (AD-4).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   */
+  @Transactional
+  public void deleteSchedule2(long millId, int year) {
+    requireDraft(millId, year);
+    Optional<SummaryRow> summary = repository.findSummary(millId, year);
+    if (summary.isEmpty()) {
+      return; // idempotent — nothing to remove
+    }
+    try {
+      repository.deleteSchedule(summary.get().summaryId());
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 2 delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+  }
+
+  /**
+   * The Draft-gate guard for the create-on-absent save path: the track must be Draft (else 409), and
+   * the category-{@code "2"} summary is created when absent (returning its id) — Schedule 2 never
+   * 404s. This is the key deviation from {@code Schedule1Service.requireEditableSummary} (which 404s
+   * on a missing summary).
+   */
+  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
+    requireDraft(millId, year);
+    return repository.findSummary(millId, year)
+        .map(SummaryRow::summaryId)
+        .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
+  }
+
+  /** The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409). */
+  private void requireDraft(long millId, int year) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!STATUS_DRAFT.equals(trackStatus)) {
+      throw new ScheduleNotEditableException();
+    }
   }
 
   /**
@@ -158,7 +258,8 @@ public class Schedule2Service {
         lessLogSales,
         netPurchased,
         totalCompanyLogging,
-        totalAverage);
+        totalAverage,
+        null); // success message is set by the controller on the PUT echo (AD-8)
   }
 
   // -------------------------------------------------------------------------------------------------

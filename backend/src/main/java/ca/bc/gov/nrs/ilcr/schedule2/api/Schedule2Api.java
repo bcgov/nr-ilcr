@@ -1,17 +1,23 @@
 package ca.bc.gov.nrs.ilcr.schedule2.api;
 
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Schedule 2 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule2Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Read-only slice —
- * no PUT/DELETE/check-status (deferred to Story 3.2).
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Adds PUT (save)
+ * and DELETE (Story 3.2); check-status is deferred.
  */
 @RequestMapping("/api/v1/schedule2")
 public interface Schedule2Api {
@@ -29,5 +35,38 @@ public interface Schedule2Api {
    */
   @GetMapping
   ResponseEntity<Schedule2Response> getSchedule2(
+      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Save (create-or-update) the two entered Schedule 2 line items for a mill/year and return the
+   * recomputed document (Story 3.2, S12). Unlike Schedule 1, a mill/year with no saved Schedule 2 is
+   * created on save (never 404). Range validation on the request body returns 400; a non-Draft track
+   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param request the entered fields + optimistic-lock token (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed aggregate document carrying the success {@code message} (AD-8)
+   */
+  @PutMapping
+  ResponseEntity<Schedule2Response> saveSchedule2(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule2Request request,
+      Authentication authentication);
+
+  /**
+   * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year (Story 3.2). Idempotent: a
+   * Draft mill with no summary returns 200 (never 404). Non-Draft track → 409; missing
+   * {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param authentication the caller (drives EDIT_SCHEDULE)
+   * @return 200 with the success {@code message} (SUC-002, AD-8)
+   */
+  @DeleteMapping
+  ResponseEntity<MessageResponse> deleteSchedule2(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }
