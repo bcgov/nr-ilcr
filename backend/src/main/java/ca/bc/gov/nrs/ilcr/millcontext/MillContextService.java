@@ -47,4 +47,28 @@ public class MillContextService {
       throw new ScheduleNotFoundException();
     }
   }
+
+  /**
+   * Validate that the mill/reporting-year context is viewable, WITHOUT requiring a schedule summary
+   * to exist for any category (Schedule 2, UC-SCH2-001 AC4/AC6). Unlike
+   * {@link #validateScheduleViewable}, a valid, active mill/year with no saved schedule is NOT a
+   * 404 — it is the legitimate "unsaved schedule" state (the legacy
+   * {@code Schedule2DAO.getReportSummaryID()} never returns null; it falls back to a new empty
+   * summary). The caller (Schedule 2) then serves a 200 empty editable document.
+   *
+   * <p>Guard order: unknown mill / no report-status row for the year &rarr;
+   * {@link ScheduleNotFoundException} (404); mill not active ({@code ACT}) for the year &rarr;
+   * {@link MillClosedException} (409). Returns normally when the context is viewable.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   */
+  public void validateMillYearActive(long millId, int year) {
+    String millStatus = repository.findMillStatusCodeForYear(millId, year)
+        .orElseThrow(ScheduleNotFoundException::new);
+
+    if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
+      throw new MillClosedException();
+    }
+  }
 }
