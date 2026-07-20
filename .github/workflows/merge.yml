@@ -31,7 +31,6 @@ jobs:
         uses: bcgov/action-get-pr@28b0adf8e4d40720d41f9c87356ce24b0a4bd6af # v0.3.1
   deploy-test:
     name: TEST Deploys (${{ needs.init.outputs.pr }})
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
@@ -52,7 +51,6 @@ jobs:
 
   deploy-prod:
     name: PROD Deploys (${{ needs.init.outputs.pr }})
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [tests, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
@@ -69,7 +67,6 @@ jobs:
   # there to customize the alert set.
   monitor-prod:
     name: Sysdig Monitor (PROD)
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [deploy-prod]
     runs-on: ubuntu-24.04
     environment: prod
@@ -86,7 +83,6 @@ jobs:
 
   promote:
     name: Promote Images
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [deploy-prod, init]
     runs-on: ubuntu-slim
     permissions:
@@ -102,3 +98,24 @@ jobs:
           repository: ${{ github.repository }}/${{ matrix.package }}
           target: ${{ needs.init.outputs.pr }}
           tags: prod
+
+  results:
+    name: Merge Results
+    needs: [init, deploy-test, tests, deploy-prod, promote]
+    if: always()
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    steps:
+      - name: Log Job Results Context
+        run: |
+          echo "=== Upstream Job Statuses ==="
+          echo '${{ toJson(needs) }}'
+
+      - name: Evaluate Overall Status
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ Merge pipeline failure: at least one required job failed or was cancelled."
+          exit 1
+
+      - name: Success Message
+        run: echo "✅ All merge pipeline jobs passed or were intentionally skipped!"
