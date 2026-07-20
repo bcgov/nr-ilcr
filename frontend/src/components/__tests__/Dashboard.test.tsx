@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { render, screen, waitFor, userEvent } from '@/test-utils'
+import { render, screen } from '@/test-utils'
 import Dashboard from '@/components/Dashboard'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -12,19 +12,11 @@ describe('Dashboard', () => {
     expect(screen.getByText(/ILCR Workspace/i)).toBeInTheDocument()
   })
 
-  test('opens and closes the row details modal', async () => {
-    const user = userEvent.setup()
+  test('renders the current local principal and pending identity endpoint state', () => {
     render(<Dashboard />)
 
-    // Wait for the mocked user data to load and render the View Details button.
-    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i })
-    await user.click(viewDetailsButton)
-
-    expect(screen.getByText(/Row Details/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /close/i }))
-    await waitFor(() => {
-      expect(screen.queryByText(/Row Details/i)).not.toBeInTheDocument()
-    })
+    expect(screen.getByText(/Alex Admin/i)).toBeInTheDocument()
+    expect(screen.getByText(/ILCR_ADMIN/i)).toBeInTheDocument()
+    expect(screen.getByText(/Identity endpoint pending/i)).toBeInTheDocument()
   })
 })
