@@ -23,6 +23,7 @@ public class SecurityConfiguration {
     private static final String[] PUBLIC_PATHS = {
         "/api",
         "/api/health",
+        "/api/health/**",
         "/api/info",
         "/api/prometheus"
     };
@@ -57,7 +58,7 @@ public class SecurityConfiguration {
                     .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
-                            .requestMatchers("/api/health", "/api/info").permitAll()
+                            .requestMatchers("/api/health", "/api/health/**", "/api/info").permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {

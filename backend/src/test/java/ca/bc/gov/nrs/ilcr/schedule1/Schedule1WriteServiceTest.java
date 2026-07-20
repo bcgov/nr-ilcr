@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -46,7 +47,12 @@ class Schedule1WriteServiceTest {
   private Schedule1Service service;
 
   private Schedule1Request request(int revision, LineItemInput... items) {
-    return new Schedule1Request(revision, "c", List.of(items), null, new BigDecimal("8000"));
+    return requestWithOtherCostsVolume(new BigDecimal("8000"), revision, items);
+  }
+
+  private Schedule1Request requestWithOtherCostsVolume(
+      BigDecimal otherCostsVolume, int revision, LineItemInput... items) {
+    return new Schedule1Request(revision, "c", List.of(items), null, otherCostsVolume);
   }
 
   private void stubDraftSummary() {
@@ -69,6 +75,19 @@ class Schedule1WriteServiceTest {
     verify(repository).upsertFixedDetail(SUMMARY_ID, 12, new BigDecimal("2000"), 60000, USER);
     // the shared Other-Costs volume row (code 19) is written from otherCostsVolume
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), eq(null), eq(USER));
+  }
+
+  @Test
+  void save_nullOtherCostsVolume_clearsSharedVolumeRow() {
+    stubDraftSummary();
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+
+    service.saveSchedule1(
+        MILL, YEAR,
+        requestWithOtherCostsVolume(null, 0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+        true, USER);
+
+    verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(19), isNull(), isNull(), eq(USER));
   }
 
   @Test

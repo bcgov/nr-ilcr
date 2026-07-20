@@ -142,10 +142,9 @@ public class Schedule1Service {
             silv.accruedLessActual().volume(), silv.accruedLessActual().cost(), user);
       }
     }
-    if (request.otherCostsVolume() != null) {
-      // Shared item-19 volume row (null description) only — never the itemized rows (AC2).
-      repository.upsertFixedDetail(summaryId, CODE_OTHER, request.otherCostsVolume(), null, user);
-    }
+    // Shared item-19 volume row (null description) only — never the itemized rows (AC2). A null
+    // volume is still written so clearing the field removes the stored value.
+    repository.upsertFixedDetail(summaryId, CODE_OTHER, request.otherCostsVolume(), null, user);
   }
 
   /**
