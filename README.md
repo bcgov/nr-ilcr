@@ -32,6 +32,7 @@ Run the Spring Boot backend directly:
 
 ```powershell
 cd backend
+$env:SPRING_PROFILES_ACTIVE = "local"
 mvn spring-boot:run
 ```
 
@@ -64,7 +65,7 @@ docker compose up --build backend frontend
 
 The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:3001` and runs inside the container on port `8080`.
 
-The current `/api/v1/users` scaffold is read-only in memory. Oracle is available as an opt-in local datasource so repository work can start without forcing every backend boot to validate a database connection.
+The current `/api/v1/users` scaffold is read-only in memory. The default backend runtime is secure and Oracle-required; the explicit `local` profile opts out so repository work can start without forcing every local backend boot to validate a database connection.
 
 To validate Oracle on backend startup, put local values in ignored `.env` and set `ILCR_DATASOURCE_ENABLED=true` for Docker Compose:
 

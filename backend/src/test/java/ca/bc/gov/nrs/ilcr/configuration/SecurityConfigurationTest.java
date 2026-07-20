@@ -21,7 +21,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
-@TestPropertySource(properties = "ilcr.security.enabled=true")
+@TestPropertySource(properties = {
+    "ilcr.security.enabled=true",
+    "ilcr.datasource.enabled=false",
+    "spring.data.jdbc.repositories.enabled=false"
+})
 class SecurityConfigurationTest {
 
   @Autowired
