@@ -109,6 +109,50 @@ class Schedule1ServiceTest {
   }
 
   @Test
+  void noSummary_returnsEmptyLockedSkeleton_notFound() {
+    // "Not initiated": active Draft mill/year with NO Schedule 1 summary -> 200 empty, editable:false.
+    when(repository.findSummary(515L, YEAR, "1")).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(515L, YEAR)).thenReturn(Optional.of("D"));
+
+    Schedule1Response doc = service.getSchedule1(515L, YEAR, true);
+
+    assertEquals("D", doc.trackStatus());
+    assertFalse(doc.editable()); // locked even for a Draft caller who may edit
+    assertNull(doc.crownVolume());
+    assertNull(doc.revisionCount());
+    assertNull(doc.comments());
+    // All nine canonical line items present, all values null.
+    assertEquals(List.of(12, 13, 14, 15, 16, 17, 18, 143, 144),
+        doc.lineItems().stream().map(LineItem::costItemCode).toList());
+    doc.lineItems().forEach(li -> {
+      assertNull(li.volume());
+      assertNull(li.cost());
+      assertNull(li.perUnit());
+    });
+    // Silviculture block all null.
+    assertNull(doc.silviculture().actualSpent());
+    assertNull(doc.silviculture().accruedLessActual());
+    assertNull(doc.silviculture().lessAdmin());
+    assertNull(doc.silviculture().total());
+    assertNull(doc.forestMgmtAdminCost());
+    assertNull(doc.lessSilvAdminCost());
+    // Other Costs zeroed/empty (count 0).
+    assertEquals(0, doc.otherCosts().count());
+    assertEquals(0L, doc.otherCosts().costSubtotal());
+    assertNull(doc.otherCosts().volume());
+    assertNull(doc.otherCosts().perUnit());
+  }
+
+  @Test
+  void noSummary_noStatusRow_trackStatusNull() {
+    when(repository.findSummary(515L, YEAR, "1")).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(515L, YEAR)).thenReturn(Optional.empty());
+    Schedule1Response doc = service.getSchedule1(515L, YEAR, true);
+    assertNull(doc.trackStatus());
+    assertFalse(doc.editable());
+  }
+
+  @Test
   void silvicultureAndScalars_mappedByCode() {
     stub("D", List.of(
         new DetailRow(1, new BigDecimal("100"), 500, null),      // silviculture actual

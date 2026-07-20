@@ -154,8 +154,13 @@ public class Schedule1Service {
    * @return the aggregate document
    */
   public Schedule1Response getSchedule1(long millId, int year, boolean callerMayEdit) {
-    SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY)
-        .orElseThrow(ScheduleNotFoundException::new);
+    var maybeSummary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY);
+    if (maybeSummary.isEmpty()) {
+      // "Not initiated": a valid, active mill/year with no saved Schedule 1 summary. Return a
+      // locked, all-null skeleton (200) instead of 404 so the client renders the greyed form.
+      return emptySchedule(millId, year);
+    }
+    SummaryRow summary = maybeSummary.get();
     List<DetailRow> details = repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
@@ -204,6 +209,41 @@ public class Schedule1Service {
         lessSilvAdminCost,
         otherCosts,
         null); // success message is set by the controller on the PUT echo (AD-8)
+  }
+
+  /**
+   * The "not initiated" empty Schedule 1 skeleton (200) for a valid, active mill/year with no saved
+   * summary. Every canonical line item is present with null volume/cost/perUnit; the silviculture
+   * block and scalars are all null; Other Costs is a zeroed/empty summary (count 0). {@code editable}
+   * is ALWAYS false — this is a locked view (there is no create-on-open flow yet). {@code trackStatus}
+   * is read from the mill-report-status lookup WITHOUT a summary (via {@code findTrackStatus}); null
+   * when there is no status row.
+   */
+  private Schedule1Response emptySchedule(long millId, int year) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+
+    List<LineItem> lineItems = new ArrayList<>();
+    for (Integer code : LINE_ITEM_CODES) {
+      lineItems.add(new LineItem(code, null, null, null));
+    }
+
+    SilvicultureBlock silviculture = new SilvicultureBlock(null, null, null, null);
+    OtherCostsSummary otherCosts = new OtherCostsSummary(null, 0L, null, 0);
+
+    return new Schedule1Response(
+        millId,
+        year,
+        trackStatus,
+        false, // locked: not-initiated docs are never editable (no create-on-open flow)
+        null, // crownVolume
+        null, // revisionCount
+        null, // comments
+        lineItems,
+        silviculture,
+        null, // forestMgmtAdminCost
+        null, // lessSilvAdminCost
+        otherCosts,
+        null); // message
   }
 
   private static LineItem toLineItem(DetailRow row) {

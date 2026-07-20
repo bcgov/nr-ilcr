@@ -72,7 +72,11 @@ class Schedule1ContextGuardIT extends AbstractOracleIT {
                 .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
     }
 
-    // ---- S21: unknown mill/year or no Schedule 1 summary -> 404 ProblemDetail ---------------------
+    // ---- S21: unknown mill/year -> 404 ProblemDetail ---------------------------------------------
+    // NOTE (2026-07-20 product change): a valid ACTIVE mill/year with NO Schedule 1 summary is NO
+    // LONGER a 404 — it now returns a 200 "not initiated" locked empty document (see
+    // Schedule1DocumentIT#notInitiatedContext_returnsLockedEmptyDocument). Only genuine context
+    // errors (unknown mill, missing/malformed params, closed mill) remain 4xx here.
 
     @Test
     @DisplayName("S21: unknown mill -> 404 ProblemDetail")
@@ -80,16 +84,6 @@ class Schedule1ContextGuardIT extends AbstractOracleIT {
         mockMvc.perform(get(ENDPOINT).param("millId", "999999").param("year", String.valueOf(SEEDED_YEAR)))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
-    }
-
-    @Test
-    @DisplayName("S21: valid mill/year but no Schedule 1 summary -> 404 with verbatim 'Schedule not found.'")
-    void noScheduleSummary_returns404_verbatimMessage() throws Exception {
-        // Seed (Task 8) MUST include a mill/year that is active but has NO category-1 summary for this case.
-        mockMvc.perform(get(ENDPOINT).param("millId", "515").param("year", String.valueOf(SEEDED_YEAR)))
-                .andExpect(status().isNotFound())
-                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail", is("Schedule not found.")));   // ERR-003 / scheduleNotFoundErrorMsg
     }
 
     // ---- S20: mill closed for the year -> 409 ProblemDetail --------------------------------------

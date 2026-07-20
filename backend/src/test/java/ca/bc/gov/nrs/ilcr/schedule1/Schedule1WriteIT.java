@@ -243,7 +243,7 @@ class Schedule1WriteIT extends AbstractOracleIT {
     // ---- S13: DELETE removes the whole schedule (BR-08); re-GET is the empty-schedule state. --------
 
     @Test
-    @DisplayName("S13 — 519 Draft DELETE 200 (SUC-002) removes summary + all details; re-GET 404")
+    @DisplayName("S13 — 519 Draft DELETE 200 (SUC-002) removes summary + all details; re-GET 200 empty locked doc")
     void delete_removesWholeSchedule() throws Exception {
         mockMvc.perform(delete(ENDPOINT).param("millId", "519").param("year", "2021")
                         .with(csrf()))
@@ -253,11 +253,13 @@ class Schedule1WriteIT extends AbstractOracleIT {
                 "ILCR_REPORT_SUMMARY_ID = 1019"), "summary row must be gone (BR-08)");
         assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, DETAIL,
                 "ILCR_REPORT_SUMMARY_ID = 1019"), "all detail rows must be gone (BR-08)");
-        // Re-GET of a mill with no summary is the established empty-schedule state (Story 1.2: 404).
-        // If the team elects a 200 empty-document instead, realign this expectation in dev-story.
+        // 2026-07-20 product change: a valid ACTIVE mill/year with no summary now re-GETs as a 200
+        // "not initiated" locked empty document (editable:false), not a 404. Mill 519 is still active.
         mockMvc.perform(get(ENDPOINT).param("millId", "519").param("year", "2021")
                         .accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.editable", is(false)))
+                .andExpect(jsonPath("$.lineItems.length()", is(9)));
     }
 
     // ---- AC7 (AR11): optimistic concurrency — stale revision -> 409; reload + retry -> 200. ---------

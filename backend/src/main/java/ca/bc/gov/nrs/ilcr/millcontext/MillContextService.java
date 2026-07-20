@@ -47,4 +47,29 @@ public class MillContextService {
       throw new ScheduleNotFoundException();
     }
   }
+
+  /**
+   * Validate only that the mill/reporting-year context exists and the mill is active — WITHOUT
+   * requiring a schedule summary to exist. Used by reads that must render a "not initiated" empty
+   * document (200) for a valid, active mill/year that has no saved schedule yet.
+   *
+   * <p>Guard order (same as {@link #validateScheduleViewable} minus the summary-exists check):
+   * <ol>
+   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
+   *       {@link ScheduleNotFoundException} (404).</li>
+   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
+   * </ol>
+   * Returns normally when the mill/year is a known, active context.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   */
+  public void validateMillYearActive(long millId, int year) {
+    String millStatus = repository.findMillStatusCodeForYear(millId, year)
+        .orElseThrow(ScheduleNotFoundException::new);
+
+    if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
+      throw new MillClosedException();
+    }
+  }
 }

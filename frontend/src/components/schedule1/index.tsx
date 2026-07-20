@@ -320,8 +320,11 @@ const Schedule1: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
-  // A value cell: an editable TextInput when the field is writable and the schedule is editable,
-  // otherwise read-only text. perUnit is always read-only (server-computed).
+  // A value cell. When the schedule is editable AND the field is writable it is an interactive
+  // TextInput seeded from form state. Otherwise it renders a DISABLED (greyed) TextInput showing the
+  // document value — this matches the legacy greyed, locked form for a not-initiated or non-Draft
+  // schedule (values are blank for the not-initiated doc). perUnit is always read-only text
+  // (server-computed, never an input).
   const numberCell = (
     fieldKey: string,
     label: string,
@@ -342,7 +345,16 @@ const Schedule1: FC = () => {
         />
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmt(current)}</TableCell>
+      <TableCell className="schedule-1__num">
+        <TextInput
+          id={fieldKey}
+          labelText={label}
+          hideLabel
+          size="sm"
+          disabled
+          value={numStr(current)}
+        />
+      </TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -479,7 +491,7 @@ const Schedule1: FC = () => {
             )}
             <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
           </div>
-          {editable && (
+          {editable ? (
             <TextInput
               id="otherCostsVolume"
               labelText="Subtotal Other Costs volume"
@@ -488,6 +500,14 @@ const Schedule1: FC = () => {
               onChange={setField('otherCostsVolume')}
               invalid={Boolean(fieldErrors['otherCostsVolume'])}
               invalidText={fieldErrors['otherCostsVolume']}
+            />
+          ) : (
+            <TextInput
+              id="otherCostsVolume"
+              labelText="Subtotal Other Costs volume"
+              size="sm"
+              disabled
+              value={numStr(data.otherCosts.volume)}
             />
           )}
         </Column>
@@ -503,10 +523,7 @@ const Schedule1: FC = () => {
               onChange={setField('comments')}
             />
           ) : (
-            <>
-              <h3 className="schedule-1__heading">Comments</h3>
-              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
-            </>
+            <TextArea id="comments" labelText="Comments" disabled value={data.comments ?? ''} />
           )}
         </Column>
 
