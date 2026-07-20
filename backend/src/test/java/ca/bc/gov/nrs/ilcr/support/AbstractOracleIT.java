@@ -31,7 +31,7 @@ import org.testcontainers.oracle.OracleContainer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 public abstract class AbstractOracleIT {
 
-  static final OracleContainer ORACLE = new OracleContainer("gvenzl/oracle-free:latest")
+  static final OracleContainer ORACLE = new OracleContainer("gvenzl/oracle-free:23.9-slim-faststart")
       .withUsername("THE")
       .withPassword("THE");
 
