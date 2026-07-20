@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -105,6 +106,7 @@ class Schedule1WriteIT extends AbstractOracleIT {
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "518").param("year", "2021")
                         .contentType(MediaType.APPLICATION_JSON).content(body)
+                        .with(csrf())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -203,7 +205,8 @@ class Schedule1WriteIT extends AbstractOracleIT {
         int before = revisionOf(1018);
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "518").param("year", "2021")
-                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                        .contentType(MediaType.APPLICATION_JSON).content(body)
+                        .with(csrf()))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.detail", is(verbatimDetail)));
@@ -218,7 +221,8 @@ class Schedule1WriteIT extends AbstractOracleIT {
         int before = revisionOf(1017);
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "517").param("year", "2021")
-                        .contentType(MediaType.APPLICATION_JSON).content(validBody(before)))
+                        .contentType(MediaType.APPLICATION_JSON).content(validBody(before))
+                        .with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
@@ -228,7 +232,8 @@ class Schedule1WriteIT extends AbstractOracleIT {
     @Test
     @DisplayName("S22-write — DELETE against non-Draft (mill 517, track S) -> 409, row survives")
     void delete_nonDraft_returns409() throws Exception {
-        mockMvc.perform(delete(ENDPOINT).param("millId", "517").param("year", "2021"))
+        mockMvc.perform(delete(ENDPOINT).param("millId", "517").param("year", "2021")
+                        .with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
         assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
@@ -240,7 +245,8 @@ class Schedule1WriteIT extends AbstractOracleIT {
     @Test
     @DisplayName("S13 — 519 Draft DELETE 200 (SUC-002) removes summary + all details; re-GET 404")
     void delete_removesWholeSchedule() throws Exception {
-        mockMvc.perform(delete(ENDPOINT).param("millId", "519").param("year", "2021"))
+        mockMvc.perform(delete(ENDPOINT).param("millId", "519").param("year", "2021")
+                        .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
         assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
@@ -263,13 +269,15 @@ class Schedule1WriteIT extends AbstractOracleIT {
         // First writer wins (N -> N+1).
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "520").param("year", "2021")
-                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n)))
+                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n))
+                        .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revisionCount", is(n + 1)));
         // Second writer still holds the stale token N -> rejected, no overwrite.
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "520").param("year", "2021")
-                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n)))
+                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n))
+                        .with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.detail", is("This schedule was changed by another user. Please reload and try again.")));
@@ -277,7 +285,8 @@ class Schedule1WriteIT extends AbstractOracleIT {
         // Reload the fresh token and retry -> succeeds.
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "520").param("year", "2021")
-                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n + 1)))
+                        .contentType(MediaType.APPLICATION_JSON).content(validBody(n + 1))
+                        .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revisionCount", is(greaterThan(n + 1))));
     }
