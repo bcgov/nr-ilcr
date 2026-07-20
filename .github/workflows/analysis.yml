@@ -121,7 +121,7 @@ jobs:
   results:
     name: Analysis Results
     needs: [backend-tests, frontend-tests, trivy]
-    if: always() && (! github.event.pull_request.draft)
+    if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 1
     steps:
