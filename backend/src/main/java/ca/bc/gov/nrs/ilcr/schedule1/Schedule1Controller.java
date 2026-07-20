@@ -7,6 +7,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code EDIT_SCHEDULE} permission, computed server-side (AD-5).
  */
 @RestController
+@RequiredArgsConstructor
 public class Schedule1Controller implements Schedule1Api {
 
   private static final String SCHEDULE_1_CATEGORY = "1";
@@ -32,17 +34,6 @@ public class Schedule1Controller implements Schedule1Api {
   private final Schedule1Service schedule1Service;
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
-
-  public Schedule1Controller(
-      MillContextService millContextService,
-      Schedule1Service schedule1Service,
-      SchedulePermissions permissions,
-      MessageSource messageSource) {
-    this.millContextService = millContextService;
-    this.schedule1Service = schedule1Service;
-    this.permissions = permissions;
-    this.messageSource = messageSource;
-  }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
   private MessageInfo message(String key) {
