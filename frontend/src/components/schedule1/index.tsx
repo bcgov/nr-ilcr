@@ -24,6 +24,7 @@ import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
+import { validateSchedule1 } from './validation'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
@@ -178,6 +179,13 @@ const Schedule1: FC = () => {
     if (!data || saving) {
       return
     }
+    // Advisory client-side validation (backend remains authoritative): block a doomed round-trip and
+    // point the user at the highlighted fields.
+    if (Object.keys(validateSchedule1(form)).length > 0) {
+      setSaveMessage(null)
+      setSaveError('Please correct the highlighted fields before saving.')
+      return
+    }
     setSaving(true)
     setSaveMessage(null)
     setSaveError(null)
@@ -315,6 +323,8 @@ const Schedule1: FC = () => {
   }
 
   const editable = data.editable
+  // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
+  const fieldErrors = editable ? validateSchedule1(form) : {}
 
   // A value cell: an editable TextInput when the field is writable and the schedule is editable,
   // otherwise read-only text. perUnit is always read-only (server-computed).
@@ -333,6 +343,8 @@ const Schedule1: FC = () => {
           size="sm"
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
+          invalid={Boolean(fieldErrors[fieldKey])}
+          invalidText={fieldErrors[fieldKey]}
         />
       </TableCell>
     ) : (
@@ -480,6 +492,8 @@ const Schedule1: FC = () => {
               size="sm"
               value={form['otherCostsVolume'] ?? ''}
               onChange={setField('otherCostsVolume')}
+              invalid={Boolean(fieldErrors['otherCostsVolume'])}
+              invalidText={fieldErrors['otherCostsVolume']}
             />
           )}
         </Column>

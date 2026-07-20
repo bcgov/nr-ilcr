@@ -118,11 +118,14 @@ describe('Schedule1 editable page', () => {
     expect(screen.getByText('30')).toBeInTheDocument()
   })
 
-  test('400 field rejection shows verbatim detail and keeps entered values (AC3 / S03)', async () => {
-    const detail = 'Entered cost must be between -99,999,999 and 99,999,999.'
+  test('out-of-range value is blocked client-side (advisory) — inline error, no PUT (AC3 / S03)', async () => {
+    let putCalled = false
     server.use(
       http.get(URL, () => HttpResponse.json(schedule1Doc)),
-      http.put(URL, () => problemBody(400, detail)),
+      http.put(URL, () => {
+        putCalled = true
+        return problemBody(400, 'server should not be reached')
+      }),
     )
     render(<Schedule1 />)
     const user = userEvent.setup()
@@ -132,8 +135,12 @@ describe('Schedule1 editable page', () => {
     await user.type(cost, '100000000')
     await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
 
-    expect(await screen.findByText(detail)).toBeInTheDocument()
-    // Entered value is retained (not cleared) so the user can correct + retry.
+    // Advisory client validation shows the verbatim range message inline and blocks the doomed PUT
+    // (backend stays authoritative — see the 500 test for server-error rendering).
+    expect(
+      await screen.findByText('Entered cost must be between -99,999,999 and 99,999,999.'),
+    ).toBeInTheDocument()
+    expect(putCalled).toBe(false)
     expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toHaveValue('100000000')
   })
 

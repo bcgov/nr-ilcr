@@ -81,11 +81,13 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(DataIntegrityViolationException.class)
   public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(
       DataIntegrityViolationException ex, HttpServletRequest request) {
-    log.warn("Data integrity violation: {}", ex.getMessage(), ex);
+    // Log the specific cause server-side, but never return raw DB/constraint text to the client
+    // (leaks schema/object names; AD-11). The client gets a generic message.
+    log.warn("Data integrity violation: {}", extractConstraintMessage(ex), ex);
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
-    problem.setTitle("Database Constraint Violation");
-    problem.setDetail(extractConstraintMessage(ex));
+    problem.setTitle(HttpStatus.CONFLICT.getReasonPhrase());
+    problem.setDetail("The request could not be completed due to a data conflict.");
     problem.setInstance(URI.create(request.getRequestURI()));
 
     return ResponseEntity.status(HttpStatus.CONFLICT)
