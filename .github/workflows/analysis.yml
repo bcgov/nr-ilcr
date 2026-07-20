@@ -45,6 +45,10 @@ jobs:
   frontend-tests:
     name: Frontend Tests
     if: (! github.event.pull_request.draft)
+    permissions:
+      contents: read
+      checks: write
+      security-events: write
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
