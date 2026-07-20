@@ -3,8 +3,10 @@ package ca.bc.gov.nrs.ilcr.schedule2;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -47,6 +49,11 @@ public class Schedule2Service {
 
   private static final int ITEM_PURCHASED_LOG_COST = 25; // cost entered
   private static final int ITEM_LESS_LOG_SALES = 26;     // volume + cost entered
+
+  private static final String OUTCOME_MET = "MET";
+  private static final String OUTCOME_ISSUES = "ISSUES";
+  private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
+  private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule2Repository repository;
 
@@ -260,6 +267,29 @@ public class Schedule2Service {
         totalCompanyLogging,
         totalAverage,
         null); // success message is set by the controller on the PUT echo (AD-8)
+  }
+
+  /**
+   * Evaluate the Schedule 2 completion requirement (BR-07) for a mill/year — read-only (AD-5), never
+   * mutates. Reuses the server-assembled document ({@link #getSchedule2}) and inspects
+   * {@code purchasedLogCost.cost} (cost-item 25): non-null &rarr; {@code MET} with one
+   * {@code scheduleRequirementsMetMsg}; null (including the unsaved-schedule state — never 404)
+   * &rarr; {@code ISSUES} with one {@code missingRequiredFieldMsg}. The mill/year context is already
+   * validated in the controller (AD-4). The returned {@link MessageInfo} carries the bundle KEY only;
+   * the controller resolves the verbatim text (AD-8), mirroring the save/delete split.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the outcome + one message key (text resolved by the controller)
+   */
+  @Transactional(readOnly = true)
+  public CheckStatusResponse checkStatus(long millId, int year) {
+    // callerMayEdit is irrelevant to BR-07 (only the item-25 cost matters); pass false.
+    Schedule2Response document = getSchedule2(millId, year, false);
+    boolean met = document.purchasedLogCost().cost() != null;
+    String outcome = met ? OUTCOME_MET : OUTCOME_ISSUES;
+    String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;
+    return new CheckStatusResponse(outcome, List.of(new MessageInfo(key, null)));
   }
 
   // -------------------------------------------------------------------------------------------------

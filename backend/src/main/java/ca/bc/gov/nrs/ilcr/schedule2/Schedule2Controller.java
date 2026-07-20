@@ -4,9 +4,11 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.api.Schedule2Api;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -71,5 +73,19 @@ public class Schedule2Controller implements Schedule2Api {
     millContextService.validateMillYearActive(millId, year);
     schedule2Service.deleteSchedule2(millId, year);
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<CheckStatusResponse> checkStatus(
+      long millId, int year, Authentication authentication) {
+    // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
+    millContextService.validateMillYearActive(millId, year);
+    CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
+    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message.
+    List<MessageInfo> resolved = status.messages().stream()
+        .map(m -> message(m.key()))
+        .toList();
+    return ResponseEntity.ok(new CheckStatusResponse(status.outcome(), resolved));
   }
 }

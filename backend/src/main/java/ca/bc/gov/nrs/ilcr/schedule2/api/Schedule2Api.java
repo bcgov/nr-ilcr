@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule2.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import jakarta.validation.Valid;
@@ -8,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -68,5 +70,22 @@ public interface Schedule2Api {
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule2(
+      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year — read-only
+   * (AD-5), mutates nothing, no request body. Returns 200 {@code {outcome:"MET", ...}} when the
+   * server-assembled {@code purchasedLogCost.cost} (item 25) is present, else
+   * {@code {outcome:"ISSUES", ...}} (including an unsaved schedule with no summary — never 404). Same
+   * no-summary-required context guards as read/write: 400 (bad param) / 404 (unknown mill) / 409
+   * (closed) / 403 (no VIEW_SCHEDULE).
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param authentication the caller (authorized for VIEW_SCHEDULE)
+   * @return 200 with the {@link CheckStatusResponse} (outcome + resolved message)
+   */
+  @PostMapping("/check-status")
+  ResponseEntity<CheckStatusResponse> checkStatus(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }
