@@ -32,6 +32,8 @@ public class MillContextRepository {
    * @return the XREF status code, or empty if no per-year context exists
    */
   public Optional<String> findMillStatusCodeForYear(long millId, int year) {
+    // Legacy ILCR maps ILCR_MILL_REPORT_STATUS.ILCR_MILL_ID to the shared one-to-one
+    // THE.ILCR_MILL_STATUS_XREF.ILCR_MILL_STATUS_XREF_ID primary key.
     return jdbcClient.sql(
             """
             SELECT x.ILCR_MILL_STATUS_CODE
