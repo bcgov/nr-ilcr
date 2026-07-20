@@ -20,6 +20,7 @@ spring:
       idle-timeout: ${SPRING_DATASOURCE_IDLE_TIMEOUT:60000}
       max-lifetime: ${SPRING_DATASOURCE_MAX_LIFETIME:180000}
       keepalive-time: ${SPRING_DATASOURCE_KEEPALIVE_TIME:60000}
+      initialization-fail-timeout: ${SPRING_DATASOURCE_INITIALIZATION_FAIL_TIMEOUT:-1}
       leak-detection-threshold: ${SPRING_DATASOURCE_LEAK_DETECTION_THRESHOLD:60000}
 
 server:
