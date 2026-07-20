@@ -35,8 +35,7 @@ public class DataSourceConfiguration {
             @Value("${spring.datasource.hikari.max-lifetime:180000}") long maxLifetime,
             @Value("${spring.datasource.hikari.keepalive-time:60000}") long keepaliveTime,
             @Value("${spring.datasource.hikari.initialization-fail-timeout:-1}") long initializationFailTimeout,
-            @Value("${spring.datasource.hikari.leak-detection-threshold:60000}") long leakDetectionThreshold,
-            @Value("${ilcr.datasource.validation-query:SELECT 1 FROM DUAL}") String validationQuery
+            @Value("${spring.datasource.hikari.leak-detection-threshold:60000}") long leakDetectionThreshold
     ) {
         requireProperty("spring.datasource.url", url);
         requireProperty("spring.datasource.username", username);
@@ -56,7 +55,6 @@ public class DataSourceConfiguration {
         config.setKeepaliveTime(keepaliveTime);
         config.setInitializationFailTimeout(initializationFailTimeout);
         config.setLeakDetectionThreshold(leakDetectionThreshold);
-        config.setConnectionTestQuery(validationQuery);
 
         return new HikariDataSource(config);
     }

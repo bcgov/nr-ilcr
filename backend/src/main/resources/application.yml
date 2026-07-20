@@ -55,7 +55,6 @@ ilcr:
     enabled: ${ILCR_SECURITY_ENABLED:true}
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:true}
-    validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}
 
 features:
   flags:
