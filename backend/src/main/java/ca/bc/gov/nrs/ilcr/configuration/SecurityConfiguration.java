@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.configuration;
 
+import ca.bc.gov.nrs.ilcr.BackendConstants;
 import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.security.LocalDevPrincipalFilter;
@@ -19,23 +20,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfiguration {
-
-    private static final String[] PUBLIC_PATHS = {
-        "/api",
-        "/api/health",
-        "/api/health/**",
-        "/api/info",
-        "/api/prometheus"
-    };
-
-    // Home-page option-list endpoints (Story 1.1). Pre-selection reads with no action gate and no
-    // @PreAuthorize; permitted even when security is enabled. The per-user mill-association filter
-    // arrives with the FAM auth story (AR4); until then these are open like the other pre-auth reads.
-    private static final String[] HOME_PUBLIC_PATHS = {
-        "/api/v1/mills",
-        "/api/v1/reporting-years",
-        "/api/v1/mill-context"
-    };
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -68,7 +52,7 @@ public class SecurityConfiguration {
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
                             .requestMatchers("/api/health", "/api/health/**", "/api/info").permitAll()
-                            .requestMatchers(HttpMethod.GET, HOME_PUBLIC_PATHS).permitAll()
+                            .requestMatchers(HttpMethod.GET, BackendConstants.HOME_PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {
@@ -80,7 +64,7 @@ public class SecurityConfiguration {
                     new LocalDevPrincipalFilter(localDevRole != null ? localDevRole : Role.SUBMITTER),
                     UsernamePasswordAuthenticationFilter.class);
             http.authorizeHttpRequests(authorize -> authorize
-                    .requestMatchers(PUBLIC_PATHS).permitAll()
+                    .requestMatchers(BackendConstants.PUBLIC_PATHS).permitAll()
                     .anyRequest().permitAll());
         }
 
