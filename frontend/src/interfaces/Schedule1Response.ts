@@ -36,12 +36,17 @@ export default interface Schedule1Response {
   trackStatus: string | null
   editable: boolean
   crownVolume: number | null
+  // The Schedule 3 Crown Timber volume (BR-03 pre-fill source), read-only. Story 2.3.
+  schedule3CrownVolume: number | null
   revisionCount: number | null
   comments: string | null
   lineItems: LineItem[]
   silviculture: SilvicultureBlock
+  // BR-04 admin costs pulled from Schedule 3 (read-only): Forest Mgmt Admin (143) / Less Silv Admin (139).
   forestMgmtAdminCost: number | null
   lessSilvAdminCost: number | null
   otherCosts: OtherCostsSummary
+  // Advisory, non-blocking messages carried on the GET (WRN-001 crown pre-fill rides here). Story 2.3.
+  warnings?: MessageInfo[]
   message?: MessageInfo | null
 }

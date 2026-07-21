@@ -15,7 +15,9 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.EntryAmount;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.LineItemInput;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.SilvicultureInput;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -46,7 +48,8 @@ class Schedule1WriteServiceTest {
   private Schedule1Service service;
 
   private Schedule1Request request(int revision, LineItemInput... items) {
-    return new Schedule1Request(revision, "c", List.of(items), null, new BigDecimal("8000"));
+    return new Schedule1Request(
+        revision, "c", List.of(items), null, new BigDecimal("8000"), null, null);
   }
 
   private void stubDraftSummary() {
@@ -72,22 +75,48 @@ class Schedule1WriteServiceTest {
   }
 
   @Test
-  void save_ignoresDerivedAndPulledCodes() {
+  void save_143And144_writeVolumeOnly_costNeverWritten() {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    // 144 = derived subtotal, 143 = pulled forest-mgmt admin — must never be written (AC2).
+    // 143/144 VOLUME is user-entered (via the dedicated fields); their COST is pulled/derived and must
+    // never be written. A 143/144 sent through the lineItems channel is ignored (only 12–18 write there).
     service.saveSchedule1(
         MILL, YEAR,
-        request(0,
-            new LineItemInput(12, new BigDecimal("2000"), 60000),
-            new LineItemInput(144, new BigDecimal("5"), 999),
-            new LineItemInput(143, new BigDecimal("5"), 999)),
+        new Schedule1Request(0, "c",
+            List.of(new LineItemInput(12, new BigDecimal("2000"), 60000),
+                new LineItemInput(144, new BigDecimal("5"), 999),
+                new LineItemInput(143, new BigDecimal("5"), 999)),
+            null, new BigDecimal("8000"),
+            new BigDecimal("111"), new BigDecimal("222")),
         true, USER);
 
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), eq(USER));
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(144), any(), any(), anyString());
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(143), any(), any(), anyString());
+    // Volume-only writes for 143/144 (null cost), from the dedicated volume fields.
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 143, new BigDecimal("111"), null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 144, new BigDecimal("222"), null, USER);
+    // The lineItems-channel 143/144 cost (999) is never persisted.
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(143), any(), eq(999), anyString());
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(144), any(), eq(999), anyString());
+  }
+
+  @Test
+  void save_silviculture139And140_writeVolumeOnly() {
+    stubDraftSummary();
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+
+    service.saveSchedule1(
+        MILL, YEAR,
+        new Schedule1Request(0, "c", List.of(), new SilvicultureInput(
+            new EntryAmount(new BigDecimal("100"), 500),
+            new EntryAmount(new BigDecimal("50"), 300),
+            new BigDecimal("77"),   // 139 volume
+            new BigDecimal("88")),  // 140 volume
+            new BigDecimal("8000"), null, null),
+        true, USER);
+
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 139, new BigDecimal("77"), null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 140, new BigDecimal("88"), null, USER);
   }
 
   @Test

@@ -1,30 +1,24 @@
 import { vi } from 'vitest'
-import { render, screen, waitFor, userEvent } from '@/test-utils'
-import Dashboard from '@/components/Dashboard'
+import { render, screen, userEvent } from '@/test-utils'
 
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: vi.fn(),
+  useNavigate: () => mockNavigate,
 }))
 
+import Dashboard from '@/components/Dashboard'
+
 describe('Dashboard', () => {
-  test('renders a heading with the correct text', () => {
+  test('renders the ILCR Workspace heading (no users API call)', () => {
     render(<Dashboard />)
     expect(screen.getByText(/ILCR Workspace/i)).toBeInTheDocument()
   })
 
-  test('opens and closes the row details modal', async () => {
+  test('Open Schedule 1 navigates to the schedule page', async () => {
+    mockNavigate.mockClear()
     const user = userEvent.setup()
     render(<Dashboard />)
-
-    // Wait for the mocked user data to load and render the View Details button.
-    const viewDetailsButton = await screen.findByRole('button', { name: /view details/i })
-    await user.click(viewDetailsButton)
-
-    expect(screen.getByText(/Row Details/i)).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /close/i }))
-    await waitFor(() => {
-      expect(screen.queryByText(/Row Details/i)).not.toBeInTheDocument()
-    })
+    await user.click(screen.getByRole('button', { name: /open schedule 1/i }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1' })
   })
 })

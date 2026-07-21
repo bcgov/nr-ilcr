@@ -6,9 +6,11 @@ import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
 // PageTitle / TanStack Link throw outside a RouterProvider (AppProviders has none). Mock the router
-// exactly like Dashboard.test.tsx; stub Link as a passthrough in case it renders.
+// exactly like Dashboard.test.tsx; stub Link as a passthrough in case it renders. A hoisted shared
+// navigate spy lets the Story 2.5 navigation test assert the destination.
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
   Link: ({ children }: { children: ReactNode }) => children,
 }))
 
@@ -23,18 +25,46 @@ const schedule1Doc = {
   trackStatus: 'D',
   editable: true,
   crownVolume: 12345,
+  schedule3CrownVolume: 54321,
   revisionCount: 3,
   comments: 'Seed comment for 514/2021',
   lineItems: [{ costItemCode: 12, volume: 1000, cost: 50000, perUnit: 50.0 }],
   silviculture: {
     actualSpent: { costItemCode: 1, volume: 500, cost: 20000, perUnit: 40.0 },
     accruedLessActual: null,
-    lessAdmin: null,
+    lessAdmin: { costItemCode: 139, volume: 55, cost: 9999, perUnit: null },
     total: null,
+  },
+  forestMgmtAdminCost: 600000,
+  lessSilvAdminCost: 150000,
+  otherCosts: { volume: 8000, costSubtotal: 24000, perUnit: 3.0, count: 2 },
+  warnings: [],
+}
+
+// Story 2.3 BR-03 pre-fill fixture: first entry (all savable volumes = the Sch 3 crown value 7777),
+// WRN-001 present, no Schedule 3 admin costs.
+const WRN_001 =
+  'The Crown Timber (Sch 3) volume has been set for volume fields. Please check and save schedule.'
+const prefillDoc = {
+  ...schedule1Doc,
+  crownVolume: null,
+  schedule3CrownVolume: 7777,
+  // Full legacy 13-field copy: 12-18 + 143 + 144 (D2 reversal).
+  lineItems: [12, 13, 14, 15, 16, 17, 18, 143, 144].map((code) => ({
+    costItemCode: code,
+    volume: 7777,
+    cost: null,
+    perUnit: null,
+  })),
+  silviculture: {
+    actualSpent: { costItemCode: 1, volume: 7777, cost: null, perUnit: null },
+    accruedLessActual: { costItemCode: 2, volume: 7777, cost: null, perUnit: null },
+    lessAdmin: { costItemCode: 139, volume: 7777, cost: null, perUnit: null },
+    total: { costItemCode: 140, volume: 7777, cost: null, perUnit: null },
   },
   forestMgmtAdminCost: null,
   lessSilvAdminCost: null,
-  otherCosts: { volume: 8000, costSubtotal: 24000, perUnit: 3.0, count: 2 },
+  warnings: [{ key: 'crownVolumeSetForSchedule1', text: WRN_001 }],
 }
 
 const problemHandler = (status: number, detail: string) =>
@@ -235,5 +265,288 @@ describe('Schedule1 editable page', () => {
       await screen.findByText('Please Select Mill and Reporting Year in the Home Page.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('Schedule1 crown pre-fill & Schedule 3 pulls (Story 2.3)', () => {
+  test('BR-03 pre-fill seeds savable volume fields and shows WRN-001 verbatim (AC1)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(prefillDoc)))
+    render(<Schedule1 />)
+
+    // WRN-001 renders verbatim from the API warnings channel (AD-8).
+    expect(await screen.findByText(WRN_001)).toBeInTheDocument()
+    // Every savable volume input carries the copied crown value — the full legacy 13-field set.
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Depletion and Amortization volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Actual $ Spent volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Accrued less Actual $ Spent volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Forest Management Administration volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Subtotal Company Logging volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Less Silviculture Admin Costs volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Total Silviculture volume')).toHaveValue('7777')
+  })
+
+  test('no warning banner when warnings are empty (AC2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    expect(screen.queryByText(WRN_001)).not.toBeInTheDocument()
+  })
+
+  test('BR-04 admin costs are pulled from Schedule 3 and shown read-only (AC3)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+
+    // Forest Management Admin (143) row shows the pulled cost as read-only text (no input).
+    expect(screen.getByText('Forest Management Administration Costs (Sch 3)')).toBeInTheDocument()
+    expect(screen.getByText('600000')).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('Forest Management Administration Costs (Sch 3) cost'),
+    ).not.toBeInTheDocument()
+    // Less Silviculture Admin (139) shows the PULLED cost (150000), not Schedule 1's own 9999.
+    expect(screen.getByText('150000')).toBeInTheDocument()
+    expect(screen.queryByText('9999')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Less Silviculture Admin Costs cost')).not.toBeInTheDocument()
+  })
+
+  test('crown-timber source field displays disabled with the Schedule 3 value (AC3)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const crown = await screen.findByLabelText('Crown Timber Volume for all fields (Sch 3)')
+    expect(crown).toBeDisabled()
+    expect(crown).toHaveValue('54321')
+  })
+})
+
+describe('Schedule1 editable pulled/derived volumes (Story 2.6 / D2 reversal)', () => {
+  test('143/144/139/140 volumes are editable and sent on Save; their costs stay read-only', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...schedule1Doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const fma = await screen.findByLabelText('Forest Management Administration volume')
+    await user.clear(fma)
+    await user.type(fma, '111')
+    const scl = screen.getByLabelText('Subtotal Company Logging volume')
+    await user.type(scl, '222')
+    const lessAdmin = screen.getByLabelText('Less Silviculture Admin Costs volume')
+    await user.clear(lessAdmin)
+    await user.type(lessAdmin, '77')
+    const total = screen.getByLabelText('Total Silviculture volume')
+    await user.type(total, '88')
+    // Their cost cells are read-only (no cost inputs).
+    expect(
+      screen.queryByLabelText('Forest Management Administration Costs (Sch 3) cost'),
+    ).toBeNull()
+    expect(screen.queryByLabelText('Less Silviculture Admin Costs cost')).toBeNull()
+
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    await screen.findByText('Data saved successfully')
+
+    const body = captured as {
+      forestMgmtAdminVolume: number
+      subtotalCompanyLoggingVolume: number
+      silviculture: { lessAdminVolume: number; totalVolume: number }
+    }
+    expect(body.forestMgmtAdminVolume).toBe(111)
+    expect(body.subtotalCompanyLoggingVolume).toBe(222)
+    expect(body.silviculture.lessAdminVolume).toBe(77)
+    expect(body.silviculture.totalVolume).toBe(88)
+  })
+})
+
+describe('Schedule1 Check Status (Story 2.7)', () => {
+  const CHECK_URL = 'http://localhost:3000/api/v1/schedule1/check-status'
+
+  test('requirementsMet renders the verbatim SUC-003 success message', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          warnings: [],
+          message: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+  })
+
+  test('missing-field errors render verbatim; Save stays enabled', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: false,
+          errors: [
+            { key: 'missingRequiredFieldMsg', text: 'Log Transportation - Volume: Value Required' },
+          ],
+          warnings: [],
+          message: null,
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+    expect(
+      await screen.findByText('Log Transportation - Volume: Value Required'),
+    ).toBeInTheDocument()
+    // A failed check never blocks editing/saving.
+    screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
+  })
+
+  test('warnings render and do not block Save (S18)', async () => {
+    const warnText =
+      'Subtotal Other Costs (2) - Cost: One or more entries contain an empty Cost value. ' +
+      'Please verify there are no Other Costs to be entered.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          warnings: [
+            { key: 'warning.schedule1.checkstatus.subtotalother.costEmpty', text: warnText },
+          ],
+          message: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+    expect(await screen.findByText(warnText)).toBeInTheDocument()
+    screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
+  })
+
+  test('Check Status is disabled on a read-only schedule (S22)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({ ...schedule1Doc, trackStatus: 'S', editable: false }),
+      ),
+    )
+    render(<Schedule1 />)
+    await screen.findByText('Standing Tree to Loaded Truck')
+    screen
+      .getAllByRole('button', { name: /check status/i })
+      .forEach((b) => expect(b).toBeDisabled())
+  })
+
+  test('a prior check result is cleared after a successful Save (Task 3)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: false,
+          errors: [
+            { key: 'missingRequiredFieldMsg', text: 'Log Transportation - Volume: Value Required' },
+          ],
+          warnings: [],
+          message: null,
+        }),
+      ),
+      http.put(URL, () =>
+        HttpResponse.json({
+          ...schedule1Doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+    expect(
+      await screen.findByText('Log Transportation - Volume: Value Required'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    await screen.findByText('Data saved successfully')
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Log Transportation - Volume: Value Required'),
+      ).not.toBeInTheDocument(),
+    )
+  })
+
+  test('a failed check renders the verbatim ProblemDetail', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.post(CHECK_URL, () =>
+        problemBody(409, 'This schedule cannot be edited in its current status.'),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+    await user.click((await screen.findAllByRole('button', { name: /check status/i }))[0])
+    expect(
+      await screen.findByText('This schedule cannot be edited in its current status.'),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('Schedule1 Other Costs navigation (Story 2.5)', () => {
+  test('clicking Subtotal Other Costs confirms then navigates to the sub-page (AC1)', async () => {
+    mockNavigate.mockClear()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1/other-costs' })
+    confirmSpy.mockRestore()
+  })
+
+  test('cancelling the confirm does NOT navigate (editable)', async () => {
+    mockNavigate.mockClear()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
+    expect(mockNavigate).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  test('read-only schedule opens the sub-page without a confirm', async () => {
+    mockNavigate.mockClear()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({ ...schedule1Doc, trackStatus: 'S', editable: false }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1/other-costs' })
+    confirmSpy.mockRestore()
   })
 })

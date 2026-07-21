@@ -26,6 +26,7 @@ const schedule1Doc = {
   trackStatus: 'D',
   editable: true,
   crownVolume: 12345,
+  schedule3CrownVolume: 54321,
   revisionCount: 3,
   comments: 'Seed comment for 514/2021',
   lineItems: [{ costItemCode: 12, volume: 1000, cost: 50000, perUnit: 50.0 }],
@@ -35,9 +36,10 @@ const schedule1Doc = {
     lessAdmin: null,
     total: null,
   },
-  forestMgmtAdminCost: null,
-  lessSilvAdminCost: null,
+  forestMgmtAdminCost: 600000,
+  lessSilvAdminCost: 150000,
   otherCosts: { volume: 8000, costSubtotal: 24000, perUnit: 3.0, count: 2 },
+  warnings: [],
 }
 
 export const restHandlers = [

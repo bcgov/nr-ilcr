@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -7,6 +8,7 @@ import org.springframework.stereotype.Service;
  * services call this and never re-check. Closed-mill status codes are the legacy {@code MILL_STATUS_CODES}.
  */
 @Service
+@Slf4j
 public class MillContextService {
 
   private static final String STATUS_ACTIVE = "ACT";
@@ -37,13 +39,21 @@ public class MillContextService {
    */
   public void validateScheduleViewable(long millId, int year, String categoryId) {
     String millStatus = repository.findMillStatusCodeForYear(millId, year)
-        .orElseThrow(ScheduleNotFoundException::new);
+        .orElseThrow(() -> {
+          // Diagnostic (mill/year only — no cost/volume, AD-11): no ACT/CLS status row was found for
+          // this mill/year, i.e. the ILCR_MILL_STATUS_XREF ⋈ ILCR_MILL_REPORT_STATUS lookup was empty.
+          log.info("Schedule 404: no mill/year status row for millId={} year={} (guard 1)", millId, year);
+          return new ScheduleNotFoundException();
+        });
 
     if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
+      log.info("Schedule 409: mill not ACT for millId={} year={} (status={})", millId, year, millStatus);
       throw new MillClosedException();
     }
 
     if (!repository.scheduleSummaryExists(millId, year, categoryId)) {
+      log.info("Schedule 404: no category-{} summary for millId={} year={} (guard 2)",
+          categoryId, millId, year);
       throw new ScheduleNotFoundException();
     }
   }
