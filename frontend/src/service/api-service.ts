@@ -7,6 +7,8 @@ class APIService {
   constructor() {
     this.client = axios.create({
       baseURL: '/api',
+      xsrfCookieName: 'XSRF-TOKEN',
+      xsrfHeaderName: 'X-XSRF-TOKEN',
       headers: {
         'Content-Type': 'application/json',
       },

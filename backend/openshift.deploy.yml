@@ -80,9 +80,28 @@ objects:
                 - name: SERVER_PORT
                   value: "8080"
                 - name: SPRING_PROFILES_ACTIVE
-                  value: openshift
+                  value: openshift,oracle
                 - name: APP_VERSION
                   value: ${IMAGE_TAG}
+                - name: ILCR_SECURITY_ENABLED
+                  value: "true"
+                - name: ILCR_DATASOURCE_ENABLED
+                  value: "true"
+                - name: SPRING_DATASOURCE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: SPRING_DATASOURCE_URL
+                - name: SPRING_DATASOURCE_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: SPRING_DATASOURCE_USERNAME
+                - name: SPRING_DATASOURCE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: SPRING_DATASOURCE_PASSWORD
               resources:
                 requests:
                   cpu: ${CPU_REQUEST}

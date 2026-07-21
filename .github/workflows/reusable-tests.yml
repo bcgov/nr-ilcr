@@ -40,9 +40,9 @@ jobs:
         env:
           BASE_URL: https://${{ env.PREFIX }}.${{ env.DOMAIN }}
         run: |
-          echo "Waiting for backend health check at ${BASE_URL}/api/health..."
+          echo "Waiting for backend health check at ${BASE_URL}/api/health/readiness..."
           for i in {1..30}; do
-            status=$(curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/health" || true)
+            status=$(curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/health/readiness" || true)
             if [ "$status" -eq 200 ]; then
               echo "Backend is healthy!"
               exit 0

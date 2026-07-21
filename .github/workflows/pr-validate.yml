@@ -15,7 +15,7 @@ jobs:
   # pr-open.yml), so the deployment links must use that zone.
   init:
     name: Initialize
-    if: (! github.event.pull_request.draft) && vars.ENABLE_OPENSHIFT_DEPLOY == 'true'
+    if: (! github.event.pull_request.draft)
     runs-on: ubuntu-slim
     timeout-minutes: 1
     outputs:
@@ -33,7 +33,7 @@ jobs:
     with:
       markdown_links: |
         - [Frontend](https://${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }})
-        - [Backend](https://${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}/api)
+        - [Backend](https://${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}/api/health)
 
   results:
     name: Validate Results

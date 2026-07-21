@@ -32,14 +32,14 @@ Run the Spring Boot backend directly:
 
 ```powershell
 cd backend
+$env:SPRING_PROFILES_ACTIVE = "local"
 mvn spring-boot:run
 ```
 
 The backend listens on `http://localhost:8080` by default.
 
-- Service root: `GET /api`
 - Health: `GET /api/health`
-- Temporary scaffold users API: `GET /api/v1/users`, `GET /api/v1/users/{id}`
+- Schedule 1 API: `GET /api/v1/schedule1`
 
 Run the frontend directly against the local backend:
 
@@ -65,7 +65,7 @@ docker compose up --build backend frontend
 
 The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:3001` and runs inside the container on port `8080`.
 
-The current `/api/v1/users` scaffold is read-only in memory. Oracle is available as an opt-in local datasource so repository work can start without forcing every backend boot to validate a database connection.
+The default backend runtime is secure and Oracle-required; the explicit `local` profile opts out so repository work can start without forcing every local backend boot to validate a database connection.
 
 To validate Oracle on backend startup, put local values in ignored `.env` and set `ILCR_DATASOURCE_ENABLED=true` for Docker Compose:
 
@@ -96,9 +96,7 @@ If a local setting is needed by the team, add a sanitized example to `.env.examp
 
 The backend follows the proven CSP-style JVM deployment path: Spring Boot 4, executable JAR, JDBC/Hikari for Oracle access, Log4j2 logging, actuator health, Maven verification, and CycloneDX SBOM generation. Graal/native-image support is intentionally not part of this scaffold.
 
-The `/api/v1/users` controller is intentionally temporary and read-only. It preserves a simple frontend and integration-test contract so the team can start wiring real ILCR slices without exposing mutable unauthenticated demo state. Replace it with domain endpoints as ILCR features are implemented.
-
-FAM authentication is tracked separately. Do not add a parallel auth model in this scaffold; align route protection, token handling, and role checks with the FAM integration plan before securing feature endpoints.
+FAM authentication is tracked separately. The dashboard currently displays the selected local mock principal only; do not add a parallel users API or auth model in this scaffold. Align route protection, token handling, principal hydration, and role checks with the FAM integration plan before securing feature endpoints.
 
 ## OpenShift Status
 
