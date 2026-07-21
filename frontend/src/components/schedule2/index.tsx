@@ -155,6 +155,7 @@ const Schedule2: FC = () => {
     // Advisory client-side validation (backend remains authoritative): block a doomed round-trip.
     if (Object.keys(validateSchedule2(form)).length > 0) {
       setSaveMessage(null)
+      setStatusMessages(null)
       setSaveError('Please correct the highlighted fields before saving.')
       return
     }
@@ -425,7 +426,7 @@ const Schedule2: FC = () => {
           </Column>
         )}
         {statusMessages &&
-          statusMessages.messages.map((msg) => (
+          (statusMessages.messages ?? []).map((msg) => (
             <Column sm={4} md={8} lg={16} key={msg.key}>
               <InlineNotification
                 kind={statusMessages.outcome === 'MET' ? 'success' : 'warning'}
