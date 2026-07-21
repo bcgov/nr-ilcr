@@ -63,7 +63,7 @@ copy .env.example .env
 docker compose up --build backend frontend
 ```
 
-The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:3001` and runs inside the container on port `8080`.
+The frontend is available at `http://localhost:3000`. In compose, the backend is mapped to `http://localhost:8080` and runs inside the container on port `8080`.
 
 The default backend runtime is secure and Oracle-required; the explicit `local` profile opts out so repository work can start without forcing every local backend boot to validate a database connection.
 
