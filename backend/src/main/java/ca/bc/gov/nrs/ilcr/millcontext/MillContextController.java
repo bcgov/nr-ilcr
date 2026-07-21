@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.millcontext;
 import ca.bc.gov.nrs.ilcr.millcontext.api.MillContextApi;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,5 +29,10 @@ public class MillContextController implements MillContextApi {
   @Override
   public ResponseEntity<List<ReportingYear>> listReportingYears() {
     return ResponseEntity.ok(millContextService.listReportingYears());
+  }
+
+  @Override
+  public ResponseEntity<WorkingContext> getMillContext(String millId, String year) {
+    return ResponseEntity.ok(millContextService.resolveWorkingContext(millId, year));
   }
 }

@@ -26,6 +26,19 @@ public class MillContextRepository {
   }
 
   /**
+   * Shared projection for the {@code MILL} ⋈ {@code ILCR_MILL_STATUS_XREF} selection columns, used
+   * by both {@link #findAllMills()} and {@link #findSelectableMillById(long)} so the two queries
+   * cannot drift. Reads by {@code THE} column name; {@code MILL_NUMBER} ({@code NUMBER(15)}) is read
+   * as a String display identifier (contract-pinned).
+   */
+  private static final org.springframework.jdbc.core.RowMapper<MillSummary> MILL_SUMMARY_MAPPER =
+      (rs, rowNum) -> new MillSummary(
+          rs.getLong("MILL_ID"),
+          rs.getString("MILL_NUMBER"),
+          rs.getString("MILL_NAME"),
+          rs.getString("ILCR_MILL_STATUS_CODE"));
+
+  /**
    * The mills for the Home page selection list, ordered by mill number ascending — full legacy
    * {@code getMills()} parity: {@code from Mill m join fetch m.millStatusXref x join fetch
    * x.millReportStatuses order by m.mill_number}. Both legacy inner joins are reproduced: a mill
@@ -56,12 +69,7 @@ public class MillContextRepository {
                             WHERE s.ILCR_MILL_ID = m.MILL_ID)
              ORDER BY m.MILL_NUMBER, m.MILL_ID
             """)
-        .query((rs, rowNum) -> new MillSummary(
-            rs.getLong("MILL_ID"),
-            // MILL_NUMBER is NUMBER(15); read as String (display identifier, contract-pinned).
-            rs.getString("MILL_NUMBER"),
-            rs.getString("MILL_NAME"),
-            rs.getString("ILCR_MILL_STATUS_CODE")))
+        .query(MILL_SUMMARY_MAPPER)
         .list();
   }
 
@@ -82,6 +90,152 @@ public class MillContextRepository {
         .query((rs, rowNum) -> new ReportingYear(rs.getInt("REPORT_YEAR")))
         .list();
   }
+
+  /**
+   * The selectable mill with this id — same join and enrollment predicate as {@link #findAllMills()}
+   * (legacy {@code getMills()} parity: status xref present AND at least one
+   * {@code ILCR_MILL_REPORT_STATUS} row for any year). Empty when the id is unknown or the mill is
+   * not selectable (Story 1.2 resolves that to 404, matching what legacy's server-controlled
+   * dropdown made unreachable).
+   *
+   * @param millId the mill id
+   * @return the mill as {@link MillSummary}, or empty when not selectable
+   */
+  public Optional<MillSummary> findSelectableMillById(long millId) {
+    return jdbcClient.sql(
+            """
+            SELECT m.MILL_ID, m.MILL_NUMBER, m.MILL_NAME, x.ILCR_MILL_STATUS_CODE
+              FROM THE.MILL m
+              JOIN THE.ILCR_MILL_STATUS_XREF x
+                ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
+             WHERE m.MILL_ID = :millId
+               AND EXISTS (SELECT 1
+                             FROM THE.ILCR_MILL_REPORT_STATUS s
+                            WHERE s.ILCR_MILL_ID = m.MILL_ID)
+            """)
+        .param("millId", millId)
+        .query(MILL_SUMMARY_MAPPER)
+        .optional();
+  }
+
+  /**
+   * Whether the reporting year is opened (an {@code THE.ILCR_REPORTING_PERIOD} row exists).
+   *
+   * @param year the reporting year
+   * @return true when the year is opened
+   */
+  public boolean reportingYearExists(int year) {
+    Integer count = jdbcClient.sql(
+            """
+            SELECT COUNT(*)
+              FROM THE.ILCR_REPORTING_PERIOD
+             WHERE REPORT_YEAR = :year
+            """)
+        .param("year", year)
+        .query(Integer.class)
+        .single();
+    return count != null && count > 0;
+  }
+
+  /**
+   * The two independent track status codes for a (mill, year) pair — 0..1 row (PK). Either column
+   * may be NULL (legacy would NPE on a NULL silviculture code; Story 1.2 tolerates it — the track
+   * simply has no status).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the pair of codes, or empty when no {@code ILCR_MILL_REPORT_STATUS} row exists (S07)
+   */
+  public Optional<TrackCodes> findTrackStatusCodes(long millId, int year) {
+    return jdbcClient.sql(
+            """
+            SELECT s.ILCR_MILL_REPORT_STATUS_CODE, s.MILL_SILVICULTUR_STATUS_CODE
+              FROM THE.ILCR_MILL_REPORT_STATUS s
+             WHERE s.ILCR_MILL_ID = :millId
+               AND s.REPORT_YEAR = :year
+            """)
+        .param("millId", millId)
+        .param("year", year)
+        .query((rs, rowNum) -> new TrackCodes(
+            rs.getString("ILCR_MILL_REPORT_STATUS_CODE"),
+            rs.getString("MILL_SILVICULTUR_STATUS_CODE")))
+        .optional();
+  }
+
+  /**
+   * The description for a report-status code from {@code THE.ILCR_MILL_REPORT_STATUS_CODE}
+   * (legacy {@code ILCRMillReportStatusCode} lookup cache).
+   *
+   * @param code the status code ({@code D}/{@code S}/{@code V}/{@code O})
+   * @return the description, or empty when the code has no lookup row
+   */
+  public Optional<String> findStatusDescription(String code) {
+    return jdbcClient.sql(
+            """
+            SELECT DESCRIPTION
+              FROM THE.ILCR_MILL_REPORT_STATUS_CODE
+             WHERE ILCR_MILL_REPORT_STATUS_CODE = :code
+            """)
+        .param("code", code)
+        .query(String.class)
+        .optional();
+  }
+
+  /**
+   * The per-status display-date strings for a (mill, year) pair from
+   * {@code THE.ILCR_MILL_REPORT_STATUS_RPT_VW} (a VIEW on the delivery DB; the test snapshot stands
+   * it in as a table — see {@code V6}). Values carry the legacy 3-character prefix; stripping is the
+   * service's job (mirrors {@code UserSessionMB.substring(3)}). Empty when the view has no row.
+   *
+   * <p>Uses first-row semantics ({@code .list()} + {@code findFirst}) rather than {@code .optional()}
+   * because {@code ILCR_MILL_REPORT_STATUS_RPT_VW} is a VIEW with no PK/uniqueness guarantee: legacy
+   * read it as a list and took {@code get(0)} ({@code MillReportStatusDAO.getMillReportStatusList}),
+   * so a multi-row view must resolve to the first row, not throw {@code IncorrectResultSizeDataAccessException}.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return the raw date strings, or empty when the view has no row for the pair
+   */
+  public Optional<StatusDates> findStatusDates(long millId, int year) {
+    return jdbcClient.sql(
+            """
+            SELECT MILL_STATUS_OPEN_DATE, MILL_STATUS_DRAFT_DATE, MILL_STATUS_SUBMIT_DATE,
+                   MILL_STATUS_VERIFY_DATE, SILVI_STATUS_DRAFT_DATE, SILVI_STATUS_SUBMIT_DATE,
+                   SILVI_STATUS_VERIFY_DATE
+              FROM THE.ILCR_MILL_REPORT_STATUS_RPT_VW
+             WHERE ILCR_MILL_ID = :millId
+               AND REPORT_YEAR = :year
+            """)
+        .param("millId", millId)
+        .param("year", year)
+        .query((rs, rowNum) -> new StatusDates(
+            rs.getString("MILL_STATUS_OPEN_DATE"),
+            rs.getString("MILL_STATUS_DRAFT_DATE"),
+            rs.getString("MILL_STATUS_SUBMIT_DATE"),
+            rs.getString("MILL_STATUS_VERIFY_DATE"),
+            rs.getString("SILVI_STATUS_DRAFT_DATE"),
+            rs.getString("SILVI_STATUS_SUBMIT_DATE"),
+            rs.getString("SILVI_STATUS_VERIFY_DATE")))
+        .list()
+        .stream()
+        .findFirst();
+  }
+
+  /**
+   * Projection: the two independent track status codes of one {@code ILCR_MILL_REPORT_STATUS} row.
+   *
+   * @param schedules1To10Code the Schedules 1–10 code ({@code ILCR_MILL_REPORT_STATUS_CODE}); nullable
+   * @param schedule11Code the Schedule 11 code ({@code MILL_SILVICULTUR_STATUS_CODE}); nullable
+   */
+  public record TrackCodes(String schedules1To10Code, String schedule11Code) {}
+
+  /**
+   * Projection: the raw (still-prefixed) per-status date strings of one
+   * {@code ILCR_MILL_REPORT_STATUS_RPT_VW} row. Any component may be null.
+   */
+  public record StatusDates(
+      String open1To10, String draft1To10, String submit1To10, String verify1To10,
+      String draftSilvi, String submitSilvi, String verifySilvi) {}
 
   /**
    * The mill's XREF status code ({@code ACT}/{@code CLS}) when an {@code ILCR_MILL_REPORT_STATUS}

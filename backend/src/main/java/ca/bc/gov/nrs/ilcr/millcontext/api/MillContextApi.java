@@ -2,10 +2,12 @@ package ca.bc.gov.nrs.ilcr.millcontext.api;
 
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Mill-context API contract (controller + api-interface split, CSP idiom; mirrors
@@ -43,4 +45,21 @@ public interface MillContextApi {
    */
   @GetMapping("/reporting-years")
   ResponseEntity<List<ReportingYear>> listReportingYears();
+
+  /**
+   * Resolve the working context for a selected (mill, year) pair (Story 1.2; UC-SEC-001
+   * S01/S06/S07): the pinned {@code WorkingContext} with both independent track statuses (AR6),
+   * the closed-mill {@code millViewable} flag, and null statuses when no report-status row exists.
+   *
+   * <p>Params are deliberately raw Strings: {@code MillContextService} owns the validation
+   * (AR4/NFR6), so missing/blank/non-numeric values return the verbatim legacy required-field
+   * messages — BOTH together when both are absent (S08) — rather than a first-error framework 400.
+   *
+   * @param millId the selected mill id (raw request param; validated by the service)
+   * @param year the selected reporting year (raw request param; validated by the service)
+   * @return 200 with the resolved {@link WorkingContext}; 400 (S04/S05/S08) / 404 via ProblemDetail
+   */
+  @GetMapping("/mill-context")
+  ResponseEntity<WorkingContext> getMillContext(
+      @RequestParam(required = false) String millId, @RequestParam(required = false) String year);
 }

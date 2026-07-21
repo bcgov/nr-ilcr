@@ -33,7 +33,8 @@ public class SecurityConfiguration {
     // arrives with the FAM auth story (AR4); until then these are open like the other pre-auth reads.
     private static final String[] HOME_PUBLIC_PATHS = {
         "/api/v1/mills",
-        "/api/v1/reporting-years"
+        "/api/v1/reporting-years",
+        "/api/v1/mill-context"
     };
 
     @Bean
