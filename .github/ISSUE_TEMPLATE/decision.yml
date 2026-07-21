@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Document a key decision.**  
+        **Document a key decision.**
         This template helps clarify changes in project direction or priorities.
 
   - type: input

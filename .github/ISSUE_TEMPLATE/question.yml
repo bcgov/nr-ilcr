@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Need help or clarification?**  
+        **Need help or clarification?**
         Use this template to ask technical, general, or project-related questions.
 
   - type: input

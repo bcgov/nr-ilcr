@@ -49,7 +49,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class FeatureFlagsConfiguration {
 
-  private static final String FEATURE_FLAG_EVALUATION_METRIC = "hrs.feature.flag.evaluations";
+  private static final String FEATURE_FLAG_EVALUATION_METRIC = "ilcr.feature.flag.evaluations";
 
   private static final String PROD_PROFILE = "prod";
 
@@ -171,4 +171,3 @@ public class FeatureFlagsConfiguration {
         );
   }
 }
-

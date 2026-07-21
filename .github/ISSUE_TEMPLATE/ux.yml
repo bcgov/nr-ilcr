@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Please provide the necessary details for the UX design task.**  
+        **Please provide the necessary details for the UX design task.**
         Ensure all required fields are filled out to avoid delays.
 
   - type: input

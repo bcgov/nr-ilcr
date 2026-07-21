@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Please provide details about the bug to help us resolve it efficiently.**  
+        **Please provide details about the bug to help us resolve it efficiently.**
         Fill out all required fields to ensure we have the necessary context.
 
   - type: input
@@ -71,9 +71,9 @@ body:
       label: Desktop Information
       description: Provide details about the desktop environment where the bug was encountered.
       placeholder: |
-        OS: [e.g., iOS, Windows]  
-        Browser: [e.g., Chrome, Safari]  
-        Version: [e.g., 22]  
+        OS: [e.g., iOS, Windows]
+        Browser: [e.g., Chrome, Safari]
+        Version: [e.g., 22]
 
   - type: textarea
     id: additional_context

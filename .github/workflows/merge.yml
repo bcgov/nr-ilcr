@@ -34,7 +34,6 @@ jobs:
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
-      db_password: ${{ secrets.db_password }}
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
@@ -44,6 +43,7 @@ jobs:
 
   tests:
     name: Tests
+    if: needs.deploy-test.result == 'success'
     needs: [deploy-test]
     uses: ./.github/workflows/reusable-tests.yml
     with:
@@ -54,7 +54,6 @@ jobs:
     needs: [tests, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:
-      db_password: ${{ secrets.db_password }}
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
     with:
@@ -90,7 +89,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        package: [migrations, backend, frontend]
+        package: [backend, frontend]
     timeout-minutes: 1
     steps:
       - uses: shrink/actions-docker-registry-tag@e6aaef25c595b6e0edd18bf4c7dbfea3abd43299 # v5
@@ -99,3 +98,24 @@ jobs:
           repository: ${{ github.repository }}/${{ matrix.package }}
           target: ${{ needs.init.outputs.pr }}
           tags: prod
+
+  results:
+    name: Merge Results
+    needs: [init, deploy-test, tests, deploy-prod, promote]
+    if: always()
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    steps:
+      - name: Log Job Results Context
+        run: |
+          echo "=== Upstream Job Statuses ==="
+          echo '${{ toJson(needs) }}'
+
+      - name: Evaluate Overall Status
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ Merge pipeline failure: at least one required job failed or was cancelled."
+          exit 1
+
+      - name: Success Message
+        run: echo "✅ All merge pipeline jobs passed or were intentionally skipped!"

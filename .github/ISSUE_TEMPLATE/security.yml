@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **⚠️ Responsible Disclosure Notice**  
+        **⚠️ Responsible Disclosure Notice**
         Please do **not** include exploit code, proof-of-concept payloads, or
         personally identifiable information (PII) in this issue. This template
         creates a **public** issue. For sensitive vulnerabilities that must not

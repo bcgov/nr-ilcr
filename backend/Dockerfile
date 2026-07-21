@@ -1,30 +1,16 @@
-### Builder
-# Use GraalVM Native Image with Java 21 (LTS) to satisfy connectivity with Oracle DB
-FROM ghcr.io/graalvm/native-image-community:21 AS build
+FROM maven:3.9.11-eclipse-temurin-21 AS build
 
-# Copy
-WORKDIR /app
-COPY pom.xml mvnw ./
+WORKDIR /workspace
+COPY pom.xml ./
+RUN mvn -B -ntp -DskipTests dependency:go-offline
 COPY src ./src
-COPY .mvn/ ./.mvn
+RUN mvn -B -ntp package
 
-# Build
-RUN ./mvnw -Pnative package -DskipTests -Dskip.unit.tests=true -Dspring-boot.run.profiles=prod
+FROM gcr.io/distroless/java21-debian12:nonroot@sha256:7e37784d94dccbf5ccb195c73b295f5ad00cd266512dfbac12eb9c3c28f8077d
 
-### Deployer
-FROM gcr.io/distroless/java-base:nonroot
-ARG PORT=9090
-
-# Copy
 WORKDIR /app
-COPY --from=build /app/target/nr-ilcr-backend ./nr-ilcr-backend
+COPY --from=build /workspace/target/nr-ilcr-backend-*.jar /app/app.jar
 
-# User, port and health check
-USER 1001
-EXPOSE ${PORT}
-HEALTHCHECK CMD curl -f http://localhost:${PORT}/actuator/health | grep '"status":"UP"'
-
-ENV SPRING_PROFILES_ACTIVE=container,prod
-
-# Startup
-ENTRYPOINT ["/app/nr-ilcr-backend"]
+EXPOSE 8080
+USER 65532:65532
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-jar", "/app/app.jar"]

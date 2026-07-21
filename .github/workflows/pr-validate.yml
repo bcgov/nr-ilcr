@@ -11,16 +11,29 @@ concurrency:
 permissions: {}
 
 jobs:
+  # ZONE for OpenShift objects is the PR number mapped into 1-50 (see
+  # pr-open.yml), so the deployment links must use that zone.
+  init:
+    name: Initialize
+    if: (! github.event.pull_request.draft)
+    runs-on: ubuntu-slim
+    timeout-minutes: 1
+    outputs:
+      zone: ${{ steps.zone.outputs.zone }}
+    steps:
+      - id: zone
+        run: echo "zone=$(( (${{ github.event.number }} - 1) % 50 + 1 ))" >> $GITHUB_OUTPUT
+
   validate:
     name: Validate PR
-    if: (! github.event.pull_request.draft)
+    needs: [init]
     permissions:
       pull-requests: write
     uses: bcgov/quickstart-openshift-helpers/.github/workflows/.pr-validate.yml@a11ad3d1b9288fb40757c4314a62eb86ff227931 # v1.2.1
     with:
       markdown_links: |
-        - [Frontend](https://${{ github.event.repository.name }}-${{ github.event.number }}.apps.silver.devops.gov.bc.ca)
-        - [Backend](https://${{ github.event.repository.name }}-${{ github.event.number }}.apps.silver.devops.gov.bc.ca/api)
+        - [Frontend](https://${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }})
+        - [Backend](https://${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}/api/health)
 
   results:
     name: Validate Results

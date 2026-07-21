@@ -17,10 +17,9 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public enum Role {
-  VIEWER(RoleType.ABSTRACT, "ILCR_VIEWER"),
+  // Exactly the roles FAM issues in production for ILCR (V67/V70). Legacy ILCR_LICENSEE maps to
+  // SUBMITTER. The AUDITOR role is deferred (FAM prod lacks it) — do not add an interim one. (AD-7)
   SUBMITTER(RoleType.ABSTRACT, "ILCR_SUBMITTER"),
-  AREA(RoleType.CONCRETE, "ILCR_AREA"),
-  DISTRICT(RoleType.CONCRETE, "ILCR_DISTRICT"),
   ADMIN(RoleType.CONCRETE, "ILCR_ADMIN"),
   ;
 

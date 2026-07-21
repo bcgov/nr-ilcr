@@ -1,0 +1,17 @@
+:root[data-carbon-theme='g10'] {
+  background-color: #ffffff;
+
+  body,
+  .cds--content,
+  .cds--side-nav {
+    background-color: #ffffff;
+  }
+
+  .cds--text-input,
+  .cds--date-picker__input,
+  .cds--list-box,
+  .cds--list-box__field,
+  .cds--search-input {
+    background-color: #f4f4f4;
+  }
+}

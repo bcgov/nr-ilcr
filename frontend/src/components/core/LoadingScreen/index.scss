@@ -1,0 +1,10 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.loading-screen {
+  align-items: center;
+  background: var(--cds-layer-01);
+  display: flex;
+  justify-content: center;
+  min-block-size: 12rem;
+  padding: $spacing-07;
+}

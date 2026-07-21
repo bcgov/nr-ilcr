@@ -9,8 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SubmissionsRouteImport } from './routes/submissions'
+import { Route as Schedule1RouteImport } from './routes/schedule-1'
+import { Route as MillAssociationsRouteImport } from './routes/mill-associations'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SubmissionsRoute = SubmissionsRouteImport.update({
+  id: '/submissions',
+  path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule1Route = Schedule1RouteImport.update({
+  id: '/schedule-1',
+  path: '/schedule-1',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MillAssociationsRoute = MillAssociationsRouteImport.update({
+  id: '/mill-associations',
+  path: '/mill-associations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +37,61 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/mill-associations': typeof MillAssociationsRoute
+  '/schedule-1': typeof Schedule1Route
+  '/submissions': typeof SubmissionsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/mill-associations': typeof MillAssociationsRoute
+  '/schedule-1': typeof Schedule1Route
+  '/submissions': typeof SubmissionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/mill-associations': typeof MillAssociationsRoute
+  '/schedule-1': typeof Schedule1Route
+  '/submissions': typeof SubmissionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/mill-associations' | '/schedule-1' | '/submissions'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/mill-associations' | '/schedule-1' | '/submissions'
+  id: '__root__' | '/' | '/mill-associations' | '/schedule-1' | '/submissions'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MillAssociationsRoute: typeof MillAssociationsRoute
+  Schedule1Route: typeof Schedule1Route
+  SubmissionsRoute: typeof SubmissionsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/submissions': {
+      id: '/submissions'
+      path: '/submissions'
+      fullPath: '/submissions'
+      preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-1': {
+      id: '/schedule-1'
+      path: '/schedule-1'
+      fullPath: '/schedule-1'
+      preLoaderRoute: typeof Schedule1RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mill-associations': {
+      id: '/mill-associations'
+      path: '/mill-associations'
+      fullPath: '/mill-associations'
+      preLoaderRoute: typeof MillAssociationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +104,9 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MillAssociationsRoute: MillAssociationsRoute,
+  Schedule1Route: Schedule1Route,
+  SubmissionsRoute: SubmissionsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

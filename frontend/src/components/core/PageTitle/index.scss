@@ -1,0 +1,36 @@
+@use '@carbon/type';
+@use '@carbon/react/scss/spacing' as *;
+@use '../../../styles/variables' as variables;
+
+.page-title-col {
+  .page-title-breadcrumb {
+    margin-block-end: $spacing-03;
+
+    .#{variables.$bcgov-prefix}--link {
+      cursor: pointer;
+    }
+  }
+
+  .page-title-container {
+    display: flex;
+    flex-direction: column;
+    row-gap: $spacing-03;
+  }
+
+  .title-container {
+    align-items: center;
+    column-gap: $spacing-03;
+    display: flex;
+
+    h1 {
+      @include type.type-style('heading-05');
+      margin: 0;
+    }
+  }
+
+  .page-title-subtitle {
+    color: var(--cds-text-secondary);
+    margin: 0;
+    max-inline-size: 52rem;
+  }
+}

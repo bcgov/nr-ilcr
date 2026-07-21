@@ -1,161 +1,91 @@
-# General application
-server:
-  error:
-    include-message: always
-  port: ${SERVER_PORT:8080}
-  shutdown: graceful
-  max-http-request-header-size: 16KB
-
 spring:
   application:
-    name: nr-waste-plus-legacy
-  mvc:
-    problemdetails:
-      enabled: true
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: https://cognito-idp.${COGNITO_REGION:region}.amazonaws.com/${COGNITO_USER_POOL:usrpool}/.well-known/jwks.json
-          issuer-uri: https://cognito-idp.${COGNITO_REGION:region}.amazonaws.com/${COGNITO_USER_POOL:usrpool}
+    name: nr-ilcr-backend
+  jackson:
+    default-property-inclusion: non_null
+  data:
+    jdbc:
+      repositories:
+        enabled: ${ilcr.datasource.enabled:true}
   datasource:
-    url: jdbc:oracle:thin:@tcps://${ca.bc.gov.nrs.oracle.host}:${ca.bc.gov.nrs.oracle.port}/${ca.bc.gov.nrs.oracle.service}?javax.net.ssl.trustStore=${ca.bc.gov.nrs.oracle.keystore}&javax.net.ssl.trustStorePassword=${ca.bc.gov.nrs.oracle.secret}&javax.net.ssl.keyStore=${ca.bc.gov.nrs.oracle.keystore}&javax.net.ssl.keyStorePassword=${ca.bc.gov.nrs.oracle.secret}
-    username: ${ca.bc.gov.nrs.oracle.username}
-    password: ${ca.bc.gov.nrs.oracle.password}
+    url: ${SPRING_DATASOURCE_URL:}
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: oracle.jdbc.OracleDriver
     hikari:
-      jdbcUrl: ${spring.datasource.url}
-      username: ${spring.datasource.username}
-      password: ${spring.datasource.password}
-      connectionTimeout: 30000 # 30 seconds
-      idleTimeout: 60000 # 1 minute
-      maxLifetime: 180000 # 3 minutes
-      keepaliveTime: 60000 # 1 minute
-      poolName: HRSOracleConnPool
-      minimumIdle: 1
-      maximumPoolSize: 5
-      leakDetectionThreshold: 60000
-      connection-test-query: SELECT 1 FROM DUAL
-  jpa:
-    show-sql: false
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.OracleDialect
-  http:
-    encoding:
-      charset: UTF-8
-      enabled: true
-      force: true
-    log:
-      slf4j:
-        whitelisted-mdc-keys:
-          - X-TRACE-ID
-          - X-USER
+      pool-name: ${SPRING_DATASOURCE_POOL_NAME:ILCROraclePool}
+      minimum-idle: ${SPRING_DATASOURCE_MIN_IDLE:1}
+      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:5}
+      connection-timeout: ${SPRING_DATASOURCE_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${SPRING_DATASOURCE_IDLE_TIMEOUT:60000}
+      max-lifetime: ${SPRING_DATASOURCE_MAX_LIFETIME:180000}
+      keepalive-time: ${SPRING_DATASOURCE_KEEPALIVE_TIME:60000}
+      initialization-fail-timeout: ${SPRING_DATASOURCE_INITIALIZATION_FAIL_TIMEOUT:-1}
+      leak-detection-threshold: ${SPRING_DATASOURCE_LEAK_DETECTION_THRESHOLD:60000}
 
-# Actuator and ops
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
 management:
-  enable-native-support: true
-  endpoint:
-    metrics:
-      enabled: false
-    health:
-      show-details: always
-    prometheus:
-      enabled: true
   endpoints:
     web:
-      path-mapping:
-        prometheus: metrics
-      base-path: /actuator
+      base-path: /api
+      discovery:
+        enabled: false
       exposure:
-        include: health,info,metrics,otlp,tracing,httptrace,prometheus
-  httpexchanges:
-    recording:
-      include: principal,request-headers,response-headers,cookie-headers,time-taken,authorization-header,remote-address,session-id
-  metrics:
-    export:
-      prometheus:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
         enabled: true
-  observations:
-    annotations:
-      enabled: true
-    key-values:
-      zone: ${APP_ZONE:local}
-      name: ${spring.application.name}
-  tracing:
-    enabled: true
-    propagation:
-      type: B3
-    sampling:
-      probability: 0.7
-    baggage:
-      enabled: true
-      correlation:
-        enabled: true
-        fields:
-          - X-B3-TraceId
-          - X-B3-SpanId
-        remote-fields:
-          - X-B3-TraceId
-          - X-B3-SpanId
-  otlp:
-    metrics:
-      export:
-        enabled: false
-    tracing:
-      export:
-        enabled: false
-    logging:
-      export:
-        enabled: false
+      show-details: when_authorized
+  info:
+    env:
+      enabled: false
 
-ca:
-  bc:
-    gov:
-      nrs:
-        self-uri: ${SELF_URI:http://localhost:8080}
-        environment: ${SECURITY_ENV:local}
-        districts: ${ALLOWED_DISTRICTS:DCK,DSQ,DVA,DKM,DSC,DFN,DSI,DCR,DMK,DQC,DKA,DCS,DOS,DSE,DCC,DMH,DQU,DNI,DND,DRM,DPG,DSS,DPC}
-        oracle:
-          keystore: ${ORACLEDB_KEYSTORE:jssecacerts.jks}
-          secret: ${ORACLEDB_SECRET:changeit}
-          service: ${ORACLEDB_SERVICENAME:fsa-forest}
-          database: ${ORACLEDB_DATABASE:fsa-forest}
-          host: ${ORACLEDB_HOST:localhost}
-          port: ${ORACLEDB_PORT:1543}
-          username: ${ORACLEDB_USER:user}
-          password: ${ORACLEDB_PASSWORD:passwd}
 info:
   app:
-    name: ${spring.application.name}
-    zone: ${APP_ZONE:local}
+    name: nr-ilcr-backend
     version: ${APP_VERSION:0.0.1-SNAPSHOT}
+
+ilcr:
+  version: ${APP_VERSION:0.0.1-SNAPSHOT}
+  security:
+    enabled: ${ILCR_SECURITY_ENABLED:true}
+  datasource:
+    enabled: ${ILCR_DATASOURCE_ENABLED:true}
+
+features:
+  flags:
+    offline-mode-enabled: ${FEATURE_OFFLINE_MODE_ENABLED:false}
 
 logging:
   level:
-    ca.bc.gov.restapi.results: ${LOGGING_LEVEL:INFO}
-  pattern:
-    correlation: "[${spring.application.name:},%X{${X-B3-TraceId:traceId}:-},%X{${X-B3-SpanId:spanId}:-}] "
+    root: ${LOG_LEVEL:INFO}
 
-# Profile Specific Properties
 ---
 spring:
   config:
     activate:
-      on-profile: container
-  sleuth:
-    propagation-keys:
-      - X-TRACE-ID
-      - X-USER
-    baggage-keys:
-      - X-TRACE-ID
-      - X-USER
-    log:
-      slf4j:
-        whitelisted-mdc-keys:
-          - X-TRACE-ID
-          - X-USER
+      on-profile: local
 
-logging:
-  pattern:
-    console: '{"time": "%d{${LOG_DATEFORMAT_PATTERN:yyyy-MM-dd HH:mm:ss.SSS}}", "level": "${LOG_LEVEL:%5p}", "app":"${spring.application.name:-}", "user":"%X{X-USER:-}", "traceId":"%X{${X-TRACE-ID:traceId}:-}", "spanId":"%X{spanId:-}", "pid": "${PID: }", "thread": "%t", "source": "%logger{63}:%L", "message": "%m", "exception":"${LOG_EXCEPTION_CONVERSION_WORD:%wEx}"}%n'
+ilcr:
+  security:
+    enabled: ${ILCR_SECURITY_ENABLED:false}
+  datasource:
+    enabled: ${ILCR_DATASOURCE_ENABLED:false}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: oracle
+  data:
+    jdbc:
+      repositories:
+        enabled: true
+
+ilcr:
+  datasource:
+    enabled: true

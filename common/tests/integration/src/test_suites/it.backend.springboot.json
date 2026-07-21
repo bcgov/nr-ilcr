@@ -1,0 +1,24 @@
+{
+  "api_name": "springboot",
+  "api_version": "1.0.0",
+  "base_url": "${BASE_URL}",
+  "tests": [
+    {
+      "name": "Read-only scaffold user endpoint",
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/v1/users",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "data": {},
+      "assertions": [
+        {
+          "method": "GET",
+          "status_code": 200
+        }
+      ]
+    }
+  ]
+}

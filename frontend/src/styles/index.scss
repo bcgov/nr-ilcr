@@ -1,0 +1,121 @@
+@use './variables' as *;
+@use './mixins' as *;
+@use './overrides';
+@use './custom';
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/type';
+
+body {
+  background: var(--cds-background);
+  color: var(--cds-text-primary);
+  font-family: 'BC Sans', 'Noto Sans', Verdana, Arial, sans-serif;
+  margin: 0;
+}
+
+.app-page {
+  padding-block-end: $spacing-09;
+}
+
+.app-page__header {
+  @include page-band;
+  padding-inline: $spacing-05;
+}
+
+.app-page__body {
+  padding-block: $spacing-06;
+  padding-inline: $spacing-05;
+}
+
+.app-section {
+  margin-block-start: $spacing-05;
+}
+
+.app-role-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-03;
+  margin-block-start: $spacing-04;
+}
+
+.mock-user-selector {
+  align-items: center;
+  display: flex;
+  gap: $spacing-03;
+  height: 3rem;
+  min-width: 0;
+  padding-inline: $spacing-03;
+}
+
+.mock-user-selector__label {
+  color: var(--cds-text-on-color);
+  @include type.type-style('label-01');
+  white-space: nowrap;
+}
+
+.mock-user-selector__select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--cds-text-on-color);
+  cursor: pointer;
+  font: inherit;
+  max-width: min(15rem, 36vw);
+  min-width: 8rem;
+  outline: 0;
+  padding-block: $spacing-03;
+  padding-inline: $spacing-03 $spacing-07;
+  text-overflow: ellipsis;
+}
+
+.mock-user-selector__select:focus {
+  outline: 0.125rem solid var(--cds-focus);
+  outline-offset: -0.125rem;
+}
+
+.mock-user-selector__select option {
+  background: var(--cds-layer-01);
+  color: var(--cds-text-primary);
+}
+
+.mock-user-selector__caret {
+  color: var(--cds-text-on-color);
+  margin-inline-start: -$spacing-07;
+  pointer-events: none;
+}
+
+.dashboard-summary {
+  height: 100%;
+}
+
+.dashboard-summary__label {
+  color: var(--cds-text-secondary);
+  margin-block: 0 $spacing-03;
+  @include type.type-style('label-01');
+}
+
+.dashboard-summary h2 {
+  @include type.type-style('heading-03');
+  margin: 0;
+}
+
+.dashboard-summary__meta {
+  color: var(--cds-text-secondary);
+  margin-block-start: $spacing-02;
+}
+
+@media (max-width: 41.98rem) {
+  .mock-user-selector__label {
+    block-size: 1px;
+    clip: rect(0 0 0 0);
+    inline-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+  }
+
+  .mock-user-selector__select {
+    max-width: 42vw;
+    min-width: 6rem;
+  }
+}
