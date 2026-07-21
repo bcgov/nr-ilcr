@@ -32,7 +32,6 @@ import './index.scss'
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -252,13 +251,8 @@ const Schedule1: FC = () => {
   }
 
   const handleOtherCosts = () => {
-    // S08: before the schedule is saved/open, opening Other Costs is blocked with ALT-001. In the
-    // current backend model an openable schedule is always saved (GET 404s for no summary), so this
-    // guard is effectively unreachable; the enabled link's navigation to the sub-page is Story 2.5.
-    if (!data) {
-      window.alert(ALT_SAVE_BEFORE_OTHER_COSTS)
-    }
-    // else: no navigation yet (Story 2.5 wires the sub-page).
+    // Story 2.5 wires navigation to the Other Costs sub-page. The button is only rendered for an
+    // editable (already-saved) schedule, so no "save before opening" guard is needed here.
   }
 
   const header = (
@@ -326,8 +320,11 @@ const Schedule1: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
-  // A value cell: an editable TextInput when the field is writable and the schedule is editable,
-  // otherwise read-only text. perUnit is always read-only (server-computed).
+  // A value cell. When the schedule is editable AND the field is writable it is an interactive
+  // TextInput seeded from form state. Otherwise it renders a DISABLED (greyed) TextInput showing the
+  // document value — this matches the legacy greyed, locked form for a not-initiated or non-Draft
+  // schedule (values are blank for the not-initiated doc). perUnit is always read-only text
+  // (server-computed, never an input).
   const numberCell = (
     fieldKey: string,
     label: string,
@@ -348,7 +345,16 @@ const Schedule1: FC = () => {
         />
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmt(current)}</TableCell>
+      <TableCell className="schedule-1__num">
+        <TextInput
+          id={fieldKey}
+          labelText={label}
+          hideLabel
+          size="sm"
+          disabled
+          value={numStr(current)}
+        />
+      </TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -485,7 +491,7 @@ const Schedule1: FC = () => {
             )}
             <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
           </div>
-          {editable && (
+          {editable ? (
             <TextInput
               id="otherCostsVolume"
               labelText="Subtotal Other Costs volume"
@@ -494,6 +500,14 @@ const Schedule1: FC = () => {
               onChange={setField('otherCostsVolume')}
               invalid={Boolean(fieldErrors['otherCostsVolume'])}
               invalidText={fieldErrors['otherCostsVolume']}
+            />
+          ) : (
+            <TextInput
+              id="otherCostsVolume"
+              labelText="Subtotal Other Costs volume"
+              size="sm"
+              disabled
+              value={numStr(data.otherCosts.volume)}
             />
           )}
         </Column>
@@ -509,10 +523,7 @@ const Schedule1: FC = () => {
               onChange={setField('comments')}
             />
           ) : (
-            <>
-              <h3 className="schedule-1__heading">Comments</h3>
-              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
-            </>
+            <TextArea id="comments" labelText="Comments" disabled value={data.comments ?? ''} />
           )}
         </Column>
 

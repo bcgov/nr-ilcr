@@ -71,7 +71,7 @@ describe('Schedule1 editable page', () => {
     expect(screen.getByText(/Subtotal Other Costs\(2\)/)).toBeInTheDocument()
   })
 
-  test('editable:false renders read-only + disables actions (AC1 / S22)', async () => {
+  test('editable:false renders DISABLED inputs showing values + disables actions (AC1 / S22)', async () => {
     server.use(
       http.get(URL, () =>
         HttpResponse.json({ ...schedule1Doc, trackStatus: 'S', editable: false }),
@@ -80,8 +80,52 @@ describe('Schedule1 editable page', () => {
     render(<Schedule1 />)
 
     expect(await screen.findByText('Standing Tree to Loaded Truck')).toBeInTheDocument()
-    // No editable inputs in read-only mode.
-    expect(screen.queryByLabelText('Standing Tree to Loaded Truck volume')).not.toBeInTheDocument()
+    // Locked form: the field is still a (greyed) input showing the value, but disabled — matching
+    // the legacy greyed not-editable form rather than plain read-only text.
+    const volume = screen.getByLabelText('Standing Tree to Loaded Truck volume')
+    expect(volume).toBeDisabled()
+    expect(volume).toHaveValue('1000')
+    const cost = screen.getByLabelText('Standing Tree to Loaded Truck cost')
+    expect(cost).toBeDisabled()
+    expect(cost).toHaveValue('50000')
+    // Comments is a disabled TextArea showing its value.
+    const comments = screen.getByLabelText('Comments')
+    expect(comments).toBeDisabled()
+    expect(comments).toHaveValue('Seed comment for 514/2021')
+    screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeDisabled())
+    screen.getAllByRole('button', { name: /delete/i }).forEach((b) => expect(b).toBeDisabled())
+  })
+
+  test('not-initiated 200 empty doc renders the locked form with blank disabled fields (2026-07-20)', async () => {
+    // A valid, active mill/year with no saved Schedule 1 now returns a 200 all-null, editable:false
+    // skeleton (no longer 404). The page renders the full greyed form with every field disabled.
+    const emptyDoc = {
+      millId: 515,
+      year: 2021,
+      trackStatus: 'D',
+      editable: false,
+      crownVolume: null,
+      revisionCount: null,
+      comments: null,
+      lineItems: [
+        { costItemCode: 12, volume: null, cost: null, perUnit: null },
+        { costItemCode: 13, volume: null, cost: null, perUnit: null },
+      ],
+      silviculture: { actualSpent: null, accruedLessActual: null, lessAdmin: null, total: null },
+      forestMgmtAdminCost: null,
+      lessSilvAdminCost: null,
+      otherCosts: { volume: null, costSubtotal: 0, perUnit: null, count: 0 },
+    }
+    server.use(http.get(URL, () => HttpResponse.json(emptyDoc)))
+    render(<Schedule1 />)
+
+    const volume = await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    expect(volume).toBeDisabled()
+    expect(volume).toHaveValue('')
+    // No enabled writable inputs anywhere.
+    expect(screen.getByLabelText('Comments')).toBeDisabled()
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toBeDisabled()
+    // Actions disabled.
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeDisabled())
     screen.getAllByRole('button', { name: /delete/i }).forEach((b) => expect(b).toBeDisabled())
   })
@@ -211,7 +255,9 @@ describe('Schedule1 editable page', () => {
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
-  test('404 not-found shows verbatim ERR-003 (AC / S21)', async () => {
+  test('genuine 404 (e.g. unknown mill) shows verbatim ERR-003 (AC / S21)', async () => {
+    // A valid ACTIVE mill/year with no summary is now a 200 empty doc (see the not-initiated test);
+    // a 404 only comes back for a genuine context error (unknown mill), and still suppresses the form.
     server.use(problemHandler(404, 'Schedule not found.'))
     render(<Schedule1 />)
 

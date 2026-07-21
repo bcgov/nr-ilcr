@@ -34,8 +34,8 @@ public class DataSourceConfiguration {
             @Value("${spring.datasource.hikari.idle-timeout:60000}") long idleTimeout,
             @Value("${spring.datasource.hikari.max-lifetime:180000}") long maxLifetime,
             @Value("${spring.datasource.hikari.keepalive-time:60000}") long keepaliveTime,
-            @Value("${spring.datasource.hikari.leak-detection-threshold:60000}") long leakDetectionThreshold,
-            @Value("${ilcr.datasource.validation-query:SELECT 1 FROM DUAL}") String validationQuery
+            @Value("${spring.datasource.hikari.initialization-fail-timeout:-1}") long initializationFailTimeout,
+            @Value("${spring.datasource.hikari.leak-detection-threshold:60000}") long leakDetectionThreshold
     ) {
         requireProperty("spring.datasource.url", url);
         requireProperty("spring.datasource.username", username);
@@ -53,10 +53,10 @@ public class DataSourceConfiguration {
         config.setIdleTimeout(idleTimeout);
         config.setMaxLifetime(maxLifetime);
         config.setKeepaliveTime(keepaliveTime);
+        config.setInitializationFailTimeout(initializationFailTimeout);
         config.setLeakDetectionThreshold(leakDetectionThreshold);
-        config.setConnectionTestQuery(validationQuery);
 
-        return new ValidatingDataSource(new HikariDataSource(config), validationQuery);
+        return new HikariDataSource(config);
     }
 
     @Bean
@@ -65,9 +65,8 @@ public class DataSourceConfiguration {
     }
 
     /**
-     * JdbcClient is the data-access idiom for all new ILCR repositories (AD-3): named parameters
-     * and record row-mapping. The JdbcTemplate bean above is retained only for OracleHealthIndicator;
-     * new code must use this JdbcClient.
+     * JdbcClient is retained for legacy Oracle access patterns that do not map cleanly to Spring Data
+     * JDBC repositories, such as projection-heavy queries or future PL/SQL / REF-CURSOR calls.
      */
     @Bean
     public JdbcClient jdbcClient(DataSource dataSource) {

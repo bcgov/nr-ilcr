@@ -49,16 +49,17 @@ public class MillContextService {
   }
 
   /**
-   * Validate that the mill/reporting-year context is viewable, WITHOUT requiring a schedule summary
-   * to exist for any category (Schedule 2, UC-SCH2-001 AC4/AC6). Unlike
-   * {@link #validateScheduleViewable}, a valid, active mill/year with no saved schedule is NOT a
-   * 404 — it is the legitimate "unsaved schedule" state (the legacy
-   * {@code Schedule2DAO.getReportSummaryID()} never returns null; it falls back to a new empty
-   * summary). The caller (Schedule 2) then serves a 200 empty editable document.
+   * Validate only that the mill/reporting-year context exists and the mill is active — WITHOUT
+   * requiring a schedule summary to exist. Used by reads that must render a "not initiated" empty
+   * document (200) for a valid, active mill/year that has no saved schedule yet.
    *
-   * <p>Guard order: unknown mill / no report-status row for the year &rarr;
-   * {@link ScheduleNotFoundException} (404); mill not active ({@code ACT}) for the year &rarr;
-   * {@link MillClosedException} (409). Returns normally when the context is viewable.
+   * <p>Guard order (same as {@link #validateScheduleViewable} minus the summary-exists check):
+   * <ol>
+   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
+   *       {@link ScheduleNotFoundException} (404).</li>
+   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
+   * </ol>
+   * Returns normally when the mill/year is a known, active context.
    *
    * @param millId the mill id
    * @param year the reporting year

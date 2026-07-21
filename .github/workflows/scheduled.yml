@@ -13,7 +13,7 @@ permissions: {}
 
 jobs:
   stale-branches:
-    name: Close Stale Branches & PRs
+    name: Close Stale PRs & Issues
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
