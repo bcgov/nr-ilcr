@@ -11,9 +11,15 @@ package ca.bc.gov.nrs.ilcr.millcontext.dto;
  * read via {@code ResultSet#getString}. Keeping it String honours the once-pinned contract that
  * Stories 1.2-1.4 derive from and avoids {@code int} overflow on {@code NUMBER(15)}.
  *
+ * <p>NULLABILITY (2026-07-21 review decision): {@code MILL_NUMBER} and {@code MILL_NAME} are
+ * nullable in {@code THE.MILL}; legacy passed NULLs through and so does this record. With the
+ * global Jackson {@code non_null} inclusion, a NULL component is OMITTED from the serialized item —
+ * consumers (Story 1.3/1.4 labels, MSW mocks) must render {@code millNumber}/{@code millName}
+ * defensively rather than assume all four fields are always present.
+ *
  * @param millId the mill id ({@code THE.MILL.MILL_ID})
- * @param millNumber the mill number as a display string ({@code THE.MILL.MILL_NUMBER})
- * @param millName the mill name ({@code THE.MILL.MILL_NAME})
+ * @param millNumber the mill number as a display string ({@code THE.MILL.MILL_NUMBER}); may be null
+ * @param millName the mill name ({@code THE.MILL.MILL_NAME}); may be null
  * @param millStatusCode the current status code {@code "ACT"} or {@code "CLS"}
  *     ({@code THE.ILCR_MILL_STATUS_XREF.ILCR_MILL_STATUS_CODE})
  */

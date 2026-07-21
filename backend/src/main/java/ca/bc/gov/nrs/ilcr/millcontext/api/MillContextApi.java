@@ -24,11 +24,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 public interface MillContextApi {
 
   /**
-   * List every mill offered for selection, ordered by mill number ascending (BR-02, legacy
-   * {@code getMills()}). Closed mills are included — no status filter, no per-user association
-   * filter — so the list is identical for every caller (AR4 deferral).
+   * List the mills offered for selection, ordered by mill number ascending (BR-02) — exact legacy
+   * {@code getMills()} semantics: a mill is listed iff it has its status xref AND at least one
+   * {@code ILCR_MILL_REPORT_STATUS} row (ever enrolled in reporting; 2026-07-21 review decision).
+   * Closed mills are included — no status filter, no per-user association filter — so the list is
+   * identical for every caller (AR4 deferral).
    *
-   * @return 200 with the full mill list as {@link MillSummary} items
+   * @return 200 with the mill list as {@link MillSummary} items
    */
   @GetMapping("/mills")
   ResponseEntity<List<MillSummary>> listMills();

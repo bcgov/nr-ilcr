@@ -26,17 +26,23 @@ public class MillContextRepository {
   }
 
   /**
-   * All mills for the Home page selection list, ordered by mill number ascending (legacy
-   * {@code getMills()} / {@code order by m.mill_number}). Closed ({@code CLS}) mills are included —
+   * The mills for the Home page selection list, ordered by mill number ascending — full legacy
+   * {@code getMills()} parity: {@code from Mill m join fetch m.millStatusXref x join fetch
+   * x.millReportStatuses order by m.mill_number}. Both legacy inner joins are reproduced: a mill
+   * must have its one-to-one {@code ILCR_MILL_STATUS_XREF} row AND at least one
+   * {@code ILCR_MILL_REPORT_STATUS} row (any year, i.e. ever enrolled in reporting) to be listed
+   * (2026-07-21 review decision: match legacy exactly). Closed ({@code CLS}) mills are included —
    * no status filter — so the closed-mill selection path (S06) stays reachable; no per-user
    * association filter is applied (deferred to the auth story, AR4).
    *
    * <p>The status code comes from {@code THE.ILCR_MILL_STATUS_XREF}, whose PK
-   * {@code ILCR_MILL_STATUS_XREF_ID} is the one-to-one mill id (confirmed against {@code V1} DDL and
-   * the existing {@link #findMillStatusCodeForYear} join). Reads columns by their {@code THE} names
-   * via an explicit {@code RowMapper} (avoids Oracle uppercase-alias mapping pitfalls).
+   * {@code ILCR_MILL_STATUS_XREF_ID} is the one-to-one mill id (legacy
+   * {@code ILCRMillStatusXref} maps {@code @OneToOne @PrimaryKeyJoinColumn} to {@code Mill};
+   * consistent with the existing {@link #findMillStatusCodeForYear} join). Reads columns by their
+   * {@code THE} names via an explicit {@code RowMapper} (avoids Oracle uppercase-alias mapping
+   * pitfalls). {@code MILL_ID} tiebreaker keeps equal/NULL mill numbers deterministically ordered.
    *
-   * @return every mill as {@link MillSummary}, ordered by mill number ascending
+   * @return the listable mills as {@link MillSummary}, ordered by mill number ascending
    */
   public List<MillSummary> findAllMills() {
     return jdbcClient.sql(
@@ -45,7 +51,10 @@ public class MillContextRepository {
               FROM THE.MILL m
               JOIN THE.ILCR_MILL_STATUS_XREF x
                 ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
-             ORDER BY m.MILL_NUMBER
+             WHERE EXISTS (SELECT 1
+                             FROM THE.ILCR_MILL_REPORT_STATUS s
+                            WHERE s.ILCR_MILL_ID = m.MILL_ID)
+             ORDER BY m.MILL_NUMBER, m.MILL_ID
             """)
         .query((rs, rowNum) -> new MillSummary(
             rs.getLong("MILL_ID"),
