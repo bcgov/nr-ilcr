@@ -85,9 +85,13 @@ public class Schedule2Service {
   @Transactional
   public Schedule2Response saveSchedule2(
       long millId, int year, Schedule2Request request, boolean callerMayEdit, String user) {
-    int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
     int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
     try {
+      // Create-on-absent runs INSIDE the try so a persistence failure on the create path
+      // (INSERT / sequence fetch) is translated to ScheduleNotSaved (500) exactly like the update
+      // path — never leaked as a raw DataAccessException (which the shared handler would map to 409).
+      // requireDraft's 409 still propagates: ScheduleNotEditableException is not a DataAccessException.
+      int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
       int bumped = repository.bumpRevision(summaryId, expectedRevision, request.comments(), user);
       if (bumped == 0) {
         throw new StaleRevisionException();

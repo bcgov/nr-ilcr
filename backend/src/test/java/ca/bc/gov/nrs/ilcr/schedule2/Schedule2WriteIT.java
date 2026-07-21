@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -181,6 +182,24 @@ class Schedule2WriteIT extends AbstractOracleIT {
   void put_item25JustOverNarrowRange_returns400() throws Exception {
     expect400NothingPersisted(body(revisionOf(1022), 100000000, 1000, 5000),
         "Entered cost must be between -99,999,999 and 99,999,999.");
+  }
+
+  @Test
+  @DisplayName("S16: two fields out of range -> 400 returns BOTH verbatim messages, nothing persisted")
+  void put_multipleFieldsOutOfRange_returnsAllMessages() throws Exception {
+    // item 25 cost over its narrow ±99,999,999 range AND item 26 volume over 0–9,999,999 at once.
+    int before = revisionOf(1022);
+    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body(before, 100000000, 10000000, 5000)))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        // Both field errors are returned together (joined), not just the first (S16).
+        .andExpect(jsonPath("$.detail",
+            containsString("Entered cost must be between -99,999,999 and 99,999,999.")))
+        .andExpect(jsonPath("$.detail",
+            containsString("Entered volume must be between 0 and 9,999,999.")));
+    assertEquals(before, revisionOf(1022), "a rejected multi-error PUT must not persist anything");
   }
 
   @Test
