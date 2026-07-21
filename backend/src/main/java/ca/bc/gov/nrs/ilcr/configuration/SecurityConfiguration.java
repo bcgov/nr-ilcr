@@ -27,6 +27,14 @@ public class SecurityConfiguration {
         "/api/prometheus"
     };
 
+    // Home-page option-list endpoints (Story 1.1). Pre-selection reads with no action gate and no
+    // @PreAuthorize; permitted even when security is enabled. The per-user mill-association filter
+    // arrives with the FAM auth story (AR4); until then these are open like the other pre-auth reads.
+    private static final String[] HOME_PUBLIC_PATHS = {
+        "/api/v1/mills",
+        "/api/v1/reporting-years"
+    };
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -58,6 +66,7 @@ public class SecurityConfiguration {
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
                             .requestMatchers("/api/health", "/api/health/**", "/api/info").permitAll()
+                            .requestMatchers(HOME_PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {

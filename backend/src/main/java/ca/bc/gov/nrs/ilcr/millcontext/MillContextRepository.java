@@ -1,5 +1,8 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -20,6 +23,55 @@ public class MillContextRepository {
 
   public MillContextRepository(JdbcClient jdbcClient) {
     this.jdbcClient = jdbcClient;
+  }
+
+  /**
+   * All mills for the Home page selection list, ordered by mill number ascending (legacy
+   * {@code getMills()} / {@code order by m.mill_number}). Closed ({@code CLS}) mills are included —
+   * no status filter — so the closed-mill selection path (S06) stays reachable; no per-user
+   * association filter is applied (deferred to the auth story, AR4).
+   *
+   * <p>The status code comes from {@code THE.ILCR_MILL_STATUS_XREF}, whose PK
+   * {@code ILCR_MILL_STATUS_XREF_ID} is the one-to-one mill id (confirmed against {@code V1} DDL and
+   * the existing {@link #findMillStatusCodeForYear} join). Reads columns by their {@code THE} names
+   * via an explicit {@code RowMapper} (avoids Oracle uppercase-alias mapping pitfalls).
+   *
+   * @return every mill as {@link MillSummary}, ordered by mill number ascending
+   */
+  public List<MillSummary> findAllMills() {
+    return jdbcClient.sql(
+            """
+            SELECT m.MILL_ID, m.MILL_NUMBER, m.MILL_NAME, x.ILCR_MILL_STATUS_CODE
+              FROM THE.MILL m
+              JOIN THE.ILCR_MILL_STATUS_XREF x
+                ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
+             ORDER BY m.MILL_NUMBER
+            """)
+        .query((rs, rowNum) -> new MillSummary(
+            rs.getLong("MILL_ID"),
+            // MILL_NUMBER is NUMBER(15); read as String (display identifier, contract-pinned).
+            rs.getString("MILL_NUMBER"),
+            rs.getString("MILL_NAME"),
+            rs.getString("ILCR_MILL_STATUS_CODE")))
+        .list();
+  }
+
+  /**
+   * The opened reporting years for the Home page selection list — every existing
+   * {@code THE.ILCR_REPORTING_PERIOD} row — ordered by {@code REPORT_YEAR} descending (BR-03,
+   * legacy {@code getReportingPeriods()}).
+   *
+   * @return the opened years as {@link ReportingYear}, most recent first
+   */
+  public List<ReportingYear> findAllReportingYears() {
+    return jdbcClient.sql(
+            """
+            SELECT REPORT_YEAR
+              FROM THE.ILCR_REPORTING_PERIOD
+             ORDER BY REPORT_YEAR DESC
+            """)
+        .query((rs, rowNum) -> new ReportingYear(rs.getInt("REPORT_YEAR")))
+        .list();
   }
 
   /**

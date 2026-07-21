@@ -1,5 +1,8 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
+import java.util.List;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,6 +18,26 @@ public class MillContextService {
 
   public MillContextService(MillContextRepository repository) {
     this.repository = repository;
+  }
+
+  /**
+   * The mills offered on the Home page (Story 1.1, BR-02). Unfiltered read — closed mills included,
+   * no per-user association filter (deferred to the auth story, AR4) — so no validation logic here;
+   * the {@code validate*} guards above are untouched.
+   *
+   * @return every mill, ordered by mill number ascending
+   */
+  public List<MillSummary> listMills() {
+    return repository.findAllMills();
+  }
+
+  /**
+   * The opened reporting years offered on the Home page (Story 1.1, BR-03), most recent first.
+   *
+   * @return the opened reporting years, ordered by year descending
+   */
+  public List<ReportingYear> listReportingYears() {
+    return repository.findAllReportingYears();
   }
 
   /**
