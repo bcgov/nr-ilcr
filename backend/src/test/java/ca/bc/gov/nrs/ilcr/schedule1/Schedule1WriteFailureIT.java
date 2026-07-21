@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -67,7 +68,8 @@ class Schedule1WriteFailureIT extends AbstractOracleIT {
         .when(repository).upsertFixedDetail(anyInt(), eq(12), any(), any(), anyString());
 
     mockMvc.perform(put(ENDPOINT).param("millId", "520").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(before)))
+            .contentType(MediaType.APPLICATION_JSON).content(body(before))
+            .with(csrf()))
         .andExpect(status().isInternalServerError())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", is("Schedule could not be saved.")));
@@ -78,7 +80,8 @@ class Schedule1WriteFailureIT extends AbstractOracleIT {
     // Fault clears; the identical retry with the same (still-current) token succeeds (S24).
     reset(repository);
     mockMvc.perform(put(ENDPOINT).param("millId", "520").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(before)))
+            .contentType(MediaType.APPLICATION_JSON).content(body(before))
+            .with(csrf()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(before + 1)));
   }

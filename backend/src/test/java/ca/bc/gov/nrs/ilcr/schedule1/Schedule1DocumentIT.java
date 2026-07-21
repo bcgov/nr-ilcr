@@ -58,7 +58,7 @@ class Schedule1DocumentIT extends AbstractOracleIT {
     }
 
     @Test
-    @DisplayName("517/2021 non-Draft — trackStatus S, editable false")
+    @DisplayName("517/2021 non-Draft WITH data — trackStatus S, editable false, data present")
     void nonDraftContext_notEditable() throws Exception {
         mockMvc.perform(get(ENDPOINT)
                         .param("millId", "517")
@@ -66,6 +66,37 @@ class Schedule1DocumentIT extends AbstractOracleIT {
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trackStatus", is("S")))
-                .andExpect(jsonPath("$.editable", is(false)));
+                .andExpect(jsonPath("$.editable", is(false)))
+                // Non-Draft with data still returns its stored values (client renders them disabled).
+                .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].cost", contains(40000)));
+    }
+
+    @Test
+    @DisplayName("515/2021 not initiated (active Draft, NO summary) — 200 locked empty document")
+    void notInitiatedContext_returnsLockedEmptyDocument() throws Exception {
+        // 2026-07-20 product change: no-summary is no longer 404; it returns a full, all-null,
+        // editable:false skeleton with every canonical line item present.
+        mockMvc.perform(get(ENDPOINT)
+                        .param("millId", "515")
+                        .param("year", "2021")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.millId", is(515)))
+                .andExpect(jsonPath("$.year", is(2021)))
+                .andExpect(jsonPath("$.trackStatus", is("D")))
+                .andExpect(jsonPath("$.editable", is(false)))
+                .andExpect(jsonPath("$.crownVolume").doesNotExist())
+                .andExpect(jsonPath("$.comments").doesNotExist())
+                .andExpect(jsonPath("$.revisionCount").doesNotExist())
+                // Every canonical line item present; values are all null (omitted by non_null Jackson).
+                .andExpect(jsonPath("$.lineItems.length()", is(9)))
+                .andExpect(jsonPath("$.lineItems[*].costItemCode",
+                        contains(12, 13, 14, 15, 16, 17, 18, 143, 144)))
+                .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].volume").doesNotExist())
+                .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].cost").doesNotExist())
+                // Other Costs zeroed / empty (present so the client can tell "zero" from "missing").
+                .andExpect(jsonPath("$.otherCosts.count", is(0)))
+                .andExpect(jsonPath("$.otherCosts.costSubtotal", is(0)));
     }
 }

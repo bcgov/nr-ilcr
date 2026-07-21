@@ -44,7 +44,10 @@ public class Schedule1Controller implements Schedule1Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule1Response> getSchedule1(
       long millId, int year, Authentication authentication) {
-    millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
+    // View no longer requires an existing summary: a valid, active mill/year with no saved
+    // Schedule 1 renders a locked "not initiated" empty document (200) rather than 404. Genuine
+    // context errors (unknown mill -> 404, closed -> 409) still throw here.
+    millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(schedule1Service.getSchedule1(millId, year, callerMayEdit));
   }

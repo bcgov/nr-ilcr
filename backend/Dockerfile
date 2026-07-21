@@ -6,7 +6,7 @@ RUN mvn -B -ntp -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -B -ntp package
 
-FROM gcr.io/distroless/java21-debian12:nonroot
+FROM gcr.io/distroless/java21-debian12:nonroot@sha256:7e37784d94dccbf5ccb195c73b295f5ad00cd266512dfbac12eb9c3c28f8077d
 
 WORKDIR /app
 COPY --from=build /workspace/target/nr-ilcr-backend-*.jar /app/app.jar
