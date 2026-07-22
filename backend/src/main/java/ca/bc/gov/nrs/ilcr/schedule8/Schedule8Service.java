@@ -4,12 +4,17 @@ import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -44,6 +49,18 @@ public class Schedule8Service {
 
   private static final String STATUS_DRAFT = "D";
   private static final String IND_YES = "Y";
+
+  // Check Status (Story 14.6) — bundle keys (controller resolves to verbatim text, AD-8) + outcomes.
+  private static final String OUTCOME_MET = "MET";
+  private static final String OUTCOME_ISSUES = "ISSUES";
+  private static final String MSG_REQUIRED = "missingRequiredFieldMsg";
+  private static final String MSG_AT_LEAST_ONE_SAMPLE = "treeToTruckReportAtleastOneSample";
+  private static final String MSG_HARVEST_ZERO = "invalidLowerRangeZeroErrorMsg";
+  private static final String MSG_PERCENT_100 = "skiddingYardingEqualsCentPercent";
+  private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
+  /** Legacy sentinel: {@code TSA_NUMBER == "TFL"} means the page uses a TFL (else a supply block). */
+  private static final String TFL_MARKER = "TFL";
+  private static final int PERCENT_TOTAL = 100;
 
   /** Cost-item subcategories that mark a rate row as an addition (§Decision 1). */
   private static final Set<String> ADDITION_SUBCATEGORIES = Set.of("1", "2");
@@ -362,6 +379,115 @@ public class Schedule8Service {
       return null;
     }
     return value ? IND_YES : "N";
+  }
+
+  /**
+   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for a mill/year — read-only
+   * (AD-5), mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read model and applies
+   * the Check-Status-only rules per page and sample. {@code outcome} is {@code MET} only when EVERY
+   * page (and its samples) passes. Emits bundle KEYS; the controller resolves verbatim text (AD-8). A
+   * mill/year with no pages is vacuously MET.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the MET/ISSUES outcome + per-page/per-sample/per-field breakdown
+   */
+  @Transactional(readOnly = true)
+  public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
+    return evaluate(getSchedule8(millId, year, false).pages());
+  }
+
+  /**
+   * Evaluate Check Status for a single page (Story 14.6, S14/BR-09) — read-only, mutates nothing.
+   * Scopes the sweep to the one page (legacy {@code Schedule8DetailMB.checkStatus} single-page
+   * overload). A {@code pageId} not present for the mill/year yields a vacuously-MET empty result.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param pageId the page to check
+   * @return the MET/ISSUES outcome scoped to that page
+   */
+  @Transactional(readOnly = true)
+  public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
+    List<Page> scoped = getSchedule8(millId, year, false).pages().stream()
+        .filter(p -> p.id() != null && p.id() == pageId)
+        .toList();
+    return evaluate(scoped);
+  }
+
+  /** Apply the Check-Status rules to the given pages and build the all-or-nothing result. */
+  private Schedule8CheckStatusResponse evaluate(List<Page> pages) {
+    List<Schedule8PageCheckResult> pageResults = new ArrayList<>(pages.size());
+    boolean scheduleMet = true;
+    for (Page page : pages) {
+      List<Schedule8CheckFieldIssue> pageIssues = new ArrayList<>();
+      requireField(pageIssues, "Contact", page.contact());
+      requireField(pageIssues, "Phone", page.phone());
+      // TFL vs Supply Block: TSA_NUMBER == "TFL" means the page uses a TFL, else a supply block.
+      if (TFL_MARKER.equals(page.tsaNumber())) {
+        requireField(pageIssues, "TFL #", page.tflNumber());
+      } else {
+        requireField(pageIssues, "Supply Block", page.supplyBlock());
+      }
+      if (page.samples().isEmpty()) {
+        pageIssues.add(issue("Sample", MSG_AT_LEAST_ONE_SAMPLE));
+      }
+
+      List<Schedule8SampleCheckResult> sampleResults = new ArrayList<>(page.samples().size());
+      boolean allSamplesMet = true;
+      for (Sample sample : page.samples()) {
+        List<Schedule8CheckFieldIssue> issues = evaluateSample(sample);
+        boolean sampleMet = issues.isEmpty();
+        allSamplesMet &= sampleMet;
+        sampleResults.add(new Schedule8SampleCheckResult(sample.id(), sampleMet, issues));
+      }
+
+      boolean pageMet = pageIssues.isEmpty() && allSamplesMet;
+      scheduleMet &= pageMet;
+      pageResults.add(new Schedule8PageCheckResult(page.id(), pageMet, pageIssues, sampleResults));
+    }
+    String outcome = scheduleMet ? OUTCOME_MET : OUTCOME_ISSUES;
+    List<MessageInfo> messages =
+        scheduleMet ? List.of(new MessageInfo(MSG_SCHEDULE_MET, null)) : List.of();
+    return new Schedule8CheckStatusResponse(outcome, messages, pageResults);
+  }
+
+  /** The Check-Status-only field rules for one sample (S28–S30, S16 check half, FLD-003/007). */
+  private List<Schedule8CheckFieldIssue> evaluateSample(Sample sample) {
+    List<Schedule8CheckFieldIssue> issues = new ArrayList<>();
+    requireField(issues, "Cut Block", sample.cutBlock());
+    // Skyline supports are required only when Skyline % > 0 (JIRA-365).
+    if (sample.skylinePct() != null && sample.skylinePct() > 0) {
+      requireField(issues, "Slope Distance", sample.skylineSlopeDistance());
+      requireField(issues, "Support Number", sample.skylineSupportNumber());
+      requireField(issues, "Support Avg Dist", sample.supportAvgDistance());
+    }
+    requireField(issues, "Coniferous", sample.coniferousVolume());
+    requireField(issues, "Deciduous", sample.deciduousVolume());
+    // Actual Harvested > 0 is checked only once at least one volume was entered (legacy parity).
+    if ((sample.coniferousVolume() != null || sample.deciduousVolume() != null)
+        && (sample.actualHarvested() == null || sample.actualHarvested() <= 0)) {
+      issues.add(issue("Actual Harvested", MSG_HARVEST_ZERO));
+    }
+    requireField(issues, "Original TtT Rate", sample.originalRate());
+    // The exact-100 rule Save deliberately omits (14.3 §Decision) lives here (FLD-003, S16 check half).
+    if (sample.percentTotal() == null || sample.percentTotal() != PERCENT_TOTAL) {
+      issues.add(issue("Skidding/Yarding", MSG_PERCENT_100));
+    }
+    return issues;
+  }
+
+  /** Flag {@code field} as missing (Value Required) when {@code value} is null/blank. */
+  private static void requireField(
+      List<Schedule8CheckFieldIssue> issues, String field, Object value) {
+    boolean missing = value == null || (value instanceof String s && s.isBlank());
+    if (missing) {
+      issues.add(issue(field, MSG_REQUIRED));
+    }
+  }
+
+  private static Schedule8CheckFieldIssue issue(String field, String messageKey) {
+    return new Schedule8CheckFieldIssue(field, new MessageInfo(messageKey, null));
   }
 
   /** The Draft gate shared by the writes: the Schedules 1–10 track must be Draft (else 409). */

@@ -4,11 +4,16 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -135,5 +140,44 @@ public class Schedule8Controller implements Schedule8Api {
     Schedule8Response updated =
         schedule8Service.deleteRate(millId, year, sampleId, rowId, callerMayEdit);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<Schedule8CheckStatusResponse> checkStatus(
+      long millId, int year, Authentication authentication) {
+    // Read-only (AD-5): context guard first (no summary required), then evaluate — mutates nothing.
+    millContextService.validateMillYearActive(millId, year);
+    return ResponseEntity.ok(resolve(schedule8Service.checkStatus(millId, year)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<Schedule8CheckStatusResponse> checkStatusPage(
+      long millId, int year, int pageId, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    return ResponseEntity.ok(resolve(schedule8Service.checkStatusPage(millId, year, pageId)));
+  }
+
+  /** Resolve every emitted bundle key in the Check Status result to its verbatim text (AD-8). */
+  private Schedule8CheckStatusResponse resolve(Schedule8CheckStatusResponse raw) {
+    List<MessageInfo> messages = raw.messages().stream().map(m -> message(m.key())).toList();
+    List<Schedule8PageCheckResult> pages = raw.pages().stream()
+        .map(page -> new Schedule8PageCheckResult(
+            page.id(),
+            page.met(),
+            resolveIssues(page.issues()),
+            page.samples().stream()
+                .map(sample -> new Schedule8SampleCheckResult(
+                    sample.id(), sample.met(), resolveIssues(sample.issues())))
+                .toList()))
+        .toList();
+    return new Schedule8CheckStatusResponse(raw.outcome(), messages, pages);
+  }
+
+  private List<Schedule8CheckFieldIssue> resolveIssues(List<Schedule8CheckFieldIssue> issues) {
+    return issues.stream()
+        .map(i -> new Schedule8CheckFieldIssue(i.field(), message(i.message().key())))
+        .toList();
   }
 }

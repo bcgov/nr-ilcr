@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule8.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
@@ -184,5 +185,37 @@ public interface Schedule8Api {
       @RequestParam int year,
       @PathVariable int sampleId,
       @PathVariable int rowId,
+      Authentication authentication);
+
+  /**
+   * Check Status — all-pages sweep (Story 14.6, BR-07). Read-only (AD-5), mutates nothing, no request
+   * body. Returns 200 with a per-page → per-sample → per-field breakdown: {@code outcome = "MET"} only
+   * when every page (and its samples) passes, else {@code "ISSUES"}. Same no-summary context guards as
+   * the read (400/404/409/403, {@code VIEW_SCHEDULE}).
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param authentication the caller (authorized for VIEW_SCHEDULE)
+   * @return 200 with the {@link Schedule8CheckStatusResponse}
+   */
+  @PostMapping("/check-status")
+  ResponseEntity<Schedule8CheckStatusResponse> checkStatus(
+      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Check Status — single page scope (Story 14.6, S14/BR-09). Read-only; validates only {@code pageId}'s
+   * samples. Same result shape as the sweep, scoped to the one page.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param pageId the page to check
+   * @param authentication the caller (authorized for VIEW_SCHEDULE)
+   * @return 200 with the {@link Schedule8CheckStatusResponse} scoped to the page
+   */
+  @PostMapping("/pages/{pageId}/check-status")
+  ResponseEntity<Schedule8CheckStatusResponse> checkStatusPage(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int pageId,
       Authentication authentication);
 }
