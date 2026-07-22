@@ -1,8 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -10,6 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
  * their {@code DESCRIPTION} labels (§Decision 3) from the repository's code→label maps.
  */
 @Service
+@Slf4j
 public class Schedule8Service {
 
   private static final String STATUS_DRAFT = "D";
@@ -98,6 +105,107 @@ public class Schedule8Service {
     }
 
     return new Schedule8Response(millId, year, trackStatus, editable, pages, null);
+  }
+
+  /**
+   * Save (create-or-edit) one Schedule 8 report page and return the recomputed document (Story 14.2,
+   * S01/S04). The mill/year context is validated in the controller (AD-4). Enforces the Draft gate
+   * (AD-9), per-page optimistic locking, and the TFL⇄supply-block mutual exclusion (S10/BR-03).
+   *
+   * <p>{@code request.id()} null → CREATE (insert the page, revision 0→1); present → EDIT (bump the
+   * page revision, then re-stamp its fields). The whole method is one transaction: a persistence fault
+   * rolls back and surfaces as 500 ({@code scheduleNotSavedErrorMsg}), logging type-only (AD-11). The
+   * TFL-resolves-to-Road-Group check (S22) is deferred with the {@code RoadGroupUtil} port (14.1 §2).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the page fields + optimistic-lock token (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 8 document
+   */
+  @Transactional
+  public Schedule8Response savePage(long millId, int year, Schedule8PageRequest request,
+      boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block and
+    // vice-versa — normalized server-side so exactly one is ever stored.
+    boolean usesTfl = isNotBlank(request.tflNumber());
+    String tflNumber = usesTfl ? request.tflNumber().trim() : null;
+    String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
+    String tsaNumber = trimToNull(request.tsaNumber());
+    try {
+      if (request.id() == null) {
+        int id = repository.insertPage(millId, year, trimToNull(request.supportCentre()),
+            trimToNull(request.region()), trimToNull(request.becZone()), tsaNumber, supplyBlock,
+            tflNumber, trimToNull(request.cuttingPermit()), trimToNull(request.license()),
+            trimToNull(request.division()), trimToNull(request.contact()),
+            trimToNull(request.phone()), trimToNull(request.comments()), user);
+        repository.bumpPageRevision(id, 0, user); // 0 -> 1 (monotonic, mirrors Schedule 2/4)
+      } else {
+        int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+        if (repository.bumpPageRevision(request.id(), expectedRevision, user) == 0) {
+          throw new StaleRevisionException();
+        }
+        repository.updatePageFields(request.id(), trimToNull(request.supportCentre()),
+            trimToNull(request.region()), trimToNull(request.becZone()), tsaNumber, supplyBlock,
+            tflNumber, trimToNull(request.cuttingPermit()), trimToNull(request.license()),
+            trimToNull(request.division()), trimToNull(request.contact()),
+            trimToNull(request.phone()), trimToNull(request.comments()), user);
+      }
+    } catch (StaleRevisionException ex) {
+      throw ex;
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 8 page save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule8(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete a whole Schedule 8 report page — the page, its samples, and all their rate details (BR-05,
+   * S07) — for a mill/year, targeted by the page {@code id}. Enforces the same Draft gate as save.
+   * Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a no-op that still
+   * returns success (never 404), mirroring Schedule 2/4. Context is validated in the controller (AD-4).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param id the page id to delete
+   */
+  @Transactional
+  public void deletePage(long millId, int year, int id) {
+    requireDraft(millId, year);
+    if (!repository.pageExists(id, millId, year)) {
+      return; // idempotent — nothing to remove
+    }
+    try {
+      repository.deletePage(id);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 8 page delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+  }
+
+  /** The Draft gate shared by the writes: the Schedules 1–10 track must be Draft (else 409). */
+  private void requireDraft(long millId, int year) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!STATUS_DRAFT.equals(trackStatus)) {
+      throw new ScheduleNotEditableException();
+    }
+  }
+
+  private static boolean isNotBlank(String value) {
+    return value != null && !value.isBlank();
+  }
+
+  private static String trimToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   /** Map one sample entity + its rate rows to the wire {@link Sample}, splitting add/ded + computing. */

@@ -1,9 +1,16 @@
 package ca.bc.gov.nrs.ilcr.schedule8.api;
 
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -11,7 +18,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Schedule 8 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule8Controller} implements it and adds
  * authorization. {@code millId} and {@code year} are required query params (AD-4). Story 14.1 is the
- * read only; the page/sample/rate write endpoints and Check Status are later stories (14.2–14.6).
+ * read; Story 14.2 adds the report-page write path (PUT save, DELETE cascade). Samples, rate details,
+ * and Check Status are later stories (14.3/14.4/14.6).
  */
 @RequestMapping("/api/v1/schedule8")
 public interface Schedule8Api {
@@ -31,4 +39,43 @@ public interface Schedule8Api {
   @GetMapping
   ResponseEntity<Schedule8Response> getSchedule8(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Save (create-or-edit) one Schedule 8 report page for a mill/year and return the recomputed
+   * document (Story 14.2, S01/S02/S04). {@code request.id()} null creates; present edits. A missing
+   * required field (License / Support Centre / Region / BEC Zone / TSA-or-TFL) → 400
+   * ({@code Value Required}); a non-Draft track → 409; a stale {@code revisionCount} → 409; missing
+   * {@code EDIT_SCHEDULE} → 403. Nothing persists on any failure. Copy (S02) arrives here as an
+   * ordinary create.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param request the page fields + optimistic-lock token (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PutMapping("/pages")
+  ResponseEntity<Schedule8Response> savePage(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody Schedule8PageRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one Schedule 8 report page (cascading its samples + all their rate details) for a mill/year,
+   * targeted by the page {@code id} (Story 14.2, S07 / BR-05). Idempotent: an unknown id returns 200
+   * (never 404). Non-Draft track → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param id the page id to delete
+   * @param authentication the caller (drives EDIT_SCHEDULE)
+   * @return 200 with the success {@code message} (SUC-002, AD-8)
+   */
+  @DeleteMapping("/pages/{id}")
+  ResponseEntity<MessageResponse> deletePage(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int id,
+      Authentication authentication);
 }
