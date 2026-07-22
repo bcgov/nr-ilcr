@@ -4,12 +4,16 @@ import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
@@ -63,6 +67,12 @@ public class Schedule4Service {
 
   /** The 9 fixed no-distance cost-item codes (written as detail rows on the primary report). */
   private static final Set<Integer> FIXED_CODES = Set.of(40, 41, 42, 44, 45, 49, 50, 51, 53);
+
+  private static final String OUTCOME_MET = "MET";
+  private static final String OUTCOME_ISSUES = "ISSUES";
+  private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
+  private static final String MSG_LOCATION_MET = "locationRequirementsMetMsg";
+  private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule4Repository repository;
 
@@ -152,6 +162,52 @@ public class Schedule4Service {
         subPageByName.getOrDefault(name, List.of()))));
 
     return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+  }
+
+  /**
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year — read-only
+   * (AD-5), mutates nothing. Reuses the assembled read model ({@link #getSchedule4}) and, per
+   * location, flags every in-scope category / sub-page row whose Cost is null as a missing field (0
+   * counts as present; Distance is NOT enforced — §Decision 2, legacy parity; Comments are soft —
+   * §Decision 3). The schedule {@code outcome} is {@code MET} only when EVERY location passes
+   * (all-or-nothing, S31). Emits bundle KEYS; the controller resolves the verbatim text (AD-8),
+   * substituting the location name into the per-location met message. A mill/year with no locations
+   * is vacuously MET (legacy {@code isSchedule4Valid} AND-over-locations).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the MET/ISSUES outcome + per-location breakdown (message text resolved by the controller)
+   */
+  @Transactional(readOnly = true)
+  public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
+    // callerMayEdit is irrelevant to the requirement check (only stored Costs matter); pass false.
+    Schedule4Response document = getSchedule4(millId, year, false);
+    List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
+    boolean scheduleMet = true;
+    for (Location location : document.locations()) {
+      List<FieldIssue> issues = new ArrayList<>();
+      // Every stored category (fixed + distance-based) with a null Cost is a missing field.
+      for (CategoryAmount category : location.categories()) {
+        if (category.cost() == null) {
+          issues.add(new FieldIssue(category.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
+        }
+      }
+      // Sub-page list rows enforce Cost only, same rule (Story 4.3 rows; distance/cycle not checked).
+      for (SubPageRow row : location.subPageRows()) {
+        if (row.cost() == null) {
+          issues.add(new FieldIssue(row.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
+        }
+      }
+      boolean met = issues.isEmpty();
+      scheduleMet &= met;
+      List<MessageInfo> messages =
+          met ? List.of(new MessageInfo(MSG_LOCATION_MET, null)) : List.of();
+      results.add(new LocationCheckResult(location.id(), location.name(), met, messages, issues));
+    }
+    String outcome = scheduleMet ? OUTCOME_MET : OUTCOME_ISSUES;
+    List<MessageInfo> scheduleMessages =
+        scheduleMet ? List.of(new MessageInfo(MSG_SCHEDULE_MET, null)) : List.of();
+    return new Schedule4CheckStatusResponse(outcome, scheduleMessages, results);
   }
 
   /**

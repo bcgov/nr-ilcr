@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule4.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
@@ -121,4 +122,20 @@ public interface Schedule4Api {
       @PathVariable int locationId,
       @PathVariable int rowId,
       Authentication authentication);
+
+  /**
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year — read-only
+   * (AD-5), mutates nothing, no request body (Story 4.4, S28–S31). Returns 200 with a per-location
+   * breakdown: {@code outcome = "MET"} only when every location's in-scope Costs are present, else
+   * {@code "ISSUES"} with per-field {@code Value Required} findings. Same no-summary-required context
+   * guards as the read: 400 / 404 / 409 / 403 ({@code VIEW_SCHEDULE}).
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param authentication the caller (authorized for VIEW_SCHEDULE)
+   * @return 200 with the {@link Schedule4CheckStatusResponse} (outcome + per-location results)
+   */
+  @PostMapping("/check-status")
+  ResponseEntity<Schedule4CheckStatusResponse> checkStatus(
+      @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }

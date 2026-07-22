@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,6 +79,31 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
             .param("millId", String.valueOf(SEEDED_MILL))
             .param("year", String.valueOf(SEEDED_YEAR))
             .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful());
+  }
+
+  // ---- POST /check-status shares the VIEW_SCHEDULE gate (Story 4.4). -----------------------------
+
+  private static final String CHECK_STATUS = "/api/v1/schedule4/check-status";
+
+  @Test
+  @DisplayName("no VIEW_SCHEDULE -> POST /check-status 403")
+  void checkStatus_noPermission_returns403() throws Exception {
+    mockMvc.perform(post(CHECK_STATUS)
+            .param("millId", String.valueOf(SEEDED_MILL))
+            .param("year", String.valueOf(SEEDED_YEAR))
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> POST /check-status passes authz (not 403)")
+  void checkStatus_submitter_passesAuthorization() throws Exception {
+    mockMvc.perform(post(CHECK_STATUS)
+            .param("millId", String.valueOf(SEEDED_MILL))
+            .param("year", String.valueOf(SEEDED_YEAR))
+            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 }
