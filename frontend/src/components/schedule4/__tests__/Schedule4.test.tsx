@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { render, screen } from '@/test-utils'
+import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -12,12 +12,13 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 import Schedule4 from '@/components/schedule4'
+import type { Location } from '@/interfaces/Schedule4Response'
 
 const URL = 'http://localhost:3000/api/v1/schedule4'
 const LOCATIONS_URL = 'http://localhost:3000/api/v1/schedule4/locations'
 const CHECK_URL = 'http://localhost:3000/api/v1/schedule4/check-status'
 
-const harbour = {
+const harbour: Location = {
   id: 7001,
   revisionCount: 0,
   name: 'Harbour Dump',
@@ -38,7 +39,7 @@ const harbour = {
     },
   ],
 }
-const emptyLanding = {
+const emptyLanding: Location = {
   id: 7002,
   revisionCount: 0,
   name: 'Empty Landing',
@@ -195,5 +196,115 @@ describe('Schedule4 page', () => {
     expect(screen.getAllByRole('button', { name: /^view$/i }).length).toBeGreaterThan(0)
     screen.getAllByRole('button', { name: /^copy$/i }).forEach((b) => expect(b).toBeDisabled())
     screen.getAllByRole('button', { name: /^delete$/i }).forEach((b) => expect(b).toBeDisabled())
+  })
+})
+
+// Harbour Dump's id is 7001, so its sub-page rows POST/DELETE target .../locations/7001/rows.
+const ROWS_7001 = 'http://localhost:3000/api/v1/schedule4/locations/7001/rows'
+
+describe('Schedule4 sub-pages (Story 10.6)', () => {
+  // Open Harbour Dump's Towing sub-page: Edit → panel → "Towing Total (1)" → NAV-002 → Continue.
+  const openTowing = async () => {
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    // NAV-002 unsaved-changes confirm.
+    expect(
+      screen.getByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    await screen.findByText('Towing Total — Harbour Dump')
+  }
+
+  test('open a sub-page from a saved location (NAV-002) shows its rows', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowing()
+    expect(screen.getByText('Deferred towing row')).toBeInTheDocument()
+  })
+
+  test('add a row PUTs the sub-resource and shows the API success message', async () => {
+    const withRow = () => {
+      const clone = doc()
+      clone.locations = [
+        {
+          ...harbour,
+          subPageRows: [
+            harbour.subPageRows[0],
+            {
+              id: 9100,
+              code: 43,
+              description: 'Added Towing',
+              distance: 12,
+              volume: 5,
+              cost: 300,
+              cycle: null,
+              perUnit: 60,
+            },
+          ],
+        },
+        emptyLanding,
+      ]
+      return clone
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(ROWS_7001, () =>
+        HttpResponse.json({
+          ...withRow(),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    await openTowing()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'Added Towing')
+    await userEvent.type(screen.getByLabelText('Volume'), '5')
+    await userEvent.click(screen.getByRole('button', { name: /add row/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(screen.getByText('Added Towing')).toBeInTheDocument()
+  })
+
+  test('blank description blocks Add with Value Required (no POST)', async () => {
+    const post = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(ROWS_7001, () => {
+        post()
+        return HttpResponse.json(doc())
+      }),
+    )
+    await openTowing()
+
+    await userEvent.click(screen.getByRole('button', { name: /add row/i }))
+
+    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  test('delete a row (NAV-005) DELETEs the sub-resource', async () => {
+    let deleted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete('http://localhost:3000/api/v1/schedule4/locations/7001/rows/7013', () => {
+        deleted = true
+        const clone = doc()
+        clone.locations = [{ ...harbour, subPageRows: [] }, emptyLanding]
+        return HttpResponse.json({
+          ...clone,
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+    await openTowing()
+
+    // Two "Delete" buttons exist (the row's + the always-rendered NAV-005 modal primary). Click the
+    // row's [0] to open the confirm, then the modal's primary [last] to submit.
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deleteButtons = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deleteButtons[deleteButtons.length - 1])
+
+    await waitFor(() => expect(deleted).toBe(true))
   })
 })

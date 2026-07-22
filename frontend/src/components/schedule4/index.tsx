@@ -30,6 +30,8 @@ import {
   validateLocationForm,
   type CategoryForm,
 } from './validation'
+import SubPage from './SubPage'
+import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. All success/error text
@@ -43,6 +45,12 @@ const copyWarning = (name: string): string =>
 const TOWING = 43
 const TRUCK_REHAUL = 46
 const OTHER = 55
+
+// NAV-002 (leaving a saved location to a sub-page — unsaved edits discarded) and NAV-003 (leaving an
+// unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
+const NAV_UNSAVED_LOST = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+const NAV_SAVE_FIRST =
+  'The information for the New Location must be saved before you can add other Transportation. Would you like to save the information now?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
 
@@ -117,6 +125,13 @@ const Schedule4: FC = () => {
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Location | null>(null)
+  // Sub-page (Story 10.6): when set, the sub-page view replaces the list/panel.
+  const [subPage, setSubPage] = useState<{ def: SubPageDef; locationId: number } | null>(null)
+  // Pending sub-page open awaiting a NAV-002 (existing) / NAV-003 (new, save-first) confirm.
+  const [navConfirm, setNavConfirm] = useState<{
+    kind: 'existing' | 'new'
+    def: SubPageDef
+  } | null>(null)
 
   useEffect(() => {
     if (contextMissing) return
@@ -297,6 +312,67 @@ const Schedule4: FC = () => {
       .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
   }
 
+  // ---- Sub-page navigation (Story 10.6). ---------------------------------------------------------
+
+  const openSubPage = (def: SubPageDef, locationId: number) => {
+    clearMessages()
+    setPanelMode('closed')
+    setSubPage({ def, locationId })
+  }
+
+  // Save the panel (create path) and return the new location's id, or null on validation/API failure.
+  const saveLocationReturningId = (): Promise<number | null> => {
+    const validation = validateLocationForm(panelName, panelCategories)
+    if (!isLocationFormValid(validation)) {
+      setSaveError('Please correct the highlighted fields before saving.')
+      return Promise.resolve(null)
+    }
+    setSaving(true)
+    clearMessages()
+    return apiService
+      .getAxiosInstance()
+      .put<Schedule4Response>(
+        `/v1/schedule4/locations?millId=${millId}&year=${year}`,
+        buildRequest(),
+      )
+      .then((response) => {
+        setData(response.data)
+        setSaveMessage(response.data.message?.text ?? null)
+        const created = response.data.locations.find((l) => l.name === panelName.trim())
+        return created?.id ?? null
+      })
+      .catch((error: unknown) => {
+        setSaveError(extractDetail(error) || 'Schedule could not be saved.')
+        return null
+      })
+      .finally(() => setSaving(false))
+  }
+
+  // From the panel: a saved location opens the sub-page after NAV-002 (edits discarded); an unsaved
+  // NEW/COPY location opens after NAV-003 (save first); a read-only View opens directly.
+  const requestOpenSubPage = (def: SubPageDef) => {
+    if (panelMode === 'view' && panelEditId !== null) {
+      openSubPage(def, panelEditId)
+    } else if (panelMode === 'edit') {
+      setNavConfirm({ kind: 'existing', def })
+    } else {
+      setNavConfirm({ kind: 'new', def })
+    }
+  }
+
+  const confirmNav = () => {
+    if (!navConfirm) return
+    const { kind, def } = navConfirm
+    setNavConfirm(null)
+    if (kind === 'existing' && panelEditId !== null) {
+      openSubPage(def, panelEditId) // discard panel edits, open the sub-page
+    } else {
+      void saveLocationReturningId().then((id) => {
+        if (id !== null) openSubPage(def, id)
+      })
+    }
+  }
+
   const header = (
     <Grid fullWidth className="app-page__header">
       <PageTitle title="Schedule 4" subtitle="Special Log Transportation Costs." />
@@ -342,10 +418,41 @@ const Schedule4: FC = () => {
   if (!data) return null
 
   const editable = data.editable
+
+  // ---- Sub-page view (Story 10.6) replaces the list/panel when open. -----------------------------
+  if (subPage) {
+    const location = data.locations.find((l) => l.id === subPage.locationId)
+    const rows = (location?.subPageRows ?? []).filter((row) => row.code === subPage.def.code)
+    return (
+      <div className="app-page">
+        {header}
+        <Grid fullWidth className="app-page__body">
+          <Column sm={4} md={8} lg={16}>
+            <SubPage
+              millId={millId as number}
+              year={year as number}
+              locationId={subPage.locationId}
+              locationName={location?.name ?? ''}
+              def={subPage.def}
+              rows={rows}
+              editable={editable}
+              onBack={() => setSubPage(null)}
+              onDocUpdate={(doc) => setData(doc)}
+            />
+          </Column>
+        </Grid>
+      </div>
+    )
+  }
+
   const validation = validateLocationForm(panelName, panelCategories)
   const fieldErrors = panelMode === 'view' ? {} : validation.fieldErrors
   const panelOpen = panelMode !== 'closed'
   const readOnlyPanel = panelMode === 'view'
+  const panelLocation =
+    panelEditId !== null ? data.locations.find((l) => l.id === panelEditId) : undefined
+  const panelSubCount = (code: number): number =>
+    panelLocation ? subPageCount(panelLocation, code) : 0
 
   // ---- Existing Locations table. -----------------------------------------------------------------
   const locationsTable = (
@@ -492,6 +599,21 @@ const Schedule4: FC = () => {
         </Table>
       </TableContainer>
 
+      <div className="schedule-4__subpage-links">
+        <span className="schedule-4__field-label">Transportation sub-pages:</span>
+        {SUB_PAGE_DEFS.map((def) => (
+          <Button
+            key={def.type}
+            kind="ghost"
+            size="sm"
+            disabled={saving}
+            onClick={() => requestOpenSubPage(def)}
+          >
+            {def.label} ({panelSubCount(def.code)})
+          </Button>
+        ))}
+      </div>
+
       <div className="schedule-4__panel-actions">
         {!readOnlyPanel && (
           <Button kind="primary" disabled={saving} onClick={handleSave}>
@@ -620,6 +742,17 @@ const Schedule4: FC = () => {
           <p>{CONFIRM_DELETE}</p>
         </Modal>
       )}
+
+      <Modal
+        open={navConfirm !== null}
+        modalHeading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
+        primaryButtonText={navConfirm?.kind === 'new' ? 'Save and continue' : 'Continue'}
+        secondaryButtonText="Cancel"
+        onRequestClose={() => setNavConfirm(null)}
+        onRequestSubmit={confirmNav}
+      >
+        <p>{navConfirm?.kind === 'new' ? NAV_SAVE_FIRST : NAV_UNSAVED_LOST}</p>
+      </Modal>
     </div>
   )
 }
