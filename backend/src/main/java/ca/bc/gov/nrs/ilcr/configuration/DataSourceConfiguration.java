@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
@@ -65,21 +65,23 @@ public class DataSourceConfiguration {
     }
 
     /**
-     * JdbcClient is the data-access idiom for all new ILCR repositories (AD-3): named parameters
-     * and record row-mapping. The JdbcTemplate bean above is retained only for OracleHealthIndicator;
-     * new code must use this JdbcClient.
+     * Named-parameter JDBC operations over the same {@link Primary} {@code DataSource}. Because this
+     * app hand-defines its datasource wiring, Boot's default {@code NamedParameterJdbcTemplate} is not
+     * auto-created; declaring it here satisfies the {@code @ConditionalOnBean(NamedParameterJdbcOperations)}
+     * guard that gates Spring Data JDBC's {@code JdbcRepositoriesAutoConfiguration} (AD-3), so the
+     * Spring Data repository proxies (e.g. {@code Schedule1Repository}) are created.
      */
     @Bean
-    public JdbcClient jdbcClient(DataSource dataSource) {
-        return JdbcClient.create(dataSource);
+    public NamedParameterJdbcTemplate namedParameterJdbcTemplate(DataSource dataSource) {
+        return new NamedParameterJdbcTemplate(dataSource);
     }
 
     /**
-     * Transaction manager bound to the same {@link Primary} {@code DataSource} the {@link JdbcClient}
-     * uses, so {@code @Transactional} service methods (Story 2.1 write path, AR11) roll back the whole
-     * unit of work on failure. Defined explicitly (rather than relying on auto-configuration) so the
-     * manager and the JdbcClient provably share one DataSource instance — otherwise writes autocommit
-     * and never roll back.
+     * Transaction manager bound to the same {@link Primary} {@code DataSource} the Spring Data JDBC
+     * repositories use, so {@code @Transactional} service methods (Story 2.1 write path, AR11) roll
+     * back the whole unit of work on failure. Defined explicitly (rather than relying on
+     * auto-configuration) so the manager and the repositories provably share one DataSource instance
+     * — otherwise writes autocommit and never roll back.
      *
      * @param dataSource the primary ILCR datasource
      * @return the JDBC transaction manager
