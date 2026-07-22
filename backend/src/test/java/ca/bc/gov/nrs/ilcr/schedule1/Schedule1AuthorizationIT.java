@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule1;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,5 +86,16 @@ class Schedule1AuthorizationIT extends AbstractOracleIT {
                         .param("year", String.valueOf(SEEDED_YEAR))
                         .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
                 .andExpect(status().is2xxSuccessful());
+    }
+
+    @Test
+    @DisplayName("check-status is VIEW-gated: no VIEW_SCHEDULE -> 403 (Story 2.6)")
+    void checkStatus_noPermission_returns403() throws Exception {
+        mockMvc.perform(post(ENDPOINT + "/check-status")
+                        .param("millId", String.valueOf(SEEDED_MILL))
+                        .param("year", String.valueOf(SEEDED_YEAR))
+                        .with(jwtWithGroups(List.of())))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
     }
 }

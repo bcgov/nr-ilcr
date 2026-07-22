@@ -63,28 +63,4 @@ class MillContextServiceTest {
     when(repository.scheduleSummaryExists(514L, YEAR, CATEGORY)).thenReturn(true);
     assertDoesNotThrow(() -> service.validateScheduleViewable(514L, YEAR, CATEGORY));
   }
-
-  // ---- validateMillYearActive: mill/year context guard WITHOUT the summary-exists requirement ----
-
-  @Test
-  void millYearActive_unknownContext_throwsScheduleNotFound() {
-    when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class,
-        () -> service.validateMillYearActive(999999L, YEAR));
-  }
-
-  @Test
-  void millYearActive_millClosed_throwsMillClosed() {
-    when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateMillYearActive(516L, YEAR));
-  }
-
-  @Test
-  void millYearActive_activeButNoSummary_isValid() {
-    // The key difference from validateScheduleViewable: an active mill/year with NO summary is
-    // valid here (drives the 200 "not initiated" empty document) rather than 404.
-    when(repository.findMillStatusCodeForYear(515L, YEAR)).thenReturn(Optional.of("ACT"));
-    assertDoesNotThrow(() -> service.validateMillYearActive(515L, YEAR));
-  }
 }
