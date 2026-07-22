@@ -7,14 +7,17 @@ import java.util.List;
  * share a {@code LOCATION_DESCRIPTION}. The pinned wire shape, frozen across the later Schedule 4
  * stories.
  *
- * <p>{@code name} ({@code LOCATION_DESCRIPTION}) is the location's natural key within a mill/year
- * (used to target edit/delete). {@code categories} holds this location's in-scope category amounts —
- * the 9 fixed categories (from the primary report, no distance) plus the 3 distance-based categories
- * (47/48/52), each of which lives on its own {@code TRANSPORTATION_REPORT} row and carries its OWN
- * distance (see {@link CategoryAmount#distance()}). Delivery-DB confirmed: distance is per-category,
- * NOT a single per-location value. A name-only location has an empty list.
+ * <p>{@code id} is the primary report's {@code TRANSPORTATION_REPORT_ID} (the family's distance-null
+ * report, else its lowest report id) — a stable, rename-safe handle the Story 4.2 write targets
+ * (§Decision 2). {@code name} ({@code LOCATION_DESCRIPTION}) is the location's natural key within a
+ * mill/year. {@code categories} holds this location's in-scope category amounts — the 9 fixed
+ * categories (from the primary report, no distance) plus the 3 distance-based categories (47/48/52),
+ * each of which lives on its own {@code TRANSPORTATION_REPORT} row and carries its OWN distance (see
+ * {@link CategoryAmount#distance()}). Delivery-DB confirmed: distance is per-category, NOT a single
+ * per-location value. A name-only location has an empty list.
  */
 public record Location(
+    Integer id,
     String name,
     List<CategoryAmount> categories) {
 }

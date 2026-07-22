@@ -1,9 +1,14 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryAmount;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -12,7 +17,10 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,12 +36,16 @@ import org.springframework.transaction.annotation.Transactional;
  * (mirrors the legacy JPA {@code getResultList()}-empty → empty-doc behaviour; the DAO returned null
  * only on a thrown exception).
  *
- * <p>Storage shape (from legacy {@code Schedule4DAO.buildSchedule4Results} / {@code saveReport}, see
- * the spec Completion Notes): one {@code TRANSPORTATION_REPORT} row = one location; its category
- * amounts are {@code ILCR_COST_REPORT_DETAIL} rows joined by {@code TRANSPORTATION_REPORT_ID}; the
- * single per-location {@code DISTANCE} is shared by the distance-based categories.
+ * <p>Storage shape (delivery-DB confirmed, see the Story 4.1/4.2 Completion Notes): a location is a
+ * FAMILY of {@code TRANSPORTATION_REPORT} rows sharing a {@code LOCATION_DESCRIPTION} — one primary
+ * report (distance null) holds the 9 fixed categories, and each distance-based category (47/48/52)
+ * lives on its OWN report with its OWN {@code DISTANCE} (two distance categories on one location can
+ * differ). Category amounts are {@code ILCR_COST_REPORT_DETAIL} rows joined by
+ * {@code TRANSPORTATION_REPORT_ID}. The Story 4.2 write path (create/edit/copy/delete a location)
+ * lives in this same service.
  */
 @Service
+@Slf4j
 public class Schedule4Service {
 
   private static final String STATUS_DRAFT = "D";
@@ -43,6 +55,9 @@ public class Schedule4Service {
 
   /** The 3 distance-based cost-item codes (47 Truck Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul). */
   private static final Set<Integer> DISTANCE_CODES = Set.of(47, 48, 52);
+
+  /** The 9 fixed no-distance cost-item codes (written as detail rows on the primary report). */
+  private static final Set<Integer> FIXED_CODES = Set.of(40, 41, 42, 44, 45, 49, 50, 51, 53);
 
   private final Schedule4Repository repository;
 
@@ -73,10 +88,18 @@ public class Schedule4Service {
     Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
     Map<Integer, String> nameByReport = new HashMap<>();
     Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
+    // The location's stable, rename-safe id (§Decision 2): the distance-null primary report if the
+    // family has one, else its lowest report id.
+    Map<String, Integer> primaryIdByName = new HashMap<>();
+    Map<String, Integer> minIdByName = new HashMap<>();
     for (LocationRow loc : locationRows) {
       distanceByReport.put(loc.transportationReportId(), loc.distance());
       nameByReport.put(loc.transportationReportId(), loc.locationDescription());
       categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
+      minIdByName.merge(loc.locationDescription(), loc.transportationReportId(), Math::min);
+      if (loc.distance() == null) {
+        primaryIdByName.putIfAbsent(loc.locationDescription(), loc.transportationReportId());
+      }
     }
 
     for (DetailRow d : repository.findInScopeDetails(millId, year)) {
@@ -100,9 +123,153 @@ public class Schedule4Service {
     }
 
     List<Location> locations = new ArrayList<>(categoriesByName.size());
-    categoriesByName.forEach((name, categories) -> locations.add(new Location(name, categories)));
+    categoriesByName.forEach((name, categories) -> locations.add(new Location(
+        primaryIdByName.getOrDefault(name, minIdByName.get(name)), name, categories)));
 
-    return new Schedule4Response(millId, year, trackStatus, editable, locations);
+    return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+  }
+
+  /**
+   * Save (create-or-edit) one Schedule 4 location and return the recomputed document (Story 4.2,
+   * S01/S02/S07). The mill/year context is already validated in the controller (AD-4). Enforces the
+   * Draft gate (AD-9), server-side name uniqueness (BR-02), and per-location optimistic locking
+   * (§Decision 3).
+   *
+   * <p>A location is a FAMILY of {@code TRANSPORTATION_REPORT} rows: {@code request.id()} null →
+   * CREATE (insert the primary report, revision 0→1); present → EDIT (bump the primary revision,
+   * re-stamp the family name on rename). The 9 fixed categories are detail rows on the primary; each
+   * distance category (47/48/52) lives on its own child report with its own distance — inserted when
+   * first entered, updated in place otherwise, and DELETED when cleared to fully-empty (the write
+   * mirror of the per-category-distance read; §Decision 1). Copy (S07) is a client-driven prefill
+   * that arrives here as an ordinary create (BR-09) — no dedicated server endpoint.
+   *
+   * <p>The whole method is one transaction: a persistence fault rolls back and surfaces as 500
+   * ({@code scheduleNotSavedErrorMsg}), logging type-only (AD-11).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the location name, optimistic-lock token, and entered categories (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 4 document
+   */
+  @Transactional
+  public Schedule4Response saveLocation(
+      long millId, int year, Schedule4LocationRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    String name = request.name().trim();
+    // The edited family's current name (null on create) — excluded from the uniqueness comparison so
+    // a no-op or case-only self-rename never self-collides.
+    String oldName = request.id() == null
+        ? null
+        : repository.findLocationName(request.id()).orElse(null);
+    if (repository.nameExists(millId, year, name, oldName)) {
+      throw new LocationNameConflictException();
+    }
+    try {
+      int primaryId;
+      if (request.id() == null) {
+        primaryId = repository.insertReport(millId, year, name, null, user); // primary: distance null
+        repository.bumpRevision(primaryId, 0, user); // 0 -> 1 (monotonic, mirrors Schedule 2)
+      } else {
+        primaryId = request.id();
+        int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+        if (repository.bumpRevision(primaryId, expectedRevision, user) == 0) {
+          throw new StaleRevisionException();
+        }
+        if (oldName != null && !oldName.equals(name)) {
+          repository.renameFamily(millId, year, oldName, name, user);
+        }
+      }
+      for (CategoryInput category : request.categoriesOrEmpty()) {
+        writeCategory(millId, year, name, primaryId, category, user);
+      }
+    } catch (StaleRevisionException ex) {
+      throw ex;
+    } catch (DataAccessException ex) {
+      // Never log cost/volume/distance values (AD-11) — action + status + exception type only.
+      log.warn("Schedule 4 location save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule4(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete a whole Schedule 4 location family (primary + distance children + cascaded details) for a
+   * mill/year, targeted by the primary report {@code id} (BR-08, S10). Enforces the same Draft gate
+   * as save. Idempotent: an absent/unknown id is a no-op that still returns success (never 404),
+   * mirroring Schedule 2's delete. Context is already validated in the controller (AD-4).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param id the primary report id of the location to delete
+   */
+  @Transactional
+  public void deleteLocation(long millId, int year, int id) {
+    requireDraft(millId, year);
+    String name = repository.findLocationName(id).orElse(null);
+    if (name == null) {
+      return; // idempotent — nothing to remove
+    }
+    try {
+      repository.deleteFamily(millId, year, name);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 4 location delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+  }
+
+  /**
+   * Persist one entered category. Fixed codes become detail rows on the primary report; distance
+   * codes (47/48/52) live on their own child report (insert/update, or delete when fully emptied).
+   * Out-of-scope codes (deferred sub-page lists 43/46/55, dead 54, unknown) are ignored — never
+   * written by this story.
+   */
+  private void writeCategory(long millId, int year, String name, int primaryId,
+      CategoryInput category, String user) {
+    Integer code = category.code();
+    if (code == null) {
+      return;
+    }
+    if (DISTANCE_CODES.contains(code)) {
+      writeDistanceCategory(millId, year, name, code, category, user);
+    } else if (FIXED_CODES.contains(code)) {
+      repository.upsertDetail(primaryId, code, category.volume(), category.cost(), user);
+    }
+  }
+
+  /**
+   * A distance category is its OWN {@code TRANSPORTATION_REPORT} child (its own distance). Fully-empty
+   * (distance + volume + cost all null) clears it: delete the child if one exists. Otherwise
+   * update-in-place when present, else insert a new child report; then upsert its single detail row.
+   */
+  private void writeDistanceCategory(long millId, int year, String name, int code,
+      CategoryInput category, String user) {
+    Optional<Integer> existing = repository.findDistanceReportId(millId, year, name, code);
+    boolean empty =
+        category.distance() == null && category.volume() == null && category.cost() == null;
+    if (empty) {
+      existing.ifPresent(repository::deleteReport);
+      return;
+    }
+    int reportId;
+    if (existing.isPresent()) {
+      reportId = existing.get();
+      repository.updateReportDistance(reportId, category.distance(), user);
+    } else {
+      reportId = repository.insertReport(millId, year, name, category.distance(), user);
+    }
+    repository.upsertDetail(reportId, code, category.volume(), category.cost(), user);
+  }
+
+  /** The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409). */
+  private void requireDraft(long millId, int year) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!STATUS_DRAFT.equals(trackStatus)) {
+      throw new ScheduleNotEditableException();
+    }
   }
 
   private static BigDecimal bd(Integer value) {

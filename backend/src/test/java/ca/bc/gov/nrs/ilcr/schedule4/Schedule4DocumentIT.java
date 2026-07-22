@@ -42,6 +42,8 @@ class Schedule4DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.locations.length()", is(2)))
         // Location "Harbour Dump" — a family of reports (7001 primary + 7011/7012) collapsed to one.
+        // id = the distance-null primary report (7001) — the rename-safe write handle (§Decision 2).
+        .andExpect(jsonPath("$.locations[0].id", is(7001)))
         .andExpect(jsonPath("$.locations[0].name", is("Harbour Dump")))
         .andExpect(jsonPath("$.locations[0].categories.length()", is(4)))
         // 40 Lakeside Dry Dump (FIXED, primary report): vol 2000 / cost 100000 / perUnit 50.0, no distance.
