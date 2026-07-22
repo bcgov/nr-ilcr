@@ -8,6 +8,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import java.math.BigDecimal;
@@ -271,6 +272,83 @@ public class Schedule8Service {
         repository.deleteSample(sampleId);
       } catch (DataAccessException ex) {
         log.warn("Schedule 8 sample delete failed for mill {} year {} [{}]",
+            millId, year, ex.getClass().getSimpleName());
+        throw new ScheduleNotSavedException();
+      }
+    }
+    return getSchedule8(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Add or edit one rate-detail row under a sample and return the recomputed document (Story 14.4,
+   * S01/S06). {@code request.id()} null → ADD (insert at revision 0); present → EDIT (optimistic-lock
+   * update). Whether the row is an addition or a deduction is derived on the read from its cost item's
+   * subcategory — not stored here. Draft gate (AD-9); unknown sample or (on edit) unknown row → 404;
+   * stale → 409; persistence fault → 500 (type-only log, AD-11). One transaction.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param sampleId the parent sample id
+   * @param rowId the rate-row id to edit; null to add
+   * @param request the rate-row fields + optimistic-lock token (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 8 document (the sample's totals + finalRate + counts update)
+   */
+  @Transactional
+  public Schedule8Response saveRate(long millId, int year, int sampleId, Integer rowId,
+      Schedule8RateRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    if (!repository.sampleInMillYear(sampleId, millId, year)) {
+      throw new ScheduleNotFoundException(); // 404 — no such sample under this mill/year
+    }
+    try {
+      if (rowId == null) {
+        repository.insertRate(sampleId, trimToNull(request.costTypeCode()), request.costItemCode(),
+            trimToNull(request.itemDescription()), request.costingRate(), user);
+      } else {
+        if (!repository.rateExists(rowId, sampleId)) {
+          throw new ScheduleNotFoundException(); // 404 — row is not under this sample
+        }
+        int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+        int updated = repository.updateRateRow(rowId, expectedRevision,
+            trimToNull(request.costTypeCode()), request.costItemCode(),
+            trimToNull(request.itemDescription()), request.costingRate(), user);
+        if (updated == 0) {
+          throw new StaleRevisionException();
+        }
+      }
+    } catch (StaleRevisionException | ScheduleNotFoundException ex) {
+      throw ex;
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 8 rate save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule8(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete one rate-detail row under a sample and return the recomputed document (Story 14.4, S09 /
+   * BR-05). Draft gate (AD-9). Idempotent: an unknown sample or row id (or a row not under this
+   * sample) is a no-op success (never 404, never deletes another sample's row).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param sampleId the parent sample id
+   * @param rowId the rate-row id to delete
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @return the recomputed Schedule 8 document
+   */
+  @Transactional
+  public Schedule8Response deleteRate(
+      long millId, int year, int sampleId, int rowId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    if (repository.sampleInMillYear(sampleId, millId, year) && repository.rateExists(rowId, sampleId)) {
+      try {
+        repository.deleteRateRow(rowId);
+      } catch (DataAccessException ex) {
+        log.warn("Schedule 8 rate delete failed for mill {} year {} [{}]",
             millId, year, ex.getClass().getSimpleName());
         throw new ScheduleNotSavedException();
       }

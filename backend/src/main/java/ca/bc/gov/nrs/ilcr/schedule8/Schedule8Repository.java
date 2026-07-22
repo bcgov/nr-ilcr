@@ -368,6 +368,98 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   }
 
   // -------------------------------------------------------------------------------------------------
+  // Rate-detail writes (Story 14.4) — @Modifying explicit SQL under a sample; the service owns the
+  // transaction boundary. Addition vs deduction is not stored — the read derives it from the cost
+  // item's subcategory. Rate rows are created at REVISION_COUNT 0 (AC1); edits bump the row revision.
+  // -------------------------------------------------------------------------------------------------
+
+  @Query("SELECT THE.TREE_TO_TRUCK_RATE_DETAIL_SEQ.NEXTVAL FROM DUAL")
+  int nextRateId();
+
+  @Modifying
+  @Query("""
+      INSERT INTO THE.TREE_TO_TRUCK_RATE_DETAIL
+          (TREE_TO_TRUCK_RATE_DETAIL_ID, TREE_TO_TRUCK_DETAIL_REPORT_ID, ILCR_RATE_COST_TYPE_CODE,
+           ILCR_REPORT_COST_ITEM_ID, ITEM_DESCRIPTION, COSTING_RATE, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP)
+      VALUES
+          (:id, :sampleId, :costTypeCode, :costItemCode, :itemDescription, :costingRate, 0,
+           :user, SYSTIMESTAMP)
+      """)
+  int insertRateRow(
+      @Param("id") int id, @Param("sampleId") int sampleId,
+      @Param("costTypeCode") String costTypeCode, @Param("costItemCode") Integer costItemCode,
+      @Param("itemDescription") String itemDescription, @Param("costingRate") BigDecimal costingRate,
+      @Param("user") String user);
+
+  /** Insert a new rate-detail row under {@code sampleId} at {@code REVISION_COUNT} 0; returns its id. */
+  default int insertRate(int sampleId, String costTypeCode, Integer costItemCode,
+      String itemDescription, BigDecimal costingRate, String user) {
+    int id = nextRateId();
+    insertRateRow(id, sampleId, costTypeCode, costItemCode, itemDescription, costingRate, user);
+    return id;
+  }
+
+  /**
+   * Optimistic-lock update of a rate row: re-stamps the fields and increments {@code REVISION_COUNT}
+   * ONLY when the stored revision matches {@code expectedRevision}. Returns rows affected (0 =
+   * stale/unknown → 409).
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
+         SET ILCR_RATE_COST_TYPE_CODE = :costTypeCode,
+             ILCR_REPORT_COST_ITEM_ID = :costItemCode,
+             ITEM_DESCRIPTION = :itemDescription,
+             COSTING_RATE = :costingRate,
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TREE_TO_TRUCK_RATE_DETAIL_ID = :id
+         AND REVISION_COUNT = :expectedRevision
+      """)
+  int updateRateRow(
+      @Param("id") int id, @Param("expectedRevision") int expectedRevision,
+      @Param("costTypeCode") String costTypeCode, @Param("costItemCode") Integer costItemCode,
+      @Param("itemDescription") String itemDescription, @Param("costingRate") BigDecimal costingRate,
+      @Param("user") String user);
+
+  @Query("""
+      SELECT COUNT(*)
+        FROM THE.TREE_TO_TRUCK_RATE_DETAIL
+       WHERE TREE_TO_TRUCK_RATE_DETAIL_ID = :id
+         AND TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId
+      """)
+  int countRate(@Param("id") int id, @Param("sampleId") int sampleId);
+
+  /** Whether {@code id} is a rate row under {@code sampleId} (guarded, idempotent delete/edit). */
+  default boolean rateExists(int id, int sampleId) {
+    return countRate(id, sampleId) > 0;
+  }
+
+  /** Whether {@code sampleId} is a sample under the mill/year's category-{@code '8'} pages (404 guard). */
+  @Query("""
+      SELECT COUNT(*)
+        FROM THE.TREE_TO_TRUCK_DETAIL_REPORT s
+        JOIN THE.TREE_TO_TRUCK_REPORT p
+          ON p.TREE_TO_TRUCK_REPORT_ID = s.TREE_TO_TRUCK_REPORT_ID
+       WHERE s.TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId
+         AND p.ILCR_MILL_ID = :millId
+         AND p.REPORT_YEAR = :year
+         AND p.ILCR_CATEGORY_ID = '8'
+      """)
+  int countSampleInMillYear(
+      @Param("sampleId") int sampleId, @Param("millId") long millId, @Param("year") int year);
+
+  default boolean sampleInMillYear(int sampleId, long millId, int year) {
+    return countSampleInMillYear(sampleId, millId, year) > 0;
+  }
+
+  @Modifying
+  @Query("DELETE FROM THE.TREE_TO_TRUCK_RATE_DETAIL WHERE TREE_TO_TRUCK_RATE_DETAIL_ID = :id")
+  int deleteRateRow(@Param("id") int id);
+
+  // -------------------------------------------------------------------------------------------------
   // Addition/deduction split (§Decision 1) — cost item id → its ILCR_SUBCATEGORY_ID.
   // -------------------------------------------------------------------------------------------------
 

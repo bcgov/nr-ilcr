@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -96,6 +97,43 @@ public class Schedule8Controller implements Schedule8Api {
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     Schedule8Response updated =
         schedule8Service.deleteSample(millId, year, pageId, id, callerMayEdit);
+    return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule8Response> addRate(
+      long millId, int year, int sampleId, Schedule8RateRequest request,
+      Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule8Response saved =
+        schedule8Service.saveRate(millId, year, sampleId, null, request, callerMayEdit, user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule8Response> updateRate(
+      long millId, int year, int sampleId, int rowId, Schedule8RateRequest request,
+      Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule8Response saved =
+        schedule8Service.saveRate(millId, year, sampleId, rowId, request, callerMayEdit, user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule8Response> deleteRate(
+      long millId, int year, int sampleId, int rowId, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    Schedule8Response updated =
+        schedule8Service.deleteRate(millId, year, sampleId, rowId, callerMayEdit);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 }

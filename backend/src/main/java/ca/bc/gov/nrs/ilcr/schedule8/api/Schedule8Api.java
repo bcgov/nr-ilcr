@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule8.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import jakarta.validation.Valid;
@@ -10,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -120,5 +122,67 @@ public interface Schedule8Api {
       @RequestParam int year,
       @PathVariable int pageId,
       @PathVariable int id,
+      Authentication authentication);
+
+  /**
+   * Add one rate-detail row (an addition or a deduction — determined by the chosen cost item's
+   * subcategory) to a sample and return the recomputed document (Story 14.4, S01). Cost Item / costing
+   * rate / Cost Type required → else 400; costing rate out of 0..9,999,999.99 → 400; unknown sample →
+   * 404; non-Draft → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param sampleId the parent sample id
+   * @param request the rate-row fields (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PostMapping("/samples/{sampleId}/rates")
+  ResponseEntity<Schedule8Response> addRate(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int sampleId,
+      @Valid @RequestBody Schedule8RateRequest request,
+      Authentication authentication);
+
+  /**
+   * Edit one rate-detail row inline (Story 14.4, S06). Same validation/guards as add; unknown row →
+   * 404; stale {@code revisionCount} → 409. The sample's totals + finalRate recompute in the response.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param sampleId the parent sample id
+   * @param rowId the rate-row id to edit
+   * @param request the rate-row fields + optimistic-lock token (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PutMapping("/samples/{sampleId}/rates/{rowId}")
+  ResponseEntity<Schedule8Response> updateRate(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int sampleId,
+      @PathVariable int rowId,
+      @Valid @RequestBody Schedule8RateRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one rate-detail row under a sample and return the recomputed document (Story 14.4, S09 /
+   * BR-05). Idempotent: an unknown sample/row id returns 200 (never 404, never touches another
+   * sample's rows). Non-Draft → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param sampleId the parent sample id
+   * @param rowId the rate-row id to delete
+   * @param authentication the caller (drives EDIT_SCHEDULE)
+   * @return 200 with the recomputed document carrying the deleted {@code message} (AD-8)
+   */
+  @DeleteMapping("/samples/{sampleId}/rates/{rowId}")
+  ResponseEntity<Schedule8Response> deleteRate(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int sampleId,
+      @PathVariable int rowId,
       Authentication authentication);
 }
