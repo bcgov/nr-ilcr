@@ -69,10 +69,10 @@ class Schedule4ServiceTest {
   private void stubTwoLocationDraft() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Harbour Dump", null),                 // primary, no distance
-        new LocationRow(7011, "Harbour Dump", new BigDecimal("120.5")), // 47's own report
-        new LocationRow(7012, "Harbour Dump", new BigDecimal("88.5")),  // 52's own report
-        new LocationRow(7002, "Empty Landing", null)));
+        new LocationRow(7001, "Harbour Dump", null, 0),                 // primary, no distance
+        new LocationRow(7011, "Harbour Dump", new BigDecimal("120.5"), 0), // 47's own report
+        new LocationRow(7012, "Harbour Dump", new BigDecimal("88.5"), 0),  // 52's own report
+        new LocationRow(7002, "Empty Landing", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7001, 40, new BigDecimal("2000"), 100000), // fixed
         new DetailRow(7001, 41, new BigDecimal("4000"), 60000),  // fixed
@@ -151,7 +151,7 @@ class Schedule4ServiceTest {
   void editable_falseWhenNotDraft_locationsStillListed() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7003, "Submitted Dump", null)));
+        new LocationRow(7003, "Submitted Dump", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7003, 42, new BigDecimal("1000"), 20000)));
     Schedule4Response doc = service.getSchedule4(MILL, YEAR, true);
@@ -170,7 +170,7 @@ class Schedule4ServiceTest {
   void perUnit_nullWhenVolumeZero() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Zero Vol", null)));
+        new LocationRow(7001, "Zero Vol", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7001, 40, BigDecimal.ZERO, 25000)));
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
@@ -182,7 +182,7 @@ class Schedule4ServiceTest {
     // 200000 / 30000 = 6.66666... -> scale-4 HALF_UP -> 6.6667.
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Round", null)));
+        new LocationRow(7001, "Round", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7001, 40, new BigDecimal("30000"), 200000)));
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
@@ -197,8 +197,8 @@ class Schedule4ServiceTest {
     // per-category (from category 47's own report 7011).
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Scale", null),
-        new LocationRow(7011, "Scale", new BigDecimal("120.5000"))));
+        new LocationRow(7001, "Scale", null, 0),
+        new LocationRow(7011, "Scale", new BigDecimal("120.5000"), 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7001, 40, new BigDecimal("2000.0000"), 100000),
         new DetailRow(7011, 47, new BigDecimal("500.0000"), 25000)));

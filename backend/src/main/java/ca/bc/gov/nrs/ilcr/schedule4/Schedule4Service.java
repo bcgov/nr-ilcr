@@ -102,6 +102,7 @@ public class Schedule4Service {
     List<LocationRow> locationRows = repository.findLocations(millId, year);
     Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
     Map<Integer, String> nameByReport = new HashMap<>();
+    Map<Integer, Integer> revisionByReport = new HashMap<>();
     Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
     // The location's stable, rename-safe id (§Decision 2): the distance-null primary report if the
     // family has one, else its lowest report id.
@@ -110,6 +111,7 @@ public class Schedule4Service {
     for (LocationRow loc : locationRows) {
       distanceByReport.put(loc.transportationReportId(), loc.distance());
       nameByReport.put(loc.transportationReportId(), loc.locationDescription());
+      revisionByReport.put(loc.transportationReportId(), loc.revisionCount());
       categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
       minIdByName.merge(loc.locationDescription(), loc.transportationReportId(), Math::min);
       if (loc.distance() == null) {
@@ -157,9 +159,11 @@ public class Schedule4Service {
     }
 
     List<Location> locations = new ArrayList<>(categoriesByName.size());
-    categoriesByName.forEach((name, categories) -> locations.add(new Location(
-        primaryIdByName.getOrDefault(name, minIdByName.get(name)), name, categories,
-        subPageByName.getOrDefault(name, List.of()))));
+    categoriesByName.forEach((name, categories) -> {
+      Integer primaryId = primaryIdByName.getOrDefault(name, minIdByName.get(name));
+      locations.add(new Location(primaryId, revisionByReport.get(primaryId), name, categories,
+          subPageByName.getOrDefault(name, List.of())));
+    });
 
     return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
   }

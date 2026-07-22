@@ -36,7 +36,7 @@ public class Schedule4Repository {
 
   /** One Schedule 4 location (a {@code TRANSPORTATION_REPORT} row). */
   public record LocationRow(int transportationReportId, String locationDescription,
-      BigDecimal distance) {
+      BigDecimal distance, Integer revisionCount) {
   }
 
   /** One in-scope transportation-category detail row for a location. */
@@ -68,7 +68,7 @@ public class Schedule4Repository {
   public List<LocationRow> findLocations(long millId, int year) {
     return jdbcClient.sql(
             """
-            SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE
+            SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE, REVISION_COUNT
               FROM THE.TRANSPORTATION_REPORT
              WHERE ILCR_MILL_ID = :millId
                AND REPORT_YEAR = :year
@@ -81,7 +81,8 @@ public class Schedule4Repository {
         .query((rs, rowNum) -> new LocationRow(
             rs.getInt("TRANSPORTATION_REPORT_ID"),
             rs.getString("LOCATION_DESCRIPTION"),
-            rs.getBigDecimal("DISTANCE")))
+            rs.getBigDecimal("DISTANCE"),
+            nullableInt(rs, "REVISION_COUNT")))
         .list();
   }
 

@@ -1,0 +1,81 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.schedule-4__meta {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-4__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-07;
+  margin: 0;
+
+  dt {
+    color: var(--cds-text-secondary);
+    font-size: 0.75rem;
+  }
+
+  dd {
+    color: var(--cds-text-primary);
+    margin: 0;
+  }
+}
+
+.schedule-4__section {
+  margin-block-end: $spacing-06;
+
+  // Carbon tables default to table-layout: fixed; let the label column size to content.
+  .cds--data-table {
+    table-layout: auto;
+  }
+
+  .cds--data-table td,
+  .cds--data-table th {
+    width: auto;
+    max-width: none;
+  }
+}
+
+.schedule-4__num {
+  text-align: right;
+}
+
+.schedule-4__actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-4__row-actions {
+  display: flex;
+  gap: $spacing-02;
+}
+
+.schedule-4__panel {
+  border: 1px solid var(--cds-border-subtle);
+  padding: $spacing-05;
+}
+
+.schedule-4__heading {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-4__field-label {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-4__grid {
+  margin-block: $spacing-05;
+}
+
+.schedule-4__panel-actions {
+  display: flex;
+  gap: $spacing-03;
+}
+
+.schedule-4__check {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}

@@ -51,7 +51,7 @@ class Schedule4CheckStatusServiceTest {
   void allCostsPresent_scheduleMet() {
     draft();
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(1, "Loc A", null)));
+        new LocationRow(1, "Loc A", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), 5000)));
 
@@ -69,7 +69,7 @@ class Schedule4CheckStatusServiceTest {
   @Test
   void zeroCost_countsAsPresent_met() {
     draft();
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null)));
+    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), 0))); // cost 0 is present, NOT missing
 
@@ -82,7 +82,7 @@ class Schedule4CheckStatusServiceTest {
   @Test
   void nullCategoryCost_issuesWithValueRequired() {
     draft();
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null)));
+    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), null))); // cost missing
 
@@ -104,8 +104,8 @@ class Schedule4CheckStatusServiceTest {
     // A distance category (47) whose report DISTANCE is null but Cost is present -> still MET
     // (§Decision 2: distance is not enforced; only Cost is).
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(1, "Loc A", null),
-        new LocationRow(2, "Loc A", null)));
+        new LocationRow(1, "Loc A", null, 0),
+        new LocationRow(2, "Loc A", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), 5000),
         new DetailRow(2, 47, bd("50"), 2000)));
@@ -118,7 +118,7 @@ class Schedule4CheckStatusServiceTest {
   @Test
   void subPageRowNullCost_fails() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null)));
+    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), 5000)));
     when(repository.findSubPageRows(MILL, YEAR)).thenReturn(List.of(
@@ -135,8 +135,8 @@ class Schedule4CheckStatusServiceTest {
   void mixed_someLocationsPassOthersFail_scheduleNotMet() {
     draft();
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(1, "Pass Loc", null),
-        new LocationRow(2, "Fail Loc", null)));
+        new LocationRow(1, "Pass Loc", null, 0),
+        new LocationRow(2, "Fail Loc", null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(1, 40, bd("100"), 5000),   // Pass Loc OK
         new DetailRow(2, 41, bd("200"), null))); // Fail Loc missing cost
