@@ -6,6 +6,7 @@ export const ROUTES = {
   scheduleOne: '/schedule-1',
   scheduleTwo: '/schedule-2',
   scheduleFour: '/schedule-4',
+  scheduleEight: '/schedule-8',
   millAssociations: '/mill-associations',
   submissions: '/submissions',
 } as const
@@ -47,6 +48,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
       { name: 'Schedule 1', path: ROUTES.scheduleOne },
       { name: 'Schedule 2', path: ROUTES.scheduleTwo },
       { name: 'Schedule 4', path: ROUTES.scheduleFour },
+      { name: 'Schedule 8', path: ROUTES.scheduleEight },
     ],
   },
   {
