@@ -15,6 +15,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -40,6 +41,13 @@ class Schedule4ServiceTest {
 
   @InjectMocks
   private Schedule4Service service;
+
+  @BeforeEach
+  void noSubPageRowsByDefault() {
+    // Story 4.3 read extension: getSchedule4 now queries sub-page rows; these read tests assert the
+    // category grid only, so default the sub-page query to empty (per-test overrides as needed).
+    lenient().when(repository.findSubPageRows(MILL, YEAR)).thenReturn(List.of());
+  }
 
   private static void eq(String expected, BigDecimal actual) {
     assertEquals(0, new BigDecimal(expected).compareTo(actual),

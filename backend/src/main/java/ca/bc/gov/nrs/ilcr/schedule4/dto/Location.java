@@ -15,9 +15,16 @@ import java.util.List;
  * each of which lives on its own {@code TRANSPORTATION_REPORT} row and carries its OWN distance (see
  * {@link CategoryAmount#distance()}). Delivery-DB confirmed: distance is per-category, NOT a single
  * per-location value. A name-only location has an empty list.
+ *
+ * <p>{@code subPageRows} holds this location's list-based sub-page rows (Story 4.3): Towing Total
+ * (43), Truck Rehaul (46, with cycle), and Other Transportation (55) — each its own
+ * {@code TRANSPORTATION_REPORT} sharing the location name (see {@link SubPageRow}). Kept separate from
+ * {@code categories} because they are free-text list rows, not the fixed category grid. Empty when
+ * the location has no sub-page rows.
  */
 public record Location(
     Integer id,
     String name,
-    List<CategoryAmount> categories) {
+    List<CategoryAmount> categories,
+    List<SubPageRow> subPageRows) {
 }

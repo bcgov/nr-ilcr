@@ -1,15 +1,20 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
+import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRow;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -122,9 +127,29 @@ public class Schedule4Service {
           perUnit(bd(d.cost()), d.volume())));
     }
 
+    // Sub-page list rows (Story 4.3): each its own report sharing the location name; grouped under
+    // the location, kept separate from the fixed/distance category grid.
+    Map<String, List<SubPageRow>> subPageByName = new HashMap<>();
+    for (SubPageRowRow r : repository.findSubPageRows(millId, year)) {
+      if (r.costItemCode() == null) {
+        continue;
+      }
+      subPageByName.computeIfAbsent(r.locationDescription(), k -> new ArrayList<>())
+          .add(new SubPageRow(
+              r.transportationReportId(),
+              r.costItemCode(),
+              r.description(),
+              normalize(r.distance()),
+              normalize(r.volume()),
+              r.cost(),
+              r.cycle(),
+              perUnit(bd(r.cost()), r.volume())));
+    }
+
     List<Location> locations = new ArrayList<>(categoriesByName.size());
     categoriesByName.forEach((name, categories) -> locations.add(new Location(
-        primaryIdByName.getOrDefault(name, minIdByName.get(name)), name, categories)));
+        primaryIdByName.getOrDefault(name, minIdByName.get(name)), name, categories,
+        subPageByName.getOrDefault(name, List.of()))));
 
     return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
   }
@@ -219,6 +244,71 @@ public class Schedule4Service {
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
+  }
+
+  /**
+   * Add one sub-page list row (Towing/Truck Rehaul/Other) to a location and return the recomputed
+   * document (Story 4.3, S03–S06). A row is its OWN {@code TRANSPORTATION_REPORT} sharing the
+   * location's name + a single detail (item 43/46/55 with {@code ITEM_DESCRIPTION}); {@code cycle} is
+   * written for Truck Rehaul only. Draft gate (AD-9); unknown {@code locationId} → 404; persistence
+   * fault → 500 (type-only log). The mill/year context is validated in the controller (AD-4).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param locationId the parent location's primary report id (its {@link Location#id()})
+   * @param request the row type, description, and amounts (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 4 document
+   */
+  @Transactional
+  public Schedule4Response addSubPageRow(long millId, int year, int locationId,
+      Schedule4SubPageRowRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    String name = repository.findLocationName(locationId).orElse(null);
+    if (name == null) {
+      throw new ScheduleNotFoundException(); // 404 — no such location to attach the row to
+    }
+    try {
+      Integer cycle = request.type() == SubPageRowType.TRUCK_REHAUL ? request.cycle() : null;
+      int rowId = repository.insertSubPageReport(millId, year, name, request.distance(), cycle, user);
+      repository.insertDetailWithDescription(rowId, request.type().code(),
+          request.volume(), request.cost(), request.description().trim(), user);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 4 sub-page add failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule4(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete one sub-page list row (its whole {@code TRANSPORTATION_REPORT} + cascaded detail) and
+   * return the recomputed document (Story 4.3, S11 / BR-08). Draft gate (AD-9). Idempotent: an
+   * unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report) —
+   * is a no-op success, so this endpoint can never delete a location. Fixes the legacy Other-sub-page
+   * bug by returning the "deleted" semantics for all three types (§Decision 4). Context validated in
+   * the controller (AD-4).
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param rowId the sub-page row's own report id
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @return the recomputed Schedule 4 document
+   */
+  @Transactional
+  public Schedule4Response deleteSubPageRow(long millId, int year, int rowId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    if (repository.isSubPageRow(rowId, millId, year)) {
+      try {
+        repository.deleteReport(rowId);
+      } catch (DataAccessException ex) {
+        log.warn("Schedule 4 sub-page delete failed for mill {} year {} [{}]",
+            millId, year, ex.getClass().getSimpleName());
+        throw new ScheduleNotSavedException();
+      }
+    }
+    return getSchedule4(millId, year, callerMayEdit);
   }
 
   /**

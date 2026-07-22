@@ -3,11 +3,14 @@ package ca.bc.gov.nrs.ilcr.schedule4.api;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -76,5 +79,46 @@ public interface Schedule4Api {
       @RequestParam long millId,
       @RequestParam int year,
       @RequestParam int id,
+      Authentication authentication);
+
+  /**
+   * Add one sub-page list row (Towing/Truck Rehaul/Other) to a location and return the recomputed
+   * document (Story 4.3, S03–S06). {@code request.type} selects the code (43/46/55); {@code cycle}
+   * applies to Truck Rehaul only. Row range/description violations → 400; a non-Draft track → 409;
+   * an unknown {@code locationId} → 404; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param locationId the parent location's id (its {@code Location.id}, primary report id)
+   * @param request the row type, description, and amounts (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PostMapping("/locations/{locationId}/rows")
+  ResponseEntity<Schedule4Response> addSubPageRow(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int locationId,
+      @Valid @RequestBody Schedule4SubPageRowRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one sub-page list row (its whole report + cascaded detail) and return the recomputed
+   * document (Story 4.3, S11 / BR-08). Idempotent: an unknown/non-sub-page {@code rowId} is a no-op
+   * 200 (never deletes a location). Non-Draft track → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param locationId the parent location's id (path symmetry; the delete targets {@code rowId})
+   * @param rowId the sub-page row's own report id
+   * @param authentication the caller (drives EDIT_SCHEDULE)
+   * @return 200 with the recomputed document carrying the deleted {@code message} (AD-8)
+   */
+  @DeleteMapping("/locations/{locationId}/rows/{rowId}")
+  ResponseEntity<Schedule4Response> deleteSubPageRow(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int locationId,
+      @PathVariable int rowId,
       Authentication authentication);
 }

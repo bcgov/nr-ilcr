@@ -55,6 +55,7 @@ class Schedule4WriteServiceTest {
   private void stubRecompute() {
     lenient().when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+    lenient().when(repository.findSubPageRows(MILL, YEAR)).thenReturn(List.of());
   }
 
   @Test

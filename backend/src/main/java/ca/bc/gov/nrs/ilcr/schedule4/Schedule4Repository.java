@@ -44,6 +44,16 @@ public class Schedule4Repository {
       Integer cost) {
   }
 
+  /**
+   * One sub-page list row (Story 4.3): its own report ({@code transportationReportId}) sharing the
+   * location name, its {@code costItemCode} (43/46/55), free-text {@code description}, per-report
+   * {@code distance}/{@code cycle}, and the single detail's {@code volume}/{@code cost}.
+   */
+  public record SubPageRowRow(int transportationReportId, String locationDescription,
+      Integer costItemCode, String description, BigDecimal distance, Integer cycle,
+      BigDecimal volume, Integer cost) {
+  }
+
   private final JdbcClient jdbcClient;
 
   public Schedule4Repository(JdbcClient jdbcClient) {
@@ -104,6 +114,42 @@ public class Schedule4Repository {
         .query((rs, rowNum) -> new DetailRow(
             rs.getInt("TRANSPORTATION_REPORT_ID"),
             nullableInt(rs, "ILCR_REPORT_COST_ITEM_ID"),
+            rs.getBigDecimal("VOLUME"),
+            nullableInt(rs, "COST")))
+        .list();
+  }
+
+  /**
+   * The sub-page list rows (Story 4.3) for a mill/year: category-{@code "4"}
+   * {@code TRANSPORTATION_REPORT} rows whose single detail is a sub-page code (43 Towing, 46 Truck
+   * Rehaul, 55 Other). Dead code 54 is excluded. Ordered by ({@code TRANSPORTATION_REPORT_ID},
+   * {@code ILCR_COST_REPORT_DETAIL_ID}); the service groups by {@code LOCATION_DESCRIPTION}.
+   */
+  public List<SubPageRowRow> findSubPageRows(long millId, int year) {
+    return jdbcClient.sql(
+            """
+            SELECT tr.TRANSPORTATION_REPORT_ID, tr.LOCATION_DESCRIPTION,
+                   d.ILCR_REPORT_COST_ITEM_ID, d.ITEM_DESCRIPTION,
+                   tr.DISTANCE, tr.TRANSPORTATION_CYCLE_TIME, d.VOLUME, d.COST
+              FROM THE.TRANSPORTATION_REPORT tr
+              JOIN THE.ILCR_COST_REPORT_DETAIL d
+                ON d.TRANSPORTATION_REPORT_ID = tr.TRANSPORTATION_REPORT_ID
+             WHERE tr.ILCR_MILL_ID = :millId
+               AND tr.REPORT_YEAR = :year
+               AND tr.ILCR_CATEGORY_ID = :categoryId
+               AND d.ILCR_REPORT_COST_ITEM_ID IN (43, 46, 55)
+             ORDER BY tr.TRANSPORTATION_REPORT_ID, d.ILCR_COST_REPORT_DETAIL_ID
+            """)
+        .param("millId", millId)
+        .param("year", year)
+        .param("categoryId", SCHEDULE_4_CATEGORY)
+        .query((rs, rowNum) -> new SubPageRowRow(
+            rs.getInt("TRANSPORTATION_REPORT_ID"),
+            rs.getString("LOCATION_DESCRIPTION"),
+            nullableInt(rs, "ILCR_REPORT_COST_ITEM_ID"),
+            rs.getString("ITEM_DESCRIPTION"),
+            rs.getBigDecimal("DISTANCE"),
+            nullableInt(rs, "TRANSPORTATION_CYCLE_TIME"),
             rs.getBigDecimal("VOLUME"),
             nullableInt(rs, "COST")))
         .list();
@@ -408,5 +454,94 @@ public class Schedule4Repository {
         .param("code", code)
         .query(Integer.class)
         .optional();
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Sub-page list rows (Story 4.3) — each row is its own TRANSPORTATION_REPORT (shared name) + one
+  // detail (item 43/46/55, ITEM_DESCRIPTION). Delete reuses deleteReport(rowId), guarded by
+  // isSubPageRow so a row-delete can never remove a location's primary/category report.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Insert a new sub-page-row {@code TRANSPORTATION_REPORT} (category {@code "4"}, shared
+   * {@code LOCATION_DESCRIPTION}, own {@code DISTANCE} + {@code TRANSPORTATION_CYCLE_TIME}) at
+   * {@code REVISION_COUNT} 0 and return its id. {@code cycle} is written for Truck Rehaul only (null
+   * otherwise).
+   */
+  public int insertSubPageReport(long millId, int year, String name, BigDecimal distance,
+      Integer cycle, String user) {
+    int reportId = jdbcClient.sql("SELECT THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL FROM DUAL")
+        .query(Integer.class)
+        .single();
+    jdbcClient.sql(
+            """
+            INSERT INTO THE.TRANSPORTATION_REPORT
+                (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT,
+                 ENTRY_USERID, ENTRY_TIMESTAMP)
+            VALUES
+                (:id, :year, :millId, :categoryId, :name, :distance, :cycle, 0, :user, SYSTIMESTAMP)
+            """)
+        .param("id", reportId)
+        .param("year", year)
+        .param("millId", millId)
+        .param("categoryId", SCHEDULE_4_CATEGORY)
+        .param("name", name)
+        .param("distance", distance)
+        .param("cycle", cycle)
+        .param("user", user)
+        .update();
+    return reportId;
+  }
+
+  /**
+   * Insert the single {@code ILCR_COST_REPORT_DETAIL} for a sub-page row (item 43/46/55) with its
+   * free-text {@code ITEM_DESCRIPTION} (legacy {@code saveOrUpdateTransportationCostDetails}).
+   */
+  public void insertDetailWithDescription(int reportId, int costItemCode, BigDecimal volume,
+      Integer cost, String description, String user) {
+    jdbcClient.sql(
+            """
+            INSERT INTO THE.ILCR_COST_REPORT_DETAIL
+                (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
+                 VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+            VALUES
+                (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
+                 :volume, :cost, :description, :user, SYSTIMESTAMP)
+            """)
+        .param("reportId", reportId)
+        .param("code", costItemCode)
+        .param("volume", volume)
+        .param("cost", cost)
+        .param("description", description)
+        .param("user", user)
+        .update();
+  }
+
+  /**
+   * Whether {@code reportId} is a sub-page-list row (its own report for this mill/year with a single
+   * detail of code 43/46/55) — the guard that keeps the row-delete endpoint from removing a primary
+   * or category report. False for an unknown/foreign id (→ idempotent no-op delete).
+   */
+  public boolean isSubPageRow(int reportId, long millId, int year) {
+    Integer count = jdbcClient.sql(
+            """
+            SELECT COUNT(*)
+              FROM THE.TRANSPORTATION_REPORT tr
+              JOIN THE.ILCR_COST_REPORT_DETAIL d
+                ON d.TRANSPORTATION_REPORT_ID = tr.TRANSPORTATION_REPORT_ID
+             WHERE tr.TRANSPORTATION_REPORT_ID = :id
+               AND tr.ILCR_MILL_ID = :millId
+               AND tr.REPORT_YEAR = :year
+               AND tr.ILCR_CATEGORY_ID = :categoryId
+               AND d.ILCR_REPORT_COST_ITEM_ID IN (43, 46, 55)
+            """)
+        .param("id", reportId)
+        .param("millId", millId)
+        .param("year", year)
+        .param("categoryId", SCHEDULE_4_CATEGORY)
+        .query(Integer.class)
+        .single();
+    return count != null && count > 0;
   }
 }

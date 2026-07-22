@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -72,6 +73,43 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   void put_submitter_passesAuthorization() throws Exception {
     mockMvc.perform(put(ENDPOINT).param("millId", "543").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(BODY)
+            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().is2xxSuccessful());
+  }
+
+  // ---- Sub-page row write verbs (Story 4.3) share the EDIT_SCHEDULE gate. -------------------------
+
+  private static final String ROWS = "/api/v1/schedule4/locations/8020/rows";
+  private static final String ROW_BODY = """
+      { "type": "TOWING", "description": "Authz row", "distance": 10.0, "volume": 50, "cost": 2000,
+        "cycle": null }
+      """;
+
+  @Test
+  @DisplayName("no EDIT_SCHEDULE -> POST row 403 problem+json")
+  void postRow_noPermission_returns403() throws Exception {
+    mockMvc.perform(post(ROWS).param("millId", "543").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("no EDIT_SCHEDULE -> DELETE row 403 problem+json")
+  void deleteRow_noPermission_returns403() throws Exception {
+    mockMvc.perform(delete("/api/v1/schedule4/locations/8020/rows/999999")
+            .param("millId", "543").param("year", "2021")
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> POST row passes authz (not 403)")
+  void postRow_submitter_passesAuthorization() throws Exception {
+    mockMvc.perform(post(ROWS).param("millId", "543").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }

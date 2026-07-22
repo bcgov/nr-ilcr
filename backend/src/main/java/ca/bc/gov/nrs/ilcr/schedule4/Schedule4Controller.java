@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.api.Schedule4Api;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
@@ -75,5 +76,28 @@ public class Schedule4Controller implements Schedule4Api {
     millContextService.validateMillYearActive(millId, year);
     schedule4Service.deleteLocation(millId, year, id);
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule4Response> addSubPageRow(
+      long millId, int year, int locationId, Schedule4SubPageRowRequest request,
+      Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule4Response saved =
+        schedule4Service.addSubPageRow(millId, year, locationId, request, callerMayEdit, user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule4Response> deleteSubPageRow(
+      long millId, int year, int locationId, int rowId, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    Schedule4Response updated = schedule4Service.deleteSubPageRow(millId, year, rowId, callerMayEdit);
+    return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 }

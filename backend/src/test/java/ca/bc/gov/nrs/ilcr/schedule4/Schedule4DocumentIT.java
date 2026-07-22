@@ -66,21 +66,34 @@ class Schedule4DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.locations[0].categories[3].volume", is(300)))
         .andExpect(jsonPath("$.locations[0].categories[3].cost").doesNotExist())
         .andExpect(jsonPath("$.locations[0].categories[3].perUnit").doesNotExist())
-        // Location "Empty Landing": name-only, empty category list.
+        // Harbour Dump's sub-page list (Story 4.3): the 43 Towing row (report 7013) — its OWN report
+        // sharing the location name, surfaced as a subPageRow (NOT a category), with its description.
+        .andExpect(jsonPath("$.locations[0].subPageRows.length()", is(1)))
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].code", is(43)))
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].description", is("Deferred towing row")))
+        // 50.0 naturalizes to the integer 50 (whole-value wire-contract parity, like other distances).
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].distance", is(50)))
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].volume", is(999)))
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].cost", is(99999)))
+        .andExpect(jsonPath("$.locations[0].subPageRows[0].cycle").doesNotExist())
+        // Location "Empty Landing": name-only, empty category + sub-page lists.
         .andExpect(jsonPath("$.locations[1].name", is("Empty Landing")))
-        .andExpect(jsonPath("$.locations[1].categories.length()", is(0)));
+        .andExpect(jsonPath("$.locations[1].categories.length()", is(0)))
+        .andExpect(jsonPath("$.locations[1].subPageRows.length()", is(0)));
   }
 
   @Test
-  @DisplayName("514/2021 — deferred sub-page code (43 Towing) is filtered out of the grid")
-  void deferredCodesFilteredOut() throws Exception {
+  @DisplayName("514/2021 — 43 Towing is a sub-page row, NOT a category (grid excludes it)")
+  void subPageCodeExcludedFromCategoryGrid() throws Exception {
     mockMvc.perform(get(ENDPOINT)
             .param("millId", "514")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        // Location A has exactly the 4 in-scope codes seeded (40,41,47,52) — never 43.
-        .andExpect(jsonPath("$.locations[0].categories[?(@.code == 43)]").isEmpty());
+        // The category grid has exactly the 4 in-scope category codes (40,41,47,52) — never 43...
+        .andExpect(jsonPath("$.locations[0].categories[?(@.code == 43)]").isEmpty())
+        // ...but 43 IS present as a sub-page list row (Story 4.3 read extension).
+        .andExpect(jsonPath("$.locations[0].subPageRows[?(@.code == 43)]").isNotEmpty());
   }
 
   @Test
