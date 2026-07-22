@@ -8,6 +8,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,36 +63,44 @@ public class Schedule4Service {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
+    // A location spans MULTIPLE TRANSPORTATION_REPORT rows sharing LOCATION_DESCRIPTION (delivery-DB
+    // confirmed): one primary report carries the 9 fixed categories (distance null); each distance
+    // category 47/48/52 is its OWN report with its OWN distance. So group by location NAME and take a
+    // distance-category's distance from the report that detail belongs to — never a single
+    // per-location value. Report order (legacy findTransportationReportDetails) is by report id;
+    // the LinkedHashMap keeps first-seen (lowest report id) location order.
     List<LocationRow> locationRows = repository.findLocations(millId, year);
-    // Group the flat in-scope detail rows by their TRANSPORTATION_REPORT_ID (one query, no N+1).
-    Map<Integer, List<DetailRow>> detailsByLocation = new LinkedHashMap<>();
-    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
-      detailsByLocation.computeIfAbsent(d.transportationReportId(), k -> new ArrayList<>()).add(d);
+    Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
+    Map<Integer, String> nameByReport = new HashMap<>();
+    Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
+    for (LocationRow loc : locationRows) {
+      distanceByReport.put(loc.transportationReportId(), loc.distance());
+      nameByReport.put(loc.transportationReportId(), loc.locationDescription());
+      categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
     }
 
-    List<Location> locations = new ArrayList<>(locationRows.size());
-    for (LocationRow loc : locationRows) {
-      List<DetailRow> details =
-          detailsByLocation.getOrDefault(loc.transportationReportId(), List.of());
-      List<CategoryAmount> categories = new ArrayList<>(details.size());
-      for (DetailRow d : details) {
-        if (d.costItemCode() == null) {
-          continue;
-        }
-        boolean isDistance = DISTANCE_CODES.contains(d.costItemCode());
-        // The distance is a per-location value (TRANSPORTATION_REPORT.DISTANCE); mirror it onto the
-        // distance-based categories only, null for the fixed categories.
-        BigDecimal categoryDistance = isDistance ? normalize(loc.distance()) : null;
-        categories.add(new CategoryAmount(
-            d.costItemCode(),
-            isDistance ? KIND_DISTANCE : KIND_FIXED,
-            normalize(d.volume()),
-            d.cost(),
-            categoryDistance,
-            perUnit(bd(d.cost()), d.volume())));
+    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
+      if (d.costItemCode() == null) {
+        continue;
       }
-      locations.add(new Location(loc.locationDescription(), normalize(loc.distance()), categories));
+      String name = nameByReport.get(d.transportationReportId());
+      if (name == null) {
+        continue; // detail's report is not a category-"4" location row (defensive)
+      }
+      boolean isDistance = DISTANCE_CODES.contains(d.costItemCode());
+      BigDecimal categoryDistance =
+          isDistance ? normalize(distanceByReport.get(d.transportationReportId())) : null;
+      categoriesByName.get(name).add(new CategoryAmount(
+          d.costItemCode(),
+          isDistance ? KIND_DISTANCE : KIND_FIXED,
+          normalize(d.volume()),
+          d.cost(),
+          categoryDistance,
+          perUnit(bd(d.cost()), d.volume())));
     }
+
+    List<Location> locations = new ArrayList<>(categoriesByName.size());
+    categoriesByName.forEach((name, categories) -> locations.add(new Location(name, categories)));
 
     return new Schedule4Response(millId, year, trackStatus, editable, locations);
   }

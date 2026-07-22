@@ -11,9 +11,10 @@ import java.math.BigDecimal;
  * (40,41,42,44,45,49,50,51,53) and {@code "DISTANCE"} for the 3 distance-based categories (47 Truck
  * Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul). {@code volume} may be fractional (legacy
  * {@code VOLUME} is a {@code Double}); {@code cost} is whole dollars (legacy {@code COST} is an
- * {@code Integer}). {@code distance} is populated only for {@code kind=="DISTANCE"} — it mirrors the
- * per-location {@code TRANSPORTATION_REPORT.DISTANCE} (the source of truth is {@link Location#distance});
- * it is null (omitted) for {@code FIXED} categories. {@code perUnit} ($/m³) is derived server-side
+ * {@code Integer}). {@code distance} is populated only for {@code kind=="DISTANCE"} — it is that
+ * category's OWN {@code TRANSPORTATION_REPORT.DISTANCE} (each distance category lives on its own
+ * report; delivery-DB confirmed, so two distance categories on the same location can differ); it is
+ * null (omitted) for {@code FIXED} categories. {@code perUnit} ($/m³) is derived server-side
  * (AD-6, cost ÷ volume) and is read-only; null when volume is null or zero.
  *
  * <p>All fields are nullable and, with the app-wide Jackson {@code non_null} inclusion, omitted from

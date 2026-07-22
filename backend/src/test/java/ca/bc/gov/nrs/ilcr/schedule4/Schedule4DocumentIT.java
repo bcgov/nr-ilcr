@@ -37,31 +37,32 @@ class Schedule4DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.locations.length()", is(2)))
-        // Location A (TR 7001), ordered first.
+        // Location "Harbour Dump" — a family of reports (7001 primary + 7011/7012) collapsed to one.
         .andExpect(jsonPath("$.locations[0].name", is("Harbour Dump")))
-        .andExpect(jsonPath("$.locations[0].distance", is(120.5)))
         .andExpect(jsonPath("$.locations[0].categories.length()", is(4)))
-        // 40 Lakeside Dry Dump (FIXED): vol 2000 / cost 100000 / perUnit 50.0, no distance.
+        // 40 Lakeside Dry Dump (FIXED, primary report): vol 2000 / cost 100000 / perUnit 50.0, no distance.
         .andExpect(jsonPath("$.locations[0].categories[0].code", is(40)))
         .andExpect(jsonPath("$.locations[0].categories[0].kind", is("FIXED")))
         .andExpect(jsonPath("$.locations[0].categories[0].volume", is(2000)))
         .andExpect(jsonPath("$.locations[0].categories[0].cost", is(100000)))
         .andExpect(jsonPath("$.locations[0].categories[0].perUnit", is(50.0)))
         .andExpect(jsonPath("$.locations[0].categories[0].distance").doesNotExist())
-        // 47 Truck Barge/Ferry (DISTANCE): vol 500 / cost 25000 / perUnit 50.0, distance mirrored.
+        // 47 Truck Barge/Ferry (DISTANCE): its OWN report's distance 120.5; vol 500 / cost 25000 / 50.0.
         .andExpect(jsonPath("$.locations[0].categories[2].code", is(47)))
         .andExpect(jsonPath("$.locations[0].categories[2].kind", is("DISTANCE")))
         .andExpect(jsonPath("$.locations[0].categories[2].distance", is(120.5)))
         .andExpect(jsonPath("$.locations[0].categories[2].perUnit", is(50.0)))
-        // 52 Rail Haul (DISTANCE): vol 300 / cost null (missing) -> perUnit omitted, volume shown.
+        // 52 Rail Haul (DISTANCE): its OWN report's distance 88.0 — DIFFERENT from 47's 120.5, proving
+        // per-category distance. vol 300 / cost null (missing) -> perUnit omitted, volume shown.
         .andExpect(jsonPath("$.locations[0].categories[3].code", is(52)))
+        .andExpect(jsonPath("$.locations[0].categories[3].kind", is("DISTANCE")))
+        .andExpect(jsonPath("$.locations[0].categories[3].distance", is(88.0)))
         .andExpect(jsonPath("$.locations[0].categories[3].volume", is(300)))
         .andExpect(jsonPath("$.locations[0].categories[3].cost").doesNotExist())
         .andExpect(jsonPath("$.locations[0].categories[3].perUnit").doesNotExist())
-        // Location B (TR 7002): name-only, empty category list, no distance.
+        // Location "Empty Landing": name-only, empty category list.
         .andExpect(jsonPath("$.locations[1].name", is("Empty Landing")))
-        .andExpect(jsonPath("$.locations[1].categories.length()", is(0)))
-        .andExpect(jsonPath("$.locations[1].distance").doesNotExist());
+        .andExpect(jsonPath("$.locations[1].categories.length()", is(0)));
   }
 
   @Test
