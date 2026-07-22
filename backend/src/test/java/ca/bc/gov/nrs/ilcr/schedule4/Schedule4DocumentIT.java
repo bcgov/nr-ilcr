@@ -10,15 +10,19 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * Acceptance test — Schedule 4 read (AD-5, AD-10, AD-12). GET /api/v1/schedule4 location list.
  *
- * <p>Security OFF (no {@code @TestPropertySource}) so the mock {@code ILCR_SUBMITTER} principal
+ * <p>Security OFF ({@code ilcr.security.enabled=false}) so the mock {@code ILCR_SUBMITTER} principal
  * applies, isolating document assembly from authz (covered by {@link Schedule4AuthorizationIT}).
- * Asserts the pinned wire contract and the server-computed perUnit against the V7 seed.
+ * (Explicit here because the merged runtime default is fail-closed {@code true}, which would require a
+ * {@code JwtDecoder} the non-auth IT does not supply.) Asserts the pinned wire contract and the
+ * server-computed perUnit against the V7 seed.
  */
 @DisplayName("GET /api/v1/schedule4 — location list (Schedule 4 read)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule4DocumentIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule4";
@@ -52,11 +56,11 @@ class Schedule4DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.locations[0].categories[2].kind", is("DISTANCE")))
         .andExpect(jsonPath("$.locations[0].categories[2].distance", is(120.5)))
         .andExpect(jsonPath("$.locations[0].categories[2].perUnit", is(50.0)))
-        // 52 Rail Haul (DISTANCE): its OWN report's distance 88.0 — DIFFERENT from 47's 120.5, proving
+        // 52 Rail Haul (DISTANCE): its OWN report's distance 88.5 — DIFFERENT from 47's 120.5, proving
         // per-category distance. vol 300 / cost null (missing) -> perUnit omitted, volume shown.
         .andExpect(jsonPath("$.locations[0].categories[3].code", is(52)))
         .andExpect(jsonPath("$.locations[0].categories[3].kind", is("DISTANCE")))
-        .andExpect(jsonPath("$.locations[0].categories[3].distance", is(88.0)))
+        .andExpect(jsonPath("$.locations[0].categories[3].distance", is(88.5)))
         .andExpect(jsonPath("$.locations[0].categories[3].volume", is(300)))
         .andExpect(jsonPath("$.locations[0].categories[3].cost").doesNotExist())
         .andExpect(jsonPath("$.locations[0].categories[3].perUnit").doesNotExist())

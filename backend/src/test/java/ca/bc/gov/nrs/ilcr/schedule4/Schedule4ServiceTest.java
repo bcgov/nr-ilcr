@@ -56,14 +56,14 @@ class Schedule4ServiceTest {
   /**
    * Two-location Draft fixture matching the V7 514/2021 numbers. "Harbour Dump" is a FAMILY: a primary
    * report 7001 (distance null) with the fixed categories, plus report 7011 (distance 120.5) for
-   * category 47 and report 7012 (distance 88.0 — DIFFERENT) for category 52.
+   * category 47 and report 7012 (distance 88.5 — DIFFERENT) for category 52.
    */
   private void stubTwoLocationDraft() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
         new LocationRow(7001, "Harbour Dump", null),                 // primary, no distance
         new LocationRow(7011, "Harbour Dump", new BigDecimal("120.5")), // 47's own report
-        new LocationRow(7012, "Harbour Dump", new BigDecimal("88.0")),  // 52's own report
+        new LocationRow(7012, "Harbour Dump", new BigDecimal("88.5")),  // 52's own report
         new LocationRow(7002, "Empty Landing", null)));
     when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
         new DetailRow(7001, 40, new BigDecimal("2000"), 100000), // fixed
@@ -101,7 +101,7 @@ class Schedule4ServiceTest {
     eq("120.5", truckBarge.distance());
     CategoryAmount railHaul = categoryByCode(a, 52);
     assertEquals("DISTANCE", railHaul.kind());
-    eq("88.0", railHaul.distance());
+    eq("88.5", railHaul.distance());
   }
 
   @Test
