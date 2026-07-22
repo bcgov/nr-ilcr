@@ -17,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.jdbc.JdbcTestUtils;
+import org.springframework.test.context.TestPropertySource;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 /**
  * Acceptance test — Story 3.2. PUT (save) + DELETE /api/v1/schedule2.
@@ -32,6 +34,7 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * at runtime so they stay order-independent.
  */
 @DisplayName("PUT/DELETE /api/v1/schedule2 — write path (Story 3.2)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule2WriteIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2";
@@ -69,7 +72,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("update — 522 Draft PUT persists 25/26, bumps revision, echoes recomputed doc + save msg")
   void put_update_persistsRecomputesBumps() throws Exception {
     int before = revisionOf(1022);
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(before, 500000, 2000, 100000))
             .accept(MediaType.APPLICATION_JSON))
@@ -99,7 +102,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
 
     // An unsaved GET omits revisionCount; the client sends 0 (the freshly-inserted summary's rev).
     // revisionCount is @NotNull, so a literal null is a 400 — the create token is 0, not null.
-    mockMvc.perform(put(ENDPOINT).param("millId", "515").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "515").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(0, 250000, 1000, 40000))
             .accept(MediaType.APPLICATION_JSON))
@@ -121,7 +124,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("clear — 522 PUT with item 25 cost null clears the stored value to null")
   void put_clearItem25_persistsNull() throws Exception {
     int before = revisionOf(1022);
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(before, null, 2000, 100000))
             .accept(MediaType.APPLICATION_JSON))
@@ -167,7 +170,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("item 26 cost = 999,999,999 (widened costSize 9) PASSES; item 25 = 99,999,999 also OK")
   void put_widenedBoundaries_pass() throws Exception {
     int before = revisionOf(1022);
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(before, 99999999, 1000, 999999999))
             .accept(MediaType.APPLICATION_JSON))
@@ -193,7 +196,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
 
   private void expect400NothingPersisted(String requestBody, String verbatimDetail) throws Exception {
     int before = revisionOf(1022);
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(requestBody))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
@@ -207,7 +210,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("PUT against non-Draft (mill 523, track S) -> 409, no change")
   void put_nonDraft_returns409() throws Exception {
     int before = revisionOf(1023);
-    mockMvc.perform(put(ENDPOINT).param("millId", "523").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "523").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(before, 1, 1, 1)))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
@@ -218,7 +221,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("DELETE against non-Draft (mill 523, track S) -> 409, row survives")
   void delete_nonDraft_returns409() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "523").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT).with(csrf()).param("millId", "523").param("year", "2021"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
     assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
@@ -231,19 +234,19 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("stale revisionCount -> 409; reload + retry with N+1 -> 200")
   void put_staleRevision_returns409_thenRetrySucceeds() throws Exception {
     int n = revisionOf(1022);
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(n, 500000, 2000, 100000)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(n + 1)));
     // Second writer still holds the stale token N -> rejected, no overwrite.
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(n, 500000, 2000, 100000)))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.detail",
             is("This schedule was changed by another user. Please reload and try again.")));
     assertEquals(n + 1, revisionOf(1022), "the stale PUT must not overwrite");
     // Reload the fresh token and retry -> succeeds.
-    mockMvc.perform(put(ENDPOINT).param("millId", "522").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "522").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(n + 1, 500000, 2000, 100000)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(greaterThan(n + 1))));
@@ -255,7 +258,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
   @DisplayName("DELETE — 525 Draft removes summary + 25/26; re-GET is the empty editable doc; idempotent")
   void delete_removesWholeSchedule() throws Exception {
     // Precondition: 525 has a summary + details.
-    mockMvc.perform(delete(ENDPOINT).param("millId", "525").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT).with(csrf()).param("millId", "525").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
     assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
@@ -269,7 +272,7 @@ class Schedule2WriteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.revisionCount").doesNotExist());
     // Idempotent: a second DELETE on the now-empty schedule still returns 200 (never 404).
-    mockMvc.perform(delete(ENDPOINT).param("millId", "525").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT).with(csrf()).param("millId", "525").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
   }

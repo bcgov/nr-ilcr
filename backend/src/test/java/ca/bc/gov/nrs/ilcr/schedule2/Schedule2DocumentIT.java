@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * Acceptance test — Story 3.1 (AD-5, AD-10, AD-12). GET /api/v1/schedule2 aggregate document.
@@ -19,6 +20,7 @@ import org.springframework.http.MediaType;
  * Asserts the pinned wire contract and the exact server-computed derived figures against the V5 seed.
  */
 @DisplayName("GET /api/v1/schedule2 — aggregate document (Story 3.1)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule2DocumentIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2";

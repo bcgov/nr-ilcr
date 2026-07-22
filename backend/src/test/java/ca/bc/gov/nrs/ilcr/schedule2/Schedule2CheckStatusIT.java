@@ -14,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.jdbc.JdbcTestUtils;
+import org.springframework.test.context.TestPropertySource;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 /**
  * Acceptance test — POST /api/v1/schedule2/check-status (read-only BR-07 evaluation, slices S07/S08).
@@ -28,6 +30,7 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * {@code REVISION_COUNT} are captured before and after and asserted unchanged.
  */
 @DisplayName("POST /api/v1/schedule2/check-status — read-only status evaluation (S07/S08)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule2CheckStatusIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2/check-status";
@@ -46,7 +49,7 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 item-25 cost present -> 200 MET with scheduleRequirementsMetMsg")
   void item25Present_returnsMet() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).with(csrf()).param("millId", "514").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -59,7 +62,7 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("515/2021 unsaved schedule (no summary) -> 200 ISSUES missingRequiredFieldMsg, NOT 404")
   void unsavedSchedule_returnsIssues_notFoundSuppressed() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "515").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).with(csrf()).param("millId", "515").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")))
@@ -74,12 +77,12 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
     long detailBefore = JdbcTestUtils.countRowsInTable(jdbcTemplate, DETAIL);
     int revisionBefore = revisionOf(1002); // pinned 514/2021 Schedule 2 summary
 
-    mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).with(csrf()).param("millId", "514").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));
     // An unsaved-schedule check must not create anything either.
-    mockMvc.perform(post(ENDPOINT).param("millId", "515").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).with(csrf()).param("millId", "515").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")));

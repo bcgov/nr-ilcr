@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * RED-PHASE ATDD SCAFFOLD — Story 1.1 (AD-10, AD-4, AD-8). Slices S19/S20/S21 + valid pass-through.
@@ -35,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code ilcr.security.enabled=false} for this class; then remove {@code @Disabled}.
  */
 @DisplayName("GET /api/v1/schedule1 — mill/year context guards (S19/S20/S21)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule1ContextGuardIT extends AbstractOracleIT {
 
     private static final String ENDPOINT = "/api/v1/schedule1";

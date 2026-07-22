@@ -22,6 +22,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * S23/S24 — persistence failure rolls back completely (500 / ERR-004) and an identical retry succeeds
@@ -33,6 +34,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * perturbed by other classes. Security OFF (mock {@code ILCR_SUBMITTER}).
  */
 @DisplayName("PUT /api/v1/schedule1 — persistence failure rollback + retry (Story 2.1, S23/S24)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule1WriteFailureIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule1";

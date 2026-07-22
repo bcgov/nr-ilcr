@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * RED-PHASE ATDD SCAFFOLD — Story 1.2 (AD-5, AD-10, AD-12). GET /api/v1/schedule1 200 aggregate document.
@@ -28,6 +29,7 @@ import org.springframework.http.MediaType;
  * ACTIVATION (dev-story): implement Tasks 1-5, add the V3 seed, then remove {@code @Disabled}.
  */
 @DisplayName("GET /api/v1/schedule1 — aggregate document (Story 1.2)")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule1DocumentIT extends AbstractOracleIT {
 
     private static final String ENDPOINT = "/api/v1/schedule1";
