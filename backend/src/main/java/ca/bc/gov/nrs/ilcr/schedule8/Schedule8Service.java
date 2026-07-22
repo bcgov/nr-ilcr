@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
@@ -8,6 +9,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -186,6 +188,102 @@ public class Schedule8Service {
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
+  }
+
+  /**
+   * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
+   * S01/S05). Draft gate (AD-9), per-sample optimistic lock, unknown page/sample → 404. Field/cross-
+   * field validation (Contract ID, per-% 0–100, sum ≤ 100, Helicopter/Other conditionals, ranges) is
+   * on the request DTO; this method persists and recomputes. The Y/N indicator columns are written
+   * from the request's Booleans. One transaction; a persistence fault → 500 (type-only log, AD-11).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param pageId the parent page id (its {@code TREE_TO_TRUCK_REPORT_ID})
+   * @param request the sample fields + optimistic-lock token (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 8 document
+   */
+  @Transactional
+  public Schedule8Response saveSample(long millId, int year, int pageId,
+      Schedule8SampleRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    if (!repository.pageExists(pageId, millId, year)) {
+      throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
+    }
+    String uphill = toIndicator(request.uphillDirection());
+    String waterDump = toIndicator(request.waterDumpDestination());
+    try {
+      if (request.id() == null) {
+        int id = repository.insertSample(pageId, trimToNull(request.contractId()),
+            trimToNull(request.cutBlock()), request.groundBasePct(), request.grapplePct(),
+            request.skylinePct(), request.highleadPct(), request.helicopterPct(),
+            request.otherSkiddingPct(), request.skylineSlopeDistance(),
+            request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
+            request.distance(), waterDump, uphill, trimToNull(request.skidTypeCode()),
+            request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
+        repository.bumpSampleRevision(id, 0, user); // 0 -> 1
+      } else {
+        if (!repository.sampleExists(request.id(), pageId)) {
+          throw new ScheduleNotFoundException(); // 404 — sample is not under this page
+        }
+        int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+        if (repository.bumpSampleRevision(request.id(), expectedRevision, user) == 0) {
+          throw new StaleRevisionException();
+        }
+        repository.updateSampleFields(request.id(), trimToNull(request.contractId()),
+            trimToNull(request.cutBlock()), request.groundBasePct(), request.grapplePct(),
+            request.skylinePct(), request.highleadPct(), request.helicopterPct(),
+            request.otherSkiddingPct(), request.skylineSlopeDistance(),
+            request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
+            request.distance(), waterDump, uphill, trimToNull(request.skidTypeCode()),
+            request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
+      }
+    } catch (StaleRevisionException | ScheduleNotFoundException ex) {
+      throw ex;
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 8 sample save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule8(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Delete one sample (cascading its rate details) under a page and return the recomputed document
+   * (Story 14.3, S08 / BR-05). Draft gate (AD-9). Idempotent: an unknown page or sample id is a no-op
+   * success (never 404), mirroring Schedule 2/4 deletes.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param pageId the parent page id
+   * @param sampleId the sample id to delete
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @return the recomputed Schedule 8 document
+   */
+  @Transactional
+  public Schedule8Response deleteSample(
+      long millId, int year, int pageId, int sampleId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    if (repository.pageExists(pageId, millId, year) && repository.sampleExists(sampleId, pageId)) {
+      try {
+        repository.deleteSample(sampleId);
+      } catch (DataAccessException ex) {
+        log.warn("Schedule 8 sample delete failed for mill {} year {} [{}]",
+            millId, year, ex.getClass().getSimpleName());
+        throw new ScheduleNotSavedException();
+      }
+    }
+    return getSchedule8(millId, year, callerMayEdit);
+  }
+
+  /** Map a nullable request Boolean to the legacy Y/N indicator column value (null stays null). */
+  private static String toIndicator(Boolean value) {
+    if (value == null) {
+      return null;
+    }
+    return value ? IND_YES : "N";
   }
 
   /** The Draft gate shared by the writes: the Schedules 1–10 track must be Draft (else 409). */

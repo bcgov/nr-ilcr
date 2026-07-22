@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
@@ -72,5 +73,29 @@ public class Schedule8Controller implements Schedule8Api {
     millContextService.validateMillYearActive(millId, year);
     schedule8Service.deletePage(millId, year, id);
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule8Response> saveSample(
+      long millId, int year, int pageId, Schedule8SampleRequest request,
+      Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule8Response saved =
+        schedule8Service.saveSample(millId, year, pageId, request, callerMayEdit, user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule8Response> deleteSample(
+      long millId, int year, int pageId, int id, Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    Schedule8Response updated =
+        schedule8Service.deleteSample(millId, year, pageId, id, callerMayEdit);
+    return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 }

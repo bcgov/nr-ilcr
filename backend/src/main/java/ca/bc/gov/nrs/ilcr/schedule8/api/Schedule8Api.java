@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule8.api;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -76,6 +77,48 @@ public interface Schedule8Api {
   ResponseEntity<MessageResponse> deletePage(
       @RequestParam long millId,
       @RequestParam int year,
+      @PathVariable int id,
+      Authentication authentication);
+
+  /**
+   * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
+   * S01/S03/S05). {@code request.id()} null creates; present edits. Contract ID missing → 400; an
+   * individual % out of 0–100 or a skidding sum > 100 → 400 (a sum &lt; 100 saves); Helicopter-/
+   * Other-conditional fields missing → 400; volume/rate out of range → 400; unknown page/sample → 404;
+   * non-Draft → 409; stale {@code revisionCount} → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param pageId the parent page id
+   * @param request the sample fields + optimistic-lock token (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PutMapping("/pages/{pageId}/samples")
+  ResponseEntity<Schedule8Response> saveSample(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int pageId,
+      @Valid @RequestBody Schedule8SampleRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one sample (cascading its rate details) under a page and return the recomputed document
+   * (Story 14.3, S08 / BR-05). Idempotent: an unknown page/sample id returns 200 (never 404). Non-Draft
+   * → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param pageId the parent page id
+   * @param id the sample id to delete
+   * @param authentication the caller (drives EDIT_SCHEDULE)
+   * @return 200 with the recomputed document carrying the deleted {@code message} (AD-8)
+   */
+  @DeleteMapping("/pages/{pageId}/samples/{id}")
+  ResponseEntity<Schedule8Response> deleteSample(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int pageId,
       @PathVariable int id,
       Authentication authentication);
 }

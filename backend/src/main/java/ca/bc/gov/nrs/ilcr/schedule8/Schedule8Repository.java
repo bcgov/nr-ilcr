@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -226,6 +227,144 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     deletePageRateDetails(pageId);
     deletePageSamples(pageId);
     deletePageRow(pageId);
+  }
+
+  // -------------------------------------------------------------------------------------------------
+  // Sample writes (Story 14.3) — @Modifying explicit SQL under a page; the service maps the request's
+  // Booleans to the legacy Y/N indicator columns and owns the transaction boundary.
+  // -------------------------------------------------------------------------------------------------
+
+  @Query("SELECT THE.TREE_TO_TRUCK_DTL_REPORT_SEQ.NEXTVAL FROM DUAL")
+  int nextSampleId();
+
+  @Modifying
+  @Query("""
+      INSERT INTO THE.TREE_TO_TRUCK_DETAIL_REPORT
+          (TREE_TO_TRUCK_DETAIL_REPORT_ID, TREE_TO_TRUCK_REPORT_ID, CONTRACTOR_ID, CUT_BLOCK,
+           GROUND_BASE_PCT, GRAPPLE_PCT, SKYLINE_PCT, HIGHLEAD_PCT, HELICOPTER_PCT, OTHER_SKIDDING_PCT,
+           SKYLINE_SLOPE_DISTANCE, SKYLINE_SUPPORT_NUMBER, SUPPORT_AVERAGE_DISTANCE, CYCLE_TIME,
+           DISTANCE, WATER_DUMP_DESTINATION_IND, UPHILL_DIRECTION_IND, ILCR_SKID_TYPE_CODE,
+           CONIFEROUS_VOLUME, DECIDUOUS_VOLUME, ORIGINAL_TREE_TO_TRUCK_RATE, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP)
+      VALUES
+          (:id, :pageId, :contractId, :cutBlock, :groundBasePct, :grapplePct, :skylinePct,
+           :highleadPct, :helicopterPct, :otherSkiddingPct, :skylineSlopeDistance,
+           :skylineSupportNumber, :supportAvgDistance, :cycleTime, :distance, :waterDump, :uphill,
+           :skidTypeCode, :coniferousVolume, :deciduousVolume, :originalRate, 0, :user, SYSTIMESTAMP)
+      """)
+  int insertSampleRow(
+      @Param("id") int id, @Param("pageId") int pageId, @Param("contractId") String contractId,
+      @Param("cutBlock") String cutBlock, @Param("groundBasePct") Integer groundBasePct,
+      @Param("grapplePct") Integer grapplePct, @Param("skylinePct") Integer skylinePct,
+      @Param("highleadPct") Integer highleadPct, @Param("helicopterPct") Integer helicopterPct,
+      @Param("otherSkiddingPct") Integer otherSkiddingPct,
+      @Param("skylineSlopeDistance") Integer skylineSlopeDistance,
+      @Param("skylineSupportNumber") Integer skylineSupportNumber,
+      @Param("supportAvgDistance") BigDecimal supportAvgDistance,
+      @Param("cycleTime") BigDecimal cycleTime, @Param("distance") BigDecimal distance,
+      @Param("waterDump") String waterDump, @Param("uphill") String uphill,
+      @Param("skidTypeCode") String skidTypeCode, @Param("coniferousVolume") Integer coniferousVolume,
+      @Param("deciduousVolume") Integer deciduousVolume, @Param("originalRate") BigDecimal originalRate,
+      @Param("user") String user);
+
+  /** Insert a new sample under {@code pageId} at {@code REVISION_COUNT} 0 and return its id. */
+  default int insertSample(int pageId, String contractId, String cutBlock, Integer groundBasePct,
+      Integer grapplePct, Integer skylinePct, Integer highleadPct, Integer helicopterPct,
+      Integer otherSkiddingPct, Integer skylineSlopeDistance, Integer skylineSupportNumber,
+      BigDecimal supportAvgDistance, BigDecimal cycleTime, BigDecimal distance, String waterDump,
+      String uphill, String skidTypeCode, Integer coniferousVolume, Integer deciduousVolume,
+      BigDecimal originalRate, String user) {
+    int id = nextSampleId();
+    insertSampleRow(id, pageId, contractId, cutBlock, groundBasePct, grapplePct, skylinePct,
+        highleadPct, helicopterPct, otherSkiddingPct, skylineSlopeDistance, skylineSupportNumber,
+        supportAvgDistance, cycleTime, distance, waterDump, uphill, skidTypeCode, coniferousVolume,
+        deciduousVolume, originalRate, user);
+    return id;
+  }
+
+  /**
+   * Optimistic-lock bump of a sample: increments {@code REVISION_COUNT} + audit ONLY when the stored
+   * revision matches {@code expectedRevision}. Returns rows affected (0 = stale/unknown → 409).
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
+         AND REVISION_COUNT = :expectedRevision
+      """)
+  int bumpSampleRevision(
+      @Param("id") int id, @Param("expectedRevision") int expectedRevision,
+      @Param("user") String user);
+
+  @Modifying
+  @Query("""
+      UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
+         SET CONTRACTOR_ID = :contractId,
+             CUT_BLOCK = :cutBlock,
+             GROUND_BASE_PCT = :groundBasePct,
+             GRAPPLE_PCT = :grapplePct,
+             SKYLINE_PCT = :skylinePct,
+             HIGHLEAD_PCT = :highleadPct,
+             HELICOPTER_PCT = :helicopterPct,
+             OTHER_SKIDDING_PCT = :otherSkiddingPct,
+             SKYLINE_SLOPE_DISTANCE = :skylineSlopeDistance,
+             SKYLINE_SUPPORT_NUMBER = :skylineSupportNumber,
+             SUPPORT_AVERAGE_DISTANCE = :supportAvgDistance,
+             CYCLE_TIME = :cycleTime,
+             DISTANCE = :distance,
+             WATER_DUMP_DESTINATION_IND = :waterDump,
+             UPHILL_DIRECTION_IND = :uphill,
+             ILCR_SKID_TYPE_CODE = :skidTypeCode,
+             CONIFEROUS_VOLUME = :coniferousVolume,
+             DECIDUOUS_VOLUME = :deciduousVolume,
+             ORIGINAL_TREE_TO_TRUCK_RATE = :originalRate,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
+      """)
+  void updateSampleFields(
+      @Param("id") int id, @Param("contractId") String contractId,
+      @Param("cutBlock") String cutBlock, @Param("groundBasePct") Integer groundBasePct,
+      @Param("grapplePct") Integer grapplePct, @Param("skylinePct") Integer skylinePct,
+      @Param("highleadPct") Integer highleadPct, @Param("helicopterPct") Integer helicopterPct,
+      @Param("otherSkiddingPct") Integer otherSkiddingPct,
+      @Param("skylineSlopeDistance") Integer skylineSlopeDistance,
+      @Param("skylineSupportNumber") Integer skylineSupportNumber,
+      @Param("supportAvgDistance") BigDecimal supportAvgDistance,
+      @Param("cycleTime") BigDecimal cycleTime, @Param("distance") BigDecimal distance,
+      @Param("waterDump") String waterDump, @Param("uphill") String uphill,
+      @Param("skidTypeCode") String skidTypeCode, @Param("coniferousVolume") Integer coniferousVolume,
+      @Param("deciduousVolume") Integer deciduousVolume, @Param("originalRate") BigDecimal originalRate,
+      @Param("user") String user);
+
+  @Query("""
+      SELECT COUNT(*)
+        FROM THE.TREE_TO_TRUCK_DETAIL_REPORT
+       WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
+         AND TREE_TO_TRUCK_REPORT_ID = :pageId
+      """)
+  int countSample(@Param("id") int id, @Param("pageId") int pageId);
+
+  /** Whether {@code id} is a sample under {@code pageId} (guarded, idempotent delete). */
+  default boolean sampleExists(int id, int pageId) {
+    return countSample(id, pageId) > 0;
+  }
+
+  @Modifying
+  @Query("DELETE FROM THE.TREE_TO_TRUCK_RATE_DETAIL WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
+  int deleteSampleRateDetails(@Param("sampleId") int sampleId);
+
+  @Modifying
+  @Query("DELETE FROM THE.TREE_TO_TRUCK_DETAIL_REPORT WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
+  int deleteSampleRow(@Param("sampleId") int sampleId);
+
+  /** Cascade-delete a sample: its rate details, then the sample row (BR-05, S08). */
+  default void deleteSample(int sampleId) {
+    deleteSampleRateDetails(sampleId);
+    deleteSampleRow(sampleId);
   }
 
   // -------------------------------------------------------------------------------------------------
