@@ -1,22 +1,24 @@
 import { vi } from 'vitest'
-import { render, screen } from '@/test-utils'
-import Dashboard from '@/components/Dashboard'
+import { render, screen, userEvent } from '@/test-utils'
 
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }))
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: vi.fn(),
+  useNavigate: () => mockNavigate,
 }))
 
+import Dashboard from '@/components/Dashboard'
+
 describe('Dashboard', () => {
-  test('renders a heading with the correct text', () => {
+  test('renders the ILCR Workspace heading (no users API call)', () => {
     render(<Dashboard />)
     expect(screen.getByText(/ILCR Workspace/i)).toBeInTheDocument()
   })
 
-  test('renders the current local principal and pending identity endpoint state', () => {
+  test('Open Schedule 1 navigates to the schedule page', async () => {
+    mockNavigate.mockClear()
+    const user = userEvent.setup()
     render(<Dashboard />)
-
-    expect(screen.getByText(/Alex Admin/i)).toBeInTheDocument()
-    expect(screen.getByText(/ILCR_ADMIN/i)).toBeInTheDocument()
-    expect(screen.getByText(/Identity endpoint pending/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /open schedule 1/i }))
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1' })
   })
 })
