@@ -7,7 +7,28 @@ parameters:
   - name: ZONE
     description: Deployment zone, e.g. pr-### or prod
     required: true
+  - name: SPRING_DATASOURCE_URL
+    description: "Full Oracle JDBC URL, e.g. jdbc:oracle:thin:@//host:1543/SERVICE"
+    required: true
+  - name: SPRING_DATASOURCE_USERNAME
+    description: Oracle database username
+    required: true
+  - name: SPRING_DATASOURCE_PASSWORD
+    description: Oracle database password
+    required: true
 objects:
+  # ── Backend Secret ────────────────────────────────────────
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${NAME}-${ZONE}-backend
+      labels:
+        app: ${NAME}-${ZONE}
+    type: Opaque
+    stringData:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:

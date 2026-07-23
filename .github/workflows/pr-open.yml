@@ -54,6 +54,8 @@ jobs:
     secrets:
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
+      oracledb_username: ${{ secrets.oracledb_username }}
+      oracledb_password: ${{ secrets.oracledb_password }}
     with:
       target: ${{ needs.init.outputs.zone }}
       triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')

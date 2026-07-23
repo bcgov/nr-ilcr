@@ -28,6 +28,13 @@ on:
       oc_token:
         description: OpenShift token
         required: true
+      # Backend secrets
+      oracledb_username:
+        description: Oracle database username
+        required: true
+      oracledb_password:
+        description: Oracle database password
+        required: true
 
     outputs:
       triggered:
@@ -52,8 +59,12 @@ jobs:
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           overwrite: true
-          parameters: -p ZONE="${{ inputs.target }}"
-            -p NAME="${{ github.event.repository.name }}"
+          parameters:
+            -p ZONE='${{ inputs.target }}'
+            -p NAME='${{ github.event.repository.name }}'
+            -p SPRING_DATASOURCE_URL='${{ vars.ORACLEDB_URL }}'
+            -p SPRING_DATASOURCE_USERNAME='${{ secrets.oracledb_username }}'
+            -p SPRING_DATASOURCE_PASSWORD='${{ secrets.oracledb_password }}'
           triggers: ${{ inputs.triggers }}
           debug: true
 
