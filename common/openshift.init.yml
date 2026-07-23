@@ -13,12 +13,12 @@ parameters:
   - name: SPRING_DATASOURCE_PASSWORD
     description: Oracle database password
     required: true
-  # Random per-deploy password; only the init container uses it, to protect
-  # the keystore it rebuilds on every pod start, so rotation is harmless.
+  # Stable, non-secret password: the keystore holds only the Oracle server's
+  # public cert, and a rotating value would desync from the keystore already
+  # built on the PVC (the app would fail to open it after a redeploy).
   - name: ORACLEDB_KEYSTORE_SECRET
     description: Password for the Oracle keystore built by the backend init container
-    generate: expression
-    from: "[a-zA-Z0-9]{32}"
+    value: changeit
 objects:
   # ── Backend Secret ────────────────────────────────────────
   - apiVersion: v1
