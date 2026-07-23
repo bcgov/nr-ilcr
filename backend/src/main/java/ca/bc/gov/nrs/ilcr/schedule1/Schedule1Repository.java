@@ -281,6 +281,70 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
   // ---------------------------------------------------------------------------------------------
+  // BR-09 Crown Timber push (Story 4.2) — Schedule 3's save overwrites the VOLUME of a fixed set of
+  // Schedule 1 detail rows with the new Crown Timber volume (COST untouched). This is the ONLY entry
+  // point Schedule 3 uses to touch Schedule 1 data (AD-14 — never direct SQL from schedule3). The
+  // orchestration (which items, the "Sch1 opened?" gate) lives in Schedule1Service.applyCrownTimberVolume.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Overwrite VOLUME only (COST preserved) for a fixed-line detail row (NULL description), for the
+   * BR-09 Crown push. {@code 0} rows when the row is absent (caller inserts it volume-only).
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET VOLUME = :volume,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
+         AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
+         AND ITEM_DESCRIPTION IS NULL
+      """)
+  int updateFixedDetailVolume(
+      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
+      @Param("volume") java.math.BigDecimal volume, @Param("user") String user);
+
+  /** Insert a fixed-line row carrying only VOLUME (COST NULL) — the insert half of the crown push. */
+  @Modifying
+  @Query("""
+      INSERT INTO THE.ILCR_COST_REPORT_DETAIL
+          (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
+           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+      VALUES
+          (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
+           :volume, NULL, NULL, :user, SYSTIMESTAMP)
+      """)
+  void insertFixedDetailVolume(
+      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
+      @Param("volume") java.math.BigDecimal volume, @Param("user") String user);
+
+  /** Upsert VOLUME (COST preserved) for a fixed-line row — the crown-push per-item operation. */
+  default void upsertFixedDetailVolume(
+      int summaryId, int costItemCode, java.math.BigDecimal volume, String user) {
+    if (updateFixedDetailVolume(summaryId, costItemCode, volume, user) == 0) {
+      insertFixedDetailVolume(summaryId, costItemCode, volume, user);
+    }
+  }
+
+  /**
+   * Overwrite VOLUME (COST preserved) on EVERY item-19 Other-Costs row (shared + itemized) for the
+   * BR-09 crown push (legacy {@code updateOtherCostCrownTimberVolumeValues}).
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET VOLUME = :volume,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
+         AND ILCR_REPORT_COST_ITEM_ID = 19
+      """)
+  void updateAllOtherCostVolumes(
+      @Param("summaryId") int summaryId, @Param("volume") java.math.BigDecimal volume,
+      @Param("user") String user);
+
+  // ---------------------------------------------------------------------------------------------
   // Row mappers — explicit column-name mapping (AD-3 record row-mapping), reading the legacy THE
   // columns exactly as the previous JdbcClient lambdas did. Referenced by the @Query methods above.
   // ---------------------------------------------------------------------------------------------

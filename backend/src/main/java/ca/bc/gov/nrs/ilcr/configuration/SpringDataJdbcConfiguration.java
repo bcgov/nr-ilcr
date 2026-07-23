@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.configuration;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.repository.config.AbstractJdbcConfiguration;
@@ -16,13 +17,14 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
  * is resolved from the live JDBC connection.
  *
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
- * interfaces ({@link Schedule1Repository}, {@link MillContextRepository}). Gated on the same
- * {@code ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are
- * unaffected.
+ * interfaces ({@link Schedule1Repository}, {@link Schedule3Repository}, {@link MillContextRepository}).
+ * Gated on the same {@code ilcr.datasource.enabled} flag as the datasource so contexts without a
+ * datasource are unaffected.
  */
 @Configuration
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 @EnableJdbcRepositories(
-    basePackageClasses = {Schedule1Repository.class, MillContextRepository.class})
+    basePackageClasses = {
+        Schedule1Repository.class, Schedule3Repository.class, MillContextRepository.class})
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {
 }
