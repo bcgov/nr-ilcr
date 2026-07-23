@@ -4,6 +4,7 @@ import { Document, Home, Table, UserMultiple } from '@carbon/icons-react'
 export const ROUTES = {
   dashboard: '/',
   scheduleOne: '/schedule-1',
+  scheduleThree: '/schedule-3',
   millAssociations: '/mill-associations',
   submissions: '/submissions',
 } as const
@@ -41,7 +42,10 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     // Schedules is a parent menu; each schedule is a sub-item (Schedule 2–11 will be added here).
     icon: Table,
     name: 'Schedules',
-    items: [{ name: 'Schedule 1', path: ROUTES.scheduleOne }],
+    items: [
+      { name: 'Schedule 1', path: ROUTES.scheduleOne },
+      { name: 'Schedule 3', path: ROUTES.scheduleThree },
+    ],
   },
   {
     icon: Document,

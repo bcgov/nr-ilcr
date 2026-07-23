@@ -133,6 +133,43 @@ public class Schedule1Service {
     }
   }
 
+  // Schedule 1 detail items whose VOLUME the BR-09 Crown Timber push overwrites (legacy
+  // Schedule1DAO.updateCrownTimberVolumeValues): the fixed lines 12–18, Forest Mgmt Admin (143),
+  // Subtotal Company Logging (144), and the four silviculture rows (1/139/2/140). The item-19
+  // Other-Costs rows are overwritten separately (updateAllOtherCostVolumes). COST is never touched.
+  private static final List<Integer> CROWN_PUSH_VOLUME_ITEMS = List.of(
+      12, 13, 14, 15, 16, 17, 18,
+      CODE_FOREST_MGMT_ADMIN, CODE_SUBTOTAL_COMPANY_LOGGING,
+      CODE_SILV_ACTUAL, CODE_SILV_LESS_ADMIN, CODE_SILV_ACCRUED, CODE_SILV_TOTAL);
+
+  /**
+   * Apply a changed Schedule 3 Crown Timber volume to Schedule 1's volume fields (BR-09). This is the
+   * single entry point Schedule 3 uses to write Schedule 1 data (AD-14 — Schedule 3 never issues SQL
+   * against Schedule 1's rows). Overwrites the VOLUME (COST preserved) of the fixed lines + the four
+   * silviculture rows + every item-19 Other-Costs row with {@code volume}. Joins the caller's
+   * transaction (Story 4.2 save), so it rolls back with the Schedule 3 write on failure.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param volume the new Crown Timber volume to propagate
+   * @param user the acting user id (audit)
+   * @return {@code true} when a Schedule 1 summary exists and the volumes were overwritten (WRN-001);
+   *     {@code false} when Schedule 1 is not opened, so nothing was written (WRN-002)
+   */
+  @Transactional
+  public boolean applyCrownTimberVolume(long millId, int year, BigDecimal volume, String user) {
+    SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null);
+    if (summary == null) {
+      return false; // Schedule 1 not opened → WRN-002, nothing written.
+    }
+    int summaryId = summary.summaryId();
+    for (int code : CROWN_PUSH_VOLUME_ITEMS) {
+      repository.upsertFixedDetailVolume(summaryId, code, volume, user);
+    }
+    repository.updateAllOtherCostVolumes(summaryId, volume, user);
+    return true;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Subtotal Other Costs sub-resource (Story 2.4) — sole writer of the itemized item-19 rows.
   // ---------------------------------------------------------------------------------------------
