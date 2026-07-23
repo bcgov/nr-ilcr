@@ -10,14 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
+import { Route as Schedule3RouteImport } from './routes/schedule-3'
 import { Route as Schedule1RouteImport } from './routes/schedule-1'
 import { Route as MillAssociationsRouteImport } from './routes/mill-associations'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as Schedule3OtherAcceptableCostsRouteImport } from './routes/schedule-3_.other-acceptable-costs'
+import { Route as Schedule3IncludedUnacceptableCostsRouteImport } from './routes/schedule-3_.included-unacceptable-costs'
 import { Route as Schedule1OtherCostsRouteImport } from './routes/schedule-1_.other-costs'
 
 const SubmissionsRoute = SubmissionsRouteImport.update({
   id: '/submissions',
   path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule3Route = Schedule3RouteImport.update({
+  id: '/schedule-3',
+  path: '/schedule-3',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Schedule1Route = Schedule1RouteImport.update({
@@ -35,6 +43,18 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Schedule3OtherAcceptableCostsRoute =
+  Schedule3OtherAcceptableCostsRouteImport.update({
+    id: '/schedule-3_/other-acceptable-costs',
+    path: '/schedule-3/other-acceptable-costs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Schedule3IncludedUnacceptableCostsRoute =
+  Schedule3IncludedUnacceptableCostsRouteImport.update({
+    id: '/schedule-3_/included-unacceptable-costs',
+    path: '/schedule-3/included-unacceptable-costs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const Schedule1OtherCostsRoute = Schedule1OtherCostsRouteImport.update({
   id: '/schedule-1_/other-costs',
   path: '/schedule-1/other-costs',
@@ -45,23 +65,32 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/mill-associations': typeof MillAssociationsRoute
   '/schedule-1': typeof Schedule1Route
+  '/schedule-3': typeof Schedule3Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
+  '/schedule-3/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
+  '/schedule-3/other-acceptable-costs': typeof Schedule3OtherAcceptableCostsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/mill-associations': typeof MillAssociationsRoute
   '/schedule-1': typeof Schedule1Route
+  '/schedule-3': typeof Schedule3Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
+  '/schedule-3/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
+  '/schedule-3/other-acceptable-costs': typeof Schedule3OtherAcceptableCostsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/mill-associations': typeof MillAssociationsRoute
   '/schedule-1': typeof Schedule1Route
+  '/schedule-3': typeof Schedule3Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1_/other-costs': typeof Schedule1OtherCostsRoute
+  '/schedule-3_/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
+  '/schedule-3_/other-acceptable-costs': typeof Schedule3OtherAcceptableCostsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -69,30 +98,42 @@ export interface FileRouteTypes {
     | '/'
     | '/mill-associations'
     | '/schedule-1'
+    | '/schedule-3'
     | '/submissions'
     | '/schedule-1/other-costs'
+    | '/schedule-3/included-unacceptable-costs'
+    | '/schedule-3/other-acceptable-costs'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/mill-associations'
     | '/schedule-1'
+    | '/schedule-3'
     | '/submissions'
     | '/schedule-1/other-costs'
+    | '/schedule-3/included-unacceptable-costs'
+    | '/schedule-3/other-acceptable-costs'
   id:
     | '__root__'
     | '/'
     | '/mill-associations'
     | '/schedule-1'
+    | '/schedule-3'
     | '/submissions'
     | '/schedule-1_/other-costs'
+    | '/schedule-3_/included-unacceptable-costs'
+    | '/schedule-3_/other-acceptable-costs'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MillAssociationsRoute: typeof MillAssociationsRoute
   Schedule1Route: typeof Schedule1Route
+  Schedule3Route: typeof Schedule3Route
   SubmissionsRoute: typeof SubmissionsRoute
   Schedule1OtherCostsRoute: typeof Schedule1OtherCostsRoute
+  Schedule3IncludedUnacceptableCostsRoute: typeof Schedule3IncludedUnacceptableCostsRoute
+  Schedule3OtherAcceptableCostsRoute: typeof Schedule3OtherAcceptableCostsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -102,6 +143,13 @@ declare module '@tanstack/react-router' {
       path: '/submissions'
       fullPath: '/submissions'
       preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-3': {
+      id: '/schedule-3'
+      path: '/schedule-3'
+      fullPath: '/schedule-3'
+      preLoaderRoute: typeof Schedule3RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule-1': {
@@ -125,6 +173,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/schedule-3_/other-acceptable-costs': {
+      id: '/schedule-3_/other-acceptable-costs'
+      path: '/schedule-3/other-acceptable-costs'
+      fullPath: '/schedule-3/other-acceptable-costs'
+      preLoaderRoute: typeof Schedule3OtherAcceptableCostsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-3_/included-unacceptable-costs': {
+      id: '/schedule-3_/included-unacceptable-costs'
+      path: '/schedule-3/included-unacceptable-costs'
+      fullPath: '/schedule-3/included-unacceptable-costs'
+      preLoaderRoute: typeof Schedule3IncludedUnacceptableCostsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/schedule-1_/other-costs': {
       id: '/schedule-1_/other-costs'
       path: '/schedule-1/other-costs'
@@ -139,8 +201,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MillAssociationsRoute: MillAssociationsRoute,
   Schedule1Route: Schedule1Route,
+  Schedule3Route: Schedule3Route,
   SubmissionsRoute: SubmissionsRoute,
   Schedule1OtherCostsRoute: Schedule1OtherCostsRoute,
+  Schedule3IncludedUnacceptableCostsRoute:
+    Schedule3IncludedUnacceptableCostsRoute,
+  Schedule3OtherAcceptableCostsRoute: Schedule3OtherAcceptableCostsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
