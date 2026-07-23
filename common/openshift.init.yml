@@ -16,6 +16,12 @@ parameters:
   - name: SPRING_DATASOURCE_PASSWORD
     description: Oracle database password
     required: true
+  # Random per-deploy password; only the init container uses it, to protect
+  # the keystore it rebuilds on every pod start, so rotation is harmless.
+  - name: ORACLEDB_KEYSTORE_SECRET
+    description: Password for the Oracle keystore built by the backend init container
+    generate: expression
+    from: "[a-zA-Z0-9]{32}"
 objects:
   # ── Backend Secret ────────────────────────────────────────
   - apiVersion: v1
@@ -29,6 +35,7 @@ objects:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:

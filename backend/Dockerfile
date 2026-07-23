@@ -13,4 +13,6 @@ COPY --from=build /workspace/target/nr-ilcr-backend-*.jar /app/app.jar
 
 EXPOSE 8080
 USER 65532:65532
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-jar", "/app/app.jar"]
+# MaxRAM bounds what MaxRAMPercentage is taken from — without a container
+# memory limit the JVM would otherwise size itself off the node's memory.
+ENTRYPOINT ["java", "-XX:MaxRAM=512m", "-XX:MaxRAMPercentage=50", "-jar", "/app/app.jar"]
