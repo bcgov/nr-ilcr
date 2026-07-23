@@ -44,6 +44,9 @@ parameters:
   - name: ORACLEDB_SERVICENAME
     description: Oracle database service name
     required: true
+  - name: COGNITO_REGION
+    description: AWS region of the Cognito (FAM) user pool
+    value: ca-central-1
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -136,6 +139,13 @@ objects:
                   value: ${ORACLEDB_SERVICENAME}
                 - name: ORACLEDB_KEYSTORE
                   value: /cert/jssecacerts
+                - name: COGNITO_REGION
+                  value: ${COGNITO_REGION}
+                - name: COGNITO_USER_POOL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: COGNITO_USER_POOL
                 - name: ORACLEDB_SECRET
                   valueFrom:
                     secretKeyRef:

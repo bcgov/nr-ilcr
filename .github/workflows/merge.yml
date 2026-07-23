@@ -38,6 +38,7 @@ jobs:
       oc_token: ${{ secrets.oc_token }}
       oracledb_username: ${{ secrets.oracledb_username }}
       oracledb_password: ${{ secrets.oracledb_password }}
+      user_pools_id: ${{ secrets.USER_POOLS_ID }}
     with:
       environment: test
       target: test
@@ -60,6 +61,7 @@ jobs:
       oc_token: ${{ secrets.oc_token }}
       oracledb_username: ${{ secrets.oracledb_username }}
       oracledb_password: ${{ secrets.oracledb_password }}
+      user_pools_id: ${{ secrets.USER_POOLS_ID }}
     with:
       environment: prod
       target: prod

@@ -19,6 +19,9 @@ parameters:
   - name: ORACLEDB_KEYSTORE_SECRET
     description: Password for the Oracle keystore built by the backend init container
     value: changeit
+  - name: COGNITO_USER_POOL
+    description: Cognito (FAM) user pool ID for JWT validation
+    required: true
 objects:
   # ── Backend Secret ────────────────────────────────────────
   - apiVersion: v1
@@ -32,6 +35,7 @@ objects:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
       ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
+      COGNITO_USER_POOL: ${COGNITO_USER_POOL}
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:
