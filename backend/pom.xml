@@ -270,7 +270,6 @@
     </dependencyManagement>
 
     <build>
-        <finalName>nr-ilcr-backend</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
