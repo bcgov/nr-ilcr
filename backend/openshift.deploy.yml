@@ -127,8 +127,10 @@ objects:
                   value: openshift,oracle
                 - name: APP_VERSION
                   value: ${IMAGE_TAG}
+                # Interim: mock-auth frontend can't produce Cognito JWTs yet.
+                # Flip to "true" when FAM login lands in the frontend.
                 - name: ILCR_SECURITY_ENABLED
-                  value: "true"
+                  value: "false"
                 - name: ILCR_DATASOURCE_ENABLED
                   value: "true"
                 - name: ORACLEDB_HOST
