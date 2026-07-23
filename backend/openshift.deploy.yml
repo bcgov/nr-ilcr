@@ -41,6 +41,9 @@ parameters:
   - name: ORACLEDB_PORT
     description: Oracle database TCPS port
     value: "1543"
+  - name: ORACLEDB_SERVICENAME
+    description: Oracle database service name
+    required: true
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -125,11 +128,19 @@ objects:
                   value: "true"
                 - name: ILCR_DATASOURCE_ENABLED
                   value: "true"
-                - name: SPRING_DATASOURCE_URL
+                - name: ORACLEDB_HOST
+                  value: ${ORACLEDB_HOST}
+                - name: ORACLEDB_PORT
+                  value: ${ORACLEDB_PORT}
+                - name: ORACLEDB_SERVICENAME
+                  value: ${ORACLEDB_SERVICENAME}
+                - name: ORACLEDB_KEYSTORE
+                  value: /cert/jssecacerts
+                - name: ORACLEDB_SECRET
                   valueFrom:
                     secretKeyRef:
                       name: ${NAME}-${ZONE}-${COMPONENT}
-                      key: SPRING_DATASOURCE_URL
+                      key: ORACLEDB_KEYSTORE_SECRET
                 - name: SPRING_DATASOURCE_USERNAME
                   valueFrom:
                     secretKeyRef:

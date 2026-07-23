@@ -62,7 +62,6 @@ jobs:
           parameters:
             -p ZONE='${{ inputs.target }}'
             -p NAME='${{ github.event.repository.name }}'
-            -p SPRING_DATASOURCE_URL='${{ vars.ORACLEDB_URL }}'
             -p SPRING_DATASOURCE_USERNAME='${{ secrets.oracledb_username }}'
             -p SPRING_DATASOURCE_PASSWORD='${{ secrets.oracledb_password }}'
           triggers: ${{ inputs.triggers }}
@@ -82,6 +81,7 @@ jobs:
             file: backend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
               -p ORACLEDB_HOST="${{ vars.ORACLEDB_HOST }}"
+              -p ORACLEDB_SERVICENAME="${{ vars.ORACLEDB_SERVICENAME }}"
           - name: frontend
             file: frontend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
