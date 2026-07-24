@@ -22,10 +22,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfiguration {
 
+    private static final String PATH_HEALTH = "/api/health";
+    private static final String PATH_INFO = "/api/info";
+
     private static final String[] PUBLIC_PATHS = {
         "/api",
-        "/api/health",
-        "/api/info",
+        PATH_HEALTH,
+        PATH_INFO,
         "/api/prometheus"
     };
 
@@ -65,8 +68,8 @@ public class SecurityConfiguration {
                     .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
-                            .requestMatchers("/api/health", "/api/info").permitAll()
-                            .requestMatchers("/api/health", "/api/health/**", "/api/info").permitAll()
+                            .requestMatchers(PATH_HEALTH, PATH_INFO).permitAll()
+                            .requestMatchers(PATH_HEALTH, PATH_HEALTH + "/**", PATH_INFO).permitAll()
                             .requestMatchers(HttpMethod.GET, BackendConstants.HOME_PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
