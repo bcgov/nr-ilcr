@@ -20,7 +20,7 @@ export default function MockUserSelector() {
       >
         {users.map((mockUser) => (
           <option key={mockUser.id} value={mockUser.id}>
-            {mockUser.displayName} ({mockUser.roles.join(' + ')})
+            {mockUser.roles.join(' + ')}
           </option>
         ))}
       </select>
