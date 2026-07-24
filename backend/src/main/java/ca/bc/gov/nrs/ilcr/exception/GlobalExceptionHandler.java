@@ -31,6 +31,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @Slf4j
 public class GlobalExceptionHandler {
 
+  /** Legacy JSF required-field bundle key, ported verbatim (Story 1.2, AD-8). */
+  private static final String REQUIRED_FIELD_KEY = "javax.faces.component.UIInput.REQUIRED";
+
   private final MessageSource messageSource;
 
   public GlobalExceptionHandler(MessageSource messageSource) {
@@ -217,6 +220,45 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * Handles missing/blank/invalid required selection fields (UC-SEC-001 S04/S05/S08, Story 1.2).
+   * Resolves the verbatim legacy required-field template
+   * ({@code javax.faces.component.UIInput.REQUIRED = "{0}: Value is required."}) once per field —
+   * passing the field label as the {@code {0}} argument (parameterized keys MUST get an args array)
+   * — and returns ALL field messages together on one 400: {@code detail} joins the texts and the
+   * {@code messages} extension property carries each {@code {key, text}} pair (the pinned shape the
+   * frontend renders per field, mirroring {@code MessageInfo}).
+   *
+   * @param ex the exception carrying the ordered missing-field labels
+   * @param request the current HTTP request
+   * @return a {@link ProblemDetail} response with HTTP 400 status and a {@code messages} array
+   */
+  @ExceptionHandler(FieldValuesRequiredException.class)
+  public ResponseEntity<ProblemDetail> handleFieldValuesRequired(
+      FieldValuesRequiredException ex, HttpServletRequest request) {
+    log.debug("Required selection fields missing: {}", ex.getFieldLabels());
+
+    var messages = ex.getFieldLabels().stream()
+        .map(label -> new FieldMessage(
+            REQUIRED_FIELD_KEY,
+            messageSource.getMessage(
+                REQUIRED_FIELD_KEY,
+                new Object[] {label},
+                REQUIRED_FIELD_KEY,
+                LocaleContextHolder.getLocale())))
+        .toList();
+
+    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+    problem.setTitle("Validation Failed");
+    problem.setDetail(messages.stream().map(FieldMessage::text).collect(Collectors.joining("; ")));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    problem.setProperty("messages", messages);
+
+    return ResponseEntity.badRequest()
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(problem);
+  }
+
+  /**
    * Handles a missing required request parameter (e.g. absent {@code millId}/{@code year}) and
    * returns a 400 problem response. Without this handler these fall through to the generic 500
    * handler (AD-4, slice S19).
@@ -342,6 +384,15 @@ public class GlobalExceptionHandler {
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .body(problem);
   }
+
+  /**
+   * One resolved field-level message on a 400 {@code messages} array: the legacy bundle key plus
+   * its resolved verbatim text (mirrors {@code MessageInfo}; pinned in Story 1.2's wire contract).
+   *
+   * @param key the legacy bundle key (e.g. {@code javax.faces.component.UIInput.REQUIRED})
+   * @param text the resolved verbatim text (e.g. {@code Mill: Value is required.})
+   */
+  public record FieldMessage(String key, String text) {}
 
   /**
    * Attempts to extract the most useful message from a DataIntegrityViolationException.
