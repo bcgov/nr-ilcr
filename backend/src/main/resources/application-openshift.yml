@@ -1,3 +1,11 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.${COGNITO_REGION:ca-central-1}.amazonaws.com/${COGNITO_USER_POOL}
+          jwk-set-uri: https://cognito-idp.${COGNITO_REGION:ca-central-1}.amazonaws.com/${COGNITO_USER_POOL}/.well-known/jwks.json
+
 server:
   shutdown: graceful
 

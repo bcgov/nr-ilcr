@@ -1,0 +1,6 @@
+# Relaxes the JDK default TLS restrictions (which disable TLSv1, TLSv1.1,
+# 3DES and small key sizes) so the JVM can negotiate with the legacy Oracle
+# TCPS listener, which offers only those. Mirrors nr-csp. Loaded via
+# -Djava.security.properties in the Dockerfile ENTRYPOINT; remove once the
+# database supports modern TLS.
+jdk.tls.disabledAlgorithms=SSLv3, RC4, DES, MD5withRSA, DH keySize < 512, EC keySize < 128, anon, NULL
