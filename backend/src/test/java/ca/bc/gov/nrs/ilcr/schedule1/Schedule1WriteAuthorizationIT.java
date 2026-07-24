@@ -1,6 +1,5 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -64,7 +63,6 @@ class Schedule1WriteAuthorizationIT extends AbstractOracleIT {
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "518").param("year", "2021")
                         .contentType(MediaType.APPLICATION_JSON).content(BODY)
-                        .with(csrf())
                         .with(jwtWithGroups(List.of())))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -75,7 +73,6 @@ class Schedule1WriteAuthorizationIT extends AbstractOracleIT {
     void delete_noPermission_returns403() throws Exception {
         mockMvc.perform(delete(ENDPOINT)
                         .param("millId", "519").param("year", "2021")
-                        .with(csrf())
                         .with(jwtWithGroups(List.of())))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -89,7 +86,6 @@ class Schedule1WriteAuthorizationIT extends AbstractOracleIT {
         mockMvc.perform(put(ENDPOINT)
                         .param("millId", "521").param("year", "2021")
                         .contentType(MediaType.APPLICATION_JSON).content(BODY)
-                        .with(csrf())
                         .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
                 .andExpect(status().is2xxSuccessful());
     }

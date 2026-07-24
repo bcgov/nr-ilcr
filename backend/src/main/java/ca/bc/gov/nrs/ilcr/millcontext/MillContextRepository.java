@@ -9,6 +9,10 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 /**
+ * Reads the legacy {@code THE} tables that determine whether a mill/reporting-year context is
+ * viewable (AD-3: Spring Data JDBC — repository interface + {@code @Table} record entity
+ * {@link MillStatusXref} + explicit {@code @Query} named-parameter SQL). SQL only — decisions live in
+ * {@link MillContextService}.
  * Spring Data JDBC access to the legacy {@code THE} tables that determine whether a mill/reporting-year
  * context is viewable (AD-3: repository interface + {@code @Table} record entities + explicit
  * {@code @Query} named-parameter SQL; migrated from the retired {@code JdbcClient} idiom, behavior
