@@ -52,7 +52,8 @@ const LINE_ITEM_LABELS: Record<number, string> = {
 }
 const WRITABLE = new Set<number>(WRITABLE_LINE_ITEM_CODES)
 
-// Silviculture code -> label; codes 1 & 2 are editable, 139 (pulled cost) and 140 (derived) read-only.
+// Silviculture code -> label. All four volumes are user-entered; codes 1 & 2 also have an editable
+// cost, while 139's cost is pulled from Schedule 3 and 140's is derived (both costs read-only).
 const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['silviculture'] }[] = [
   { code: 1, label: 'Actual $ Spent', key: 'actualSpent' },
   { code: 2, label: 'Accrued less Actual $ Spent', key: 'accruedLessActual' },
