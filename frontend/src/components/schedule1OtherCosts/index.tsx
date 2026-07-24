@@ -21,6 +21,7 @@ import {
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import { validateOtherCost, DESCRIPTION_MAX_LENGTH } from './validation'
 import './index.scss'
@@ -236,57 +237,43 @@ const OtherCostsPage: FC = () => {
 
   if (contextMissing) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Mill and Reporting Year required',
+          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
+        }}
+      />
     )
   }
 
   if (isLoading) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Other Costs" />
-          </Column>
-        </Grid>
-      </div>
+      <PageState header={header}>
+        <Column sm={4} md={8} lg={16}>
+          <LoadingScreen label="Loading Other Costs" />
+        </Column>
+      </PageState>
     )
   }
 
   if (errorDetail) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Other Costs"
-              subtitle={errorDetail}
-            />
-          </Column>
-          <Column sm={4} md={8} lg={16}>
-            <Button kind="secondary" onClick={goBack}>
-              Back to Schedule 1
-            </Button>
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Unable to load Other Costs',
+          subtitle: errorDetail,
+        }}
+      >
+        <Column sm={4} md={8} lg={16}>
+          <Button kind="secondary" onClick={goBack}>
+            Back to Schedule 1
+          </Button>
+        </Column>
+      </PageState>
     )
   }
 
