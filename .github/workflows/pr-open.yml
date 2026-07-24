@@ -10,23 +10,21 @@ concurrency:
 permissions: {}
 
 jobs:
-  # ZONE for OpenShift objects is the PR number mapped into 1-50, capping how
+  # ZONE for OpenShift objects is the PR number mapped into 0-49, capping how
   # many PR environments can exist at once. Images keep the real PR number.
   init:
     name: Initialize
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     runs-on: ubuntu-slim
     timeout-minutes: 1
     outputs:
       zone: ${{ steps.zone.outputs.zone }}
     steps:
       - id: zone
-        run: echo "zone=$(( (${{ github.event.number }} - 1) % 50 + 1 ))" >> $GITHUB_OUTPUT
+        run: echo "zone=$(( ${{ github.event.number }} % 50 ))" >> $GITHUB_OUTPUT
 
   # https://github.com/bcgov/action-builder-ghcr
   builds:
     name: Builds
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     permissions:
       attestations: write
       id-token: write
@@ -48,7 +46,6 @@ jobs:
 
   deploys:
     name: Deploys (${{ github.event.number }})
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [builds, init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets:

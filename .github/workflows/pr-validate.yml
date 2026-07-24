@@ -11,7 +11,7 @@ concurrency:
 permissions: {}
 
 jobs:
-  # ZONE for OpenShift objects is the PR number mapped into 1-50 (see
+  # ZONE for OpenShift objects is the PR number mapped into 0-49 (see
   # pr-open.yml), so the deployment links must use that zone.
   init:
     name: Initialize
@@ -22,7 +22,7 @@ jobs:
       zone: ${{ steps.zone.outputs.zone }}
     steps:
       - id: zone
-        run: echo "zone=$(( (${{ github.event.number }} - 1) % 50 + 1 ))" >> $GITHUB_OUTPUT
+        run: echo "zone=$(( ${{ github.event.number }} % 50 ))" >> $GITHUB_OUTPUT
 
   validate:
     name: Validate PR
