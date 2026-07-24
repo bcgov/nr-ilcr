@@ -34,7 +34,16 @@ public record Schedule1Request(
     @Valid SilvicultureInput silviculture,
     @DecimalMin(value = "-99999999", message = "{volume8DigitValidatorErrorMsg}")
     @DecimalMax(value = "99999999", message = "{volume8DigitValidatorErrorMsg}")
-    BigDecimal otherCostsVolume) {
+    BigDecimal otherCostsVolume,
+    // Forest Management Administration (143) volume — user-entered 8-digit; its cost is pulled from
+    // Schedule 3 (BR-04) and is not part of this request.
+    @DecimalMin(value = "-99999999", message = "{volume8DigitValidatorErrorMsg}")
+    @DecimalMax(value = "99999999", message = "{volume8DigitValidatorErrorMsg}")
+    BigDecimal forestMgmtAdminVolume,
+    // Subtotal Company Logging (144) volume — user-entered 8-digit; its cost is derived server-side.
+    @DecimalMin(value = "-99999999", message = "{volume8DigitValidatorErrorMsg}")
+    @DecimalMax(value = "99999999", message = "{volume8DigitValidatorErrorMsg}")
+    BigDecimal subtotalCompanyLoggingVolume) {
 
   /**
    * One writable fixed line item. Volume is the 7-digit group (±9,999,999, FLD-002); cost is the
@@ -50,10 +59,20 @@ public record Schedule1Request(
       Integer cost) {
   }
 
-  /** The two writable silviculture entries (codes 1 and 2); same range groups as a line item. */
+  /**
+   * The writable silviculture entries. {@code actualSpent} (1) and {@code accruedLessActual} (2) are
+   * volume + cost; {@code lessAdminVolume} (139) and {@code totalVolume} (140) are VOLUME only (7-digit)
+   * — their cost is pulled from Schedule 3 (139) or derived (140), not client-written.
+   */
   public record SilvicultureInput(
       @Valid EntryAmount actualSpent,
-      @Valid EntryAmount accruedLessActual) {
+      @Valid EntryAmount accruedLessActual,
+      @DecimalMin(value = "-9999999", message = "{volume7DigitValidatorErrorMsg}")
+      @DecimalMax(value = "9999999", message = "{volume7DigitValidatorErrorMsg}")
+      BigDecimal lessAdminVolume,
+      @DecimalMin(value = "-9999999", message = "{volume7DigitValidatorErrorMsg}")
+      @DecimalMax(value = "9999999", message = "{volume7DigitValidatorErrorMsg}")
+      BigDecimal totalVolume) {
   }
 
   /** A writable volume/cost pair (7-digit volume, default cost). */

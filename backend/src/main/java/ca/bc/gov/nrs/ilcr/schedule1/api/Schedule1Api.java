@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule1.api;
 
+import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
@@ -8,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,5 +65,19 @@ public interface Schedule1Api {
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule1(
+      @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Check Status (BR-07, Story 2.6): validate whether Schedule 1 meets all requirements. Read-only —
+   * no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown mill/year or
+   * no summary → 404; closed mill → 409.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param authentication the caller
+   * @return 200 with the check-status result (errors, warnings, requirements-met + success message)
+   */
+  @PostMapping("/check-status")
+  ResponseEntity<CheckStatusResponse> checkStatus(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }
