@@ -16,9 +16,9 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.Locale;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -53,13 +53,8 @@ class Schedule1ControllerTest {
   @Mock
   private Authentication authentication;
 
+  @InjectMocks
   private Schedule1Controller controller;
-
-  @BeforeEach
-  void setUp() {
-    controller = new Schedule1Controller(
-        millContextService, schedule1Service, permissions, messageSource);
-  }
 
   @Test
   void getSchedule1_validatesContext_derivesEditFlag_andReturnsDocument() {

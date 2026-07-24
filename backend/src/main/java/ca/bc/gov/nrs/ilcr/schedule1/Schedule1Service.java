@@ -339,12 +339,8 @@ public class Schedule1Service {
     // missing Schedule 3 — an empty map yields a null crown (no pre-fill) and null pulled costs.
     // First row per code wins (rows come back ordered by detail id) so a duplicate/corrupt row can't
     // make the crown volume or pulled costs depend on driver row order (legacy takes the first row).
-    Map<Integer, DetailRow> sch3ByCode = new HashMap<>();
-    for (DetailRow row : repository.findSchedule3Details(millId, year)) {
-      if (row.costItemCode() != null) {
-        sch3ByCode.putIfAbsent(row.costItemCode(), row);
-      }
-    }
+    Map<Integer, DetailRow> sch3ByCode =
+        firstRowPerCode(repository.findSchedule3Details(millId, year));
     DetailRow crownRow = sch3ByCode.get(CODE_SCH3_CROWN_TIMBER);
     BigDecimal sch3CrownVolume = crownRow == null ? null : crownRow.volume();
 
@@ -485,6 +481,17 @@ public class Schedule1Service {
         ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
         : null;
     return new CheckStatusResponse(requirementsMet, errors, warnings, message);
+  }
+
+  /** First stored detail row per cost-item code (later duplicates ignored); null codes skipped. */
+  private static Map<Integer, DetailRow> firstRowPerCode(List<DetailRow> rows) {
+    Map<Integer, DetailRow> byCode = new HashMap<>();
+    for (DetailRow row : rows) {
+      if (row.costItemCode() != null) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
   }
 
   /** First stored detail row per (non-Other) cost-item code; later duplicates are ignored. */

@@ -13,9 +13,9 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.Locale;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -50,13 +50,8 @@ class Schedule1OtherCostsControllerTest {
   @Mock
   private Authentication authentication;
 
+  @InjectMocks
   private Schedule1OtherCostsController controller;
-
-  @BeforeEach
-  void setUp() {
-    controller = new Schedule1OtherCostsController(
-        millContextService, schedule1Service, permissions, messageSource);
-  }
 
   private OtherCostsDocument mockDocEchoingMessage() {
     OtherCostsDocument doc = mock(OtherCostsDocument.class);

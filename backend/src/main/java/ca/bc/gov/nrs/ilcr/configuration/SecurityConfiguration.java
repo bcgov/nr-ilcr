@@ -25,13 +25,6 @@ public class SecurityConfiguration {
     private static final String PATH_HEALTH = "/api/health";
     private static final String PATH_INFO = "/api/info";
 
-    private static final String[] PUBLIC_PATHS = {
-        "/api",
-        PATH_HEALTH,
-        PATH_INFO,
-        "/api/prometheus"
-    };
-
     @Bean
     // java:S4502 — Disabling CSRF is safe here: this is a stateless REST API (SessionCreationPolicy
     // .STATELESS below) authenticated by bearer JWTs in the Authorization header, with no session

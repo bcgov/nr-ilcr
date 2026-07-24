@@ -92,8 +92,7 @@ class Schedule1OtherCostsServiceTest {
     stubRows(new BigDecimal("6000"), List.of());
     service.addOtherCost(MILL, YEAR, new OtherCostRequest("New Row", 1200), USER);
     // BR-06: the new row inherits the shared Other-Costs volume (6000).
-    verify(repository).insertOtherCost(
-        eq(SUMMARY), eq("New Row"), eq(1200), eq(new BigDecimal("6000")), eq(USER));
+    verify(repository).insertOtherCost(SUMMARY, "New Row", 1200, new BigDecimal("6000"), USER);
   }
 
   @Test
@@ -101,23 +100,24 @@ class Schedule1OtherCostsServiceTest {
     stubContext("D");
     stubRows(new BigDecimal("6000"), List.of());
     service.addOtherCost(MILL, YEAR, new OtherCostRequest("No cost row", null), USER);
-    verify(repository).insertOtherCost(
-        eq(SUMMARY), eq("No cost row"), eq(null), eq(new BigDecimal("6000")), eq(USER));
+    verify(repository).insertOtherCost(SUMMARY, "No cost row", null, new BigDecimal("6000"), USER);
   }
 
   @Test
   void add_nonDraft_throws409() {
     stubContext("S");
+    OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(ScheduleNotEditableException.class,
-        () -> service.addOtherCost(MILL, YEAR, new OtherCostRequest("x", 1), USER));
+        () -> service.addOtherCost(MILL, YEAR, request, USER));
   }
 
   @Test
   void update_unknownId_throws404() {
     stubContext("D");
     when(repository.updateOtherCost(999999, SUMMARY, "x", 1, USER)).thenReturn(0);
+    OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(OtherCostNotFoundException.class,
-        () -> service.updateOtherCost(MILL, YEAR, 999999, new OtherCostRequest("x", 1), USER));
+        () -> service.updateOtherCost(MILL, YEAR, 999999, request, USER));
   }
 
   @Test
@@ -144,8 +144,9 @@ class Schedule1OtherCostsServiceTest {
     doThrow(new DataIntegrityViolationException("boom"))
         .when(repository).insertOtherCost(eq(SUMMARY), any(), any(), any(), eq(USER));
 
+    OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(ScheduleNotSavedException.class,
-        () -> service.addOtherCost(MILL, YEAR, new OtherCostRequest("x", 1), USER));
+        () -> service.addOtherCost(MILL, YEAR, request, USER));
   }
 
   @Test
@@ -169,8 +170,9 @@ class Schedule1OtherCostsServiceTest {
     when(repository.updateOtherCost(5051, SUMMARY, "x", 1, USER))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
+    OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(ScheduleNotSavedException.class,
-        () -> service.updateOtherCost(MILL, YEAR, 5051, new OtherCostRequest("x", 1), USER));
+        () -> service.updateOtherCost(MILL, YEAR, 5051, request, USER));
   }
 
   @Test
