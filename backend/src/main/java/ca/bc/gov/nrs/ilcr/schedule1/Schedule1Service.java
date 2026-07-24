@@ -264,13 +264,7 @@ public class Schedule1Service {
   /** Upsert the writable codes; itemized Other-Costs rows untouched (their sole writer is Story 2.4). */
   private void writeWritableDetails(int summaryId, Schedule1Request request, String user) {
     // 12–18: volume + cost.
-    if (request.lineItems() != null) {
-      for (Schedule1Request.LineItemInput li : request.lineItems()) {
-        if (li.costItemCode() != null && WRITABLE_LINE_ITEM_CODES.contains(li.costItemCode())) {
-          repository.upsertFixedDetail(summaryId, li.costItemCode(), li.volume(), li.cost(), user);
-        }
-      }
-    }
+    writeLineItems(summaryId, request.lineItems(), user);
     // 143 / 144: VOLUME only — their cost is pulled from Sch 3 (143) or derived (144), never client-set.
     // Guarded by != null (like otherCostsVolume) so a request that omits the field leaves the stored
     // volume untouched rather than null-clobbering it.
@@ -283,27 +277,46 @@ public class Schedule1Service {
           summaryId, CODE_SUBTOTAL_COMPANY_LOGGING, request.subtotalCompanyLoggingVolume(), null, user);
     }
     // Silviculture: 1 & 2 are volume + cost; 139 (pulled cost) and 140 (derived cost) are VOLUME only.
-    if (request.silviculture() != null) {
-      Schedule1Request.SilvicultureInput silv = request.silviculture();
-      if (silv.actualSpent() != null) {
-        repository.upsertFixedDetail(
-            summaryId, CODE_SILV_ACTUAL, silv.actualSpent().volume(), silv.actualSpent().cost(), user);
-      }
-      if (silv.accruedLessActual() != null) {
-        repository.upsertFixedDetail(
-            summaryId, CODE_SILV_ACCRUED,
-            silv.accruedLessActual().volume(), silv.accruedLessActual().cost(), user);
-      }
-      if (silv.lessAdminVolume() != null) {
-        repository.upsertFixedDetail(summaryId, CODE_SILV_LESS_ADMIN, silv.lessAdminVolume(), null, user);
-      }
-      if (silv.totalVolume() != null) {
-        repository.upsertFixedDetail(summaryId, CODE_SILV_TOTAL, silv.totalVolume(), null, user);
-      }
-    }
+    writeSilviculture(summaryId, request.silviculture(), user);
     if (request.otherCostsVolume() != null) {
       // Shared item-19 volume row (null description) only — never the itemized rows (AC2).
       repository.upsertFixedDetail(summaryId, CODE_OTHER, request.otherCostsVolume(), null, user);
+    }
+  }
+
+  /** Write the writable 12–18 line items (volume + cost); null or non-writable codes are ignored. */
+  private void writeLineItems(
+      int summaryId, List<Schedule1Request.LineItemInput> lineItems, String user) {
+    if (lineItems == null) {
+      return;
+    }
+    for (Schedule1Request.LineItemInput li : lineItems) {
+      if (li.costItemCode() != null && WRITABLE_LINE_ITEM_CODES.contains(li.costItemCode())) {
+        repository.upsertFixedDetail(summaryId, li.costItemCode(), li.volume(), li.cost(), user);
+      }
+    }
+  }
+
+  /** Write the silviculture codes: 1 & 2 are volume + cost; 139/140 are VOLUME only. */
+  private void writeSilviculture(
+      int summaryId, Schedule1Request.SilvicultureInput silv, String user) {
+    if (silv == null) {
+      return;
+    }
+    if (silv.actualSpent() != null) {
+      repository.upsertFixedDetail(
+          summaryId, CODE_SILV_ACTUAL, silv.actualSpent().volume(), silv.actualSpent().cost(), user);
+    }
+    if (silv.accruedLessActual() != null) {
+      repository.upsertFixedDetail(
+          summaryId, CODE_SILV_ACCRUED,
+          silv.accruedLessActual().volume(), silv.accruedLessActual().cost(), user);
+    }
+    if (silv.lessAdminVolume() != null) {
+      repository.upsertFixedDetail(summaryId, CODE_SILV_LESS_ADMIN, silv.lessAdminVolume(), null, user);
+    }
+    if (silv.totalVolume() != null) {
+      repository.upsertFixedDetail(summaryId, CODE_SILV_TOTAL, silv.totalVolume(), null, user);
     }
   }
 
@@ -326,12 +339,8 @@ public class Schedule1Service {
     // missing Schedule 3 — an empty map yields a null crown (no pre-fill) and null pulled costs.
     // First row per code wins (rows come back ordered by detail id) so a duplicate/corrupt row can't
     // make the crown volume or pulled costs depend on driver row order (legacy takes the first row).
-    Map<Integer, DetailRow> sch3ByCode = new HashMap<>();
-    for (DetailRow row : repository.findSchedule3Details(millId, year)) {
-      if (row.costItemCode() != null) {
-        sch3ByCode.putIfAbsent(row.costItemCode(), row);
-      }
-    }
+    Map<Integer, DetailRow> sch3ByCode =
+        firstRowPerCode(repository.findSchedule3Details(millId, year));
     DetailRow crownRow = sch3ByCode.get(CODE_SCH3_CROWN_TIMBER);
     BigDecimal sch3CrownVolume = crownRow == null ? null : crownRow.volume();
 
@@ -443,25 +452,10 @@ public class Schedule1Service {
     List<DetailRow> details = repository.findDetails(summary.summaryId());
     // First row per code wins (rows come back ordered by detail id), matching the GET/save reads so a
     // corrupt duplicate can't make check-status disagree with the served document.
-    Map<Integer, DetailRow> byCode = new HashMap<>();
-    for (DetailRow row : details) {
-      if (row.costItemCode() != null && row.costItemCode() != CODE_OTHER) {
-        byCode.putIfAbsent(row.costItemCode(), row);
-      }
-    }
+    Map<Integer, DetailRow> byCode = indexFirstByCode(details);
 
-    List<MessageInfo> errors = new ArrayList<>();
+    List<MessageInfo> errors = new ArrayList<>(collectRequiredFieldErrors(byCode));
     List<MessageInfo> warnings = new ArrayList<>();
-
-    for (CheckField f : CHECK_FIELDS) {
-      DetailRow row = byCode.get(f.code());
-      if (f.checkVolume() && (row == null || row.volume() == null)) {
-        errors.add(valueRequired(f.label() + " - Volume"));
-      }
-      if (f.checkCost() && (row == null || row.cost() == null)) {
-        errors.add(valueRequired(f.label() + " - Cost"));
-      }
-    }
 
     // Subtotal Other Costs (N = itemized-row count).
     BigDecimal sharedVolume = repository.findSharedOtherCostsVolume(summary.summaryId()).orElse(null);
@@ -471,20 +465,13 @@ public class Schedule1Service {
         .map(OtherCostDetailRow::cost).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
     String otherLabel = "Subtotal Other Costs (" + count + ")";
 
-    if (sharedVolume == null) {
-      errors.add(valueRequired(otherLabel + " - Volume"));
-    } else if (sharedVolume.signum() > 0 && subtotalCost == 0L) {
-      errors.add(new MessageInfo(MSG_OTHER_COST_GT_ZERO,
-          otherLabel + ": " + resolveText(MSG_OTHER_COST_GT_ZERO)));
-    } else if (sharedVolume.signum() == 0 && subtotalCost > 0L) {
-      errors.add(new MessageInfo(MSG_OTHER_VOLUME_GT_ZERO,
-          otherLabel + ": " + resolveText(MSG_OTHER_VOLUME_GT_ZERO)));
+    MessageInfo otherCostError = otherCostsError(sharedVolume, subtotalCost, otherLabel);
+    if (otherCostError != null) {
+      errors.add(otherCostError);
     }
 
     // WRN-002 (non-blocking): any itemized row with a description but a null cost.
-    boolean anyEmptyCost = otherRows.stream()
-        .anyMatch(r -> r.cost() == null && StringUtils.isNotBlank(r.description()));
-    if (anyEmptyCost) {
+    if (anyOtherCostEmpty(otherRows)) {
       warnings.add(new MessageInfo(WARN_OTHER_COST_EMPTY,
           resolveText(WARN_OTHER_COST_EMPTY, count)));
     }
@@ -494,6 +481,66 @@ public class Schedule1Service {
         ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
         : null;
     return new CheckStatusResponse(requirementsMet, errors, warnings, message);
+  }
+
+  /** First stored detail row per cost-item code (later duplicates ignored); null codes skipped. */
+  private static Map<Integer, DetailRow> firstRowPerCode(List<DetailRow> rows) {
+    Map<Integer, DetailRow> byCode = new HashMap<>();
+    for (DetailRow row : rows) {
+      if (row.costItemCode() != null) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
+  }
+
+  /** First stored detail row per (non-Other) cost-item code; later duplicates are ignored. */
+  private static Map<Integer, DetailRow> indexFirstByCode(List<DetailRow> details) {
+    Map<Integer, DetailRow> byCode = new HashMap<>();
+    for (DetailRow row : details) {
+      if (row.costItemCode() != null && row.costItemCode() != CODE_OTHER) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
+  }
+
+  /** "Value Required" errors for each required volume/cost field that is missing (FLD-007/010). */
+  private List<MessageInfo> collectRequiredFieldErrors(Map<Integer, DetailRow> byCode) {
+    List<MessageInfo> errors = new ArrayList<>();
+    for (CheckField f : CHECK_FIELDS) {
+      DetailRow row = byCode.get(f.code());
+      if (f.checkVolume() && (row == null || row.volume() == null)) {
+        errors.add(valueRequired(f.label() + " - Volume"));
+      }
+      if (f.checkCost() && (row == null || row.cost() == null)) {
+        errors.add(valueRequired(f.label() + " - Cost"));
+      }
+    }
+    return errors;
+  }
+
+  /** The single Subtotal-Other-Costs error (volume required / cost-vs-volume mismatch), or null. */
+  private MessageInfo otherCostsError(
+      BigDecimal sharedVolume, long subtotalCost, String otherLabel) {
+    if (sharedVolume == null) {
+      return valueRequired(otherLabel + " - Volume");
+    }
+    if (sharedVolume.signum() > 0 && subtotalCost == 0L) {
+      return new MessageInfo(MSG_OTHER_COST_GT_ZERO,
+          otherLabel + ": " + resolveText(MSG_OTHER_COST_GT_ZERO));
+    }
+    if (sharedVolume.signum() == 0 && subtotalCost > 0L) {
+      return new MessageInfo(MSG_OTHER_VOLUME_GT_ZERO,
+          otherLabel + ": " + resolveText(MSG_OTHER_VOLUME_GT_ZERO));
+    }
+    return null;
+  }
+
+  /** WRN-002: true when any itemized Other-Costs row has a description but a null cost. */
+  private static boolean anyOtherCostEmpty(List<OtherCostDetailRow> otherRows) {
+    return otherRows.stream()
+        .anyMatch(r -> r.cost() == null && StringUtils.isNotBlank(r.description()));
   }
 
   /** A "{label}: Value Required" error (FLD-007/010), verbatim text resolved from the bundle. */

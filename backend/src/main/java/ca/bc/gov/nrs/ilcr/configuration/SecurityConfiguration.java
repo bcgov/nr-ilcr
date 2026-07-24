@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.configuration;
 
+import ca.bc.gov.nrs.ilcr.BackendConstants;
 import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.security.MockPrincipalFilter;
@@ -7,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -20,14 +22,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfiguration {
 
-    private static final String[] PUBLIC_PATHS = {
-        "/api",
-        "/api/health",
-        "/api/info",
-        "/api/prometheus"
-    };
+    private static final String PATH_HEALTH = "/api/health";
+    private static final String PATH_INFO = "/api/info";
 
     @Bean
+    // java:S4502 — Disabling CSRF is safe here: this is a stateless REST API (SessionCreationPolicy
+    // .STATELESS below) authenticated by bearer JWTs in the Authorization header, with no session
+    // cookie. CSRF requires an ambient credential the browser attaches automatically to a forged
+    // cross-site request; a bearer token is not sent automatically, so there is no CSRF surface to
+    // protect. Revisit this suppression if cookie- or session-based auth is ever introduced.
+    @SuppressWarnings("java:S4502")
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             @Value("${ilcr.security.enabled:false}") boolean securityEnabled,
@@ -57,7 +61,9 @@ public class SecurityConfiguration {
                     .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
-                            .requestMatchers("/api/health", "/api/info").permitAll()
+                            .requestMatchers(PATH_HEALTH, PATH_INFO).permitAll()
+                            .requestMatchers(PATH_HEALTH, PATH_HEALTH + "/**", PATH_INFO).permitAll()
+                            .requestMatchers(HttpMethod.GET, BackendConstants.HOME_PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {
@@ -69,7 +75,7 @@ public class SecurityConfiguration {
                     new MockPrincipalFilter(mockRole != null ? mockRole : Role.SUBMITTER),
                     UsernamePasswordAuthenticationFilter.class);
             http.authorizeHttpRequests(authorize -> authorize
-                    .requestMatchers(PUBLIC_PATHS).permitAll()
+                    .requestMatchers(BackendConstants.PUBLIC_PATHS).permitAll()
                     .anyRequest().permitAll());
         }
 

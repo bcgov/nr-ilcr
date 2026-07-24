@@ -28,6 +28,16 @@ on:
       oc_token:
         description: OpenShift token
         required: true
+      # Backend secrets
+      oracledb_username:
+        description: Oracle database username
+        required: true
+      oracledb_password:
+        description: Oracle database password
+        required: true
+      user_pools_id:
+        description: Cognito (FAM) user pool ID for JWT validation
+        required: true
 
     outputs:
       triggered:
@@ -44,7 +54,7 @@ jobs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: bcgov/action-deployer-openshift@1ffe5c65252909912e1dfad2dc7f683587d21da9 # v4.2.0
+      - uses: bcgov/action-deployer-openshift@27a85b7b157bfc9c3c9bf0aca53bcd288d4d2506 # v4.2.1
         id: deploy
         with:
           file: common/openshift.init.yml
@@ -52,8 +62,12 @@ jobs:
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           overwrite: true
-          parameters: -p ZONE="${{ inputs.target }}"
-            -p NAME="${{ github.event.repository.name }}"
+          parameters:
+            -p ZONE='${{ inputs.target }}'
+            -p NAME='${{ github.event.repository.name }}'
+            -p SPRING_DATASOURCE_USERNAME='${{ secrets.oracledb_username }}'
+            -p SPRING_DATASOURCE_PASSWORD='${{ secrets.oracledb_password }}'
+            -p COGNITO_USER_POOL='${{ secrets.user_pools_id }}'
           triggers: ${{ inputs.triggers }}
           debug: true
 
@@ -70,13 +84,15 @@ jobs:
           - name: backend
             file: backend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
+              -p ORACLEDB_HOST="${{ vars.ORACLEDB_HOST }}"
+              -p ORACLEDB_SERVICENAME="${{ vars.ORACLEDB_SERVICENAME }}"
           - name: frontend
             file: frontend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     steps:
-      - uses: bcgov/action-deployer-openshift@1ffe5c65252909912e1dfad2dc7f683587d21da9 # v4.2.0
+      - uses: bcgov/action-deployer-openshift@27a85b7b157bfc9c3c9bf0aca53bcd288d4d2506 # v4.2.1
         id: deploy
         with:
           file: ${{ matrix.file }}
