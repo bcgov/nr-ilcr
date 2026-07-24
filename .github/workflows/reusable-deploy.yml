@@ -28,6 +28,16 @@ on:
       oc_token:
         description: OpenShift token
         required: true
+      # Backend secrets
+      oracledb_username:
+        description: Oracle database username
+        required: true
+      oracledb_password:
+        description: Oracle database password
+        required: true
+      user_pools_id:
+        description: Cognito (FAM) user pool ID for JWT validation
+        required: true
 
     outputs:
       triggered:
@@ -52,8 +62,12 @@ jobs:
           oc_server: ${{ vars.oc_server }}
           oc_token: ${{ secrets.oc_token }}
           overwrite: true
-          parameters: -p ZONE="${{ inputs.target }}"
-            -p NAME="${{ github.event.repository.name }}"
+          parameters:
+            -p ZONE='${{ inputs.target }}'
+            -p NAME='${{ github.event.repository.name }}'
+            -p SPRING_DATASOURCE_USERNAME='${{ secrets.oracledb_username }}'
+            -p SPRING_DATASOURCE_PASSWORD='${{ secrets.oracledb_password }}'
+            -p COGNITO_USER_POOL='${{ secrets.user_pools_id }}'
           triggers: ${{ inputs.triggers }}
           debug: true
 
@@ -70,6 +84,8 @@ jobs:
           - name: backend
             file: backend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
+              -p ORACLEDB_HOST="${{ vars.ORACLEDB_HOST }}"
+              -p ORACLEDB_SERVICENAME="${{ vars.ORACLEDB_SERVICENAME }}"
           - name: frontend
             file: frontend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"

@@ -65,6 +65,15 @@ spring:
   config:
     activate:
       on-profile: oracle
+  data:
+    jdbc:
+      repositories:
+        enabled: true
+  # TCPS URL composed from parts; trust material is scoped to the JDBC
+  # connection via URL properties (waste-plus pattern) so the JVM default
+  # truststore stays intact for public HTTPS calls (e.g. OIDC JWKS).
+  datasource:
+    url: jdbc:oracle:thin:@tcps://${ORACLEDB_HOST:localhost}:${ORACLEDB_PORT:1543}/${ORACLEDB_SERVICENAME:ilcr}?javax.net.ssl.trustStore=${ORACLEDB_KEYSTORE:/cert/jssecacerts}&javax.net.ssl.trustStorePassword=${ORACLEDB_SECRET:changeit}&javax.net.ssl.keyStore=${ORACLEDB_KEYSTORE:/cert/jssecacerts}&javax.net.ssl.keyStorePassword=${ORACLEDB_SECRET:changeit}
 
 ilcr:
   datasource:
