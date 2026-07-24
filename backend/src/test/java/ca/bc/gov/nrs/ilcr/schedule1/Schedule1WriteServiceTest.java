@@ -179,4 +179,65 @@ class Schedule1WriteServiceTest {
         service.saveSchedule1(MILL, YEAR,
             request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER));
   }
+
+  @Test
+  void save_nullRevision_treatedAsFirstWrite() {
+    stubDraftSummary();
+    // A null optimistic-lock token means "no prior revision" -> expectedRevision -1 (first write).
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER))).thenReturn(1);
+
+    service.saveSchedule1(
+        MILL, YEAR,
+        new Schedule1Request(null, "c",
+            List.of(new LineItemInput(12, new BigDecimal("2000"), 60000)),
+            null, new BigDecimal("8000"), null, null),
+        true, USER);
+
+    verify(repository).bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER));
+  }
+
+  @Test
+  void delete_persistenceFailure_translatesToScheduleNotSaved() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findSummary(MILL, YEAR, "1"))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
+    doThrow(new DataIntegrityViolationException("boom")).when(repository).deleteSchedule(SUMMARY_ID);
+
+    assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule1(MILL, YEAR));
+  }
+
+  @Test
+  void save_nullLineItemsAndSilviculture_skipsOptionalWrites_writesSharedVolumeOnly() {
+    stubDraftSummary();
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+
+    // null lineItems and null silviculture skip those write branches entirely; only the shared
+    // Other-Costs volume (code 19) is written.
+    service.saveSchedule1(
+        MILL, YEAR,
+        new Schedule1Request(0, "c", null, null, new BigDecimal("8000"), null, null),
+        true, USER);
+
+    verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), eq(null), eq(USER));
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), anyString());
+  }
+
+  @Test
+  void save_nonWritableCodeAndNullSilvFields_persistNothingOptional() {
+    stubDraftSummary();
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+
+    // A non-writable line-item code (99) is skipped; a present silviculture block whose sub-fields
+    // are all null writes none of them; a null otherCostsVolume leaves code 19 untouched.
+    service.saveSchedule1(
+        MILL, YEAR,
+        new Schedule1Request(0, "c",
+            List.of(new LineItemInput(99, new BigDecimal("1"), 1)),
+            new SilvicultureInput(null, null, null, null),
+            null, null, null),
+        true, USER);
+
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(99), any(), any(), anyString());
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), any(), anyString());
+  }
 }

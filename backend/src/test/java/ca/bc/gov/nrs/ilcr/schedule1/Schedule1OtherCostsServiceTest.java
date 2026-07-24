@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Unit test for the Story 2.4 Subtotal Other Costs operations on {@link Schedule1Service} (server-side
@@ -123,5 +126,73 @@ class Schedule1OtherCostsServiceTest {
     when(repository.deleteOtherCost(999999, SUMMARY)).thenReturn(0);
     assertThrows(OtherCostNotFoundException.class,
         () -> service.deleteOtherCost(MILL, YEAR, 999999));
+  }
+
+  @Test
+  void getDocument_editableFalseWhenCallerCannotEdit() {
+    // Draft track but caller lacks EDIT_SCHEDULE: the callerMayEdit short-circuit keeps it read-only.
+    stubContext("D");
+    stubRows(new BigDecimal("5000"), List.of());
+    assertFalse(service.getOtherCostsDocument(MILL, YEAR, false).editable());
+  }
+
+  @Test
+  void add_persistenceFailure_translatesToScheduleNotSaved() {
+    stubContext("D");
+    when(repository.findSharedOtherCostsVolume(SUMMARY))
+        .thenReturn(Optional.of(new BigDecimal("6000")));
+    doThrow(new DataIntegrityViolationException("boom"))
+        .when(repository).insertOtherCost(eq(SUMMARY), any(), any(), any(), eq(USER));
+
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.addOtherCost(MILL, YEAR, new OtherCostRequest("x", 1), USER));
+  }
+
+  @Test
+  void update_happyPath_returnsRebuiltDocument() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"), List.of(
+        new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+    when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER)).thenReturn(1);
+
+    OtherCostsDocument doc =
+        service.updateOtherCost(MILL, YEAR, 5051, new OtherCostRequest("Row A+", 3200), USER);
+
+    assertEquals(1, doc.count());
+    assertTrue(doc.editable());
+    verify(repository).updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER);
+  }
+
+  @Test
+  void update_persistenceFailure_translatesToScheduleNotSaved() {
+    stubContext("D");
+    when(repository.updateOtherCost(5051, SUMMARY, "x", 1, USER))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.updateOtherCost(MILL, YEAR, 5051, new OtherCostRequest("x", 1), USER));
+  }
+
+  @Test
+  void delete_happyPath_returnsRebuiltDocument() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"), List.of());
+    when(repository.deleteOtherCost(5051, SUMMARY)).thenReturn(1);
+
+    OtherCostsDocument doc = service.deleteOtherCost(MILL, YEAR, 5051);
+
+    assertEquals(0, doc.count());
+    assertTrue(doc.editable());
+    verify(repository).deleteOtherCost(5051, SUMMARY);
+  }
+
+  @Test
+  void delete_persistenceFailure_translatesToScheduleNotSaved() {
+    stubContext("D");
+    when(repository.deleteOtherCost(5051, SUMMARY))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.deleteOtherCost(MILL, YEAR, 5051));
   }
 }
