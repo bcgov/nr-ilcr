@@ -30,6 +30,12 @@ public class SecurityConfiguration {
     };
 
     @Bean
+    // java:S4502 — Disabling CSRF is safe here: this is a stateless REST API (SessionCreationPolicy
+    // .STATELESS below) authenticated by bearer JWTs in the Authorization header, with no session
+    // cookie. CSRF requires an ambient credential the browser attaches automatically to a forged
+    // cross-site request; a bearer token is not sent automatically, so there is no CSRF surface to
+    // protect. Revisit this suppression if cookie- or session-based auth is ever introduced.
+    @SuppressWarnings("java:S4502")
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             @Value("${ilcr.security.enabled:false}") boolean securityEnabled,
