@@ -29,12 +29,9 @@ parameters:
     description: The maximum amount of replicas for the horizontal pod autoscaler.
     value: "5"
   - name: CPU_REQUEST
-    value: "50m"
+    value: "20m"
   - name: MEMORY_REQUEST
-    value: "50Mi"
-  - name: MEMORY_LIMIT
-    description: Memory limit for the container (bounds the pod's working set).
-    value: "1Gi"
+    value: "64Mi"
   - name: LOG_LEVEL
     description: Caddy log level (debug|info|warn|error)
     value: "info"
@@ -126,8 +123,7 @@ objects:
                 requests:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
-                limits:
-                  memory: ${MEMORY_LIMIT}
+                  ephemeral-storage: "100Mi"
               securityContext:
                 allowPrivilegeEscalation: false
                 runAsNonRoot: true
