@@ -33,8 +33,10 @@ export const isNavigationMenu = (item: NavigationItem): item is NavigationMenu =
 
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
+    // Story 1.3: '/' renders the Home (Mill and Reporting Year) page — legacy has no Dashboard
+    // concept. The ROUTES.dashboard key is internal only; the label is what users see.
     icon: Home,
-    name: 'Dashboard',
+    name: 'Home',
     path: ROUTES.dashboard,
   },
   {
