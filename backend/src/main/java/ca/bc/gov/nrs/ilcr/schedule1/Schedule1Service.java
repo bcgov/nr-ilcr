@@ -58,6 +58,15 @@ public class Schedule1Service {
   private static final int CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST = 115; // BR-04 Forest Mgmt Admin (harvest)
   private static final int CODE_SCH3_SUBTOTAL_ACTUAL_POP = 135;     // BR-04 Forest Mgmt Admin (PO&P)
 
+  // The Schedule 3 fixed admin-cost lines that make up "Subtotal Actual Costs" when it is not persisted
+  // as items 115/135. Legacy computes that subtotal on the fly and stores only these raw lines, so
+  // Forest Mgmt Admin falls back to summing them (harvest 27–37 minus PO&P 125–134; 127 skipped; 29 &
+  // 37 have no PO&P). Legacy Constant.REPORT_COST_ITEMS.
+  private static final List<Integer> SCH3_ADMIN_HARVEST =
+      List.of(27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37);
+  private static final List<Integer> SCH3_ADMIN_POP =
+      List.of(125, 126, 128, 129, 130, 131, 132, 133, 134);
+
   // WRN-001: legacy verbatim bundle key for the crown-timber pre-fill warning (BR-03, S02).
   private static final String WARN_CROWN_PREFILL = "crownVolumeSetForSchedule1";
 
@@ -380,9 +389,7 @@ public class Schedule1Service {
     // BR-04: the two admin costs are PULLED from Schedule 3 (read-only), never from Schedule 1's own
     // 143/139 rows. Forest Mgmt Admin = crownCost of Sch 3 Subtotal Actual Costs (harvest 115 −
     // PO&P 135); Less Silv Admin = Sch 3 Silviculture Admin (item 37; PO&P forced 0 ⇒ = its cost).
-    Integer forestMgmtAdminCost = crownCost(
-        sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST),
-        sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_POP));
+    Integer forestMgmtAdminCost = forestManagementAdminCost(sch3ByCode);
     Integer lessSilvAdminCost = costOf(sch3ByCode.get(CODE_SCH3_SILV_ADMIN));
 
     OtherCostsSummary otherCosts = toOtherCosts(otherCostRows);
@@ -582,6 +589,40 @@ public class Schedule1Service {
       return null;
     }
     return harvest.cost() - pop.cost();
+  }
+
+  /**
+   * The Schedule 3 "Subtotal Actual Costs" crown cost (harvest − PO&amp;P) that drives Schedule 1's
+   * Forest Management Administration cost (BR-04). Modern Schedule 3 persists the subtotal as items
+   * 115/135, but legacy/migrated Schedule 3 computes it on the fly and stores only the raw admin lines,
+   * so when 115/135 are absent this sums the stored fixed admin lines (harvest 27–37 minus PO&amp;P
+   * 125–134). Returns null only when there is no Schedule 3 admin data at all (so the field genuinely
+   * blanks when no Schedule 3 exists). [PARITY-VERIFY: the scaling-expense derived PO&amp;P (131) and the
+   * Other-Acceptable sub-page contribution to the subtotal are included only when persisted as rows.]
+   */
+  private static Integer forestManagementAdminCost(Map<Integer, DetailRow> sch3) {
+    DetailRow storedHarvest = sch3.get(CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST);
+    DetailRow storedPop = sch3.get(CODE_SCH3_SUBTOTAL_ACTUAL_POP);
+    if (storedHarvest != null && storedPop != null) {
+      return crownCost(storedHarvest, storedPop);
+    }
+    long total = 0;
+    boolean anyRow = false;
+    for (Integer code : SCH3_ADMIN_HARVEST) {
+      DetailRow row = sch3.get(code);
+      if (row != null && row.cost() != null) {
+        total += row.cost();
+        anyRow = true;
+      }
+    }
+    for (Integer code : SCH3_ADMIN_POP) {
+      DetailRow row = sch3.get(code);
+      if (row != null && row.cost() != null) {
+        total -= row.cost();
+        anyRow = true;
+      }
+    }
+    return anyRow ? Math.toIntExact(total) : null;
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for an advisory warning message. */
