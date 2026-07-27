@@ -161,6 +161,34 @@ class Schedule1ServiceTest {
   }
 
   @Test
+  void derivedTotals_foldInSchedule3AndLineItems() {
+    stub("D", List.of(
+        new DetailRow(12, new BigDecimal("100"), 40000, null),   // logging line
+        new DetailRow(13, new BigDecimal("50"), 10000, null),    // logging line
+        new DetailRow(143, new BigDecimal("1000"), null, null),  // FMA volume (cost pulled from Sch3)
+        new DetailRow(144, new BigDecimal("2000"), null, null),  // Subtotal Company Logging volume
+        new DetailRow(1, new BigDecimal("10"), 200000, null),    // Silviculture Actual $ Spent
+        new DetailRow(2, new BigDecimal("10"), 50000, null),     // Accrued less Actual
+        new DetailRow(140, new BigDecimal("500"), null, null))); // Total Silviculture volume
+    stubSchedule3(List.of(
+        new DetailRow(119, new BigDecimal("4000"), null, null),  // crown volume (prefill won't fire — Sch1 has volumes)
+        new DetailRow(115, null, 900000, null),                  // Subtotal Actual (harvest)
+        new DetailRow(135, null, 300000, null),                  // Subtotal Actual (PO&P) -> FMA = 600000
+        new DetailRow(37, null, 150000, null)));                 // Silviculture Admin -> lessSilvAdmin = 150000
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    // Subtotal Company Logging = (40000 + 10000) + 600000 (FMA) + 0 (other costs) = 650000.
+    assertEquals(650000L, doc.subtotalCompanyLoggingCost());
+    // Total Silviculture = 200000 (actual) − 150000 (Sch3 silv admin) + 50000 (accrued) = 100000.
+    assertEquals(100000L, doc.totalSilvicultureCost());
+    // Total Company Logging = 650000 + 100000 = 750000; its $/m³ = 750000 / 4000 crown volume = 187.5.
+    assertEquals(750000L, doc.totalCompanyLoggingCost());
+    assertEquals(0, new BigDecimal("187.5").compareTo(doc.totalCompanyLoggingPerUnit()));
+    // Per-unit cells: FMA 600000/1000 = 600.0; Subtotal 650000/2000 = 325.0.
+    assertEquals(0, new BigDecimal("600.0").compareTo(doc.forestMgmtAdminPerUnit()));
+    assertEquals(0, new BigDecimal("325.0").compareTo(doc.subtotalCompanyLoggingPerUnit()));
+  }
+
+  @Test
   void br04_forestMgmtAdmin_computedFromFixedLinesWhenSubtotalNotPersisted() {
     // Legacy/migrated Schedule 3 stores only the raw admin lines — no 115/135 subtotal rows (which
     // legacy computes on the fly). Forest Mgmt Admin must still populate: Σ harvest(27–37) − Σ PO&P.

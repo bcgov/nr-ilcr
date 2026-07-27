@@ -46,6 +46,15 @@ export default interface Schedule1Response {
   forestMgmtAdminCost: number | null
   lessSilvAdminCost: number | null
   otherCosts: OtherCostsSummary
+  // Derived read-only figures (legacy Schedule1MB getters) — server-computed, never recompute client-side.
+  forestMgmtAdminPerUnit: number | null // 143 $/m³
+  lessSilvAdminPerUnit: number | null // 139 $/m³
+  totalSilvicultureCost: number | null // 140 cost (silv actual − Sch3 silv admin + accrued)
+  totalSilviculturePerUnit: number | null // 140 $/m³
+  subtotalCompanyLoggingCost: number | null // 144 cost (Σ logging + FMA + other costs)
+  subtotalCompanyLoggingPerUnit: number | null // 144 $/m³
+  totalCompanyLoggingCost: number | null // grand total (subtotal + total silviculture)
+  totalCompanyLoggingPerUnit: number | null // grand total $/m³ (÷ Sch3 harvested crown volume)
   // Advisory, non-blocking messages carried on the GET (WRN-001 crown pre-fill rides here). Story 2.3.
   warnings?: MessageInfo[]
   message?: MessageInfo | null

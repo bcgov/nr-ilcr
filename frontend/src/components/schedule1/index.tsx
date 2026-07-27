@@ -417,15 +417,26 @@ const Schedule1: FC = () => {
     // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
     // pulled from Schedule 3, 140's is derived — both read-only.
     const writableCost = row.code === 1 || row.code === 2
-    const costValue = row.code === 139 ? data.lessSilvAdminCost : item?.cost
-    // 139/140 $/m³ (cost ÷ volume) is a Schedule-3 cross-derivation deferred this story — show —.
-    const perUnitCell = row.code === 139 || row.code === 140 ? '—' : fmt(item?.perUnit)
+    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
+    const costValue =
+      row.code === 139
+        ? data.lessSilvAdminCost
+        : row.code === 140
+          ? data.totalSilvicultureCost
+          : item?.cost
+    // $/m³ = cost ÷ volume, computed server-side (139/140 fold in the Schedule 3 pulls).
+    const perUnitValue =
+      row.code === 139
+        ? data.lessSilvAdminPerUnit
+        : row.code === 140
+          ? data.totalSilviculturePerUnit
+          : item?.perUnit
     return (
       <TableRow key={row.code}>
         <TableCell>{row.label}</TableCell>
         {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
         {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
-        <TableCell className="schedule-1__num">{perUnitCell}</TableCell>
+        <TableCell className="schedule-1__num">{fmt(perUnitValue)}</TableCell>
       </TableRow>
     )
   }
@@ -443,7 +454,7 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 143)?.volume,
       )}
       <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminCost)}</TableCell>
-      <TableCell className="schedule-1__num">—</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminPerUnit)}</TableCell>
     </TableRow>
   )
 
@@ -456,8 +467,19 @@ const Schedule1: FC = () => {
         true,
         data.lineItems.find((li) => li.costItemCode === 144)?.volume,
       )}
-      <TableCell className="schedule-1__num">—</TableCell>
-      <TableCell className="schedule-1__num">—</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingPerUnit)}</TableCell>
+    </TableRow>
+  )
+
+  // Grand-total row (legacy "Total Company Logging Costs (Including total Silviculture Cost)"): the
+  // Total Harvested Crown Timber volume (Sch 3), the total logging cost, and its $/m³ average.
+  const totalCompanyLoggingRow = (
+    <TableRow key="total-company-logging">
+      <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.schedule3CrownVolume)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingPerUnit)}</TableCell>
     </TableRow>
   )
 
@@ -616,7 +638,10 @@ const Schedule1: FC = () => {
                   <TableHeader className="schedule-1__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
-              <TableBody>{SILV_ROWS.map(silvicultureRow)}</TableBody>
+              <TableBody>
+                {SILV_ROWS.map(silvicultureRow)}
+                {totalCompanyLoggingRow}
+              </TableBody>
             </Table>
           </TableContainer>
         </Column>
@@ -628,6 +653,7 @@ const Schedule1: FC = () => {
               Subtotal Other Costs({data.otherCosts.count}):
             </Button>
             <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
+            <span className="schedule-1__num">$/m³: {fmt(data.otherCosts.perUnit)}</span>
           </div>
           {editable && (
             <TextInput
