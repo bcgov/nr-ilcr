@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
@@ -11,6 +12,8 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 
 /**
@@ -23,10 +26,16 @@ public class MillContextService {
 
   private static final String STATUS_ACTIVE = "ACT";
 
-  private final MillContextRepository repository;
+  // Reused legacy bundle key (messages.properties:37) — the same SUC-001 key Schedule 1's save uses.
+  // No new key is added; the text is resolved server-side (AD-8) and never hardcoded in Java.
+  private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
 
-  public MillContextService(MillContextRepository repository) {
+  private final MillContextRepository repository;
+  private final MessageSource messageSource;
+
+  public MillContextService(MillContextRepository repository, MessageSource messageSource) {
     this.repository = repository;
+    this.messageSource = messageSource;
   }
 
   /**
@@ -109,7 +118,17 @@ public class MillContextService {
     boolean millViewable = STATUS_ACTIVE.equalsIgnoreCase(mill.millStatusCode());
     return new WorkingContext(
         mill.millId(), mill.millNumber(), mill.millName(), year,
-        schedules1To10, schedule11, millViewable);
+        schedules1To10, schedule11, millViewable, savedMessage());
+  }
+
+  /**
+   * The SUC-001 confirmation carried on every 200 (Story 1.3, AC7). Resolves the reused legacy bundle
+   * key to its verbatim text via the wired {@code MessageSource} (AD-8) — mirrors how Schedule 1's
+   * controllers build their success {@code MessageInfo}. The frontend only DISPLAYS it after a Save.
+   */
+  private MessageInfo savedMessage() {
+    return new MessageInfo(
+        MSG_SAVED, messageSource.getMessage(MSG_SAVED, null, MSG_SAVED, LocaleContextHolder.getLocale()));
   }
 
   /** Null when the code is null (S07 / NULL code column); description resolved from the lookup. */
