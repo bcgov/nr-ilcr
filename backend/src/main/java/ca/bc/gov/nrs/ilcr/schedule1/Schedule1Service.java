@@ -321,6 +321,24 @@ public class Schedule1Service {
   }
 
   /**
+   * Partition the stored detail rows into the code-keyed map (single row per code) and the
+   * repeatable Other-Costs rows. Rows without a cost item code are ignored.
+   */
+  private static void partitionDetails(
+      List<DetailRow> details, Map<Integer, DetailRow> byCode, List<DetailRow> otherCostRows) {
+    for (DetailRow row : details) {
+      if (row.costItemCode() == null) {
+        continue;
+      }
+      if (row.costItemCode() == CODE_OTHER) {
+        otherCostRows.add(row);
+      } else {
+        byCode.put(row.costItemCode(), row);
+      }
+    }
+  }
+
+  /**
    * Assemble the Schedule 1 document for a mill/year.
    *
    * @param millId the mill id (context already validated)
@@ -346,13 +364,7 @@ public class Schedule1Service {
 
     Map<Integer, DetailRow> byCode = new HashMap<>();
     List<DetailRow> otherCostRows = new ArrayList<>();
-    for (DetailRow row : details) {
-      if (row.costItemCode() != null && row.costItemCode() == CODE_OTHER) {
-        otherCostRows.add(row);
-      } else if (row.costItemCode() != null) {
-        byCode.put(row.costItemCode(), row);
-      }
-    }
+    partitionDetails(details, byCode, otherCostRows);
 
     // BR-03 pre-fill (S02): first entry (every stored volume empty) + a Schedule 3 Crown Timber
     // volume present ⇒ copy that volume into the full legacy 13-field volume set (all line items 12–18,
@@ -404,7 +416,7 @@ public class Schedule1Service {
 
     Long subtotalCompanyLoggingCost = loggingLineCost + fmaCost + otherCostsCost;
     Long totalSilvicultureCost =
-        (long) costOfCode(byCode, CODE_SILV_ACTUAL) - lsaCost + costOfCode(byCode, CODE_SILV_ACCRUED);
+        costOfCode(byCode, CODE_SILV_ACTUAL) - lsaCost + costOfCode(byCode, CODE_SILV_ACCRUED);
     Long totalCompanyLoggingCost = subtotalCompanyLoggingCost + totalSilvicultureCost;
 
     BigDecimal forestMgmtAdminPerUnit = perUnit(
