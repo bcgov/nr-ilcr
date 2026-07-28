@@ -677,7 +677,7 @@ const Schedule4: FC = () => {
           <Column sm={4} md={8} lg={16} className="schedule-4__check">
             {checkResult.messages.map((msg) => (
               <InlineNotification
-                key={`schedule-${msg.key}`}
+                key={`schedule-${msg.key}-${msg.text}`}
                 kind="success"
                 lowContrast
                 title="Check Status"
@@ -688,7 +688,7 @@ const Schedule4: FC = () => {
               <div key={`loc-${location.id ?? location.name}`}>
                 {location.messages.map((msg) => (
                   <InlineNotification
-                    key={`met-${location.id ?? location.name}`}
+                    key={`met-${location.id ?? location.name}-${msg.key}-${msg.text}`}
                     kind="success"
                     lowContrast
                     title="Check Status"

@@ -4,9 +4,9 @@
 // schedule sends 0).
 
 export default interface Schedule2Request {
-  revisionCount: number
-  comments: string | null
-  purchasedLogCostCost: number | null // item 25 cost
-  lessLogSalesVolume: number | null // item 26 volume
-  lessLogSalesCost: number | null // item 26 cost
+  readonly revisionCount: number
+  readonly comments: string | null
+  readonly purchasedLogCostCost: number | null // item 25 cost
+  readonly lessLogSalesVolume: number | null // item 26 volume
+  readonly lessLogSalesCost: number | null // item 26 cost
 }
