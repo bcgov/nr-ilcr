@@ -30,7 +30,7 @@ import { validateSchedule1 } from './validation'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
-// are client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so
+// are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
@@ -142,6 +142,8 @@ const Schedule1: FC = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [confirmNavOpen, setConfirmNavOpen] = useState(false)
+  const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
 
@@ -295,14 +297,21 @@ const Schedule1: FC = () => {
     // current backend model an openable schedule is always saved (GET 404s for no summary), so this
     // guard is effectively unreachable.
     if (!data) {
-      window.alert(ALT_SAVE_BEFORE_OTHER_COSTS)
+      setOtherCostsBlockedOpen(true)
       return
     }
     // Navigating away from an editable Schedule 1 discards unsaved edits — confirm first (legacy
     // confirmNavigationMsg). A read-only schedule has nothing to lose, so open directly.
-    if (data.editable && !window.confirm(CONFIRM_NAVIGATION)) {
+    if (data.editable) {
+      setConfirmNavOpen(true)
       return
     }
+    navigate({ to: '/schedule-1/other-costs' })
+  }
+
+  // Confirmed via the navigation Modal: discard unsaved edits and open Other Costs.
+  const openOtherCosts = () => {
+    setConfirmNavOpen(false)
     navigate({ to: '/schedule-1/other-costs' })
   }
 
@@ -700,6 +709,32 @@ const Schedule1: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {/* Discard-unsaved-edits confirm before leaving an editable schedule for Other Costs. */}
+      {editable && (
+        <Modal
+          open={confirmNavOpen}
+          modalHeading="Leave Schedule 1"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmNavOpen(false)}
+          onRequestSubmit={openOtherCosts}
+        >
+          <p>{CONFIRM_NAVIGATION}</p>
+        </Modal>
+      )}
+
+      {/* ALT-001: schedule must be saved before Other Costs can open (informational, single action). */}
+      {otherCostsBlockedOpen && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Save required"
+          onRequestClose={() => setOtherCostsBlockedOpen(false)}
+        >
+          <p>{ALT_SAVE_BEFORE_OTHER_COSTS}</p>
         </Modal>
       )}
     </div>

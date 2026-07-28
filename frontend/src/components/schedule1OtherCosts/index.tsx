@@ -29,6 +29,7 @@ import './index.scss'
 // Client-side chrome (verbatim legacy text); SUC-* come from the API message.text (AD-8).
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+const OTHER_COSTS_PATH = '/v1/schedule1/other-costs'
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? '—' : String(value)
@@ -76,7 +77,8 @@ const OtherCostsPage: FC = () => {
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
-  const base = `/v1/schedule1/other-costs`
+  // Derived purely from millId/year (both effect deps), so the effect re-runs on any real change
+  // without listing this string. The request path is a module constant (OTHER_COSTS_PATH).
   const query = `?millId=${millId}&year=${year}`
 
   useEffect(() => {
@@ -93,6 +95,8 @@ const OtherCostsPage: FC = () => {
     // Cancel (its row may be absent from the reloaded list, leaving all actions disabled).
     setEditingId(null)
     setEditErrors({})
+    setEditDescription('')
+    setEditCost('')
     setAddDescription('')
     setAddCost('')
     setAddErrors({})
@@ -100,7 +104,7 @@ const OtherCostsPage: FC = () => {
     let active = true
     apiService
       .getAxiosInstance()
-      .get<OtherCostsDocument>(`${base}${query}`)
+      .get<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}`)
       .then((response) => {
         if (active) {
           setData(response.data)
@@ -121,7 +125,10 @@ const OtherCostsPage: FC = () => {
     return () => {
       active = false
     }
-  }, [millId, year, contextMissing, base, query])
+    // `query` is intentionally omitted: it is derived solely from millId/year (already listed), so
+    // adding it would imply an independent reactive input that doesn't exist.
+    // eslint-disable-next-line @eslint-react/exhaustive-deps
+  }, [millId, year, contextMissing])
 
   const applyDocument = (doc: OtherCostsDocument) => {
     setData(doc)
@@ -145,7 +152,7 @@ const OtherCostsPage: FC = () => {
     setSaving(true)
     apiService
       .getAxiosInstance()
-      .post<OtherCostsDocument>(`${base}${query}`, {
+      .post<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}`, {
         description: addDescription.trim(),
         cost: toNum(addCost),
       })
@@ -170,6 +177,8 @@ const OtherCostsPage: FC = () => {
   const cancelEdit = () => {
     setEditingId(null)
     setEditErrors({})
+    setEditDescription('')
+    setEditCost('')
   }
 
   const handleSaveEdit = () => {
@@ -187,13 +196,15 @@ const OtherCostsPage: FC = () => {
     setSaving(true)
     apiService
       .getAxiosInstance()
-      .put<OtherCostsDocument>(`${base}/${editingId}${query}`, {
+      .put<OtherCostsDocument>(`${OTHER_COSTS_PATH}/${editingId}${query}`, {
         description: editDescription.trim(),
         cost: toNum(editCost),
       })
       .then((response) => {
         applyDocument(response.data)
         setEditingId(null)
+        setEditDescription('')
+        setEditCost('')
       })
       .catch((error: unknown) => {
         setActionError(extractDetail(error) || 'Other cost could not be saved.')
@@ -212,7 +223,7 @@ const OtherCostsPage: FC = () => {
     setActionError(null)
     apiService
       .getAxiosInstance()
-      .delete<OtherCostsDocument>(`${base}/${id}${query}`)
+      .delete<OtherCostsDocument>(`${OTHER_COSTS_PATH}/${id}${query}`)
       .then((response) => {
         applyDocument(response.data)
       })

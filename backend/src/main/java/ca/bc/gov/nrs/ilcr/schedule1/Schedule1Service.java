@@ -389,7 +389,7 @@ public class Schedule1Service {
     // BR-04: the two admin costs are PULLED from Schedule 3 (read-only), never from Schedule 1's own
     // 143/139 rows. Forest Mgmt Admin = crownCost of Sch 3 Subtotal Actual Costs (harvest 115 −
     // PO&P 135); Less Silv Admin = Sch 3 Silviculture Admin (item 37; PO&P forced 0 ⇒ = its cost).
-    Integer forestMgmtAdminCost = forestManagementAdminCost(sch3ByCode);
+    Long forestMgmtAdminCost = forestManagementAdminCost(sch3ByCode);
     Integer lessSilvAdminCost = costOf(sch3ByCode.get(CODE_SCH3_SILV_ADMIN));
 
     OtherCostsSummary otherCosts = toOtherCosts(otherCostRows);
@@ -620,11 +620,11 @@ public class Schedule1Service {
    * Legacy {@code CostType.getCrownCost} = harvest cost − PO&amp;P cost, returning null when EITHER
    * side is absent ({@code bigDecimalNotNullCostSubtraction}). Costs are whole dollars.
    */
-  private static Integer crownCost(DetailRow harvest, DetailRow pop) {
+  private static Long crownCost(DetailRow harvest, DetailRow pop) {
     if (harvest == null || harvest.cost() == null || pop == null || pop.cost() == null) {
       return null;
     }
-    return harvest.cost() - pop.cost();
+    return (long) harvest.cost() - pop.cost();
   }
 
   /**
@@ -636,7 +636,7 @@ public class Schedule1Service {
    * blanks when no Schedule 3 exists). [PARITY-VERIFY: the scaling-expense derived PO&amp;P (131) and the
    * Other-Acceptable sub-page contribution to the subtotal are included only when persisted as rows.]
    */
-  private static Integer forestManagementAdminCost(Map<Integer, DetailRow> sch3) {
+  private static Long forestManagementAdminCost(Map<Integer, DetailRow> sch3) {
     DetailRow storedHarvest = sch3.get(CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST);
     DetailRow storedPop = sch3.get(CODE_SCH3_SUBTOTAL_ACTUAL_POP);
     if (storedHarvest != null && storedPop != null) {
@@ -658,7 +658,9 @@ public class Schedule1Service {
         anyRow = true;
       }
     }
-    return anyRow ? Math.toIntExact(total) : null;
+    // Return the accumulated long directly (no Math.toIntExact): a large aggregate must not bubble
+    // as a 500. Parity with legacy, which carried this crown cost as an unbounded BigDecimal.
+    return anyRow ? total : null;
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for an advisory warning message. */

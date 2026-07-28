@@ -28,7 +28,7 @@ public record Schedule1Response(
     String comments,
     List<LineItem> lineItems,
     SilvicultureBlock silviculture,
-    Integer forestMgmtAdminCost,
+    Long forestMgmtAdminCost,
     Integer lessSilvAdminCost,
     OtherCostsSummary otherCosts,
     // Derived read-only figures (legacy Schedule1MB getters) — the $/m³ ("Cal") per-unit cells and the
