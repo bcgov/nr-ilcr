@@ -36,7 +36,6 @@ jobs:
 
   ageOutPRs:
     name: PR Deployment Purge
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     env:
       # https://tecadmin.net/getting-yesterdays-date-in-bash/
       CUTOFF: "1 week ago"

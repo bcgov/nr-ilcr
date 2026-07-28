@@ -7,7 +7,35 @@ parameters:
   - name: ZONE
     description: Deployment zone, e.g. pr-### or prod
     required: true
+  - name: SPRING_DATASOURCE_USERNAME
+    description: Oracle database username
+    required: true
+  - name: SPRING_DATASOURCE_PASSWORD
+    description: Oracle database password
+    required: true
+  # Stable, non-secret password: the keystore holds only the Oracle server's
+  # public cert, and a rotating value would desync from the keystore already
+  # built on the PVC (the app would fail to open it after a redeploy).
+  - name: ORACLEDB_KEYSTORE_SECRET
+    description: Password for the Oracle keystore built by the backend init container
+    value: changeit
+  - name: COGNITO_USER_POOL
+    description: Cognito (FAM) user pool ID for JWT validation
+    required: true
 objects:
+  # ── Backend Secret ────────────────────────────────────────
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${NAME}-${ZONE}-backend
+      labels:
+        app: ${NAME}-${ZONE}
+    type: Opaque
+    stringData:
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
+      COGNITO_USER_POOL: ${COGNITO_USER_POOL}
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:

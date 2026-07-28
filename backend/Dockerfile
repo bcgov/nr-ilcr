@@ -10,7 +10,10 @@ FROM gcr.io/distroless/java21-debian12:nonroot@sha256:7e37784d94dccbf5ccb195c73b
 
 WORKDIR /app
 COPY --from=build /workspace/target/nr-ilcr-backend-*.jar /app/app.jar
+COPY tls-legacy.security /app/tls-legacy.security
 
 EXPOSE 8080
 USER 65532:65532
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-jar", "/app/app.jar"]
+# MaxRAM bounds what MaxRAMPercentage is taken from — without a container
+# memory limit the JVM would otherwise size itself off the node's memory.
+ENTRYPOINT ["java", "-XX:MaxRAM=512m", "-XX:MaxRAMPercentage=50", "-Djava.security.properties=/app/tls-legacy.security", "-jar", "/app/app.jar"]
