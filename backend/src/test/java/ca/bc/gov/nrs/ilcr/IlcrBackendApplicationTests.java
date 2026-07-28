@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
+import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -20,6 +21,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private MillContextRepository millContextRepository;
+
+  @MockitoBean
+  private Schedule11Repository schedule11Repository;
 
   @Test
   void contextLoads() {
