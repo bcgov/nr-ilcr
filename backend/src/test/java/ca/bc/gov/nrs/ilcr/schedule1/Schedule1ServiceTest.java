@@ -189,9 +189,12 @@ class Schedule1ServiceTest {
   }
 
   @Test
-  void br04_forestMgmtAdmin_computedFromFixedLinesWhenSubtotalNotPersisted() {
-    // Legacy/migrated Schedule 3 stores only the raw admin lines — no 115/135 subtotal rows (which
-    // legacy computes on the fly). Forest Mgmt Admin must still populate: Σ harvest(27–37) − Σ PO&P.
+  void br04_forestMgmtAdmin_nullWhenSubtotalRowsAbsent() {
+    // Forest Mgmt Admin is the crown of Schedule 3's Subtotal Actual Costs (items 115/135). Legacy
+    // never re-derived that subtotal from the raw admin lines in Schedule 1 — it read the computed
+    // Subtotal Actual Costs — so Schedule 1 does NOT sum the raw lines here. With only raw admin lines
+    // present and no 115/135, Forest Mgmt Admin blanks (null). Less Silv Admin is a separate pull of
+    // the persisted item-37 cost and is unaffected.
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
     stubSchedule3(List.of(
         new DetailRow(27, null, 100000, null),   // Licenses harvest
@@ -200,8 +203,7 @@ class Schedule1ServiceTest {
         new DetailRow(128, null, 155000, null),   // Wages PO&P
         new DetailRow(37, null, 150000, null)));  // Silviculture Admin harvest (no PO&P)
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
-    // (100000 + 285000 + 150000) − (40000 + 155000) = 340000.
-    assertEquals(340000, doc.forestMgmtAdminCost());
+    assertNull(doc.forestMgmtAdminCost());
     assertEquals(150000, doc.lessSilvAdminCost());
   }
 
