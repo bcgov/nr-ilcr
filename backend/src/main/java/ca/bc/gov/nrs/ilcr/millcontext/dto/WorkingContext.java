@@ -12,6 +12,15 @@ package ca.bc.gov.nrs.ilcr.millcontext.dto;
  * null status is omitted from the JSON. {@code millNumber}/{@code millName} may be null (legacy
  * nullable columns — see the 1.1 contract nullability note).
  *
+ * <p>Story 1.3 amendment (AD-12): {@code message} carries the SUC-001 confirmation
+ * ({@code dataSavedSuccesfullyInfoMsg} → "Data saved successfully") on EVERY 200, mirroring how
+ * Schedule 1's save sources its success text server-side (AD-8). Semantic caveat: the endpoint is
+ * used both to CONFIRM a Home save (1.3) and to LOAD the banner (1.4); the message is present on
+ * every 200 but the frontend must only DISPLAY it after an explicit Save — 1.4's banner load ignores
+ * it. Backward-compatible because the change is purely ADDITIVE — existing 1.2 consumers just see
+ * one extra field they do not read. (Note {@code message} is populated on every 200, so the global
+ * {@code non_null} setting never omits it; compatibility does not rest on omission.)
+ *
  * @param millId the mill id ({@code THE.MILL.MILL_ID})
  * @param millNumber the mill number as a display string; may be null
  * @param millName the mill name; may be null
@@ -20,6 +29,7 @@ package ca.bc.gov.nrs.ilcr.millcontext.dto;
  * @param schedule11Status the Schedule 11 (silviculture) track status; null when none
  * @param millViewable false when the mill's {@code ILCR_MILL_STATUS_XREF} status is not {@code ACT}
  *     (closed mills stay selectable — S06 — but schedule pages block viewing)
+ * @param message the SUC-001 confirmation (key + server-resolved verbatim text); Story 1.3 (AC7)
  */
 public record WorkingContext(
     long millId,
@@ -28,5 +38,6 @@ public record WorkingContext(
     int reportYear,
     TrackStatus schedules1To10Status,
     TrackStatus schedule11Status,
-    boolean millViewable) {
+    boolean millViewable,
+    MessageInfo message) {
 }

@@ -22,6 +22,7 @@ import {
 import apiService from '@/service/api-service'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import useMillYear from '@/context/millYear/useMillYear'
+import { extractDetail } from '@/utils/error'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule1 } from './validation'
@@ -57,14 +58,6 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 ]
 
 type FieldValues = Record<string, string>
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
-  }
-  return undefined
-}
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? '—' : String(value)
