@@ -427,7 +427,7 @@ const Schedule2: FC = () => {
         )}
         {statusMessages &&
           (statusMessages.messages ?? []).map((msg) => (
-            <Column sm={4} md={8} lg={16} key={msg.key}>
+            <Column sm={4} md={8} lg={16} key={`${msg.key}-${msg.text}`}>
               <InlineNotification
                 kind={statusMessages.outcome === 'MET' ? 'success' : 'warning'}
                 lowContrast
