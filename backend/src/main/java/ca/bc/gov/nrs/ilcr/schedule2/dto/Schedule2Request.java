@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
@@ -27,14 +28,14 @@ import java.math.BigDecimal;
  * {@code costSize="9"} range — ∈ [-999,999,999, 999,999,999] ({@code costSize9ValidatorErrorMsg}).
  *
  * @param revisionCount optimistic-lock token from the last GET (AR11); required
- * @param comments free-text schedule comments (nullable)
+ * @param comments free-text schedule comments (nullable; &le; 3500 chars, {@code commentsMaxLengthErrorMsg})
  * @param purchasedLogCostCost item 25 cost (nullable; ±99,999,999)
  * @param lessLogSalesVolume item 26 volume (nullable; [0, 9,999,999])
  * @param lessLogSalesCost item 26 cost (nullable; ±999,999,999, widened costSize 9)
  */
 public record Schedule2Request(
     @NotNull(message = "revisionCount is required") Integer revisionCount,
-    String comments,
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") String comments,
     @Min(value = -99999999, message = "{costValidatorErrorMsg}")
     @Max(value = 99999999, message = "{costValidatorErrorMsg}")
     Integer purchasedLogCostCost,

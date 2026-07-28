@@ -178,13 +178,6 @@ class Schedule2WriteIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("item 25 cost = 99,999,999 + 1 -> 400 (item 25 keeps the narrow ±99,999,999 range)")
-  void put_item25JustOverNarrowRange_returns400() throws Exception {
-    expect400NothingPersisted(body(revisionOf(1022), 100000000, 1000, 5000),
-        "Entered cost must be between -99,999,999 and 99,999,999.");
-  }
-
-  @Test
   @DisplayName("S16: two fields out of range -> 400 returns BOTH verbatim messages, nothing persisted")
   void put_multipleFieldsOutOfRange_returnsAllMessages() throws Exception {
     // item 25 cost over its narrow ±99,999,999 range AND item 26 volume over 0–9,999,999 at once.

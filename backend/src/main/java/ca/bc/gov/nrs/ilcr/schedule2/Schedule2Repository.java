@@ -24,7 +24,8 @@ import org.springframework.data.repository.query.Param;
  * <p>The public {@code default} methods expose the plain service-facing records ({@link SummaryRow},
  * {@link DetailRow}) and compose the create-on-absent / upsert / delete sequences; the
  * {@code @Query}/{@code @Modifying} methods are the explicit SQL. The summary sequence is
- * {@code ILCR_REPORT_SUMMARY_SEQ}; detail ids come from {@code ILCR_COST_REPORT_DETAIL_SEQ}.
+ * {@code ILCR_REPORT_COMMON_SEQ} (the real THE sequence legacy {@code ILCRReportSummary} uses); detail
+ * ids come from {@code ILCR_COST_REPORT_DETAIL_SEQ}.
  */
 public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, Integer> {
 
@@ -99,6 +100,8 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '3'
          AND d.ILCR_REPORT_COST_ITEM_ID = 118
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<BigDecimal> findSch3PopTimberVolume(@Param("millId") long millId, @Param("year") int year);
 
@@ -115,6 +118,8 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '3'
          AND d.ILCR_REPORT_COST_ITEM_ID = 135
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<Integer> findSch3PopActualCost(@Param("millId") long millId, @Param("year") int year);
 
@@ -128,12 +133,16 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '3'
+       ORDER BY ILCR_REPORT_SUMMARY_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<BigDecimal> findSch3CrownVolume(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * Schedule 1 Subtotal Company Logging cost (cost-item 144), a detail row on the category-{@code "1"}
-   * summary. Feeds {@code totalCompanyLogging.cost}. Empty when the Schedule 1 source is absent.
+   * summary. Feeds the {@code totalCompanyLogging.cost} legacy formula. Empty when the Schedule 1
+   * source is absent. First-row-wins ({@code FETCH FIRST 1 ROW ONLY}) so a duplicate detail row in
+   * real data is tolerated rather than throwing {@code IncorrectResultSizeDataAccessException} (500).
    */
   @Query("""
       SELECT d.COST
@@ -144,38 +153,100 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '1'
          AND d.ILCR_REPORT_COST_ITEM_ID = 144
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<Integer> findSch1SubtotalLoggingCost(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Schedule 1 Silviculture Actual $ Spent cost (cost-item 1) — the fixed detail row (NULL
+   * {@code ITEM_DESCRIPTION}) on the category-{@code "1"} summary. Feeds the {@code silvActualSpent}
+   * term of the legacy {@code totalCompanyLogging.cost} formula. Empty when absent. First-row-wins.
+   */
+  @Query("""
+      SELECT d.COST
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.ILCR_REPORT_SUMMARY s
+          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+         AND s.ILCR_CATEGORY_ID = '1'
+         AND d.ILCR_REPORT_COST_ITEM_ID = 1
+         AND d.ITEM_DESCRIPTION IS NULL
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
+      """)
+  Optional<Integer> findSch1SilvActualSpentCost(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Schedule 1 Silviculture Accrued less Actual $ Spent cost (cost-item 2) — the fixed detail row
+   * (NULL {@code ITEM_DESCRIPTION}) on the category-{@code "1"} summary. Feeds the
+   * {@code silvAccruedSpent} term of the legacy {@code totalCompanyLogging.cost} formula. Empty when
+   * absent. First-row-wins.
+   */
+  @Query("""
+      SELECT d.COST
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.ILCR_REPORT_SUMMARY s
+          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+         AND s.ILCR_CATEGORY_ID = '1'
+         AND d.ILCR_REPORT_COST_ITEM_ID = 2
+         AND d.ITEM_DESCRIPTION IS NULL
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
+      """)
+  Optional<Integer> findSch1SilvAccruedSpentCost(@Param("millId") long millId, @Param("year") int year);
 
   // -------------------------------------------------------------------------------------------------
   // Writes (Story 3.2) — @Modifying explicit SQL; default methods compose create-on-absent / upsert /
   // delete. Transaction boundary + rules live in Schedule2Service (@Transactional).
   // -------------------------------------------------------------------------------------------------
 
-  @Query("SELECT THE.ILCR_REPORT_SUMMARY_SEQ.NEXTVAL FROM DUAL")
-  int nextSummaryId();
+  // Summary ids come from THE.ILCR_REPORT_COMMON_SEQ — the real THE sequence legacy ILCRReportSummary
+  // uses (ILCRReportSummary.java:49-50). ILCR_REPORT_SUMMARY_SEQ does NOT exist in THE and would
+  // ORA-02289 on the first prod create. The sequence is drawn inline inside the create MERGE below.
 
+  /**
+   * Idempotent create of the empty category-{@code "2"} summary for a mill/year, keyed on
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). There is no unique constraint on that triple, so a
+   * plain check-then-insert lets two concurrent first-saves both INSERT (permanent duplicate → 500s),
+   * and a try/catch on {@code DuplicateKeyException} cannot help (no key to violate). An Oracle
+   * {@code MERGE ... WHEN NOT MATCHED THEN INSERT} serializes the create on the row lock so exactly one
+   * row is inserted and a concurrent create becomes a no-op. Caller re-reads the summary afterwards to
+   * obtain the id (see {@link #insertSummary}).
+   */
   @Modifying
   @Query("""
-      INSERT INTO THE.ILCR_REPORT_SUMMARY
-          (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
-           COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
-      VALUES
-          (:id, :year, :millId, '2', :comments, 0, :user, SYSTIMESTAMP)
+      MERGE INTO THE.ILCR_REPORT_SUMMARY t
+      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '2' AS ILCR_CATEGORY_ID FROM DUAL) src
+         ON (t.ILCR_MILL_ID = src.ILCR_MILL_ID
+             AND t.REPORT_YEAR = src.REPORT_YEAR
+             AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
+       WHEN NOT MATCHED THEN
+         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
+         VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '2',
+                 :comments, 0, :user, SYSTIMESTAMP)
       """)
-  int insertSummaryRow(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
+  int mergeSummaryRow(
+      @Param("millId") long millId, @Param("year") int year,
       @Param("comments") String comments, @Param("user") String user);
 
   /**
-   * Insert a new, empty category-{@code "2"} report summary for a mill/year at {@code REVISION_COUNT}
-   * 0 and return its generated id (the Schedule 2 create-on-absent divergence — Schedule 2 never
-   * 404s). The freshly-inserted revision 0 is then bumped to 1 by the normal {@link #bumpRevision}.
+   * Idempotently create a new, empty category-{@code "2"} report summary for a mill/year at
+   * {@code REVISION_COUNT} 0 and return its id (the Schedule 2 create-on-absent divergence — Schedule 2
+   * never 404s). The MERGE serializes concurrent first-saves so only one row is ever inserted; the
+   * summary is then re-read for its id. The freshly-created revision 0 is bumped to 1 by the normal
+   * {@link #bumpRevision}.
    */
   default int insertSummary(long millId, int year, String comments, String user) {
-    int id = nextSummaryId();
-    insertSummaryRow(id, millId, year, comments, user);
-    return id;
+    mergeSummaryRow(millId, year, comments, user);
+    return findSummary(millId, year)
+        .map(SummaryRow::summaryId)
+        .orElseThrow(() -> new IllegalStateException(
+            "Schedule 2 summary not found immediately after MERGE create"));
   }
 
   /**
