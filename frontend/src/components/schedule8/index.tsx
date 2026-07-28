@@ -540,7 +540,7 @@ const Schedule8: FC = () => {
           <Column sm={4} md={8} lg={16} className="schedule-8__check">
             {checkResult.messages.map((msg) => (
               <InlineNotification
-                key={`sch-${msg.key}`}
+                key={`sch-${msg.key}-${msg.text}`}
                 kind="success"
                 lowContrast
                 title="Check Status"

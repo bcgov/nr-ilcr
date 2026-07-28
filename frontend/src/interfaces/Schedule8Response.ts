@@ -4,20 +4,20 @@
 // counts, the *Label companions, editable) is computed server-side — never recomputed here (AD-5).
 
 export interface MessageInfo {
-  key: string
-  text: string
+  readonly key: string
+  readonly text: string
 }
 
 // One rate-adjustment row (TREE_TO_TRUCK_RATE_DETAIL). Whether it is an addition or a deduction is
 // decided server-side by the cost item's subcategory; the row itself carries no add/deduct flag.
 export interface RateRow {
-  id: number | null
-  revisionCount: number | null
-  costItemCode: number | null
-  itemDescription: string | null
-  costingRate: number | null
-  costTypeCode: string | null
-  costTypeDescription: string | null
+  readonly id: number | null
+  readonly revisionCount: number | null
+  readonly costItemCode: number | null
+  readonly itemDescription: string | null
+  readonly costingRate: number | null
+  readonly costTypeCode: string | null
+  readonly costTypeDescription: string | null
 }
 
 // One Tree-to-Truck sample. The six skidding %s are stored as entered; percentTotal is their
@@ -25,98 +25,98 @@ export interface RateRow {
 // sums of the respective rate rows and finalRate = originalRate + additionsTotal − deductionsTotal —
 // all read-only server-computed.
 export interface Sample {
-  id: number | null
-  revisionCount: number | null
-  contractId: string | null
-  cutBlock: string | null
-  groundBasePct: number | null
-  grapplePct: number | null
-  skylinePct: number | null
-  highleadPct: number | null
-  helicopterPct: number | null
-  otherSkiddingPct: number | null
-  percentTotal: number | null
-  skylineSlopeDistance: number | null
-  skylineSupportNumber: number | null
-  supportAvgDistance: number | null
-  distance: number | null
-  cycleTime: number | null
-  uphillDirection: boolean
-  waterDumpDestination: boolean
-  skidTypeCode: string | null
-  skidTypeDescription: string | null
-  coniferousVolume: number | null
-  deciduousVolume: number | null
-  actualHarvested: number | null
-  originalRate: number | null
-  additionsTotal: number | null
-  deductionsTotal: number | null
-  finalRate: number | null
-  additionCount: number
-  deductionCount: number
-  additions: RateRow[]
-  deductions: RateRow[]
+  readonly id: number | null
+  readonly revisionCount: number | null
+  readonly contractId: string | null
+  readonly cutBlock: string | null
+  readonly groundBasePct: number | null
+  readonly grapplePct: number | null
+  readonly skylinePct: number | null
+  readonly highleadPct: number | null
+  readonly helicopterPct: number | null
+  readonly otherSkiddingPct: number | null
+  readonly percentTotal: number | null
+  readonly skylineSlopeDistance: number | null
+  readonly skylineSupportNumber: number | null
+  readonly supportAvgDistance: number | null
+  readonly distance: number | null
+  readonly cycleTime: number | null
+  readonly uphillDirection: boolean
+  readonly waterDumpDestination: boolean
+  readonly skidTypeCode: string | null
+  readonly skidTypeDescription: string | null
+  readonly coniferousVolume: number | null
+  readonly deciduousVolume: number | null
+  readonly actualHarvested: number | null
+  readonly originalRate: number | null
+  readonly additionsTotal: number | null
+  readonly deductionsTotal: number | null
+  readonly finalRate: number | null
+  readonly additionCount: number
+  readonly deductionCount: number
+  readonly additions: RateRow[]
+  readonly deductions: RateRow[]
 }
 
 // One report page (TREE_TO_TRUCK_REPORT). The six code fields carry both the stored code and its
 // resolved *Label (looked up server-side); a code with no matching row leaves its label null.
 export interface Page {
-  id: number | null
-  revisionCount: number | null
-  division: string | null
-  license: string | null
-  contact: string | null
-  phone: string | null
-  cuttingPermit: string | null
-  supportCentre: string | null
-  supportCentreLabel: string | null
-  region: string | null
-  regionLabel: string | null
-  becZone: string | null
-  becZoneLabel: string | null
-  tsaNumber: string | null
-  tsaNumberLabel: string | null
-  tflNumber: string | null
-  tflNumberLabel: string | null
-  supplyBlock: string | null
-  supplyBlockLabel: string | null
-  comments: string | null
-  sampleCount: number
-  samples: Sample[]
+  readonly id: number | null
+  readonly revisionCount: number | null
+  readonly division: string | null
+  readonly license: string | null
+  readonly contact: string | null
+  readonly phone: string | null
+  readonly cuttingPermit: string | null
+  readonly supportCentre: string | null
+  readonly supportCentreLabel: string | null
+  readonly region: string | null
+  readonly regionLabel: string | null
+  readonly becZone: string | null
+  readonly becZoneLabel: string | null
+  readonly tsaNumber: string | null
+  readonly tsaNumberLabel: string | null
+  readonly tflNumber: string | null
+  readonly tflNumberLabel: string | null
+  readonly supplyBlock: string | null
+  readonly supplyBlockLabel: string | null
+  readonly comments: string | null
+  readonly sampleCount: number
+  readonly samples: Sample[]
 }
 
 export default interface Schedule8Response {
-  millId: number
-  year: number
-  trackStatus: string | null
-  editable: boolean
-  pages: Page[]
-  message?: MessageInfo | null
+  readonly millId: number
+  readonly year: number
+  readonly trackStatus: string | null
+  readonly editable: boolean
+  readonly pages: Page[]
+  readonly message?: MessageInfo | null
 }
 
 // Check Status (Story 14.6). Read-only, mutates nothing. outcome is 'MET' only when every in-scope
 // page (and its samples) passes. The all-pages sweep and the single-page scope share this shape (the
 // single-page result carries one page entry).
 export interface CheckFieldIssue {
-  field: string
-  message: MessageInfo
+  readonly field: string
+  readonly message: MessageInfo
 }
 
 export interface SampleCheckResult {
-  id: number | null
-  met: boolean
-  issues: CheckFieldIssue[]
+  readonly id: number | null
+  readonly met: boolean
+  readonly issues: CheckFieldIssue[]
 }
 
 export interface PageCheckResult {
-  id: number | null
-  met: boolean
-  issues: CheckFieldIssue[]
-  samples: SampleCheckResult[]
+  readonly id: number | null
+  readonly met: boolean
+  readonly issues: CheckFieldIssue[]
+  readonly samples: SampleCheckResult[]
 }
 
 export interface Schedule8CheckStatusResponse {
-  outcome: 'MET' | 'ISSUES'
-  messages: MessageInfo[]
-  pages: PageCheckResult[]
+  readonly outcome: 'MET' | 'ISSUES'
+  readonly messages: MessageInfo[]
+  readonly pages: PageCheckResult[]
 }

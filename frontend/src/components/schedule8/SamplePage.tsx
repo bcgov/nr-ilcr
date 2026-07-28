@@ -512,7 +512,7 @@ const SamplePage: FC<SamplePageProps> = ({
         <div className="schedule-8__check">
           {checkResult.messages.map((msg) => (
             <InlineNotification
-              key={`sch-${msg.key}`}
+              key={`sch-${msg.key}-${msg.text}`}
               kind="success"
               lowContrast
               title="Check Status"
