@@ -4,17 +4,17 @@
 
 // One entered category amount. `distance` is ignored server-side for fixed codes.
 export interface CategoryInput {
-  code: number
-  volume: number | null
-  cost: number | null
-  distance: number | null
+  readonly code: number
+  readonly volume: number | null
+  readonly cost: number | null
+  readonly distance: number | null
 }
 
 // Location save (create-or-edit). `id` null = create, present = edit (rename-safe). `revisionCount`
 // is the optimistic-lock token from the read (null on create).
 export default interface Schedule4LocationRequest {
-  id: number | null
-  revisionCount: number | null
-  name: string
-  categories: CategoryInput[]
+  readonly id: number | null
+  readonly revisionCount: number | null
+  readonly name: string
+  readonly categories: CategoryInput[]
 }
