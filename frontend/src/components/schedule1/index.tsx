@@ -540,8 +540,11 @@ const Schedule1: FC = () => {
         </Column>
 
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
-        {(data.warnings ?? []).map((w) => (
-          <Column key={`warn-${w.key}`} sm={4} md={8} lg={16}>
+        {(data.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`warn-${w.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification
               kind="warning"
               lowContrast
@@ -578,13 +581,19 @@ const Schedule1: FC = () => {
             />
           </Column>
         )}
-        {(checkResult?.errors ?? []).map((e) => (
-          <Column key={`check-err-${e.text || e.key}`} sm={4} md={8} lg={16}>
+        {(checkResult?.errors ?? []).map((e, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-err-${e.text || e.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification kind="error" lowContrast title="Error" subtitle={e.text || e.key} />
           </Column>
         ))}
-        {(checkResult?.warnings ?? []).map((w) => (
-          <Column key={`check-warn-${w.text || w.key}`} sm={4} md={8} lg={16}>
+        {(checkResult?.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-warn-${w.text || w.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification
               kind="warning"
               lowContrast
