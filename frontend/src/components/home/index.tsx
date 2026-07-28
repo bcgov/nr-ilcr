@@ -9,6 +9,7 @@ import type MillSummary from '@/interfaces/MillSummary'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import type WorkingContext from '@/interfaces/WorkingContext'
 import type { ProblemBody } from '@/interfaces/WorkingContext'
+import { extractDetail } from '@/utils/error'
 import './index.scss'
 
 // Home is the landing page (legacy home.xhtml): pick a mill + reporting year and Save to establish
@@ -17,13 +18,6 @@ import './index.scss'
 // `messages` — never hardcoded here. The only literals below are client-side chrome with no legacy
 // counterpart (last-resort fallbacks for a missing problem body / list-load failure, and Carbon
 // notification titles), mirroring the ratified schedule1 idiom [schedule1/index.tsx:30-35].
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    return (error as { response?: { data?: ProblemBody } }).response?.data?.detail
-  }
-  return undefined
-}
 
 // The verbatim per-field message(s) from a 400 body (S08 shows both together); fall back to `detail`,
 // then a last-resort generic (only if the server sent no problem body at all). Deduplicated — the
