@@ -28,7 +28,7 @@ const NOT_INITIATED = 'Not Initiated'
 // `||` (not `??`) so a blank string also collapses to the fallback — legacy-faithful (legacy blank
 // date → "Not Initiated", UserSessionMB.java:374); the 1.2 backend already collapses blank→null, so
 // this only guards the degenerate out-of-contract case.
-const statusLine = (label: string, status: TrackStatus): string => {
+const statusLine = (label: 'Sch 1-10' | 'Sch 11', status: TrackStatus): string => {
   const description = status.description || status.code || ''
   const date = status.date || NOT_INITIATED
   return `${label} - Status: ${description} - Date: ${date}`
