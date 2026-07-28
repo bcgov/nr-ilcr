@@ -63,7 +63,6 @@ public abstract class AbstractOracleIT {
     registry.add("spring.datasource.username", ORACLE::getUsername);
     registry.add("spring.datasource.password", ORACLE::getPassword);
     registry.add("ilcr.datasource.enabled", () -> "true");
-    registry.add("spring.data.jdbc.repositories.enabled", () -> "true");
     // Migrations applied manually in the static block above; keep Boot's Flyway off.
     registry.add("spring.flyway.enabled", () -> "false");
   }

@@ -29,15 +29,24 @@ parameters:
     description: The maximum amount of replicas for the horizontal pod autoscaler.
     value: "1"
   - name: CPU_REQUEST
-    value: "100m"
+    value: "30m"
   - name: MEMORY_REQUEST
-    value: "512Mi"
-  - name: MEMORY_LIMIT
-    description: Memory limit for the container (bounds the pod's working set).
-    value: "1Gi"
+    value: "256Mi"
   - name: LOG_LEVEL
     description: Application log level (debug|info|warn|error)
     value: "info"
+  - name: ORACLEDB_HOST
+    description: Oracle database host; the init container fetches its TCPS cert
+    required: true
+  - name: ORACLEDB_PORT
+    description: Oracle database TCPS port
+    value: "1543"
+  - name: ORACLEDB_SERVICENAME
+    description: Oracle database service name
+    required: true
+  - name: COGNITO_REGION
+    description: AWS region of the Cognito (FAM) user pool
+    value: ca-central-1
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -67,6 +76,41 @@ objects:
                       matchLabels:
                         deployment: ${NAME}-${ZONE}-${COMPONENT}
                     topologyKey: kubernetes.io/hostname
+          # Fetches the Oracle TCPS cert into a keystore on the api-cert PVC
+          # before the app starts. Connecting out to the Oracle host is also
+          # what triggers the namespace firewall rule for database egress.
+          initContainers:
+            - name: ${NAME}-init
+              image: ghcr.io/bcgov/nr-forest-client/common:prod
+              imagePullPolicy: Always
+              env:
+                - name: ORACLEDB_HOST
+                  value: ${ORACLEDB_HOST}
+                - name: ORACLEDB_PORT
+                  value: ${ORACLEDB_PORT}
+                - name: ORACLEDB_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: ORACLEDB_KEYSTORE_SECRET
+              volumeMounts:
+                - name: api-cert
+                  mountPath: /cert
+                - name: init-tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: "10m"
+                  memory: "64Mi"
+                  ephemeral-storage: "50Mi"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
           containers:
             - name: ${NAME}
               image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
@@ -83,15 +127,32 @@ objects:
                   value: openshift,oracle
                 - name: APP_VERSION
                   value: ${IMAGE_TAG}
+                # Interim: mock-auth frontend can't produce Cognito JWTs yet.
+                # Flip to "true" when FAM login lands in the frontend.
                 - name: ILCR_SECURITY_ENABLED
-                  value: "true"
+                  value: "false"
                 - name: ILCR_DATASOURCE_ENABLED
                   value: "true"
-                - name: SPRING_DATASOURCE_URL
+                - name: ORACLEDB_HOST
+                  value: ${ORACLEDB_HOST}
+                - name: ORACLEDB_PORT
+                  value: ${ORACLEDB_PORT}
+                - name: ORACLEDB_SERVICENAME
+                  value: ${ORACLEDB_SERVICENAME}
+                - name: ORACLEDB_KEYSTORE
+                  value: /cert/jssecacerts
+                - name: COGNITO_REGION
+                  value: ${COGNITO_REGION}
+                - name: COGNITO_USER_POOL
                   valueFrom:
                     secretKeyRef:
                       name: ${NAME}-${ZONE}-${COMPONENT}
-                      key: SPRING_DATASOURCE_URL
+                      key: COGNITO_USER_POOL
+                - name: ORACLEDB_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: ORACLEDB_KEYSTORE_SECRET
                 - name: SPRING_DATASOURCE_USERNAME
                   valueFrom:
                     secretKeyRef:
@@ -106,8 +167,7 @@ objects:
                 requests:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
-                limits:
-                  memory: ${MEMORY_LIMIT}
+                  ephemeral-storage: "200Mi"
               securityContext:
                 allowPrivilegeEscalation: false
                 runAsNonRoot: true
@@ -119,6 +179,8 @@ objects:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                - name: api-cert
+                  mountPath: /cert
               startupProbe:
                 httpGet:
                   path: /api/health/readiness
@@ -142,6 +204,12 @@ objects:
               emptyDir:
                 medium: Memory
                 sizeLimit: 256Mi
+            # Oracle keystore written by the init container, read by the app
+            - name: api-cert
+              persistentVolumeClaim:
+                claimName: ${NAME}-${ZONE}-${COMPONENT}-api-cert
+            - name: init-tmp
+              emptyDir: {}
   - apiVersion: v1
     kind: Service
     metadata:
@@ -190,6 +258,20 @@ objects:
               value: 50
               periodSeconds: 60
           selectPolicy: Max
+  # PVC for the Oracle keystore (per-ZONE so PR previews are isolated)
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app: ${NAME}-${ZONE}
+      name: ${NAME}-${ZONE}-${COMPONENT}-api-cert
+    spec:
+      accessModes:
+        - ReadWriteMany
+      resources:
+        requests:
+          storage: 50Mi
+      storageClassName: netapp-file-standard
   - apiVersion: policy/v1
     kind: PodDisruptionBudget
     metadata:

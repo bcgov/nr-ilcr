@@ -2,12 +2,12 @@ package ca.bc.gov.nrs.ilcr.schedule1;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.api.Schedule1Api;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code EDIT_SCHEDULE} permission, computed server-side (AD-5).
  */
 @RestController
-@RequiredArgsConstructor
 public class Schedule1Controller implements Schedule1Api {
 
   private static final String SCHEDULE_1_CATEGORY = "1";
@@ -35,6 +34,17 @@ public class Schedule1Controller implements Schedule1Api {
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
+  public Schedule1Controller(
+      MillContextService millContextService,
+      Schedule1Service schedule1Service,
+      SchedulePermissions permissions,
+      MessageSource messageSource) {
+    this.millContextService = millContextService;
+    this.schedule1Service = schedule1Service;
+    this.permissions = permissions;
+    this.messageSource = messageSource;
+  }
+
   /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
   private MessageInfo message(String key) {
     return new MessageInfo(key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
@@ -44,10 +54,7 @@ public class Schedule1Controller implements Schedule1Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule1Response> getSchedule1(
       long millId, int year, Authentication authentication) {
-    // View no longer requires an existing summary: a valid, active mill/year with no saved
-    // Schedule 1 renders a locked "not initiated" empty document (200) rather than 404. Genuine
-    // context errors (unknown mill -> 404, closed -> 409) still throw here.
-    millContextService.validateMillYearActive(millId, year);
+    millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(schedule1Service.getSchedule1(millId, year, callerMayEdit));
   }
@@ -70,5 +77,13 @@ public class Schedule1Controller implements Schedule1Api {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
     schedule1Service.deleteSchedule1(millId, year);
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<CheckStatusResponse> checkStatus(
+      long millId, int year, Authentication authentication) {
+    millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
+    return ResponseEntity.ok(schedule1Service.checkSchedule1Status(millId, year));
   }
 }
