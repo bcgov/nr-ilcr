@@ -347,17 +347,17 @@ public class Schedule2Service {
   }
 
   /** {@code CoreUtil.bigDecimalAddition}: null only when both null; else the non-null operand(s). */
-  private static BigDecimal add(BigDecimal a, BigDecimal b) {
-    if (a == null && b == null) {
+  private static BigDecimal add(BigDecimal augend, BigDecimal addend) {
+    if (augend == null && addend == null) {
       return null;
     }
-    if (a == null) {
-      return b;
+    if (augend == null) {
+      return addend;
     }
-    if (b == null) {
-      return a;
+    if (addend == null) {
+      return augend;
     }
-    return a.add(b);
+    return augend.add(addend);
   }
 
   /**

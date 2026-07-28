@@ -1,8 +1,8 @@
--- Story 3.2 (Schedule 2 write) seed EXTENSION (never edit V1-V5). Adds the summary sequence the
--- create-on-absent save path needs and DEDICATED write/delete/concurrency/non-Draft fixtures so the
--- mutating acceptance tests never clobber the read-only Schedule 2 fixtures (514/517) the read *IT
--- classes assert against (the Testcontainers container + data are shared across the whole *IT run).
--- V6 is the next free migration number (V1-V5 present).
+-- Story 3.2 (Schedule 2 write) seed EXTENSION (never edit earlier migrations). Adds the summary
+-- sequence the create-on-absent save path needs and DEDICATED write/delete/concurrency/non-Draft
+-- fixtures so the mutating acceptance tests never clobber the read-only Schedule 2 fixtures (514/517)
+-- the read *IT classes assert against (the Testcontainers container + data are shared across the
+-- whole *IT run). Numbered V11 (paired with the V10 read fixtures) — see README.md. Originally V6.
 --
 -- Schedule 2 divergence: SAVE creates the category-"2" summary when none exists (Schedule 2 never
 -- 404s). V4 created ILCR_COST_REPORT_DETAIL_SEQ but intentionally NOT a summary sequence (the guarded

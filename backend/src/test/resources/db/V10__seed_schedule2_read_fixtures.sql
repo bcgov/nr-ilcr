@@ -1,6 +1,7 @@
--- Story 3.1 (Schedule 2 read) seed EXTENSION (never edit V1-V4). Adds the Schedule 2 read fixtures
--- and the cross-schedule sources they carry, pinned to hand-checkable values that match the *IT
--- assertions. V5 is the next free migration number (V1-V4 present).
+-- Story 3.1 (Schedule 2 read) seed EXTENSION (never edit earlier migrations). Adds the Schedule 2
+-- read fixtures and the cross-schedule sources they carry, pinned to hand-checkable values that
+-- match the *IT assertions. Numbered V10: V1-V9 were claimed by other tracks (schedule 3, other
+-- costs, home) once main merged in — see README.md. Originally authored as V5.
 --
 -- Cost-item ids (legacy Constant.REPORT_COST_ITEMS): Sch2 25 (Purchased/Private Log Costs, cost),
 -- 26 (less Log Sales, volume+cost); Sch3 118 (PO&P Timber volume), 135 (PO&P actual cost); Sch1 144
