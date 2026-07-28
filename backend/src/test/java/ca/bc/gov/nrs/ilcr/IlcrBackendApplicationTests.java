@@ -10,9 +10,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged
- * {@code application.yml} now defaults {@code ilcr.datasource.enabled} to {@code true}, so this
- * smoke test must set it {@code false} explicitly or the Spring Data JDBC config would try to build
- * the JDBC infrastructure against a (nonexistent) live connection. With the datasource off the
+ * {@code application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke
+ * test keeps that explicit. With the datasource off the
  * Spring Data JDBC repositories are absent; mocks stand in so the wiring loads. The real datasource +
  * Spring Data JDBC path is proven by the Testcontainers acceptance tests (*IT).
  */

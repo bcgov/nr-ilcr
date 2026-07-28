@@ -74,6 +74,17 @@ const toNum = (raw: string): number | null => {
 const numStr = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : String(value)
 
+const mapLoadErrorDetail = (
+  detail: string | null,
+  millId: number | null,
+  year: number | null,
+): string => {
+  if (detail === 'Schedule not found.' && millId != null && year != null) {
+    return `No Schedule 1 exists for Mill ${millId} in Reporting Year ${year}. Select another mill/year from Home, or create Schedule 1 data for this context.`
+  }
+  return detail || 'Unable to load Schedule 1.'
+}
+
 // Seed editable form state from the loaded document (writable fields only).
 function seedForm(doc: Schedule1Response): FieldValues {
   const values: FieldValues = {}
@@ -145,7 +156,7 @@ const Schedule1: FC = () => {
       })
       .catch((error: unknown) => {
         if (active) {
-          setErrorDetail(extractDetail(error) || 'Unable to load Schedule 1.')
+          setErrorDetail(mapLoadErrorDetail(extractDetail(error), millId, year))
           setData(null)
         }
       })

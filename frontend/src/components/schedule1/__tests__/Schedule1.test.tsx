@@ -162,6 +162,64 @@ describe('Schedule1 editable page', () => {
     expect(screen.getByText('30')).toBeInTheDocument()
   })
 
+  test('load/save/delete carry selected millId/year in query params (regression guard)', async () => {
+    const selected = { millId: 516, year: 2020 }
+    const selectedDoc = {
+      ...schedule1Doc,
+      millId: selected.millId,
+      year: selected.year,
+      comments: 'Seed comment for 516/2020',
+    }
+    let getUrl = ''
+    let putUrl = ''
+    let deleteUrl = ''
+
+    server.use(
+      http.get(URL, ({ request }) => {
+        getUrl = request.url
+        return HttpResponse.json(selectedDoc)
+      }),
+      http.put(URL, ({ request }) => {
+        putUrl = request.url
+        return HttpResponse.json({
+          ...selectedDoc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+      http.delete(URL, ({ request }) => {
+        deleteUrl = request.url
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+
+    render(
+      <MillYearProvider initial={selected}>
+        <Schedule1 />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+
+    const assertParams = (url: string) => {
+      expect(url).toContain(`millId=${selected.millId}`)
+      expect(url).toContain(`year=${selected.year}`)
+    }
+
+    assertParams(getUrl)
+    assertParams(putUrl)
+    assertParams(deleteUrl)
+  })
+
   test('out-of-range value is blocked client-side (advisory) — inline error, no PUT (AC3 / S03)', async () => {
     let putCalled = false
     server.use(
@@ -261,7 +319,11 @@ describe('Schedule1 editable page', () => {
     server.use(problemHandler(404, 'Schedule not found.'))
     render(<Schedule1 />)
 
-    expect(await screen.findByText('Schedule not found.')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'No Schedule 1 exists for Mill 514 in Reporting Year 2021. Select another mill/year from Home, or create Schedule 1 data for this context.',
+      ),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
