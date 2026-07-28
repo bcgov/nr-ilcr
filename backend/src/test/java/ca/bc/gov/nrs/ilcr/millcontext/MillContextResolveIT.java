@@ -30,10 +30,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * (never invoked — no bearer tokens here). Written RED-FIRST: before the endpoint + permit entry
  * exist, requests are 401/404 and every assertion fails.
  *
- * <p>Fixtures (V2/V4/V5/V6, fixture-robust assertions only — no positional/exact-count coupling):
+ * <p>Fixtures (V2/V4/V8/V9 — the Home fixtures were renumbered V5/V6→V8/V9 in Story 1.3 after the
+ * schedule-track seeds claimed V5-V7; fixture-robust assertions only — no positional/exact-count
+ * coupling):
  * 514/2020 both tracks (S + silvi D, dates); 514/2021 1-10 D only (silvi NULL, draft date);
  * 516/2021 closed (CLS, no view row → date null); (515, 2020) selectable mill + opened year with
- * NO status row (S07); 522 never-enrolled (not selectable → 404); 2019 not opened.
+ * NO status row (S07); 540 never-enrolled (not selectable → 404); 2019 not opened.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Home working context — GET /api/v1/mill-context (Story 1.2)")
@@ -66,7 +68,23 @@ class MillContextResolveIT extends AbstractOracleIT {
                 .andExpect(jsonPath("$.schedule11Status.description", is("Draft")))
                 // Silvi Draft -> SILVI_STATUS_DRAFT_DATE (each track uses its OWN code — the legacy
                 // cross-track bug is deliberately not reproduced).
-                .andExpect(jsonPath("$.schedule11Status.date", is("2020-08-01")));
+                .andExpect(jsonPath("$.schedule11Status.date", is("2020-08-01")))
+                // Story 1.3 amendment (AC7): every 200 carries the SUC-001 message (reused legacy
+                // bundle key + server-resolved verbatim text). The frontend only DISPLAYS it after an
+                // explicit Save (the 1.4 banner load must ignore it).
+                .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
+                .andExpect(jsonPath("$.message.text", is("Data saved successfully")));
+    }
+
+    @Test
+    @DisplayName("Story 1.3 (AC7) — every 200 carries the SUC-001 message from the legacy bundle")
+    void successResponse_carriesSuc001Message() throws Exception {
+        // Even a minimal 200 (S07: selectable mill + opened year, no status row) carries message.
+        mockMvc.perform(get(ENDPOINT).param("millId", "515").param("year", "2020")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
+                .andExpect(jsonPath("$.message.text", is("Data saved successfully")));
     }
 
     @Test
@@ -153,16 +171,17 @@ class MillContextResolveIT extends AbstractOracleIT {
     }
 
     @Test
-    @DisplayName("unknown mill 999 / never-enrolled 522 / unopened year 2019 — 404 problem+json")
+    @DisplayName("unknown mill 999 / never-enrolled 540 / unopened year 2019 — 404 problem+json")
     void unknownMillOrYear_returns404() throws Exception {
         mockMvc.perform(get(ENDPOINT).param("millId", "999").param("year", "2021")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
 
-        // Mill 522 has an xref but NO report-status row for any year -> not selectable (legacy
-        // getMills() parity, Story 1.1 review decision) -> 404, same as an unknown id.
-        mockMvc.perform(get(ENDPOINT).param("millId", "522").param("year", "2021")
+        // Mill 540 has an xref but NO report-status row for any year -> not selectable (legacy
+        // getMills() parity, Story 1.1 review decision) -> 404, same as an unknown id. (522 is now
+        // the schedule fixtures' enrolled mill, so Home's never-enrolled probe uses 540.)
+        mockMvc.perform(get(ENDPOINT).param("millId", "540").param("year", "2021")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound());
 
