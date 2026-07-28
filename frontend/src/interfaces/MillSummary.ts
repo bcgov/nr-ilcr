@@ -3,8 +3,8 @@
 // value from the JSON (1.1 nullability decision), so the `{millNumber} - {millName}` label must
 // render defensively. millStatusCode is always present (CLS mills are included in the list).
 export default interface MillSummary {
-  millId: number
-  millNumber?: string | null
-  millName?: string | null
-  millStatusCode: string
+  readonly millId: number
+  readonly millNumber?: string | null
+  readonly millName?: string | null
+  readonly millStatusCode: string
 }

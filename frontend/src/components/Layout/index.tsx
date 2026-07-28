@@ -6,7 +6,7 @@ import ContextBanner from './ContextBanner'
 import './index.scss'
 
 type Props = {
-  children: ReactNode
+  readonly children: ReactNode
 }
 
 // The ContextBanner is the legacy `#subMenu` strip: it sits inside the content flow, above the page
