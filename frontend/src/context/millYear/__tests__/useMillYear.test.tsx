@@ -26,7 +26,10 @@ describe('useMillYear', () => {
   })
 
   test('restores mill/year from local storage on mount', () => {
-    window.localStorage.setItem('ilcr:mill-year-context', JSON.stringify({ millId: 516, year: 2024 }))
+    window.localStorage.setItem(
+      'ilcr:mill-year-context',
+      JSON.stringify({ millId: 516, year: 2024 }),
+    )
 
     const { result } = renderHook(() => useMillYear(), { wrapper: MillYearProvider })
     expect(result.current.millId).toBe(516)
@@ -34,7 +37,10 @@ describe('useMillYear', () => {
   })
 
   test('uses explicit initial context instead of stored context', () => {
-    window.localStorage.setItem('ilcr:mill-year-context', JSON.stringify({ millId: 516, year: 2024 }))
+    window.localStorage.setItem(
+      'ilcr:mill-year-context',
+      JSON.stringify({ millId: 516, year: 2024 }),
+    )
 
     const { result } = renderHook(() => useMillYear(), {
       wrapper: ({ children }) => (
