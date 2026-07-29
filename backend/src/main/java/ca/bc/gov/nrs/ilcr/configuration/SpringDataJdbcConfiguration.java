@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.configuration;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
+import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository;
@@ -20,7 +21,8 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
  *
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
  * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link Schedule3Repository},
- * {@link Schedule4Repository}, {@link MillContextRepository}). Gated on the same
+ * {@link Schedule4Repository}, {@link MillContextRepository}, {@link Schedule11Repository}). Gated
+ * on the same
  * {@code ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are
  * unaffected.
  */
@@ -32,7 +34,8 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule2Repository.class,
       Schedule3Repository.class,
       Schedule4Repository.class,
-      MillContextRepository.class
+      MillContextRepository.class,
+      Schedule11Repository.class
     })
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {
 }
