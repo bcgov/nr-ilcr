@@ -37,7 +37,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 @ExtendWith(MockitoExtension.class)
 class Schedule4WriteServiceTest {
 
-  private static final long MILL = 540L;
+  private static final long MILL = 546L;
   private static final int YEAR = 2021;
   private static final String USER = "dev-submitter";
 
