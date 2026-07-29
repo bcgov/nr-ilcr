@@ -1,0 +1,103 @@
+-- Story Schedule 4 (read) seed EXTENSION (never edit V1-V6). Adds the THE.TRANSPORTATION_REPORT
+-- table (a location per row: LOCATION_DESCRIPTION + a single per-location DISTANCE +
+-- TRANSPORTATION_CYCLE_TIME, keyed by ILCR_MILL_ID + REPORT_YEAR + ILCR_CATEGORY_ID='4'), the
+-- TRANSPORTATION_REPORT_ID FK column on ILCR_COST_REPORT_DETAIL (absent from the V1 snapshot -> added
+-- here), the Schedule 4 cost items, and read fixtures. V7 is the next free migration number.
+--
+-- STEP 0 data-model resolution (delivery-DB confirmed 2026-07-21, e.g. mill 25050/2015 loc
+-- '04-A2-Canoe'): a LOCATION is a FAMILY of TRANSPORTATION_REPORT rows sharing LOCATION_DESCRIPTION.
+-- One PRIMARY report holds the 9 fixed categories (40,41,42,44,45,49,50,51,53) with DISTANCE NULL;
+-- each distance-based category 47 (TruckBargeFerry), 48 (CrewBargeFerry), 52 (RailHaul) is its OWN
+-- report with its OWN DISTANCE (two distance categories on one location can differ). Category amounts
+-- are ILCR_COST_REPORT_DETAIL rows joined by TRANSPORTATION_REPORT_ID. Deferred sub-page codes
+-- 43,46,55 are also separate reports; 54 is dead. The read excludes 43/46/54/55 (one 43 is seeded to
+-- prove the filter).
+
+-- The TRANSPORTATION_REPORT table (present in the real THE schema; test-scope shape here).
+CREATE TABLE THE.TRANSPORTATION_REPORT (
+  TRANSPORTATION_REPORT_ID  NUMBER(10)  PRIMARY KEY,
+  REPORT_YEAR               NUMBER(10),
+  ILCR_MILL_ID              NUMBER(10),
+  ILCR_CATEGORY_ID          VARCHAR2(3),
+  LOCATION_DESCRIPTION      VARCHAR2(120),
+  DISTANCE                  NUMBER(18,4),
+  TRANSPORTATION_CYCLE_TIME NUMBER(10),
+  COMMENTS                  VARCHAR2(2000),
+  REVISION_COUNT            NUMBER(10) DEFAULT 0,
+  ENTRY_USERID              VARCHAR2(30),
+  ENTRY_TIMESTAMP           TIMESTAMP DEFAULT SYSTIMESTAMP,
+  UPDATE_USERID             VARCHAR2(30),
+  UPDATE_TIMESTAMP          TIMESTAMP
+);
+
+-- The legacy TransportationReport generator draws summary ids from THE.ILCR_REPORT_COMMON_SEQ, which
+-- the Schedule 2 write fixtures (V11) already create test-scope. Shared object, created once — do not
+-- re-CREATE it here or the migration fails with ORA-00955 (name already in use).
+
+-- ILCR_COST_REPORT_DETAIL gained a per-report FK per report family (camp/bridge/transportation/...).
+-- V1's test snapshot only carries ILCR_REPORT_SUMMARY_ID, so add the transportation FK column here.
+ALTER TABLE THE.ILCR_COST_REPORT_DETAIL ADD (TRANSPORTATION_REPORT_ID NUMBER(10));
+
+-- Schedule 4 cost items (legacy Constant.REPORT_COST_ITEMS; category '4'). In-scope + one deferred
+-- (43) to prove the detail query filters it out.
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (40, 'Lakeside Dry Dump', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (41, 'Water Dump', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (42, 'Water Boom', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (43, 'Towing Total', '4', '3', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (44, 'Williston Lake Dewater Only', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (45, 'Dewater and Reload', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (47, 'Truck Barge/Ferry', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (48, 'Crew Barge/Ferry', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (49, 'Hydro Dam Log Transfer', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (50, 'Truck to Truck Transfer', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (51, 'Truck to Rail Transfer', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (52, 'Rail Haul', '4', '1', 'SEED');
+INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (53, 'Low Water Bridge', '4', '1', 'SEED');
+
+-- ================================================================================================
+-- Mill 514 / 2021 — ACT, Draft (Schedules 1-10 track "D"; seeded in V2). Two locations.
+--   Location "Harbour Dump" = a FAMILY of reports sharing the name:
+--     TR 7001 (PRIMARY, DISTANCE NULL): fixed 40 (perUnit 50.0), 41 (perUnit 15.0).
+--     TR 7011 (DISTANCE 120.5):         47 Truck Barge/Ferry (perUnit 50.0).
+--     TR 7012 (DISTANCE 88.5):          52 Rail Haul, VOLUME present / COST NULL (perUnit null) —
+--                                        DIFFERENT distance than 47 proves per-category distance.
+--     TR 7013 (DISTANCE 50.0):          43 Towing Total (deferred) — MUST be filtered out of the read.
+--   Location "Empty Landing" (TR 7002): name-only, no detail rows.
+-- Ordered by TRANSPORTATION_REPORT_ID (legacy order): Harbour Dump family first, then Empty Landing.
+-- ================================================================================================
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7001, 2021, 514, '4', 'Harbour Dump', NULL, NULL, 'SEED');
+--   40 Lakeside Dry Dump: VOLUME 2000 / COST 100000 -> perUnit 50.0
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7101, 7001, 40, 2000, 100000, NULL, 'SEED');
+--   41 Water Dump: VOLUME 4000 / COST 60000 -> perUnit 15.0
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7102, 7001, 41, 4000, 60000, NULL, 'SEED');
+-- 47 Truck Barge/Ferry — its OWN report, DISTANCE 120.5: VOLUME 500 / COST 25000 -> perUnit 50.0
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7011, 2021, 514, '4', 'Harbour Dump', 120.5, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7103, 7011, 47, 500, 25000, NULL, 'SEED');
+-- 52 Rail Haul — its OWN report, DISTANCE 88.5 (different, fractional): VOLUME 300 / COST NULL (perUnit null)
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7012, 2021, 514, '4', 'Harbour Dump', 88.5, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7104, 7012, 52, 300, NULL, NULL, 'SEED');
+-- Deferred code 43 (Towing Total) — its OWN report, DISTANCE 50.0. MUST be filtered out of the read.
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7013, 2021, 514, '4', 'Harbour Dump', 50.0, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7105, 7013, 43, 999, 99999, 'Deferred towing row', 'SEED');
+
+-- Location "Empty Landing": name-only, no detail rows.
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7002, 2021, 514, '4', 'Empty Landing', NULL, NULL, 'SEED');
+
+-- ================================================================================================
+-- Mill 517 / 2021 — ACT, non-Draft (Schedules 1-10 track "S"; seeded in V2). One location; the read
+-- must still list it with editable:false. Fixed category on the primary report (DISTANCE NULL).
+-- ================================================================================================
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (7003, 2021, 517, '4', 'Submitted Dump', NULL, NULL, 'SEED');
+--   42 Water Boom: VOLUME 1000 / COST 20000 -> perUnit 20.0
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (7301, 7003, 42, 1000, 20000, NULL, 'SEED');
+
+-- NOTE: mill 515/2021 (ACT + Draft, seeded in V2, no schedule data) is reused for the no-locations
+-- 200-empty-list path — it has no category-"4" TRANSPORTATION_REPORT rows.
+
+COMMIT;

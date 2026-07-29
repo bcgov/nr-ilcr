@@ -22,12 +22,14 @@ type FieldKind = 'cost' | 'volume7' | 'volume8'
 
 /** Classify a form field key (e.g. `cost-12`, `vol-1`, `otherCostsVolume`) into a validator group. */
 function fieldKind(key: string): FieldKind | null {
-  if (key === 'otherCostsVolume') {
+  // 8-digit volumes: shared Other-Costs (FLD-003), Forest Mgmt Admin (143), Subtotal Company Logging (144).
+  if (key === 'otherCostsVolume' || key === 'vol-143' || key === 'vol-144') {
     return 'volume8'
   }
   if (key.startsWith('cost-')) {
     return 'cost'
   }
+  // All other volumes (12–18, silviculture 1/2/139/140) are 7-digit.
   if (key.startsWith('vol-')) {
     return 'volume7'
   }

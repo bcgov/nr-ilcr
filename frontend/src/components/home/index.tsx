@@ -210,7 +210,7 @@ const Home: FC = () => {
             label="Select Mill"
             items={mills}
             itemToString={millItemToString}
-            selectedItem={selectedMill}
+            selectedItem={selectedMill ?? undefined}
             onChange={({ selectedItem }) => {
               setSelectedMill(selectedItem ?? null)
               // A changed selection is unsaved — stale save feedback would misstate its status.
@@ -226,7 +226,7 @@ const Home: FC = () => {
             label="Select Reporting Year"
             items={years}
             itemToString={yearItemToString}
-            selectedItem={selectedYear}
+            selectedItem={selectedYear ?? undefined}
             onChange={({ selectedItem }) => {
               setSelectedYear(selectedItem ?? null)
               setSaveMessage(null)

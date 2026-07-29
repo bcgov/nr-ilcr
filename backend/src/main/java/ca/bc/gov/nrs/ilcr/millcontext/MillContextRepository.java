@@ -23,6 +23,7 @@ import org.springframework.data.repository.query.Param;
  * XREF status ({@code ACT}/{@code CLS}) joined to an {@code ILCR_MILL_REPORT_STATUS} row for the
  * year supplies the per-year dimension.
  */
+@org.springframework.stereotype.Repository
 public interface MillContextRepository extends Repository<SelectableMillEntity, Long> {
 
   /**
