@@ -269,9 +269,9 @@ public class Schedule4Service {
       for (CategoryInput category : request.categoriesOrEmpty()) {
         writeCategory(millId, year, name, primaryId, category, user);
       }
-    } catch (StaleRevisionException ex) {
-      throw ex;
     } catch (DataAccessException ex) {
+      // StaleRevisionException (a BusinessException, not a DataAccessException) propagates on its own
+      // to the 409 handler — only persistence failures are translated here.
       // Never log cost/volume/distance values (AD-11) — action + status + exception type only.
       log.warn("Schedule 4 location save failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
