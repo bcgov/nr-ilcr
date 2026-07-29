@@ -6,10 +6,14 @@
 -- Task 1; the V1 snapshot lacks it because no prior story inserts a BASIC_SILVICULTURE_REPORT /
 -- ILCR_REPORT_SUMMARY row - schedule1 only bumps an existing summary).
 
--- BSR PK generator (delivery: THE.ILCR_REPORT_COMMON_SEQ). Start high so sequence-generated ids for
--- newly-added locations never collide with the explicit fixture ids below (9201-9206) or V20's
--- (9101-9106). ILCR_COST_REPORT_DETAIL_SEQ already exists (V4, START WITH 9000) - reused for new
--- cost children; explicit cost ids here (6101-6107) stay below it.
+-- BSR PK generator (delivery: THE.ILCR_REPORT_COMMON_SEQ). V11 (Schedule 2) already creates this
+-- sequence START WITH 9000, so a bare CREATE here is ORA-00955; drop/recreate instead to restart it
+-- at 9500 — high enough that sequence-generated ids for newly-added locations never collide with
+-- the explicit fixture ids below (9201-9206) or V20's (9101-9106). Safe: migrations run at
+-- container init, before any IT draws NEXTVAL, and sequence consumers need no continuity.
+-- ILCR_COST_REPORT_DETAIL_SEQ already exists (V4, START WITH 9000) - reused for new cost children;
+-- explicit cost ids here (6101-6107) stay below it.
+DROP SEQUENCE THE.ILCR_REPORT_COMMON_SEQ;
 CREATE SEQUENCE THE.ILCR_REPORT_COMMON_SEQ START WITH 9500 INCREMENT BY 1;
 
 -- ============ Fixture (a): mill 614 - silviculture Draft write playground ============

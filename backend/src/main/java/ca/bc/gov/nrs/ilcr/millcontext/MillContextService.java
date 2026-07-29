@@ -222,6 +222,38 @@ public class MillContextService {
    * @param categoryId the schedule category id (Schedule 1 = {@code "1"})
    */
   public void validateScheduleViewable(long millId, int year, String categoryId) {
+    validateMillYearActive(millId, year);
+
+    if (!repository.scheduleSummaryExists(millId, year, categoryId)) {
+      log.info("Schedule 404: no category-{} summary for millId={} year={} (guard 2)",
+          categoryId, millId, year);
+      throw new ScheduleNotFoundException();
+    }
+  }
+
+  /**
+   * Validate that the mill/reporting-year context exists and the mill is active — the shared
+   * guards 1–2 of every schedule endpoint, WITHOUT requiring a schedule summary to exist. Callers
+   * that need only these guards are the ones for which zero saved data is a valid 200: document
+   * reads rendering a "not initiated" empty document, and list schedules, where legacy fires
+   * "Schedule not found." only when the {@code ILCR_MILL_REPORT_STATUS} row is absent
+   * ({@code Schedule11MB.init()} &rarr; {@code scheduleNotFound}, UC-SCH11-001 S12/S13), never on
+   * an empty list. {@link #validateScheduleViewable} layers the summary-exists guard on top.
+   *
+   * <p>Guard order:
+   * <ol>
+   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
+   *       {@link ScheduleNotFoundException} (404).</li>
+   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
+   * </ol>
+   * Returns normally when the mill/year is a known, active context.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @throws ScheduleNotFoundException 404 — no {@code ILCR_MILL_REPORT_STATUS} row (ERR-003)
+   * @throws MillClosedException 409 — mill not active ({@code ACT}) for the year (ERR-002)
+   */
+  public void validateMillYearActive(long millId, int year) {
     String millStatus = repository.findMillStatusCodeForYear(millId, year)
         .orElseThrow(() -> {
           // Diagnostic (mill/year only — no cost/volume, AD-11): no ACT/CLS status row was found for
@@ -234,45 +266,13 @@ public class MillContextService {
       log.info("Schedule 409: mill not ACT for millId={} year={} (status={})", millId, year, millStatus);
       throw new MillClosedException();
     }
-
-    if (!repository.scheduleSummaryExists(millId, year, categoryId)) {
-      log.info("Schedule 404: no category-{} summary for millId={} year={} (guard 2)",
-          categoryId, millId, year);
-      throw new ScheduleNotFoundException();
-    }
   }
 
   /**
-   * Validate that the mill/reporting-year context itself is viewable, for LIST schedules
-   * (Story 25.1, UC-SCH11-001 S12/S13). Same guards 1–2 as
-   * {@link #validateScheduleViewable(long, int, String)} but deliberately WITHOUT the
-   * summary-exists check: a list schedule (Schedule 11) has no {@code ILCR_REPORT_SUMMARY} row, and
-   * zero data rows is a valid, viewable state (200 with an empty list) — legacy fires
-   * "Schedule not found." only when the {@code ILCR_MILL_REPORT_STATUS} row is absent
-   * ({@code Schedule11MB.init()} &rarr; {@code scheduleNotFound}), never on an empty list.
-   *
-   * @param millId the mill id
-   * @param year the reporting year
-   * @throws ScheduleNotFoundException 404 — no {@code ILCR_MILL_REPORT_STATUS} row (ERR-003)
-   * @throws MillClosedException 409 — mill not active ({@code ACT}) for the year (ERR-002)
-   */
-  public void validateMillYearViewable(long millId, int year) {
-    String millStatus = repository.findMillStatusCodeForYear(millId, year)
-        .orElseThrow(() -> {
-          log.info("Schedule 404: no mill/year status row for millId={} year={}", millId, year);
-          return new ScheduleNotFoundException();
-        });
-
-    if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
-      log.info("Schedule 409: mill not ACT for millId={} year={} (status={})", millId, year, millStatus);
-      throw new MillClosedException();
-    }
-  }
-
-  /**
-   * Raw-parameter overload of {@link #validateMillYearViewable(long, int)} (Story 25.1 AC3 / S11).
-   * Params arrive as Strings so missing, blank, AND non-numeric values all resolve to the ONE
-   * verbatim legacy ERR-001 message — a typed {@code @RequestParam} cannot produce it (the
+   * Raw-parameter overload of {@link #validateMillYearActive(long, int)} for endpoints that take
+   * mill/year straight off the query string (introduced Story 25.1 AC3 / S11). Params arrive as
+   * Strings so missing, blank, AND non-numeric values all resolve to the ONE verbatim legacy
+   * ERR-001 message — a typed {@code @RequestParam} cannot produce it (the
    * {@code resolveWorkingContext} idiom; legacy shows the combined message, not per-field texts,
    * when the schedule page lacks a session context — {@code schedule11.xhtml:11–26}).
    *
@@ -283,19 +283,19 @@ public class MillContextService {
    * @throws ScheduleNotFoundException 404 — no {@code ILCR_MILL_REPORT_STATUS} row (ERR-003)
    * @throws MillClosedException 409 — mill not active ({@code ACT}) for the year (ERR-002)
    */
-  public MillYearContext validateMillYearViewable(String millIdParam, String yearParam) {
+  public MillYearContext validateMillYearActive(String millIdParam, String yearParam) {
     Long millId = parseAsLong(millIdParam);
     Integer year = parseAsInt(yearParam);
     if (millId == null || year == null) {
       throw new MillYearNotSelectedException();
     }
-    validateMillYearViewable(millId, year);
+    validateMillYearActive(millId, year);
     return new MillYearContext(millId, year);
   }
 
   /**
    * A validated (mill, year) pair parsed from raw request params by
-   * {@link #validateMillYearViewable(String, String)}.
+   * {@link #validateMillYearActive(String, String)}.
    *
    * @param millId the parsed mill id
    * @param year the parsed reporting year
@@ -314,30 +314,5 @@ public class MillContextService {
    */
   public Optional<String> findSchedule11TrackStatusCode(long millId, int year) {
     return repository.findTrackStatusCodes(millId, year).map(TrackCodes::schedule11Code);
-  }
-
-  /**
-   * Validate only that the mill/reporting-year context exists and the mill is active — WITHOUT
-   * requiring a schedule summary to exist. Used by reads that must render a "not initiated" empty
-   * document (200) for a valid, active mill/year that has no saved schedule yet.
-   *
-   * <p>Guard order (same as {@link #validateScheduleViewable} minus the summary-exists check):
-   * <ol>
-   *   <li>No per-year context (unknown mill or no report-status row) &rarr;
-   *       {@link ScheduleNotFoundException} (404).</li>
-   *   <li>Mill not active ({@code ACT}) for the year &rarr; {@link MillClosedException} (409).</li>
-   * </ol>
-   * Returns normally when the mill/year is a known, active context.
-   *
-   * @param millId the mill id
-   * @param year the reporting year
-   */
-  public void validateMillYearActive(long millId, int year) {
-    String millStatus = repository.findMillStatusCodeForYear(millId, year)
-        .orElseThrow(ScheduleNotFoundException::new);
-
-    if (!STATUS_ACTIVE.equalsIgnoreCase(millStatus)) {
-      throw new MillClosedException();
-    }
   }
 }

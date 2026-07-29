@@ -50,7 +50,7 @@ public class Schedule11Controller implements Schedule11Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule11Response> getSchedule11(
       String millId, String year, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearViewable(millId, year);
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(
         schedule11Service.getSchedule11(context.millId(), context.year(), callerMayEdit));
@@ -61,7 +61,7 @@ public class Schedule11Controller implements Schedule11Api {
   public ResponseEntity<Schedule11Response> addLocation(
       String millId, String year, SilvicultureLocationRequest request,
       Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearViewable(millId, year);
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc = schedule11Service.addLocation(
         context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
@@ -72,7 +72,7 @@ public class Schedule11Controller implements Schedule11Api {
   public ResponseEntity<Schedule11Response> updateLocation(
       long id, String millId, String year, SilvicultureLocationRequest request,
       Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearViewable(millId, year);
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc = schedule11Service.updateLocation(
         context.millId(), context.year(), id, request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
@@ -82,7 +82,7 @@ public class Schedule11Controller implements Schedule11Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule11Response> deleteLocation(
       long id, String millId, String year, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearViewable(millId, year);
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc = schedule11Service.deleteLocation(
         context.millId(), context.year(), id, true);
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
@@ -92,7 +92,7 @@ public class Schedule11Controller implements Schedule11Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule11CheckStatusResponse> checkStatus(
       String millId, String year, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearViewable(millId, year);
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
     return ResponseEntity.ok(schedule11Service.checkStatus(context.millId(), context.year()));
   }
 
