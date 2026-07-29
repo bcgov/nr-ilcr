@@ -244,10 +244,13 @@ public class Schedule4Service {
     requireDraft(millId, year);
     String name = request.name().trim();
     // The edited family's current name (null on create) — excluded from the uniqueness comparison so
-    // a no-op or case-only self-rename never self-collides.
+    // a no-op or case-only self-rename never self-collides. Resolving it via the mill/year-scoped
+    // lookup also validates the edit target belongs to THIS context: a foreign id → 404, never a
+    // silent cross-context mutation (IDOR guard).
     String oldName = request.id() == null
         ? null
-        : repository.findLocationName(request.id()).orElse(null);
+        : repository.findLocationName(request.id(), millId, year)
+            .orElseThrow(ScheduleNotFoundException::new);
     if (repository.nameExists(millId, year, name, oldName)) {
       throw new LocationNameConflictException();
     }
@@ -255,11 +258,12 @@ public class Schedule4Service {
       int primaryId;
       if (request.id() == null) {
         primaryId = repository.insertReport(millId, year, name, null, user); // primary: distance null
-        repository.bumpRevision(primaryId, 0, user); // 0 -> 1 (monotonic, mirrors Schedule 2)
+        repository.bumpRevision(primaryId, 0, millId, year, user); // 0 -> 1 (mirrors Schedule 2)
       } else {
         primaryId = request.id();
         int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
-        if (repository.bumpRevision(primaryId, expectedRevision, user) == 0) {
+        // bump is mill/year-scoped: a foreign id (or stale token) affects 0 rows -> 409.
+        if (repository.bumpRevision(primaryId, expectedRevision, millId, year, user) == 0) {
           throw new StaleRevisionException();
         }
         if (oldName != null && !oldName.equals(name)) {
@@ -293,7 +297,9 @@ public class Schedule4Service {
   @Transactional
   public void deleteLocation(long millId, int year, int id) {
     requireDraft(millId, year);
-    String name = repository.findLocationName(id).orElse(null);
+    // Mill/year-scoped: a foreign id resolves to no name here, so it can never delete another
+    // context's family (IDOR guard); an absent id in this context stays an idempotent no-op.
+    String name = repository.findLocationName(id, millId, year).orElse(null);
     if (name == null) {
       return; // idempotent — nothing to remove
     }
@@ -325,7 +331,9 @@ public class Schedule4Service {
   public Schedule4Response addSubPageRow(long millId, int year, int locationId,
       Schedule4SubPageRowRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
-    String name = repository.findLocationName(locationId).orElse(null);
+    // Mill/year-scoped: a foreign locationId resolves to no name here, so rows can only be attached
+    // to a location that genuinely exists in THIS context (IDOR guard) — otherwise 404.
+    String name = repository.findLocationName(locationId, millId, year).orElse(null);
     if (name == null) {
       throw new ScheduleNotFoundException(); // 404 — no such location to attach the row to
     }

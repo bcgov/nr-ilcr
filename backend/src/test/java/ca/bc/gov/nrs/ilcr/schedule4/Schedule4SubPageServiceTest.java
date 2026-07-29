@@ -65,7 +65,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_towing_insertsReportAndDescriptionDetail_noCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
         eq(USER))).thenReturn(9100);
     stubRecompute();
@@ -80,7 +80,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_truckRehaul_writesCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), eq(7),
         eq(USER))).thenReturn(9101);
     stubRecompute();
@@ -94,7 +94,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_other_ignoresCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
         eq(USER))).thenReturn(9102);
     stubRecompute();
@@ -109,7 +109,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_unknownLocation_throws404_writesNothing() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.empty());
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
     assertThrows(ScheduleNotFoundException.class, () -> service.addSubPageRow(
         MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
@@ -125,7 +125,7 @@ class Schedule4SubPageServiceTest {
     assertThrows(ScheduleNotEditableException.class, () -> service.addSubPageRow(
         MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
 
-    verify(repository, never()).findLocationName(anyInt());
+    verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
     verify(repository, never()).insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(),
         anyString());
   }
@@ -133,7 +133,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_persistenceFailure_translatesToScheduleNotSaved() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString()))
         .thenThrow(new DataIntegrityViolationException("boom"));
 

@@ -159,13 +159,22 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
-  /** The current {@code LOCATION_DESCRIPTION} of a report (the edit target's name), or empty. */
+  /**
+   * The current {@code LOCATION_DESCRIPTION} of a report (the edit/delete/sub-page target's name), or
+   * empty when the report is not a category-{@code "4"} report for THIS mill/year. Scoping to the
+   * caller's context is a security guard: without it a foreign {@code reportId} would resolve a name
+   * and let a request mutate or delete another mill/year's data (IDOR).
+   */
   @Query("""
       SELECT LOCATION_DESCRIPTION
         FROM THE.TRANSPORTATION_REPORT
        WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '4'
       """)
-  Optional<String> findLocationName(@Param("reportId") int reportId);
+  Optional<String> findLocationName(
+      @Param("reportId") int reportId, @Param("millId") long millId, @Param("year") int year);
 
   /**
    * The distance-child report id holding {@code code}'s detail for the named location, or empty when
@@ -293,8 +302,10 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
 
   /**
    * Optimistic-lock bump of a report (§Decision 3): increments {@code REVISION_COUNT} + audit ONLY
-   * when the stored revision still matches {@code expectedRevision}. Returns rows affected —
-   * {@code 1} on success, {@code 0} when stale (→ 409).
+   * when the stored revision still matches {@code expectedRevision} AND the report is a
+   * category-{@code "4"} report for THIS mill/year. Returns rows affected — {@code 1} on success,
+   * {@code 0} when stale OR when the {@code reportId} is not in the caller's context (→ 409). The
+   * mill/year scoping is a security guard: it prevents bumping a foreign context's report (IDOR).
    */
   @Modifying
   @Query("""
@@ -304,10 +315,13 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE TRANSPORTATION_REPORT_ID = :reportId
          AND REVISION_COUNT = :expectedRevision
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '4'
       """)
   int bumpRevision(
       @Param("reportId") int reportId, @Param("expectedRevision") int expectedRevision,
-      @Param("user") String user);
+      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
 
   /** Re-stamp the distance on a distance-child report (audit updated). */
   @Modifying
