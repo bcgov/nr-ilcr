@@ -12,12 +12,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
+
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -32,7 +34,8 @@ import org.springframework.dao.DataIntegrityViolationException;
  * — so it isolates the family write model: create (insert primary + bump 0→1 + fixed on primary +
  * distance child), edit (bump expected + rename + update-in-place), the delete-when-emptied distance
  * child, server-side name uniqueness (ERR-002), the Draft gate, optimistic-lock handling, idempotent
- * delete, delete cascade, and persistence-failure rollback translation.
+ * delete, delete cascade, cross-context (mill/year-scoped) edit rejection, and persistence-failure
+ * rollback translation.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4WriteServiceTest {
@@ -47,10 +50,6 @@ class Schedule4WriteServiceTest {
   @InjectMocks
   private Schedule4Service service;
 
-  private static BigDecimal bd(String v) {
-    return new BigDecimal(v);
-  }
-
   /** The recompute read at the end of a successful save — kept minimal (content not asserted here). */
   private void stubRecompute() {
     lenient().when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
@@ -64,7 +63,7 @@ class Schedule4WriteServiceTest {
     when(repository.nameExists(MILL, YEAR, "New Dump", null)).thenReturn(false);
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), isNull(), eq(USER)))
         .thenReturn(9001);
-    when(repository.bumpRevision(9001, 0, USER)).thenReturn(1);
+    when(repository.bumpRevision(9001, 0, MILL, YEAR, USER)).thenReturn(1);
     when(repository.findDistanceReportId(MILL, YEAR, "New Dump", 47)).thenReturn(Optional.empty());
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), eq(bd("60.0")), eq(USER)))
         .thenReturn(9002);
@@ -75,7 +74,7 @@ class Schedule4WriteServiceTest {
         new CategoryInput(47, bd("200"), 8000, bd("60.0")))), true, USER);
 
     verify(repository).insertReport(MILL, YEAR, "New Dump", null, USER);   // primary (distance null)
-    verify(repository).bumpRevision(9001, 0, USER);                        // 0 -> 1
+    verify(repository).bumpRevision(9001, 0, MILL, YEAR, USER);            // 0 -> 1
     verify(repository).upsertDetail(9001, 40, bd("1000"), 50000, USER);    // fixed on primary
     verify(repository).insertReport(MILL, YEAR, "New Dump", bd("60.0"), USER); // distance child
     verify(repository).upsertDetail(9002, 47, bd("200"), 8000, USER);      // distance detail
@@ -87,7 +86,7 @@ class Schedule4WriteServiceTest {
     when(repository.nameExists(MILL, YEAR, "Bare Dump", null)).thenReturn(false);
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("Bare Dump"), isNull(), eq(USER)))
         .thenReturn(9001);
-    when(repository.bumpRevision(9001, 0, USER)).thenReturn(1);
+    when(repository.bumpRevision(9001, 0, MILL, YEAR, USER)).thenReturn(1);
     stubRecompute();
 
     service.saveLocation(MILL, YEAR,
@@ -100,9 +99,9 @@ class Schedule4WriteServiceTest {
   @Test
   void save_edit_bumpsExpectedRenamesUpdatesInPlace() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Renamed Dump", "Existing Dump")).thenReturn(false);
-    when(repository.bumpRevision(8001, 0, USER)).thenReturn(1);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, USER)).thenReturn(1);
     when(repository.findDistanceReportId(MILL, YEAR, "Renamed Dump", 47))
         .thenReturn(Optional.of(8002));
     stubRecompute();
@@ -111,7 +110,7 @@ class Schedule4WriteServiceTest {
         new CategoryInput(40, bd("1500"), 60000, null),
         new CategoryInput(47, bd("250"), 9000, bd("70.0")))), true, USER);
 
-    verify(repository).bumpRevision(8001, 0, USER);
+    verify(repository).bumpRevision(8001, 0, MILL, YEAR, USER);
     verify(repository).renameFamily(MILL, YEAR, "Existing Dump", "Renamed Dump", USER);
     verify(repository).upsertDetail(8001, 40, bd("1500"), 60000, USER);
     verify(repository).updateReportDistance(8002, bd("70.0"), USER);
@@ -122,9 +121,9 @@ class Schedule4WriteServiceTest {
   @Test
   void save_edit_sameName_doesNotRename() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
-    when(repository.bumpRevision(8001, 0, USER)).thenReturn(1);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, USER)).thenReturn(1);
     stubRecompute();
 
     service.saveLocation(MILL, YEAR, new Schedule4LocationRequest(8001, 0, "Existing Dump", List.of(
@@ -137,9 +136,9 @@ class Schedule4WriteServiceTest {
   @Test
   void save_clearDistanceCategory_deletesChildReport() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
-    when(repository.bumpRevision(8001, 0, USER)).thenReturn(1);
+    when(repository.bumpRevision(8001, 0, MILL, YEAR, USER)).thenReturn(1);
     when(repository.findDistanceReportId(MILL, YEAR, "Existing Dump", 47))
         .thenReturn(Optional.of(8002));
     stubRecompute();
@@ -155,14 +154,30 @@ class Schedule4WriteServiceTest {
   @Test
   void save_duplicateName_throwsConflict_writesNothing() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Rival Dump", "Existing Dump")).thenReturn(true);
 
     assertThrows(LocationNameConflictException.class, () -> service.saveLocation(MILL, YEAR,
         new Schedule4LocationRequest(8001, 0, "Rival Dump", List.of()), true, USER));
 
-    verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyString());
+    verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), anyString());
     verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
+    verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
+        anyString());
+  }
+
+  @Test
+  void save_edit_foreignId_notInContext_throwsNotFound_writesNothing() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // The id is not a category-4 report for THIS mill/year (foreign / cross-context) -> 404, and the
+    // request must not mutate anything (the IDOR guard SScholefield flagged).
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.empty());
+
+    assertThrows(ScheduleNotFoundException.class, () -> service.saveLocation(MILL, YEAR,
+        new Schedule4LocationRequest(8001, 0, "Whatever", List.of()), true, USER));
+
+    verify(repository, never()).nameExists(anyLong(), anyInt(), anyString(), any());
+    verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), anyString());
     verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
         anyString());
   }
@@ -181,9 +196,9 @@ class Schedule4WriteServiceTest {
   @Test
   void save_staleRevision_throwsConflict_neverUpserts() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
-    when(repository.bumpRevision(8001, 5, USER)).thenReturn(0);
+    when(repository.bumpRevision(8001, 5, MILL, YEAR, USER)).thenReturn(0);
 
     assertThrows(StaleRevisionException.class, () -> service.saveLocation(MILL, YEAR,
         new Schedule4LocationRequest(8001, 5, "Existing Dump",
@@ -208,7 +223,7 @@ class Schedule4WriteServiceTest {
   @Test
   void delete_draftWithLocation_deletesFamily() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(8001)).thenReturn(Optional.of("Existing Dump"));
+    when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
 
     service.deleteLocation(MILL, YEAR, 8001);
 
@@ -216,9 +231,10 @@ class Schedule4WriteServiceTest {
   }
 
   @Test
-  void delete_unknownId_isIdempotentNoOp() {
+  void delete_unknownOrForeignId_isIdempotentNoOp() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(9999)).thenReturn(Optional.empty());
+    // Unknown in this context (also covers a foreign id: mill/year-scoped lookup returns empty).
+    when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
 
     service.deleteLocation(MILL, YEAR, 9999); // must not throw
 

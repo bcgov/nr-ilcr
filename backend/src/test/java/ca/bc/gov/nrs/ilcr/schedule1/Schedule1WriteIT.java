@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.jdbc.JdbcTestUtils;
-import org.springframework.test.context.TestPropertySource;
 
 /**
  * RED-PHASE ATDD SCAFFOLD — Story 2.1 (AD-4/5/6/8/9/10, AR11). PUT + DELETE /api/v1/schedule1.
@@ -43,7 +42,6 @@ import org.springframework.test.context.TestPropertySource;
  * ACTIVATION (dev-story): implement Tasks 1–6, then remove {@code @Disabled} and green each case.
  */
 @DisplayName("PUT/DELETE /api/v1/schedule1 — write path (Story 2.1)")
-@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule1WriteIT extends AbstractOracleIT {
 
     private static final String ENDPOINT = "/api/v1/schedule1";
