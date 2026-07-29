@@ -235,4 +235,77 @@ class MillContextServiceTest {
     assertNull(ctx.schedules1To10Status().date());
     assertNull(ctx.schedule11Status().date());
   }
+
+  // ---- validateMillYearActive (AD-4): the summary-free guards 1-2, shared by LIST schedules
+  // (Schedule11Controller, Story 25.1) and "not initiated" document reads (Schedule2Controller),
+  // and delegated to by validateScheduleViewable for its guards 1-2. Unlike
+  // validateScheduleViewable there is deliberately NO summary-exists check — list schedules
+  // (Schedule 11, UC-SCH11-001 S13) have no ILCR_REPORT_SUMMARY row; the 404 keys solely on the
+  // ILCR_MILL_REPORT_STATUS row (legacy Schedule11MB.init -> scheduleNotFound). Strict Mockito
+  // proves the no-summary-check semantics: stubbing scheduleSummaryExists here would fail the run.
+
+  @Test
+  void millYearActive_noStatusRow_throwsScheduleNotFound() {
+    when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
+    assertThrows(ScheduleNotFoundException.class,
+        () -> service.validateMillYearActive(999999L, YEAR));
+  }
+
+  @Test
+  void millYearActive_millClosedForYear_throwsMillClosed() {
+    when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
+    assertThrows(MillClosedException.class,
+        () -> service.validateMillYearActive(516L, YEAR));
+  }
+
+  @Test
+  void millYearActive_unexpectedNonActiveStatus_throwsMillClosed() {
+    // Same ACT whitelist as validateScheduleViewable: any unexpected status is not viewable.
+    when(repository.findMillStatusCodeForYear(518L, YEAR)).thenReturn(Optional.of("SUS"));
+    assertThrows(MillClosedException.class,
+        () -> service.validateMillYearActive(518L, YEAR));
+  }
+
+  @Test
+  void millYearActive_activeMill_isValid_withoutAnySummaryCheck() {
+    when(repository.findMillStatusCodeForYear(515L, YEAR)).thenReturn(Optional.of("ACT"));
+    // Mill 515 has NO summary of any category (V2 seed) — a list schedule is still viewable (AC2).
+    assertDoesNotThrow(() -> service.validateMillYearActive(515L, YEAR));
+  }
+
+  // ---- validateMillYearActive String overload (Story 25.1 AC3 / S11): missing, blank, and
+  // non-numeric params all resolve to the verbatim legacy ERR-001 message (400) — the raw-String
+  // idiom mirrors resolveWorkingContext, because a typed @RequestParam cannot produce ERR-001.
+
+  @Test
+  void millYearActive_missingMillId_throwsMillYearNotSelected() {
+    assertThrows(MillYearNotSelectedException.class,
+        () -> service.validateMillYearActive(null, "2021"));
+  }
+
+  @Test
+  void millYearActive_blankYear_throwsMillYearNotSelected() {
+    assertThrows(MillYearNotSelectedException.class,
+        () -> service.validateMillYearActive("514", "   "));
+  }
+
+  @Test
+  void millYearActive_nonNumericMillId_throwsMillYearNotSelected() {
+    assertThrows(MillYearNotSelectedException.class,
+        () -> service.validateMillYearActive("abc", "2021"));
+  }
+
+  @Test
+  void millYearActive_bothMissing_throwsMillYearNotSelected() {
+    // Legacy shows ONE combined message (schedule11.xhtml guard), not per-field texts — unlike
+    // resolveWorkingContext's S08 per-field list.
+    assertThrows(MillYearNotSelectedException.class,
+        () -> service.validateMillYearActive(null, null));
+  }
+
+  @Test
+  void millYearActive_validStrings_delegateToTypedGuard() {
+    when(repository.findMillStatusCodeForYear(514L, YEAR)).thenReturn(Optional.of("ACT"));
+    assertDoesNotThrow(() -> service.validateMillYearActive("514", "2021"));
+  }
 }
