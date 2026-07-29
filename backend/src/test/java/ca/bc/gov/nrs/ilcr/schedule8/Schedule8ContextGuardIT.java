@@ -40,7 +40,7 @@ class Schedule8ContextGuardIT extends AbstractOracleIT {
   @Test
   @DisplayName("missing year -> 400 ProblemDetail")
   void missingYear_returns400() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "570"))
+    mockMvc.perform(get(ENDPOINT).param("millId", "576"))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
   }
@@ -76,7 +76,7 @@ class Schedule8ContextGuardIT extends AbstractOracleIT {
   @DisplayName("valid active mill/year with NO pages -> 200 (NOT 404)")
   void validActiveNoPages_returns200() throws Exception {
     mockMvc.perform(get(ENDPOINT)
-            .param("millId", "572")
+            .param("millId", "578")
             .param("year", String.valueOf(SEEDED_YEAR))
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk());
