@@ -199,18 +199,18 @@ public class Schedule3Service {
     long subtotalActualHarvest = subtotalOtherCosts.harvest();
     long subtotalActualPop = subtotalOtherCosts.pop();
     for (LineSpec spec : LINES) {
-      subtotalActualHarvest += nz(harvestByCode.get(spec.code()));
-      subtotalActualPop += nz(popByCode.get(spec.code()));
+      subtotalActualHarvest += nullToZero(harvestByCode.get(spec.code()));
+      subtotalActualPop += nullToZero(popByCode.get(spec.code()));
     }
     ThreeColumnTotal subtotalActualCosts = total(subtotalActualHarvest, subtotalActualPop);
 
     // --- Included Unacceptable Costs = Σ(item-38) + Annual Rents harvest; PO&P forced 0 ---------
     long unacceptableHarvest = 0L;
     for (DetailRow row : unacceptableRows) {
-      unacceptableHarvest += nz(row.cost());
+      unacceptableHarvest += nullToZero(row.cost());
     }
     Integer annualRentsHarvest = harvestByCode.get(CODE_ANNUAL_RENTS);
-    unacceptableHarvest += nz(annualRentsHarvest);
+    unacceptableHarvest += nullToZero(annualRentsHarvest);
     ThreeColumnTotal includedUnacceptableCosts = new ThreeColumnTotal(
         unacceptableHarvest, 0L, unacceptableHarvest); // pop 0 ⇒ crown = harvest
 
@@ -498,8 +498,8 @@ public class Schedule3Service {
       rowDtos.add(new OtherAcceptableRow(
           tot.detailId(), tot.itemDescription(), tot.cost(), popCost,
           crownCost(tot.cost(), popCost)));
-      harvest += nz(tot.cost());
-      pop += nz(popCost);
+      harvest += nullToZero(tot.cost());
+      pop += nullToZero(popCost);
     }
     rowDtos.sort((a, b) -> Integer.compare(a.id(), b.id()));
     return new OtherAcceptableDocument(editable, rowDtos.size(), total(harvest, pop), rowDtos, null);
@@ -586,7 +586,7 @@ public class Schedule3Service {
     long subtotal = 0L;
     for (SubPageRow row : rows) {
       rowDtos.add(new UnacceptableRow(row.detailId(), row.itemDescription(), row.cost()));
-      subtotal += nz(row.cost());
+      subtotal += nullToZero(row.cost());
     }
     Integer annualRents = firstCost(summaryId, CODE_ANNUAL_RENTS);
     return new UnacceptableDocument(editable, rowDtos.size(), subtotal, annualRents, rowDtos, null);
@@ -878,9 +878,9 @@ public class Schedule3Service {
     long pop = 0L;
     for (DetailRow row : acceptableRows) {
       if (isTotalRow(row)) {
-        harvest += nz(row.cost());
+        harvest += nullToZero(row.cost());
       } else {
-        pop += nz(row.cost());
+        pop += nullToZero(row.cost());
       }
     }
     return total(harvest, pop);
@@ -999,7 +999,7 @@ public class Schedule3Service {
     return row == null ? null : row.volume();
   }
 
-  private static long nz(Integer value) {
+  private static long nullToZero(Integer value) {
     return value == null ? 0L : value;
   }
 }

@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -36,6 +37,14 @@ class Schedule3WriteIT extends AbstractOracleIT {
 
   private int revisionOf(String doc) {
     return JsonPath.read(doc, "$.revisionCount");
+  }
+
+  /** GET the current Schedule 1 document JSON for a mill/year (for the BR-09 push cross-checks). */
+  private String getSch1Doc(long millId) throws Exception {
+    return mockMvc.perform(get("/api/v1/schedule1").param("millId", String.valueOf(millId))
+            .param("year", "2021").accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
   }
 
   @Test
@@ -79,6 +88,26 @@ class Schedule3WriteIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].volume", contains(newCrown)))
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].cost", contains(50000)));
+  }
+
+  @Test
+  @DisplayName("Crown push bumps the Schedule 1 revision (stale main-page token then rejected)")
+  void crownVolumeChange_bumpsSchedule1Revision() throws Exception {
+    int sch1RevBefore = revisionOf(getSch1Doc(573));
+    String doc = getDoc(573);
+    int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 2000;
+    String body = """
+        { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
+          "popTimberVolume": 5000, "crownTimberVolume": %d }
+        """.formatted(revisionOf(doc), newCrown);
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isOk());
+    // AR11: the push incremented Schedule 1's REVISION_COUNT, so a client still holding sch1RevBefore
+    // now holds a stale optimistic-lock token — its main-page save would be rejected (409).
+    int sch1RevAfter = revisionOf(getSch1Doc(573));
+    assertTrue(sch1RevAfter > sch1RevBefore,
+        "Schedule 1 revision must increase after the crown push");
   }
 
   @Test

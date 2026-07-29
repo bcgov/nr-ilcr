@@ -198,6 +198,23 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       @Param("comments") String comments, @Param("user") String user);
 
   /**
+   * Unconditionally bump the summary revision (BR-09 Crown Timber push, AR11). The Crown push writes
+   * Schedule 1 detail VOLUMEs outside the main-page optimistic-lock; bumping {@code REVISION_COUNT}
+   * takes a row lock on the summary (serializing a concurrent Schedule 1 save) AND invalidates any
+   * already-loaded main-page token, so an editor holding a now-stale revision is forced to reload
+   * rather than silently overwriting the propagated values.
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_REPORT_SUMMARY
+         SET REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
+      """)
+  void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
+
+  /**
    * Upsert a fixed / shared-volume detail row by {@code (summaryId, costItemCode)} where the row has
    * a NULL {@code ITEM_DESCRIPTION}. The {@code ITEM_DESCRIPTION IS NULL} guard means itemized
    * Other-Costs rows (code 19 WITH a description) are never touched (AC2). Update-in-place first;

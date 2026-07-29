@@ -48,6 +48,8 @@ class Schedule1CrownPushTest {
     boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, volume, USER);
 
     assertTrue(pushed);
+    // The aggregate revision is bumped (AR11) so a stale-token main-page save is rejected.
+    verify(repository).touchSummary(SUMMARY_ID, USER);
     // Fixed-line items get a VOLUME-only upsert; the item-19 Other-Costs rows are overwritten en masse.
     verify(repository).upsertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);
     verify(repository).upsertFixedDetailVolume(SUMMARY_ID, 144, volume, USER);
@@ -61,6 +63,7 @@ class Schedule1CrownPushTest {
     boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
 
     assertFalse(pushed); // WRN-002: nothing written when Schedule 1 has no summary
+    verify(repository, never()).touchSummary(anyInt(), any());
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());
   }
@@ -75,6 +78,7 @@ class Schedule1CrownPushTest {
 
     // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown push.
     assertFalse(pushed);
+    verify(repository, never()).touchSummary(anyInt(), any());
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());
   }

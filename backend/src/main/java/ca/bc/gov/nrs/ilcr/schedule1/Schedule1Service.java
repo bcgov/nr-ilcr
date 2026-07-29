@@ -171,6 +171,10 @@ public class Schedule1Service {
       return false;
     }
     int summaryId = summary.summaryId();
+    // Bump the Schedule 1 aggregate revision FIRST (AR11): the volume writes below sit outside the
+    // main-page optimistic-lock, so this row lock serializes a concurrent Schedule 1 save and forces
+    // an editor holding a stale token to reload rather than overwrite the pushed values.
+    repository.touchSummary(summaryId, user);
     for (int code : CROWN_PUSH_VOLUME_ITEMS) {
       repository.upsertFixedDetailVolume(summaryId, code, volume, user);
     }
