@@ -24,7 +24,8 @@ import org.springframework.data.repository.query.Param;
  * <p>The public {@code default} methods expose the plain service-facing records ({@link SummaryRow},
  * {@link DetailRow}) and compose the create-on-absent / upsert / delete sequences; the
  * {@code @Query}/{@code @Modifying} methods are the explicit SQL. The summary sequence is
- * {@code ILCR_REPORT_SUMMARY_SEQ}; detail ids come from {@code ILCR_COST_REPORT_DETAIL_SEQ}.
+ * {@code ILCR_REPORT_COMMON_SEQ} (the real THE sequence legacy {@code ILCRReportSummary} uses); detail
+ * ids come from {@code ILCR_COST_REPORT_DETAIL_SEQ}.
  */
 public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, Integer> {
 
@@ -87,6 +88,24 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
   /**
+   * Same as {@link #findTrackStatus} but takes a row lock (Oracle {@code FOR UPDATE}) on the
+   * per-mill/year report-status row. The write-path Draft gate uses this so concurrent first-saves
+   * for the same mill/year serialize on this row: the first create inserts the category-{@code "2"}
+   * summary and commits (releasing the lock); the next writer then reads the now-committed summary so
+   * its {@link #mergeSummaryRow} is a no-op. This closes the create-on-absent duplicate-summary race
+   * the (real-schema) missing unique constraint would otherwise allow. Must run inside the write
+   * {@code @Transactional} to hold the lock until commit.
+   */
+  @Query("""
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
    * Schedule 3 PO&amp;P Timber volume (cost-item 118), carried onto {@code purchasedLogCost.volume}
    * and {@code purchasedWoodOverhead.volume} (BR-03). Empty when the Schedule 3 source is absent.
    */
@@ -99,6 +118,8 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '3'
          AND d.ILCR_REPORT_COST_ITEM_ID = 118
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<BigDecimal> findSch3PopTimberVolume(@Param("millId") long millId, @Param("year") int year);
 
@@ -115,6 +136,8 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '3'
          AND d.ILCR_REPORT_COST_ITEM_ID = 135
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<Integer> findSch3PopActualCost(@Param("millId") long millId, @Param("year") int year);
 
@@ -128,12 +151,16 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '3'
+       ORDER BY ILCR_REPORT_SUMMARY_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<BigDecimal> findSch3CrownVolume(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * Schedule 1 Subtotal Company Logging cost (cost-item 144), a detail row on the category-{@code "1"}
-   * summary. Feeds {@code totalCompanyLogging.cost}. Empty when the Schedule 1 source is absent.
+   * summary. Feeds the {@code totalCompanyLogging.cost} legacy formula. Empty when the Schedule 1
+   * source is absent. First-row-wins ({@code FETCH FIRST 1 ROW ONLY}) so a duplicate detail row in
+   * real data is tolerated rather than throwing {@code IncorrectResultSizeDataAccessException} (500).
    */
   @Query("""
       SELECT d.COST
@@ -144,38 +171,103 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
          AND s.REPORT_YEAR = :year
          AND s.ILCR_CATEGORY_ID = '1'
          AND d.ILCR_REPORT_COST_ITEM_ID = 144
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
       """)
   Optional<Integer> findSch1SubtotalLoggingCost(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Schedule 1 Silviculture Actual $ Spent cost (cost-item 1) — the fixed detail row (NULL
+   * {@code ITEM_DESCRIPTION}) on the category-{@code "1"} summary. Feeds the {@code silvActualSpent}
+   * term of the legacy {@code totalCompanyLogging.cost} formula. Empty when absent. First-row-wins.
+   */
+  @Query("""
+      SELECT d.COST
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.ILCR_REPORT_SUMMARY s
+          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+         AND s.ILCR_CATEGORY_ID = '1'
+         AND d.ILCR_REPORT_COST_ITEM_ID = 1
+         AND d.ITEM_DESCRIPTION IS NULL
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
+      """)
+  Optional<Integer> findSch1SilvActualSpentCost(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Schedule 1 Silviculture Accrued less Actual $ Spent cost (cost-item 2) — the fixed detail row
+   * (NULL {@code ITEM_DESCRIPTION}) on the category-{@code "1"} summary. Feeds the
+   * {@code silvAccruedSpent} term of the legacy {@code totalCompanyLogging.cost} formula. Empty when
+   * absent. First-row-wins.
+   */
+  @Query("""
+      SELECT d.COST
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.ILCR_REPORT_SUMMARY s
+          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
+       WHERE s.ILCR_MILL_ID = :millId
+         AND s.REPORT_YEAR = :year
+         AND s.ILCR_CATEGORY_ID = '1'
+         AND d.ILCR_REPORT_COST_ITEM_ID = 2
+         AND d.ITEM_DESCRIPTION IS NULL
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+       FETCH FIRST 1 ROW ONLY
+      """)
+  Optional<Integer> findSch1SilvAccruedSpentCost(@Param("millId") long millId, @Param("year") int year);
 
   // -------------------------------------------------------------------------------------------------
   // Writes (Story 3.2) — @Modifying explicit SQL; default methods compose create-on-absent / upsert /
   // delete. Transaction boundary + rules live in Schedule2Service (@Transactional).
   // -------------------------------------------------------------------------------------------------
 
-  @Query("SELECT THE.ILCR_REPORT_SUMMARY_SEQ.NEXTVAL FROM DUAL")
-  int nextSummaryId();
+  // Summary ids come from THE.ILCR_REPORT_COMMON_SEQ — the real THE sequence legacy ILCRReportSummary
+  // uses (ILCRReportSummary.java:49-50). ILCR_REPORT_SUMMARY_SEQ does NOT exist in THE and would
+  // ORA-02289 on the first prod create. The sequence is drawn inline inside the create MERGE below.
 
+  /**
+   * Idempotent create of the empty category-{@code "2"} summary for a mill/year, keyed on
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). The real THE schema has no unique constraint on
+   * that triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize:
+   * under READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT
+   * (permanent duplicate → later 500s). Serialization is provided by the caller instead — the write
+   * path takes a {@code FOR UPDATE} row lock on the parent report-status row via
+   * {@link #findTrackStatusForUpdate} before this MERGE, so first-saves for the same mill/year run one
+   * at a time and the second becomes a no-op. A unique index on the triple is the structural backstop
+   * (present test-scope in the {@code report_summary_uniqueness} migration; flagged for the real
+   * schema). Caller re-reads the summary afterwards to obtain the id (see {@link #insertSummary}).
+   */
   @Modifying
   @Query("""
-      INSERT INTO THE.ILCR_REPORT_SUMMARY
-          (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
-           COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
-      VALUES
-          (:id, :year, :millId, '2', :comments, 0, :user, SYSTIMESTAMP)
+      MERGE INTO THE.ILCR_REPORT_SUMMARY t
+      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '2' AS ILCR_CATEGORY_ID FROM DUAL) src
+         ON (t.ILCR_MILL_ID = src.ILCR_MILL_ID
+             AND t.REPORT_YEAR = src.REPORT_YEAR
+             AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
+       WHEN NOT MATCHED THEN
+         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
+         VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '2',
+                 :comments, 0, :user, SYSTIMESTAMP)
       """)
-  int insertSummaryRow(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
+  int mergeSummaryRow(
+      @Param("millId") long millId, @Param("year") int year,
       @Param("comments") String comments, @Param("user") String user);
 
   /**
-   * Insert a new, empty category-{@code "2"} report summary for a mill/year at {@code REVISION_COUNT}
-   * 0 and return its generated id (the Schedule 2 create-on-absent divergence — Schedule 2 never
-   * 404s). The freshly-inserted revision 0 is then bumped to 1 by the normal {@link #bumpRevision}.
+   * Idempotently create a new, empty category-{@code "2"} report summary for a mill/year at
+   * {@code REVISION_COUNT} 0 and return its id (the Schedule 2 create-on-absent divergence — Schedule 2
+   * never 404s). The MERGE serializes concurrent first-saves so only one row is ever inserted; the
+   * summary is then re-read for its id. The freshly-created revision 0 is bumped to 1 by the normal
+   * {@link #bumpRevision}.
    */
   default int insertSummary(long millId, int year, String comments, String user) {
-    int id = nextSummaryId();
-    insertSummaryRow(id, millId, year, comments, user);
-    return id;
+    mergeSummaryRow(millId, year, comments, user);
+    return findSummary(millId, year)
+        .map(SummaryRow::summaryId)
+        .orElseThrow(() -> new IllegalStateException(
+            "Schedule 2 summary not found immediately after MERGE create"));
   }
 
   /**

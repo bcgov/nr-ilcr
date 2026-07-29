@@ -48,4 +48,20 @@ describe('validateSchedule2 ranges', () => {
       purchasedLogCostCost: VALIDATION_MESSAGES.costInvalid,
     })
   })
+
+  it('flags non-integer cost the backend would silently coerce, but allows fractional volume', () => {
+    // Costs are integer dollars: 50.5 → Jackson int-coerces to 50, "0x1F" → 31, "1e3" → 1000. All
+    // must be flagged rather than "saved successfully" over altered data.
+    expect(validateSchedule2({ purchasedLogCostCost: '50.5' })).toEqual({
+      purchasedLogCostCost: VALIDATION_MESSAGES.costInvalid,
+    })
+    expect(validateSchedule2({ lessLogSalesCost: '0x1F' })).toEqual({
+      lessLogSalesCost: VALIDATION_MESSAGES.costInvalid,
+    })
+    expect(validateSchedule2({ lessLogSalesCost: '1e3' })).toEqual({
+      lessLogSalesCost: VALIDATION_MESSAGES.costInvalid,
+    })
+    // Volume legitimately allows fractions (legacy Double) — a decimal volume is NOT flagged.
+    expect(validateSchedule2({ lessLogSalesVolume: '50.5' })).toEqual({})
+  })
 })

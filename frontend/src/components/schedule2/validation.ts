@@ -42,15 +42,29 @@ const FIELD_RULES: Record<
   },
 }
 
+// FIELD_RULES is static; cache its entries once rather than reallocating on every validate call.
+const FIELD_ENTRIES = Object.entries(FIELD_RULES)
+
+// Costs are integer dollars (legacy costConverter). A plain Number() would silently accept values the
+// backend then mangles — 50.5 → Jackson coerces to 50, and "0x1F"/"1e3" parse to 31/1000 — so the user
+// sees "Data saved successfully" over altered data. Require an explicit signed-integer string for cost.
+// Volume legitimately allows fractions (legacy Double), so it keeps the tolerant Number() check.
+const INTEGER_PATTERN = /^-?\d+$/
+
 /** Advisory validation: returns a map of fieldKey → error message for every invalid editable field. */
 export function validateSchedule2(form: Record<string, string>): Record<string, string> {
   const errors: Record<string, string> = {}
-  for (const [key, rule] of Object.entries(FIELD_RULES)) {
+  for (const [key, rule] of FIELD_ENTRIES) {
     const raw = form[key]
     if (raw === undefined || raw.trim() === '') {
       continue
     }
-    const value = Number(raw)
+    const trimmed = raw.trim()
+    if (rule.kind === 'cost' && !INTEGER_PATTERN.test(trimmed)) {
+      errors[key] = VALIDATION_MESSAGES.costInvalid
+      continue
+    }
+    const value = Number(trimmed)
     if (Number.isNaN(value)) {
       errors[key] =
         rule.kind === 'cost' ? VALIDATION_MESSAGES.costInvalid : VALIDATION_MESSAGES.volumeInvalid

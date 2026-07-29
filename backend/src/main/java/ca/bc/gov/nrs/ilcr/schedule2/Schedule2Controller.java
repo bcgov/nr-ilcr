@@ -82,9 +82,16 @@ public class Schedule2Controller implements Schedule2Api {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
     CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
-    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message.
+    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message. The
+    // service carries an optional field label in MessageInfo.text; when present it is prefixed as
+    // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
     List<MessageInfo> resolved = status.messages().stream()
-        .map(m -> message(m.key()))
+        .map(m -> {
+          MessageInfo base = message(m.key());
+          return m.text() == null
+              ? base
+              : new MessageInfo(base.key(), m.text() + ": " + base.text());
+        })
         .toList();
     return ResponseEntity.ok(new CheckStatusResponse(status.outcome(), resolved));
   }
