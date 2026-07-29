@@ -115,12 +115,12 @@ public class Schedule8Service {
       pages.add(new Page(
           p.id(), p.revisionCount(), p.division(), p.license(), p.contact(), p.phone(),
           p.cuttingPermit(),
-          p.supportCentre(), supportCentre.get(p.supportCentre()),
-          p.region(), region.get(p.region()),
-          p.becZone(), becZone.get(p.becZone()),
-          p.tsaNumber(), tsa.get(p.tsaNumber()),
-          p.tflNumber(), tfl.get(p.tflNumber()),
-          p.supplyBlock(), supplyBlock.get(p.supplyBlock()),
+          p.supportCentre(), labelFor(supportCentre, p.supportCentre()),
+          p.region(), labelFor(region, p.region()),
+          p.becZone(), labelFor(becZone, p.becZone()),
+          p.tsaNumber(), labelFor(tsa, p.tsaNumber()),
+          p.tflNumber(), labelFor(tfl, p.tflNumber()),
+          p.supplyBlock(), labelFor(supplyBlock, p.supplyBlock()),
           p.comments(), samples.size(), samples));
     }
 
@@ -519,9 +519,9 @@ public class Schedule8Service {
     BigDecimal additionsTotal = BigDecimal.ZERO;
     BigDecimal deductionsTotal = BigDecimal.ZERO;
     for (TreeToTruckRateDetailEntity r : rateRows) {
-      String subcategory = subcategories.get(r.costItemCode());
+      String subcategory = labelFor(subcategories, r.costItemCode());
       RateRow row = new RateRow(r.id(), r.revisionCount(), r.costItemCode(), r.itemDescription(),
-          normalize(r.costingRate()), r.costTypeCode(), costType.get(r.costTypeCode()));
+          normalize(r.costingRate()), r.costTypeCode(), labelFor(costType, r.costTypeCode()));
       if (ADDITION_SUBCATEGORIES.contains(subcategory)) {
         additions.add(row);
         additionsTotal = additionsTotal.add(zeroIfNull(r.costingRate()));
@@ -545,7 +545,7 @@ public class Schedule8Service {
         s.skylineSlopeDistance(), s.skylineSupportNumber(), normalize(s.supportAverageDistance()),
         normalize(s.distance()), normalize(s.cycleTime()),
         IND_YES.equals(s.uphillDirectionInd()), IND_YES.equals(s.waterDumpDestinationInd()),
-        s.skidTypeCode(), skidType.get(s.skidTypeCode()),
+        s.skidTypeCode(), labelFor(skidType, s.skidTypeCode()),
         s.coniferousVolume(), s.deciduousVolume(), actualHarvested,
         normalize(s.originalRate()), normalize(additionsTotal), normalize(deductionsTotal),
         normalize(finalRate), additions.size(), deductions.size(), additions, deductions);
@@ -553,6 +553,15 @@ public class Schedule8Service {
 
   private static BigDecimal zeroIfNull(BigDecimal value) {
     return value == null ? BigDecimal.ZERO : value;
+  }
+
+  /**
+   * Null-safe code-table label lookup. The label maps are immutable ({@code Map.of}/{@code Map.copyOf}
+   * from the repository), which reject a null key with an NPE — so a sample/rate row with no code
+   * (never entered) must short-circuit to a null label rather than probe the map.
+   */
+  private static <K> String labelFor(Map<K, String> labels, K code) {
+    return code == null ? null : labels.get(code);
   }
 
   /** Sum of the given values treating null as 0; null (never entered) is fine as 0 for a roll-up. */
