@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { MockAuthContext } from './MockAuthContext'
+import type { IlcrRole } from './mockUsers'
 import { MOCK_USER_STORAGE_KEY, MOCK_USERS, findMockUser } from './mockUsers'
 
 type Props = {
@@ -43,7 +44,7 @@ export default function MockAuthProvider({ children }: Props) {
         persistUserId(id)
         setSelectedUserId(id)
       },
-      hasRole: (role: string) => user.roles.includes(role as never),
+      hasRole: (role: IlcrRole) => user.roles.includes(role),
     }),
     [user],
   )

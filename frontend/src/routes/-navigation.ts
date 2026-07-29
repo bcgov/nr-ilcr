@@ -4,7 +4,9 @@ import { Document, Home, Table, UserMultiple } from '@carbon/icons-react'
 export const ROUTES = {
   dashboard: '/',
   scheduleOne: '/schedule-1',
+  scheduleTwo: '/schedule-2',
   scheduleThree: '/schedule-3',
+  scheduleFour: '/schedule-4',
   millAssociations: '/mill-associations',
   submissions: '/submissions',
 } as const
@@ -34,8 +36,10 @@ export const isNavigationMenu = (item: NavigationItem): item is NavigationMenu =
 
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
+    // Story 1.3: '/' renders the Home (Mill and Reporting Year) page — legacy has no Dashboard
+    // concept. The ROUTES.dashboard key is internal only; the label is what users see.
     icon: Home,
-    name: 'Dashboard',
+    name: 'Home',
     path: ROUTES.dashboard,
   },
   {
@@ -44,7 +48,9 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     name: 'Schedules',
     items: [
       { name: 'Schedule 1', path: ROUTES.scheduleOne },
+      { name: 'Schedule 2', path: ROUTES.scheduleTwo },
       { name: 'Schedule 3', path: ROUTES.scheduleThree },
+      { name: 'Schedule 4', path: ROUTES.scheduleFour },
     ],
   },
   {

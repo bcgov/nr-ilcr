@@ -148,6 +148,66 @@ describe('Schedule1 editable page', () => {
     expect(screen.getByText('30')).toBeInTheDocument()
   })
 
+  test('load/save/delete carry selected millId/year in query params (regression guard)', async () => {
+    const selected = { millId: 516, year: 2020 }
+    const selectedDoc = {
+      ...schedule1Doc,
+      millId: selected.millId,
+      year: selected.year,
+      comments: 'Seed comment for 516/2020',
+    }
+    let getUrl = ''
+    let putUrl = ''
+    let deleteUrl = ''
+
+    server.use(
+      http.get(URL, ({ request }) => {
+        getUrl = request.url
+        return HttpResponse.json(selectedDoc)
+      }),
+      http.put(URL, ({ request }) => {
+        putUrl = request.url
+        return HttpResponse.json({
+          ...selectedDoc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+      http.delete(URL, ({ request }) => {
+        deleteUrl = request.url
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+
+    render(
+      <MillYearProvider initial={selected}>
+        <Schedule1 />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
+    // Scope to the delete-confirm modal by heading — the page also renders the Leave / Save-required
+    // modals, so a bare dialog role is ambiguous.
+    const dialog = await screen.findByRole('dialog', { name: /delete schedule/i })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+
+    const assertParams = (url: string) => {
+      expect(url).toContain(`millId=${selected.millId}`)
+      expect(url).toContain(`year=${selected.year}`)
+    }
+
+    assertParams(getUrl)
+    assertParams(putUrl)
+    assertParams(deleteUrl)
+  })
+
   test('out-of-range value is blocked client-side (advisory) — inline error, no PUT (AC3 / S03)', async () => {
     let putCalled = false
     server.use(
@@ -216,7 +276,7 @@ describe('Schedule1 editable page', () => {
     await screen.findByLabelText('Standing Tree to Loaded Truck volume')
     await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
     // Confirm dialog shows the verbatim legacy text.
-    const dialog = await screen.findByRole('dialog')
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
     expect(
       within(dialog).getByText('This will delete the current record. Do you want to continue?'),
     ).toBeInTheDocument()
@@ -243,9 +303,18 @@ describe('Schedule1 editable page', () => {
 
   test('404 not-found shows verbatim ERR-003 (AC / S21)', async () => {
     server.use(problemHandler(404, 'Schedule not found.'))
-    render(<Schedule1 />)
+    // Explicit context so the message is deterministic regardless of the dev default mill/year.
+    render(
+      <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+        <Schedule1 />
+      </MillYearProvider>,
+    )
 
-    expect(await screen.findByText('Schedule not found.')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'No Schedule 1 exists for Mill 514 in Reporting Year 2021. Select another mill/year from Home, or create Schedule 1 data for this context.',
+      ),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
@@ -511,31 +580,36 @@ describe('Schedule1 Check Status (Story 2.7)', () => {
 describe('Schedule1 Other Costs navigation (Story 2.5)', () => {
   test('clicking Subtotal Other Costs confirms then navigates to the sub-page (AC1)', async () => {
     mockNavigate.mockClear()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
+    // A Carbon Modal (not window.confirm) shows the verbatim discard-unsaved-edits text.
+    const dialog = await screen.findByRole('dialog', { name: 'Leave Schedule 1' })
+    expect(
+      within(dialog).getByText(
+        'Any unsaved data will be lost. Are you sure you would like to continue?',
+      ),
+    ).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1/other-costs' })
-    confirmSpy.mockRestore()
   })
 
-  test('cancelling the confirm does NOT navigate (editable)', async () => {
+  test('cancelling the confirm Modal does NOT navigate (editable)', async () => {
     mockNavigate.mockClear()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Leave Schedule 1' })
+    await user.click(within(dialog).getByRole('button', { name: /cancel/i }))
     expect(mockNavigate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
   })
 
   test('read-only schedule opens the sub-page without a confirm', async () => {
     mockNavigate.mockClear()
-    const confirmSpy = vi.spyOn(window, 'confirm')
     server.use(
       http.get(URL, () =>
         HttpResponse.json({ ...schedule1Doc, trackStatus: 'S', editable: false }),
@@ -545,8 +619,7 @@ describe('Schedule1 Other Costs navigation (Story 2.5)', () => {
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
-    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1/other-costs' })
-    confirmSpy.mockRestore()
   })
 })

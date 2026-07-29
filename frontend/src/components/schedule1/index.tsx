@@ -3,7 +3,7 @@ import type Schedule1Response from '@/interfaces/Schedule1Response'
 import type { LineItem } from '@/interfaces/Schedule1Response'
 import type Schedule1Request from '@/interfaces/Schedule1Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -24,13 +24,16 @@ import {
 import apiService from '@/service/api-service'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import useMillYear from '@/context/millYear/useMillYear'
+import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import { extractDetail } from '@/utils/error'
+import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule1 } from './validation'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
-// are client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so
+// are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
@@ -52,7 +55,8 @@ const LINE_ITEM_LABELS: Record<number, string> = {
 }
 const WRITABLE = new Set<number>(WRITABLE_LINE_ITEM_CODES)
 
-// Silviculture code -> label; codes 1 & 2 are editable, 139 (pulled cost) and 140 (derived) read-only.
+// Silviculture code -> label. All four volumes are user-entered; codes 1 & 2 also have an editable
+// cost, while 139's cost is pulled from Schedule 3 and 140's is derived (both costs read-only).
 const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['silviculture'] }[] = [
   { code: 1, label: 'Actual $ Spent', key: 'actualSpent' },
   { code: 2, label: 'Accrued less Actual $ Spent', key: 'accruedLessActual' },
@@ -62,28 +66,16 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 
 type FieldValues = Record<string, string>
 
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
+const mapLoadErrorDetail = (
+  detail: string | undefined,
+  millId: number | null,
+  year: number | null,
+): string => {
+  if (detail === 'Schedule not found.' && millId != null && year != null) {
+    return `No Schedule 1 exists for Mill ${millId} in Reporting Year ${year}. Select another mill/year from Home, or create Schedule 1 data for this context.`
   }
-  return undefined
+  return detail || 'Unable to load Schedule 1.'
 }
-
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
-    return null
-  }
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
 
 // Seed editable form state from the loaded document (writable fields only).
 function seedForm(doc: Schedule1Response): FieldValues {
@@ -133,61 +125,32 @@ const Schedule1: FC = () => {
   const navigate = useNavigate()
   const contextMissing = millId === null || year === null
 
-  const [data, setData] = useState<Schedule1Response | null>(null)
-  const [form, setForm] = useState<FieldValues>({})
-  const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [confirmNavOpen, setConfirmNavOpen] = useState(false)
+  const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
 
-  useEffect(() => {
-    if (contextMissing) {
-      return
-    }
-    /* eslint-disable @eslint-react/set-state-in-effect -- intentional reset on mill/year change */
-    setIsLoading(true)
-    setData(null)
-    setErrorDetail(null)
+  // Clear the save/check notifications whenever a fresh document loads (mill/year change).
+  const resetMessages = useCallback(() => {
     setSaveMessage(null)
     setSaveError(null)
     setCheckResult(null)
-    /* eslint-enable @eslint-react/set-state-in-effect */
-    let active = true
-    apiService
-      .getAxiosInstance()
-      .get<Schedule1Response>(`/v1/schedule1?millId=${millId}&year=${year}`)
-      .then((response) => {
-        if (active) {
-          setData(response.data)
-          setForm(seedForm(response.data))
-          setErrorDetail(null)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setErrorDetail(extractDetail(error) || 'Unable to load Schedule 1.')
-          setData(null)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [millId, year, contextMissing])
+  }, [])
 
-  const setField =
-    (key: string) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const { value } = event.target
-      setForm((prev) => ({ ...prev, [key]: value }))
-    }
+  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+    useScheduleDocument<Schedule1Response>({
+      path: '/v1/schedule1',
+      millId,
+      year,
+      contextMissing,
+      seedForm,
+      mapLoadError: mapLoadErrorDetail,
+      onReset: resetMessages,
+    })
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -294,14 +257,21 @@ const Schedule1: FC = () => {
     // current backend model an openable schedule is always saved (GET 404s for no summary), so this
     // guard is effectively unreachable.
     if (!data) {
-      window.alert(ALT_SAVE_BEFORE_OTHER_COSTS)
+      setOtherCostsBlockedOpen(true)
       return
     }
     // Navigating away from an editable Schedule 1 discards unsaved edits — confirm first (legacy
     // confirmNavigationMsg). A read-only schedule has nothing to lose, so open directly.
-    if (data.editable && !window.confirm(CONFIRM_NAVIGATION)) {
+    if (data.editable) {
+      setConfirmNavOpen(true)
       return
     }
+    navigate({ to: '/schedule-1/other-costs' })
+  }
+
+  // Confirmed via the navigation Modal: discard unsaved edits and open Other Costs.
+  const openOtherCosts = () => {
+    setConfirmNavOpen(false)
     navigate({ to: '/schedule-1/other-costs' })
   }
 
@@ -416,15 +386,26 @@ const Schedule1: FC = () => {
     // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
     // pulled from Schedule 3, 140's is derived — both read-only.
     const writableCost = row.code === 1 || row.code === 2
-    const costValue = row.code === 139 ? data.lessSilvAdminCost : item?.cost
-    // 139/140 $/m³ (cost ÷ volume) is a Schedule-3 cross-derivation deferred this story — show —.
-    const perUnitCell = row.code === 139 || row.code === 140 ? '—' : fmt(item?.perUnit)
+    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
+    const costValue =
+      row.code === 139
+        ? data.lessSilvAdminCost
+        : row.code === 140
+          ? data.totalSilvicultureCost
+          : item?.cost
+    // $/m³ = cost ÷ volume, computed server-side (139/140 fold in the Schedule 3 pulls).
+    const perUnitValue =
+      row.code === 139
+        ? data.lessSilvAdminPerUnit
+        : row.code === 140
+          ? data.totalSilviculturePerUnit
+          : item?.perUnit
     return (
       <TableRow key={row.code}>
         <TableCell>{row.label}</TableCell>
         {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
         {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
-        <TableCell className="schedule-1__num">{perUnitCell}</TableCell>
+        <TableCell className="schedule-1__num">{fmt(perUnitValue)}</TableCell>
       </TableRow>
     )
   }
@@ -442,7 +423,7 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 143)?.volume,
       )}
       <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminCost)}</TableCell>
-      <TableCell className="schedule-1__num">—</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminPerUnit)}</TableCell>
     </TableRow>
   )
 
@@ -455,8 +436,19 @@ const Schedule1: FC = () => {
         true,
         data.lineItems.find((li) => li.costItemCode === 144)?.volume,
       )}
-      <TableCell className="schedule-1__num">—</TableCell>
-      <TableCell className="schedule-1__num">—</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingPerUnit)}</TableCell>
+    </TableRow>
+  )
+
+  // Grand-total row (legacy "Total Company Logging Costs (Including total Silviculture Cost)"): the
+  // Total Harvested Crown Timber volume (Sch 3), the total logging cost, and its $/m³ average.
+  const totalCompanyLoggingRow = (
+    <TableRow key="total-company-logging">
+      <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.schedule3CrownVolume)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingPerUnit)}</TableCell>
     </TableRow>
   )
 
@@ -508,8 +500,11 @@ const Schedule1: FC = () => {
         </Column>
 
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
-        {(data.warnings ?? []).map((w) => (
-          <Column key={`warn-${w.key}`} sm={4} md={8} lg={16}>
+        {(data.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`warn-${w.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification
               kind="warning"
               lowContrast
@@ -546,13 +541,19 @@ const Schedule1: FC = () => {
             />
           </Column>
         )}
-        {(checkResult?.errors ?? []).map((e) => (
-          <Column key={`check-err-${e.text || e.key}`} sm={4} md={8} lg={16}>
+        {(checkResult?.errors ?? []).map((e, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-err-${e.text || e.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification kind="error" lowContrast title="Error" subtitle={e.text || e.key} />
           </Column>
         ))}
-        {(checkResult?.warnings ?? []).map((w) => (
-          <Column key={`check-warn-${w.text || w.key}`} sm={4} md={8} lg={16}>
+        {(checkResult?.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-warn-${w.text || w.key}-${i}`} sm={4} md={8} lg={16}>
             <InlineNotification
               kind="warning"
               lowContrast
@@ -615,7 +616,10 @@ const Schedule1: FC = () => {
                   <TableHeader className="schedule-1__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
-              <TableBody>{SILV_ROWS.map(silvicultureRow)}</TableBody>
+              <TableBody>
+                {SILV_ROWS.map(silvicultureRow)}
+                {totalCompanyLoggingRow}
+              </TableBody>
             </Table>
           </TableContainer>
         </Column>
@@ -627,6 +631,7 @@ const Schedule1: FC = () => {
               Subtotal Other Costs({data.otherCosts.count}):
             </Button>
             <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
+            <span className="schedule-1__num">$/m³: {fmt(data.otherCosts.perUnit)}</span>
           </div>
           {editable && (
             <TextInput
@@ -673,6 +678,32 @@ const Schedule1: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {/* Discard-unsaved-edits confirm before leaving an editable schedule for Other Costs. */}
+      {editable && (
+        <Modal
+          open={confirmNavOpen}
+          modalHeading="Leave Schedule 1"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmNavOpen(false)}
+          onRequestSubmit={openOtherCosts}
+        >
+          <p>{CONFIRM_NAVIGATION}</p>
+        </Modal>
+      )}
+
+      {/* ALT-001: schedule must be saved before Other Costs can open (informational, single action). */}
+      {otherCostsBlockedOpen && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Save required"
+          onRequestClose={() => setOtherCostsBlockedOpen(false)}
+        >
+          <p>{ALT_SAVE_BEFORE_OTHER_COSTS}</p>
         </Modal>
       )}
     </div>

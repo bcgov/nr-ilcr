@@ -41,10 +41,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * <p>Assertions avoid positional/exact-count coupling to the shared snapshot (which later stories
  * extend, V5 header rule): ordering is asserted on the sorted projection itself, per-mill fields via
  * {@code millId} filters. Fixtures: {@code V2} (mills 514/515/516/517, year 2021), {@code V4}
- * (mills 518-521), {@code V5} (year 2020 + never-enrolled mill 522).
+ * (mills 518-521), {@code V8} (year 2020 + never-enrolled mill 540).
  *
  * <p>Mills-list semantics are exact legacy {@code getMills()} parity (2026-07-21 review decision):
- * listed iff the mill has its status xref AND any {@code ILCR_MILL_REPORT_STATUS} row — mill 522
+ * listed iff the mill has its status xref AND any {@code ILCR_MILL_REPORT_STATUS} row — mill 540
  * (xref but never enrolled) proves the exclusion; closed mill 516 (CLS) proves no status filter.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
@@ -76,9 +76,10 @@ class MillContextListIT extends AbstractOracleIT {
                 // Closed mill 516 (CLS) is present — no status filter (S06 parity).
                 .andExpect(jsonPath("$[?(@.millId == 516)].millStatusCode", contains("CLS")))
                 .andExpect(jsonPath("$[?(@.millId == 517)].millStatusCode", contains("ACT")))
-                // Never-enrolled mill 522 (xref, but no ILCR_MILL_REPORT_STATUS row) is EXCLUDED
-                // (legacy getMills() inner-joins millReportStatuses).
-                .andExpect(jsonPath("$[?(@.millId == 522)]").isEmpty())
+                // Never-enrolled mill 540 (xref, but no ILCR_MILL_REPORT_STATUS row) is EXCLUDED
+                // (legacy getMills() inner-joins millReportStatuses). NB: 522 is now the schedule
+                // fixtures' enrolled "Prefill Milling" mill, so Home's never-enrolled probe uses 540.
+                .andExpect(jsonPath("$[?(@.millId == 540)]").isEmpty())
                 .andReturn().getResponse().getContentAsString();
 
         // Ordering asserted on the payload itself (order by MILL_NUMBER asc, MILL_ID tiebreak) —

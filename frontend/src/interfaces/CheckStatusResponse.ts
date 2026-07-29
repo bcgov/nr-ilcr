@@ -4,9 +4,9 @@
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
 
 export default interface CheckStatusResponse {
-  requirementsMet: boolean
-  errors: MessageInfo[]
-  warnings: MessageInfo[]
+  readonly requirementsMet: boolean
+  readonly errors: readonly MessageInfo[]
+  readonly warnings: readonly MessageInfo[]
   // SUC-003 success text when requirementsMet; null otherwise.
-  message: MessageInfo | null
+  readonly message: MessageInfo | null
 }
