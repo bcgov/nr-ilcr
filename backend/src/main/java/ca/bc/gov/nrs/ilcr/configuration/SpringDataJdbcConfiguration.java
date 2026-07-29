@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository;
+import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Repository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.repository.config.AbstractJdbcConfiguration;
@@ -30,6 +31,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule1Repository.class,
       Schedule2Repository.class,
       Schedule4Repository.class,
+      Schedule8Repository.class,
       MillContextRepository.class
     })
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {
