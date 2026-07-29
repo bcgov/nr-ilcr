@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Acceptance test — Story 4.2 POST /api/v1/schedule3/check-status (BR-11/BR-03, read-only). Security
- * OFF (mock ILCR_SUBMITTER). Fixtures: 543 complete/valid (all met, V9); 517 empty cat-3 (missing, V8).
+ * OFF (mock ILCR_SUBMITTER). Fixtures: 572 complete/valid (all met, V9); 517 empty cat-3 (missing, V8).
  */
 @DisplayName("POST /api/v1/schedule3/check-status — readiness validation (Story 4.2)")
 class Schedule3CheckStatusIT extends AbstractOracleIT {
@@ -24,7 +24,7 @@ class Schedule3CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("complete valid document → requirementsMet true + SUC-003")
   void completeDocument_requirementsMet() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "543").param("year", "2021"))
+    mockMvc.perform(post(ENDPOINT).param("millId", "572").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(true)))
         .andExpect(jsonPath("$.errors", hasSize(0)))

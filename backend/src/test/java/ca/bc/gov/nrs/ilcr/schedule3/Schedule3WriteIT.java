@@ -19,7 +19,7 @@ import org.springframework.http.MediaType;
  * Acceptance test — Story 4.2 PUT/DELETE + BR-09 Crown Timber push (AD-5/AD-9/AD-14). Security OFF
  * (mock ILCR_SUBMITTER) so this isolates the write behavior from authz ({@link Schedule3WriteAuthorizationIT}).
  * Each test reads the current revision via GET first, so it is order-independent against the shared
- * container. Write fixtures seeded by V14 (mills 544/541/542).
+ * container. Write fixtures seeded by V14 (mills 573/570/571).
  */
 @DisplayName("PUT/DELETE /api/v1/schedule3 — write path + Crown Timber push (Story 4.2)")
 class Schedule3WriteIT extends AbstractOracleIT {
@@ -41,13 +41,13 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT valid — persists entered values, returns SUC-001 + recomputed document")
   void putValid_persistsAndRecomputes() throws Exception {
-    int rev = revisionOf(getDoc(544));
+    int rev = revisionOf(getDoc(573));
     String body = """
         { "revisionCount": %d, "comments": "updated", "overrideHarvestTotalPop": "N",
           "lineItems": [ { "costItemCode": 27, "harvest": 111, "pop": 44 } ],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """.formatted(rev);
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
@@ -62,19 +62,19 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT with a changed Crown Timber volume propagates into Schedule 1 (WRN-001)")
   void crownVolumeChange_propagatesIntoSchedule1() throws Exception {
-    String doc = getDoc(544);
+    String doc = getDoc(573);
     int rev = revisionOf(doc);
     int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 1000;
     String body = """
         { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": %d }
         """.formatted(rev, newCrown);
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.warnings[0].key", is("crownVolumeChangeSchedule1")));
     // Schedule 1 (cat-1 summary 1041) item-12 VOLUME overwritten with the new crown; COST preserved.
-    mockMvc.perform(get("/api/v1/schedule1").param("millId", "544").param("year", "2021")
+    mockMvc.perform(get("/api/v1/schedule1").param("millId", "573").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].volume", contains(newCrown)))
@@ -84,14 +84,14 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT with a changed Crown volume but no Schedule 1 → WRN-002 (not opened)")
   void crownVolumeChange_noSchedule1_warnsNotSet() throws Exception {
-    String doc = getDoc(541);
+    String doc = getDoc(570);
     int rev = revisionOf(doc);
     int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 1000;
     String body = """
         { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": %d }
         """.formatted(rev, newCrown);
-    mockMvc.perform(put(ENDPOINT).param("millId", "541").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "570").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.warnings[0].key", is("crownVolumeNotSetSchedule1")));
@@ -100,10 +100,10 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("DELETE removes the whole Schedule 3 family (SUC-002); GET then 404")
   void delete_removesFamily() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "542").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT).param("millId", "571").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")));
-    mockMvc.perform(get(ENDPOINT).param("millId", "542").param("year", "2021"))
+    mockMvc.perform(get(ENDPOINT).param("millId", "571").param("year", "2021"))
         .andExpect(status().isNotFound());
   }
 
@@ -115,7 +115,7 @@ class Schedule3WriteIT extends AbstractOracleIT {
           "lineItems": [ { "costItemCode": 27, "harvest": 100000000, "pop": 0 } ],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -128,7 +128,7 @@ class Schedule3WriteIT extends AbstractOracleIT {
         { "revisionCount": 0, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": 10000000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -141,7 +141,7 @@ class Schedule3WriteIT extends AbstractOracleIT {
         { "revisionCount": 999, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isConflict());
   }

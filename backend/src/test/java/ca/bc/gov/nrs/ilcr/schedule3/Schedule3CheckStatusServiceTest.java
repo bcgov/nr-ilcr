@@ -31,7 +31,7 @@ import org.springframework.context.MessageSource;
 @ExtendWith(MockitoExtension.class)
 class Schedule3CheckStatusServiceTest {
 
-  private static final long MILL = 543L;
+  private static final long MILL = 572L;
   private static final int YEAR = 2021;
 
   @Mock

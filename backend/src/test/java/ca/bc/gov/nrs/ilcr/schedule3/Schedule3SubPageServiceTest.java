@@ -38,7 +38,7 @@ import org.springframework.context.MessageSource;
 @ExtendWith(MockitoExtension.class)
 class Schedule3SubPageServiceTest {
 
-  private static final long MILL = 550L;
+  private static final long MILL = 574L;
   private static final int YEAR = 2021;
   private static final int SUMMARY = 1050;
 

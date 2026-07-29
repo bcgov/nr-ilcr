@@ -46,7 +46,7 @@ class Schedule3WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT without permission → 403")
   void putNoPermission_returns403() throws Exception {
-    mockMvc.perform(put(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(BODY)
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
@@ -56,7 +56,7 @@ class Schedule3WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("DELETE without permission → 403")
   void deleteNoPermission_returns403() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "544").param("year", "2021")
+    mockMvc.perform(delete(ENDPOINT).param("millId", "573").param("year", "2021")
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));

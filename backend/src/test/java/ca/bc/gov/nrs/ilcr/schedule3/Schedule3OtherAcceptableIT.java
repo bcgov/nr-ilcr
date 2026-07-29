@@ -18,7 +18,7 @@ import org.springframework.http.MediaType;
 
 /**
  * Acceptance test — Story 4.4 Other Acceptable Costs sub-resource (item-124 TOT+PO&P groups, AD-5).
- * Security OFF (mock ILCR_SUBMITTER). Read mill 550 (2 seeded groups), write mill 551 (empty; each
+ * Security OFF (mock ILCR_SUBMITTER). Read mill 574 (2 seeded groups), write mill 575 (empty; each
  * lifecycle test adds AND removes its own rows so the shared container stays order-independent), and
  * non-Draft mill 552.
  */
@@ -30,7 +30,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
   @Test
   @DisplayName("GET returns the seeded groups with derived crown + subtotal")
   void get_returnsGroups() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "550").param("year", "2021")
+    mockMvc.perform(get(ENDPOINT).param("millId", "574").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.editable", is(true)))
@@ -49,7 +49,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
   @DisplayName("POST → PUT → DELETE lifecycle recomputes the group and cleans up")
   void addUpdateDelete_lifecycle() throws Exception {
     // Add a group on the empty write mill.
-    String added = mockMvc.perform(post(ENDPOINT).param("millId", "551").param("year", "2021")
+    String added = mockMvc.perform(post(ENDPOINT).param("millId", "575").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{ \"description\": \"New Cost\", \"total\": 900, \"pop\": 100 }"))
         .andExpect(status().isOk())
@@ -60,7 +60,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
     int id = JsonPath.read(added, "$.rows[0].id");
 
     // Update it (crown recomputes 1000 − 400 = 600).
-    mockMvc.perform(put(ENDPOINT + "/" + id).param("millId", "551").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT + "/" + id).param("millId", "575").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{ \"description\": \"Updated\", \"total\": 1000, \"pop\": 400 }"))
         .andExpect(status().isOk())
@@ -69,7 +69,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.rows[?(@.description == 'Updated')].crown", contains(600)));
 
     // Delete it (back to empty).
-    mockMvc.perform(delete(ENDPOINT + "/" + id).param("millId", "551").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT + "/" + id).param("millId", "575").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")))
         .andExpect(jsonPath("$.count", is(0)));
@@ -78,7 +78,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
   @Test
   @DisplayName("POST blank description → 400 FLD-003")
   void addBlankDescription_returns400() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "551").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).param("millId", "575").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{ \"description\": \"\", \"total\": 100, \"pop\": 50 }"))
         .andExpect(status().isBadRequest())
@@ -88,7 +88,7 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
   @Test
   @DisplayName("POST out-of-range total → 400 FLD-001")
   void addOutOfRange_returns400() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "551").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).param("millId", "575").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{ \"description\": \"X\", \"total\": 100000000, \"pop\": 0 }"))
         .andExpect(status().isBadRequest())
@@ -98,11 +98,11 @@ class Schedule3OtherAcceptableIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT/DELETE unknown id → 404")
   void unknownId_returns404() throws Exception {
-    mockMvc.perform(put(ENDPOINT + "/999999").param("millId", "551").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT + "/999999").param("millId", "575").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{ \"description\": \"X\", \"total\": 1, \"pop\": 0 }"))
         .andExpect(status().isNotFound());
-    mockMvc.perform(delete(ENDPOINT + "/999999").param("millId", "551").param("year", "2021"))
+    mockMvc.perform(delete(ENDPOINT + "/999999").param("millId", "575").param("year", "2021"))
         .andExpect(status().isNotFound());
   }
 
