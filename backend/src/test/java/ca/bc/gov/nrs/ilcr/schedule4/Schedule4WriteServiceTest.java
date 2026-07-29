@@ -12,13 +12,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
+
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -48,10 +49,6 @@ class Schedule4WriteServiceTest {
 
   @InjectMocks
   private Schedule4Service service;
-
-  private static BigDecimal bd(String v) {
-    return new BigDecimal(v);
-  }
 
   /** The recompute read at the end of a successful save — kept minimal (content not asserted here). */
   private void stubRecompute() {

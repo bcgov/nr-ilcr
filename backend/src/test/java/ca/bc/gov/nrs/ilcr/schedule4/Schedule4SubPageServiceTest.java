@@ -12,12 +12,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
+
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -47,10 +48,6 @@ class Schedule4SubPageServiceTest {
 
   @InjectMocks
   private Schedule4Service service;
-
-  private static BigDecimal bd(String v) {
-    return new BigDecimal(v);
-  }
 
   private static Schedule4SubPageRowRequest req(SubPageRowType type, Integer cycle) {
     return new Schedule4SubPageRowRequest(type, "  New Row  ", bd("30.0"), bd("100"), 3000, cycle);
