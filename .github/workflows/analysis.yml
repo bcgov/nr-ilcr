@@ -63,7 +63,7 @@ jobs:
           dir: frontend
           node_version: "24"
           sonar_args: >
-            -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts,**/*test.tsx,**/test-setup.ts,**/test-utils.tsx,**/routeTree.gen.ts
+            -Dsonar.exclusions=**/coverage/**,**/node_modules/**,**/*spec.ts,**/*test.tsx,**/routeTree.gen.ts
             -Dsonar.organization=bcgov-sonarcloud
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_frontend
             -Dsonar.sources=src

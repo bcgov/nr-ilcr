@@ -29,7 +29,8 @@ INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (133, 'Residue & Waste Expense (PO&P)', '3', '1', 'SEED');
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (36,  'Depreciation Expense (Harvest)', '3', '1', 'SEED');
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (134, 'Depreciation Expense (PO&P)', '3', '1', 'SEED');
-INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (118, 'PO&P Timber', '3', '1', 'SEED');
+-- Cost item 118 (PO&P Timber) is shared master data already seeded by V10 (schedule 2 read fixtures);
+-- per db/README.md ("define each item once; reference, don't re-INSERT"), it is referenced here, not re-inserted.
 
 -- Summary 1003 (514/2021, category '3'): set the Override Harvest/Total PO&P indicator (legacy carrier
 -- is the LOCATION column) and comments. Draft track + REVISION_COUNT default 0 come from V2.
