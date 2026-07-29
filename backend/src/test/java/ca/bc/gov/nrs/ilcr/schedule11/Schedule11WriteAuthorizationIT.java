@@ -33,6 +33,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * <p><b>Coverage gap (recorded):</b> a "holds VIEW but not EDIT → 403" case is unreachable today —
  * both shipped roles ({@code ILCR_SUBMITTER}, {@code ILCR_ADMIN}) hold {@code EDIT_SCHEDULE}. It
  * becomes testable when a narrower (view-only) role exists.
+ *
+ * <p>TODO(DL-6, FAM auth story): when the FAM auth story introduces a narrower (view-only) role,
+ * add a "holds VIEW_SCHEDULE but not EDIT_SCHEDULE → 403 on POST/PUT/DELETE" test here. The full
+ * action-key mapping / narrower roles land with that story (see implementation-readiness-report DL-6).
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Schedule 11 writes — authorization on EDIT_SCHEDULE / VIEW_SCHEDULE (AC8)")
