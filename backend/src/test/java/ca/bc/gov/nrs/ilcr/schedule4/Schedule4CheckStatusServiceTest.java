@@ -6,12 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
+
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -37,10 +38,6 @@ class Schedule4CheckStatusServiceTest {
 
   @InjectMocks
   private Schedule4Service service;
-
-  private static BigDecimal bd(String v) {
-    return new BigDecimal(v);
-  }
 
   private void draft() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));

@@ -10,7 +10,6 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 
 /**
  * Acceptance test — Story 3.1 (AD-5, AD-10, AD-12). GET /api/v1/schedule2 aggregate document.
@@ -20,26 +19,25 @@ import org.springframework.test.context.TestPropertySource;
  * Asserts the pinned wire contract and the exact server-computed derived figures against the V5 seed.
  */
 @DisplayName("GET /api/v1/schedule2 — aggregate document (Story 3.1)")
-@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule2DocumentIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2";
 
   @Test
-  @DisplayName("514/2021 Draft — full pinned document with server-computed derived values")
+  @DisplayName("621/2021 Draft — full pinned document with server-computed derived values")
   void draftContext_returnsPinnedDocument() throws Exception {
     mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
+            .param("millId", "621")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.millId", is(514)))
+        .andExpect(jsonPath("$.millId", is(621)))
         .andExpect(jsonPath("$.year", is(2021)))
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.revisionCount", is(0)))
-        .andExpect(jsonPath("$.comments", is("Seed Schedule 2 comment for 514/2021")))
+        .andExpect(jsonPath("$.comments", is("Seed Schedule 2 comment for 621/2021")))
         // purchasedLogCost: cost 25 = 500000; volume carried Sch3 118 = 10000; perUnit 50.0
         .andExpect(jsonPath("$.purchasedLogCost.volume", is(10000)))
         .andExpect(jsonPath("$.purchasedLogCost.cost", is(500000)))

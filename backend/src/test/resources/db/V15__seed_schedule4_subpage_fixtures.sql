@@ -1,6 +1,6 @@
 -- Story 4.3 (Schedule 4 sub-page lists) seed EXTENSION (never edit V1-V8). Dedicated read / add /
 -- delete / non-Draft fixtures so the sub-page acceptance tests never clobber the Sch4 read (514) or
--- location-write (540-545) fixtures. V9 is the next free migration number.
+-- location-write (541-546) fixtures. V9 is the next free migration number.
 --
 -- A sub-page row is a SEPARATE TRANSPORTATION_REPORT (shared LOCATION_DESCRIPTION, category '4') with
 -- its own DISTANCE (+ TRANSPORTATION_CYCLE_TIME for Truck Rehaul) and a single ILCR_COST_REPORT_DETAIL

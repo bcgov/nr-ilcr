@@ -29,7 +29,7 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * in {@link Schedule4WriteAuthorizationIT}, security ON).
  *
  * <p>Mutating tests use DEDICATED V8 mills so they never clobber the read-only Schedule 4 fixtures
- * (514/515/517): 540 "Existing Dump" (id 8001, distance child 8002) for edit-in-place / duplicate /
+ * (514/515/517): 546 "Existing Dump" (id 8001, distance child 8002) for edit-in-place / duplicate /
  * range / BR-04 / stale (all non-destructive to the family's name+existence), 541 for create, 542
  * (non-Draft) for the write gate, 544 for delete, 545 for rename. Cases read the revision at runtime
  * so they stay order-independent.
@@ -142,10 +142,10 @@ class Schedule4WriteIT extends AbstractOracleIT {
   // ---- edit-in-place: update fixed on primary + distance child (no rename). ----------------------
 
   @Test
-  @DisplayName("edit — 540/8001 updates fixed on primary + distance child in place, bumps revision")
+  @DisplayName("edit — 546/8001 updates fixed on primary + distance child in place, bumps revision")
   void put_edit_updatesInPlace() throws Exception {
     int before = revisionOf(8001);
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(8001, before, "Existing Dump", cat(40, 1500, 60000, null),
                 cat(47, 250, 9000, "70.0")))
@@ -184,7 +184,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("blank name -> 400 locationEmptyOrNull, nothing persisted")
   void put_blankName_returns400() throws Exception {
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(8001, revisionOf(8001), "   ", cat(40, 1, 1, null))))
         .andExpect(status().isBadRequest())
@@ -197,14 +197,14 @@ class Schedule4WriteIT extends AbstractOracleIT {
   @DisplayName("duplicate name (case-insensitive) -> 409 locationAlreadyExists, nothing changed")
   void put_duplicateName_returns409() throws Exception {
     int before = revisionOf(8001);
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             // "rival dump" collides case-insensitively with the seeded "Rival Dump" (id 8003).
             .content(body(8001, before, "rival dump", cat(40, 1, 1, null))))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.detail", is("Location Name already exists.")));
     assertEquals(before, revisionOf(8001), "a rejected save must not bump the revision");
-    assertEquals(0, reports("ILCR_MILL_ID = 540 AND LOCATION_DESCRIPTION = 'rival dump'"),
+    assertEquals(0, reports("ILCR_MILL_ID = 546 AND LOCATION_DESCRIPTION = 'rival dump'"),
         "nothing renamed on a duplicate-name rejection");
   }
 
@@ -247,7 +247,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
 
   private void expect400(String requestBody, String verbatimDetail) throws Exception {
     int before = revisionOf(8001);
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(requestBody))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
@@ -257,7 +257,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
 
   private void expect400Contains(String requestBody, String fragment) throws Exception {
     int before = revisionOf(8001);
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(requestBody))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", containsString(fragment)));
@@ -292,7 +292,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
   @DisplayName("stale revisionCount -> 409, no overwrite")
   void put_staleRevision_returns409() throws Exception {
     int before = revisionOf(8001);
-    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "540").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).with(csrf()).param("millId", "546").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body(8001, before + 99, "Existing Dump", cat(40, 1, 1, null))))
         .andExpect(status().isConflict())

@@ -30,8 +30,9 @@ CREATE TABLE THE.TRANSPORTATION_REPORT (
   UPDATE_TIMESTAMP          TIMESTAMP
 );
 
--- Sequence the legacy TransportationReport generator uses (test-scope; the read never inserts).
-CREATE SEQUENCE THE.ILCR_REPORT_COMMON_SEQ START WITH 9000 INCREMENT BY 1;
+-- The legacy TransportationReport generator draws summary ids from THE.ILCR_REPORT_COMMON_SEQ, which
+-- the Schedule 2 write fixtures (V11) already create test-scope. Shared object, created once — do not
+-- re-CREATE it here or the migration fails with ORA-00955 (name already in use).
 
 -- ILCR_COST_REPORT_DETAIL gained a per-report FK per report family (camp/bridge/transportation/...).
 -- V1's test snapshot only carries ILCR_REPORT_SUMMARY_ID, so add the transportation FK column here.

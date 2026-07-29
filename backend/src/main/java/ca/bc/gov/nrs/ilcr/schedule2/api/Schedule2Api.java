@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 2 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule2Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Adds PUT (save)
- * and DELETE (Story 3.2); check-status is deferred.
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Covers GET (read),
+ * PUT (save), DELETE, and POST /check-status (Story 3.2).
  */
 @RequestMapping("/api/v1/schedule2")
 public interface Schedule2Api {

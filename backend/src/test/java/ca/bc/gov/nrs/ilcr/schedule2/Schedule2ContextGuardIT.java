@@ -10,7 +10,6 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 
 /**
  * Acceptance test — Story 3.1 context guards (AD-4, AD-8). Slices S09 (missing/malformed param →
@@ -22,7 +21,6 @@ import org.springframework.test.context.TestPropertySource;
  * mill/year with no saved Schedule 2 returns 200 (proven in {@link Schedule2DocumentIT}).
  */
 @DisplayName("GET /api/v1/schedule2 — mill/year context guards (S09/S10)")
-@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule2ContextGuardIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule2";

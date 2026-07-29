@@ -12,12 +12,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
+
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -48,10 +49,6 @@ class Schedule4SubPageServiceTest {
   @InjectMocks
   private Schedule4Service service;
 
-  private static BigDecimal bd(String v) {
-    return new BigDecimal(v);
-  }
-
   private static Schedule4SubPageRowRequest req(SubPageRowType type, Integer cycle) {
     return new Schedule4SubPageRowRequest(type, "  New Row  ", bd("30.0"), bd("100"), 3000, cycle);
   }
@@ -65,7 +62,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_towing_insertsReportAndDescriptionDetail_noCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
         eq(USER))).thenReturn(9100);
     stubRecompute();
@@ -80,7 +77,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_truckRehaul_writesCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), eq(7),
         eq(USER))).thenReturn(9101);
     stubRecompute();
@@ -94,7 +91,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_other_ignoresCycle() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(eq(MILL), eq(YEAR), eq(NAME), eq(bd("30.0")), isNull(),
         eq(USER))).thenReturn(9102);
     stubRecompute();
@@ -109,7 +106,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_unknownLocation_throws404_writesNothing() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.empty());
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
 
     assertThrows(ScheduleNotFoundException.class, () -> service.addSubPageRow(
         MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
@@ -125,7 +122,7 @@ class Schedule4SubPageServiceTest {
     assertThrows(ScheduleNotEditableException.class, () -> service.addSubPageRow(
         MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
 
-    verify(repository, never()).findLocationName(anyInt());
+    verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
     verify(repository, never()).insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(),
         anyString());
   }
@@ -133,7 +130,7 @@ class Schedule4SubPageServiceTest {
   @Test
   void add_persistenceFailure_translatesToScheduleNotSaved() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocationName(LOCATION_ID)).thenReturn(Optional.of(NAME));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
     when(repository.insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString()))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
@@ -144,22 +141,39 @@ class Schedule4SubPageServiceTest {
   @Test
   void delete_subPageRow_deletesReport() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.isSubPageRow(8051, MILL, YEAR)).thenReturn(true);
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    when(repository.isSubPageRowOfLocation(8051, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, 8051, true);
+    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true);
 
     verify(repository).deleteReport(8051);
   }
 
   @Test
-  void delete_notASubPageRow_isIdempotentNoOp() {
+  void delete_rowNotUnderThisLocation_isIdempotentNoOp() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.isSubPageRow(8050, MILL, YEAR)).thenReturn(false); // e.g. a primary report id
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    // Not a sub-page row of THIS location (a primary/category report, or a row under another
+    // location in the same mill/year) — the path-scoped guard makes it a no-op.
+    when(repository.isSubPageRowOfLocation(8050, NAME, MILL, YEAR)).thenReturn(false);
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, 8050, true); // must not throw, must not delete
+    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8050, true); // must not throw, must not delete
 
+    verify(repository, never()).deleteReport(anyInt());
+  }
+
+  @Test
+  void delete_foreignLocationId_isIdempotentNoOp() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // locationId not in this mill/year (foreign/cross-context) → no name → never touches the row.
+    when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
+    stubRecompute();
+
+    service.deleteSubPageRow(MILL, YEAR, 9999, 8051, true);
+
+    verify(repository, never()).isSubPageRowOfLocation(anyInt(), anyString(), anyLong(), anyInt());
     verify(repository, never()).deleteReport(anyInt());
   }
 
@@ -168,7 +182,7 @@ class Schedule4SubPageServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(ScheduleNotEditableException.class,
-        () -> service.deleteSubPageRow(MILL, YEAR, 8051, true));
+        () -> service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true));
 
     verify(repository, never()).deleteReport(anyInt());
   }

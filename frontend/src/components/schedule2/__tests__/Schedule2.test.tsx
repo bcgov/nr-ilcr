@@ -88,7 +88,7 @@ describe('Schedule2 page', () => {
     )
     render(<Schedule2 />)
 
-    expect(await screen.findByText('Purchased Log Cost')).toBeInTheDocument()
+    expect(await screen.findByText('Purchased/Private Log Costs:')).toBeInTheDocument()
     expect(screen.queryByLabelText('Purchased Log Cost cost')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Less Log Sales volume')).not.toBeInTheDocument()
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeDisabled())
@@ -232,14 +232,28 @@ describe('Schedule2 page', () => {
     ).toBeInTheDocument()
   })
 
-  test('Delete confirms then shows the API success message and empties the schedule (AC4)', async () => {
+  test('Delete confirms, shows the API message, then re-GETs the empty editable schedule (AC4)', async () => {
+    let deleted = false
+    const emptyDoc = {
+      ...schedule2Doc,
+      revisionCount: null,
+      comments: null,
+      purchasedLogCost: block(null, null, null),
+      purchasedWoodOverhead: block(null, null, null),
+      subtotal: block(null, null, null),
+      lessLogSales: block(null, null, null),
+      netPurchased: block(null, null, null),
+      totalCompanyLogging: block(null, null, null),
+      totalAverage: block(null, null, null),
+    }
     server.use(
-      http.get(URL, () => HttpResponse.json(schedule2Doc)),
-      http.delete(URL, () =>
-        HttpResponse.json({
+      http.get(URL, () => HttpResponse.json(deleted ? emptyDoc : schedule2Doc)),
+      http.delete(URL, () => {
+        deleted = true
+        return HttpResponse.json({
           message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
-        }),
-      ),
+        })
+      }),
     )
     render(<Schedule2 />)
     const user = userEvent.setup()
@@ -253,9 +267,17 @@ describe('Schedule2 page', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
-    await waitFor(() =>
-      expect(screen.queryByLabelText('Purchased Log Cost cost')).not.toBeInTheDocument(),
-    )
+    // Schedule 2 never 404s: the re-GET returns the empty EDITABLE document. Inputs remain (now
+    // empty), Delete is disabled (nothing to delete), and Save/Check Status stay enabled so the
+    // Licensee can immediately re-enter data (legacy AF1).
+    await waitFor(() => expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue(''))
+    // Scope to the action-bar Delete buttons (the closed confirm modal also has a "Delete" button).
+    const actionDeletes = screen
+      .getAllByRole('button', { name: /delete/i })
+      .filter((b) => b.closest('.schedule-2__actions'))
+    expect(actionDeletes.length).toBeGreaterThan(0)
+    actionDeletes.forEach((b) => expect(b).toBeDisabled())
+    screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
   })
 
   test('Check Status MET renders a success notification with the returned text (AC5)', async () => {

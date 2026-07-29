@@ -1,0 +1,7 @@
+# Build output & dependencies
+dist
+coverage
+node_modules
+
+# Generated files (kept in sync with eslint.config.mjs ignores)
+src/routeTree.gen.ts

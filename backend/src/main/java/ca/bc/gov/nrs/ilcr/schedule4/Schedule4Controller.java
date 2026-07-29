@@ -101,7 +101,8 @@ public class Schedule4Controller implements Schedule4Api {
       long millId, int year, int locationId, int rowId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    Schedule4Response updated = schedule4Service.deleteSubPageRow(millId, year, rowId, callerMayEdit);
+    Schedule4Response updated =
+        schedule4Service.deleteSubPageRow(millId, year, locationId, rowId, callerMayEdit);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 

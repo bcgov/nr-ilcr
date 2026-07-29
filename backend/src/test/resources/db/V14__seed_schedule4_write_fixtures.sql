@@ -9,26 +9,26 @@
 -- seeded ids stay below 9000 so a created row never collides. Cost items 40-53 are seeded in V7.
 
 -- ================================================================================================
--- Mill 540 / 2021 — ACT, Draft. Two locations:
+-- Mill 546 / 2021 — ACT, Draft. Two locations:
 --   "Existing Dump"  = primary 8001 (fixed 40) + distance child 8002 (code 47, dist 60.0). The main
 --                      edit / rename / delete target; primary id 8001, revision 0.
 --   "Rival Dump"     = primary 8003 (fixed 41). Exists only so a rename of "Existing Dump" -> a
 --                      case-insensitive "rival dump" collides (ERR-002).
 -- ================================================================================================
-INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (540, 'Sch4 Write Milling', 540, 'SEED');
-INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (540, 'ACT', 'SEED');
-INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2021, 540, 'D', 'SEED');
+INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (546, 'Sch4 Write Milling', 546, 'SEED');
+INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (546, 'ACT', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2021, 546, 'D', 'SEED');
 -- "Existing Dump" primary (fixed 40: VOLUME 1000 / COST 50000 -> perUnit 50.0).
 INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT, ENTRY_USERID)
-  VALUES (8001, 2021, 540, '4', 'Existing Dump', NULL, NULL, 0, 'SEED');
+  VALUES (8001, 2021, 546, '4', 'Existing Dump', NULL, NULL, 0, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (8101, 8001, 40, 1000, 50000, NULL, 'SEED');
 -- "Existing Dump" distance child (code 47: DISTANCE 60.0, VOLUME 200 / COST 8000 -> perUnit 40.0).
 INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT, ENTRY_USERID)
-  VALUES (8002, 2021, 540, '4', 'Existing Dump', 60.0, NULL, 0, 'SEED');
+  VALUES (8002, 2021, 546, '4', 'Existing Dump', 60.0, NULL, 0, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (8102, 8002, 47, 200, 8000, NULL, 'SEED');
 -- "Rival Dump" primary (fixed 41) — the duplicate-name collision target.
 INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT, ENTRY_USERID)
-  VALUES (8003, 2021, 540, '4', 'Rival Dump', NULL, NULL, 0, 'SEED');
+  VALUES (8003, 2021, 546, '4', 'Rival Dump', NULL, NULL, 0, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (8103, 8003, 41, 500, 10000, NULL, 'SEED');
 
 -- ================================================================================================
@@ -51,7 +51,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTAT
 
 -- ================================================================================================
 -- Mill 543 / 2021 — ACT, Draft, one location "Authz Dump" (primary 8020). Dedicated security-ON
--- authorization happy-path fixture (Schedule4WriteAuthorizationIT) so its PUT never collides with 540.
+-- authorization happy-path fixture (Schedule4WriteAuthorizationIT) so its PUT never collides with 546.
 -- ================================================================================================
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (543, 'Sch4 Authz Milling', 543, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (543, 'ACT', 'SEED');
@@ -62,7 +62,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTAT
 
 -- ================================================================================================
 -- Mill 544 / 2021 — ACT, Draft, one location "Deletable Dump" = primary 8030 (fixed 40) + distance
--- child 8031 (code 47). Dedicated DELETE fixture so the destructive delete never races the mill-540
+-- child 8031 (code 47). Dedicated DELETE fixture so the destructive delete never races the mill-546
 -- edit/duplicate/stale assertions.
 -- ================================================================================================
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (544, 'Sch4 Delete Milling', 544, 'SEED');
@@ -77,7 +77,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTAT
 
 -- ================================================================================================
 -- Mill 545 / 2021 — ACT, Draft, one location "Renamable Dump" (primary 8040). Dedicated RENAME
--- fixture so the destructive rename never breaks the mill-540 name assertions.
+-- fixture so the destructive rename never breaks the mill-546 name assertions.
 -- ================================================================================================
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (545, 'Sch4 Rename Milling', 545, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (545, 'ACT', 'SEED');

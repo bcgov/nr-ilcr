@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
@@ -14,12 +17,14 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.MessageSource;
 
 /**
  * Unit test for the mill/year guard decisions (AD-4). Mocked repository — no DB, no Spring. Covers
@@ -33,6 +38,12 @@ class MillContextServiceTest {
 
   @Mock
   private MillContextRepository repository;
+
+  // Story 1.3 (AC7): the service resolves the SUC-001 text via MessageSource for the 200 message.
+  // Unstubbed here except where a success test asserts the message; unused-mock is fine under strict
+  // Mockito (only unused STUBS fail). @InjectMocks wires it through the two-arg constructor.
+  @Mock
+  private MessageSource messageSource;
 
   @InjectMocks
   private MillContextService service;
@@ -119,6 +130,11 @@ class MillContextServiceTest {
     stubSelectable(MILL_514, 2020);
     when(repository.findTrackStatusCodes(514L, 2020)).thenReturn(Optional.empty());
     when(repository.findStatusDates(514L, 2020)).thenReturn(Optional.empty());
+    // AC7: the success path resolves the reused SUC-001 key to its verbatim text (server-side, AD-8).
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), isNull(), eq("dataSavedSuccesfullyInfoMsg"),
+            any(Locale.class)))
+        .thenReturn("Data saved successfully");
 
     WorkingContext ctx = service.resolveWorkingContext("514", "2020");
 
@@ -127,6 +143,9 @@ class MillContextServiceTest {
     assertTrue(ctx.millViewable());
     assertEquals(514L, ctx.millId());
     assertEquals(2020, ctx.reportYear());
+    // Every 200 carries the SUC-001 message (key + resolved text); the frontend displays it on Save.
+    assertEquals("dataSavedSuccesfullyInfoMsg", ctx.message().key());
+    assertEquals("Data saved successfully", ctx.message().text());
   }
 
   @Test
