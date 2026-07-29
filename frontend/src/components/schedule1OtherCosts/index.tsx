@@ -20,6 +20,8 @@ import {
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
+import { extractDetail } from '@/utils/error'
+import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
@@ -30,29 +32,6 @@ import './index.scss'
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const OTHER_COSTS_PATH = '/v1/schedule1/other-costs'
-
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
-    return null
-  }
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
-  }
-  return undefined
-}
 
 const OtherCostsPage: FC = () => {
   const { millId, year } = useMillYear()

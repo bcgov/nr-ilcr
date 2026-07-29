@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule2Response from '@/interfaces/Schedule2Response'
 import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Response'
 import type Schedule2Request from '@/interfaces/Schedule2Request'
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Button,
   Column,
@@ -21,7 +21,11 @@ import {
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
+import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import { extractDetail } from '@/utils/error'
+import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule2 } from './validation'
 import './index.scss'
@@ -48,28 +52,8 @@ const PAGE_HEADER = (
   </Grid>
 )
 
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
-  }
-  return undefined
-}
-
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
-    return null
-  }
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
+// Schedule 2's load never 404s specially (unlike Schedule 1's not-found): any detail passes through.
+const mapLoadError = (detail: string | undefined): string => detail || 'Unable to load Schedule 2.'
 
 // Seed editable form state from the loaded document (editable fields only).
 function seedForm(doc: Schedule2Response): FieldValues {
@@ -98,60 +82,29 @@ const Schedule2: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
 
-  const [data, setData] = useState<Schedule2Response | null>(null)
-  const [form, setForm] = useState<FieldValues>({})
-  const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [statusMessages, setStatusMessages] = useState<CheckStatusResponse | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  useEffect(() => {
-    if (contextMissing) {
-      return
-    }
-    /* eslint-disable @eslint-react/set-state-in-effect -- intentional reset on mill/year change */
-    setIsLoading(true)
-    setData(null)
-    setErrorDetail(null)
+  // Clear the mutation notifications whenever a fresh document loads (mill/year change).
+  const resetMessages = useCallback(() => {
     setSaveMessage(null)
     setSaveError(null)
     setStatusMessages(null)
-    /* eslint-enable @eslint-react/set-state-in-effect */
-    let active = true
-    apiService
-      .getAxiosInstance()
-      .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`)
-      .then((response) => {
-        if (active) {
-          setData(response.data)
-          setForm(seedForm(response.data))
-          setErrorDetail(null)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setErrorDetail(extractDetail(error) || 'Unable to load Schedule 2.')
-          setData(null)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [millId, year, contextMissing])
+  }, [])
 
-  const setField =
-    (key: string) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const { value } = event.target
-      setForm((prev) => ({ ...prev, [key]: value }))
-    }
+  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+    useScheduleDocument<Schedule2Response>({
+      path: '/v1/schedule2',
+      millId,
+      year,
+      contextMissing,
+      seedForm,
+      mapLoadError,
+      onReset: resetMessages,
+    })
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -252,52 +205,33 @@ const Schedule2: FC = () => {
 
   if (contextMissing) {
     return (
-      <div className="app-page">
-        {PAGE_HEADER}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={PAGE_HEADER}
+        notification={{
+          kind: 'error',
+          title: 'Mill and Reporting Year required',
+          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
+        }}
+      />
     )
   }
 
   if (isLoading) {
     return (
-      <div className="app-page">
-        {PAGE_HEADER}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Schedule 2" />
-          </Column>
-        </Grid>
-      </div>
+      <PageState header={PAGE_HEADER}>
+        <Column sm={4} md={8} lg={16}>
+          <LoadingScreen label="Loading Schedule 2" />
+        </Column>
+      </PageState>
     )
   }
 
   if (errorDetail) {
     return (
-      <div className="app-page">
-        {PAGE_HEADER}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Schedule 2"
-              subtitle={errorDetail}
-            />
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={PAGE_HEADER}
+        notification={{ kind: 'error', title: 'Unable to load Schedule 2', subtitle: errorDetail }}
+      />
     )
   }
 
