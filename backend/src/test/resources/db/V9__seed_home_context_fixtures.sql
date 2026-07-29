@@ -1,5 +1,10 @@
 -- Story 1.2 (Home page working context) test fixtures. TEST-SCOPE ONLY (AD-2: no runtime DDL).
--- EXTENDS the shared snapshot; V1-V5 untouched.
+-- EXTENDS the shared snapshot; V1-V8 untouched.
+--
+-- RENUMBERED V6 -> V9 (Story 1.3): moved after the merged Schedule 3 / Other-Costs seeds (V5-V7)
+-- so the Home migrations no longer collide with them. Only Home-owned files change. No data change
+-- from the original V6 — it depends only on the opened year 2020 seeded by the Home fixture that is
+-- now V8 (formerly V5).
 --
 -- ILCR_MILL_REPORT_STATUS_RPT_VW is a VIEW on the delivery DB (legacy maps it via
 -- ILCRMillReportStatusRptOv @Table(name="ILCR_MILL_REPORT_STATUS_RPT_VW")). The app only ever
@@ -33,6 +38,6 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS_RPT_VW (REPORT_YEAR, ILCR_MILL_ID, ILCR_
   VALUES (2020, 514, 'ACT', '02 2020-11-30', '01 2020-08-01');
 
 -- S07 pair (515, 2020) needs NO seed: mill 515 is selectable (enrolled via its 2021 row), year 2020
--- is opened (V5), and no ILCR_MILL_REPORT_STATUS row exists for the pair.
+-- is opened (V8), and no ILCR_MILL_REPORT_STATUS row exists for the pair.
 
 COMMIT;

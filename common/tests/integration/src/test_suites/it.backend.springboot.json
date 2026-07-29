@@ -4,11 +4,11 @@
   "base_url": "${BASE_URL}",
   "tests": [
     {
-      "name": "Read-only scaffold user endpoint",
+      "name": "Read-only public mills endpoint",
       "methods": [
         "GET"
       ],
-      "path": "/api/v1/users",
+      "path": "/api/v1/mills",
       "headers": {
         "Content-Type": "application/json"
       },

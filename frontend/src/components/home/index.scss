@@ -1,0 +1,12 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.home__field {
+  margin-block-end: $spacing-05;
+  max-width: 24rem;
+}
+
+.home__actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-start: $spacing-05;
+}

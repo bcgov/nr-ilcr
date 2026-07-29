@@ -5,24 +5,24 @@
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
 
 export interface OtherCostRow {
-  id: number
-  description: string
-  cost: number | null
-  perUnit: number | null
+  readonly id: number
+  readonly description: string
+  readonly cost: number | null
+  readonly perUnit: number | null
 }
 
 export interface OtherCostsDocument {
-  volume: number | null
-  costSubtotal: number | null
-  perUnit: number | null
-  count: number
-  rows: OtherCostRow[]
-  editable: boolean
+  readonly volume: number | null
+  readonly costSubtotal: number | null
+  readonly perUnit: number | null
+  readonly count: number
+  readonly rows: readonly OtherCostRow[]
+  readonly editable: boolean
   // Verbatim success message on a mutation echo (AD-8); null/absent on GET.
-  message?: MessageInfo | null
+  readonly message?: MessageInfo | null
 }
 
 export interface OtherCostRequest {
-  description: string
-  cost: number | null
+  readonly description: string
+  readonly cost: number | null
 }
