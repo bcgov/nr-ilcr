@@ -111,6 +111,16 @@ public class Schedule2Service {
       int summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
       int bumped = repository.bumpRevision(summaryId, expectedRevision, request.comments(), user);
       if (bumped == 0) {
+        // A stale-revision conflict is a normal concurrent-edit outcome (→ 409), not an error, so
+        // this is debug-level. Guarded so the extra revision lookup only runs when debug is enabled.
+        // Revision counts are safe to log (AD-11 bars only cost/volume values).
+        if (log.isDebugEnabled()) {
+          Integer storedRevision = repository.findSummary(millId, year)
+              .map(SummaryRow::revisionCount)
+              .orElse(null);
+          log.debug("Stale revision for mill {} year {}: expected {}, stored {}",
+              millId, year, expectedRevision, storedRevision);
+        }
         throw new StaleRevisionException();
       }
       // item 25 — cost only (its volume is carried from Schedule 3, never entered here).
