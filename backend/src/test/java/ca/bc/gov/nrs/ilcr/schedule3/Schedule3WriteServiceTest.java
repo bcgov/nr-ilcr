@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request.CostLineInput;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import org.springframework.dao.DataAccessResourceFailureException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -161,5 +163,38 @@ class Schedule3WriteServiceTest {
   void delete_notDraft_throwsNotEditable() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
     assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule3(MILL, YEAR));
+  }
+
+  @Test
+  void delete_repositoryFailure_throwsNotDeleted() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
+    doThrow(new DataAccessResourceFailureException("db down")).when(repository).deleteSchedule(1040);
+    assertThrows(ScheduleNotDeletedException.class, () -> service.deleteSchedule3(MILL, YEAR));
+  }
+
+  @Test
+  void deleteOtherAcceptable_repositoryFailure_throwsNotDeleted() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
+    when(repository.findSubPageRows(anyInt(), anyInt()))
+        .thenThrow(new DataAccessResourceFailureException("db down"));
+    assertThrows(
+        ScheduleNotDeletedException.class,
+        () -> service.deleteOtherAcceptable(MILL, YEAR, 5, USER));
+  }
+
+  @Test
+  void deleteUnacceptable_repositoryFailure_throwsNotDeleted() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
+    when(repository.deleteSubPageRowById(anyInt(), anyInt(), anyInt()))
+        .thenThrow(new DataAccessResourceFailureException("db down"));
+    assertThrows(
+        ScheduleNotDeletedException.class,
+        () -> service.deleteUnacceptable(MILL, YEAR, 5, USER));
   }
 }

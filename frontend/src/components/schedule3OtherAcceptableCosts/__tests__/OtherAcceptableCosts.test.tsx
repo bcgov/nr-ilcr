@@ -12,6 +12,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 import OtherAcceptableCostsPage from '@/components/schedule3OtherAcceptableCosts'
+import MillYearProvider from '@/context/millYear/MillYearProvider'
 
 const URL = 'http://localhost:3000/api/v1/schedule3/other-acceptable-costs'
 
@@ -142,5 +143,138 @@ describe('Other Acceptable Costs sub-page (Story 4.4)', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: /back to schedule 3/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3' })
+  })
+
+  test('edit a row seeds the inputs, PUTs the changed values, and shows success', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(`${URL}/5501`, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    const row = (await screen.findByText('Consulting')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: /edit/i }))
+
+    // The edit inputs are seeded from the row (description + the two editable fields).
+    expect(screen.getByLabelText('Edit description')).toHaveValue('Consulting')
+    expect(screen.getByLabelText('Edit total')).toHaveValue('800')
+    expect(screen.getByLabelText('Edit PO&P')).toHaveValue('300')
+
+    await user.clear(screen.getByLabelText('Edit total'))
+    await user.type(screen.getByLabelText('Edit total'), '850')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // The PUT only fires because the handler matched `${URL}/5501` (the edited row's id).
+    expect(captured).toEqual({ description: 'Consulting', total: 850, pop: 300 })
+  })
+
+  test('cancelling an edit closes the inputs without a PUT', async () => {
+    let putCount = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(`${URL}/5501`, () => {
+        putCount += 1
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    const row = (await screen.findByText('Consulting')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: /edit/i }))
+    // Scope to the row: the delete-confirm Modal also renders a "Cancel" button in the DOM.
+    await user.click(within(row).getByRole('button', { name: /^cancel$/i }))
+
+    expect(screen.queryByLabelText('Edit description')).not.toBeInTheDocument()
+    expect(screen.getByText('Consulting')).toBeInTheDocument()
+    expect(putCount).toBe(0)
+  })
+
+  test('blank description blocks an edit (advisory), no PUT', async () => {
+    let putCount = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(`${URL}/5501`, () => {
+        putCount += 1
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    const row = (await screen.findByText('Consulting')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: /edit/i }))
+    await user.clear(screen.getByLabelText('Edit description'))
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Description: Value is required.')).toBeInTheDocument()
+    expect(putCount).toBe(0)
+  })
+
+  test('an add failure surfaces the ProblemDetail as an action error', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...doc,
+          rows: [],
+          count: 0,
+          subtotal: { harvest: 0, pop: 0, crown: 0 },
+        }),
+      ),
+      http.post(URL, () => problemBody(500, 'Other cost could not be saved.')),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Description'), 'New')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(await screen.findByText('Action failed')).toBeInTheDocument()
+    expect(screen.getByText('Other cost could not be saved.')).toBeInTheDocument()
+  })
+
+  test('a delete failure surfaces an action error', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.delete(`${URL}/5501`, () => problemBody(500, 'Unable to delete other cost.')),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+
+    const row = (await screen.findByText('Consulting')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: /delete/i }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Action failed')).toBeInTheDocument()
+    expect(screen.getByText('Unable to delete other cost.')).toBeInTheDocument()
+  })
+
+  test('no mill/year context shows the required notice and fires no request', async () => {
+    let fetched = false
+    server.use(
+      http.get(URL, () => {
+        fetched = true
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: null, year: null }}>
+        <OtherAcceptableCostsPage />
+      </MillYearProvider>,
+    )
+    expect(
+      await screen.findByText('Please Select Mill and Reporting Year in the Home Page.'),
+    ).toBeInTheDocument()
+    expect(fetched).toBe(false)
   })
 })
