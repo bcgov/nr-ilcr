@@ -3,7 +3,7 @@ import type Schedule1Response from '@/interfaces/Schedule1Response'
 import type { LineItem } from '@/interfaces/Schedule1Response'
 import type Schedule1Request from '@/interfaces/Schedule1Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -24,7 +24,9 @@ import {
 import apiService from '@/service/api-service'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import useMillYear from '@/context/millYear/useMillYear'
+import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
+import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule1 } from './validation'
@@ -64,23 +66,8 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 
 type FieldValues = Record<string, string>
 
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
-    return null
-  }
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
-
 const mapLoadErrorDetail = (
-  detail: string | null,
+  detail: string | undefined,
   millId: number | null,
   year: number | null,
 ): string => {
@@ -138,10 +125,6 @@ const Schedule1: FC = () => {
   const navigate = useNavigate()
   const contextMissing = millId === null || year === null
 
-  const [data, setData] = useState<Schedule1Response | null>(null)
-  const [form, setForm] = useState<FieldValues>({})
-  const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -151,50 +134,23 @@ const Schedule1: FC = () => {
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
 
-  useEffect(() => {
-    if (contextMissing) {
-      return
-    }
-    /* eslint-disable @eslint-react/set-state-in-effect -- intentional reset on mill/year change */
-    setIsLoading(true)
-    setData(null)
-    setErrorDetail(null)
+  // Clear the save/check notifications whenever a fresh document loads (mill/year change).
+  const resetMessages = useCallback(() => {
     setSaveMessage(null)
     setSaveError(null)
     setCheckResult(null)
-    /* eslint-enable @eslint-react/set-state-in-effect */
-    let active = true
-    apiService
-      .getAxiosInstance()
-      .get<Schedule1Response>(`/v1/schedule1?millId=${millId}&year=${year}`)
-      .then((response) => {
-        if (active) {
-          setData(response.data)
-          setForm(seedForm(response.data))
-          setErrorDetail(null)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setErrorDetail(mapLoadErrorDetail(extractDetail(error), millId, year))
-          setData(null)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [millId, year, contextMissing])
+  }, [])
 
-  const setField =
-    (key: string) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const { value } = event.target
-      setForm((prev) => ({ ...prev, [key]: value }))
-    }
+  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+    useScheduleDocument<Schedule1Response>({
+      path: '/v1/schedule1',
+      millId,
+      year,
+      contextMissing,
+      seedForm,
+      mapLoadError: mapLoadErrorDetail,
+      onReset: resetMessages,
+    })
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
