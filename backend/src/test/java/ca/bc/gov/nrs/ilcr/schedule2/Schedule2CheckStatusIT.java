@@ -21,7 +21,7 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * <p>Security is OFF (no {@code @TestPropertySource}) so the mock {@code ILCR_SUBMITTER} principal
  * holds VIEW_SCHEDULE — this isolates the evaluation + no-mutation guarantee from authz (the 403 case
  * lives in {@link Schedule2CheckStatusAuthorizationIT}, security ON). Reuses the read fixtures: mill
- * 514/2021 (item-25 cost present -> MET) and mill 515/2021 (no summary, unsaved -> ISSUES, never 404).
+ * 621/2021 (item-25 cost present -> MET) and mill 515/2021 (no summary, unsaved -> ISSUES, never 404).
  *
  * <p>The CRITICAL acceptance assertion (AD-5): a check-status call changes NO rows — the
  * {@code ILCR_REPORT_SUMMARY}/{@code ILCR_COST_REPORT_DETAIL} row counts and the pinned summary's
@@ -44,9 +44,9 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("514/2021 item-25 cost present -> 200 MET with scheduleRequirementsMetMsg")
+  @DisplayName("621/2021 item-25 cost present -> 200 MET with scheduleRequirementsMetMsg")
   void item25Present_returnsMet() throws Exception {
-    mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).param("millId", "621").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -64,7 +64,9 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")))
         .andExpect(jsonPath("$.messages[0].key", is("missingRequiredFieldMsg")))
-        .andExpect(jsonPath("$.messages[0].text", is("Value Required")));
+        // ISSUES carries the human-readable label prefix (mirrors Schedule 1 / review HP#5); the MET
+        // case above is unlabeled. Keep in sync with Schedule2Service#checkStatus labelPrefix.
+        .andExpect(jsonPath("$.messages[0].text", is("Purchased/Private Log Costs - Cost: Value Required")));
   }
 
   @Test
@@ -72,9 +74,9 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
   void checkStatus_mutatesNothing() throws Exception {
     long summaryBefore = JdbcTestUtils.countRowsInTable(jdbcTemplate, SUMMARY);
     long detailBefore = JdbcTestUtils.countRowsInTable(jdbcTemplate, DETAIL);
-    int revisionBefore = revisionOf(1002); // pinned 514/2021 Schedule 2 summary
+    int revisionBefore = revisionOf(1202); // pinned 621/2021 Schedule 2 summary
 
-    mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    mockMvc.perform(post(ENDPOINT).param("millId", "621").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));
@@ -88,7 +90,7 @@ class Schedule2CheckStatusIT extends AbstractOracleIT {
         "check-status must not add/remove ILCR_REPORT_SUMMARY rows");
     assertEquals(detailBefore, JdbcTestUtils.countRowsInTable(jdbcTemplate, DETAIL),
         "check-status must not add/remove ILCR_COST_REPORT_DETAIL rows");
-    assertEquals(revisionBefore, revisionOf(1002),
+    assertEquals(revisionBefore, revisionOf(1202),
         "check-status must not bump REVISION_COUNT");
   }
 }

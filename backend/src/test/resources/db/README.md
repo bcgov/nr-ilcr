@@ -34,21 +34,21 @@ two such branches merge:
    | Schedule 3 / crown+admin  | 522 (prefill)   | `V5`                                         |
    | Other Costs               | 523–527         | `V6`                                         |
    | Home                      | (see `V8`/`V9`) |                                              |
-   | Schedule 2                | **622–625**     | target block — see known-collision note      |
+   | Schedule 2                | **622–625**     | summaries in the `12xx` block                |
 
    Cost-item IDs (`ILCR_REPORT_COST_ITEM_ID`) are a **shared** master-data space across schedules.
    Define each item **once**; if another track already seeds it (identical row), reference it, don't
    re-`INSERT` it.
 
-## Known unresolved collisions (Schedule 2 — deferred to the e2e/IT pass)
+## History: Schedule 2 collisions (resolved)
 
-The version clash (`V5`/`V6` → renumbered to `V10`/`V11`) is fixed. The **data** collisions below are
-still present and will `ORA-00001` when the `*IT` suite actually runs — to be cleared when Schedule 2
-integration tests are wired up:
+When schedule 3 (`V5`, #182), other costs (`V6`, #182) and home (`V8`/`V9`, #190) merged into `main`,
+this branch's schedule 2 fixtures collided on both version numbers and seed IDs. All resolved:
 
-- Mills **522, 523, 524, 525** in `V11__seed_schedule2_write_fixtures.sql` collide with schedule 3
-  (`V5`, mill 522) and other-costs (`V6`, mills 523–525). Move Schedule 2 to **622–625** and update
-  the ~48 references across the `schedule2` `*IT`/service tests in lockstep.
-- Cost-item **135** is `INSERT`ed by both `V5__seed_schedule3_crown_and_admin.sql` and
-  `V10__seed_schedule2_read_fixtures.sql` (byte-identical row). Drop the duplicate from `V10` and rely
-  on schedule 3's definition (or seed it in a shared earlier migration).
+- **Version clash** — schedule 2's `V5`/`V6` → renumbered to `V10`/`V11`.
+- **Mill PKs** — schedule 2's mills `522–525` → `622–625` (schedule 3 keeps 522; other costs keeps
+  523–525). All references in the `schedule2` `*IT`/service tests moved in lockstep.
+- **Summary PKs** — schedule 2's colliding summaries `1022/1024/1025` (write) and `1028` (read) →
+  the `12xx` block (`1222–1225`, `1228`); non-colliding `1002`/`1023` left as-is.
+- **Cost-item 135** — was `INSERT`ed identically by both schedule 3 (`V5`) and schedule 2 (`V10`);
+  the duplicate `INSERT` was dropped from `V10`, which now references schedule 3's definition.

@@ -48,7 +48,7 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> PUT 403 problem+json")
   void put_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(ENDPOINT).param("millId", "524").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "624").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(BODY)
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
@@ -58,7 +58,7 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> DELETE 403 problem+json")
   void delete_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "524").param("year", "2021")
+    mockMvc.perform(delete(ENDPOINT).param("millId", "624").param("year", "2021")
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -67,9 +67,9 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> PUT passes authz (not 403)")
   void put_submitter_passesAuthorization() throws Exception {
-    // Dedicated mill 524 (REVISION_COUNT 0, only this test writes it) so the hard-coded token can
+    // Dedicated mill 624 (REVISION_COUNT 0, only this test writes it) so the hard-coded token can
     // never be made stale by another class sharing the container.
-    mockMvc.perform(put(ENDPOINT).param("millId", "524").param("year", "2021")
+    mockMvc.perform(put(ENDPOINT).param("millId", "624").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(BODY)
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
