@@ -16,6 +16,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
+import { fmt, toNum } from '@/utils/number'
+import { extractDetail } from '@/utils/error'
 import {
   emptySubPageRowForm,
   validateSubPageRow,
@@ -25,25 +27,8 @@ import {
 
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
 
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') return null
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
 const sum = (rows: SubPageRow[], pick: (r: SubPageRow) => number | null): number =>
   rows.reduce((total, r) => total + (pick(r) ?? 0), 0)
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    return (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-  }
-  return undefined
-}
 
 interface SubPageProps {
   millId: number

@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Button,
   Column,
@@ -19,6 +19,9 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
+import { fmt, numStr, toNum } from '@/utils/number'
+import { extractDetail } from '@/utils/error'
+import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
@@ -54,27 +57,6 @@ const NAV_SAVE_FIRST =
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
 
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') return null
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
-  }
-  return undefined
-}
-
 const emptyCategoryForm = (): CategoryForm => {
   const form: CategoryForm = {}
   for (const def of ALL_CATEGORIES) {
@@ -105,13 +87,93 @@ function seedCategoryForm(location: Location): {
 const subPageCount = (location: Location, code: number): number =>
   location.subPageRows.filter((row) => row.code === code).length
 
+type CategoryDef = (typeof ALL_CATEGORIES)[number]
+type CategoryField = 'volume' | 'cost' | 'distance'
+
+// A single category grid cell: an editable numeric input, or its value as read-only text in View
+// mode. Module-level (only depends on its props) so it is not recreated on every page render.
+const CategoryCell: FC<{
+  inputId: string
+  label: string
+  value: string
+  readOnly: boolean
+  invalidText?: string
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+}> = ({ inputId, label, value, readOnly, invalidText, onChange }) => {
+  if (readOnly) {
+    return <TableCell className="schedule-4__num">{value === '' ? '—' : value}</TableCell>
+  }
+  return (
+    <TableCell className="schedule-4__num">
+      <TextInput
+        id={inputId}
+        labelText={label}
+        hideLabel
+        size="sm"
+        inputMode="numeric"
+        value={value}
+        onChange={onChange}
+        invalid={Boolean(invalidText)}
+        invalidText={invalidText}
+      />
+    </TableCell>
+  )
+}
+
+// One category row (Volume / Cost / Distance / read-only $/m³). Distance cell only for the distance
+// categories. Module-level so it is not recreated on every page render.
+const CategoryRow: FC<{
+  def: CategoryDef
+  values: { volume: string; cost: string; distance: string }
+  perUnit: number | null | undefined
+  readOnly: boolean
+  fieldErrors: Record<string, string>
+  onFieldChange: (
+    code: number,
+    field: CategoryField,
+  ) => (event: React.ChangeEvent<HTMLInputElement>) => void
+}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange }) => {
+  const isDistance = def.kind === 'DISTANCE'
+  return (
+    <TableRow>
+      <TableCell>{def.label}</TableCell>
+      <CategoryCell
+        inputId={`${def.code}-volume`}
+        label={`${def.label} volume`}
+        value={values.volume}
+        readOnly={readOnly}
+        invalidText={fieldErrors[`${def.code}-volume`]}
+        onChange={onFieldChange(def.code, 'volume')}
+      />
+      <CategoryCell
+        inputId={`${def.code}-cost`}
+        label={`${def.label} cost`}
+        value={values.cost}
+        readOnly={readOnly}
+        invalidText={fieldErrors[`${def.code}-cost`]}
+        onChange={onFieldChange(def.code, 'cost')}
+      />
+      {isDistance ? (
+        <CategoryCell
+          inputId={`${def.code}-distance`}
+          label={`${def.label} distance`}
+          value={values.distance}
+          readOnly={readOnly}
+          invalidText={fieldErrors[`${def.code}-distance`]}
+          onChange={onFieldChange(def.code, 'distance')}
+        />
+      ) : (
+        <TableCell className="schedule-4__num">—</TableCell>
+      )}
+      <TableCell className="schedule-4__num">{fmt(perUnit)}</TableCell>
+    </TableRow>
+  )
+}
+
 const Schedule4: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
 
-  const [data, setData] = useState<Schedule4Response | null>(null)
-  const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -133,41 +195,28 @@ const Schedule4: FC = () => {
     def: SubPageDef
   } | null>(null)
 
-  useEffect(() => {
-    if (contextMissing) return
-    /* eslint-disable @eslint-react/set-state-in-effect -- intentional reset on mill/year change */
-    setIsLoading(true)
-    setData(null)
-    setErrorDetail(null)
+  // Clear the transient mutation notifications + close the panel whenever a fresh document loads
+  // (mill/year change), mirroring the Schedule 1/2 onReset.
+  const resetTransient = useCallback(() => {
     setSaveMessage(null)
     setSaveError(null)
     setWarnMessage(null)
     setCheckResult(null)
     setPanelMode('closed')
-    /* eslint-enable @eslint-react/set-state-in-effect */
-    let active = true
-    apiService
-      .getAxiosInstance()
-      .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`)
-      .then((response) => {
-        if (active) {
-          setData(response.data)
-          setErrorDetail(null)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setErrorDetail(extractDetail(error) || 'Unable to load Schedule 4.')
-          setData(null)
-        }
-      })
-      .finally(() => {
-        if (active) setIsLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [millId, year, contextMissing])
+  }, [])
+
+  // Shared load-on-context-change concern (Schedule 1/2 idiom): owns data/errorDetail/isLoading,
+  // resets on mill/year change, and ignores a stale response. Schedule 4's writable state is the
+  // on-demand location panel (not a flat form), so seedForm is unused here.
+  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule4Response>({
+    path: '/v1/schedule4',
+    millId,
+    year,
+    contextMissing,
+    seedForm: () => ({}),
+    mapLoadError: (detail) => detail ?? 'Unable to load Schedule 4.',
+    onReset: resetTransient,
+  })
 
   const clearMessages = () => {
     setSaveMessage(null)
@@ -519,45 +568,17 @@ const Schedule4: FC = () => {
   )
 
   // ---- Category grid (inside the panel). ---------------------------------------------------------
-  const categoryInput = (code: number, field: 'volume' | 'cost' | 'distance', label: string) => {
-    const key = `${code}-${field}`
-    const value = panelCategories[code]?.[field] ?? ''
-    if (readOnlyPanel) {
-      return <TableCell className="schedule-4__num">{value === '' ? '—' : value}</TableCell>
-    }
-    return (
-      <TableCell className="schedule-4__num">
-        <TextInput
-          id={key}
-          labelText={label}
-          hideLabel
-          size="sm"
-          inputMode="numeric"
-          value={value}
-          onChange={setCategoryField(code, field)}
-          invalid={Boolean(fieldErrors[key])}
-          invalidText={fieldErrors[key]}
-        />
-      </TableCell>
-    )
-  }
-
-  const categoryRow = (def: (typeof ALL_CATEGORIES)[number]) => {
-    const isDistance = def.kind === 'DISTANCE'
-    return (
-      <TableRow key={def.code}>
-        <TableCell>{def.label}</TableCell>
-        {categoryInput(def.code, 'volume', `${def.label} volume`)}
-        {categoryInput(def.code, 'cost', `${def.label} cost`)}
-        {isDistance ? (
-          categoryInput(def.code, 'distance', `${def.label} distance`)
-        ) : (
-          <TableCell className="schedule-4__num">—</TableCell>
-        )}
-        <TableCell className="schedule-4__num">{fmt(panelPerUnit[def.code])}</TableCell>
-      </TableRow>
-    )
-  }
+  const renderCategoryRow = (def: CategoryDef) => (
+    <CategoryRow
+      key={def.code}
+      def={def}
+      values={panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }}
+      perUnit={panelPerUnit[def.code]}
+      readOnly={readOnlyPanel}
+      fieldErrors={fieldErrors}
+      onFieldChange={setCategoryField}
+    />
+  )
 
   const panel = panelOpen && (
     <div className="schedule-4__panel">
@@ -593,8 +614,8 @@ const Schedule4: FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {FIXED_CATEGORIES.map(categoryRow)}
-            {DISTANCE_CATEGORIES.map(categoryRow)}
+            {FIXED_CATEGORIES.map(renderCategoryRow)}
+            {DISTANCE_CATEGORIES.map(renderCategoryRow)}
           </TableBody>
         </Table>
       </TableContainer>
