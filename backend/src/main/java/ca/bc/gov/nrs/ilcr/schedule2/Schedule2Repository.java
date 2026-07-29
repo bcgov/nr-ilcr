@@ -88,6 +88,24 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
   /**
+   * Same as {@link #findTrackStatus} but takes a row lock (Oracle {@code FOR UPDATE}) on the
+   * per-mill/year report-status row. The write-path Draft gate uses this so concurrent first-saves
+   * for the same mill/year serialize on this row: the first create inserts the category-{@code "2"}
+   * summary and commits (releasing the lock); the next writer then reads the now-committed summary so
+   * its {@link #mergeSummaryRow} is a no-op. This closes the create-on-absent duplicate-summary race
+   * the (real-schema) missing unique constraint would otherwise allow. Must run inside the write
+   * {@code @Transactional} to hold the lock until commit.
+   */
+  @Query("""
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
    * Schedule 3 PO&amp;P Timber volume (cost-item 118), carried onto {@code purchasedLogCost.volume}
    * and {@code purchasedWoodOverhead.volume} (BR-03). Empty when the Schedule 3 source is absent.
    */
@@ -210,12 +228,15 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
 
   /**
    * Idempotent create of the empty category-{@code "2"} summary for a mill/year, keyed on
-   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). There is no unique constraint on that triple, so a
-   * plain check-then-insert lets two concurrent first-saves both INSERT (permanent duplicate → 500s),
-   * and a try/catch on {@code DuplicateKeyException} cannot help (no key to violate). An Oracle
-   * {@code MERGE ... WHEN NOT MATCHED THEN INSERT} serializes the create on the row lock so exactly one
-   * row is inserted and a concurrent create becomes a no-op. Caller re-reads the summary afterwards to
-   * obtain the id (see {@link #insertSummary}).
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). The real THE schema has no unique constraint on
+   * that triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize:
+   * under READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT
+   * (permanent duplicate → later 500s). Serialization is provided by the caller instead — the write
+   * path takes a {@code FOR UPDATE} row lock on the parent report-status row via
+   * {@link #findTrackStatusForUpdate} before this MERGE, so first-saves for the same mill/year run one
+   * at a time and the second becomes a no-op. A unique index on the triple is the structural backstop
+   * (present test-scope in the {@code report_summary_uniqueness} migration; flagged for the real
+   * schema). Caller re-reads the summary afterwards to obtain the id (see {@link #insertSummary}).
    */
   @Modifying
   @Query("""

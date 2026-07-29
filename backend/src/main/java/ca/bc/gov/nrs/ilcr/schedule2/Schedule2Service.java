@@ -179,9 +179,15 @@ public class Schedule2Service {
         .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
   }
 
-  /** The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409). */
+  /**
+   * The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409).
+   * Uses the {@code FOR UPDATE} locking read so concurrent first-saves for the same mill/year
+   * serialize on the report-status row — closing the create-on-absent duplicate-summary race (the
+   * real schema has no unique constraint on year+mill+category). Safe: only write paths call this,
+   * and both run inside a {@code @Transactional}.
+   */
   private void requireDraft(long millId, int year) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!STATUS_DRAFT.equals(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
@@ -278,6 +284,8 @@ public class Schedule2Service {
     //   subtotalLoggingCost = sch1.subtotalLoggingCost(144) + sch3.subtotalActualCosts.crownCost
     //   totalSilvCost       = (sch1.silvActualSpent(1) - sch3.silvAdmin.crownCost) + sch1.silvAccruedSpent(2)
     //   result              = subtotalLoggingCost + totalSilvCost
+    // TODO(AD-12): restore the two Schedule-3 crown-cost terms below once a Schedule 3 backend can
+    //   supply them; until then totalCompanyLogging is the Sch1-only partial (pending product sign-off).
     // AD-12 deviation: the two Schedule-3 crown-cost operands (subtotalActualCosts.crownCost,
     // silvicultureAdminCosts.crownCost) are genuinely unavailable — no Schedule 3 backend exists to
     // derive them — so both are treated as null. CoreUtil null-propagation (add/subtract below) makes
