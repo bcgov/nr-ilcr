@@ -365,9 +365,15 @@ public class Schedule4Service {
    * @return the recomputed Schedule 4 document
    */
   @Transactional
-  public Schedule4Response deleteSubPageRow(long millId, int year, int rowId, boolean callerMayEdit) {
+  public Schedule4Response deleteSubPageRow(
+      long millId, int year, int locationId, int rowId, boolean callerMayEdit) {
     requireDraft(millId, year);
-    if (repository.isSubPageRow(rowId, millId, year)) {
+    // Enforce the /locations/{locationId}/rows/{rowId} path: resolve the addressed location's name
+    // (mill/year-scoped) and only delete when rowId is a sub-page row OF THAT location. A foreign or
+    // unknown locationId, or a rowId under a different location, is an idempotent no-op — never a
+    // cross-location/cross-context delete.
+    String locationName = repository.findLocationName(locationId, millId, year).orElse(null);
+    if (locationName != null && repository.isSubPageRowOfLocation(rowId, locationName, millId, year)) {
       try {
         repository.deleteReport(rowId);
       } catch (DataAccessException ex) {

@@ -236,9 +236,11 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   }
 
   /**
-   * Whether {@code reportId} is a sub-page-list row (its own report for this mill/year with a single
-   * detail of code 43/46/55) — the guard that keeps the row-delete endpoint from removing a primary
-   * or category report.
+   * Whether {@code reportId} is a sub-page-list row (its own report with a single detail of code
+   * 43/46/55) belonging to the location named {@code name} for this mill/year. The
+   * {@code LOCATION_DESCRIPTION} match enforces the {@code /locations/{locationId}/rows/{rowId}} path
+   * semantics: the row-delete can only remove a row that actually lives under the addressed location
+   * (and never a primary/category report, or a row of another location — even in the same mill/year).
    */
   @Query("""
       SELECT COUNT(*)
@@ -249,14 +251,19 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
          AND tr.ILCR_MILL_ID = :millId
          AND tr.REPORT_YEAR = :year
          AND tr.ILCR_CATEGORY_ID = '4'
+         AND tr.LOCATION_DESCRIPTION = :name
          AND d.ILCR_REPORT_COST_ITEM_ID IN (43,46,55)
       """)
-  int countSubPageRow(
-      @Param("reportId") int reportId, @Param("millId") long millId, @Param("year") int year);
+  int countSubPageRowOfLocation(
+      @Param("reportId") int reportId, @Param("name") String name,
+      @Param("millId") long millId, @Param("year") int year);
 
-  /** Whether {@code reportId} is a sub-page-list row for this mill/year (guarded, idempotent delete). */
-  default boolean isSubPageRow(int reportId, long millId, int year) {
-    return countSubPageRow(reportId, millId, year) > 0;
+  /**
+   * Whether {@code reportId} is a sub-page-list row of the location {@code name} for this mill/year
+   * (guarded, idempotent, path-scoped delete).
+   */
+  default boolean isSubPageRowOfLocation(int reportId, String name, long millId, int year) {
+    return countSubPageRowOfLocation(reportId, name, millId, year) > 0;
   }
 
   // -------------------------------------------------------------------------------------------------

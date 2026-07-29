@@ -136,7 +136,7 @@ class Schedule4ControllerTest {
     Schedule4Response updated = mock(Schedule4Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
     when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 9001, true)).thenReturn(updated);
+    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
     when(messageSource.getMessage(
         eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");

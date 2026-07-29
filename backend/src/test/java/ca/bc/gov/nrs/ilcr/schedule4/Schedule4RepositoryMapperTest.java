@@ -107,11 +107,11 @@ class Schedule4RepositoryMapperTest {
   }
 
   @Test
-  void isSubPageRow_reflectsCount() {
-    when(repo.countSubPageRow(9001, MILL, YEAR)).thenReturn(1);
-    when(repo.isSubPageRow(9001, MILL, YEAR)).thenCallRealMethod();
+  void isSubPageRowOfLocation_reflectsCount() {
+    when(repo.countSubPageRowOfLocation(9001, "Dump A", MILL, YEAR)).thenReturn(1);
+    when(repo.isSubPageRowOfLocation(9001, "Dump A", MILL, YEAR)).thenCallRealMethod();
 
-    assertTrue(repo.isSubPageRow(9001, MILL, YEAR));
+    assertTrue(repo.isSubPageRowOfLocation(9001, "Dump A", MILL, YEAR));
   }
 
   @Test
