@@ -52,10 +52,13 @@ class Schedule2WriteServiceTest {
   }
 
   private void stubDraftExistingSummary() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Write-path Draft gate takes the FOR UPDATE lock (requireDraft) — always called on save/delete.
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
-    // Recompute read after write — keep it minimal (no cross-schedule data).
+    // Recompute read after write — reached only on the success path (getSchedule2 uses the plain,
+    // non-locking findTrackStatus), so keep these lenient.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
     lenient().when(repository.findSch3PopTimberVolume(MILL, YEAR)).thenReturn(Optional.empty());
     lenient().when(repository.findSch3PopActualCost(MILL, YEAR)).thenReturn(Optional.empty());
@@ -78,7 +81,8 @@ class Schedule2WriteServiceTest {
 
   @Test
   void save_createOnAbsent_insertsSummaryThenBumpsToOne() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D")); // write gate
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // recompute read
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.empty())            // create-on-absent lookup
         .thenReturn(Optional.of(new SummaryRow(9001, "c", 1))); // recompute read after save
@@ -122,7 +126,7 @@ class Schedule2WriteServiceTest {
 
   @Test
   void save_notDraft_throwsNotEditable_andNeverWrites() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(ScheduleNotEditableException.class, () ->
         service.saveSchedule2(MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
@@ -143,7 +147,7 @@ class Schedule2WriteServiceTest {
 
   @Test
   void delete_draftWithSummary_deletesSchedule() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
 
@@ -154,7 +158,7 @@ class Schedule2WriteServiceTest {
 
   @Test
   void delete_draftNoSummary_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
 
     service.deleteSchedule2(MILL, YEAR); // must not throw
@@ -164,7 +168,7 @@ class Schedule2WriteServiceTest {
 
   @Test
   void delete_notDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule2(MILL, YEAR));
 
