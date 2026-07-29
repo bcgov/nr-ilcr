@@ -1,0 +1,42 @@
+// Self-contained layout for the Other Costs sub-page (global scss, like the Schedule 1 page). The
+// .schedule-1__* class names are reused for visual consistency with the parent page.
+.schedule-1__num {
+  text-align: right;
+}
+
+.schedule-1__section {
+  margin-block: 1rem;
+}
+
+.schedule-1__meta {
+  margin-block-end: 1rem;
+}
+
+.schedule-1__heading {
+  margin-block-end: 0.5rem;
+}
+
+.schedule-1__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+.schedule-1__summary {
+  display: flex;
+  gap: 2rem;
+  margin-block-start: 0.5rem;
+}
+
+.schedule-1__summary-item {
+  dt {
+    font-weight: 600;
+  }
+}
+
+.schedule-1-other-costs__add {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}

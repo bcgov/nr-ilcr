@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
-import type { MockAuthContextValue } from './MockAuthContext'
 import { MockAuthContext } from './MockAuthContext'
+import type { IlcrRole } from './mockUsers'
 import { MOCK_USER_STORAGE_KEY, MOCK_USERS, findMockUser } from './mockUsers'
 
 type Props = {
@@ -36,7 +36,7 @@ export default function MockAuthProvider({ children }: Props) {
   const [selectedUserId, setSelectedUserId] = useState(getInitialUserId)
   const user = findMockUser(selectedUserId)
 
-  const value = useMemo<MockAuthContextValue>(
+  const value = useMemo(
     () => ({
       user,
       users: MOCK_USERS,
@@ -44,7 +44,7 @@ export default function MockAuthProvider({ children }: Props) {
         persistUserId(id)
         setSelectedUserId(id)
       },
-      hasRole: (role) => user.roles.includes(role),
+      hasRole: (role: IlcrRole) => user.roles.includes(role),
     }),
     [user],
   )
