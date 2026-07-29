@@ -153,6 +153,17 @@ class Schedule11WriteIT extends AbstractOracleIT {
     }
 
     @Test
+    @DisplayName("S15: null Enhanced indicator -> 400 verbatim required message, nothing persisted")
+    void missingEnhancedIndicator_returns400() throws Exception {
+        mockMvc.perform(post(LOCATIONS).with(csrf()).param("millId", "614").param("year", "2021")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"location\":\"X\",\"biogeoclimaticCatalogueId\":8801,\"netArea\":10.0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail", is("Enhanced: Value is required.")));
+    }
+
+    @Test
     @DisplayName("S16: null biogeo -> 400 required; S17: null NAR -> 400 required")
     void missingRequiredSelections_return400() throws Exception {
         mockMvc.perform(post(LOCATIONS).with(csrf()).param("millId", "614").param("year", "2021")
