@@ -33,13 +33,20 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
-// The three editable form keys mirror the flat Schedule2Request field names.
+// The editable form keys mirror the flat Schedule2Request field names.
 const F_ITEM25_COST = 'purchasedLogCostCost'
 const F_ITEM26_VOLUME = 'lessLogSalesVolume'
 const F_ITEM26_COST = 'lessLogSalesCost'
 const F_COMMENTS = 'comments'
 
 type FieldValues = Record<string, string>
+
+// Static page chrome — no props, so hoisted to module scope (allocated once, not per render).
+const PAGE_HEADER = (
+  <Grid fullWidth className="app-page__header">
+    <PageTitle title="Schedule 2" subtitle="Cost of Purchased / Private Logs." />
+  </Grid>
+)
 
 function extractDetail(error: unknown): string | undefined {
   if (error && typeof error === 'object' && 'response' in error) {
@@ -48,8 +55,6 @@ function extractDetail(error: unknown): string | undefined {
   }
   return undefined
 }
-
-const EMPTY_BLOCK: CostBlock = { volume: null, cost: null, perUnit: null }
 
 const fmt = (value: number | null | undefined): string =>
   value === null || value === undefined ? '—' : String(value)
@@ -77,13 +82,15 @@ function seedForm(doc: Schedule2Response): FieldValues {
 }
 
 function buildRequest(doc: Schedule2Response, form: FieldValues): Schedule2Request {
+  // `?? ''` guards the trim against an absent key (defence-in-depth; the form is always seeded).
+  const rawComments = form[F_COMMENTS] ?? ''
   return {
     // A new/unsaved schedule (revisionCount null) sends 0, per the ratified write contract.
     revisionCount: doc.revisionCount ?? 0,
-    comments: form[F_COMMENTS].trim() === '' ? null : form[F_COMMENTS],
-    purchasedLogCostCost: toNum(form[F_ITEM25_COST]),
-    lessLogSalesVolume: toNum(form[F_ITEM26_VOLUME]),
-    lessLogSalesCost: toNum(form[F_ITEM26_COST]),
+    comments: rawComments.trim() === '' ? null : rawComments,
+    purchasedLogCostCost: toNum(form[F_ITEM25_COST] ?? ''),
+    lessLogSalesVolume: toNum(form[F_ITEM26_VOLUME] ?? ''),
+    lessLogSalesCost: toNum(form[F_ITEM26_COST] ?? ''),
   }
 }
 
@@ -191,31 +198,21 @@ const Schedule2: FC = () => {
     setSaveMessage(null)
     setSaveError(null)
     setStatusMessages(null)
-    apiService
-      .getAxiosInstance()
+    const api = apiService.getAxiosInstance()
+    api
       .delete<{ message?: { text?: string } }>(`/v1/schedule2?millId=${millId}&year=${year}`)
       .then((response) => {
-        // Delete removed the summary; a re-GET could 404, so reset to an empty read-only schedule in
-        // place (no re-fetch) and show the API delete message.
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                editable: false,
-                revisionCount: null,
-                comments: null,
-                purchasedLogCost: EMPTY_BLOCK,
-                purchasedWoodOverhead: EMPTY_BLOCK,
-                subtotal: EMPTY_BLOCK,
-                lessLogSales: EMPTY_BLOCK,
-                netPurchased: EMPTY_BLOCK,
-                totalCompanyLogging: EMPTY_BLOCK,
-                totalAverage: EMPTY_BLOCK,
-              }
-            : prev,
-        )
-        setForm({})
-        setSaveMessage(response.data?.message?.text ?? null)
+        const deleteMessage = response.data?.message?.text ?? null
+        // Schedule 2 never 404s: with the summary gone, a re-GET returns the 200 empty EDITABLE
+        // document (revisionCount null). Reload it so the meta row / form reflect reality and the
+        // Licensee can immediately re-enter data (legacy AF1), while keeping the API delete message.
+        return api
+          .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`)
+          .then((reload) => {
+            setData(reload.data)
+            setForm(seedForm(reload.data))
+            setSaveMessage(deleteMessage)
+          })
       })
       .catch((error: unknown) => {
         setSaveError(extractDetail(error) || 'Unable to delete Schedule 2.')
@@ -224,9 +221,20 @@ const Schedule2: FC = () => {
   }
 
   const handleCheckStatus = () => {
+    // `saving` doubles as the in-flight guard so a double-click can't fire concurrent POSTs and a
+    // slow response can't repaint stale status over a later Save (Save/Check are mutually exclusive).
     if (!data || saving) {
       return
     }
+    // Legacy Check Status is validateClient="true": invalid entered values block the action with the
+    // same FLD-* messages Save uses, rather than firing a POST that ignores them.
+    if (Object.keys(validateSchedule2(form)).length > 0) {
+      setSaveMessage(null)
+      setStatusMessages(null)
+      setSaveError('Please correct the highlighted fields before checking status.')
+      return
+    }
+    setSaving(true)
     setSaveMessage(null)
     setSaveError(null)
     setStatusMessages(null)
@@ -239,18 +247,13 @@ const Schedule2: FC = () => {
       .catch((error: unknown) => {
         setSaveError(extractDetail(error) || 'Unable to check status.')
       })
+      .finally(() => setSaving(false))
   }
-
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 2" subtitle="Cost of Purchased / Private Logs." />
-    </Grid>
-  )
 
   if (contextMissing) {
     return (
       <div className="app-page">
-        {header}
+        {PAGE_HEADER}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <InlineNotification
@@ -269,7 +272,7 @@ const Schedule2: FC = () => {
   if (isLoading) {
     return (
       <div className="app-page">
-        {header}
+        {PAGE_HEADER}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <LoadingScreen label="Loading Schedule 2" />
@@ -282,7 +285,7 @@ const Schedule2: FC = () => {
   if (errorDetail) {
     return (
       <div className="app-page">
-        {header}
+        {PAGE_HEADER}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <InlineNotification
@@ -303,11 +306,15 @@ const Schedule2: FC = () => {
   }
 
   const editable = data.editable
+  // Delete targets a persisted summary; an unsaved document (revisionCount null) has nothing to
+  // delete, so gate it exactly like legacy isScheduleOpen() (BR-08 / S06).
+  const deletable = editable && data.revisionCount !== null
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
   // An editable value cell: a TextInput when the field is entered-by-user and the schedule is
-  // editable, otherwise read-only text.
+  // editable, otherwise read-only text. The hidden `labelText` is a terse, stable a11y name (the
+  // visible legacy label lives in the row's first cell).
   const inputCell = (fieldKey: string, label: string) => (
     <TableCell className="schedule-2__num">
       <TextInput
@@ -327,10 +334,10 @@ const Schedule2: FC = () => {
     <TableCell className="schedule-2__num">{fmt(value)}</TableCell>
   )
 
-  // Item 25 — Purchased Log Cost: volume carried (read-only), cost editable, perUnit read-only.
+  // Item 25 — Purchased/Private Log Costs: volume carried (read-only), cost editable, perUnit read-only.
   const item25Row = (
     <TableRow>
-      <TableCell>Purchased Log Cost</TableCell>
+      <TableCell>Purchased/Private Log Costs:</TableCell>
       {readOnlyCell(data.purchasedLogCost.volume)}
       {editable
         ? inputCell(F_ITEM25_COST, 'Purchased Log Cost cost')
@@ -339,10 +346,10 @@ const Schedule2: FC = () => {
     </TableRow>
   )
 
-  // Item 26 — Less Log Sales: volume + cost editable, perUnit read-only.
+  // Item 26 — (less) Log Sales: volume + cost editable, perUnit read-only.
   const item26Row = (
     <TableRow>
-      <TableCell>Less Log Sales</TableCell>
+      <TableCell>(less) Log Sales:</TableCell>
       {editable
         ? inputCell(F_ITEM26_VOLUME, 'Less Log Sales volume')
         : readOnlyCell(data.lessLogSales.volume)}
@@ -353,21 +360,13 @@ const Schedule2: FC = () => {
     </TableRow>
   )
 
-  // Read-only derived / carried blocks (never inputs, never sent on write).
-  const readOnlyRows: { label: string; block: CostBlock }[] = [
-    { label: 'Purchased Wood Overhead', block: data.purchasedWoodOverhead },
-    { label: 'Subtotal', block: data.subtotal },
-    { label: 'Net Purchased', block: data.netPurchased },
-    { label: 'Total Company Logging', block: data.totalCompanyLogging },
-    { label: 'Total Average', block: data.totalAverage },
-  ]
-
-  const derivedRow = (row: { label: string; block: CostBlock }) => (
-    <TableRow key={row.label}>
-      <TableCell>{row.label}</TableCell>
-      {readOnlyCell(row.block.volume)}
-      {readOnlyCell(row.block.cost)}
-      {readOnlyCell(row.block.perUnit)}
+  // Read-only derived / carried block (never inputs, never sent on write).
+  const derivedRow = (label: string, block: CostBlock) => (
+    <TableRow key={label}>
+      <TableCell>{label}</TableCell>
+      {readOnlyCell(block.volume)}
+      {readOnlyCell(block.cost)}
+      {readOnlyCell(block.perUnit)}
     </TableRow>
   )
 
@@ -381,7 +380,7 @@ const Schedule2: FC = () => {
       </Button>
       <Button
         kind="danger--tertiary"
-        disabled={!editable || saving}
+        disabled={!deletable || saving}
         onClick={() => setConfirmDeleteOpen(true)}
       >
         Delete
@@ -391,7 +390,7 @@ const Schedule2: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16} className="schedule-2__meta">
           <dl className="schedule-2__summary">
@@ -450,10 +449,17 @@ const Schedule2: FC = () => {
                   <TableHeader className="schedule-2__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
+              {/* Legacy row order + verbatim labels (schedule2.xhtml:52-142): Purchased/Private Log
+                  Costs, Purchased/Private Wood Overhead, Subtotal, (less) Log Sales, Net Purchased,
+                  Total Company Logging Costs(Sch 1), Total Average Logging Costs. */}
               <TableBody>
                 {item25Row}
+                {derivedRow('Purchased/Private Wood Overhead:', data.purchasedWoodOverhead)}
+                {derivedRow('Subtotal:', data.subtotal)}
                 {item26Row}
-                {readOnlyRows.map(derivedRow)}
+                {derivedRow('Net Purchased/Private Log Cost:', data.netPurchased)}
+                {derivedRow('Total Company Logging Costs(Sch 1):', data.totalCompanyLogging)}
+                {derivedRow('Total Average Logging Costs:', data.totalAverage)}
               </TableBody>
             </Table>
           </TableContainer>

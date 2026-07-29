@@ -29,7 +29,9 @@ export default interface Schedule2Response {
   readonly netPurchased: CostBlock
   readonly totalCompanyLogging: CostBlock
   readonly totalAverage: CostBlock
-  readonly message?: MessageInfo | null
+  // The API returns null on GET and a MessageInfo on mutations — one nullable field, not also
+  // optional, so callers only ever check `message?.text`.
+  readonly message: MessageInfo | null
 }
 
 // Read-only CheckStatus evaluation (POST check-status, no body). `MET` when item-25 cost present,
