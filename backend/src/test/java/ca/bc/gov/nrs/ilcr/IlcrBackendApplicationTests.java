@@ -2,17 +2,21 @@ package ca.bc.gov.nrs.ilcr;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
+import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * No-DB context smoke test. The Oracle datasource is disabled by default (AD-2), so the Spring Data
- * JDBC repositories (created only when a datasource is present) are absent here; mocks stand in so
- * the wiring loads. The real datasource + Spring Data JDBC path is proven by the Testcontainers
- * acceptance tests (*IT).
+ * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged
+ * {@code application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke
+ * test keeps that explicit. With the datasource off the
+ * Spring Data JDBC repositories are absent; mocks stand in so the wiring loads. The real datasource +
+ * Spring Data JDBC path is proven by the Testcontainers acceptance tests (*IT).
  */
 @SpringBootTest
+@TestPropertySource(properties = "ilcr.datasource.enabled=false")
 class IlcrBackendApplicationTests {
 
   @MockitoBean
@@ -20,6 +24,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private MillContextRepository millContextRepository;
+
+  @MockitoBean
+  private Schedule2Repository schedule2Repository;
 
   @Test
   void contextLoads() {

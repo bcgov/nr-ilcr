@@ -28,9 +28,19 @@ public record Schedule1Response(
     String comments,
     List<LineItem> lineItems,
     SilvicultureBlock silviculture,
-    Integer forestMgmtAdminCost,
+    Long forestMgmtAdminCost,
     Integer lessSilvAdminCost,
     OtherCostsSummary otherCosts,
+    // Derived read-only figures (legacy Schedule1MB getters) — the $/m³ ("Cal") per-unit cells and the
+    // running subtotal/total costs that fold in the Schedule 3 pulls. Server-computed, ignored on write.
+    BigDecimal forestMgmtAdminPerUnit,        // 143 $/m³ = forestMgmtAdminCost / vol(143)
+    BigDecimal lessSilvAdminPerUnit,          // 139 $/m³ = lessSilvAdminCost / vol(139)
+    Long totalSilvicultureCost,               // 140 cost = silvActual(1) − lessSilvAdmin(Sch3) + silvAccrued(2)
+    BigDecimal totalSilviculturePerUnit,      // 140 $/m³
+    Long subtotalCompanyLoggingCost,          // 144 cost = Σ logging(12–18) + FMA(Sch3) + Subtotal Other Costs
+    BigDecimal subtotalCompanyLoggingPerUnit, // 144 $/m³
+    Long totalCompanyLoggingCost,             // grand total = subtotalCompanyLoggingCost + totalSilvicultureCost
+    BigDecimal totalCompanyLoggingPerUnit,    // grand total $/m³ = totalCompanyLoggingCost / schedule3CrownVolume(119)
     List<MessageInfo> warnings,
     MessageInfo message) {
 
@@ -39,6 +49,8 @@ public record Schedule1Response(
     return new Schedule1Response(
         millId, year, trackStatus, editable, crownVolume, schedule3CrownVolume, revisionCount,
         comments, lineItems, silviculture, forestMgmtAdminCost, lessSilvAdminCost, otherCosts,
-        warnings, message);
+        forestMgmtAdminPerUnit, lessSilvAdminPerUnit, totalSilvicultureCost, totalSilviculturePerUnit,
+        subtotalCompanyLoggingCost, subtotalCompanyLoggingPerUnit, totalCompanyLoggingCost,
+        totalCompanyLoggingPerUnit, warnings, message);
   }
 }
