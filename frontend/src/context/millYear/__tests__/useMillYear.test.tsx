@@ -7,10 +7,10 @@ describe('useMillYear', () => {
     window.localStorage.clear()
   })
 
-  test('provider supplies the 514/2021 defaults', () => {
+  test('provider supplies the 13050/2017 dev defaults', () => {
     const { result } = renderHook(() => useMillYear(), { wrapper: MillYearProvider })
-    expect(result.current.millId).toBe(514)
-    expect(result.current.year).toBe(2021)
+    expect(result.current.millId).toBe(13050)
+    expect(result.current.year).toBe(2017)
   })
 
   test('persists mill/year to local storage when context changes', () => {

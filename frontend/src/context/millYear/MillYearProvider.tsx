@@ -5,7 +5,7 @@ import { DEFAULT_MILL_ID, DEFAULT_YEAR } from './millYearDefaults'
 
 type Props = {
   children: ReactNode
-  // Optional seed for tests (e.g. the S19 empty-context case). Defaults to 514/2021.
+  // Optional seed for tests (e.g. the S19 empty-context case). Defaults to DEFAULT_MILL_ID/YEAR.
   initial?: { millId: number | null; year: number | null }
 }
 

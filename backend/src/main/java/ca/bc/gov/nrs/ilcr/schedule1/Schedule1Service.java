@@ -321,6 +321,24 @@ public class Schedule1Service {
   }
 
   /**
+   * Partition the stored detail rows into the code-keyed map (single row per code) and the
+   * repeatable Other-Costs rows. Rows without a cost item code are ignored.
+   */
+  private static void partitionDetails(
+      List<DetailRow> details, Map<Integer, DetailRow> byCode, List<DetailRow> otherCostRows) {
+    for (DetailRow row : details) {
+      if (row.costItemCode() == null) {
+        continue;
+      }
+      if (row.costItemCode() == CODE_OTHER) {
+        otherCostRows.add(row);
+      } else {
+        byCode.put(row.costItemCode(), row);
+      }
+    }
+  }
+
+  /**
    * Assemble the Schedule 1 document for a mill/year.
    *
    * @param millId the mill id (context already validated)
@@ -346,13 +364,7 @@ public class Schedule1Service {
 
     Map<Integer, DetailRow> byCode = new HashMap<>();
     List<DetailRow> otherCostRows = new ArrayList<>();
-    for (DetailRow row : details) {
-      if (row.costItemCode() != null && row.costItemCode() == CODE_OTHER) {
-        otherCostRows.add(row);
-      } else if (row.costItemCode() != null) {
-        byCode.put(row.costItemCode(), row);
-      }
-    }
+    partitionDetails(details, byCode, otherCostRows);
 
     // BR-03 pre-fill (S02): first entry (every stored volume empty) + a Schedule 3 Crown Timber
     // volume present ⇒ copy that volume into the full legacy 13-field volume set (all line items 12–18,
@@ -380,7 +392,7 @@ public class Schedule1Service {
     // BR-04: the two admin costs are PULLED from Schedule 3 (read-only), never from Schedule 1's own
     // 143/139 rows. Forest Mgmt Admin = crownCost of Sch 3 Subtotal Actual Costs (harvest 115 −
     // PO&P 135); Less Silv Admin = Sch 3 Silviculture Admin (item 37; PO&P forced 0 ⇒ = its cost).
-    Integer forestMgmtAdminCost = crownCost(
+    Long forestMgmtAdminCost = crownCost(
         sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST),
         sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_POP));
     Integer lessSilvAdminCost = costOf(sch3ByCode.get(CODE_SCH3_SILV_ADMIN));
@@ -390,6 +402,34 @@ public class Schedule1Service {
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
     List<MessageInfo> warnings = prefill ? List.of(warning(WARN_CROWN_PREFILL)) : List.of();
+
+    // Derived read-only figures (legacy Schedule1MB getters): the running subtotal/total costs that
+    // fold in the Schedule 3 pulls, and the $/m³ ("Cal") per-unit cells. Costs sum whole dollars with
+    // null treated as 0; per-unit divides by the DISPLAYED volume (the crown-prefilled value on S02).
+    long loggingLineCost = 0;
+    for (int code : new int[] {12, 13, 14, 15, 16, 17, 18}) {
+      loggingLineCost += costOfCode(byCode, code);
+    }
+    long otherCostsCost = otherCosts.costSubtotal() == null ? 0L : otherCosts.costSubtotal();
+    long fmaCost = forestMgmtAdminCost == null ? 0L : forestMgmtAdminCost;
+    long lsaCost = lessSilvAdminCost == null ? 0L : lessSilvAdminCost;
+
+    Long subtotalCompanyLoggingCost = loggingLineCost + fmaCost + otherCostsCost;
+    Long totalSilvicultureCost =
+        costOfCode(byCode, CODE_SILV_ACTUAL) - lsaCost + costOfCode(byCode, CODE_SILV_ACCRUED);
+    Long totalCompanyLoggingCost = subtotalCompanyLoggingCost + totalSilvicultureCost;
+
+    BigDecimal forestMgmtAdminPerUnit = perUnit(
+        displayVolume(byCode, CODE_FOREST_MGMT_ADMIN, prefill, sch3CrownVolume), bd(forestMgmtAdminCost));
+    BigDecimal lessSilvAdminPerUnit = perUnit(
+        displayVolume(byCode, CODE_SILV_LESS_ADMIN, prefill, sch3CrownVolume), bd(lessSilvAdminCost));
+    BigDecimal totalSilviculturePerUnit = perUnit(
+        displayVolume(byCode, CODE_SILV_TOTAL, prefill, sch3CrownVolume), bd(totalSilvicultureCost));
+    BigDecimal subtotalCompanyLoggingPerUnit = perUnit(
+        displayVolume(byCode, CODE_SUBTOTAL_COMPANY_LOGGING, prefill, sch3CrownVolume),
+        bd(subtotalCompanyLoggingCost));
+    // Grand-total $/m³: total logging cost ÷ Schedule 3 harvested crown-timber volume (item 119).
+    BigDecimal totalCompanyLoggingPerUnit = perUnit(sch3CrownVolume, bd(totalCompanyLoggingCost));
 
     return new Schedule1Response(
         millId,
@@ -405,6 +445,14 @@ public class Schedule1Service {
         forestMgmtAdminCost,
         lessSilvAdminCost,
         otherCosts,
+        forestMgmtAdminPerUnit,
+        lessSilvAdminPerUnit,
+        totalSilvicultureCost,
+        totalSilviculturePerUnit,
+        subtotalCompanyLoggingCost,
+        subtotalCompanyLoggingPerUnit,
+        totalCompanyLoggingCost,
+        totalCompanyLoggingPerUnit,
         warnings,
         null); // success message is set by the controller on the PUT echo (AD-8)
   }
@@ -577,11 +625,11 @@ public class Schedule1Service {
    * Legacy {@code CostType.getCrownCost} = harvest cost − PO&amp;P cost, returning null when EITHER
    * side is absent ({@code bigDecimalNotNullCostSubtraction}). Costs are whole dollars.
    */
-  private static Integer crownCost(DetailRow harvest, DetailRow pop) {
+  private static Long crownCost(DetailRow harvest, DetailRow pop) {
     if (harvest == null || harvest.cost() == null || pop == null || pop.cost() == null) {
       return null;
     }
-    return harvest.cost() - pop.cost();
+    return (long) harvest.cost() - pop.cost();
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for an advisory warning message. */
@@ -644,6 +692,32 @@ public class Schedule1Service {
     }
     BigDecimal result = cost.divide(volume, 4, RoundingMode.HALF_UP).stripTrailingZeros();
     return result.scale() < 1 ? result.setScale(1, RoundingMode.HALF_UP) : result;
+  }
+
+  /** A line-item cost from the by-code map, treating absent/null as 0 (legacy null-safe sums). */
+  private static int costOfCode(Map<Integer, DetailRow> byCode, int code) {
+    DetailRow row = byCode.get(code);
+    return row == null || row.cost() == null ? 0 : row.cost();
+  }
+
+  /** The volume shown for a row: the crown-prefilled value on first entry (S02), else the stored volume. */
+  private static BigDecimal displayVolume(
+      Map<Integer, DetailRow> byCode, int code, boolean prefill, BigDecimal crownVolume) {
+    if (prefill && crownVolume != null) {
+      return crownVolume;
+    }
+    DetailRow row = byCode.get(code);
+    return row == null ? null : row.volume();
+  }
+
+  /** Widen a whole-dollar Integer cost to BigDecimal for the {@link #perUnit} division; null-safe. */
+  private static BigDecimal bd(Integer value) {
+    return value == null ? null : BigDecimal.valueOf(value);
+  }
+
+  /** Widen a whole-dollar Long cost to BigDecimal for the {@link #perUnit} division; null-safe. */
+  private static BigDecimal bd(Long value) {
+    return value == null ? null : BigDecimal.valueOf(value);
   }
 
   /**

@@ -2,7 +2,9 @@ import type { FC } from 'react'
 import type Schedule1Response from '@/interfaces/Schedule1Response'
 import type { LineItem } from '@/interfaces/Schedule1Response'
 import type Schedule1Request from '@/interfaces/Schedule1Request'
+import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
 import { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
   Column,
@@ -29,11 +31,13 @@ import { validateSchedule1 } from './validation'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
-// are client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so
+// are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
+const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const COMMENTS_MAX = 3500
 
 const LINE_ITEM_LABELS: Record<number, string> = {
@@ -49,7 +53,8 @@ const LINE_ITEM_LABELS: Record<number, string> = {
 }
 const WRITABLE = new Set<number>(WRITABLE_LINE_ITEM_CODES)
 
-// Silviculture code -> label; codes 1 & 2 are editable, 139 (pulled cost) and 140 (derived) read-only.
+// Silviculture code -> label. All four volumes are user-entered; codes 1 & 2 also have an editable
+// cost, while 139's cost is pulled from Schedule 3 and 140's is derived (both costs read-only).
 const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['silviculture'] }[] = [
   { code: 1, label: 'Actual $ Spent', key: 'actualSpent' },
   { code: 2, label: 'Accrued less Actual $ Spent', key: 'accruedLessActual' },
@@ -97,6 +102,11 @@ function seedForm(doc: Schedule1Response): FieldValues {
   values['cost-1'] = numStr(doc.silviculture.actualSpent?.cost)
   values['vol-2'] = numStr(doc.silviculture.accruedLessActual?.volume)
   values['cost-2'] = numStr(doc.silviculture.accruedLessActual?.cost)
+  // Volume-only editable fields: 143/144 (line items) and 139/140 (silviculture).
+  values['vol-143'] = numStr(doc.lineItems.find((li) => li.costItemCode === 143)?.volume)
+  values['vol-144'] = numStr(doc.lineItems.find((li) => li.costItemCode === 144)?.volume)
+  values['vol-139'] = numStr(doc.silviculture.lessAdmin?.volume)
+  values['vol-140'] = numStr(doc.silviculture.total?.volume)
   values['otherCostsVolume'] = numStr(doc.otherCosts.volume)
   values['comments'] = doc.comments ?? ''
   return values
@@ -114,13 +124,18 @@ function buildRequest(doc: Schedule1Response, form: FieldValues): Schedule1Reque
     silviculture: {
       actualSpent: { volume: toNum(form['vol-1']), cost: toNum(form['cost-1']) },
       accruedLessActual: { volume: toNum(form['vol-2']), cost: toNum(form['cost-2']) },
+      lessAdminVolume: toNum(form['vol-139']),
+      totalVolume: toNum(form['vol-140']),
     },
     otherCostsVolume: toNum(form['otherCostsVolume']),
+    forestMgmtAdminVolume: toNum(form['vol-143']),
+    subtotalCompanyLoggingVolume: toNum(form['vol-144']),
   }
 }
 
 const Schedule1: FC = () => {
   const { millId, year } = useMillYear()
+  const navigate = useNavigate()
   const contextMissing = millId === null || year === null
 
   const [data, setData] = useState<Schedule1Response | null>(null)
@@ -131,6 +146,10 @@ const Schedule1: FC = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [confirmNavOpen, setConfirmNavOpen] = useState(false)
+  const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
 
   useEffect(() => {
     if (contextMissing) {
@@ -142,6 +161,7 @@ const Schedule1: FC = () => {
     setErrorDetail(null)
     setSaveMessage(null)
     setSaveError(null)
+    setCheckResult(null)
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
     apiService
@@ -192,6 +212,7 @@ const Schedule1: FC = () => {
     setSaving(true)
     setSaveMessage(null)
     setSaveError(null)
+    setCheckResult(null) // a prior Check Status result is stale once the data changes
     apiService
       .getAxiosInstance()
       .put<Schedule1Response>(
@@ -219,6 +240,7 @@ const Schedule1: FC = () => {
     setSaving(true)
     setSaveMessage(null)
     setSaveError(null)
+    setCheckResult(null) // the deleted schedule's check result is stale
     apiService
       .getAxiosInstance()
       .delete<{ message?: { text?: string } }>(`/v1/schedule1?millId=${millId}&year=${year}`)
@@ -254,9 +276,47 @@ const Schedule1: FC = () => {
       .finally(() => setSaving(false))
   }
 
+  const handleCheckStatus = () => {
+    if (!data || checking || saving) {
+      return
+    }
+    setChecking(true)
+    setCheckResult(null)
+    setSaveError(null)
+    setSaveMessage(null) // don't leave a stale Save success banner beside a new check result
+    apiService
+      .getAxiosInstance()
+      .post<CheckStatusResponse>(`/v1/schedule1/check-status?millId=${millId}&year=${year}`)
+      .then((response) => {
+        setCheckResult(response.data)
+      })
+      .catch((error: unknown) => {
+        setSaveError(extractDetail(error) || 'Unable to check status.')
+      })
+      .finally(() => setChecking(false))
+  }
+
   const handleOtherCosts = () => {
-    // Story 2.5 wires navigation to the Other Costs sub-page. The button is only rendered for an
-    // editable (already-saved) schedule, so no "save before opening" guard is needed here.
+    // S08: before the schedule is saved/open, opening Other Costs is blocked with ALT-001. In the
+    // current backend model an openable schedule is always saved (GET 404s for no summary), so this
+    // guard is effectively unreachable.
+    if (!data) {
+      setOtherCostsBlockedOpen(true)
+      return
+    }
+    // Navigating away from an editable Schedule 1 discards unsaved edits — confirm first (legacy
+    // confirmNavigationMsg). A read-only schedule has nothing to lose, so open directly.
+    if (data.editable) {
+      setConfirmNavOpen(true)
+      return
+    }
+    navigate({ to: '/schedule-1/other-costs' })
+  }
+
+  // Confirmed via the navigation Modal: discard unsaved edits and open Other Costs.
+  const openOtherCosts = () => {
+    setConfirmNavOpen(false)
+    navigate({ to: '/schedule-1/other-costs' })
   }
 
   const header = (
@@ -324,11 +384,8 @@ const Schedule1: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
-  // A value cell. When the schedule is editable AND the field is writable it is an interactive
-  // TextInput seeded from form state. Otherwise it renders a DISABLED (greyed) TextInput showing the
-  // document value — this matches the legacy greyed, locked form for a not-initiated or non-Draft
-  // schedule (values are blank for the not-initiated doc). perUnit is always read-only text
-  // (server-computed, never an input).
+  // A value cell: an editable TextInput when the field is writable and the schedule is editable,
+  // otherwise read-only text. perUnit is always read-only (server-computed).
   const numberCell = (
     fieldKey: string,
     label: string,
@@ -349,16 +406,7 @@ const Schedule1: FC = () => {
         />
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">
-        <TextInput
-          id={fieldKey}
-          labelText={label}
-          hideLabel
-          size="sm"
-          disabled
-          value={numStr(current)}
-        />
-      </TableCell>
+      <TableCell className="schedule-1__num">{fmt(current)}</TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -379,24 +427,85 @@ const Schedule1: FC = () => {
 
   const silvicultureRow = (row: (typeof SILV_ROWS)[number]) => {
     const item = data.silviculture[row.key]
-    const writable = row.code === 1 || row.code === 2
+    // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
+    // pulled from Schedule 3, 140's is derived — both read-only.
+    const writableCost = row.code === 1 || row.code === 2
+    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
+    const costValue =
+      row.code === 139
+        ? data.lessSilvAdminCost
+        : row.code === 140
+          ? data.totalSilvicultureCost
+          : item?.cost
+    // $/m³ = cost ÷ volume, computed server-side (139/140 fold in the Schedule 3 pulls).
+    const perUnitValue =
+      row.code === 139
+        ? data.lessSilvAdminPerUnit
+        : row.code === 140
+          ? data.totalSilviculturePerUnit
+          : item?.perUnit
     return (
       <TableRow key={row.code}>
         <TableCell>{row.label}</TableCell>
-        {numberCell(`vol-${row.code}`, `${row.label} volume`, writable, item?.volume)}
-        {numberCell(`cost-${row.code}`, `${row.label} cost`, writable, item?.cost)}
-        <TableCell className="schedule-1__num">{fmt(item?.perUnit)}</TableCell>
+        {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
+        {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
+        <TableCell className="schedule-1__num">{fmt(perUnitValue)}</TableCell>
       </TableRow>
     )
   }
+
+  // Forest Management Admin (143): VOLUME is user-entered (8-digit); its COST is pulled from Schedule 3
+  // (read-only). Subtotal Company Logging (144): VOLUME user-entered (8-digit); COST derived (—).
+  // Both $/m³ cells are Schedule-3 cross-derivations deferred this story (—).
+  const forestMgmtAdminRow = (
+    <TableRow key={143}>
+      <TableCell>{LINE_ITEM_LABELS[143]}</TableCell>
+      {numberCell(
+        'vol-143',
+        'Forest Management Administration volume',
+        true,
+        data.lineItems.find((li) => li.costItemCode === 143)?.volume,
+      )}
+      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminPerUnit)}</TableCell>
+    </TableRow>
+  )
+
+  const subtotalCompanyLoggingRow = (
+    <TableRow key={144}>
+      <TableCell>{LINE_ITEM_LABELS[144]}</TableCell>
+      {numberCell(
+        'vol-144',
+        'Subtotal Company Logging volume',
+        true,
+        data.lineItems.find((li) => li.costItemCode === 144)?.volume,
+      )}
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingPerUnit)}</TableCell>
+    </TableRow>
+  )
+
+  // Grand-total row (legacy "Total Company Logging Costs (Including total Silviculture Cost)"): the
+  // Total Harvested Crown Timber volume (Sch 3), the total logging cost, and its $/m³ average.
+  const totalCompanyLoggingRow = (
+    <TableRow key="total-company-logging">
+      <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.schedule3CrownVolume)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingPerUnit)}</TableCell>
+    </TableRow>
+  )
 
   const actions = (
     <Column sm={4} md={8} lg={16} className="schedule-1__actions">
       <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
         Save
       </Button>
-      {/* Check Status renders per the legacy layout; its endpoint is wired in Story 2.7. */}
-      <Button kind="tertiary" disabled>
+      <Button
+        kind="tertiary"
+        disabled={!editable || saving || checking}
+        onClick={handleCheckStatus}
+      >
         Check Status
       </Button>
       <Button
@@ -434,6 +543,20 @@ const Schedule1: FC = () => {
           </dl>
         </Column>
 
+        {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
+        {(data.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`warn-${w.key}-${i}`} sm={4} md={8} lg={16}>
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              title="Notice"
+              subtitle={w.text || w.key}
+            />
+          </Column>
+        ))}
         {saveMessage && (
           <Column sm={4} md={8} lg={16}>
             <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
@@ -450,7 +573,53 @@ const Schedule1: FC = () => {
           </Column>
         )}
 
+        {/* Check Status result (Story 2.7). Severity is carried by the notification kind AND an explicit
+            title word (Success/Error/Warning) — not colour alone (WCAG 2.1 AA). Verbatim text (AD-8). */}
+        {checkResult?.requirementsMet && checkResult.message && (
+          <Column sm={4} md={8} lg={16}>
+            <InlineNotification
+              kind="success"
+              lowContrast
+              title="Requirements met"
+              subtitle={checkResult.message.text}
+            />
+          </Column>
+        )}
+        {(checkResult?.errors ?? []).map((e, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-err-${e.text || e.key}-${i}`} sm={4} md={8} lg={16}>
+            <InlineNotification kind="error" lowContrast title="Error" subtitle={e.text || e.key} />
+          </Column>
+        ))}
+        {(checkResult?.warnings ?? []).map((w, i) => (
+          // Static, append-only notification list (never reordered); index disambiguates messages
+          // that share the same key/text.
+          // eslint-disable-next-line @eslint-react/no-array-index-key
+          <Column key={`check-warn-${w.text || w.key}-${i}`} sm={4} md={8} lg={16}>
+            <InlineNotification
+              kind="warning"
+              lowContrast
+              title="Warning"
+              subtitle={w.text || w.key}
+            />
+          </Column>
+        ))}
+
         {actions}
+
+        <Column sm={4} md={8} lg={16} className="schedule-1__section">
+          {/* BR-03 source, read-only: the Schedule 3 Crown Timber volume that drives the pre-fill. */}
+          <TextInput
+            id="schedule3CrownVolume"
+            labelText="Crown Timber Volume for all fields (Sch 3)"
+            size="sm"
+            value={numStr(data.schedule3CrownVolume)}
+            onChange={() => undefined}
+            disabled
+          />
+        </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           <TableContainer title="Company Logging Costs">
@@ -463,7 +632,19 @@ const Schedule1: FC = () => {
                   <TableHeader className="schedule-1__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
-              <TableBody>{data.lineItems.map(lineItemRow)}</TableBody>
+              <TableBody>
+                {/* Legacy form order: 12–16, 143, 17, 18, 144 (schedule1.xhtml). */}
+                {[12, 13, 14, 15, 16, 143, 17, 18, 144].map((code) => {
+                  if (code === 143) {
+                    return forestMgmtAdminRow
+                  }
+                  if (code === 144) {
+                    return subtotalCompanyLoggingRow
+                  }
+                  const item = data.lineItems.find((li) => li.costItemCode === code)
+                  return item ? lineItemRow(item) : null
+                })}
+              </TableBody>
             </Table>
           </TableContainer>
         </Column>
@@ -479,23 +660,24 @@ const Schedule1: FC = () => {
                   <TableHeader className="schedule-1__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
-              <TableBody>{SILV_ROWS.map(silvicultureRow)}</TableBody>
+              <TableBody>
+                {SILV_ROWS.map(silvicultureRow)}
+                {totalCompanyLoggingRow}
+              </TableBody>
             </Table>
           </TableContainer>
         </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           <div className="schedule-1__other-costs">
-            {editable ? (
-              <Button kind="ghost" size="sm" onClick={handleOtherCosts}>
-                Subtotal Other Costs({data.otherCosts.count}):
-              </Button>
-            ) : (
-              <span>Subtotal Other Costs({data.otherCosts.count}):</span>
-            )}
+            {/* Opens the Other Costs sub-page (Story 2.5) for both editable and read-only schedules. */}
+            <Button kind="ghost" size="sm" onClick={handleOtherCosts}>
+              Subtotal Other Costs({data.otherCosts.count}):
+            </Button>
             <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
+            <span className="schedule-1__num">$/m³: {fmt(data.otherCosts.perUnit)}</span>
           </div>
-          {editable ? (
+          {editable && (
             <TextInput
               id="otherCostsVolume"
               labelText="Subtotal Other Costs volume"
@@ -504,14 +686,6 @@ const Schedule1: FC = () => {
               onChange={setField('otherCostsVolume')}
               invalid={Boolean(fieldErrors['otherCostsVolume'])}
               invalidText={fieldErrors['otherCostsVolume']}
-            />
-          ) : (
-            <TextInput
-              id="otherCostsVolume"
-              labelText="Subtotal Other Costs volume"
-              size="sm"
-              disabled
-              value={numStr(data.otherCosts.volume)}
             />
           )}
         </Column>
@@ -527,7 +701,10 @@ const Schedule1: FC = () => {
               onChange={setField('comments')}
             />
           ) : (
-            <TextArea id="comments" labelText="Comments" disabled value={data.comments ?? ''} />
+            <>
+              <h3 className="schedule-1__heading">Comments</h3>
+              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
+            </>
           )}
         </Column>
 
@@ -545,6 +722,32 @@ const Schedule1: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {/* Discard-unsaved-edits confirm before leaving an editable schedule for Other Costs. */}
+      {editable && (
+        <Modal
+          open={confirmNavOpen}
+          modalHeading="Leave Schedule 1"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmNavOpen(false)}
+          onRequestSubmit={openOtherCosts}
+        >
+          <p>{CONFIRM_NAVIGATION}</p>
+        </Modal>
+      )}
+
+      {/* ALT-001: schedule must be saved before Other Costs can open (informational, single action). */}
+      {otherCostsBlockedOpen && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Save required"
+          onRequestClose={() => setOtherCostsBlockedOpen(false)}
+        >
+          <p>{ALT_SAVE_BEFORE_OTHER_COSTS}</p>
         </Modal>
       )}
     </div>
