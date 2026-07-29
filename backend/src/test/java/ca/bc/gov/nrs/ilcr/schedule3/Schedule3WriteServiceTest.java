@@ -36,7 +36,7 @@ import org.springframework.context.MessageSource;
 @ExtendWith(MockitoExtension.class)
 class Schedule3WriteServiceTest {
 
-  private static final long MILL = 540L;
+  private static final long MILL = 544L;
   private static final int YEAR = 2021;
   private static final String USER = "tester";
 
