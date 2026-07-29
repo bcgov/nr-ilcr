@@ -83,7 +83,8 @@ public class Schedule3OtherCostsController implements Schedule3OtherCostsApi {
   public ResponseEntity<OtherAcceptableDocument> deleteOtherAcceptable(
       int id, long millId, int year, Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
-    OtherAcceptableDocument doc = schedule3Service.deleteOtherAcceptable(millId, year, id);
+    OtherAcceptableDocument doc =
+        schedule3Service.deleteOtherAcceptable(millId, year, id, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 }

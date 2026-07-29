@@ -107,15 +107,16 @@ class Schedule3WriteServiceTest {
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 3)));
     lenient().when(repository.findDetails(1040)).thenReturn(List.of());
     when(repository.bumpRevision(anyInt(), anyInt(), any(), any(), anyString())).thenReturn(0);
-    assertThrows(StaleRevisionException.class, () ->
-        service.saveSchedule3(MILL, YEAR, request("N", new BigDecimal("5000"), List.of()), true, USER));
+    var req = request("N", new BigDecimal("5000"), List.of());
+    assertThrows(StaleRevisionException.class, () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
   }
 
   @Test
   void save_notDraft_throwsNotEditable() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
-    assertThrows(ScheduleNotEditableException.class, () ->
-        service.saveSchedule3(MILL, YEAR, request("N", new BigDecimal("5000"), List.of()), true, USER));
+    var req = request("N", new BigDecimal("5000"), List.of());
+    assertThrows(
+        ScheduleNotEditableException.class, () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
   }
 
   @Test

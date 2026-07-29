@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -44,6 +43,7 @@ class Schedule1CrownPushTest {
     BigDecimal volume = new BigDecimal("54321");
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // Draft → editable
 
     boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, volume, USER);
 
@@ -61,6 +61,20 @@ class Schedule1CrownPushTest {
     boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
 
     assertFalse(pushed); // WRN-002: nothing written when Schedule 1 has no summary
+    verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
+    verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());
+  }
+
+  @Test
+  void applyCrownTimberVolume_noOp_whenSchedule1NotDraft() {
+    when(repository.findSummary(MILL, YEAR, "1"))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S")); // submitted, not Draft
+
+    boolean pushed = service.applyCrownTimberVolume(MILL, YEAR, new BigDecimal("1"), USER);
+
+    // Defence-in-depth: a present-but-non-Draft Schedule 1 must NOT be overwritten by the crown push.
+    assertFalse(pushed);
     verify(repository, never()).upsertFixedDetailVolume(anyInt(), anyInt(), any(), any());
     verify(repository, never()).updateAllOtherCostVolumes(anyInt(), any(), any());
   }
@@ -86,6 +100,6 @@ class Schedule1CrownPushTest {
 
     repo.upsertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);
 
-    verify(repo).insertFixedDetailVolume(eq(SUMMARY_ID), eq(12), eq(volume), eq(USER));
+    verify(repo).insertFixedDetailVolume(SUMMARY_ID, 12, volume, USER);
   }
 }

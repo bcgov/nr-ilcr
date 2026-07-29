@@ -24,6 +24,9 @@ import org.springframework.jdbc.core.RowMapper;
  */
 public interface Schedule3Repository extends Repository<ReportSummary, Long> {
 
+  /** The legacy {@code COMMENTS} column name, read by every row mapper below. */
+  String COMMENTS_COLUMN = "COMMENTS";
+
   /**
    * Summary-level fields for a Schedule 3 report. {@code location} carries the legacy
    * Override Harvest/Total PO&amp;P indicator ({@code Schedule3DAO} reads it from
@@ -302,7 +305,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       return new SummaryRow(
           nullableInt(rs, "ILCR_REPORT_SUMMARY_ID"),
           rs.getString("LOCATION"),
-          rs.getString("COMMENTS"),
+          rs.getString(COMMENTS_COLUMN),
           nullableInt(rs, "REVISION_COUNT"));
     }
   }
@@ -316,7 +319,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
           rs.getBigDecimal("VOLUME"),
           nullableInt(rs, "COST"),
           rs.getString("ITEM_DESCRIPTION"),
-          rs.getString("COMMENTS"));
+          rs.getString(COMMENTS_COLUMN));
     }
   }
 
@@ -328,7 +331,7 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
           nullableInt(rs, "ILCR_COST_REPORT_DETAIL_ID"),
           nullableInt(rs, "COST"),
           rs.getString("ITEM_DESCRIPTION"),
-          rs.getString("COMMENTS"));
+          rs.getString(COMMENTS_COLUMN));
     }
   }
 

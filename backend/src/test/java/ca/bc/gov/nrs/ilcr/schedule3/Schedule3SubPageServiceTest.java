@@ -103,9 +103,9 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
+    OtherAcceptableRequest request = new OtherAcceptableRequest("X", 1, 0);
     assertThrows(OtherCostNotFoundException.class, () ->
-        service.updateOtherAcceptable(MILL, YEAR, 999999,
-            new OtherAcceptableRequest("X", 1, 0), "user"));
+        service.updateOtherAcceptable(MILL, YEAR, 999999, request, "user"));
   }
 
   @Test

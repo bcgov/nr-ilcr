@@ -165,26 +165,10 @@ public class Schedule3Service {
     List<DetailRow> details = repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
-    // One row per (summary, cost-item) is the invariant; if a duplicate ever exists, first-by-detail-id
-    // wins (rows are ordered by detail id) so a derived value can't depend on driver row order. (Legacy
-    // set each field unconditionally while iterating, i.e. last-wins in Hibernate's unspecified order —
-    // this is deterministic instead; the two agree for the expected unique-row data.)
-    Map<Integer, DetailRow> byCode = new HashMap<>();
-    List<DetailRow> acceptableRows = new ArrayList<>();
-    List<DetailRow> unacceptableRows = new ArrayList<>();
-    for (DetailRow row : details) {
-      Integer code = row.costItemCode();
-      if (code == null) {
-        continue;
-      }
-      if (code == CODE_OTHER_ACCEPTABLE) {
-        acceptableRows.add(row);
-      } else if (code == CODE_UNACCEPTABLE) {
-        unacceptableRows.add(row);
-      } else {
-        byCode.putIfAbsent(code, row);
-      }
-    }
+    PartitionedDetails partitioned = partitionDetails(details);
+    Map<Integer, DetailRow> byCode = partitioned.byCode();
+    List<DetailRow> acceptableRows = partitioned.acceptable();
+    List<DetailRow> unacceptableRows = partitioned.unacceptable();
 
     // --- Base entered values -------------------------------------------------------------------
     BigDecimal popTimberVolume = volumeOf(byCode.get(CODE_POP_TIMBER));
@@ -260,6 +244,34 @@ public class Schedule3Service {
         otherAcceptableCount, unacceptableCount,
         List.of(),  // warnings — empty on GET; the PUT crown-push outcome is added in saveSchedule3
         null);      // success message is set by the controller on a mutation echo (AD-8)
+  }
+
+  /** The detail rows split into unique-by-code fixed rows and the item-124/38 sub-page row lists. */
+  private record PartitionedDetails(
+      Map<Integer, DetailRow> byCode, List<DetailRow> acceptable, List<DetailRow> unacceptable) {
+  }
+
+  /**
+   * Partition detail rows: one row per (summary, cost-item) is the invariant; if a duplicate ever
+   * exists, first-by-detail-id wins (rows are ordered by detail id) so a derived value can't depend on
+   * driver row order. Item-124 / item-38 rows are collected separately as the sub-page groups.
+   */
+  private static PartitionedDetails partitionDetails(List<DetailRow> details) {
+    Map<Integer, DetailRow> byCode = new HashMap<>();
+    List<DetailRow> acceptable = new ArrayList<>();
+    List<DetailRow> unacceptable = new ArrayList<>();
+    for (DetailRow row : details) {
+      Integer code = row.costItemCode();
+      if (code == null) {
+        continue;
+      }
+      switch (code) {
+        case CODE_OTHER_ACCEPTABLE -> acceptable.add(row);
+        case CODE_UNACCEPTABLE -> unacceptable.add(row);
+        default -> byCode.putIfAbsent(code, row);
+      }
+    }
+    return new PartitionedDetails(byCode, acceptable, unacceptable);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -385,6 +397,9 @@ public class Schedule3Service {
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
+      // Bump the aggregate revision (AR11): a sub-page mutation must invalidate a stale main-page
+      // optimistic-lock token and serialize concurrent sub-page writers on the summary row lock.
+      repository.touchSummary(summaryId, user);
       repository.updateSubPageRowById(
           id, summaryId, CODE_OTHER_ACCEPTABLE, request.total(), request.description(), user);
       repository.updateSubPageRowByComments(
@@ -401,11 +416,13 @@ public class Schedule3Service {
 
   /** Delete one Other Acceptable group (TOT by id + its PO&P peer). 404 when the id is not a TOT row. */
   @Transactional
-  public OtherAcceptableDocument deleteOtherAcceptable(long millId, int year, int id) {
+  public OtherAcceptableDocument deleteOtherAcceptable(long millId, int year, int id, String user) {
     int summaryId = requireEditableSummary(millId, year).summaryId();
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
+      // Bump the aggregate revision (AR11) — see updateOtherAcceptable.
+      repository.touchSummary(summaryId, user);
       repository.deleteSubPageRowById(id, summaryId, CODE_OTHER_ACCEPTABLE);
       repository.deleteSubPageRowByComments(summaryId, CODE_OTHER_ACCEPTABLE, popComments);
     } catch (OtherCostNotFoundException ex) {
@@ -430,15 +447,20 @@ public class Schedule3Service {
         .orElseThrow(OtherCostNotFoundException::new);
   }
 
-  /** Next item-124 group number = max existing TOT suffix + 1 (1 when none). */
+  /**
+   * Next item-124 group number = max existing group suffix + 1 (1 when none). Scans BOTH the TOT and
+   * PO&amp;P rows so an orphaned PO&amp;P row (a POP with no TOT peer) can't have its number reused,
+   * which would mint a duplicate {@code SCH3_2_POP_GRP{n}} and corrupt the TOT↔PO&P pairing.
+   */
   private int nextGroupNumber(int summaryId) {
     int max = 0;
     for (SubPageRow row : repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE)) {
-      if (!isTotalComments(row.comments()) || row.comments().length() <= GROUPKEY_TOT.length()) {
+      String key = groupKey(row.comments());
+      if (key == null) {
         continue;
       }
       try {
-        max = Math.max(max, Integer.parseInt(row.comments().substring(GROUPKEY_TOT.length())));
+        max = Math.max(max, Integer.parseInt(key));
       } catch (NumberFormatException ignored) {
         // Non-numeric legacy suffix — skip; the sequence only needs a fresh unused number.
       }
@@ -450,8 +472,6 @@ public class Schedule3Service {
   private OtherAcceptableDocument buildOtherAcceptableDocument(int summaryId, boolean editable) {
     List<SubPageRow> rows = repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE);
     Map<String, SubPageRow[]> groups = new LinkedHashMap<>(); // key -> [tot, pop]
-    long harvest = 0L;
-    long pop = 0L;
     for (SubPageRow row : rows) {
       String key = groupKey(row.comments());
       if (key == null) {
@@ -460,22 +480,26 @@ public class Schedule3Service {
       SubPageRow[] pair = groups.computeIfAbsent(key, k -> new SubPageRow[2]);
       if (isTotalComments(row.comments())) {
         pair[0] = row;
-        harvest += nz(row.cost());
       } else {
         pair[1] = row;
-        pop += nz(row.cost());
       }
     }
     List<OtherAcceptableRow> rowDtos = new ArrayList<>();
+    long harvest = 0L;
+    long pop = 0L;
     for (SubPageRow[] pair : groups.values()) {
       SubPageRow tot = pair[0];
       if (tot == null) {
-        continue; // a group with no TOT row has no identity to edit/delete
+        // An orphaned PO&P row (no TOT peer) has no identity to edit/delete — exclude it from BOTH the
+        // row list AND the subtotal so the displayed rows and the total always reconcile.
+        continue;
       }
       Integer popCost = pair[1] == null ? null : pair[1].cost();
       rowDtos.add(new OtherAcceptableRow(
           tot.detailId(), tot.itemDescription(), tot.cost(), popCost,
           crownCost(tot.cost(), popCost)));
+      harvest += nz(tot.cost());
+      pop += nz(popCost);
     }
     rowDtos.sort((a, b) -> Integer.compare(a.id(), b.id()));
     return new OtherAcceptableDocument(editable, rowDtos.size(), total(harvest, pop), rowDtos, null);
@@ -499,6 +523,8 @@ public class Schedule3Service {
       long millId, int year, UnacceptableRequest request, String user) {
     int summaryId = requireEditableSummary(millId, year).summaryId();
     try {
+      // Bump the aggregate revision (AR11) — see updateOtherAcceptable.
+      repository.touchSummary(summaryId, user);
       repository.insertSubPageRow(
           summaryId, CODE_UNACCEPTABLE, request.total(), request.description(), null, user);
     } catch (DataAccessException ex) {
@@ -520,6 +546,8 @@ public class Schedule3Service {
       if (updated == 0) {
         throw new OtherCostNotFoundException();
       }
+      // Bump the aggregate revision (AR11) — see updateOtherAcceptable. Only after a real row update.
+      repository.touchSummary(summaryId, user);
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
@@ -532,13 +560,15 @@ public class Schedule3Service {
 
   /** Delete one Included Unacceptable row by detail id. 404 when the id is not an item-38 row here. */
   @Transactional
-  public UnacceptableDocument deleteUnacceptable(long millId, int year, int id) {
+  public UnacceptableDocument deleteUnacceptable(long millId, int year, int id, String user) {
     int summaryId = requireEditableSummary(millId, year).summaryId();
     try {
       int deleted = repository.deleteSubPageRowById(id, summaryId, CODE_UNACCEPTABLE);
       if (deleted == 0) {
         throw new OtherCostNotFoundException();
       }
+      // Bump the aggregate revision (AR11) — see updateOtherAcceptable. Only after a real row delete.
+      repository.touchSummary(summaryId, user);
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
@@ -585,29 +615,10 @@ public class Schedule3Service {
     List<DetailRow> details = repository.findDetails(summary.summaryId());
     boolean override = OVERRIDE_YES.equals(summary.location());
 
-    Map<Integer, DetailRow> byCode = new HashMap<>();
-    for (DetailRow row : details) {
-      if (row.costItemCode() != null) {
-        byCode.putIfAbsent(row.costItemCode(), row);
-      }
-    }
+    Map<Integer, DetailRow> byCode = partitionDetails(details).byCode();
 
     List<MessageInfo> errors = new ArrayList<>();
-    for (CheckLine line : CHECK_LINES) {
-      Integer harvest = costOf(byCode.get(line.code()));
-      if (harvest == null) {
-        errors.add(valueRequired(line.name() + " (Harvest Total $)"));
-      }
-      if (line.hasPop()) {
-        Integer pop = costOf(byCode.get(line.popCode()));
-        if (pop == null) {
-          errors.add(valueRequired(line.name() + " (PO&P Total $)"));
-        }
-        if (!override && harvest != null && pop != null && harvest < pop) {
-          errors.add(harvestNotGreaterThanPop(line.name() + " (Harvest Total $)"));
-        }
-      }
-    }
+    appendFixedLineCheckErrors(byCode, override, errors);
 
     // Sub-page checks (Story 4.4) — legacy order places Other Acceptable + Unacceptable BEFORE the
     // Total Overhead (timber) checks (Schedule3MB.java:303-340).
@@ -629,18 +640,62 @@ public class Schedule3Service {
   }
 
   /**
+   * BR-11 (missing Harvest/PO&amp;P) + BR-03 (Harvest ≥ PO&amp;P, suppressed under Override) checks for the
+   * eleven fixed cost lines, in legacy field order (extracted from {@link #checkSchedule3Status}).
+   */
+  private void appendFixedLineCheckErrors(
+      Map<Integer, DetailRow> byCode, boolean override, List<MessageInfo> errors) {
+    for (CheckLine line : CHECK_LINES) {
+      Integer harvest = costOf(byCode.get(line.code()));
+      if (harvest == null) {
+        errors.add(valueRequired(line.name() + " (Harvest Total $)"));
+      }
+      if (!line.hasPop()) {
+        continue;
+      }
+      Integer pop = costOf(byCode.get(line.popCode()));
+      if (pop == null) {
+        errors.add(valueRequired(line.name() + " (PO&P Total $)"));
+      }
+      if (!override && harvest != null && pop != null && harvest < pop) {
+        errors.add(harvestNotGreaterThanPop(line.name() + " (Harvest Total $)"));
+      }
+    }
+  }
+
+  /**
    * Other Acceptable (item 124) check-status (legacy {@code Schedule3MB.java:304-320}): one error per
    * failing kind across ALL groups — missing description, missing total, Harvest&lt;PO&amp;P (suppressed
    * when Override="Y", BR-10/S12), missing PO&amp;P. Groups pair TOT+PO&amp;P rows by group key.
    */
   private void appendOtherAcceptableCheckErrors(
       List<DetailRow> details, boolean override, List<MessageInfo> errors) {
+    OaCheckFlags flags = evaluateOtherAcceptableGroups(groupOtherAcceptableDetailRows(details));
+    if (flags.missingDescription()) {
+      errors.add(valueRequired(LABEL_OA_DESCRIPTION));
+    }
+    if (flags.missingTotal()) {
+      errors.add(valueRequired(LABEL_OA_TOTAL));
+    }
+    if (!override && flags.harvestLessThanPop()) {
+      errors.add(harvestNotGreaterThanPop(LABEL_OA_TOTAL));
+    }
+    if (flags.missingPop()) {
+      errors.add(valueRequired(LABEL_OA_POP));
+    }
+  }
+
+  /** The four BR-11/BR-03 failure kinds observed across the Other Acceptable groups. */
+  private record OaCheckFlags(
+      boolean missingDescription, boolean missingTotal, boolean harvestLessThanPop,
+      boolean missingPop) {
+  }
+
+  /** Group item-124 detail rows by group key into {@code [tot, pop]} pairs (single continue). */
+  private static Map<String, DetailRow[]> groupOtherAcceptableDetailRows(List<DetailRow> details) {
     Map<String, DetailRow[]> groups = new LinkedHashMap<>(); // key -> [tot, pop]
     for (DetailRow row : details) {
-      if (row.costItemCode() == null || row.costItemCode() != CODE_OTHER_ACCEPTABLE) {
-        continue;
-      }
-      String key = groupKey(row.comments());
+      String key = isOtherAcceptableRow(row) ? groupKey(row.comments()) : null;
       if (key == null) {
         continue;
       }
@@ -651,6 +706,11 @@ public class Schedule3Service {
         pair[1] = row;
       }
     }
+    return groups;
+  }
+
+  /** Fold the per-group BR-11/BR-03 checks into the four failure flags. */
+  private static OaCheckFlags evaluateOtherAcceptableGroups(Map<String, DetailRow[]> groups) {
     boolean missingDescription = false;
     boolean missingTotal = false;
     boolean harvestLessThanPop = false;
@@ -660,9 +720,7 @@ public class Schedule3Service {
       DetailRow pop = pair[1];
       Integer totalCost = tot == null ? null : tot.cost();
       Integer popCost = pop == null ? null : pop.cost();
-      String description = tot != null ? tot.itemDescription()
-          : (pop != null ? pop.itemDescription() : null);
-      if (StringUtils.isBlank(description)) {
+      if (StringUtils.isBlank(groupDescription(tot, pop))) {
         missingDescription = true;
       }
       if (totalCost == null) {
@@ -675,18 +733,19 @@ public class Schedule3Service {
         missingPop = true;
       }
     }
-    if (missingDescription) {
-      errors.add(valueRequired(LABEL_OA_DESCRIPTION));
+    return new OaCheckFlags(missingDescription, missingTotal, harvestLessThanPop, missingPop);
+  }
+
+  /** A group's description: the TOT row's, else the PO&amp;P row's, else null. */
+  private static String groupDescription(DetailRow tot, DetailRow pop) {
+    if (tot != null) {
+      return tot.itemDescription();
     }
-    if (missingTotal) {
-      errors.add(valueRequired(LABEL_OA_TOTAL));
-    }
-    if (!override && harvestLessThanPop) {
-      errors.add(harvestNotGreaterThanPop(LABEL_OA_TOTAL));
-    }
-    if (missingPop) {
-      errors.add(valueRequired(LABEL_OA_POP));
-    }
+    return pop == null ? null : pop.itemDescription();
+  }
+
+  private static boolean isOtherAcceptableRow(DetailRow row) {
+    return row.costItemCode() != null && row.costItemCode() == CODE_OTHER_ACCEPTABLE;
   }
 
   /**
@@ -730,12 +789,10 @@ public class Schedule3Service {
       return;
     }
     for (Schedule3Request.CostLineInput li : request.lineItems()) {
-      if (li.costItemCode() == null) {
-        continue;
-      }
-      LineSpec spec = LINE_BY_CODE.get(li.costItemCode());
+      // Ignore null / unknown / non-fixed codes (server is the sole writer of derived rows).
+      LineSpec spec = li.costItemCode() == null ? null : LINE_BY_CODE.get(li.costItemCode());
       if (spec == null) {
-        continue; // ignore unknown / non-fixed codes (server is the sole writer of derived rows)
+        continue;
       }
       repository.upsertFixedDetailCost(summaryId, spec.code(), li.harvest(), user);
       if (spec.popCode() != null) {
@@ -851,11 +908,23 @@ public class Schedule3Service {
         && OTHERACCEPT_TYPE_TOTAL.equals(comments.substring(7, 10));
   }
 
+  /**
+   * The group number that ties a TOT row to its PO&P peer: the suffix after the
+   * {@code SCH3_2_TOT_GRP}/{@code SCH3_2_POP_GRP} prefix. Null for a blank or unrecognized comment (so
+   * the row is skipped). Parsing the full suffix — not a fixed 4-char slice — keeps distinct groups
+   * distinct once the sequence reaches 5+ digits (e.g. GRP10002 vs GRP20002).
+   */
   private static String groupKey(String comments) {
     if (StringUtils.isBlank(comments)) {
       return null;
     }
-    return comments.length() >= 4 ? comments.substring(comments.length() - 4) : comments;
+    if (comments.startsWith(GROUPKEY_TOT)) {
+      return comments.substring(GROUPKEY_TOT.length());
+    }
+    if (comments.startsWith(GROUPKEY_POP)) {
+      return comments.substring(GROUPKEY_POP.length());
+    }
+    return null;
   }
 
   /**

@@ -176,7 +176,8 @@ class Schedule3ControllerTest {
   void deleteOtherAcceptable_delegates_andAppliesDeletedMessage() {
     OtherAcceptableDocument doc = mock(OtherAcceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
-    when(schedule3Service.deleteOtherAcceptable(MILL_ID, YEAR, 7)).thenReturn(doc);
+    when(authentication.getName()).thenReturn(USER);
+    when(schedule3Service.deleteOtherAcceptable(MILL_ID, YEAR, 7, USER)).thenReturn(doc);
 
     ResponseEntity<OtherAcceptableDocument> response =
         otherCostsController.deleteOtherAcceptable(7, MILL_ID, YEAR, authentication);
@@ -238,7 +239,8 @@ class Schedule3ControllerTest {
   void deleteUnacceptable_delegates_andAppliesDeletedMessage() {
     UnacceptableDocument doc = mock(UnacceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
-    when(schedule3Service.deleteUnacceptable(MILL_ID, YEAR, 9)).thenReturn(doc);
+    when(authentication.getName()).thenReturn(USER);
+    when(schedule3Service.deleteUnacceptable(MILL_ID, YEAR, 9, USER)).thenReturn(doc);
 
     ResponseEntity<UnacceptableDocument> response =
         unacceptableController.deleteUnacceptable(9, MILL_ID, YEAR, authentication);

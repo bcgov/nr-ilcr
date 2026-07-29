@@ -82,7 +82,8 @@ public class Schedule3UnacceptableCostsController implements Schedule3Unacceptab
   public ResponseEntity<UnacceptableDocument> deleteUnacceptable(
       int id, long millId, int year, Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
-    UnacceptableDocument doc = schedule3Service.deleteUnacceptable(millId, year, id);
+    UnacceptableDocument doc =
+        schedule3Service.deleteUnacceptable(millId, year, id, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 }

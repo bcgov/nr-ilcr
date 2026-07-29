@@ -12,7 +12,6 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;

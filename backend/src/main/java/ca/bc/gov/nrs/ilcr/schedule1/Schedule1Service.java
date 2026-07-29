@@ -153,14 +153,22 @@ public class Schedule1Service {
    * @param year the reporting year
    * @param volume the new Crown Timber volume to propagate
    * @param user the acting user id (audit)
-   * @return {@code true} when a Schedule 1 summary exists and the volumes were overwritten (WRN-001);
-   *     {@code false} when Schedule 1 is not opened, so nothing was written (WRN-002)
+   * @return {@code true} when a Schedule 1 summary exists, is editable (Draft), and the volumes were
+   *     overwritten (WRN-001); {@code false} when Schedule 1 is not opened or not editable, so nothing
+   *     was written (WRN-002)
    */
   @Transactional
   public boolean applyCrownTimberVolume(long millId, int year, BigDecimal volume, String user) {
     SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null);
     if (summary == null) {
       return false; // Schedule 1 not opened → WRN-002, nothing written.
+    }
+    // Defence-in-depth (AD-14): this is the sole entry point Schedule 3 uses to write Schedule 1, so it
+    // self-gates on the Draft track status rather than trusting the caller. Schedule 1 and Schedule 3
+    // share the mill/year track today, so a Draft Schedule 3 save already implies Draft here — this
+    // guard preserves the invariant (never overwrite a submitted/closed Schedule 1) if that diverges.
+    if (!STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+      return false;
     }
     int summaryId = summary.summaryId();
     for (int code : CROWN_PUSH_VOLUME_ITEMS) {
