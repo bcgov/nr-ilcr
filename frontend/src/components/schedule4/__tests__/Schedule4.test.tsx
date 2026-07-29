@@ -12,6 +12,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 import Schedule4 from '@/components/schedule4'
+import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Location } from '@/interfaces/Schedule4Response'
 
 const URL = 'http://localhost:3000/api/v1/schedule4'
@@ -306,5 +307,228 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(deleteButtons[deleteButtons.length - 1])
 
     await waitFor(() => expect(deleted).toBe(true))
+  })
+
+  test('← Back to location returns from a sub-page to the list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openTowing()
+    expect(screen.getByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /back to location/i }))
+
+    expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument()
+    // Back on the list.
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
+})
+
+describe('Schedule4 context, load + write error, edit, delete and status paths', () => {
+  test('missing mill/year shows verbatim ERR-001 and fires NO request (EF2-001)', async () => {
+    server.use(
+      http.get(URL, () => {
+        throw new Error('GET must not fire when mill/year context is null')
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: null, year: null }}>
+        <Schedule4 />
+      </MillYearProvider>,
+    )
+
+    expect(
+      await screen.findByText('Please Select Mill and Reporting Year in the Home Page.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
+  })
+
+  test('a load failure surfaces the default unable-to-load message', async () => {
+    server.use(http.get(URL, () => HttpResponse.error()))
+    render(<Schedule4 />)
+
+    expect(await screen.findByText('Unable to load Schedule 4.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
+  })
+
+  test('a save failure keeps the panel open and surfaces the API verbatim detail (ERR-002)', async () => {
+    const detail = 'A location with that name already exists.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () => HttpResponse.json({ detail }, { status: 409 })),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'Harbour Dump')
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '5000')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText(detail)).toBeInTheDocument()
+    // Panel stays open with entered values (edits not discarded).
+    expect(screen.getByText('New Location')).toBeInTheDocument()
+  })
+
+  test('Edit an existing location PUTs its id + revisionCount (optimistic lock)', async () => {
+    let body: Schedule4LocationRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        body = (await request.json()) as Schedule4LocationRequest
+        return HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(body).not.toBeNull()
+    expect(body!.id).toBe(7001)
+    expect(body!.revisionCount).toBe(0)
+  })
+
+  test('Delete flow: row → confirm modal → DELETE + re-read drops the family', async () => {
+    let deleted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(deleted ? doc({ locations: [emptyLanding] }) : doc())),
+      http.delete(LOCATIONS_URL, () => {
+        deleted = true
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    const deletes = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deletes[deletes.length - 1])
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Harbour Dump')).not.toBeInTheDocument())
+  })
+
+  test('a delete failure surfaces the API verbatim detail', async () => {
+    const detail = 'Unable to delete because the schedule is submitted.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(LOCATIONS_URL, () => HttpResponse.json({ detail }, { status: 409 })),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const deletes = screen.getAllByRole('button', { name: /^delete$/i })
+    await userEvent.click(deletes[deletes.length - 1])
+
+    expect(await screen.findByText(detail)).toBeInTheDocument()
+  })
+
+  test('Check Status shows the whole-schedule SUC-006 banner when all pass', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All Schedule 4 requirements have been met.',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+
+    expect(
+      await screen.findByText('All Schedule 4 requirements have been met.'),
+    ).toBeInTheDocument()
+  })
+
+  test('a Check Status failure surfaces the API verbatim detail', async () => {
+    const detail = 'Unable to evaluate the schedule right now.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText(detail)).toBeInTheDocument()
+  })
+
+  test('View opens a read-only panel (no Save) and sub-pages open directly (STA-001)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(screen.getByText('View Location')).toBeInTheDocument()
+    // Read-only: the name is plain text, no Save button, category values render as text.
+    expect(screen.getByText('Location Name: Harbour Dump')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+
+    // A View sub-page opens directly — no NAV-002/003 confirm.
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('New location → sub-page link → NAV-003 save-first → opens the saved sub-page', async () => {
+    const savedNew: Location = {
+      id: 9200,
+      revisionCount: 0,
+      name: 'New Dump',
+      categories: [
+        { code: 40, kind: 'FIXED', volume: null, cost: 5000, distance: null, perUnit: null },
+      ],
+      subPageRows: [],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [harbour, emptyLanding, savedNew],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    render(<Schedule4 />)
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'New Dump')
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '5000')
+
+    // Open a sub-page from the unsaved NEW panel → NAV-003 save-first confirm.
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(0\)/i }))
+    expect(
+      screen.getByText(
+        'The information for the New Location must be saved before you can add other Transportation. Would you like to save the information now?',
+      ),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /save and continue/i }))
+
+    expect(await screen.findByText('Towing Total — New Dump')).toBeInTheDocument()
   })
 })
