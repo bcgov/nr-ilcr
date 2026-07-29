@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule11.dto;
 
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import java.util.List;
 
 /**
@@ -21,6 +22,9 @@ import java.util.List;
  *     (recorded AR11 keying delta)
  * @param locations the location rows, ordered by {@code BASIC_SILVICULTURE_REPORT_ID} ascending
  * @param totals the footer totals (fields null — never zero — without contributors)
+ * @param message success message on a 25.2 mutation echo (AD-8); ALWAYS null on the GET (Jackson
+ *     {@code non_null} omits it, so the Story 25.1 GET wire is unchanged — a contract extension,
+ *     not a re-shape)
  */
 public record Schedule11Response(
     long millId,
@@ -29,5 +33,12 @@ public record Schedule11Response(
     boolean editable,
     Integer revisionCount,
     List<SilvicultureLocation> locations,
-    SilvicultureTotals totals) {
+    SilvicultureTotals totals,
+    MessageInfo message) {
+
+  /** A copy carrying the given success message (for a POST/PUT/DELETE echo, AD-8). */
+  public Schedule11Response withMessage(MessageInfo message) {
+    return new Schedule11Response(
+        millId, year, trackStatus, editable, revisionCount, locations, totals, message);
+  }
 }

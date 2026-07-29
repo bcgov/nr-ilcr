@@ -1,15 +1,27 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureTotals;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +39,16 @@ import org.springframework.transaction.annotation.Transactional;
  * effect ordering quirk (recorded in the story; correct only by JSF render order).
  */
 @Service
+@Slf4j
 public class Schedule11Service {
 
   private static final String STATUS_DRAFT = "D";
+
+  // The delivery unique key on (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+  // BECBIOGEOCLIMATIC_CATALOGUE_ID, LOCATION) — legacy SILVICULTURE_UNIQUE_BIOGEOCODE. Only THIS
+  // constraint may map to the biogeo 409; any other integrity failure (PK collision from a lagging
+  // sequence, a NOT NULL on a cost child) is a server fault -> 500 ERR-004, never a false conflict.
+  private static final String BIOGEO_UNIQUE_CONSTRAINT = "BSRPT_BSRPT_UK_UK";
 
   // Legacy Constant.REPORT_COST_ITEMS.Schedule11_1_* ids (delivery-verified: 23='Planned',
   // 24='Actual', category '11').
@@ -39,13 +58,23 @@ public class Schedule11Service {
   // Legacy Constant.POSITIVE_IND.
   private static final String POSITIVE_IND = "Y";
 
+  // Check-status message keys (SUC-004 always, SUC-003 when met; FLD-004 per missing cost reuses
+  // the shared "Value Required" key). Composed verbatim in legacy Schedule11MB.checkStatus() order.
+  private static final String MSG_STATUS_CHECKED = "checkStatusMessage";
+  private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
+  private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
+
   private final Schedule11Repository repository;
   private final MillContextService millContextService;
+  private final MessageSource messageSource;
 
   public Schedule11Service(
-      Schedule11Repository repository, MillContextService millContextService) {
+      Schedule11Repository repository,
+      MillContextService millContextService,
+      MessageSource messageSource) {
     this.repository = repository;
     this.millContextService = millContextService;
+    this.messageSource = messageSource;
   }
 
   /**
@@ -62,6 +91,16 @@ public class Schedule11Service {
   public Schedule11Response getSchedule11(long millId, int year, boolean callerMayEdit) {
     String trackStatus = millContextService.findSchedule11TrackStatusCode(millId, year)
         .orElse(null);
+    return buildDocument(millId, year, trackStatus, callerMayEdit);
+  }
+
+  /**
+   * Assemble the served document for a KNOWN track status. The write methods reuse this with the
+   * {@code D} their Draft gate just proved (same transaction) instead of re-running the track-status
+   * query on every mutation.
+   */
+  private Schedule11Response buildDocument(
+      long millId, int year, String trackStatus, boolean callerMayEdit) {
     // Editable = EDIT_SCHEDULE ∧ silviculture track Draft (legacy disableUserInputSchedule11
     // D+Licensee row; a null code cannot be Draft). The 1–10 track plays no part (S10).
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
@@ -74,9 +113,245 @@ public class Schedule11Service {
         .toList();
 
     // Document revisionCount is ALWAYS null: no ILCR_REPORT_SUMMARY row exists for this list
-    // schedule (recorded AR11 keying delta — 25.2 keys per-row).
+    // schedule (recorded AR11 keying delta — 25.2 keys per-row). message is null on the GET
+    // (Jackson non_null omits it) — the write echoes attach it via withMessage in the controller.
     return new Schedule11Response(
-        millId, year, trackStatus, editable, null, locations, totalsOf(locations));
+        millId, year, trackStatus, editable, null, locations, totalsOf(locations), null);
+  }
+
+  // ===============================================================================================
+  // Write path (Story 25.2) — add/edit/delete a location. Each method is one transaction: a
+  // persistence failure rolls back and surfaces as 500/ERR-004. The Draft gate keys on the
+  // SILVICULTURE track (AD-9) — never the 1–10 track (AR7). Costs/comments/location values are
+  // NEVER logged (AD-11).
+  // ===============================================================================================
+
+  /**
+   * Create one Schedule 11 location and return the recomputed document (S01/S02/S09). The location
+   * persists immediately (legacy {@code addLocation()} → {@code save(true)}). Costs are optional; a
+   * present cost writes its item-23/24 child, an absent cost writes no row (delivery-faithful — real
+   * silviculture locations carry no cost rows, AC9). Draft-gated (AD-9); a duplicate biogeo/location
+   * key → 409, an unresolvable biogeo id → 400.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the entered location fields
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit columns)
+   * @return the recomputed aggregate document (the new row included; footer totals refreshed)
+   */
+  @Transactional
+  public Schedule11Response addLocation(
+      long millId, int year, SilvicultureLocationRequest request, boolean callerMayEdit,
+      String user) {
+    requireSilvicultureDraft(millId, year);
+    requireValidBiogeo(request.biogeoclimaticCatalogueId());
+    try {
+      long locationId = repository.nextLocationId();
+      repository.insertLocation(
+          locationId, millId, year, request.location(), request.biogeoclimaticCatalogueId(),
+          request.netArea(), enhancedInd(request.enhancedIndicator()), request.comments(), user);
+      writeCosts(locationId, request.actualCost(), request.plannedCost(), user);
+    } catch (DataIntegrityViolationException ex) {
+      throwConflictOrNotSaved(ex, "add", millId, year);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 11 add failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Edit one existing Schedule 11 location and return the recomputed document (S03). Optimistic-lock
+   * on the row's {@code REVISION_COUNT} (AR11): a stale token → 409, an unknown id → 404. Cost edits
+   * upsert their child row, or remove it when a cost is cleared to null (clear semantics).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param locationId the location id to edit
+   * @param request the entered fields + the required {@code revisionCount} token
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit columns)
+   * @return the recomputed aggregate document
+   */
+  @Transactional
+  public Schedule11Response updateLocation(
+      long millId, int year, long locationId, SilvicultureLocationRequest request,
+      boolean callerMayEdit, String user) {
+    requireSilvicultureDraft(millId, year);
+    requireValidBiogeo(request.biogeoclimaticCatalogueId());
+    try {
+      int updated = repository.updateLocation(
+          locationId, millId, year, request.revisionCount(), request.location(),
+          request.biogeoclimaticCatalogueId(), request.netArea(),
+          enhancedInd(request.enhancedIndicator()), request.comments(), user);
+      if (updated == 0) {
+        // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate (AC7).
+        if (repository.countLocation(locationId, millId, year) == 0) {
+          throw new SilvicultureLocationNotFoundException();
+        }
+        throw new StaleRevisionException();
+      }
+      writeCosts(locationId, request.actualCost(), request.plannedCost(), user);
+    } catch (DataIntegrityViolationException ex) {
+      throwConflictOrNotSaved(ex, "update", millId, year);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 11 update failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Delete one Schedule 11 location and ALL its cost children (S07 — legacy whole-row removal; a
+   * 23/24-only cascade would orphan other attached items). Draft-gated; an unknown id → 404. Carries
+   * NO revision token — the systemic AR11 DELETE deviation (Story 2.1; legacy delete re-fetches by
+   * PK and removes, no lock).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param locationId the location id to delete
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @return the recomputed aggregate document (the row and its costs gone; footer refreshed)
+   */
+  @Transactional
+  public Schedule11Response deleteLocation(
+      long millId, int year, long locationId, boolean callerMayEdit) {
+    requireSilvicultureDraft(millId, year);
+    try {
+      // The mill/year-scoped location delete runs FIRST: its 0-rows result is the ownership check,
+      // so the id-scoped cost cascade below can never touch another mill's rows.
+      int deleted = repository.deleteLocation(locationId, millId, year);
+      if (deleted == 0) {
+        throw new SilvicultureLocationNotFoundException();
+      }
+      repository.deleteCostsForLocation(locationId);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 11 delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Write the two cost children of a location per the clear semantics: a present cost upserts its
+   * item row (audit-preserving), a null cost removes any existing row (delivery-faithful — absent
+   * cost rows are the dominant real case, AC9).
+   */
+  private void writeCosts(long locationId, Integer actualCost, Integer plannedCost, String user) {
+    writeCost(locationId, CODE_ACTUAL, actualCost, user);
+    writeCost(locationId, CODE_PLANNED, plannedCost, user);
+  }
+
+  private void writeCost(long locationId, int costItemId, Integer cost, String user) {
+    if (cost == null) {
+      repository.deleteCost(locationId, costItemId);
+    } else {
+      repository.upsertCost(locationId, costItemId, cost, user);
+    }
+  }
+
+  /**
+   * Map an integrity failure to its verbatim client error: the {@code BSRPT_BSRPT_UK_UK} unique key
+   * (legacy SILVICULTURE_UNIQUE_BIOGEOCODE) → 409 biogeo conflict; ANY other violated constraint
+   * (PK, NOT NULL, a cost-child failure) is a server fault → 500 ERR-004 — a blanket 409 would tell
+   * the user to change a biogeo that is not the problem.
+   */
+  private void throwConflictOrNotSaved(
+      DataIntegrityViolationException ex, String action, long millId, int year) {
+    String cause = String.valueOf(ex.getMostSpecificCause().getMessage());
+    if (cause.contains(BIOGEO_UNIQUE_CONSTRAINT)) {
+      throw new SilvicultureBiogeoConflictException();
+    }
+    log.warn("Schedule 11 {} failed for mill {} year {} [{}]",
+        action, millId, year, ex.getClass().getSimpleName());
+    throw new ScheduleNotSavedException();
+  }
+
+  /**
+   * The Draft-gate for every write: the SILVICULTURE track must be {@code D} (else 409). Keys on
+   * {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext (AD-9 single owner) — a Submitted/Verified
+   * 1–10 track leaves Schedule 11 writable (AR7 track independence). Context (400/404/409-mill) is
+   * already validated by the controller before this runs (AD-4).
+   */
+  private void requireSilvicultureDraft(long millId, int year) {
+    String trackStatus = millContextService.findSchedule11TrackStatusCode(millId, year)
+        .orElse(null);
+    if (!STATUS_DRAFT.equals(trackStatus)) {
+      throw new ScheduleNotEditableException();
+    }
+  }
+
+  /** Reject a biogeo id that resolves to no catalogue row (force-selection enforcement, S16). */
+  private void requireValidBiogeo(long biogeoclimaticCatalogueId) {
+    if (repository.countBiogeo(biogeoclimaticCatalogueId) == 0) {
+      throw new InvalidBiogeoCodeException();
+    }
+  }
+
+  private static String enhancedInd(Boolean enhancedIndicator) {
+    return Boolean.TRUE.equals(enhancedIndicator) ? POSITIVE_IND : "N";
+  }
+
+  // ===============================================================================================
+  // Check Status — BR-07 readiness validation (Story 25.2, S04/S05/S06). Read-only; no persistence,
+  // no transition. A location passes iff BOTH costs are non-null (missing = null; 0 is present).
+  // Legacy Schedule11CheckStatus.checkStatus() + Schedule11MB.checkStatus() message composition.
+  // ===============================================================================================
+
+  /**
+   * BR-07 Check Status: validate whether every stored Schedule 11 location has both costs. Read-only
+   * — mutates nothing (VIEW-gated, not Draft-gated; runs on any status). Zero locations → vacuously
+   * met. SUC-004 "Status has been checked" is returned on every call; SUC-003 only when met.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the check-status result with verbatim, legacy-ordered messages
+   */
+  @Transactional(readOnly = true)
+  public Schedule11CheckStatusResponse checkStatus(long millId, int year) {
+    List<SilvicultureLocationEntity> locationRows = repository.findLocations(year, millId);
+    Map<Long, CostPair> costs = unpackCosts(repository.findCostDetails(year, millId));
+
+    List<MessageInfo> errors = new ArrayList<>();
+    for (SilvicultureLocationEntity row : locationRows) {
+      CostPair pair = costs.getOrDefault(row.locationId(), CostPair.EMPTY);
+      // Legacy Schedule11MB.checkStatus() order: Actual missing before Planned missing, per row.
+      if (pair.actual() == null) {
+        errors.add(missingCost(row.location(), "Actual cost"));
+      }
+      if (pair.planned() == null) {
+        errors.add(missingCost(row.location(), "Planned cost"));
+      }
+    }
+
+    boolean requirementsMet = errors.isEmpty();
+    MessageInfo requirementsMetMessage = requirementsMet
+        ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
+        : null;
+    // SUC-004 is ALWAYS emitted (legacy adds "Status has been checked" on every invocation).
+    MessageInfo statusChecked = new MessageInfo(MSG_STATUS_CHECKED, resolveText(MSG_STATUS_CHECKED));
+    return new Schedule11CheckStatusResponse(
+        requirementsMet, errors, requirementsMetMessage, statusChecked);
+  }
+
+  /**
+   * A FLD-004 missing-cost message composed VERBATIM in legacy form:
+   * {@code "location  : <location> - <Actual|Planned> cost: Value Required"} — note the DOUBLE space
+   * after {@code location} (legacy {@code Schedule11MB} literal) and the shared
+   * {@code missingRequiredFieldMsg} = {@code "Value Required"} suffix.
+   */
+  private MessageInfo missingCost(String location, String costLabel) {
+    String text = "location  : " + location + " - " + costLabel + ": " + resolveText(MSG_VALUE_REQUIRED);
+    return new MessageInfo(MSG_VALUE_REQUIRED, text);
+  }
+
+  /** Resolve a legacy bundle key to verbatim text (AD-8). */
+  private String resolveText(String key) {
+    return messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
   }
 
   /**

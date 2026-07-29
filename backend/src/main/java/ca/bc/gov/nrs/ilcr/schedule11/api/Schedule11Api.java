@@ -1,9 +1,20 @@
 package ca.bc.gov.nrs.ilcr.schedule11.api;
 
+import ca.bc.gov.nrs.ilcr.schedule11.dto.OnUpdate;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.groups.Default;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -35,6 +46,79 @@ public interface Schedule11Api {
    */
   @GetMapping
   ResponseEntity<Schedule11Response> getSchedule11(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Add one Schedule 11 location (S01/S02/S09). The location persists immediately and the recomputed
+   * document (footer totals refreshed, CNT-001) is echoed with a success {@code message}. Required
+   * fields Location/Enhanced/Biogeo/NAR; costs optional. Validation → 400; unresolvable biogeo → 400;
+   * duplicate biogeo/location key → 409; non-Draft silviculture track → 409; missing
+   * {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
+   *
+   * @param millId the raw mill id param (validated by millcontext; verbatim ERR-001 on absence)
+   * @param year the raw reporting year param (validated by millcontext)
+   * @param request the entered location fields (validated, default group)
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PostMapping("/locations")
+  ResponseEntity<Schedule11Response> addLocation(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody SilvicultureLocationRequest request,
+      Authentication authentication);
+
+  /**
+   * Edit one Schedule 11 location (S03). Same validation/gates as add; the body must carry the row's
+   * {@code revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
+   * unknown id → 404.
+   *
+   * @param id the location id ({@code BASIC_SILVICULTURE_REPORT_ID}) to edit
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param request the entered fields + required {@code revisionCount} (default + OnUpdate groups)
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PutMapping("/locations/{id}")
+  ResponseEntity<Schedule11Response> updateLocation(
+      @PathVariable long id,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Validated({Default.class, OnUpdate.class}) @RequestBody SilvicultureLocationRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one Schedule 11 location and its item-23/24 cost children (S07). Draft-gated; carries no
+   * revision token (systemic AR11 DELETE deviation). Unknown id → 404.
+   *
+   * @param id the location id to delete
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param authentication the caller (EDIT_SCHEDULE + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @DeleteMapping("/locations/{id}")
+  ResponseEntity<Schedule11Response> deleteLocation(
+      @PathVariable long id,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Check Status for Schedule 11 (BR-07, S04/S05/S06) — read-only validation, mutates nothing, NOT
+   * Draft-gated ({@code VIEW_SCHEDULE}). A location passes iff both costs are non-null. Returns
+   * SUC-004 always and SUC-003 when all met, else per-missing-cost FLD-004 flags.
+   *
+   * @param millId the raw mill id param (validated by millcontext)
+   * @param year the raw reporting year param
+   * @param authentication the caller (VIEW_SCHEDULE)
+   * @return 200 with the check-status result
+   */
+  @PostMapping("/check-status")
+  ResponseEntity<Schedule11CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);
