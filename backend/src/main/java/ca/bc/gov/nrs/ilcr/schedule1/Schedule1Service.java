@@ -133,6 +133,55 @@ public class Schedule1Service {
     }
   }
 
+  // Schedule 1 detail items whose VOLUME the BR-09 Crown Timber push overwrites (legacy
+  // Schedule1DAO.updateCrownTimberVolumeValues): the fixed lines 12–18, Forest Mgmt Admin (143),
+  // Subtotal Company Logging (144), and the four silviculture rows (1/139/2/140). The item-19
+  // Other-Costs rows are overwritten separately (updateAllOtherCostVolumes). COST is never touched.
+  private static final List<Integer> CROWN_PUSH_VOLUME_ITEMS = List.of(
+      12, 13, 14, 15, 16, 17, 18,
+      CODE_FOREST_MGMT_ADMIN, CODE_SUBTOTAL_COMPANY_LOGGING,
+      CODE_SILV_ACTUAL, CODE_SILV_LESS_ADMIN, CODE_SILV_ACCRUED, CODE_SILV_TOTAL);
+
+  /**
+   * Apply a changed Schedule 3 Crown Timber volume to Schedule 1's volume fields (BR-09). This is the
+   * single entry point Schedule 3 uses to write Schedule 1 data (AD-14 — Schedule 3 never issues SQL
+   * against Schedule 1's rows). Overwrites the VOLUME (COST preserved) of the fixed lines + the four
+   * silviculture rows + every item-19 Other-Costs row with {@code volume}. Joins the caller's
+   * transaction (Story 4.2 save), so it rolls back with the Schedule 3 write on failure.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @param volume the new Crown Timber volume to propagate
+   * @param user the acting user id (audit)
+   * @return {@code true} when a Schedule 1 summary exists, is editable (Draft), and the volumes were
+   *     overwritten (WRN-001); {@code false} when Schedule 1 is not opened or not editable, so nothing
+   *     was written (WRN-002)
+   */
+  @Transactional
+  public boolean applyCrownTimberVolume(long millId, int year, BigDecimal volume, String user) {
+    SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY).orElse(null);
+    if (summary == null) {
+      return false; // Schedule 1 not opened → WRN-002, nothing written.
+    }
+    // Defence-in-depth (AD-14): this is the sole entry point Schedule 3 uses to write Schedule 1, so it
+    // self-gates on the Draft track status rather than trusting the caller. Schedule 1 and Schedule 3
+    // share the mill/year track today, so a Draft Schedule 3 save already implies Draft here — this
+    // guard preserves the invariant (never overwrite a submitted/closed Schedule 1) if that diverges.
+    if (!STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+      return false;
+    }
+    int summaryId = summary.summaryId();
+    // Bump the Schedule 1 aggregate revision FIRST (AR11): the volume writes below sit outside the
+    // main-page optimistic-lock, so this row lock serializes a concurrent Schedule 1 save and forces
+    // an editor holding a stale token to reload rather than overwrite the pushed values.
+    repository.touchSummary(summaryId, user);
+    for (int code : CROWN_PUSH_VOLUME_ITEMS) {
+      repository.upsertFixedDetailVolume(summaryId, code, volume, user);
+    }
+    repository.updateAllOtherCostVolumes(summaryId, volume, user);
+    return true;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Subtotal Other Costs sub-resource (Story 2.4) — sole writer of the itemized item-19 rows.
   // ---------------------------------------------------------------------------------------------
