@@ -114,6 +114,16 @@ class Schedule2WriteIT extends AbstractOracleIT {
     assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
         "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
         "a new category-2 summary must be created on save");
+
+    // Restore 515's no-summary precondition on the shared container (AbstractOracleIT has no
+    // per-test rollback): 515 is ALSO the no-summary read fixture for Schedule2DocumentIT /
+    // Schedule2CheckStatusIT, so this created summary must not leak across IT classes. Undo it
+    // through the production DELETE (515 is Draft, so the gate allows it) rather than raw SQL.
+    mockMvc.perform(delete(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk());
+    assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
+        "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
+        "cleanup: 515 must be restored to its no-summary state for the read ITs");
   }
 
   // ---- clear-to-null: item 25 cost null persists as null. ----------------------------------------
