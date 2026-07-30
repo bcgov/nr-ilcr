@@ -19,6 +19,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
+import { extractDetail } from '@/utils/error'
+import { blankToNull } from '@/utils/forms'
 import {
   emptySampleForm,
   fmt,
@@ -34,15 +36,6 @@ const CONFIRM_DELETE = 'This will delete the current record. Do you want to cont
 const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
-
-const blankToNull = (raw: string): string | null => (raw.trim() === '' ? null : raw)
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    return (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-  }
-  return undefined
-}
 
 interface SamplePageProps {
   millId: number

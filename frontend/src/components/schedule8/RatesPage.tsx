@@ -16,19 +16,13 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
+import { extractDetail } from '@/utils/error'
 import { emptyRateForm, fmt, toNum, validateRateForm, type RateForm } from './validation'
 
 // Client-only confirm chrome, verbatim from the legacy bundle (confirmDeleteMsg intent).
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
 // Back confirm — literal from the legacy markup (confirmNavigationMsg).
 const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    return (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-  }
-  return undefined
-}
 
 const sumRates = (rows: RateRow[]): number =>
   rows.reduce((total, r) => total + (r.costingRate ?? 0), 0)

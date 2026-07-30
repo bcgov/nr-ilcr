@@ -20,6 +20,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
+import { extractDetail } from '@/utils/error'
+import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageTitle from '@/components/core/PageTitle'
@@ -46,15 +48,6 @@ type NavView =
   | { level: 'pages' }
   | { level: 'samples'; pageId: number }
   | { level: 'rates'; pageId: number; sampleId: number }
-
-const blankToNull = (raw: string): string | null => (raw.trim() === '' ? null : raw)
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    return (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-  }
-  return undefined
-}
 
 const Schedule8: FC = () => {
   const { millId, year } = useMillYear()
