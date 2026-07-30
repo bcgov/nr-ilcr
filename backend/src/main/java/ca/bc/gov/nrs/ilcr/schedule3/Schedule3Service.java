@@ -348,7 +348,7 @@ public class Schedule3Service {
     } catch (DataAccessException ex) {
       log.warn("Schedule 3 delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
+      throw new ScheduleNotDeletedException();
     }
   }
 
@@ -430,7 +430,7 @@ public class Schedule3Service {
     } catch (DataAccessException ex) {
       log.warn("Other-Acceptable delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
+      throw new ScheduleNotDeletedException();
     }
     return buildOtherAcceptableDocument(summaryId, true);
   }
@@ -574,7 +574,7 @@ public class Schedule3Service {
     } catch (DataAccessException ex) {
       log.warn("Unacceptable delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
+      throw new ScheduleNotDeletedException();
     }
     return buildUnacceptableDocument(summaryId, true);
   }
