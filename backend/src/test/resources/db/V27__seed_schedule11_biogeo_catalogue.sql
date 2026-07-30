@@ -1,6 +1,7 @@
 -- Story 25.3 (UC-SCH11-001) seed: extra THE.BIOGEOCLIMATIC_CATALOGUE rows for the BEC type-ahead
--- search endpoint (BR-09/S16). TEST-SCOPE ONLY. V22 claimed 2026-07-29 (V1-V9, V20, V21 on this
--- tree; next free). NO runtime DDL (AD-2) - the catalogue table + ids 8801-8803 exist from V20.
+-- search endpoint (BR-09/S16). TEST-SCOPE ONLY. Renumbered V22 -> V27 2026-07-30 after schedule 8
+-- merged from main claimed V22-V26 (bump the newer, unmerged migration per README convention). NO
+-- runtime DDL (AD-2) - the catalogue table + ids 8801-8803 exist from V20.
 --
 -- V20's three rows all carry distinct zone prefixes (ICH/CWH/ESSF), so they cannot prove a prefix
 -- search that returns MULTIPLE label-ordered matches while excluding non-matches. These four share

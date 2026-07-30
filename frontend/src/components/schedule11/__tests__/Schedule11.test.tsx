@@ -161,6 +161,35 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(captured!.actualCost).toBe(25000)
   })
 
+  test('comma-grouped NAR and cost reach the wire as numbers, not NaN/null (P2)', async () => {
+    // Legacy (US DecimalFormat) accepts grouped input; the page must parse "1,000" the same for BOTH
+    // the advisory gate AND the request body. A Number()-based parse would reject NAR here (NaN ->
+    // null -> backend @NotNull 400) — this pins the grouped value all the way to the POST body.
+    let captured: SilvicultureLocationRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, async ({ request }) => {
+        captured = (await request.json()) as SilvicultureLocationRequest
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'No' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    await user.type(screen.getByLabelText('NAR(ha)'), '1,000.5')
+    await user.type(screen.getByLabelText('Actual Cost ($)'), '10,000')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    await waitFor(() => expect(captured).not.toBeNull())
+    expect(captured!.netArea).toBe(1000.5)
+    expect(captured!.actualCost).toBe(10000)
+  })
+
   test('blank add fields block the POST with inline advisory errors (AC5)', async () => {
     const post = vi.fn()
     server.use(

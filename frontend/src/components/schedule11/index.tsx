@@ -30,11 +30,16 @@ import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { numStr, toNum } from '@/utils/number'
+import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
-import { validateLocation, COMMENTS_MAX_LENGTH, LOCATION_MAX_LENGTH } from './validation'
+import {
+  validateLocation,
+  parseDecimalInput,
+  COMMENTS_MAX_LENGTH,
+  LOCATION_MAX_LENGTH,
+} from './validation'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success/error is
@@ -287,9 +292,12 @@ const Schedule11: FC = () => {
     // Validated non-null before this runs; the assertions only satisfy the required-field types.
     enhancedIndicator: form.enhanced as boolean,
     biogeoclimaticCatalogueId: (form.bec as BiogeoclimaticOption).id,
-    netArea: toNum(form.netArea) as number,
-    actualCost: roundCost(toNum(form.actualCost)),
-    plannedCost: roundCost(toNum(form.plannedCost)),
+    // Parse with the SAME legacy DecimalFormat-faithful parser as validation.ts, not toNum/Number:
+    // a grouped value like "1,000" that validateLocation now accepts must serialize to 1000, not the
+    // null Number("1,000") would yield (which would trip the backend's @NotNull netArea as a 400).
+    netArea: parseDecimalInput(form.netArea) as number,
+    actualCost: roundCost(parseDecimalInput(form.actualCost)),
+    plannedCost: roundCost(parseDecimalInput(form.plannedCost)),
     comments: form.comments.trim() === '' ? null : form.comments,
     ...(revisionCount === undefined ? {} : { revisionCount }),
   })

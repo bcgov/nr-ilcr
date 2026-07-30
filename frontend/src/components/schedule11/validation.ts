@@ -48,13 +48,30 @@ export interface LocationFormValues {
   comments: string
 }
 
+// Legacy JSF numeric fields (NAR, costs) bind through a US-locale DecimalFormat converter, so the
+// accepted syntax is: an optional leading '-', digits with optional comma grouping, and an optional
+// '.' fractional part — the same format the page DISPLAYS (the money/area masks in index.tsx). Native
+// Number() diverges both ways and must NOT be used here: it rejects grouped input the legacy app
+// accepts (`Number('1,000')` -> NaN) and silently accepts JS-only forms the legacy app never allowed
+// (`1e2` -> 100, `0x10` -> 16, `Infinity`). Parsing with an explicit format keeps both this advisory
+// gate AND the submitted body (index.tsx buildBody) faithful to legacy. Returns the numeric value, or
+// null when the string is blank or not a valid decimal in that format.
+const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
+export const parseDecimalInput = (raw: string): number | null => {
+  const trimmed = raw.trim()
+  if (trimmed === '' || !DECIMAL_INPUT.test(trimmed)) {
+    return null
+  }
+  return Number(trimmed.replace(/,/g, ''))
+}
+
 const validateCost = (raw: string): string | undefined => {
   const trimmed = raw.trim()
   if (trimmed === '') {
     return undefined
   }
-  const n = Number(trimmed)
-  if (Number.isNaN(n) || n < COST.min || n > COST.max) {
+  const n = parseDecimalInput(trimmed)
+  if (n === null || n < COST.min || n > COST.max) {
     return SILV_MESSAGES.costValidator
   }
   return undefined
@@ -86,9 +103,11 @@ export function validateLocation(form: LocationFormValues): SilvicultureErrors {
   if (netAreaRaw === '') {
     errors.netArea = SILV_MESSAGES.netAreaRequired
   } else {
-    const n = Number(netAreaRaw)
+    const n = parseDecimalInput(netAreaRaw)
+    // Fractional digits counted from the raw string (grouping lives only in the integer part, so the
+    // post-'.' slice is unaffected): >1 decimal trips the same S18/BR-05 one-decimal cap as the backend.
     const decimals = netAreaRaw.includes('.') ? netAreaRaw.split('.')[1].length : 0
-    if (Number.isNaN(n) || n < NET_AREA.min || n > NET_AREA.max || decimals > 1) {
+    if (n === null || n < NET_AREA.min || n > NET_AREA.max || decimals > 1) {
       errors.netArea = SILV_MESSAGES.netAreaRange
     }
   }
