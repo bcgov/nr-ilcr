@@ -196,9 +196,11 @@ public class Schedule4Service {
           issues.add(new FieldIssue(category.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
         }
       }
-      // Sub-page list rows enforce Cost only, same rule (Story 4.3 rows; distance/cycle not checked).
+      // Sub-page list rows require BOTH Volume and Cost (legacy CheckStatusUtil
+      // .checkRequiredDistanceCycleTimeType flags a missing volume OR cost); an incomplete row is one
+      // field issue keyed by its category code (distance/cycle are not check-status fields).
       for (SubPageRow row : location.subPageRows()) {
-        if (row.cost() == null) {
+        if (row.cost() == null || row.volume() == null) {
           issues.add(new FieldIssue(row.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
         }
       }

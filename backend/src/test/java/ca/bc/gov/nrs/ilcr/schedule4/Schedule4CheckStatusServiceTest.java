@@ -129,6 +129,24 @@ class Schedule4CheckStatusServiceTest {
   }
 
   @Test
+  void subPageRowNullVolume_fails() {
+    // Cost present but Volume null — legacy checkRequiredDistanceCycleTimeType requires BOTH, so the
+    // row is incomplete and the schedule is ISSUES (previously this passed — the gap-analysis fix).
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(new LocationRow(1, "Loc A", null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
+        new DetailRow(1, 40, bd("100"), 5000)));
+    when(repository.findSubPageRows(MILL, YEAR)).thenReturn(List.of(
+        new SubPageRowRow(2, "Loc A", 43, "Towing", bd("10"), null, null, 5000))); // volume null
+
+    Schedule4CheckStatusResponse r = service.checkStatus(MILL, YEAR);
+
+    assertEquals("ISSUES", r.outcome());
+    assertFalse(r.locations().get(0).met());
+    assertEquals(43, r.locations().get(0).issues().get(0).code());
+  }
+
+  @Test
   void mixed_someLocationsPassOthersFail_scheduleNotMet() {
     draft();
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
