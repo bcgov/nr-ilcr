@@ -33,6 +33,8 @@ jobs:
     secrets:
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
+      # Helper defaults oc_server to Silver; this repo is on Gold
+      oc_server: ${{ secrets.oc_server }}
     with:
       cleanup: label
       # Resources are labeled with three app values: ${NAME}-${ZONE} (init),
