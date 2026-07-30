@@ -28,7 +28,9 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageTitle from '@/components/core/PageTitle'
+import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule1 } from './validation'
 import './index.scss'
 
@@ -453,25 +455,15 @@ const Schedule1: FC = () => {
   )
 
   const actions = (
-    <Column sm={4} md={8} lg={16} className="schedule-1__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-        Save
-      </Button>
-      <Button
-        kind="tertiary"
-        disabled={!editable || saving || checking}
-        onClick={handleCheckStatus}
-      >
-        Check Status
-      </Button>
-      <Button
-        kind="danger--tertiary"
-        disabled={!editable || saving}
-        onClick={() => setConfirmDeleteOpen(true)}
-      >
-        Delete
-      </Button>
-    </Column>
+    <ScheduleActions
+      className="schedule-1__actions"
+      editable={editable}
+      saving={saving}
+      checking={checking}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+      onDelete={() => setConfirmDeleteOpen(true)}
+    />
   )
 
   return (
@@ -514,40 +506,31 @@ const Schedule1: FC = () => {
           </Column>
         ))}
         {saveMessage && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-          </Column>
+          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
 
         {/* Check Status result (Story 2.7). Severity is carried by the notification kind AND an explicit
             title word (Success/Error/Warning) — not colour alone (WCAG 2.1 AA). Verbatim text (AD-8). */}
         {checkResult?.requirementsMet && checkResult.message && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="success"
-              lowContrast
-              title="Requirements met"
-              subtitle={checkResult.message.text}
-            />
-          </Column>
+          <NotificationColumn
+            kind="success"
+            title="Requirements met"
+            subtitle={checkResult.message.text}
+          />
         )}
         {(checkResult?.errors ?? []).map((e, i) => (
-          // Static, append-only notification list (never reordered); index disambiguates messages
-          // that share the same key/text.
-          // eslint-disable-next-line @eslint-react/no-array-index-key
-          <Column key={`check-err-${e.text || e.key}-${i}`} sm={4} md={8} lg={16}>
-            <InlineNotification kind="error" lowContrast title="Error" subtitle={e.text || e.key} />
-          </Column>
+          <NotificationColumn
+            // Static, append-only notification list (never reordered); index disambiguates messages
+            // that share the same key/text.
+            // eslint-disable-next-line @eslint-react/no-array-index-key
+            key={`check-err-${e.text || e.key}-${i}`}
+            kind="error"
+            title="Error"
+            subtitle={e.text || e.key}
+          />
         ))}
         {(checkResult?.warnings ?? []).map((w, i) => (
           // Static, append-only notification list (never reordered); index disambiguates messages

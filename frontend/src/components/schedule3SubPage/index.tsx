@@ -5,7 +5,6 @@ import {
   Button,
   Column,
   Grid,
-  InlineNotification,
   Modal,
   Table,
   TableBody,
@@ -21,8 +20,10 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
+import RowActionButtons from '@/components/core/RowActionButtons'
 import './index.scss'
 
 // Client-side chrome (verbatim legacy text); SUC-* come from the API message.text (AD-8).
@@ -399,24 +400,11 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
           </TableCell>
         ))}
         {editable && (
-          <TableCell>
-            <Button
-              kind="ghost"
-              size="sm"
-              disabled={saving || editingId !== null}
-              onClick={() => startEdit(row)}
-            >
-              Edit
-            </Button>
-            <Button
-              kind="danger--ghost"
-              size="sm"
-              disabled={saving || editingId !== null}
-              onClick={() => setConfirmDeleteId(row.id)}
-            >
-              Delete
-            </Button>
-          </TableCell>
+          <RowActionButtons
+            disabled={saving || editingId !== null}
+            onEdit={() => startEdit(row)}
+            onDelete={() => setConfirmDeleteId(row.id)}
+          />
         )}
       </>
     )
@@ -442,20 +430,9 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
           </Column>
         )}
 
-        {message && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
-          </Column>
-        )}
+        {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={actionError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">

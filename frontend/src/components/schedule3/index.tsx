@@ -9,7 +9,6 @@ import {
   Button,
   Column,
   Grid,
-  InlineNotification,
   Modal,
   Select,
   SelectItem,
@@ -29,8 +28,10 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
+import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule3 } from './validation'
 import './index.scss'
 
@@ -436,25 +437,15 @@ const Schedule3: FC = () => {
   )
 
   const actions = (
-    <Column sm={4} md={8} lg={16} className="schedule-3__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-        Save
-      </Button>
-      <Button
-        kind="tertiary"
-        disabled={!editable || saving || checking}
-        onClick={handleCheckStatus}
-      >
-        Check Status
-      </Button>
-      <Button
-        kind="danger--tertiary"
-        disabled={!editable || saving}
-        onClick={() => setConfirmDeleteOpen(true)}
-      >
-        Delete
-      </Button>
-    </Column>
+    <ScheduleActions
+      className="schedule-3__actions"
+      editable={editable}
+      saving={saving}
+      checking={checking}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+      onDelete={() => setConfirmDeleteOpen(true)}
+    />
   )
 
   return (
@@ -480,42 +471,31 @@ const Schedule3: FC = () => {
 
         {/* Advisory warnings from a mutation echo (BR-09 crown push). Verbatim text (AD-8). */}
         {saveWarnings.map((w) => (
-          <Column key={`warn-${w}`} sm={4} md={8} lg={16}>
-            <InlineNotification kind="warning" lowContrast title="Notice" subtitle={w} />
-          </Column>
+          <NotificationColumn key={`warn-${w}`} kind="warning" title="Notice" subtitle={w} />
         ))}
         {saveMessage && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-          </Column>
+          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
 
         {/* Check Status result. Severity is carried by the notification kind AND an explicit title
             word (Success/Error) — not colour alone (WCAG 2.1 AA). Verbatim text (AD-8). */}
         {checkResult?.requirementsMet && checkResult.message && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="success"
-              lowContrast
-              title="Requirements met"
-              subtitle={checkResult.message.text}
-            />
-          </Column>
+          <NotificationColumn
+            kind="success"
+            title="Requirements met"
+            subtitle={checkResult.message.text}
+          />
         )}
         {(checkResult?.errors ?? []).map((e) => (
-          <Column key={`check-err-${e.text || e.key}`} sm={4} md={8} lg={16}>
-            <InlineNotification kind="error" lowContrast title="Error" subtitle={e.text || e.key} />
-          </Column>
+          <NotificationColumn
+            key={`check-err-${e.text || e.key}`}
+            kind="error"
+            title="Error"
+            subtitle={e.text || e.key}
+          />
         ))}
 
         {actions}
