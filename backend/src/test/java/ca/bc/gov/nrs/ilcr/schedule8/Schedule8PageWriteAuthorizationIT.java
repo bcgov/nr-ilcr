@@ -71,4 +71,13 @@ class Schedule8PageWriteAuthorizationIT extends AbstractOracleIT {
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
         .andExpect(status().is2xxSuccessful());
   }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> DELETE passes authz (idempotent no-op, not 403)")
+  void delete_submitter_passesAuthorization() throws Exception {
+    // Unknown page id in a Draft mill → idempotent no-op success; proves the submitter isn't blocked.
+    mockMvc.perform(delete(ENDPOINT + "/999999").param("millId", "580").param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().is2xxSuccessful());
+  }
 }

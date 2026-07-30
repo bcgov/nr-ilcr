@@ -153,7 +153,16 @@ public class Schedule8Service {
     boolean usesTfl = isNotBlank(request.tflNumber());
     String tflNumber = usesTfl ? request.tflNumber().trim() : null;
     String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
-    String tsaNumber = trimToNull(request.tsaNumber());
+    // Stamp the legacy "TFL" sentinel into TSA_NUMBER when the page uses a TFL, so the write side and
+    // the Check Status discriminator (TSA_NUMBER == "TFL") agree — otherwise a TFL page saved through
+    // this API lands in the Supply-Block-required branch and can never reach MET (H2).
+    String tsaNumber = usesTfl ? TFL_MARKER : trimToNull(request.tsaNumber());
+    // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
+    // deletePage). Without it, a Draft context could overwrite another mill/year's page by id (IDOR),
+    // since EDIT_SCHEDULE is global and requireDraft only checks the URL mill/year.
+    if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
+      throw new ScheduleNotFoundException();
+    }
     try {
       if (request.id() == null) {
         int id = repository.insertPage(millId, year, trimToNull(request.supportCentre()),

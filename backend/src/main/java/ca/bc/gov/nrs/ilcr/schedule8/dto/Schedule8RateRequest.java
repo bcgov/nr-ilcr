@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule8.dto;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -26,6 +27,7 @@ public record Schedule8RateRequest(
     @NotNull(message = "{missingRequiredFieldMsg}")
     @DecimalMin(value = "0", message = "{costingRateValidatorErrorMsg}")
     @DecimalMax(value = "9999999.99", message = "{costingRateValidatorErrorMsg}")
+    @Digits(integer = 7, fraction = 2, message = "{costingRateValidatorErrorMsg}")
     BigDecimal costingRate,
     @NotBlank(message = "{missingRequiredFieldMsg}") String costTypeCode,
     @Size(max = 30, message = "Description can not exceed 30 characters.") String itemDescription) {

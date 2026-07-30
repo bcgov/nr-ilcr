@@ -68,4 +68,13 @@ class Schedule8SampleWriteAuthorizationIT extends AbstractOracleIT {
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
         .andExpect(status().is2xxSuccessful());
   }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> DELETE sample passes authz (idempotent no-op, not 403)")
+  void delete_submitter_passesAuthorization() throws Exception {
+    // Unknown sample id → idempotent no-op success; proves the submitter isn't blocked by @PreAuthorize.
+    mockMvc.perform(delete(SAMPLES + "/999999").param("millId", "591").param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().is2xxSuccessful());
+  }
 }

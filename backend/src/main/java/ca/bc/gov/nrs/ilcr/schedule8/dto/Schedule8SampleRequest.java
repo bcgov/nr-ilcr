@@ -2,9 +2,11 @@ package ca.bc.gov.nrs.ilcr.schedule8.dto;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
 /**
@@ -25,8 +27,9 @@ import java.math.BigDecimal;
 public record Schedule8SampleRequest(
     Integer id,
     Integer revisionCount,
-    @NotBlank(message = "{missingRequiredFieldMsg}") String contractId,
-    String cutBlock,
+    @NotBlank(message = "{missingRequiredFieldMsg}")
+    @Size(max = 12, message = "Contract ID can not exceed 12 characters.") String contractId,
+    @Size(max = 12, message = "Cut block can not exceed 12 characters.") String cutBlock,
     @Min(value = 0, message = "{percentageValidatorErrorMsg}")
     @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer groundBasePct,
     @Min(value = 0, message = "{percentageValidatorErrorMsg}")
@@ -39,19 +42,25 @@ public record Schedule8SampleRequest(
     @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer helicopterPct,
     @Min(value = 0, message = "{percentageValidatorErrorMsg}")
     @Max(value = 100, message = "{percentageValidatorErrorMsg}") Integer otherSkiddingPct,
-    Integer skylineSlopeDistance,
-    Integer skylineSupportNumber,
+    @Min(value = 0, message = "{treeToTruckRateValidatorErrorMsg}")
+    @Max(value = 999_999, message = "{treeToTruckRateValidatorErrorMsg}") Integer skylineSlopeDistance,
+    @Min(value = 0, message = "{treeToTruckRateValidatorErrorMsg}")
+    @Max(value = 999_999, message = "{treeToTruckRateValidatorErrorMsg}") Integer skylineSupportNumber,
+    @Digits(integer = 14, fraction = 4, message = "{treeToTruckRateValidatorErrorMsg}")
     BigDecimal supportAvgDistance,
+    @Digits(integer = 14, fraction = 4, message = "{treeToTruckRateValidatorErrorMsg}")
     BigDecimal cycleTime,
+    @Digits(integer = 14, fraction = 4, message = "{treeToTruckRateValidatorErrorMsg}")
     BigDecimal distance,
     Boolean uphillDirection,
     Boolean waterDumpDestination,
-    String skidTypeCode,
+    @Size(max = 10, message = "Skid type can not exceed 10 characters.") String skidTypeCode,
     @Min(value = 0, message = "{volumeValidatorErrorMsg}")
     @Max(value = 9_999_999, message = "{volumeValidatorErrorMsg}") Integer coniferousVolume,
     @Min(value = 0, message = "{volumeValidatorErrorMsg}")
     @Max(value = 9_999_999, message = "{volumeValidatorErrorMsg}") Integer deciduousVolume,
     @DecimalMin(value = "0", message = "{treeToTruckRateValidatorErrorMsg}")
     @DecimalMax(value = "999999.99", message = "{treeToTruckRateValidatorErrorMsg}")
+    @Digits(integer = 6, fraction = 2, message = "{treeToTruckRateValidatorErrorMsg}")
     BigDecimal originalRate) {
 }

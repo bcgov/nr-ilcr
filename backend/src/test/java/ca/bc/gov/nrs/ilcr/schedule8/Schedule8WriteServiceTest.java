@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -92,12 +93,45 @@ class Schedule8WriteServiceTest {
   @Test
   void savePage_edit_bumpsThenUpdatesFields() {
     draft();
+    when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
     when(repository.bumpPageRevision(PAGE, 3, USER)).thenReturn(1);
 
     service.savePage(MILL, YEAR, pageEdit(), true, USER);
 
     verify(repository).updatePageFields(eq(PAGE), eq("SC"), eq("R"), eq("BZ"), eq("TSA5"), eq("B"),
         any(), eq("CP"), eq("LIC"), eq("Div"), eq("Contact"), eq("250"), eq("notes"), eq(USER));
+  }
+
+  @Test
+  void savePage_editForeignPage_throwsNotFound_noWrite() {
+    // H1 — the page id is not in this mill/year: must 404, never bump/overwrite (cross-context guard).
+    draft();
+    when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(false);
+
+    assertThrows(ScheduleNotFoundException.class,
+        () -> service.savePage(MILL, YEAR, pageEdit(), true, USER));
+
+    verify(repository, never()).bumpPageRevision(anyInt(), anyInt(), any());
+    verify(repository, never()).updatePageFields(anyInt(), any(), any(), any(), any(), any(), any(),
+        any(), any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void savePage_tflPage_stampsTflSentinelIntoTsaNumber_andClearsSupplyBlock() {
+    // H2 — a TFL page must persist TSA_NUMBER = "TFL" so Check Status routes to the TFL-# branch.
+    draft();
+    when(repository.insertPage(anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(),
+        any(), any(), any(), any(), any(), any())).thenReturn(9100);
+    Schedule8PageRequest tflCreate =
+        new Schedule8PageRequest(null, null, "LIC", "SC", "R", "BZ", null, "48", "IGNORED", "Div",
+            "Contact", "250", "CP", "notes");
+
+    service.savePage(MILL, YEAR, tflCreate, true, USER);
+
+    // tsaNumber (arg 6, 0-based) = "TFL" sentinel; supplyBlock (arg 7) cleared; tflNumber (arg 8) "48".
+    verify(repository).insertPage(eq(MILL), eq(YEAR), eq("SC"), eq("R"), eq("BZ"), eq("TFL"),
+        isNull(), eq("48"), eq("CP"), eq("LIC"), eq("Div"), eq("Contact"), eq("250"), eq("notes"),
+        eq(USER));
   }
 
   @Test
