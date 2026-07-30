@@ -163,12 +163,13 @@ public class Schedule8Service {
     if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
       throw new ScheduleNotFoundException();
     }
-    // Reject unknown code-table values up front (400) rather than letting them hit a DB FK (500) — the
-    // legacy autocomplete's "select from the list". Validate the request's own codes (not the stamped
-    // TSA sentinel): when a TFL is used only the TFL # matters; otherwise the supply block / TSA do.
-    requireKnownCode(repository.supportCentreLabels(), request.supportCentre());
-    requireKnownCode(repository.regionLabels(), request.region());
-    requireKnownCode(repository.becZoneLabels(), request.becZone());
+    // Reject unknown code-table values up front (400) rather than letting them hit a DB FK (500) — the    
+    // legacy autocomplete's "select from the list". Validate the request's own codes (not the stamped     
+    // TSA sentinel): when a TFL is used only the TFL # matters; otherwise the supply block / TSA do.      
+    // Validate trimmed values to be consistent with what is persisted (2).
+    requireKnownCode(repository.supportCentreLabels(), request.supportCentre() == null ? null : request.supportCentre().trim());
+    requireKnownCode(repository.regionLabels(), request.region() == null ? null : request.region().trim());
+    requireKnownCode(repository.becZoneLabels(), request.becZone() == null ? null : request.becZone().trim());
     if (usesTfl) {
       requireKnownCode(repository.tflNumberLabels(), tflNumber);
     } else {
@@ -254,6 +255,9 @@ public class Schedule8Service {
     requireDraft(millId, year);
     if (!repository.pageExists(pageId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
+    }
+    if (request.skidTypeCode() != null) {
+      requireKnownCode(repository.skidTypeLabels(), request.skidTypeCode().trim());
     }
     String uphill = toIndicator(request.uphillDirection());
     String waterDump = toIndicator(request.waterDumpDestination());
@@ -602,23 +606,28 @@ public class Schedule8Service {
   }
 
   /**
-   * Null-safe code-table label lookup. The label maps are immutable ({@code Map.of}/{@code Map.copyOf}
-   * from the repository), which reject a null key with an NPE — so a sample/rate row with no code
-   * (never entered) must short-circuit to a null label rather than probe the map.
+   * Null-safe code-table label lookup. Provides a defensive short-circuit for null keys (unentered values)
+   * to return a null label cleanly without probing the map (3).
    */
   private static <K> String labelFor(Map<K, String> labels, K code) {
     return code == null ? null : labels.get(code);
   }
 
-  /** Sum of the given values treating null as 0; null (never entered) is fine as 0 for a roll-up. */
+  /** Sum of the given values treating null as 0; uses long accumulation for overflow protection (4). */  
   private static Integer sumInts(Integer... values) {
-    int total = 0;
+    long total = 0L;
     for (Integer value : values) {
       if (value != null) {
         total += value;
       }
     }
-    return total;
+    if (total > Integer.MAX_VALUE) {
+      return Integer.MAX_VALUE;
+    }
+    if (total < Integer.MIN_VALUE) {
+      return Integer.MIN_VALUE;
+    }
+    return (int) total;
   }
 
   /**
