@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository;
+import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Repository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
@@ -36,6 +37,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private Schedule4Repository schedule4Repository;
+
+  @MockitoBean
+  private Schedule8Repository schedule8Repository;
 
   @MockitoBean
   private Schedule11Repository schedule11Repository;

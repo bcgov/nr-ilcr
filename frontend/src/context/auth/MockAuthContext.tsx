@@ -1,12 +1,12 @@
 import { createContext } from 'react'
-import type { IlcrRole, MockUser } from './mockUsers'
+import type { MockUser } from './mockUsers'
 import { MOCK_USERS } from './mockUsers'
 
 export type MockAuthContextValue = {
   user: MockUser
   users: MockUser[]
   setUserId: (id: string) => void
-  hasRole: (role: IlcrRole) => boolean
+  hasRole: (role: string) => boolean
 }
 
 export const MockAuthContext = createContext<MockAuthContextValue>({

@@ -5,6 +5,7 @@ export const ROUTES = {
   dashboard: '/',
   scheduleOne: '/schedule-1',
   scheduleTwo: '/schedule-2',
+  scheduleThree: '/schedule-3',
   scheduleFour: '/schedule-4',
   millAssociations: '/mill-associations',
   submissions: '/submissions',
@@ -48,6 +49,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     items: [
       { name: 'Schedule 1', path: ROUTES.scheduleOne },
       { name: 'Schedule 2', path: ROUTES.scheduleTwo },
+      { name: 'Schedule 3', path: ROUTES.scheduleThree },
       { name: 'Schedule 4', path: ROUTES.scheduleFour },
     ],
   },
