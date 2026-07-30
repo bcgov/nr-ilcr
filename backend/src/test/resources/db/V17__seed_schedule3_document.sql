@@ -3,14 +3,13 @@
 -- hand-checkable document, and adds a non-Draft category-3 fixture (mill 517).
 --
 -- V5 already seeded on 1003 (for Schedule 1's BR-03/BR-04 reads — do NOT duplicate/edit those rows):
---   item 119 Crown Timber VOLUME 54321 | item 115 Subtotal Actual (Harvest) COST 900000
---   item 135 Subtotal Actual (PO&P) COST 300000 | item 37 Silviculture Admin (Harvest) COST 150000
--- 115/135 are the DERIVED subtotals persisted for Schedule 1's consumption. Schedule 3 computes its
--- OWN subtotals from the fixed lines; the fixed-line values below are chosen so Schedule 3's computed
--- Subtotal Actual (900000 / 300000) equals the stored 115/135, keeping the whole seed consistent.
+--   item 119 Crown Timber VOLUME 54321 | item 37 Silviculture Admin (Harvest) COST 150000
+-- Schedule 3 (like legacy) computes Subtotal Actual Costs from the fixed lines and NEVER persists a
+-- 115/135 row; the fixed-line values below are chosen so that computed Subtotal Actual = 900000 /
+-- 300000 -> crown 600000, which is exactly the Forest Mgmt Admin cost Schedule 1 derives (BR-04).
 -- [PARITY-VERIFY: confirm the LOCATION-as-override-carrier and these values against the delivery DB.]
 
--- Register the remaining category-3 cost items the Schedule 3 document reads (37/115/135/119 done in V5).
+-- Register the remaining category-3 cost items the Schedule 3 document reads (37/119 done in V5).
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (27,  'Licenses, Fees, Insurance (Harvest)', '3', '1', 'SEED');
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (125, 'Licenses, Fees, Insurance (PO&P)', '3', '1', 'SEED');
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (28,  'Taxes, Leases, Rentals (Harvest)', '3', '1', 'SEED');

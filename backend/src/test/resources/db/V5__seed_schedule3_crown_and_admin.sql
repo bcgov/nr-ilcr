@@ -9,20 +9,20 @@
 -- [PARITY-VERIFY: confirm against the delivery DB before production.]
 
 -- Schedule 3 cost items the Story 2.3 reads reference (category '3'). No FK in the test snapshot, but
--- registered for hygiene/traceability.
+-- registered for hygiene/traceability. Items 115/135 ("Subtotal Actual Costs") are NOT persisted in
+-- production (Schedule 3 computes those subtotals from the fixed lines — see Schedule3CostDerivation),
+-- so they are intentionally NOT seeded as detail rows; Forest Mgmt Admin is derived from the fixed
+-- lines V17 seeds on this summary.
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (37,  'Silviculture Admin Costs (Harvest)', '3', '1', 'SEED');
-INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (115, 'Subtotal Actual Costs (Harvest)', '3', '1', 'SEED');
-INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (135, 'Subtotal Actual Costs (PO&P)', '3', '1', 'SEED');
 INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_CATEGORY_ID, ILCR_SUBCATEGORY_ID, ENTRY_USERID) VALUES (119, 'Crown Timber', '3', '1', 'SEED');
 
 -- 514/2021: give the EXISTING category-3 summary (1003) its Schedule 3 source rows.
 --   Crown Timber (item 119) VOLUME = 54321 (BR-03 source; distinct from cat-1 CROWN_VOLUME 12345).
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (5031, 1003, 119, 54321, NULL, NULL, 'SEED');
---   BR-04 Forest Management Admin Cost = crownCost of Subtotal Actual Costs = cost(115) - cost(135).
---     115 (harvest) 900000, 135 (pop) 300000 -> 600000.
-INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (5032, 1003, 115, NULL, 900000, NULL, 'SEED');
-INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (5033, 1003, 135, NULL, 300000, NULL, 'SEED');
---   BR-04 Less Silviculture Admin Cost = crownCost of Silviculture Admin (PO&P forced 0) = cost(37).
+--   BR-04 Forest Management Admin Cost = crown of Schedule 3's (DERIVED) Subtotal Actual Costs. The
+--   fixed lines V17 seeds on this summary compute to harvest 900000 / PO&P 300000 -> crown 600000
+--   (pinned by Schedule3DocumentIT), which is exactly what Schedule 1's BR-04 pull now reads.
+--   BR-04 Less Silviculture Admin Cost = crown of Silviculture Admin (item 37; PO&P forced 0) = cost(37).
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (5034, 1003, 37, NULL, 150000, NULL, 'SEED');
 
 -- Mill 522 - AAA Prefill: ACT, Draft, has a category-1 summary with NO detail rows (all Schedule 1
