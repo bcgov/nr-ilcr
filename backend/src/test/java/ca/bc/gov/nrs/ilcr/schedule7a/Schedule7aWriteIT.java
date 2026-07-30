@@ -13,9 +13,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import com.jayway.jsonpath.JsonPath;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
@@ -29,6 +32,25 @@ class Schedule7aWriteIT extends AbstractOracleIT {
   private static final String BRIDGES = "/api/v1/schedule7a/bridges";
   private static final String MILL = "515";
   private static final String YEAR = "2021";
+
+  @Autowired private JdbcTemplate jdbc;
+
+  /**
+   * Mill 515/2021 is the shared, initially-empty write fixture; the container is one-per-JVM with no
+   * per-test rollback (see {@link AbstractOracleIT}). Remove everything these tests commit so mill 515
+   * is empty again for the next test AND for {@code Schedule7aContextGuardIT.emptyList_returns200},
+   * which asserts it empty — that guard must not depend on Failsafe class order.
+   */
+  @AfterEach
+  void cleanupMill515() {
+    jdbc.update(
+        "DELETE FROM THE.ILCR_COST_REPORT_DETAIL WHERE BRIDGE_REPORT_ID IN "
+            + "(SELECT BRIDGE_REPORT_ID FROM THE.BRIDGE_REPORT "
+            + "WHERE ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '7')");
+    jdbc.update(
+        "DELETE FROM THE.BRIDGE_REPORT "
+            + "WHERE ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '7'");
+  }
 
   /** A valid bridge body (grandTotal 12000) — {@code {loc}} substituted for a per-test name. */
   private static String validBody(String location, int revisionCount) {
@@ -146,7 +168,7 @@ class Schedule7aWriteIT extends AbstractOracleIT {
   @DisplayName("correct a bridge -> recomputed totals + bumped revision (S03)")
   void update_correctsBridge() throws Exception {
     long id = addBridge("Correct Me");
-    // Halve every cost by editing the body: new grandTotal computed from the new costs.
+    // Double the site-plan cost (1000 -> 2000) via a full-body PUT: grandTotal recomputed 12000 -> 13000.
     String edit = validBody("Corrected", 0)
         .replace("\"sitePlanCost\": 1000", "\"sitePlanCost\": 2000");
     mockMvc.perform(put(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR)
@@ -185,5 +207,103 @@ class Schedule7aWriteIT extends AbstractOracleIT {
     mockMvc.perform(delete(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + id + ")]", is(empty())));
+  }
+
+  @Test
+  @DisplayName("update a bridge id owned by another mill -> 404 (IDOR scope)")
+  void update_foreignMillBridgeId_notFound() throws Exception {
+    // Bridge 7601 belongs to mill 514; correcting it while scoped to mill 515 must not resolve.
+    mockMvc.perform(put(BRIDGES + "/7601").param("millId", MILL).param("year", YEAR)
+            .contentType(MediaType.APPLICATION_JSON).content(validBody("Cross Mill", 0)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("delete a bridge id owned by another mill -> 404 (IDOR scope)")
+  void delete_foreignMillBridgeId_notFound() throws Exception {
+    mockMvc.perform(delete(BRIDGES + "/7601").param("millId", MILL).param("year", YEAR))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("delete an unknown bridge id -> 404")
+  void delete_unknownId_notFound() throws Exception {
+    mockMvc.perform(delete(BRIDGES + "/888888").param("millId", MILL).param("year", YEAR))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("correct outside Draft (mill 517 Submitted) -> 409 (S18 write half)")
+  void update_rejectedOutsideDraft() throws Exception {
+    // 7651 is a real bridge on the Submitted mill 517; the Draft gate rejects before any write.
+    mockMvc.perform(put(BRIDGES + "/7651").param("millId", "517").param("year", YEAR)
+            .contentType(MediaType.APPLICATION_JSON).content(validBody("Nope", 0)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", containsString("cannot be edited")));
+  }
+
+  @Test
+  @DisplayName("delete outside Draft (mill 517 Submitted) -> 409")
+  void delete_rejectedOutsideDraft() throws Exception {
+    mockMvc.perform(delete(BRIDGES + "/7651").param("millId", "517").param("year", YEAR))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", containsString("cannot be edited")));
+  }
+
+  @Test
+  @DisplayName("correcting a cost to null clears its detail row and drops the total (S03)")
+  void update_clearsCostToNull_dropsTotal() throws Exception {
+    long id = addBridge("Clear Cost");
+    // Null out otherCost (item 73, 100): a full-body PUT removes the detail row, grandTotal 12000 -> 11900.
+    String edit = validBody("Cleared", 0).replace("\"otherCost\": 100", "\"otherCost\": null");
+    mockMvc.perform(put(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR)
+            .contentType(MediaType.APPLICATION_JSON).content(edit))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + id + ")].grandTotal",
+            hasItem(11900)));
+    // The cost child for item 73 is actually gone from the table, not merely omitted from the echo.
+    Integer remaining = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE BRIDGE_REPORT_ID = ? AND ILCR_REPORT_COST_ITEM_ID = 73", Integer.class, id);
+    org.junit.jupiter.api.Assertions.assertEquals(0, remaining.intValue());
+  }
+
+  @Test
+  @DisplayName("delete removes the bridge's ten cost children from the table (S04 cascade)")
+  void delete_removesCostChildren() throws Exception {
+    long id = addBridge("Cascade");
+    Integer before = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL WHERE BRIDGE_REPORT_ID = ?",
+        Integer.class, id);
+    org.junit.jupiter.api.Assertions.assertEquals(10, before.intValue());
+    mockMvc.perform(delete(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR))
+        .andExpect(status().isOk());
+    Integer after = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL WHERE BRIDGE_REPORT_ID = ?",
+        Integer.class, id);
+    org.junit.jupiter.api.Assertions.assertEquals(0, after.intValue());
+  }
+
+  @Test
+  @DisplayName("delete the last bridge -> SUC-003 empty-schedule message")
+  void delete_lastBridge_emptyScheduleMessage() throws Exception {
+    long id = addBridge("Last One");
+    mockMvc.perform(delete(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.bridges", is(empty())))
+        .andExpect(jsonPath("$.message.key", is("anyDataToSaveInfoMsg")))
+        .andExpect(jsonPath("$.message.text", is("Any data was saved. The Schedule is empty.")));
+  }
+
+  @Test
+  @DisplayName("delete with bridges remaining -> SUC-002 deleted message")
+  void delete_withRemaining_deletedMessage() throws Exception {
+    long keep = addBridge("Keep");
+    long remove = addBridge("Remove");
+    mockMvc.perform(delete(BRIDGES + "/" + remove).param("millId", MILL).param("year", YEAR))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + keep + ")].locationName",
+            hasItem("Keep")))
+        .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")));
   }
 }
