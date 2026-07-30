@@ -1,11 +1,13 @@
 package ca.bc.gov.nrs.ilcr.schedule11.api;
 
+import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
@@ -121,5 +123,21 @@ public interface Schedule11Api {
   ResponseEntity<Schedule11CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Type-ahead search of the global BEC catalogue for the forced-selection field (BR-09, S16). A
+   * read-only lookup that mutates nothing and takes NO mill/year context (the catalogue is global,
+   * not Draft-gated). {@code q} is matched case-insensitively as a prefix of the concatenated
+   * zone+subzone+variant+phase label; a blank/whitespace {@code q} yields an empty list. Requires
+   * {@code VIEW_SCHEDULE} → 403 otherwise.
+   *
+   * @param q the raw search term (may be absent/blank — blank yields an empty list)
+   * @param authentication the caller (VIEW_SCHEDULE)
+   * @return 200 with the label-ordered, capped list of catalogue options
+   */
+  @GetMapping("/biogeoclimatic-catalogue")
+  ResponseEntity<List<BiogeoclimaticOption>> searchBiogeoCatalogue(
+      @RequestParam(name = "q", required = false) String q,
       Authentication authentication);
 }

@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
@@ -536,5 +537,47 @@ class Schedule11ServiceTest {
   private void stubEmpty() {
     when(repository.findLocations(YEAR, MILL)).thenReturn(List.of());
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+  }
+
+  // ---- BEC catalogue type-ahead (AC6/BR-09/S16) ------------------------------------------------
+
+  private static BiogeoclimaticCatalogueEntity catalogue(
+      long id, String zone, String subzone, String variant, String phase) {
+    return new BiogeoclimaticCatalogueEntity(id, zone, subzone, variant, phase);
+  }
+
+  @Test
+  void searchBiogeoCatalogue_mapsRowsToLabelWithNullsAsEmpty() {
+    // Same concat as SilvicultureLocation.becLabel (getBiogeoSubZoneVariantPase): nulls -> "".
+    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
+        catalogue(8804L, "SBS", "dk", null, null),
+        catalogue(8806L, "SBS", "wk", "1", "a")));
+
+    List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("SBS");
+
+    assertEquals(2, options.size());
+    assertEquals(8804L, options.get(0).id());
+    assertEquals("SBSdk", options.get(0).label());   // null variant + phase -> ""
+    assertEquals("SBSwk1a", options.get(1).label());  // full zone+subzone+variant+phase
+  }
+
+  @Test
+  void searchBiogeoCatalogue_trimsTermBeforeQuery() {
+    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
+        catalogue(8804L, "SBS", "dk", null, null)));
+
+    List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("  SBS  ");
+
+    assertEquals(1, options.size());
+    verify(repository).searchBiogeoCatalogue("SBS"); // surrounding whitespace stripped
+  }
+
+  @Test
+  void searchBiogeoCatalogue_blankOrNullTerm_returnsEmptyWithoutQuery() {
+    // Legacy minQueryLength=1: a blank/whitespace/null term never touches the catalogue.
+    assertTrue(service.searchBiogeoCatalogue("   ").isEmpty());
+    assertTrue(service.searchBiogeoCatalogue("").isEmpty());
+    assertTrue(service.searchBiogeoCatalogue(null).isEmpty());
+    verify(repository, never()).searchBiogeoCatalogue(anyString());
   }
 }

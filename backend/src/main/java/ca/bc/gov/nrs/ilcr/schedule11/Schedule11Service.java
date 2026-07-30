@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
@@ -92,6 +93,28 @@ public class Schedule11Service {
     String trackStatus = millContextService.findSchedule11TrackStatusCode(millId, year)
         .orElse(null);
     return buildDocument(millId, year, trackStatus, callerMayEdit);
+  }
+
+  /**
+   * Type-ahead search of the global BEC catalogue for the forced-selection field (BR-09, S16). A
+   * blank/whitespace term returns an empty list WITHOUT touching the database (legacy
+   * {@code minQueryLength=1}); otherwise the trimmed term drives a case-insensitive prefix match on
+   * the concatenated label, and each catalogue row is mapped to its {@code becLabel} — the same
+   * concat the served location rows use, so a picked option reads identically to a saved row. The
+   * catalogue is global: no mill/year context, no Draft gate (VIEW-gated lookup).
+   *
+   * @param term the raw search term from the request (may be null/blank)
+   * @return the label-ordered options (empty when the term is blank; capped by the repository)
+   */
+  @Transactional(readOnly = true)
+  public List<BiogeoclimaticOption> searchBiogeoCatalogue(String term) {
+    if (term == null || term.isBlank()) {
+      return List.of();
+    }
+    return repository.searchBiogeoCatalogue(term.trim()).stream()
+        .map(row -> new BiogeoclimaticOption(
+            row.id(), becLabel(row.becZoneCode(), row.subzone(), row.variant(), row.phase())))
+        .toList();
   }
 
   /**
@@ -494,18 +517,21 @@ public class Schedule11Service {
     return result.scale() < 1 ? result.setScale(1, RoundingMode.HALF_UP) : result;
   }
 
+  private static String becLabel(SilvicultureLocationEntity row) {
+    return becLabel(row.becZoneCode(), row.subzone(), row.variant(), row.phase());
+  }
+
   /**
    * Legacy {@code BiogeoclimaticCatalogue.getBiogeoSubZoneVariantPase()}: zone+subzone+variant+
    * phase with null variant/phase as {@code ""}. A missing catalogue row (null zone — no FK in
-   * delivery, AC9) yields null rather than a partial label.
+   * delivery, AC9) yields null rather than a partial label. Shared by the served location rows and
+   * the BEC catalogue lookup so both render the identical label (BR-09 forced selection).
    */
-  private static String becLabel(SilvicultureLocationEntity row) {
-    if (row.becZoneCode() == null) {
+  private static String becLabel(String zoneCode, String subzone, String variant, String phase) {
+    if (zoneCode == null) {
       return null;
     }
-    String variant = row.variant() != null ? row.variant() : "";
-    String phase = row.phase() != null ? row.phase() : "";
-    return row.becZoneCode() + row.subzone() + variant + phase;
+    return zoneCode + subzone + (variant != null ? variant : "") + (phase != null ? phase : "");
   }
 
   /** The 24/23 whole-dollar cost pair of one location; either side may be null. */
