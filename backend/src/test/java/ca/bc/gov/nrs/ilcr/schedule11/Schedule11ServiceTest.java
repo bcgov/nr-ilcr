@@ -65,8 +65,12 @@ class Schedule11ServiceTest {
   private Schedule11Service service;
 
   private static SilvicultureLocationRequest request(Integer actual, Integer planned, Integer rev) {
+    // Costs are whole-dollar BigDecimals on the wire (fraction=0); the service narrows them back to
+    // the Integer COST column via wholeDollars — the upsertCost verifications pin that narrowing.
     return new SilvicultureLocationRequest(
-        "North Ridge", true, 8801L, new BigDecimal("125.5"), actual, planned, null, rev);
+        "North Ridge", true, 8801L, new BigDecimal("125.5"),
+        actual == null ? null : BigDecimal.valueOf(actual),
+        planned == null ? null : BigDecimal.valueOf(planned), null, rev);
   }
 
   private void stubTrack(String code) {
@@ -570,6 +574,17 @@ class Schedule11ServiceTest {
 
     assertEquals(1, options.size());
     verify(repository).searchBiogeoCatalogue("SBS"); // surrounding whitespace stripped
+  }
+
+  @Test
+  void searchBiogeoCatalogue_escapesLikeMetacharactersForLiteralPrefixMatch() {
+    // Legacy completeBiogeoSubzoneVariant used String.startsWith — '%', '_' and '\' are literal
+    // characters there, so they must reach the LIKE clause escaped (paired with ESCAPE '\').
+    when(repository.searchBiogeoCatalogue("50\\%\\_\\\\")).thenReturn(List.of());
+
+    assertTrue(service.searchBiogeoCatalogue("50%_\\").isEmpty());
+
+    verify(repository).searchBiogeoCatalogue("50\\%\\_\\\\");
   }
 
   @Test

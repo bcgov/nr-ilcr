@@ -93,16 +93,18 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
    * and ORDER BY agree with the label the service derives in Java. Oracle {@code ||} treats a NULL
    * variant/phase as {@code ""}, mirroring {@code getBiogeoSubZoneVariantPase()}. Ordered by that
    * label and capped so the type-ahead payload stays bounded; the blank/whitespace short-circuit
-   * (empty result, no query) lives in {@link Schedule11Service}.
+   * (empty result, no query) and the {@code LIKE}-metacharacter escaping (a user-typed {@code %}/
+   * {@code _} must match LITERALLY, not as a wildcard — legacy {@code String.startsWith}) live in
+   * {@link Schedule11Service}, paired with the {@code ESCAPE '\'} clause here.
    *
-   * @param term the already-trimmed, non-blank search prefix
+   * @param term the already-trimmed, non-blank, LIKE-escaped search prefix
    * @return the matching catalogue rows, label-ordered, at most 50
    */
   @Query("""
       SELECT c.BIOGEOCLIMATIC_CATALOGUE_ID, c.BEC_ZONE_CODE, c.SUBZONE, c.VARIANT, c.PHASE
         FROM THE.BIOGEOCLIMATIC_CATALOGUE c
        WHERE UPPER(c.BEC_ZONE_CODE || c.SUBZONE || c.VARIANT || c.PHASE)
-             LIKE UPPER(:term) || '%'
+             LIKE UPPER(:term) || '%' ESCAPE '\\'
        ORDER BY c.BEC_ZONE_CODE || c.SUBZONE || c.VARIANT || c.PHASE
        FETCH FIRST 50 ROWS ONLY
       """)

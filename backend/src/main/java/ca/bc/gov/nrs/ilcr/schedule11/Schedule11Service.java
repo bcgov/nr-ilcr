@@ -98,7 +98,9 @@ public class Schedule11Service {
   /**
    * Type-ahead search of the global BEC catalogue for the forced-selection field (BR-09, S16). A
    * blank/whitespace term returns an empty list WITHOUT touching the database (legacy
-   * {@code minQueryLength=1}); otherwise the trimmed term drives a case-insensitive prefix match on
+   * {@code minQueryLength=1}); otherwise the trimmed term — with Oracle {@code LIKE} metacharacters
+   * escaped so the match is a LITERAL prefix (legacy {@code String.startsWith} semantics) — drives a
+   * case-insensitive prefix match on
    * the concatenated label, and each catalogue row is mapped to its {@code becLabel} — the same
    * concat the served location rows use, so a picked option reads identically to a saved row. The
    * catalogue is global: no mill/year context, no Draft gate (VIEW-gated lookup).
@@ -111,7 +113,7 @@ public class Schedule11Service {
     if (term == null || term.isBlank()) {
       return List.of();
     }
-    return repository.searchBiogeoCatalogue(term.trim()).stream()
+    return repository.searchBiogeoCatalogue(escapeLike(term.trim())).stream()
         .map(row -> new BiogeoclimaticOption(
             row.id(), becLabel(row.becZoneCode(), row.subzone(), row.variant(), row.phase())))
         .toList();
@@ -174,7 +176,8 @@ public class Schedule11Service {
       repository.insertLocation(
           locationId, millId, year, request.location(), request.biogeoclimaticCatalogueId(),
           request.netArea(), enhancedInd(request.enhancedIndicator()), request.comments(), user);
-      writeCosts(locationId, request.actualCost(), request.plannedCost(), user);
+      writeCosts(locationId, wholeDollars(request.actualCost()),
+          wholeDollars(request.plannedCost()), user);
     } catch (DataIntegrityViolationException ex) {
       throwConflictOrNotSaved(ex, "add", millId, year);
     } catch (DataAccessException ex) {
@@ -216,7 +219,8 @@ public class Schedule11Service {
         }
         throw new StaleRevisionException();
       }
-      writeCosts(locationId, request.actualCost(), request.plannedCost(), user);
+      writeCosts(locationId, wholeDollars(request.actualCost()),
+          wholeDollars(request.plannedCost()), user);
     } catch (DataIntegrityViolationException ex) {
       throwConflictOrNotSaved(ex, "update", millId, year);
     } catch (DataAccessException ex) {
@@ -519,6 +523,26 @@ public class Schedule11Service {
 
   private static String becLabel(SilvicultureLocationEntity row) {
     return becLabel(row.becZoneCode(), row.subzone(), row.variant(), row.phase());
+  }
+
+  /**
+   * Escape Oracle {@code LIKE} metacharacters ({@code \}, {@code %}, {@code _}) in the user's
+   * search term so the repository match is a LITERAL prefix — legacy
+   * {@code Schedule11MB.completeBiogeoSubzoneVariant} used plain {@code String.startsWith}, where
+   * these characters match nothing special. Pairs with the {@code ESCAPE '\'} clause on
+   * {@link Schedule11Repository#searchBiogeoCatalogue}.
+   */
+  private static String escapeLike(String term) {
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+  }
+
+  /**
+   * Narrow a validated whole-dollar cost to the {@code COST NUMBER(15)} column type. Safe by
+   * construction: {@code @Digits(fraction = 0)} on the request has already rejected any fractional
+   * value, so {@code intValueExact} cannot throw here.
+   */
+  private static Integer wholeDollars(BigDecimal cost) {
+    return cost == null ? null : cost.intValueExact();
   }
 
   /**

@@ -176,7 +176,9 @@ describe('Schedule 11 page (Story 25.3)', () => {
     await user.click(await screen.findByRole('button', { name: /^add$/i }))
 
     expect(screen.getByText('Location: Value is required.')).toBeInTheDocument()
+    expect(screen.getByText('Enhanced: Value is required.')).toBeInTheDocument()
     expect(screen.getByText('Biogeo/Subzone/Variant: Value is required.')).toBeInTheDocument()
+    expect(screen.getByText('NAR(ha): Value is required.')).toBeInTheDocument()
     expect(post).not.toHaveBeenCalled()
   })
 
@@ -206,6 +208,66 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
+  test('an out-of-range cost blocks the POST with the advisory cost error (AC5)', async () => {
+    const post = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, () => {
+        post()
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'Yes' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    await user.type(screen.getByLabelText('NAR(ha)'), '10')
+    await user.type(screen.getByLabelText('Actual Cost ($)'), '100000000')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(
+      screen.getByText('Entered cost must be between -99,999,999 and 99,999,999.'),
+    ).toBeInTheDocument()
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  test('fractional costs round to whole dollars before send (legacy Oracle rounding parity)', async () => {
+    let captured: SilvicultureLocationRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, async ({ request }) => {
+        captured = (await request.json()) as SilvicultureLocationRequest
+        return HttpResponse.json(
+          doc({
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'Yes' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    await user.type(screen.getByLabelText('NAR(ha)'), '10')
+    // Legacy accepted fractional costs and Oracle COST NUMBER(15) ROUNDED them on insert; the
+    // client reproduces that (half away from zero) so the Integer wire never silently truncates.
+    await user.type(screen.getByLabelText('Actual Cost ($)'), '100.5')
+    await user.type(screen.getByLabelText('Planned Cost ($)'), '-2.5')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(captured!.actualCost).toBe(101)
+    expect(captured!.plannedCost).toBe(-3)
+  })
+
   test('inline edit PUTs the row carrying its revisionCount and shows success (AC3)', async () => {
     let captured: SilvicultureLocationRequest | null = null
     server.use(
@@ -232,6 +294,63 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(captured).not.toBeNull()
     expect(captured!.location).toBe('North Ridge Revised')
     expect(captured!.revisionCount).toBe(4)
+    // The full edit body is pinned — a mis-seeded startEdit or mis-mapped buildBody must fail here.
+    expect(captured!.biogeoclimaticCatalogueId).toBe(321)
+    expect(captured!.enhancedIndicator).toBe(false)
+    expect(captured!.netArea).toBe(120.5)
+    expect(captured!.actualCost).toBe(25000)
+    expect(captured!.plannedCost).toBe(10000)
+    expect(captured!.comments).toBeNull()
+  })
+
+  test('an invalid inline edit blocks the PUT with the advisory error (AC5)', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${LOCATIONS_URL}/9001`, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const nar = screen.getByLabelText('Edit NAR(ha)')
+    await user.clear(nar)
+    await user.type(nar, '1000000')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(
+      screen.getByText('Entered NAR (ha) must be between 0 and 999,999.9.'),
+    ).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  test('edit Cancel restores the row with no request (AC3)', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${LOCATIONS_URL}/9001`, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const location = screen.getByLabelText('Edit Location')
+    await user.clear(location)
+    await user.type(location, 'Changed But Discarded')
+    // Scoped to the edit row — the (closed) delete modal mounts its own Cancel button.
+    const editRow = location.closest('tr') as HTMLElement
+    await user.click(within(editRow).getByRole('button', { name: /^cancel$/i }))
+
+    expect(put).not.toHaveBeenCalled()
+    const row = screen.getByText('North Ridge').closest('tr') as HTMLElement
+    expect(within(row).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByText('Changed But Discarded')).not.toBeInTheDocument()
   })
 
   test('delete confirm issues DELETE and shows the verbatim delete success (AC4)', async () => {
@@ -337,6 +456,65 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
+  test('typing after a pick drops the BEC selection (forced selection, AC6)', async () => {
+    const post = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, () => {
+        post()
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'Yes' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    // Appending to the picked label breaks the resolved option — the stale id must not submit
+    // under a label that no longer matches (BR-09).
+    await user.type(screen.getByRole('combobox', { name: /^Biogeo\/Subzone\/Variant$/i }), 'x')
+    await user.type(screen.getByLabelText('NAR(ha)'), '10')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(screen.getByText('Biogeo/Subzone/Variant: Value is required.')).toBeInTheDocument()
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  test('clearing the BEC input fires no search request (client minQueryLength=1)', async () => {
+    const search = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))),
+      http.get(BEC_URL, () => {
+        search()
+        return HttpResponse.json([])
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    const combo = await screen.findByRole('combobox', { name: /^Biogeo\/Subzone\/Variant$/i })
+    await user.type(combo, 'I')
+    await user.clear(combo)
+    // Past the debounce window: clearing must have cancelled the pending search outright.
+    await delay(350)
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  test('Comments is a TextArea with the 3500 counter (AC11 / BR-10)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))))
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    const comments = await screen.findByLabelText('Comments')
+    expect(comments.tagName).toBe('TEXTAREA')
+    expect(screen.getByText('0/3500')).toBeInTheDocument()
+    await user.type(comments, 'hello')
+    expect(screen.getByText('5/3500')).toBeInTheDocument()
+  })
+
   test('Check Status all-met renders SUC-004 and SUC-003 (AC7)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
@@ -386,6 +564,34 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(
       screen.queryByText('All requirements for this schedule have been met'),
     ).not.toBeInTheDocument()
+  })
+
+  test('Check Status locks while in flight — one POST per click (AC7)', async () => {
+    const check = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        check()
+        await delay(150)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: null,
+          message: { key: 'checkStatusMessage', text: 'Status has been checked' },
+        })
+      }),
+    )
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    const button = screen.getByRole('button', { name: /check status/i })
+    await user.click(button)
+    // The in-flight lock disables the button (and the rest of the write surface) until it resolves.
+    await waitFor(() => expect(button).toBeDisabled())
+    expect(await screen.findByText('Status has been checked')).toBeInTheDocument()
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(check).toHaveBeenCalledTimes(1)
   })
 
   test.each([
@@ -494,5 +700,50 @@ describe('Schedule 11 page (Story 25.3)', () => {
 
     expect(await screen.findByText('South Valley')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('North Ridge')).not.toBeInTheDocument())
+  })
+
+  test('a stale add response (mill/year changed mid-flight) is ignored', async () => {
+    // The POST is dispatched under the initial context (13050); the context then changes to 999 and
+    // its GET loads South Valley. When the slow POST resolves, its old-mill document and success
+    // banner must NOT apply over the fresh context.
+    server.use(
+      http.get(URL, ({ request }) =>
+        request.url.includes('millId=999')
+          ? HttpResponse.json(doc({ locations: [{ ...northRidge, location: 'South Valley' }] }))
+          : HttpResponse.json(doc({ locations: [], totals: {} })),
+      ),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, async () => {
+        await delay(300)
+        return HttpResponse.json(
+          doc({
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    // Explicit initial context: the sibling stale-GET test persists 999/2020 to localStorage, and a
+    // no-op "change" to the same context would defeat the race this test exists to exercise.
+    render(
+      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByLabelText('Location'), 'North Ridge')
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'Yes' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    await user.type(screen.getByLabelText('NAR(ha)'), '10')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('South Valley')).toBeInTheDocument()
+    // Let the stale POST resolve, then confirm nothing from it landed.
+    await delay(400)
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('North Ridge')).not.toBeInTheDocument()
+    expect(screen.getByText('South Valley')).toBeInTheDocument()
   })
 })

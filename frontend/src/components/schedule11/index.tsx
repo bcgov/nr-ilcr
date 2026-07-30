@@ -60,6 +60,13 @@ const money = (value: number | null | undefined): string => mask(value, 0, 0) //
 const area = (value: number | null | undefined): string => mask(value, 1, 1) // #,###,##0.0
 const ratio = (value: number | null | undefined): string => mask(value, 2, 2) // #,###,##0.00
 
+// Whole-dollar costs: legacy accepted fractional input (ILCRCostConverter BigDecimal parse) and
+// Oracle COST NUMBER(15) ROUNDED it on insert, while the modern Integer wire would silently
+// TRUNCATE at deserialization. Round half-away-from-zero (Oracle's rounding) before send so the
+// stored value matches legacy; the backend independently rejects any fractional cost (@Digits).
+const roundCost = (value: number | null): number | null =>
+  value === null ? null : Math.sign(value) * Math.round(Math.abs(value))
+
 const emptyForm = (): LocationFormValues => ({
   location: '',
   enhanced: null,
@@ -114,12 +121,17 @@ const BiogeoComboBox: FC<{
 }> = ({ id, label, selected, disabled, invalidText, onSelect }) => {
   const [items, setItems] = useState<BiogeoclimaticOption[]>([])
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonic search token: only the LATEST dispatched search may populate the list, so an older,
+  // slower response can never overwrite newer suggestions (out-of-order type-ahead race).
+  const searchSeqRef = useRef(0)
   // Latest resolved label, updated synchronously on selection so the follow-up onInputChange (which
   // Carbon fires with the chosen label) does not mistake the selection for stray typing.
   const selectedLabelRef = useRef<string | null>(selected?.label ?? null)
 
   useEffect(
     () => () => {
+      // Invalidate any in-flight search on unmount (its setItems must not land) + drop the timer.
+      searchSeqRef.current += 1
       if (timerRef.current) {
         clearTimeout(timerRef.current)
       }
@@ -131,12 +143,29 @@ const BiogeoComboBox: FC<{
     if (timerRef.current) {
       clearTimeout(timerRef.current)
     }
+    const term = query.trim()
+    // Client-side minQueryLength=1 (legacy): a blank term never costs a round-trip, and clearing
+    // the field invalidates any in-flight search so stale suggestions cannot repopulate the list.
+    if (term === '') {
+      searchSeqRef.current += 1
+      setItems([])
+      return
+    }
     timerRef.current = setTimeout(() => {
+      const seq = ++searchSeqRef.current
       apiService
         .getAxiosInstance()
-        .get<BiogeoclimaticOption[]>(`${BEC_CATALOGUE_PATH}?q=${encodeURIComponent(query.trim())}`)
-        .then((response) => setItems(response.data))
-        .catch(() => setItems([]))
+        .get<BiogeoclimaticOption[]>(`${BEC_CATALOGUE_PATH}?q=${encodeURIComponent(term)}`)
+        .then((response) => {
+          if (seq === searchSeqRef.current) {
+            setItems(response.data)
+          }
+        })
+        .catch(() => {
+          if (seq === searchSeqRef.current) {
+            setItems([])
+          }
+        })
     }, BEC_DEBOUNCE_MS)
   }
 
@@ -182,6 +211,17 @@ const mapLoadError = (detail: string | undefined): string => detail ?? 'Unable t
 const Schedule11: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
+
+  // The GET path's stale-response guard lives inside useScheduleDocument (its active flag); the
+  // write/check handlers need their own: a response dispatched under one mill/year must never apply
+  // after the context changes (the document it echoes belongs to the OLD context). Each handler
+  // closes over its dispatch-time context; the ref always holds the current one.
+  const contextRef = useRef({ millId, year })
+  useEffect(() => {
+    contextRef.current = { millId, year }
+  }, [millId, year])
+  const contextStillCurrent = () =>
+    contextRef.current.millId === millId && contextRef.current.year === year
 
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -248,8 +288,8 @@ const Schedule11: FC = () => {
     enhancedIndicator: form.enhanced as boolean,
     biogeoclimaticCatalogueId: (form.bec as BiogeoclimaticOption).id,
     netArea: toNum(form.netArea) as number,
-    actualCost: toNum(form.actualCost),
-    plannedCost: toNum(form.plannedCost),
+    actualCost: roundCost(toNum(form.actualCost)),
+    plannedCost: roundCost(toNum(form.plannedCost)),
     comments: form.comments.trim() === '' ? null : form.comments,
     ...(revisionCount === undefined ? {} : { revisionCount }),
   })
@@ -276,15 +316,27 @@ const Schedule11: FC = () => {
       .getAxiosInstance()
       .post<Schedule11Response>(`${SCHEDULE11_PATH}/locations${query}`, buildBody(addForm))
       .then((response) => {
+        if (!contextStillCurrent()) {
+          return
+        }
         applyDocument(response.data)
         // Inputs cleared only on success (add-is-save).
         setAddForm(emptyForm())
       })
       .catch((error: unknown) => {
+        if (!contextStillCurrent()) {
+          return
+        }
         // Keep entered values for correction; surface the API's verbatim detail.
         setActionError(extractDetail(error) || 'Schedule could not be saved.')
       })
-      .finally(() => setSaving(false))
+      // On a context change resetTransient already cleared `saving` — and a save dispatched under
+      // the NEW context may be in flight, so a stale finally must not release its lock.
+      .finally(() => {
+        if (contextStillCurrent()) {
+          setSaving(false)
+        }
+      })
   }
 
   const startEdit = (row: SilvicultureLocation) => {
@@ -294,7 +346,10 @@ const Schedule11: FC = () => {
     setEditForm({
       location: row.location,
       enhanced: row.enhancedIndicator,
-      bec: { id: row.biogeoclimaticCatalogueId, label: row.becLabel ?? '' },
+      // A row whose catalogue label is missing (dangling id — no FK in delivery) must NOT seed a
+      // phantom selection: force a real re-pick instead of resubmitting the dangling id (BR-09).
+      bec:
+        row.becLabel === null ? null : { id: row.biogeoclimaticCatalogueId, label: row.becLabel },
       netArea: numStr(row.netArea),
       actualCost: numStr(row.actualCost),
       plannedCost: numStr(row.plannedCost),
@@ -311,7 +366,9 @@ const Schedule11: FC = () => {
   }
 
   const handleSaveEdit = () => {
-    if (editingId === null || saving) {
+    // revisionCount is read from the loaded row at startEdit — never hardcoded or coerced; an
+    // unseeded token cannot reach the PUT (a coerced 0 could silently bypass the stale-edit check).
+    if (editingId === null || editRevision === null || saving) {
       return
     }
     clearBanners()
@@ -322,21 +379,30 @@ const Schedule11: FC = () => {
     }
     setEditErrors({})
     setSaving(true)
-    // revisionCount read from the loaded row (never hardcoded); a new/unseeded token falls back to 0.
     apiService
       .getAxiosInstance()
       .put<Schedule11Response>(
         `${SCHEDULE11_PATH}/locations/${editingId}${query}`,
-        buildBody(editForm, editRevision ?? 0),
+        buildBody(editForm, editRevision),
       )
       .then((response) => {
+        if (!contextStillCurrent()) {
+          return
+        }
         applyDocument(response.data)
         cancelEdit()
       })
       .catch((error: unknown) => {
+        if (!contextStillCurrent()) {
+          return
+        }
         setActionError(extractDetail(error) || 'Schedule could not be saved.')
       })
-      .finally(() => setSaving(false))
+      .finally(() => {
+        if (contextStillCurrent()) {
+          setSaving(false)
+        }
+      })
   }
 
   const handleDelete = () => {
@@ -352,11 +418,21 @@ const Schedule11: FC = () => {
     apiService
       .getAxiosInstance()
       .delete<Schedule11Response>(`${SCHEDULE11_PATH}/locations/${id}${query}`)
-      .then((response) => applyDocument(response.data))
-      .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Unable to delete location.')
+      .then((response) => {
+        if (contextStillCurrent()) {
+          applyDocument(response.data)
+        }
       })
-      .finally(() => setSaving(false))
+      .catch((error: unknown) => {
+        if (contextStillCurrent()) {
+          setActionError(extractDetail(error) || 'Unable to delete location.')
+        }
+      })
+      .finally(() => {
+        if (contextStillCurrent()) {
+          setSaving(false)
+        }
+      })
   }
 
   const handleCheckStatus = () => {
@@ -364,13 +440,27 @@ const Schedule11: FC = () => {
       return
     }
     clearBanners()
+    // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must
+    // not interleave with (or resurrect state older than) a mutation — `saving` locks both ways.
+    setSaving(true)
     // Read-only validation (BR-07) — mutates nothing. Disabled in read-only for S20/legacy parity.
     apiService
       .getAxiosInstance()
       .post<Schedule11CheckStatusResponse>(`${SCHEDULE11_PATH}/check-status${query}`)
-      .then((response) => setCheckResult(response.data))
+      .then((response) => {
+        if (contextStillCurrent()) {
+          setCheckResult(response.data)
+        }
+      })
       .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Unable to check status.')
+        if (contextStillCurrent()) {
+          setActionError(extractDetail(error) || 'Unable to check status.')
+        }
+      })
+      .finally(() => {
+        if (contextStillCurrent()) {
+          setSaving(false)
+        }
       })
   }
 
@@ -424,6 +514,7 @@ const Schedule11: FC = () => {
               hideLabel
               size="sm"
               maxLength={LOCATION_MAX_LENGTH}
+              disabled={saving}
               value={editForm.location}
               onChange={(e) => setEditField('location', e.target.value)}
               invalid={Boolean(editErrors.location)}
@@ -435,6 +526,7 @@ const Schedule11: FC = () => {
               id={`edit-enhanced-${row.locationId}`}
               label="Edit Enhanced"
               value={editForm.enhanced}
+              disabled={saving}
               invalidText={editErrors.enhanced}
               onChange={(v) => setEditField('enhanced', v)}
             />
@@ -444,6 +536,7 @@ const Schedule11: FC = () => {
               id={`edit-bec-${row.locationId}`}
               label="Edit Biogeo/Subzone/Variant"
               selected={editForm.bec}
+              disabled={saving}
               invalidText={editErrors.bec}
               onSelect={(o) => setEditField('bec', o)}
             />
@@ -455,6 +548,7 @@ const Schedule11: FC = () => {
               hideLabel
               size="sm"
               inputMode="decimal"
+              disabled={saving}
               value={editForm.netArea}
               onChange={(e) => setEditField('netArea', e.target.value)}
               invalid={Boolean(editErrors.netArea)}
@@ -468,6 +562,7 @@ const Schedule11: FC = () => {
               hideLabel
               size="sm"
               inputMode="numeric"
+              disabled={saving}
               value={editForm.actualCost}
               onChange={(e) => setEditField('actualCost', e.target.value)}
               invalid={Boolean(editErrors.actualCost)}
@@ -481,6 +576,7 @@ const Schedule11: FC = () => {
               hideLabel
               size="sm"
               inputMode="numeric"
+              disabled={saving}
               value={editForm.plannedCost}
               onChange={(e) => setEditField('plannedCost', e.target.value)}
               invalid={Boolean(editErrors.plannedCost)}
@@ -491,12 +587,15 @@ const Schedule11: FC = () => {
           <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
           <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
           <TableCell>
-            <TextInput
+            {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is
+                Add-panel-only, matching legacy). */}
+            <TextArea
               id={`edit-comments-${row.locationId}`}
               labelText="Edit Comments"
               hideLabel
-              size="sm"
+              rows={3}
               maxLength={COMMENTS_MAX_LENGTH}
+              disabled={saving}
               value={editForm.comments}
               onChange={(e) => setEditField('comments', e.target.value)}
             />
@@ -678,6 +777,7 @@ const Schedule11: FC = () => {
                 labelText="Location"
                 size="sm"
                 maxLength={LOCATION_MAX_LENGTH}
+                disabled={saving}
                 value={addForm.location}
                 onChange={(e) => setAddField('location', e.target.value)}
                 invalid={Boolean(addErrors.location)}
@@ -687,6 +787,7 @@ const Schedule11: FC = () => {
                 id="add-enhanced"
                 label="Enhanced"
                 value={addForm.enhanced}
+                disabled={saving}
                 invalidText={addErrors.enhanced}
                 onChange={(v) => setAddField('enhanced', v)}
               />
@@ -694,6 +795,7 @@ const Schedule11: FC = () => {
                 id="add-bec"
                 label="Biogeo/Subzone/Variant"
                 selected={addForm.bec}
+                disabled={saving}
                 invalidText={addErrors.bec}
                 onSelect={(o) => setAddField('bec', o)}
               />
@@ -702,6 +804,7 @@ const Schedule11: FC = () => {
                 labelText="NAR(ha)"
                 size="sm"
                 inputMode="decimal"
+                disabled={saving}
                 value={addForm.netArea}
                 onChange={(e) => setAddField('netArea', e.target.value)}
                 invalid={Boolean(addErrors.netArea)}
@@ -712,6 +815,7 @@ const Schedule11: FC = () => {
                 labelText="Actual Cost ($)"
                 size="sm"
                 inputMode="numeric"
+                disabled={saving}
                 value={addForm.actualCost}
                 onChange={(e) => setAddField('actualCost', e.target.value)}
                 invalid={Boolean(addErrors.actualCost)}
@@ -722,6 +826,7 @@ const Schedule11: FC = () => {
                 labelText="Planned Cost ($)"
                 size="sm"
                 inputMode="numeric"
+                disabled={saving}
                 value={addForm.plannedCost}
                 onChange={(e) => setAddField('plannedCost', e.target.value)}
                 invalid={Boolean(addErrors.plannedCost)}
@@ -732,6 +837,7 @@ const Schedule11: FC = () => {
                 labelText="Comments"
                 enableCounter
                 maxCount={COMMENTS_MAX_LENGTH}
+                disabled={saving}
                 value={addForm.comments}
                 onChange={(e) => setAddField('comments', e.target.value)}
               />

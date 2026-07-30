@@ -31,7 +31,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * {@code oauth2ResourceServer} chain + {@code @PreAuthorize} run: the functional cases authenticate
  * as {@code ILCR_SUBMITTER} (which holds {@code VIEW_SCHEDULE}); the deny case sends no group and
  * expects 403. GET is a safe method — no CSRF token needed (unlike the sibling write ITs). Asserts
- * against the V20 (8801-8803) + V22 (8804-8807, shared 'SBS' prefix) catalogue fixtures.
+ * against the V20 (8801-8803) + V22 (8804-8807, shared 'SBS' prefix) + V23 (8901-8951, the 'ZZQ'
+ * 51-row cap block) catalogue fixtures.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/schedule11/biogeoclimatic-catalogue — BEC type-ahead (Story 25.3)")
@@ -113,6 +114,47 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", is(empty())));
+    }
+
+    @Test
+    @DisplayName("LIKE metacharacters match literally -> '%' and '_' are not wildcards")
+    void likeMetacharacters_matchLiterally() throws Exception {
+        // Unescaped, '%' would return the first 50 rows of the whole catalogue and 'SB_' would
+        // match 'SBS…' via the any-character wildcard. Escaped (legacy String.startsWith parity),
+        // neither matches any real label.
+        mockMvc.perform(get(ENDPOINT)
+                        .param("q", "%")
+                        .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", is(empty())));
+        mockMvc.perform(get(ENDPOINT)
+                        .param("q", "SB_")
+                        .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", is(empty())));
+    }
+
+    @Test
+    @DisplayName("result cap -> 51 'ZZQ' fixture rows return exactly the first 50, label-ordered")
+    void resultCap_boundsTypeAheadPayload() throws Exception {
+        // V23 seeds ZZQz01..ZZQz51; FETCH FIRST 50 ROWS ONLY must drop the label-order tail (z51).
+        mockMvc.perform(get(ENDPOINT)
+                        .param("q", "ZZQ")
+                        .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(50)))
+                .andExpect(jsonPath("$[0].label", is("ZZQz01")))
+                .andExpect(jsonPath("$[49].label", is("ZZQz50")));
+    }
+
+    @Test
+    @DisplayName("no token -> 401 (resource-server chain, before @PreAuthorize)")
+    void anonymous_returns401() throws Exception {
+        mockMvc.perform(get(ENDPOINT).param("q", "SBS"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
