@@ -176,6 +176,28 @@ class Schedule8ServiceTest {
   }
 
   @Test
+  void multiRow_rollupSumsEveryAdditionAndDeduction_acrossAllFourSubcategories() {
+    // Two additions (subcats '1' + '2') and two deductions ('3' + '4') — proves the totals SUM the
+    // rows (n=1 can't distinguish sum from passthrough) and exercises subcategories '2'/'4' (M5).
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
+        rate(8700, 8600, "CT1", 82, "Add subcat 1", "5.00"),
+        rate(8701, 8600, "CT1", 100, "Add subcat 2", "3.25"),
+        rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
+        rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
+
+    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+
+    assertEquals(2, sample.additionCount());
+    assertEquals(2, sample.deductionCount());
+    eq("8.25", sample.additionsTotal());   // 5.00 + 3.25  (subcats '1' + '2')
+    eq("3.75", sample.deductionsTotal());  // 2.00 + 1.75  (subcats '3' + '4')
+    eq("30", sample.finalRate());          // 25.50 + 8.25 − 3.75
+  }
+
+  @Test
   void sampleWithNoRateRows_finalRateEqualsOriginal() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));

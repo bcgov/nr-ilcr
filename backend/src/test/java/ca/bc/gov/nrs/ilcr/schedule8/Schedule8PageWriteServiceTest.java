@@ -50,12 +50,14 @@ class Schedule8PageWriteServiceTest {
     org.mockito.Mockito.lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     org.mockito.Mockito.lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
     org.mockito.Mockito.lenient().when(repository.costItemSubcategories()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.supportCentreLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.regionLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.becZoneLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.tflNumberLabels()).thenReturn(Map.of());
+    // Known page code-table values so the write-path code checks pass for the create/edit requests.
+    org.mockito.Mockito.lenient().when(repository.supportCentreLabels())
+        .thenReturn(Map.of("SC1", "Support Centre One"));
+    org.mockito.Mockito.lenient().when(repository.regionLabels()).thenReturn(Map.of("R1", "Region"));
+    org.mockito.Mockito.lenient().when(repository.becZoneLabels()).thenReturn(Map.of("BZ1", "Zone"));
+    org.mockito.Mockito.lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of("TSA5", "Tsa"));
+    org.mockito.Mockito.lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of("B", "Block"));
+    org.mockito.Mockito.lenient().when(repository.tflNumberLabels()).thenReturn(Map.of("48", "Tfl"));
     org.mockito.Mockito.lenient().when(repository.skidTypeLabels()).thenReturn(Map.of());
     org.mockito.Mockito.lenient().when(repository.costTypeLabels()).thenReturn(Map.of());
   }
@@ -77,6 +79,7 @@ class Schedule8PageWriteServiceTest {
   @Test
   void editWithStaleRevision_throwsStale() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.pageExists(8800, MILL, YEAR)).thenReturn(true); // ownership guard (H1) passes
     when(repository.bumpPageRevision(8800, 5, USER)).thenReturn(0);
     Schedule8PageRequest edit = new Schedule8PageRequest(8800, 5, "LIC1", "SC1", "R1", "BZ1",
         "TSA5", null, "B", null, null, null, null, null);
@@ -91,10 +94,11 @@ class Schedule8PageWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.insertPage(anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(),
         any(), any(), any(), any(), any(), any())).thenReturn(9001);
-    // TFL selected + a supply block supplied → the supply block must be cleared (null) on insert.
+    // TFL selected + a supply block supplied → the supply block must be cleared (null) on insert,
+    // and TSA_NUMBER stamped with the "TFL" sentinel so Check Status routes to the TFL-# branch (H2).
     service.savePage(MILL, YEAR, create("48", "B"), true, USER);
-    // supplyBlock (arg 7, 0-based) null, tflNumber (arg 8) "48".
-    verify(repository).insertPage(eq(MILL), eq(YEAR), eq("SC1"), eq("R1"), eq("BZ1"), eq("TSA5"),
+    // tsaNumber (arg 6) "TFL" sentinel, supplyBlock (arg 7) null, tflNumber (arg 8) "48".
+    verify(repository).insertPage(eq(MILL), eq(YEAR), eq("SC1"), eq("R1"), eq("BZ1"), eq("TFL"),
         isNull(), eq("48"), eq("CP"), eq("LIC1"), eq("Div"), eq("Contact"), eq("250"), eq("notes"),
         eq(USER));
     verify(repository).bumpPageRevision(9001, 0, USER);

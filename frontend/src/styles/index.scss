@@ -97,6 +97,12 @@ body {
   margin-block-start: $spacing-02;
 }
 
+.dashboard-details {
+  background: var(--cds-layer-01);
+  overflow: auto;
+  padding: $spacing-05;
+}
+
 @media (max-width: 41.98rem) {
   .mock-user-selector__label {
     block-size: 1px;

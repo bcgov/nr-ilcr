@@ -34,3 +34,7 @@ export default interface Schedule1Request {
 
 /** Fixed line-item codes writable with volume + cost. */
 export const WRITABLE_LINE_ITEM_CODES = [12, 13, 14, 15, 16, 17, 18] as const
+
+/** Codes whose VOLUME is user-entered but whose cost is pulled/derived (read-only). */
+export const VOLUME_ONLY_8_DIGIT_CODES = [143, 144] as const
+export const VOLUME_ONLY_7_DIGIT_CODES = [139, 140] as const

@@ -153,7 +153,33 @@ public class Schedule8Service {
     boolean usesTfl = isNotBlank(request.tflNumber());
     String tflNumber = usesTfl ? request.tflNumber().trim() : null;
     String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
-    String tsaNumber = trimToNull(request.tsaNumber());
+    // Stamp the legacy "TFL" sentinel into TSA_NUMBER when the page uses a TFL, so the write side and
+    // the Check Status discriminator (TSA_NUMBER == "TFL") agree — otherwise a TFL page saved through
+    // this API lands in the Supply-Block-required branch and can never reach MET (H2).
+    String tsaNumber = usesTfl ? TFL_MARKER : trimToNull(request.tsaNumber());
+    // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
+    // deletePage). Without it, a Draft context could overwrite another mill/year's page by id (IDOR),
+    // since EDIT_SCHEDULE is global and requireDraft only checks the URL mill/year.
+    if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
+      throw new ScheduleNotFoundException();
+    }
+    // Reject unknown code-table values up front (400) rather than letting them hit a DB FK (500) — the    
+    // legacy autocomplete's "select from the list". Validate the request's own codes (not the stamped     
+    // TSA sentinel): when a TFL is used only the TFL # matters; otherwise the supply block / TSA do.      
+    // Validate trimmed values to be consistent with what is persisted (2).
+    requireKnownCode(repository.supportCentreLabels(), request.supportCentre() == null ? null : request.supportCentre().trim());
+    requireKnownCode(repository.regionLabels(), request.region() == null ? null : request.region().trim());
+    requireKnownCode(repository.becZoneLabels(), request.becZone() == null ? null : request.becZone().trim());
+    if (usesTfl) {
+      requireKnownCode(repository.tflNumberLabels(), tflNumber);
+    } else {
+      if (supplyBlock != null) {
+        requireKnownCode(repository.supplyBlockLabels(), supplyBlock);
+      }
+      if (isNotBlank(request.tsaNumber())) {
+        requireKnownCode(repository.tsaNumberLabels(), request.tsaNumber().trim());
+      }
+    }
     try {
       if (request.id() == null) {
         int id = repository.insertPage(millId, year, trimToNull(request.supportCentre()),
@@ -229,6 +255,9 @@ public class Schedule8Service {
     requireDraft(millId, year);
     if (!repository.pageExists(pageId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
+    }
+    if (request.skidTypeCode() != null) {
+      requireKnownCode(repository.skidTypeLabels(), request.skidTypeCode().trim());
     }
     String uphill = toIndicator(request.uphillDirection());
     String waterDump = toIndicator(request.waterDumpDestination());
@@ -319,6 +348,16 @@ public class Schedule8Service {
     if (!repository.sampleInMillYear(sampleId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such sample under this mill/year
     }
+    // Reject an unknown/foreign-category cost item (400): its subcategory is the addition/deduction
+    // discriminator, so a row that classifies as neither would persist yet silently vanish from the
+    // read's totals + finalRate. Also validate the cost-type code against its reference table.
+    String subcategory = repository.costItemSubcategories().get(request.costItemCode());
+    if (subcategory == null
+        || (!ADDITION_SUBCATEGORIES.contains(subcategory)
+            && !DEDUCTION_SUBCATEGORIES.contains(subcategory))) {
+      throw new Schedule8InvalidCodeException();
+    }
+    requireKnownCode(repository.costTypeLabels(), request.costTypeCode());
     try {
       if (rowId == null) {
         repository.insertRate(sampleId, trimToNull(request.costTypeCode()), request.costItemCode(),
@@ -502,6 +541,13 @@ public class Schedule8Service {
     return value != null && !value.isBlank();
   }
 
+  /** Reject (400) a code that does not resolve to a row in its reference/code table. */
+  private static void requireKnownCode(Map<String, String> codeTable, String code) {
+    if (code == null || !codeTable.containsKey(code)) {
+      throw new Schedule8InvalidCodeException();
+    }
+  }
+
   private static String trimToNull(String value) {
     if (value == null) {
       return null;
@@ -522,15 +568,19 @@ public class Schedule8Service {
       String subcategory = labelFor(subcategories, r.costItemCode());
       RateRow row = new RateRow(r.id(), r.revisionCount(), r.costItemCode(), r.itemDescription(),
           normalize(r.costingRate()), r.costTypeCode(), labelFor(costType, r.costTypeCode()));
-      if (ADDITION_SUBCATEGORIES.contains(subcategory)) {
+      if (subcategory != null && ADDITION_SUBCATEGORIES.contains(subcategory)) {
         additions.add(row);
         additionsTotal = additionsTotal.add(zeroIfNull(r.costingRate()));
-      } else if (DEDUCTION_SUBCATEGORIES.contains(subcategory)) {
+      } else if (subcategory != null && DEDUCTION_SUBCATEGORIES.contains(subcategory)) {
         deductions.add(row);
         deductionsTotal = deductionsTotal.add(zeroIfNull(r.costingRate()));
+      } else {
+        // A rate row whose cost item is neither an addition nor a deduction is dropped from the
+        // roll-up. The write path now rejects such codes (Schedule8InvalidCodeException), so this can
+        // only surface for legacy/out-of-band data — log it rather than silently vanish the money.
+        log.warn("Schedule 8 rate row {} has cost item {} with unclassifiable subcategory {} —"
+            + " excluded from additions/deductions", r.id(), r.costItemCode(), subcategory);
       }
-      // A rate row whose cost item is neither an addition nor a deduction subcategory is ignored
-      // (defensive — category-'8' items are always one or the other).
     }
     BigDecimal originalRate = zeroIfNull(s.originalRate());
     BigDecimal finalRate = originalRate.add(additionsTotal).subtract(deductionsTotal);
@@ -556,23 +606,28 @@ public class Schedule8Service {
   }
 
   /**
-   * Null-safe code-table label lookup. The label maps are immutable ({@code Map.of}/{@code Map.copyOf}
-   * from the repository), which reject a null key with an NPE — so a sample/rate row with no code
-   * (never entered) must short-circuit to a null label rather than probe the map.
+   * Null-safe code-table label lookup. Provides a defensive short-circuit for null keys (unentered values)
+   * to return a null label cleanly without probing the map (3).
    */
   private static <K> String labelFor(Map<K, String> labels, K code) {
     return code == null ? null : labels.get(code);
   }
 
-  /** Sum of the given values treating null as 0; null (never entered) is fine as 0 for a roll-up. */
+  /** Sum of the given values treating null as 0; uses long accumulation for overflow protection (4). */  
   private static Integer sumInts(Integer... values) {
-    int total = 0;
+    long total = 0L;
     for (Integer value : values) {
       if (value != null) {
         total += value;
       }
     }
-    return total;
+    if (total > Integer.MAX_VALUE) {
+      return Integer.MAX_VALUE;
+    }
+    if (total < Integer.MIN_VALUE) {
+      return Integer.MIN_VALUE;
+    }
+    return (int) total;
   }
 
   /**

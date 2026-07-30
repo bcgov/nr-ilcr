@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class Schedule8CheckStatusAuthorizationIT extends AbstractOracleIT {
 
   private static final String ALL = "/api/v1/schedule8/check-status";
+  private static final String PAGE = "/api/v1/schedule8/pages/999/check-status";
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -50,6 +51,23 @@ class Schedule8CheckStatusAuthorizationIT extends AbstractOracleIT {
   @DisplayName("ILCR_SUBMITTER -> POST check-status passes authz (not 403)")
   void submitter_passesAuthorization() throws Exception {
     mockMvc.perform(post(ALL).param("millId", "600").param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().is2xxSuccessful());
+  }
+
+  @Test
+  @DisplayName("no VIEW_SCHEDULE -> POST single-page check-status 403")
+  void page_noPermission_returns403() throws Exception {
+    mockMvc.perform(post(PAGE).param("millId", "600").param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> POST single-page check-status passes authz (not 403)")
+  void page_submitter_passesAuthorization() throws Exception {
+    mockMvc.perform(post(PAGE).param("millId", "600").param("year", "2021")
             .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }

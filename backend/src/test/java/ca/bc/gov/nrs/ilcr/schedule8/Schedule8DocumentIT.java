@@ -27,15 +27,15 @@ class Schedule8DocumentIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/schedule8";
 
   @Test
-  @DisplayName("570/2021 Draft — page → sample → additions/deductions, labels + computed rates")
+  @DisplayName("576/2021 Draft — page → sample → additions/deductions, labels + computed rates")
   void draftContext_servesThreeLevelHierarchy() throws Exception {
     mockMvc.perform(get(ENDPOINT)
-            .param("millId", "570")
+            .param("millId", "576")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.millId", is(570)))
+        .andExpect(jsonPath("$.millId", is(576)))
         .andExpect(jsonPath("$.year", is(2021)))
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
@@ -53,7 +53,7 @@ class Schedule8DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].becZoneLabel", is("BEC Zone One")))
         .andExpect(jsonPath("$.pages[0].tsaNumberLabel", is("Test TSA Five")))
         .andExpect(jsonPath("$.pages[0].supplyBlockLabel", is("Supply Block B")))
-        // 570's page has no TFL code — the code and its label are omitted (null).
+        // 576's page has no TFL code — the code and its label are omitted (null).
         .andExpect(jsonPath("$.pages[0].tflNumber").doesNotExist())
         .andExpect(jsonPath("$.pages[0].tflNumberLabel").doesNotExist())
         .andExpect(jsonPath("$.pages[0].sampleCount", is(1)))
@@ -89,10 +89,10 @@ class Schedule8DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("571/2021 non-Draft — trackStatus S, editable false, page listed, no rate rows")
+  @DisplayName("577/2021 non-Draft — trackStatus S, editable false, page listed, no rate rows")
   void nonDraftContext_notEditable_pageStillListed() throws Exception {
     mockMvc.perform(get(ENDPOINT)
-            .param("millId", "571")
+            .param("millId", "577")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
@@ -114,10 +114,10 @@ class Schedule8DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("572/2021 valid active Draft, no pages — 200 empty list, NOT 404")
+  @DisplayName("578/2021 valid active Draft, no pages — 200 empty list, NOT 404")
   void noPages_returnsEmptyList() throws Exception {
     mockMvc.perform(get(ENDPOINT)
-            .param("millId", "572")
+            .param("millId", "578")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())

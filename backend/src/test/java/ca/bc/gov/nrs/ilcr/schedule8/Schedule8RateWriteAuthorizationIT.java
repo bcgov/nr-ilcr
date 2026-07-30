@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -69,6 +70,35 @@ class Schedule8RateWriteAuthorizationIT extends AbstractOracleIT {
     mockMvc.perform(post(RATES).param("millId", String.valueOf(MILL)).param("year", "2021")
             .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+        .andExpect(status().is2xxSuccessful());
+  }
+
+  @Test
+  @DisplayName("no EDIT_SCHEDULE -> PUT rate 403")
+  void put_noPermission_returns403() throws Exception {
+    mockMvc.perform(put(RATES + "/8952").param("millId", String.valueOf(MILL)).param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of()))
+            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> PUT rate passes authz (404 unknown row, not 403)")
+  void put_submitter_passesAuthorization() throws Exception {
+    // Authz passes → the handler runs → 404 for the unknown row id (a 403 would mean denied).
+    mockMvc.perform(put(RATES + "/999999").param("millId", String.valueOf(MILL)).param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER -> DELETE rate passes authz (idempotent no-op, not 403)")
+  void delete_submitter_passesAuthorization() throws Exception {
+    // Unknown row id → idempotent no-op success; proves the submitter is not blocked by @PreAuthorize.
+    mockMvc.perform(delete(RATES + "/999999").param("millId", String.valueOf(MILL)).param("year", "2021")
+            .with(csrf()).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 }
