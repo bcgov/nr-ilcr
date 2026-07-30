@@ -49,7 +49,8 @@ class Schedule8RateWriteServiceTest {
     lenient().when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    lenient().when(repository.costItemSubcategories()).thenReturn(Map.of());
+    // Cost item 82 = addition subcategory "1"; cost type CT1 known — so the write-path code checks pass.
+    lenient().when(repository.costItemSubcategories()).thenReturn(Map.of(82, "1"));
     lenient().when(repository.supportCentreLabels()).thenReturn(Map.of());
     lenient().when(repository.regionLabels()).thenReturn(Map.of());
     lenient().when(repository.becZoneLabels()).thenReturn(Map.of());
@@ -57,7 +58,7 @@ class Schedule8RateWriteServiceTest {
     lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of());
     lenient().when(repository.tflNumberLabels()).thenReturn(Map.of());
     lenient().when(repository.skidTypeLabels()).thenReturn(Map.of());
-    lenient().when(repository.costTypeLabels()).thenReturn(Map.of());
+    lenient().when(repository.costTypeLabels()).thenReturn(Map.of("CT1", "Cost Type One"));
   }
 
   private static Schedule8RateRequest rate(Integer revisionCount) {

@@ -59,15 +59,17 @@ class Schedule8WriteServiceTest {
     lenient().when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    lenient().when(repository.costItemSubcategories()).thenReturn(Map.of());
-    lenient().when(repository.supportCentreLabels()).thenReturn(Map.of());
-    lenient().when(repository.regionLabels()).thenReturn(Map.of());
-    lenient().when(repository.becZoneLabels()).thenReturn(Map.of());
-    lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of());
-    lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of());
-    lenient().when(repository.tflNumberLabels()).thenReturn(Map.of());
+    // Known code-table values so the write-path code checks pass (cost item 47 = addition "1"; the
+    // page/rate codes used by the requests below all resolve).
+    lenient().when(repository.costItemSubcategories()).thenReturn(Map.of(47, "1"));
+    lenient().when(repository.supportCentreLabels()).thenReturn(Map.of("SC", "Support"));
+    lenient().when(repository.regionLabels()).thenReturn(Map.of("R", "Region"));
+    lenient().when(repository.becZoneLabels()).thenReturn(Map.of("BZ", "Zone"));
+    lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of("TSA5", "Tsa"));
+    lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of("B", "Block"));
+    lenient().when(repository.tflNumberLabels()).thenReturn(Map.of("48", "Tfl"));
     lenient().when(repository.skidTypeLabels()).thenReturn(Map.of());
-    lenient().when(repository.costTypeLabels()).thenReturn(Map.of());
+    lenient().when(repository.costTypeLabels()).thenReturn(Map.of("CT", "Cost Type"));
   }
 
   private void draft() {
@@ -345,5 +347,31 @@ class Schedule8WriteServiceTest {
     doThrow(new DataIntegrityViolationException("x")).when(repository).deleteRateRow(ROW);
     assertThrows(ScheduleNotSavedException.class,
         () -> service.deleteRate(MILL, YEAR, SAMPLE, ROW, true));
+  }
+
+  // ---- Code-table validation (M1/M4) -------------------------------------------------------------
+
+  @Test
+  void saveRate_unknownCostItem_throwsInvalidCode_noInsert() {
+    // Cost item 999 resolves to no category-8 subcategory → 400, never persisted (else it would
+    // silently vanish from finalRate on read).
+    draft();
+    when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
+    Schedule8RateRequest bad = new Schedule8RateRequest(null, null, 999, new BigDecimal("10"), "CT", "d");
+
+    assertThrows(Schedule8InvalidCodeException.class,
+        () -> service.saveRate(MILL, YEAR, SAMPLE, null, bad, true, USER));
+    verify(repository, never()).insertRate(anyInt(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void savePage_unknownCode_throwsInvalidCode() {
+    // Region "NOPE" is not in the reference table → 400 (rather than a DB FK 500 in prod).
+    draft();
+    Schedule8PageRequest bad = new Schedule8PageRequest(null, null, "LIC", "SC", "NOPE", "BZ",
+        "TSA5", null, "B", null, null, null, null, null);
+
+    assertThrows(Schedule8InvalidCodeException.class,
+        () -> service.savePage(MILL, YEAR, bad, true, USER));
   }
 }

@@ -50,12 +50,14 @@ class Schedule8PageWriteServiceTest {
     org.mockito.Mockito.lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     org.mockito.Mockito.lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
     org.mockito.Mockito.lenient().when(repository.costItemSubcategories()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.supportCentreLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.regionLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.becZoneLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of());
-    org.mockito.Mockito.lenient().when(repository.tflNumberLabels()).thenReturn(Map.of());
+    // Known page code-table values so the write-path code checks pass for the create/edit requests.
+    org.mockito.Mockito.lenient().when(repository.supportCentreLabels())
+        .thenReturn(Map.of("SC1", "Support Centre One"));
+    org.mockito.Mockito.lenient().when(repository.regionLabels()).thenReturn(Map.of("R1", "Region"));
+    org.mockito.Mockito.lenient().when(repository.becZoneLabels()).thenReturn(Map.of("BZ1", "Zone"));
+    org.mockito.Mockito.lenient().when(repository.tsaNumberLabels()).thenReturn(Map.of("TSA5", "Tsa"));
+    org.mockito.Mockito.lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of("B", "Block"));
+    org.mockito.Mockito.lenient().when(repository.tflNumberLabels()).thenReturn(Map.of("48", "Tfl"));
     org.mockito.Mockito.lenient().when(repository.skidTypeLabels()).thenReturn(Map.of());
     org.mockito.Mockito.lenient().when(repository.costTypeLabels()).thenReturn(Map.of());
   }
