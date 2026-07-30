@@ -26,7 +26,10 @@ import {
 import apiService from '@/service/api-service'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
 import useMillYear from '@/context/millYear/useMillYear'
+import { extractDetail } from '@/utils/error'
+import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule3 } from './validation'
 import './index.scss'
@@ -68,29 +71,6 @@ const HARVEST_POP = new Set<number>(HARVEST_POP_LINE_CODES)
 const POP_HIDDEN = new Set<number>([29, 37])
 
 type FieldValues = Record<string, string>
-
-function extractDetail(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { detail?: string } } }).response
-    return response?.data?.detail
-  }
-  return undefined
-}
-
-const fmt = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '—' : String(value)
-
-const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '') {
-    return null
-  }
-  const n = Number(trimmed)
-  return Number.isNaN(n) ? null : n
-}
-
-const numStr = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : String(value)
 
 // Seed editable form state from the loaded document (entered fields only).
 function seedForm(doc: Schedule3Response): FieldValues {
@@ -319,52 +299,33 @@ const Schedule3: FC = () => {
 
   if (contextMissing) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Mill and Reporting Year required',
+          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
+        }}
+      />
     )
   }
 
   if (isLoading) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Schedule 3" />
-          </Column>
-        </Grid>
-      </div>
+      <PageState header={header}>
+        <Column sm={4} md={8} lg={16}>
+          <LoadingScreen label="Loading Schedule 3" />
+        </Column>
+      </PageState>
     )
   }
 
   if (errorDetail) {
     return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Schedule 3"
-              subtitle={errorDetail}
-            />
-          </Column>
-        </Grid>
-      </div>
+      <PageState
+        header={header}
+        notification={{ kind: 'error', title: 'Unable to load Schedule 3', subtitle: errorDetail }}
+      />
     )
   }
 

@@ -1,4 +1,4 @@
-import type { FC, ReactNode } from 'react'
+import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
@@ -21,6 +21,7 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import './index.scss'
 
@@ -285,55 +286,45 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     </Grid>
   )
 
-  const shell = (body: ReactNode) => (
-    <div className="app-page">
-      {header}
-      <Grid fullWidth className="app-page__body">
-        {body}
-      </Grid>
-    </div>
-  )
-
   if (contextMissing) {
-    return shell(
-      <Column sm={4} md={8} lg={16}>
-        <InlineNotification
-          kind="error"
-          lowContrast
-          hideCloseButton
-          title="Mill and Reporting Year required"
-          subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-        />
-      </Column>,
+    return (
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Mill and Reporting Year required',
+          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
+        }}
+      />
     )
   }
 
   if (isLoading) {
-    return shell(
-      <Column sm={4} md={8} lg={16}>
-        <LoadingScreen label={`Loading ${config.title}`} />
-      </Column>,
+    return (
+      <PageState header={header}>
+        <Column sm={4} md={8} lg={16}>
+          <LoadingScreen label={`Loading ${config.title}`} />
+        </Column>
+      </PageState>
     )
   }
 
   if (errorDetail) {
-    return shell(
-      <>
-        <Column sm={4} md={8} lg={16}>
-          <InlineNotification
-            kind="error"
-            lowContrast
-            hideCloseButton
-            title={`Unable to load ${config.title}`}
-            subtitle={errorDetail}
-          />
-        </Column>
+    return (
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: `Unable to load ${config.title}`,
+          subtitle: errorDetail,
+        }}
+      >
         <Column sm={4} md={8} lg={16}>
           <Button kind="secondary" onClick={goBack}>
             Back to Schedule 3
           </Button>
         </Column>
-      </>,
+      </PageState>
     )
   }
 
