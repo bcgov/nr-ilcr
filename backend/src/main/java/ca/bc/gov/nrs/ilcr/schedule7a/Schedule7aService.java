@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -130,11 +132,7 @@ public class Schedule7aService {
     validateCodes(request);
     try {
       long bridgeId = repository.nextBridgeReportId();
-      repository.insertBridge(
-          bridgeId, millId, year, request.locationName(), builtDate, request.lifeSpan(),
-          request.abutmentHeight(), request.length(), request.width(), request.distance(),
-          request.constructionTypeCode(), request.superstructureTypeCode(), request.deckTypeCode(),
-          request.abutmentTypeCode(), request.loadRatingCode(), request.comments(), user);
+      repository.insertBridge(toEntity(bridgeId, request, builtDate), millId, year, user);
       writeCosts(bridgeId, request, user);
     } catch (DataAccessException ex) {
       log.warn("Schedule 7A add failed for mill {} year {} [{}]",
@@ -158,11 +156,7 @@ public class Schedule7aService {
     validateCodes(request);
     try {
       int updated = repository.updateBridge(
-          bridgeId, millId, year, request.revisionCount(), request.locationName(), builtDate,
-          request.lifeSpan(), request.abutmentHeight(), request.length(), request.width(),
-          request.distance(), request.constructionTypeCode(), request.superstructureTypeCode(),
-          request.deckTypeCode(), request.abutmentTypeCode(), request.loadRatingCode(),
-          request.comments(), user);
+          toEntity(bridgeId, request, builtDate), millId, year, request.revisionCount(), user);
       if (updated == 0) {
         // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate.
         if (repository.countBridge(bridgeId, millId, year) == 0) {
@@ -200,6 +194,19 @@ public class Schedule7aService {
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * The entered bridge columns as one {@link BridgeReportEntity} for the repository write (the
+   * column-shaped param object the insert/update bind by accessor). {@code revisionCount} is unused
+   * by the writes (insert forces 0; update locks on the separate {@code expectedRevision}), so it
+   * is carried as 0 here.
+   */
+  private static BridgeReportEntity toEntity(long bridgeId, BridgeRequest r, LocalDate builtDate) {
+    return new BridgeReportEntity(
+        bridgeId, r.locationName(), builtDate, r.lifeSpan(), r.abutmentHeight(), r.length(),
+        r.width(), r.distance(), r.constructionTypeCode(), r.superstructureTypeCode(),
+        r.deckTypeCode(), r.abutmentTypeCode(), r.loadRatingCode(), r.comments(), 0);
   }
 
   /** Write (or clear) the ten cost children of a bridge — present cost upserts, null cost clears. */
@@ -306,60 +313,54 @@ public class Schedule7aService {
     return new Schedule7aCheckStatusResponse(allMet, errors, bridgeMessages, requirementsMetMessage);
   }
 
+  /** One required-value check: the "is this value missing?" test paired with its verbatim label. */
+  private record RequiredCheck(
+      BiPredicate<BridgeReportEntity, Map<Integer, Integer>> missing, String label) {
+  }
+
+  /** A required-attribute check on the bridge row itself. */
+  private static RequiredCheck attrCheck(Predicate<BridgeReportEntity> missing, String label) {
+    return new RequiredCheck((r, c) -> missing.test(r), label);
+  }
+
+  /** A required-cost check: the cost item has no stored detail row for the bridge. */
+  private static RequiredCheck costCheck(int itemId, String label) {
+    return new RequiredCheck((r, c) -> c.get(itemId) == null, label);
+  }
+
+  /**
+   * The 17 Check-Status required values in the exact legacy order with the verbatim legacy labels
+   * ({@code Schedule7aMB.java:206-289}), as an ordered table so {@link #missingLabels} stays a flat
+   * walk rather than 17 branches. The abutment-height entry is a recorded deviation: legacy
+   * {@code getBridgeAbutHtM().equals(null)} never flags and NPEs; here it is a correct null check.
+   */
+  private static final List<RequiredCheck> REQUIRED_CHECKS = List.of(
+      attrCheck(r -> r.locationName() == null || r.locationName().isBlank(),
+          " - Name / Location of Bridge "),
+      attrCheck(r -> r.builtDate() == null, " - Built Date "),
+      attrCheck(r -> r.lifeSpan() == null, " - Expected Life Span "),
+      attrCheck(r -> r.abutmentHeight() == null, " - Abutments heigth value "),
+      attrCheck(r -> r.length() == null, " - Length (m) "),
+      attrCheck(r -> r.deckWidth() == null, " - Width (m) "),
+      attrCheck(r -> r.distance() == null, " - Distance (km) "),
+      costCheck(ITEM_SS_MATERIAL, " - Superstructure - Materil Cost "),
+      costCheck(ITEM_SS_DELIVER, " - Superstructure - Deliver Cost "),
+      costCheck(ITEM_SS_INSTALL, " - Superstructure - Install Cost "),
+      costCheck(ITEM_ABUT_MATERIAL, " - Abutments Material Cost "),
+      costCheck(ITEM_ABUT_DELIVER, " - Abutments Deliver Cost "),
+      costCheck(ITEM_ABUT_INSTALL, " - Abutments Install Cost "),
+      costCheck(ITEM_SITE_PLAN, " - Site Plan / Gen. Arr.  Cost "),
+      costCheck(ITEM_APPROACH, " - Approach works Cost "),
+      costCheck(ITEM_AFTER_INSTALL, " - Certification After install Cost "),
+      costCheck(ITEM_OTHER, " - Other Costs "));
+
   /** The missing required-field labels for one bridge, in the exact legacy order (verbatim text). */
   private static List<String> missingLabels(BridgeReportEntity row, Map<Integer, Integer> cost) {
     List<String> missing = new ArrayList<>();
-    if (row.locationName() == null || row.locationName().isBlank()) {
-      missing.add(" - Name / Location of Bridge ");
-    }
-    if (row.builtDate() == null) {
-      missing.add(" - Built Date ");
-    }
-    if (row.lifeSpan() == null) {
-      missing.add(" - Expected Life Span ");
-    }
-    if (row.abutmentHeight() == null) {
-      // Recorded deviation: legacy .equals(null) never flags + NPEs; correct == null here.
-      missing.add(" - Abutments heigth value ");
-    }
-    if (row.length() == null) {
-      missing.add(" - Length (m) ");
-    }
-    if (row.deckWidth() == null) {
-      missing.add(" - Width (m) ");
-    }
-    if (row.distance() == null) {
-      missing.add(" - Distance (km) ");
-    }
-    if (cost.get(ITEM_SS_MATERIAL) == null) {
-      missing.add(" - Superstructure - Materil Cost ");
-    }
-    if (cost.get(ITEM_SS_DELIVER) == null) {
-      missing.add(" - Superstructure - Deliver Cost ");
-    }
-    if (cost.get(ITEM_SS_INSTALL) == null) {
-      missing.add(" - Superstructure - Install Cost ");
-    }
-    if (cost.get(ITEM_ABUT_MATERIAL) == null) {
-      missing.add(" - Abutments Material Cost ");
-    }
-    if (cost.get(ITEM_ABUT_DELIVER) == null) {
-      missing.add(" - Abutments Deliver Cost ");
-    }
-    if (cost.get(ITEM_ABUT_INSTALL) == null) {
-      missing.add(" - Abutments Install Cost ");
-    }
-    if (cost.get(ITEM_SITE_PLAN) == null) {
-      missing.add(" - Site Plan / Gen. Arr.  Cost ");
-    }
-    if (cost.get(ITEM_APPROACH) == null) {
-      missing.add(" - Approach works Cost ");
-    }
-    if (cost.get(ITEM_AFTER_INSTALL) == null) {
-      missing.add(" - Certification After install Cost ");
-    }
-    if (cost.get(ITEM_OTHER) == null) {
-      missing.add(" - Other Costs ");
+    for (RequiredCheck check : REQUIRED_CHECKS) {
+      if (check.missing().test(row, cost)) {
+        missing.add(check.label());
+      }
     }
     return missing;
   }

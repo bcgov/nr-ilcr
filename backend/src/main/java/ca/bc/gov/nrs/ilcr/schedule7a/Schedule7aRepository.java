@@ -1,8 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
@@ -114,8 +112,11 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   /**
    * Insert one bridge (category {@code '7'}, {@code REVISION_COUNT = 0}, audit {@code ENTRY_*}/
-   * {@code UPDATE_*} set). The PK is supplied from {@link #nextBridgeReportId()} so the service can
-   * key the cost-child inserts to it.
+   * {@code UPDATE_*} set). The entered columns arrive as one {@link BridgeReportEntity} (its
+   * {@code bridgeReportId} is the PK supplied from {@link #nextBridgeReportId()} so the service can
+   * key the cost-child inserts to it); {@code millId}/{@code year}/{@code user} are the context.
+   * The bridge columns bind by SpEL accessor so the write mirrors the {@code @Table} record shape
+   * rather than a flat parameter list.
    */
   @Modifying
   @Query("""
@@ -126,26 +127,25 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
            ILCR_BRIDGE_ABUTMENT_TYPE_CODE, ILCR_BRIDGE_LOAD_RATING_CODE, COMMENTS,
            REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
-          (:id, :year, :millId, '7', :locationName, :builtDate, :lifeSpan, :abutmentHeight, :length,
-           :width, :distance, :constructionTypeCode, :superstructureTypeCode, :deckTypeCode,
-           :abutmentTypeCode, :loadRatingCode, :comments,
+          (:#{#bridge.bridgeReportId()}, :year, :millId, '7', :#{#bridge.locationName()},
+           :#{#bridge.builtDate()}, :#{#bridge.lifeSpan()}, :#{#bridge.abutmentHeight()},
+           :#{#bridge.length()}, :#{#bridge.deckWidth()}, :#{#bridge.distance()},
+           :#{#bridge.constructionTypeCode()}, :#{#bridge.superstructureTypeCode()},
+           :#{#bridge.deckTypeCode()}, :#{#bridge.abutmentTypeCode()},
+           :#{#bridge.loadRatingCode()}, :#{#bridge.comments()},
            0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertBridge(
-      @Param("id") long id, @Param("millId") long millId, @Param("year") int year,
-      @Param("locationName") String locationName, @Param("builtDate") LocalDate builtDate,
-      @Param("lifeSpan") Integer lifeSpan, @Param("abutmentHeight") BigDecimal abutmentHeight,
-      @Param("length") BigDecimal length, @Param("width") BigDecimal width,
-      @Param("distance") Integer distance, @Param("constructionTypeCode") String constructionTypeCode,
-      @Param("superstructureTypeCode") String superstructureTypeCode,
-      @Param("deckTypeCode") String deckTypeCode, @Param("abutmentTypeCode") String abutmentTypeCode,
-      @Param("loadRatingCode") String loadRatingCode, @Param("comments") String comments,
-      @Param("user") String user);
+      @Param("bridge") BridgeReportEntity bridge, @Param("millId") long millId,
+      @Param("year") int year, @Param("user") String user);
 
   /**
    * Optimistic-lock update of one bridge: sets the entered fields, bumps {@code REVISION_COUNT}, and
    * stamps {@code UPDATE_*} ONLY when the stored revision still matches {@code expectedRevision} and
-   * the row belongs to this mill/year and category.
+   * the row belongs to this mill/year and category. The entered columns arrive as one
+   * {@link BridgeReportEntity} ({@code bridgeReportId} is the row to correct), bound by SpEL
+   * accessor; {@code millId}/{@code year}/{@code expectedRevision}/{@code user} are the context and
+   * lock token.
    *
    * @return rows affected — {@code 1} on success; {@code 0} when the id is absent (→ 404) OR the
    *     revision is stale (→ 409). The service disambiguates via {@link #countBridge}.
@@ -153,38 +153,31 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Modifying
   @Query("""
       UPDATE THE.BRIDGE_REPORT
-         SET LOCATION_NAME = :locationName,
-             BUILT_DATE = :builtDate,
-             EXPECTED_BRIDGE_LIFE_SPAN = :lifeSpan,
-             HEIGHT = :abutmentHeight,
-             LENGTH = :length,
-             DECK_WIDTH = :width,
-             DISTANCE_FROM_STORAGE = :distance,
-             ILCR_BRIDGE_CNSTRCTN_TYPE_CODE = :constructionTypeCode,
-             ILCR_BRIDGE_SUPERSTRUCTR_CODE = :superstructureTypeCode,
-             ILCR_DECK_CODE = :deckTypeCode,
-             ILCR_BRIDGE_ABUTMENT_TYPE_CODE = :abutmentTypeCode,
-             ILCR_BRIDGE_LOAD_RATING_CODE = :loadRatingCode,
-             COMMENTS = :comments,
+         SET LOCATION_NAME = :#{#bridge.locationName()},
+             BUILT_DATE = :#{#bridge.builtDate()},
+             EXPECTED_BRIDGE_LIFE_SPAN = :#{#bridge.lifeSpan()},
+             HEIGHT = :#{#bridge.abutmentHeight()},
+             LENGTH = :#{#bridge.length()},
+             DECK_WIDTH = :#{#bridge.deckWidth()},
+             DISTANCE_FROM_STORAGE = :#{#bridge.distance()},
+             ILCR_BRIDGE_CNSTRCTN_TYPE_CODE = :#{#bridge.constructionTypeCode()},
+             ILCR_BRIDGE_SUPERSTRUCTR_CODE = :#{#bridge.superstructureTypeCode()},
+             ILCR_DECK_CODE = :#{#bridge.deckTypeCode()},
+             ILCR_BRIDGE_ABUTMENT_TYPE_CODE = :#{#bridge.abutmentTypeCode()},
+             ILCR_BRIDGE_LOAD_RATING_CODE = :#{#bridge.loadRatingCode()},
+             COMMENTS = :#{#bridge.comments()},
              REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSTIMESTAMP
-       WHERE BRIDGE_REPORT_ID = :id
+       WHERE BRIDGE_REPORT_ID = :#{#bridge.bridgeReportId()}
          AND ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '7'
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateBridge(
-      @Param("id") long id, @Param("millId") long millId, @Param("year") int year,
-      @Param("expectedRevision") int expectedRevision, @Param("locationName") String locationName,
-      @Param("builtDate") LocalDate builtDate, @Param("lifeSpan") Integer lifeSpan,
-      @Param("abutmentHeight") BigDecimal abutmentHeight, @Param("length") BigDecimal length,
-      @Param("width") BigDecimal width, @Param("distance") Integer distance,
-      @Param("constructionTypeCode") String constructionTypeCode,
-      @Param("superstructureTypeCode") String superstructureTypeCode,
-      @Param("deckTypeCode") String deckTypeCode, @Param("abutmentTypeCode") String abutmentTypeCode,
-      @Param("loadRatingCode") String loadRatingCode, @Param("comments") String comments,
+      @Param("bridge") BridgeReportEntity bridge, @Param("millId") long millId,
+      @Param("year") int year, @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   /**

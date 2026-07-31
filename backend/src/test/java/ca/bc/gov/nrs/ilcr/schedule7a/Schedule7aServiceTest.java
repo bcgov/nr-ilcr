@@ -6,11 +6,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
@@ -20,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -129,6 +135,44 @@ class Schedule7aServiceTest {
   }
 
   @Test
+  @DisplayName("totals: null-tolerant addition returns the lone present operand")
+  void totals_partialNullAddition() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    // material: SS present, abutment absent → returns SS; deliver: SS absent, abutment present.
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
+        cost(1, 7601, 79, 5000), // ss material only  → add(5000, null) → 5000
+        cost(2, 7601, 75, 300))); // abut deliver only → add(null, 300)  → 300
+
+    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+
+    assertThat(b.totalMaterial()).isEqualTo(5000);
+    assertThat(b.totalDeliver()).isEqualTo(300);
+    assertThat(b.totalInstall()).isNull();
+  }
+
+  @Test
+  @DisplayName("read tolerates a null built date and null measurements")
+  void read_nullDateAndMeasurements() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021)).thenReturn(List.of(new BridgeReportEntity(
+        7601, "North Fork", null, null, null, null, null, null,
+        "N", "STL", "WD", "CONC", "L100", null, 0)));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+
+    assertThat(b.builtDate()).isNull();
+    assertThat(b.abutmentHeight()).isNull();
+    assertThat(b.length()).isNull();
+    assertThat(b.width()).isNull();
+    assertThat(b.grandTotal()).isNull();
+  }
+
+  @Test
   @DisplayName("editable false when caller cannot edit, or the 1-10 track is not Draft")
   void editable_requiresEditAndDraft() {
     stubCodeOptions();
@@ -205,7 +249,8 @@ class Schedule7aServiceTest {
   @DisplayName("add rejects a write outside Draft (409)")
   void add_rejectedOutsideDraft() {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
-    assertThatThrownBy(() -> service.addBridge(517, 2021, validRequest(null), true, "user"))
+    BridgeRequest request = validRequest(null);
+    assertThatThrownBy(() -> service.addBridge(517, 2021, request, true, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
   }
 
@@ -239,16 +284,130 @@ class Schedule7aServiceTest {
   void update_staleVsNotFound() {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.updateBridge(anyLong(), anyLong(), anyInt(), anyInt(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
+    BridgeRequest request = validRequest(0);
 
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1); // exists → stale
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, validRequest(0), true, "user"))
+    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
         .isInstanceOf(StaleRevisionException.class);
 
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0); // absent → 404
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 9999, validRequest(0), true, "user"))
+    assertThatThrownBy(() -> service.updateBridge(514, 2021, 9999, request, true, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("add persists the bridge, upserts present costs, clears null costs, and recomputes")
+  void add_persistsUpsertsAndClears() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.nextBridgeReportId()).thenReturn(7601L);
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+    // Only site plan present — its row upserts; the other nine null costs each clear.
+    BridgeRequest request = new BridgeRequest(
+        "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
+        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
+        1000, null, null, null, null, null, null, null, null, null, null, null);
+
+    Schedule7aResponse doc = service.addBridge(514, 2021, request, true, "user");
+
+    assertThat(doc.bridges()).hasSize(1);
+    verify(repository).insertBridge(any(BridgeReportEntity.class), eq(514L), eq(2021), eq("user"));
+    verify(repository, times(1)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
+    verify(repository, times(9)).deleteCost(eq(7601L), anyInt());
+  }
+
+  @Test
+  @DisplayName("add rolls back and surfaces ERR-004 when the persistence layer fails (500)")
+  void add_persistenceFailure() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.nextBridgeReportId()).thenReturn(7601L);
+    doThrow(new DataIntegrityViolationException("insert failed"))
+        .when(repository).insertBridge(any(), anyLong(), anyInt(), any());
+    BridgeRequest request = validRequest(null);
+
+    assertThatThrownBy(() -> service.addBridge(514, 2021, request, true, "user"))
+        .isInstanceOf(ScheduleNotSavedException.class);
+  }
+
+  @Test
+  @DisplayName("update writes the correction, upserts its costs, and recomputes")
+  void update_persistsAndRecomputes() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+    BridgeRequest request = validRequest(0);
+
+    Schedule7aResponse doc = service.updateBridge(514, 2021, 7601, request, true, "user");
+
+    assertThat(doc.bridges()).hasSize(1);
+    verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
+  }
+
+  @Test
+  @DisplayName("update rolls back and surfaces ERR-004 when the persistence layer fails (500)")
+  void update_persistenceFailure() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    doThrow(new DataIntegrityViolationException("update failed"))
+        .when(repository).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+    BridgeRequest request = validRequest(0);
+
+    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
+        .isInstanceOf(ScheduleNotSavedException.class);
+  }
+
+  @Test
+  @DisplayName("delete removes the bridge and cascades its cost children, then recomputes (S04)")
+  void delete_removesBridgeAndCosts() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
+    when(repository.findBridges(514, 2021)).thenReturn(List.of());
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, true);
+
+    assertThat(doc.bridges()).isEmpty();
+    verify(repository).deleteCostsForBridge(7601);
+  }
+
+  @Test
+  @DisplayName("delete of an unknown id → 404 and never cascades the cost delete")
+  void delete_unknownId() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.deleteBridge(9999, 514, 2021)).thenReturn(0);
+
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, true))
+        .isInstanceOf(BridgeNotFoundException.class);
+    verify(repository, never()).deleteCostsForBridge(anyLong());
+  }
+
+  @Test
+  @DisplayName("delete rolls back and surfaces ERR-004 when the persistence layer fails (500)")
+  void delete_persistenceFailure() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    doThrow(new DataIntegrityViolationException("delete failed"))
+        .when(repository).deleteBridge(7601, 514, 2021);
+
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+        .isInstanceOf(ScheduleNotSavedException.class);
+  }
+
+  @Test
+  @DisplayName("delete outside Draft is rejected before any repository write (409)")
+  void delete_rejectedOutsideDraft() {
+    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+
+    assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, true))
+        .isInstanceOf(ScheduleNotEditableException.class);
+    verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
   }
 
   private static BridgeRequest validRequest(Integer revisionCount) {
