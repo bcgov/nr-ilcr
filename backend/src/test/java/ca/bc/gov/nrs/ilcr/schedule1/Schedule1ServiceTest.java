@@ -13,6 +13,8 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
@@ -42,6 +44,9 @@ class Schedule1ServiceTest {
   private Schedule1Repository repository;
 
   @Mock
+  private Schedule3CostDerivation schedule3CostDerivation;
+
+  @Mock
   private MessageSource messageSource;
 
   @InjectMocks
@@ -53,11 +58,18 @@ class Schedule1ServiceTest {
         .thenReturn(Optional.of(new SummaryRow(1001, 12345, "c", 3)));
     lenient().when(repository.findDetails(1001)).thenReturn(details);
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
+    // Schedule 3 defaults to absent: no crown, no pulled admin costs (overridden per-test below).
+    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
   }
 
-  /** Stub the Schedule 3 side (the BR-03/BR-04 source rows). */
-  private void stubSchedule3(List<DetailRow> sch3Details) {
-    lenient().when(repository.findSchedule3Details(MILL, YEAR)).thenReturn(sch3Details);
+  /**
+   * Stub the Schedule-3-derived sources Schedule 1 reads (BR-03 crown volume, BR-04 Less Silv Admin
+   * cost, BR-04 Forest Mgmt Admin crown cost) — the values {@link Schedule3CostDerivation} computes.
+   */
+  private void stubSchedule3(BigDecimal crownVolume, Integer silvAdminCost, Long forestMgmtAdminCost) {
+    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(crownVolume, silvAdminCost, forestMgmtAdminCost));
   }
 
   private void stubWarningText() {
@@ -98,6 +110,20 @@ class Schedule1ServiceTest {
     assertEquals(24000L, doc.otherCosts().costSubtotal());
     assertEquals(2, doc.otherCosts().count());
     assertEquals(0, new BigDecimal("3.0").compareTo(doc.otherCosts().perUnit()));
+  }
+
+  @Test
+  void otherCosts_whitespaceDescription_countsAsItemized_matchesLegacy() {
+    // Legacy isNullOrEmptyString treats only null/"" as the shared (non-itemized) row; a
+    // whitespace-only description is an itemized row (isNotEmpty), so it counts toward N and its cost
+    // toward the subtotal — not folded into the shared-volume row.
+    stub("D", List.of(
+        new DetailRow(19, new BigDecimal("1000"), null, null),  // shared volume row (null desc)
+        new DetailRow(19, null, 500, "   ")));                   // whitespace desc -> itemized
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    assertEquals(1, doc.otherCosts().count());
+    assertEquals(500L, doc.otherCosts().costSubtotal());
+    assertEquals(0, new BigDecimal("1000").compareTo(doc.otherCosts().volume()));
   }
 
   @Test
@@ -146,16 +172,13 @@ class Schedule1ServiceTest {
 
   @Test
   void br04_pulledAdminCosts_comeFromSchedule3_notSchedule1() {
-    // Even with 143/139 rows on Schedule 1, the pulled scalars are sourced from Schedule 3.
+    // Even with 143/139 rows on Schedule 1, the pulled scalars are sourced from Schedule 3's derived
+    // Subtotal Actual Costs crown (Forest Mgmt Admin) and item-37 cost (Less Silv Admin).
     stub("D", List.of(
         new DetailRow(143, new BigDecimal("70"), 700, null),
         new DetailRow(139, new BigDecimal("50"), 300, null)));
-    stubSchedule3(List.of(
-        new DetailRow(115, null, 900000, null),   // Subtotal Actual Costs (harvest)
-        new DetailRow(135, null, 300000, null),   // Subtotal Actual Costs (PO&P)
-        new DetailRow(37, null, 150000, null)));  // Silviculture Admin (harvest; PO&P = 0)
+    stubSchedule3(null, 150000, 600000L);
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
-    // Forest Mgmt Admin = crownCost(115) = 900000 - 300000; Less Silv Admin = cost(37).
     assertEquals(600000, doc.forestMgmtAdminCost());
     assertEquals(150000, doc.lessSilvAdminCost());
   }
@@ -170,11 +193,8 @@ class Schedule1ServiceTest {
         new DetailRow(1, new BigDecimal("10"), 200000, null),    // Silviculture Actual $ Spent
         new DetailRow(2, new BigDecimal("10"), 50000, null),     // Accrued less Actual
         new DetailRow(140, new BigDecimal("500"), null, null))); // Total Silviculture volume
-    stubSchedule3(List.of(
-        new DetailRow(119, new BigDecimal("4000"), null, null),  // crown volume (prefill won't fire — Sch1 has volumes)
-        new DetailRow(115, null, 900000, null),                  // Subtotal Actual (harvest)
-        new DetailRow(135, null, 300000, null),                  // Subtotal Actual (PO&P) -> FMA = 600000
-        new DetailRow(37, null, 150000, null)));                 // Silviculture Admin -> lessSilvAdmin = 150000
+    // crown volume 4000 (prefill won't fire — Sch1 has volumes); FMA 600000; Less Silv Admin 150000.
+    stubSchedule3(new BigDecimal("4000"), 150000, 600000L);
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
     // Subtotal Company Logging = (40000 + 10000) + 600000 (FMA) + 0 (other costs) = 650000.
     assertEquals(650000L, doc.subtotalCompanyLoggingCost());
@@ -189,28 +209,36 @@ class Schedule1ServiceTest {
   }
 
   @Test
-  void br04_forestMgmtAdmin_nullWhenSubtotalRowsAbsent() {
-    // Forest Mgmt Admin is the crown of Schedule 3's Subtotal Actual Costs (items 115/135). Legacy
-    // never re-derived that subtotal from the raw admin lines in Schedule 1 — it read the computed
-    // Subtotal Actual Costs — so Schedule 1 does NOT sum the raw lines here. With only raw admin lines
-    // present and no 115/135, Forest Mgmt Admin blanks (null). Less Silv Admin is a separate pull of
-    // the persisted item-37 cost and is unaffected.
-    stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
-    stubSchedule3(List.of(
-        new DetailRow(27, null, 100000, null),   // Licenses harvest
-        new DetailRow(125, null, 40000, null),    // Licenses PO&P
-        new DetailRow(30, null, 285000, null),    // Wages harvest
-        new DetailRow(128, null, 155000, null),   // Wages PO&P
-        new DetailRow(37, null, 150000, null)));  // Silviculture Admin harvest (no PO&P)
+  void totalSilviculture_blankWhenSilvCostsAbsent_matchesLegacyNullSemantics() {
+    // Legacy Schedule1MB.getTotalSilvCost uses CoreUtil null-propagation: with Actual $ Spent (and
+    // Accrued) cost blank it returns null (blank) and does NOT subtract the Sch3 admin cost, and a
+    // blank Total Silviculture leaves Total Company Logging equal to the subtotal. This is the S02
+    // crown-prefill screen (costs blank, Sch3 Less Silv Admin present) — it must show blank, not −admin.
+    stub("D", List.of(new DetailRow(12, new BigDecimal("100"), 40000, null))); // logging line, no silv costs
+    stubSchedule3(null, 150000, null); // Less Silv Admin (item-37 crown) = 150000; no FMA
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
-    assertNull(doc.forestMgmtAdminCost());
-    assertEquals(150000, doc.lessSilvAdminCost());
+    assertNull(doc.totalSilvicultureCost());                // blank — NOT -150000
+    assertEquals(40000L, doc.subtotalCompanyLoggingCost()); // logging line only
+    assertEquals(40000L, doc.totalCompanyLoggingCost());    // subtotal + blank = subtotal, not subtotal-admin
+    assertNull(doc.totalSilviculturePerUnit());
+  }
+
+  @Test
+  void br04_forestMgmtAdmin_derivedSubtotalIsZero_notNull_whenSchedule3Empty() {
+    // A Schedule 3 that exists but has no cost lines yields a Subtotal Actual Costs crown of 0 (the
+    // subtotal seeds at 0 — legacy sumCostType), NOT null. Null is reserved for "no Schedule 3 at all"
+    // (the next test). This distinguishes an opened-but-empty Schedule 3 from a missing one.
+    stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
+    stubSchedule3(null, null, 0L);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    assertEquals(0L, doc.forestMgmtAdminCost());
+    assertNull(doc.lessSilvAdminCost());
   }
 
   @Test
   void br04_pulledAdminCosts_nullWhenSchedule3Absent() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
-    // No stubSchedule3 → empty; and crownCost is null when a subtotal side is missing.
+    // Default stub → no Schedule 3 summary → all sources null (legacy shows those cells blank).
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
     assertNull(doc.forestMgmtAdminCost());
     assertNull(doc.lessSilvAdminCost());
@@ -221,7 +249,7 @@ class Schedule1ServiceTest {
   @Test
   void br03_prefill_firesWhenAllVolumesEmptyAndSch3CrownPresent() {
     stub("D", List.of());  // first entry: no stored detail rows
-    stubSchedule3(List.of(new DetailRow(119, new BigDecimal("7777"), null, null)));
+    stubSchedule3(new BigDecimal("7777"), null, null);
     stubWarningText();
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
 
@@ -241,7 +269,7 @@ class Schedule1ServiceTest {
   @Test
   void br03_prefill_doesNotFireWhenAnyVolumePresent() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));  // populated
-    stubSchedule3(List.of(new DetailRow(119, new BigDecimal("7777"), null, null)));
+    stubSchedule3(new BigDecimal("7777"), null, null);
     Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
     // No copy: code 12 keeps its stored 1000; no warning.
     assertEquals(0, new BigDecimal("1000").compareTo(lineItem(doc, 12).volume()));

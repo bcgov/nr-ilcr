@@ -169,6 +169,17 @@ class Schedule1CheckStatusServiceTest {
   }
 
   @Test
+  void otherCostsFractionalVolumeBelowOne_treatedAsZero_matchesLegacyIntValue() {
+    // Legacy compares subtotalVolume.intValue(); a shared volume of 0.5 reads as 0, so with a cost
+    // present it must raise "Volume must be > 0 when Cost > 0" — not pass (as BigDecimal.signum would).
+    stub(allPresent(), new BigDecimal("0.5"),
+        List.of(new OtherCostDetailRow(1, "A", 5000, new BigDecimal("0.5"))));
+    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    assertTrue(r.errors().stream()
+        .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
+  }
+
+  @Test
   void emptyCostRow_isWarningNotError() {
     stub(allPresent(), new BigDecimal("100"),
         List.of(new OtherCostDetailRow(1, "Has desc, no cost", null, new BigDecimal("100")),

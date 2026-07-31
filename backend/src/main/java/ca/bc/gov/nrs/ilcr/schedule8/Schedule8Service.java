@@ -460,6 +460,7 @@ public class Schedule8Service {
     boolean scheduleMet = true;
     for (Page page : pages) {
       List<Schedule8CheckFieldIssue> pageIssues = new ArrayList<>();
+      requireField(pageIssues, "Division", page.division());
       requireField(pageIssues, "Contact", page.contact());
       requireField(pageIssues, "Phone", page.phone());
       // TFL vs Supply Block: TSA_NUMBER == "TFL" means the page uses a TFL, else a supply block.

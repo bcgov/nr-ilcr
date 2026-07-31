@@ -58,25 +58,9 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
       """, rowMapperClass = DetailRowMapper.class)
   List<DetailRow> findDetails(@Param("summaryId") int summaryId);
 
-  /**
-   * All Schedule 3 (category {@code "3"}) cost-report-detail rows for a mill/year, or empty when no
-   * Schedule 3 summary exists. Story 2.3 reads the Crown Timber volume (item 119) for the BR-03
-   * pre-fill and the admin-cost source rows (items 37/115/135) for the BR-04 pulls (D1: the Crown
-   * Timber source is the item-119 detail VOLUME, not the summary {@code CROWN_VOLUME} column). SQL
-   * only — the derivation (crownCost = harvest &minus; PO&amp;P, pre-fill decision) lives in
-   * {@link Schedule1Service} (AD-6). Tolerant of a missing Schedule 3 (returns an empty list).
-   */
-  @Query(value = """
-      SELECT d.ILCR_REPORT_COST_ITEM_ID, d.VOLUME, d.COST, d.ITEM_DESCRIPTION
-        FROM THE.ILCR_COST_REPORT_DETAIL d
-        JOIN THE.ILCR_REPORT_SUMMARY s
-          ON d.ILCR_REPORT_SUMMARY_ID = s.ILCR_REPORT_SUMMARY_ID
-       WHERE s.ILCR_MILL_ID = :millId
-         AND s.REPORT_YEAR = :year
-         AND s.ILCR_CATEGORY_ID = '3'
-       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
-      """, rowMapperClass = DetailRowMapper.class)
-  List<DetailRow> findSchedule3Details(@Param("millId") long millId, @Param("year") int year);
+  // Schedule 3 (category "3") source data for Schedule 1's BR-03 pre-fill and BR-04 admin-cost pulls
+  // is read + derived by ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation (the Subtotal Actual
+  // Costs are computed from the fixed lines, never persisted — so there is no query for them here).
 
   // ---------------------------------------------------------------------------------------------
   // Other-Costs itemized rows (Story 2.4) — item-19 WITH a non-null ITEM_DESCRIPTION. The sole
@@ -113,17 +97,20 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
 
   /**
    * Insert one itemized Other-Costs row (item-19, non-null description) inheriting the shared volume
-   * (BR-06). Uses {@code ILCR_COST_REPORT_DETAIL_SEQ}; audit {@code ENTRY_*} set (DB triggers own the
-   * rest). Never writes the shared null-description row.
+   * (BR-06). Uses {@code ILCR_COST_REPORT_DETAIL_SEQ}; sets {@code REVISION_COUNT = 0} (the column is
+   * NOT NULL with no DB default — legacy {@code Schedule1DAO.getNewOtherCostDetail} sets it explicitly,
+   * so relying on a default raised ORA-01400) and the {@code ENTRY_*} audit columns. Never writes the
+   * shared null-description row.
    */
   @Modifying
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, 19,
-           :volume, :cost, :description, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertOtherCost(
       @Param("summaryId") int summaryId, @Param("description") String description,
@@ -255,10 +242,11 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, :cost, NULL, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertFixedDetail(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
@@ -327,10 +315,11 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, NULL, NULL, :user, SYSTIMESTAMP)
+           :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertFixedDetailVolume(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,

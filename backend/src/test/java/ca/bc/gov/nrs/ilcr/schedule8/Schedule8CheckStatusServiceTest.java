@@ -82,6 +82,20 @@ class Schedule8CheckStatusServiceTest {
   }
 
   @Test
+  void missingDivision_returnsIssuesWithDivisionFlag() {
+    // Division (10th field) blank → flagged (legacy Schedule8CheckStatus.validateTtTReport requires it).
+    TreeToTruckReportEntity noDivision = new TreeToTruckReportEntity(8970, "SC1", "R1", "BZ1", "TSA5",
+        "B", null, null, "L600", null, "Pat", "250", "c", 0);
+    when(repository.findPages(MILL, YEAR)).thenReturn(List.of(noDivision));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(metSample()));
+    Schedule8CheckStatusResponse result = service.checkStatus(MILL, YEAR);
+    assertEquals("ISSUES", result.outcome());
+    assertTrue(result.pages().get(0).issues().stream()
+        .map(Schedule8CheckFieldIssue::field)
+        .anyMatch("Division"::equals));
+  }
+
+  @Test
   void percentNotHundred_flagsSkiddingYarding() {
     // Sample with only 50% skidding -> percentTotal 50 != 100 -> flagged at Check Status (S16 half).
     TreeToTruckDetailReportEntity sample = new TreeToTruckDetailReportEntity(8971, 8970, "C", "CB",

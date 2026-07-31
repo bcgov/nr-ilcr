@@ -14,6 +14,8 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.EntryAmount;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.LineItemInput;
@@ -44,6 +46,9 @@ class Schedule1WriteServiceTest {
   @Mock
   private Schedule1Repository repository;
 
+  @Mock
+  private Schedule3CostDerivation schedule3CostDerivation;
+
   @InjectMocks
   private Schedule1Service service;
 
@@ -57,6 +62,9 @@ class Schedule1WriteServiceTest {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
+    // saveSchedule1 reloads via getSchedule1 → no Schedule 3 sources needed for these write assertions.
+    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
   }
 
   @Test
