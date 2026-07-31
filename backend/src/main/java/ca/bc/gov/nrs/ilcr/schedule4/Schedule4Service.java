@@ -189,21 +189,7 @@ public class Schedule4Service {
     List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
     boolean scheduleMet = true;
     for (Location location : document.locations()) {
-      List<FieldIssue> issues = new ArrayList<>();
-      // Every stored category (fixed + distance-based) with a null Cost is a missing field.
-      for (CategoryAmount category : location.categories()) {
-        if (category.cost() == null) {
-          issues.add(new FieldIssue(category.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
-        }
-      }
-      // Sub-page list rows require BOTH Volume and Cost (legacy CheckStatusUtil
-      // .checkRequiredDistanceCycleTimeType flags a missing volume OR cost); an incomplete row is one
-      // field issue keyed by its category code (distance/cycle are not check-status fields).
-      for (SubPageRow row : location.subPageRows()) {
-        if (row.cost() == null || row.volume() == null) {
-          issues.add(new FieldIssue(row.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
-        }
-      }
+      List<FieldIssue> issues = missingFieldIssues(location);
       boolean met = issues.isEmpty();
       scheduleMet &= met;
       List<MessageInfo> messages =
@@ -214,6 +200,26 @@ public class Schedule4Service {
     List<MessageInfo> scheduleMessages =
         scheduleMet ? List.of(new MessageInfo(MSG_SCHEDULE_MET, null)) : List.of();
     return new Schedule4CheckStatusResponse(outcome, scheduleMessages, results);
+  }
+
+  /**
+   * The missing-required-field issues for one location: every stored category with a null Cost, and
+   * every sub-page list row missing Volume OR Cost (legacy CheckStatusUtil
+   * .checkRequiredDistanceCycleTimeType requires both). Each issue is keyed by its category code.
+   */
+  private static List<FieldIssue> missingFieldIssues(Location location) {
+    List<FieldIssue> issues = new ArrayList<>();
+    for (CategoryAmount category : location.categories()) {
+      if (category.cost() == null) {
+        issues.add(new FieldIssue(category.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
+      }
+    }
+    for (SubPageRow row : location.subPageRows()) {
+      if (row.cost() == null || row.volume() == null) {
+        issues.add(new FieldIssue(row.code(), new MessageInfo(MSG_MISSING_REQUIRED, null)));
+      }
+    }
+    return issues;
   }
 
   /**
