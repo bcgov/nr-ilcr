@@ -128,15 +128,20 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
       @Param("cost") Integer cost, @Param("user") String user);
 
-  /** Insert half of {@link #upsertFixedDetailCost} (NULL description, NULL volume). */
+  /**
+   * Insert half of {@link #upsertFixedDetailCost} (NULL description, NULL volume). Sets
+   * {@code REVISION_COUNT = 0} — the column is NOT NULL with no DB default (legacy sets it explicitly),
+   * so omitting it raises ORA-01400.
+   */
   @Modifying
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           NULL, :cost, NULL, :user, SYSTIMESTAMP)
+           NULL, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertFixedDetailCost(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
@@ -162,15 +167,16 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
       @Param("volume") BigDecimal volume, @Param("user") String user);
 
-  /** Insert half of {@link #upsertVolume} (NULL description, NULL cost). */
+  /** Insert half of {@link #upsertVolume} (NULL description, NULL cost); {@code REVISION_COUNT = 0}. */
   @Modifying
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           :volume, NULL, NULL, :user, SYSTIMESTAMP)
+           :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertVolume(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
@@ -225,15 +231,19 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       """)
   void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
 
-  /** Insert one sub-page row (COST + description + optional group {@code comments}; NULL volume). */
+  /**
+   * Insert one sub-page row (COST + description + optional group {@code comments}; NULL volume). Sets
+   * {@code REVISION_COUNT = 0} (NOT NULL, no DB default — see {@link #insertFixedDetailCost}).
+   */
   @Modifying
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, COMMENTS, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, COMMENTS, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :costItemCode,
-           NULL, :cost, :description, :comments, :user, SYSTIMESTAMP)
+           NULL, :cost, :description, :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertSubPageRow(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,

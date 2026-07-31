@@ -1,0 +1,140 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.schedule-8__meta {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-07;
+  margin: 0;
+
+  dt {
+    color: var(--cds-text-secondary);
+    font-size: 0.75rem;
+  }
+
+  dd {
+    color: var(--cds-text-primary);
+    margin: 0;
+  }
+}
+
+.schedule-8__section {
+  margin-block-end: $spacing-06;
+
+  // Carbon tables default to table-layout: fixed; let columns size to content.
+  .cds--data-table {
+    table-layout: auto;
+  }
+
+  .cds--data-table td,
+  .cds--data-table th {
+    width: auto;
+    max-width: none;
+  }
+}
+
+.schedule-8__num {
+  text-align: right;
+}
+
+.schedule-8__actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__row-actions {
+  display: flex;
+  gap: $spacing-02;
+}
+
+.schedule-8__panel {
+  border: 1px solid var(--cds-border-subtle);
+  padding: $spacing-05;
+}
+
+.schedule-8__heading {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__subheading {
+  margin-block: $spacing-05 $spacing-03;
+}
+
+.schedule-8__field-label {
+  display: block;
+  color: var(--cds-text-secondary);
+  font-size: 0.75rem;
+}
+
+.schedule-8__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: $spacing-05;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__field {
+  min-width: 8rem;
+}
+
+.schedule-8__grid {
+  margin-block: $spacing-05;
+}
+
+.schedule-8__panel-actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-start: $spacing-05;
+}
+
+.schedule-8__nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $spacing-03;
+  margin-block: $spacing-05;
+}
+
+.schedule-8__check {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__level-header {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-8__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: $spacing-05;
+  margin-block-end: $spacing-06;
+}
+
+.schedule-8__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-07;
+  margin-block: $spacing-05;
+
+  dt {
+    color: var(--cds-text-secondary);
+    font-size: 0.75rem;
+  }
+
+  dd {
+    color: var(--cds-text-primary);
+    margin: 0;
+  }
+}
