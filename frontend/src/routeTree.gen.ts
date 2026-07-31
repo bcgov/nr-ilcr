@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
+import { Route as Schedule8RouteImport } from './routes/schedule-8'
 import { Route as Schedule4RouteImport } from './routes/schedule-4'
 import { Route as Schedule3RouteImport } from './routes/schedule-3'
 import { Route as Schedule2RouteImport } from './routes/schedule-2'
@@ -23,6 +24,11 @@ import { Route as Schedule1OtherCostsRouteImport } from './routes/schedule-1_.ot
 const SubmissionsRoute = SubmissionsRouteImport.update({
   id: '/submissions',
   path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule8Route = Schedule8RouteImport.update({
+  id: '/schedule-8',
+  path: '/schedule-8',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Schedule4Route = Schedule4RouteImport.update({
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
   '/schedule-3/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
   '/schedule-3/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1_/other-costs': typeof Schedule1OtherCostsRoute
   '/schedule-3_/included-unacceptable-costs': typeof Schedule3IncludedUnacceptableCostsRoute
@@ -119,6 +128,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-8'
     | '/submissions'
     | '/schedule-1/other-costs'
     | '/schedule-3/included-unacceptable-costs'
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-8'
     | '/submissions'
     | '/schedule-1/other-costs'
     | '/schedule-3/included-unacceptable-costs'
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-8'
     | '/submissions'
     | '/schedule-1_/other-costs'
     | '/schedule-3_/included-unacceptable-costs'
@@ -156,6 +168,7 @@ export interface RootRouteChildren {
   Schedule2Route: typeof Schedule2Route
   Schedule3Route: typeof Schedule3Route
   Schedule4Route: typeof Schedule4Route
+  Schedule8Route: typeof Schedule8Route
   SubmissionsRoute: typeof SubmissionsRoute
   Schedule1OtherCostsRoute: typeof Schedule1OtherCostsRoute
   Schedule3IncludedUnacceptableCostsRoute: typeof Schedule3IncludedUnacceptableCostsRoute
@@ -169,6 +182,13 @@ declare module '@tanstack/react-router' {
       path: '/submissions'
       fullPath: '/submissions'
       preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-8': {
+      id: '/schedule-8'
+      path: '/schedule-8'
+      fullPath: '/schedule-8'
+      preLoaderRoute: typeof Schedule8RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule-4': {
@@ -244,6 +264,7 @@ const rootRouteChildren: RootRouteChildren = {
   Schedule2Route: Schedule2Route,
   Schedule3Route: Schedule3Route,
   Schedule4Route: Schedule4Route,
+  Schedule8Route: Schedule8Route,
   SubmissionsRoute: SubmissionsRoute,
   Schedule1OtherCostsRoute: Schedule1OtherCostsRoute,
   Schedule3IncludedUnacceptableCostsRoute:
