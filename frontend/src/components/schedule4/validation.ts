@@ -3,6 +3,8 @@
 // round-trip. Ranges + messages MIRROR the Schedule 4 write DTO / message bundle. Category labels are
 // the legacy cost-item names (Constants.REPORT_COST_ITEMS).
 
+import { isBlank, rangeError } from './fieldRange'
+
 export interface CategoryDef {
   code: number
   label: string
@@ -54,20 +56,6 @@ export type CategoryForm = Record<number, CategoryFormValue>
 export interface LocationValidation {
   nameError?: string
   fieldErrors: Record<string, string> // key: `${code}-volume` | `${code}-cost` | `${code}-distance`
-}
-
-const isBlank = (raw: string | undefined): boolean => raw === undefined || raw.trim() === ''
-
-const rangeError = (
-  raw: string,
-  range: { min: number; max: number },
-  message: string,
-): string | undefined => {
-  const value = Number(raw)
-  if (Number.isNaN(value) || value < range.min || value > range.max) {
-    return message
-  }
-  return undefined
 }
 
 /**

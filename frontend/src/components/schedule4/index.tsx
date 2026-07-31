@@ -273,7 +273,7 @@ const Schedule4: FC = () => {
   const buildRequest = (): Schedule4LocationRequest => ({
     id: panelMode === 'edit' ? panelEditId : null,
     revisionCount: panelMode === 'edit' ? (panelRevision ?? 0) : null,
-    name: panelName,
+    name: panelName.trim(),
     categories: ALL_CATEGORIES.flatMap((def) => {
       const value = panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }
       const isDistance = def.kind === 'DISTANCE'
@@ -293,19 +293,21 @@ const Schedule4: FC = () => {
     }),
   })
 
-  const handleSave = () => {
-    if (saving || panelMode === 'closed' || panelMode === 'view') return
+  // Validate + PUT the location panel (create or edit). Resolves to the saved document on success, or
+  // null on validation failure / API error (panel stays open with its entered values). Shared by the
+  // Save button (handleSave) and the save-before-subpage flow (saveLocationReturningId).
+  const putLocation = (): Promise<Schedule4Response | null> => {
     const validation = validateLocationForm(panelName, panelCategories)
     if (!isLocationFormValid(validation)) {
       // Generic banner; the specific verbatim messages (ERR-001, ranges, BR-04) show inline on the
       // fields so they are not duplicated.
       setSaveMessage(null)
       setSaveError('Please correct the highlighted fields before saving.')
-      return
+      return Promise.resolve(null)
     }
     setSaving(true)
     clearMessages()
-    apiService
+    return apiService
       .getAxiosInstance()
       .put<Schedule4Response>(
         `/v1/schedule4/locations?millId=${millId}&year=${year}`,
@@ -314,13 +316,21 @@ const Schedule4: FC = () => {
       .then((response) => {
         setData(response.data)
         setSaveMessage(response.data.message?.text ?? null)
-        setPanelMode('closed')
+        return response.data
       })
       .catch((error: unknown) => {
         // Keep the panel open + entered values; surface the API's verbatim detail (ERR-001/ERR-002…).
         setSaveError(extractDetail(error) || 'Schedule could not be saved.')
+        return null
       })
       .finally(() => setSaving(false))
+  }
+
+  const handleSave = () => {
+    if (saving || panelMode === 'closed' || panelMode === 'view') return
+    void putLocation().then((document) => {
+      if (document) setPanelMode('closed')
+    })
   }
 
   const handleDelete = () => {
@@ -351,6 +361,7 @@ const Schedule4: FC = () => {
 
   const handleCheckStatus = () => {
     if (saving) return
+    setSaving(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
     clearMessages()
     apiService
       .getAxiosInstance()
@@ -359,6 +370,7 @@ const Schedule4: FC = () => {
       )
       .then((response) => setCheckResult(response.data))
       .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
+      .finally(() => setSaving(false))
   }
 
   // ---- Sub-page navigation (Story 10.6). ---------------------------------------------------------
@@ -370,32 +382,10 @@ const Schedule4: FC = () => {
   }
 
   // Save the panel (create path) and return the new location's id, or null on validation/API failure.
-  const saveLocationReturningId = (): Promise<number | null> => {
-    const validation = validateLocationForm(panelName, panelCategories)
-    if (!isLocationFormValid(validation)) {
-      setSaveError('Please correct the highlighted fields before saving.')
-      return Promise.resolve(null)
-    }
-    setSaving(true)
-    clearMessages()
-    return apiService
-      .getAxiosInstance()
-      .put<Schedule4Response>(
-        `/v1/schedule4/locations?millId=${millId}&year=${year}`,
-        buildRequest(),
-      )
-      .then((response) => {
-        setData(response.data)
-        setSaveMessage(response.data.message?.text ?? null)
-        const created = response.data.locations.find((l) => l.name === panelName.trim())
-        return created?.id ?? null
-      })
-      .catch((error: unknown) => {
-        setSaveError(extractDetail(error) || 'Schedule could not be saved.')
-        return null
-      })
-      .finally(() => setSaving(false))
-  }
+  const saveLocationReturningId = (): Promise<number | null> =>
+    putLocation().then((document) =>
+      document ? (document.locations.find((l) => l.name === panelName.trim())?.id ?? null) : null,
+    )
 
   // From the panel: a saved location opens the sub-page after NAV-002 (edits discarded); an unsaved
   // NEW/COPY location opens after NAV-003 (save first); a read-only View opens directly.

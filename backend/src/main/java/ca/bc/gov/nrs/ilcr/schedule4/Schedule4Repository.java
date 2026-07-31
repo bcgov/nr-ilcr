@@ -279,9 +279,10 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       INSERT INTO THE.TRANSPORTATION_REPORT
           (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, REVISION_COUNT,
-           ENTRY_USERID, ENTRY_TIMESTAMP)
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
-          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSTIMESTAMP)
+          (:id, :year, :millId, '4', :name, :distance, :cycle, 0, :user, SYSTIMESTAMP,
+           :user, SYSTIMESTAMP)
       """)
   int insertReportRow(
       @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
@@ -381,10 +382,11 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+           UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, NULL, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertDetailRow(
       @Param("reportId") int reportId, @Param("code") int code,
@@ -410,10 +412,11 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+           UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :reportId, :code,
-           :volume, :cost, :description, :user, SYSTIMESTAMP)
+           :volume, :cost, :description, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertDetailWithDescription(
       @Param("reportId") int reportId, @Param("code") int costItemCode,

@@ -231,20 +231,20 @@ const SubPage: FC<SubPageProps> = ({
       <dl className="schedule-4__totals" aria-label={`${def.label} totals`}>
         <div>
           <dt>Total Distance</dt>
-          <dd>{sum(rows, (r) => r.distance)}</dd>
+          <dd>{fmt(sum(rows, (r) => r.distance))}</dd>
         </div>
         <div>
           <dt>Total Volume</dt>
-          <dd>{sum(rows, (r) => r.volume)}</dd>
+          <dd>{fmt(sum(rows, (r) => r.volume))}</dd>
         </div>
         <div>
           <dt>Total Cost</dt>
-          <dd>{sum(rows, (r) => r.cost)}</dd>
+          <dd>{fmt(sum(rows, (r) => r.cost))}</dd>
         </div>
         {def.hasCycle && (
           <div>
             <dt>Total Cycle</dt>
-            <dd>{sum(rows, (r) => r.cycle)}</dd>
+            <dd>{fmt(sum(rows, (r) => r.cycle))}</dd>
           </div>
         )}
       </dl>
