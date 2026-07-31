@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,9 +136,10 @@ public class Schedule2Service {
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      // Never log cost/volume values (AD-11) — action + status + exception type only.
-      log.warn("Schedule 2 save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      // Log the DB cause (constraint name / ORA text) but NEVER the cost/volume values (AD-11) — the
+      // most-specific cause is the SQL error, not business data, so this stays diagnosable in prod.
+      log.warn("Schedule 2 save failed for mill {} year {} [{}]: {}", millId, year,
+          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
@@ -160,8 +162,8 @@ public class Schedule2Service {
     try {
       repository.deleteSchedule(summary.get().summaryId());
     } catch (DataAccessException ex) {
-      log.warn("Schedule 2 delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 2 delete failed for mill {} year {} [{}]: {}", millId, year,
+          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
