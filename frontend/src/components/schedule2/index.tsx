@@ -7,7 +7,6 @@ import {
   Button,
   Column,
   Grid,
-  InlineNotification,
   Modal,
   Table,
   TableBody,
@@ -25,6 +24,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import { validateSchedule2 } from './validation'
@@ -344,30 +344,19 @@ const Schedule2: FC = () => {
         </Column>
 
         {saveMessage && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-          </Column>
+          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
         {statusMessages &&
           (statusMessages.messages ?? []).map((msg) => (
-            <Column sm={4} md={8} lg={16} key={`${msg.key}-${msg.text}`}>
-              <InlineNotification
-                kind={statusMessages.outcome === 'MET' ? 'success' : 'warning'}
-                lowContrast
-                title="Check Status"
-                subtitle={msg.text}
-              />
-            </Column>
+            <NotificationColumn
+              key={`${msg.key}-${msg.text}`}
+              kind={statusMessages.outcome === 'MET' ? 'success' : 'warning'}
+              title="Check Status"
+              subtitle={msg.text}
+            />
           ))}
 
         {actions}
