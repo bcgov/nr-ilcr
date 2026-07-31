@@ -125,6 +125,25 @@ class Schedule8ServiceTest {
   }
 
   @Test
+  void unclassifiableRateRow_droppedFromRollup() {
+    // A stored rate row whose cost item has no addition/deduction subcategory (legacy / out-of-band
+    // data the write path now rejects) is excluded from both lists and the totals — never surfaced.
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+    when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
+        rate(8700, 8600, "CT1", 82, "Add A", "5.00"),      // subcat '1' — addition
+        rate(8702, 8600, "CT1", 999, "Orphan", "9.99")));  // 999 not in subcategories → dropped
+
+    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+
+    assertEquals(1, sample.additionCount());   // only the classifiable addition
+    assertEquals(0, sample.deductionCount());
+    eq("5", sample.additionsTotal());          // the orphan 9.99 is NOT summed in
+    eq("30.5", sample.finalRate());            // 25.50 + 5.00 − 0
+  }
+
+  @Test
   void codeLabels_resolvedFromCodeTables() {
     stubOnePageOneSample();
     Page page = service.getSchedule8(MILL, YEAR, true).pages().get(0);
