@@ -31,6 +31,7 @@ import {
   validateSampleForm,
   type SampleForm,
 } from './validation'
+import CheckStatusResult from './CheckStatusResult'
 
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
@@ -134,7 +135,7 @@ const SamplePage: FC<SamplePageProps> = ({
   const buildRequest = (): Schedule8SampleRequest => ({
     id: panelMode === 'edit' ? editId : null,
     revisionCount: panelMode === 'edit' ? (revision ?? 0) : null,
-    contractId: form.contractId,
+    contractId: form.contractId.trim(),
     cutBlock: blankToNull(form.cutBlock),
     groundBasePct: toNum(form.groundBasePct),
     grapplePct: toNum(form.grapplePct),
@@ -203,6 +204,7 @@ const SamplePage: FC<SamplePageProps> = ({
 
   const handleCheckStatus = () => {
     if (busy) return
+    setBusy(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
     clearMessages()
     apiService
       .getAxiosInstance()
@@ -211,6 +213,7 @@ const SamplePage: FC<SamplePageProps> = ({
       )
       .then((response) => setCheckResult(response.data))
       .catch((err: unknown) => setError(extractDetail(err) || 'Unable to check status.'))
+      .finally(() => setBusy(false))
   }
 
   const readOnly = panelMode === 'view'
@@ -503,37 +506,7 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
       {checkResult && (
         <div className="schedule-8__check">
-          {checkResult.messages.map((msg) => (
-            <InlineNotification
-              key={`sch-${msg.key}-${msg.text}`}
-              kind="success"
-              lowContrast
-              title="Check Status"
-              subtitle={msg.text}
-            />
-          ))}
-          {checkResult.pages.flatMap((p) => [
-            ...p.issues.map((issue) => (
-              <InlineNotification
-                key={`page-${p.id}-${issue.field}`}
-                kind="warning"
-                lowContrast
-                title={`${issue.field} — required`}
-                subtitle={issue.message.text}
-              />
-            )),
-            ...p.samples.flatMap((s) =>
-              s.issues.map((issue) => (
-                <InlineNotification
-                  key={`sample-${s.id}-${issue.field}`}
-                  kind="warning"
-                  lowContrast
-                  title={`Sample — ${issue.field}`}
-                  subtitle={issue.message.text}
-                />
-              )),
-            ),
-          ])}
+          <CheckStatusResult result={checkResult} />
         </div>
       )}
 

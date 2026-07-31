@@ -24,6 +24,7 @@ import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageTitle from '@/components/core/PageTitle'
 import {
   emptyPageForm,
@@ -32,6 +33,7 @@ import {
   validatePageForm,
   type PageForm,
 } from './validation'
+import CheckStatusResult from './CheckStatusResult'
 import SamplePage from './SamplePage'
 import RatesPage from './RatesPage'
 import './index.scss'
@@ -156,10 +158,10 @@ const Schedule8: FC = () => {
     return {
       id: panelMode === 'edit' ? editId : null,
       revisionCount: panelMode === 'edit' ? (revision ?? 0) : null,
-      license: form.license,
-      supportCentre: form.supportCentre,
-      region: form.region,
-      becZone: form.becZone,
+      license: form.license.trim(),
+      supportCentre: form.supportCentre.trim(),
+      region: form.region.trim(),
+      becZone: form.becZone.trim(),
       tsaNumber: blankToNull(form.tsaNumber),
       tflNumber: tfl ? blankToNull(form.tflNumber) : null,
       supplyBlock: tfl ? null : blankToNull(form.supplyBlock),
@@ -221,6 +223,7 @@ const Schedule8: FC = () => {
 
   const handleCheckStatus = () => {
     if (saving) return
+    setSaving(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
     clearMessages()
     apiService
       .getAxiosInstance()
@@ -229,6 +232,7 @@ const Schedule8: FC = () => {
       )
       .then((response) => setCheckResult(response.data))
       .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
+      .finally(() => setSaving(false))
   }
 
   const openSamples = (pageId: number) => {
@@ -515,53 +519,14 @@ const Schedule8: FC = () => {
         </Column>
 
         {saveMessage && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-          </Column>
+          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
         {checkResult && (
           <Column sm={4} md={8} lg={16} className="schedule-8__check">
-            {checkResult.messages.map((msg) => (
-              <InlineNotification
-                key={`sch-${msg.key}-${msg.text}`}
-                kind="success"
-                lowContrast
-                title="Check Status"
-                subtitle={msg.text}
-              />
-            ))}
-            {checkResult.pages.flatMap((page) => [
-              ...page.issues.map((issue) => (
-                <InlineNotification
-                  key={`page-${page.id}-${issue.field}`}
-                  kind="warning"
-                  lowContrast
-                  title={`Page — ${issue.field}`}
-                  subtitle={issue.message.text}
-                />
-              )),
-              ...page.samples.flatMap((sample) =>
-                sample.issues.map((issue) => (
-                  <InlineNotification
-                    key={`sample-${sample.id}-${issue.field}`}
-                    kind="warning"
-                    lowContrast
-                    title={`Sample — ${issue.field}`}
-                    subtitle={issue.message.text}
-                  />
-                )),
-              ),
-            ])}
+            <CheckStatusResult result={checkResult} />
           </Column>
         )}
 

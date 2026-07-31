@@ -351,10 +351,8 @@ public class Schedule8Service {
     // Reject an unknown/foreign-category cost item (400): its subcategory is the addition/deduction
     // discriminator, so a row that classifies as neither would persist yet silently vanish from the
     // read's totals + finalRate. Also validate the cost-type code against its reference table.
-    String subcategory = repository.costItemSubcategories().get(request.costItemCode());
-    if (subcategory == null
-        || (!ADDITION_SUBCATEGORIES.contains(subcategory)
-            && !DEDUCTION_SUBCATEGORIES.contains(subcategory))) {
+    if (classifyRate(repository.costItemSubcategories(), request.costItemCode())
+        == RateClass.UNKNOWN) {
       throw new Schedule8InvalidCodeException();
     }
     requireKnownCode(repository.costTypeLabels(), request.costTypeCode());
@@ -566,21 +564,23 @@ public class Schedule8Service {
     BigDecimal additionsTotal = BigDecimal.ZERO;
     BigDecimal deductionsTotal = BigDecimal.ZERO;
     for (TreeToTruckRateDetailEntity r : rateRows) {
-      String subcategory = labelFor(subcategories, r.costItemCode());
       RateRow row = new RateRow(r.id(), r.revisionCount(), r.costItemCode(), r.itemDescription(),
           normalize(r.costingRate()), r.costTypeCode(), labelFor(costType, r.costTypeCode()));
-      if (subcategory != null && ADDITION_SUBCATEGORIES.contains(subcategory)) {
-        additions.add(row);
-        additionsTotal = additionsTotal.add(zeroIfNull(r.costingRate()));
-      } else if (subcategory != null && DEDUCTION_SUBCATEGORIES.contains(subcategory)) {
-        deductions.add(row);
-        deductionsTotal = deductionsTotal.add(zeroIfNull(r.costingRate()));
-      } else {
+      switch (classifyRate(subcategories, r.costItemCode())) {
+        case ADDITION -> {
+          additions.add(row);
+          additionsTotal = additionsTotal.add(zeroIfNull(r.costingRate()));
+        }
+        case DEDUCTION -> {
+          deductions.add(row);
+          deductionsTotal = deductionsTotal.add(zeroIfNull(r.costingRate()));
+        }
         // A rate row whose cost item is neither an addition nor a deduction is dropped from the
         // roll-up. The write path now rejects such codes (Schedule8InvalidCodeException), so this can
         // only surface for legacy/out-of-band data — log it rather than silently vanish the money.
-        log.warn("Schedule 8 rate row {} has cost item {} with unclassifiable subcategory {} —"
-            + " excluded from additions/deductions", r.id(), r.costItemCode(), subcategory);
+        default -> log.warn("Schedule 8 rate row {} has cost item {} with unclassifiable subcategory"
+            + " {} — excluded from additions/deductions", r.id(), r.costItemCode(),
+            labelFor(subcategories, r.costItemCode()));
       }
     }
     BigDecimal originalRate = zeroIfNull(s.originalRate());
@@ -612,6 +612,28 @@ public class Schedule8Service {
    */
   private static <K> String labelFor(Map<K, String> labels, K code) {
     return code == null ? null : labels.get(code);
+  }
+
+  /** How a rate row's cost item classifies for the additions/deductions roll-up. */
+  private enum RateClass { ADDITION, DEDUCTION, UNKNOWN }
+
+  /**
+   * Classify a rate row's cost item by its subcategory. {@code UNKNOWN} means the code is neither a
+   * recognized addition nor deduction — the write path rejects it (400) and the read path drops it
+   * from the roll-up. Single source for both classifications so the two paths cannot diverge.
+   */
+  private static RateClass classifyRate(Map<Integer, String> subcategories, Integer costItemCode) {
+    String subcategory = labelFor(subcategories, costItemCode);
+    if (subcategory == null) {
+      return RateClass.UNKNOWN;
+    }
+    if (ADDITION_SUBCATEGORIES.contains(subcategory)) {
+      return RateClass.ADDITION;
+    }
+    if (DEDUCTION_SUBCATEGORIES.contains(subcategory)) {
+      return RateClass.DEDUCTION;
+    }
+    return RateClass.UNKNOWN;
   }
 
   /** Sum of the given values treating null as 0; uses long accumulation for overflow protection (4). */  

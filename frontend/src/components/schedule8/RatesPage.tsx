@@ -72,11 +72,13 @@ const RatesPage: FC<RatesPageProps> = ({
     else onBack()
   }
 
-  const submitRate = (form: RateForm) => {
+  // Resolves true on a successful save, false on validation/API failure — the caller clears the
+  // add-row form ONLY on success, so a rejected POST keeps the user's typed values.
+  const submitRate = (form: RateForm): Promise<boolean> => {
     setBusy(true)
     setMessage(null)
     setError(null)
-    apiService
+    return apiService
       .getAxiosInstance()
       .post<Schedule8Response>(
         `/v1/schedule8/samples/${sampleId}/rates?millId=${millId}&year=${year}`,
@@ -92,8 +94,12 @@ const RatesPage: FC<RatesPageProps> = ({
       .then((response) => {
         onDocUpdate(response.data)
         setMessage(response.data.message?.text ?? null)
+        return true
       })
-      .catch((err: unknown) => setError(extractDetail(err) || 'Row could not be saved.'))
+      .catch((err: unknown) => {
+        setError(extractDetail(err) || 'Row could not be saved.')
+        return false
+      })
       .finally(() => setBusy(false))
   }
 
@@ -104,9 +110,12 @@ const RatesPage: FC<RatesPageProps> = ({
       setShowAddErrors(true)
       return
     }
-    submitRate(addForm)
-    setAddForm(emptyRateForm())
-    setShowAddErrors(false)
+    void submitRate(addForm).then((ok) => {
+      if (ok) {
+        setAddForm(emptyRateForm())
+        setShowAddErrors(false)
+      }
+    })
   }
 
   const handleAddDeduction = () => {
@@ -116,9 +125,12 @@ const RatesPage: FC<RatesPageProps> = ({
       setShowDedErrors(true)
       return
     }
-    submitRate(dedForm)
-    setDedForm(emptyRateForm())
-    setShowDedErrors(false)
+    void submitRate(dedForm).then((ok) => {
+      if (ok) {
+        setDedForm(emptyRateForm())
+        setShowDedErrors(false)
+      }
+    })
   }
 
   const handleDeleteRow = () => {
@@ -248,7 +260,7 @@ const RatesPage: FC<RatesPageProps> = ({
         <dl className="schedule-8__totals" aria-label={`${label} total`}>
           <div>
             <dt>{label} Total</dt>
-            <dd>{sumRates(rows)}</dd>
+            <dd>{fmt(sumRates(rows))}</dd>
           </div>
         </dl>
       </div>
