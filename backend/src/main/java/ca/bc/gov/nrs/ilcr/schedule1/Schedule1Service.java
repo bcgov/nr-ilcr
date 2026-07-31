@@ -212,9 +212,10 @@ public class Schedule1Service {
       BigDecimal sharedVolume = repository.findSharedOtherCostsVolume(summaryId).orElse(null);
       repository.insertOtherCost(summaryId, request.description(), request.cost(), sharedVolume, user);
     } catch (DataAccessException ex) {
-      log.warn("Other-Costs add failed for mill {} year {} [{}]: {}",
-          millId, year, ex.getClass().getSimpleName(),
-          ex.getMostSpecificCause().getMessage());
+      // Type only — the message/root cause can carry SQL state, constraint or column names; the
+      // stack trace already logged at WARN carries the detail when it's actually needed.
+      log.warn("Other-Costs add failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildOtherCostsDocument(summaryId, true);
@@ -237,9 +238,9 @@ public class Schedule1Service {
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Other-Costs update failed for mill {} year {} [{}]: {}",
-          millId, year, ex.getClass().getSimpleName(),
-          ex.getMostSpecificCause().getMessage());
+      // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
+      log.warn("Other-Costs update failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildOtherCostsDocument(summaryId, true);
@@ -260,9 +261,9 @@ public class Schedule1Service {
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Other-Costs delete failed for mill {} year {} [{}]: {}",
-          millId, year, ex.getClass().getSimpleName(),
-          ex.getMostSpecificCause().getMessage());
+      // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
+      log.warn("Other-Costs delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildOtherCostsDocument(summaryId, true);

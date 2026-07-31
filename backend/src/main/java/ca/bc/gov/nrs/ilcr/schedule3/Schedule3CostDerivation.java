@@ -1,8 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule3;
 
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LINES;
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.isTotalComments;
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.resolvePop;
+
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,35 +36,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class Schedule3CostDerivation {
 
-  // Fixed admin-cost lines — MUST match Schedule3Service.LINES. Each line's Harvest item id is its
-  // identity; popCode is its PO&P item id (null for the Harvest-only lines). Annual Rents (29) and
-  // Silviculture Admin (37) are Harvest-only (legacy forces their PO&P to 0). Scaling (33) has no
-  // stored PO&P — it is derived from the timber-volume ratio (getScalingExpense).
-  private static final int CODE_SCALING = 33;
-  private static final int CODE_SILV_ADMIN = 37;       // BR-04 Less Silviculture Admin source
+  // The fixed admin-cost LINES, the LineSpec record, and the PO&P/other-acceptable derivation rules
+  // (resolvePop, isTotalComments) live in Schedule3Constants — the single source of truth shared with
+  // Schedule3Service, so the two derive the Subtotal Actual Costs identically and can never drift.
+  private static final int CODE_SILV_ADMIN = Schedule3Constants.CODE_SILV_ADMIN; // BR-04 Less Silv Admin
   private static final int CODE_POP_TIMBER = 118;      // PO&P Timber volume (Scaling ratio numerator)
   private static final int CODE_CROWN_TIMBER = 119;    // BR-03 Crown Timber pre-fill source (volume)
   private static final int CODE_OTHER_ACCEPTABLE = 124; // Other Acceptable Costs sub-page rows
-
-  // Legacy Constant.SCH3_OTHERACCEPT — an item-124 COMMENTS encodes "SCH3_2_<TYPE>_<GRP>"; chars
-  // 7..10 == "TOT" marks a group's Harvest-total row (all others carry the group's PO&P).
-  private static final String OTHERACCEPT_TYPE_TOTAL = "TOT";
-
-  private record LineSpec(int code, Integer popCode, boolean harvestOnly) {
-  }
-
-  private static final List<LineSpec> LINES = List.of(
-      new LineSpec(27, 125, false),   // Licenses, Fees, Insurance
-      new LineSpec(28, 126, false),   // Taxes, Leases, Rentals
-      new LineSpec(29, null, true),   // Annual Rents (Harvest-only; PO&P forced 0)
-      new LineSpec(30, 128, false),   // Wages/Salaries incl. Benefits
-      new LineSpec(31, 129, false),   // Vehicle Expense
-      new LineSpec(32, 130, false),   // Office Expense
-      new LineSpec(CODE_SCALING, null, false),       // Scaling Expense (PO&P derived)
-      new LineSpec(34, 132, false),   // Cruising & Layout Expense
-      new LineSpec(35, 133, false),   // Residue & Waste Expense
-      new LineSpec(36, 134, false),   // Depreciation Expense
-      new LineSpec(CODE_SILV_ADMIN, null, true));    // Silviculture Admin Costs (Harvest-only; PO&P 0)
 
   private final Schedule3Repository repository;
 
@@ -136,43 +118,6 @@ public class Schedule3CostDerivation {
         crownTimberVolume,
         costOf(byCode.get(CODE_SILV_ADMIN)),
         harvest - pop);
-  }
-
-  /**
-   * Resolve a line's PO&P amount: Harvest-only lines (29/37) force 0 when a harvest is present;
-   * Scaling (33) derives it from the timber-volume ratio; all others read their PO&P item's cost.
-   */
-  private Integer resolvePop(LineSpec spec, Integer harvest, Map<Integer, DetailRow> byCode,
-      BigDecimal popTimberVolume, BigDecimal overheadVolume) {
-    if (spec.harvestOnly()) {
-      return harvest == null ? null : 0;
-    }
-    if (spec.code() == CODE_SCALING) {
-      return scalingPop(harvest, popTimberVolume, overheadVolume);
-    }
-    return costOf(byCode.get(spec.popCode()));
-  }
-
-  /**
-   * Legacy {@code Schedule3DO.getScalingExpense}: PO&P = round-to-whole-dollars(
-   * (popTimberVolume / totalOverheadVolume) × scalingHarvest). Null when the harvest or a volume is
-   * absent or the overhead volume is zero.
-   */
-  private static Integer scalingPop(Integer scalingHarvest, BigDecimal popTimberVolume,
-      BigDecimal overheadVolume) {
-    if (scalingHarvest == null || popTimberVolume == null
-        || overheadVolume == null || overheadVolume.signum() == 0) {
-      return null;
-    }
-    BigDecimal ratio = popTimberVolume.divide(overheadVolume, 15, RoundingMode.HALF_UP);
-    return ratio.multiply(BigDecimal.valueOf(scalingHarvest)).setScale(0, RoundingMode.HALF_UP)
-        .intValue();
-  }
-
-  /** True when an item-124 {@code COMMENTS} encodes a Harvest-total row (chars 7..10 == "TOT"). */
-  private static boolean isTotalComments(String comments) {
-    return comments != null && comments.length() >= 10
-        && OTHERACCEPT_TYPE_TOTAL.equals(comments.substring(7, 10));
   }
 
   /** Legacy {@code bigDecimalCostAddition}: null-tolerant (a null operand is treated as absent). */

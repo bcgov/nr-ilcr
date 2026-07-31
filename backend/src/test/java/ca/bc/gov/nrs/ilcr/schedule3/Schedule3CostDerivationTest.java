@@ -5,12 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -108,6 +110,16 @@ class Schedule3CostDerivationTest {
     assertNull(sources.forestMgmtAdminCrownCost());
     assertNull(sources.silvicultureAdminCrownCost());
     assertNull(sources.crownTimberVolume());
+  }
+
+  @Test
+  void resolvePop_nullPopCodeSpec_forcesZeroWhenHarvestPresentElseNull() {
+    // Harvest-only lines (Annual Rents 29 / Silviculture Admin 37) carry a null popCode: resolvePop
+    // must force PO&P to 0 when a Harvest is present (so crown = harvest) and stay null when it isn't —
+    // never dereferencing the absent PO&P item. Volumes are irrelevant on this path (scaling-only).
+    LineSpec harvestOnly = new LineSpec(29, null, true);
+    assertEquals(0, Schedule3Constants.resolvePop(harvestOnly, 30000, Map.of(), null, null));
+    assertNull(Schedule3Constants.resolvePop(harvestOnly, null, Map.of(), null, null));
   }
 
   @Test
