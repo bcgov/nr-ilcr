@@ -14,6 +14,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsSummary;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.SilvicultureBlock;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -52,12 +53,6 @@ public class Schedule1Service {
   private static final int CODE_SUBTOTAL_COMPANY_LOGGING = 144;
   private static final int CODE_OTHER = 19;
 
-  // Schedule 3 (category "3") source cost-item codes for the Story 2.3 reads (legacy Constant).
-  private static final int CODE_SCH3_CROWN_TIMBER = 119;           // BR-03 pre-fill source (volume)
-  private static final int CODE_SCH3_SILV_ADMIN = 37;             // BR-04 Less Silv Admin (PO&P = 0)
-  private static final int CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST = 115; // BR-04 Forest Mgmt Admin (harvest)
-  private static final int CODE_SCH3_SUBTOTAL_ACTUAL_POP = 135;     // BR-04 Forest Mgmt Admin (PO&P)
-
   // WRN-001: legacy verbatim bundle key for the crown-timber pre-fill warning (BR-03, S02).
   private static final String WARN_CROWN_PREFILL = "crownVolumeSetForSchedule1";
 
@@ -71,10 +66,15 @@ public class Schedule1Service {
   // items, these four volumes, and silviculture 1 & 2 (never the Other-Costs shared volume).
 
   private final Schedule1Repository repository;
+  private final Schedule3CostDerivation schedule3CostDerivation;
   private final MessageSource messageSource;
 
-  public Schedule1Service(Schedule1Repository repository, MessageSource messageSource) {
+  public Schedule1Service(
+      Schedule1Repository repository,
+      Schedule3CostDerivation schedule3CostDerivation,
+      MessageSource messageSource) {
     this.repository = repository;
+    this.schedule3CostDerivation = schedule3CostDerivation;
     this.messageSource = messageSource;
   }
 
@@ -212,6 +212,8 @@ public class Schedule1Service {
       BigDecimal sharedVolume = repository.findSharedOtherCostsVolume(summaryId).orElse(null);
       repository.insertOtherCost(summaryId, request.description(), request.cost(), sharedVolume, user);
     } catch (DataAccessException ex) {
+      // Type only — the message/root cause can carry SQL state, constraint or column names; the
+      // stack trace already logged at WARN carries the detail when it's actually needed.
       log.warn("Other-Costs add failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
@@ -236,6 +238,7 @@ public class Schedule1Service {
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
+      // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
       log.warn("Other-Costs update failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
@@ -258,6 +261,7 @@ public class Schedule1Service {
     } catch (OtherCostNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
+      // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
       log.warn("Other-Costs delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
@@ -401,15 +405,13 @@ public class Schedule1Service {
     List<DetailRow> details = repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
-    // Schedule 3 source data (BR-03 crown pre-fill + BR-04 admin-cost pulls). The Sch 3 context is not
-    // guaranteed to exist (MillContextService validates category "1" only), so this is tolerant of a
-    // missing Schedule 3 — an empty map yields a null crown (no pre-fill) and null pulled costs.
-    // First row per code wins (rows come back ordered by detail id) so a duplicate/corrupt row can't
-    // make the crown volume or pulled costs depend on driver row order (legacy takes the first row).
-    Map<Integer, DetailRow> sch3ByCode =
-        firstRowPerCode(repository.findSchedule3Details(millId, year));
-    DetailRow crownRow = sch3ByCode.get(CODE_SCH3_CROWN_TIMBER);
-    BigDecimal sch3CrownVolume = crownRow == null ? null : crownRow.volume();
+    // Schedule 3 source data (BR-03 crown pre-fill + BR-04 admin-cost pulls). Derived live from the
+    // stored Schedule 3 fixed lines (legacy computed these each render; the subtotals are never
+    // persisted — see Schedule3CostDerivation). Tolerant of a missing Schedule 3 (category "1" is the
+    // only context MillContextService guarantees): all-null sources ⇒ no pre-fill, blank pulled costs.
+    Schedule3CostDerivation.Schedule1Sources sch3 =
+        schedule3CostDerivation.schedule1Sources(millId, year);
+    BigDecimal sch3CrownVolume = sch3.crownTimberVolume();
 
     Map<Integer, DetailRow> byCode = new HashMap<>();
     List<DetailRow> otherCostRows = new ArrayList<>();
@@ -439,12 +441,11 @@ public class Schedule1Service {
         prefilledSilv(CODE_SILV_TOTAL, byCode.get(CODE_SILV_TOTAL), prefill, sch3CrownVolume));
 
     // BR-04: the two admin costs are PULLED from Schedule 3 (read-only), never from Schedule 1's own
-    // 143/139 rows. Forest Mgmt Admin = crownCost of Sch 3 Subtotal Actual Costs (harvest 115 −
-    // PO&P 135); Less Silv Admin = Sch 3 Silviculture Admin (item 37; PO&P forced 0 ⇒ = its cost).
-    Long forestMgmtAdminCost = crownCost(
-        sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_HARVEST),
-        sch3ByCode.get(CODE_SCH3_SUBTOTAL_ACTUAL_POP));
-    Integer lessSilvAdminCost = costOf(sch3ByCode.get(CODE_SCH3_SILV_ADMIN));
+    // 143/139 rows. Forest Mgmt Admin = crown of Sch 3's Subtotal Actual Costs (Σ fixed-line harvest −
+    // PO&P, derived — not a persisted row); Less Silv Admin = Sch 3 Silviculture Admin (item 37; PO&P
+    // forced 0 ⇒ = its cost). Both null when no Schedule 3 exists (legacy shows those cells blank).
+    Long forestMgmtAdminCost = sch3.forestMgmtAdminCrownCost();
+    Integer lessSilvAdminCost = sch3.silvicultureAdminCrownCost();
 
     OtherCostsSummary otherCosts = toOtherCosts(otherCostRows);
 
@@ -453,20 +454,29 @@ public class Schedule1Service {
     List<MessageInfo> warnings = prefill ? List.of(warning(WARN_CROWN_PREFILL)) : List.of();
 
     // Derived read-only figures (legacy Schedule1MB getters): the running subtotal/total costs that
-    // fold in the Schedule 3 pulls, and the $/m³ ("Cal") per-unit cells. Costs sum whole dollars with
-    // null treated as 0; per-unit divides by the DISPLAYED volume (the crown-prefilled value on S02).
+    // fold in the Schedule 3 pulls, and the $/m³ ("Cal") per-unit cells. Per-unit divides by the
+    // DISPLAYED volume (the crown-prefilled value on S02).
+    //
+    // Subtotal Company Logging is never blank in legacy (its Subtotal-Other-Costs term seeds at 0), so
+    // the logging lines + Forest Mgmt Admin + Other Costs are summed with null treated as 0.
     long loggingLineCost = 0;
     for (int code : new int[] {12, 13, 14, 15, 16, 17, 18}) {
       loggingLineCost += costOfCode(byCode, code);
     }
     long otherCostsCost = otherCosts.costSubtotal() == null ? 0L : otherCosts.costSubtotal();
     long fmaCost = forestMgmtAdminCost == null ? 0L : forestMgmtAdminCost;
-    long lsaCost = lessSilvAdminCost == null ? 0L : lessSilvAdminCost;
-
     Long subtotalCompanyLoggingCost = loggingLineCost + fmaCost + otherCostsCost;
-    Long totalSilvicultureCost =
-        costOfCode(byCode, CODE_SILV_ACTUAL) - lsaCost + costOfCode(byCode, CODE_SILV_ACCRUED);
-    Long totalCompanyLoggingCost = subtotalCompanyLoggingCost + totalSilvicultureCost;
+
+    // Total Silviculture + Total Company Logging follow legacy CoreUtil null-propagation
+    // (Schedule1MB.getTotalSilvCost / Schedule1DO.getTotalLoggingCost) — NOT null-as-0. The Sch3 admin
+    // cost is subtracted ONLY when Actual $ Spent is present; when both Actual and Accrued costs are
+    // absent the total stays blank (null), and a blank Total Silviculture leaves Total Company Logging
+    // equal to the subtotal. This keeps the S02 crown-prefill screen (costs blank) blank rather than
+    // showing a negative admin cost.
+    Long totalSilvicultureCost = addNullable(
+        subtractNullable(costOrNull(byCode, CODE_SILV_ACTUAL), toLong(lessSilvAdminCost)),
+        costOrNull(byCode, CODE_SILV_ACCRUED));
+    Long totalCompanyLoggingCost = addNullable(subtotalCompanyLoggingCost, totalSilvicultureCost);
 
     BigDecimal forestMgmtAdminPerUnit = perUnit(
         displayVolume(byCode, CODE_FOREST_MGMT_ADMIN, prefill, sch3CrownVolume), bd(forestMgmtAdminCost));
@@ -580,17 +590,6 @@ public class Schedule1Service {
     return new CheckStatusResponse(requirementsMet, errors, warnings, message);
   }
 
-  /** First stored detail row per cost-item code (later duplicates ignored); null codes skipped. */
-  private static Map<Integer, DetailRow> firstRowPerCode(List<DetailRow> rows) {
-    Map<Integer, DetailRow> byCode = new HashMap<>();
-    for (DetailRow row : rows) {
-      if (row.costItemCode() != null) {
-        byCode.putIfAbsent(row.costItemCode(), row);
-      }
-    }
-    return byCode;
-  }
-
   /** First stored detail row per (non-Other) cost-item code; later duplicates are ignored. */
   private static Map<Integer, DetailRow> indexFirstByCode(List<DetailRow> details) {
     Map<Integer, DetailRow> byCode = new HashMap<>();
@@ -623,11 +622,14 @@ public class Schedule1Service {
     if (sharedVolume == null) {
       return valueRequired(otherLabel + " - Volume");
     }
-    if (sharedVolume.signum() > 0 && subtotalCost == 0L) {
+    // Legacy compares the WHOLE-number volume (Schedule1MB uses subtotalVolume.intValue()), so a
+    // fractional shared volume in (-1, 1) reads as 0 — match that truncation, not BigDecimal.signum().
+    int wholeVolume = sharedVolume.intValue();
+    if (wholeVolume > 0 && subtotalCost == 0L) {
       return new MessageInfo(MSG_OTHER_COST_GT_ZERO,
           otherLabel + ": " + resolveText(MSG_OTHER_COST_GT_ZERO));
     }
-    if (sharedVolume.signum() == 0 && subtotalCost > 0L) {
+    if (wholeVolume == 0 && subtotalCost > 0L) {
       return new MessageInfo(MSG_OTHER_VOLUME_GT_ZERO,
           otherLabel + ": " + resolveText(MSG_OTHER_VOLUME_GT_ZERO));
     }
@@ -636,8 +638,10 @@ public class Schedule1Service {
 
   /** WRN-002: true when any itemized Other-Costs row has a description but a null cost. */
   private static boolean anyOtherCostEmpty(List<OtherCostDetailRow> otherRows) {
+    // isNotEmpty (null or "" only), matching legacy isNullOrEmptyString — a whitespace-only
+    // description still counts as an itemized row.
     return otherRows.stream()
-        .anyMatch(r -> r.cost() == null && StringUtils.isNotBlank(r.description()));
+        .anyMatch(r -> r.cost() == null && StringUtils.isNotEmpty(r.description()));
   }
 
   /** A "{label}: Value Required" error (FLD-007/010), verbatim text resolved from the bundle. */
@@ -670,17 +674,6 @@ public class Schedule1Service {
     return prefill ? prefilledLineItem(code, row, crown) : toLineItem(row);
   }
 
-  /**
-   * Legacy {@code CostType.getCrownCost} = harvest cost − PO&amp;P cost, returning null when EITHER
-   * side is absent ({@code bigDecimalNotNullCostSubtraction}). Costs are whole dollars.
-   */
-  private static Long crownCost(DetailRow harvest, DetailRow pop) {
-    if (harvest == null || harvest.cost() == null || pop == null || pop.cost() == null) {
-      return null;
-    }
-    return (long) harvest.cost() - pop.cost();
-  }
-
   /** Resolve a legacy bundle key to verbatim text (AD-8) for an advisory warning message. */
   private MessageInfo warning(String key) {
     return new MessageInfo(
@@ -698,22 +691,21 @@ public class Schedule1Service {
         perUnit(row.volume(), row.cost() == null ? null : BigDecimal.valueOf(row.cost())));
   }
 
-  private static Integer costOf(DetailRow row) {
-    return row == null ? null : row.cost();
-  }
-
   private OtherCostsSummary toOtherCosts(List<DetailRow> otherCostRows) {
     // Always present (AD-5/AD-12): a schedule with no Other Costs still carries count 0 / subtotal 0,
     // so the client can distinguish "zero" from "missing".
-    // The shared volume is carried by the item-19 row with a null/empty description (legacy).
+    // The shared volume is carried by the item-19 row with a null/empty description. Legacy splits on
+    // isNullOrEmptyString (null or ""), NOT a whitespace-trimmed blank, so a whitespace-only
+    // description is an itemized row — use isEmpty/isNotEmpty to match legacy and the SQL IS NULL /
+    // IS NOT NULL read paths (on Oracle "" is stored as NULL, so this only differs on whitespace).
     BigDecimal sharedVolume = otherCostRows.stream()
-        .filter(r -> StringUtils.isBlank(r.itemDescription()))
+        .filter(r -> StringUtils.isEmpty(r.itemDescription()))
         .map(DetailRow::volume)
         .findFirst()
         .orElse(null);
 
     List<DetailRow> itemized = otherCostRows.stream()
-        .filter(r -> StringUtils.isNotBlank(r.itemDescription()))
+        .filter(r -> StringUtils.isNotEmpty(r.itemDescription()))
         .toList();
 
     // Sum as long to avoid silent int overflow across many/large itemized costs.
@@ -731,22 +723,53 @@ public class Schedule1Service {
   }
 
   /**
-   * $/m³ = cost / volume, computed server-side. Null when volume is null/zero or cost is null
-   * (legacy divide-by-zero returns null). Kept at scale &ge; 1 so it serializes as a decimal
-   * (e.g. {@code 50.0}, not {@code 50}).
+   * $/m³ = cost / volume, computed server-side to match legacy {@code CostVolumeType.getCostVolume}
+   * and {@code Schedule3Service.perUnit} ({@code CoreUtil.bigDecimalDivision}: divide at scale 10
+   * HALF_UP, then round to scale 2 HALF_UP). Null when cost is null or volume is null/zero (legacy
+   * divide-by-zero returns null). Scale 2 fixes the earlier Schedule-1 divergence to 4 decimals.
    */
   private static BigDecimal perUnit(BigDecimal volume, BigDecimal cost) {
     if (cost == null || volume == null || volume.signum() == 0) {
       return null;
     }
-    BigDecimal result = cost.divide(volume, 4, RoundingMode.HALF_UP).stripTrailingZeros();
-    return result.scale() < 1 ? result.setScale(1, RoundingMode.HALF_UP) : result;
+    return cost.divide(volume, 10, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
   }
 
   /** A line-item cost from the by-code map, treating absent/null as 0 (legacy null-safe sums). */
   private static int costOfCode(Map<Integer, DetailRow> byCode, int code) {
     DetailRow row = byCode.get(code);
     return row == null || row.cost() == null ? 0 : row.cost();
+  }
+
+  /** A line-item cost from the by-code map as a nullable Long (absent/null cost → null). */
+  private static Long costOrNull(Map<Integer, DetailRow> byCode, int code) {
+    DetailRow row = byCode.get(code);
+    return row == null || row.cost() == null ? null : (long) row.cost();
+  }
+
+  /** Widen a nullable Integer to a nullable Long (null-preserving). */
+  private static Long toLong(Integer value) {
+    return value == null ? null : (long) value;
+  }
+
+  /**
+   * Legacy {@code CoreUtil.bigDecimalSubtraction}: {@code null} when the minuend is absent; the minuend
+   * unchanged when only the subtrahend is absent; else {@code total - subtract}. (So a null admin cost
+   * leaves Actual $ Spent unreduced, and a null Actual $ Spent blanks the result.)
+   */
+  private static Long subtractNullable(Long total, Long subtract) {
+    if (total == null) {
+      return null;
+    }
+    return subtract == null ? total : total - subtract;
+  }
+
+  /** Legacy {@code CoreUtil.bigDecimalAddition}: null + null = null; a null operand yields the other. */
+  private static Long addNullable(Long a, Long b) {
+    if (a == null) {
+      return b;
+    }
+    return b == null ? a : a + b;
   }
 
   /** The volume shown for a row: the crown-prefilled value on first entry (S02), else the stored volume. */

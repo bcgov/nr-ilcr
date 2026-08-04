@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -173,5 +174,16 @@ class Schedule2WriteServiceTest {
     assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule2(MILL, YEAR));
 
     verify(repository, never()).deleteSchedule(anyInt());
+  }
+
+  @Test
+  void delete_persistenceFailure_translatesToScheduleNotSaved() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
+    doThrow(new DataIntegrityViolationException("boom"))
+        .when(repository).deleteSchedule(SUMMARY_ID);
+
+    assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule2(MILL, YEAR));
   }
 }

@@ -1,7 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule3;
 
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LINES;
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.isTotalComments;
+import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.resolvePop;
+
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
@@ -52,30 +57,13 @@ public class Schedule3Service {
   private static final String STATUS_DRAFT = "D";
   private static final String OVERRIDE_DEFAULT = "N";
 
-  // Fixed admin-cost lines (legacy Constant.REPORT_COST_ITEMS). Each line's Harvest item id is the
-  // line's identity; popCode is its PO&P item id (null when the line has no PO&P item). Annual Rents
-  // (29) and Silviculture Admin (37) are Harvest-only: the legacy Schedule3DAO forces their PO&P to
-  // ZERO on load (so crown = harvest). Scaling (33) has no stored PO&P — its PO&P is derived from the
-  // timber-volume ratio (getScalingExpense).
-  private static final int CODE_ANNUAL_RENTS = 29;
-  private static final int CODE_SCALING = 33;
-  private static final int CODE_SILV_ADMIN = 37;
-
-  private record LineSpec(int code, Integer popCode, boolean harvestOnly) {
-  }
-
-  private static final List<LineSpec> LINES = List.of(
-      new LineSpec(27, 125, false),   // Licenses, Fees, Insurance
-      new LineSpec(28, 126, false),   // Taxes, Leases, Rentals
-      new LineSpec(CODE_ANNUAL_RENTS, null, true),   // Annual Rents (Harvest-only; PO&P forced 0)
-      new LineSpec(30, 128, false),   // Wages/Salaries incl. Benefits
-      new LineSpec(31, 129, false),   // Vehicle Expense
-      new LineSpec(32, 130, false),   // Office Expense
-      new LineSpec(CODE_SCALING, null, false),       // Scaling Expense (PO&P derived)
-      new LineSpec(34, 132, false),   // Cruising & Layout Expense
-      new LineSpec(35, 133, false),   // Residue & Waste Expense
-      new LineSpec(36, 134, false),   // Depreciation Expense
-      new LineSpec(CODE_SILV_ADMIN, null, true));    // Silviculture Admin Costs (Harvest-only; PO&P 0)
+  // The fixed admin-cost LINES, the LineSpec record, and the PO&P/other-acceptable derivation rules
+  // (resolvePop, scalingPop, isTotalComments) live in Schedule3Constants — the single source of truth
+  // shared with Schedule3CostDerivation so the two can never drift. Aliased here for readability at the
+  // many call sites below.
+  private static final int CODE_ANNUAL_RENTS = Schedule3Constants.CODE_ANNUAL_RENTS;
+  private static final int CODE_SCALING = Schedule3Constants.CODE_SCALING;
+  private static final int CODE_SILV_ADMIN = Schedule3Constants.CODE_SILV_ADMIN;
 
   private static final int CODE_POP_TIMBER = 118;      // PO&P Timber volume
   private static final int CODE_CROWN_TIMBER = 119;    // Crown Timber volume (BR-09 push source, 4.2)
@@ -84,8 +72,8 @@ public class Schedule3Service {
 
   // Legacy other-acceptable grouping (Constant.SCH3_OTHERACCEPT_*). The item-124 COMMENTS encode
   // "SCH3_2_<TYPE>_<GRP>" — chars 7..10 are the cost type ("TOT" carries the group's harvest total,
-  // otherwise PO&P), and the trailing group key ties a TOT row to its PO&P row.
-  private static final String OTHERACCEPT_TYPE_TOTAL = "TOT";
+  // otherwise PO&P), and the trailing group key ties a TOT row to its PO&P row. The "TOT" marker and
+  // its isTotalComments test live in Schedule3Constants (shared with Schedule3CostDerivation).
   // Legacy Constant.SCH3_OTHERACCEPT_GROUPKEY_* — the item-124 COMMENTS prefixes; a group's TOT and
   // PO&P rows share the trailing group-number suffix (Story 4.4 sub-page writers).
   private static final String GROUPKEY_TOT = "SCH3_2_TOT_GRP";
@@ -840,38 +828,6 @@ public class Schedule3Service {
     return messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
   }
 
-  /**
-   * Resolve a line's PO&P amount: Harvest-only lines (29/37) force 0 when a harvest is present (legacy
-   * {@code Schedule3DAO} sets {@code popCost = ZERO}); Scaling (33) derives it from the timber-volume
-   * ratio ({@code getScalingExpense}); all others read their PO&P item's cost.
-   */
-  private Integer resolvePop(LineSpec spec, Integer harvest, Map<Integer, DetailRow> byCode,
-      BigDecimal popTimberVolume, BigDecimal overheadVolume) {
-    if (spec.harvestOnly()) {
-      return harvest == null ? null : 0;
-    }
-    if (spec.code() == CODE_SCALING) {
-      return scalingPop(harvest, popTimberVolume, overheadVolume);
-    }
-    return costOf(byCode.get(spec.popCode()));
-  }
-
-  /**
-   * Legacy {@code Schedule3DO.getScalingExpense}: PO&P = round-to-whole-dollars(
-   * (popTimberVolume / totalOverheadVolume) × scalingHarvest ). Null when the harvest or a volume is
-   * absent or the overhead volume is zero.
-   */
-  private static Integer scalingPop(Integer scalingHarvest, BigDecimal popTimberVolume,
-      BigDecimal overheadVolume) {
-    if (scalingHarvest == null || popTimberVolume == null
-        || overheadVolume == null || overheadVolume.signum() == 0) {
-      return null;
-    }
-    BigDecimal ratio = popTimberVolume.divide(overheadVolume, 15, RoundingMode.HALF_UP);
-    return ratio.multiply(BigDecimal.valueOf(scalingHarvest)).setScale(0, RoundingMode.HALF_UP)
-        .intValue();
-  }
-
   /** Subtotal Other Costs from the item-124 group rows: TOT rows sum to harvest, others to PO&P. */
   private static ThreeColumnTotal subtotalOtherCosts(List<DetailRow> acceptableRows) {
     long harvest = 0L;
@@ -900,12 +856,6 @@ public class Schedule3Service {
 
   private static boolean isTotalRow(DetailRow row) {
     return isTotalComments(row.comments());
-  }
-
-  /** True when an item-124 {@code COMMENTS} encodes a TOT row (chars 7..10 == "TOT"). */
-  private static boolean isTotalComments(String comments) {
-    return comments != null && comments.length() >= 10
-        && OTHERACCEPT_TYPE_TOTAL.equals(comments.substring(7, 10));
   }
 
   /**

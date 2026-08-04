@@ -26,6 +26,13 @@ body {
   padding-inline: $spacing-05;
 }
 
+// Page-level notification banners (success / error / warning) sit directly in the page grid; give
+// them clean vertical breathing room so stacked messages don't crowd each other or the content below.
+.app-page__body .cds--inline-notification {
+  margin-block: $spacing-03 $spacing-05;
+  max-inline-size: 100%;
+}
+
 .app-section {
   margin-block-start: $spacing-05;
 }

@@ -247,9 +247,10 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
              AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
        WHEN NOT MATCHED THEN
          INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
-                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP)
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+                 UPDATE_USERID, UPDATE_TIMESTAMP)
          VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '2',
-                 :comments, 0, :user, SYSTIMESTAMP)
+                 :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int mergeSummaryRow(
       @Param("millId") long millId, @Param("year") int year,
@@ -307,10 +308,11 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
-           VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID, ENTRY_TIMESTAMP)
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+           UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL, :summaryId, :code,
-           :volume, :cost, NULL, :user, SYSTIMESTAMP)
+           :volume, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertDetail(
       @Param("summaryId") int summaryId, @Param("code") int costItemCode,

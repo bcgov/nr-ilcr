@@ -2,6 +2,8 @@
 // authoritative; these checks give inline feedback and gate Add. Ranges + messages MIRROR the
 // Schedule 4 sub-page write DTO / message bundle (tighter than the category grid).
 
+import { isBlank, rangeError } from './fieldRange'
+
 export type SubPageType = 'TOWING' | 'TRUCK_REHAUL' | 'OTHER'
 
 export interface SubPageDef {
@@ -49,19 +51,6 @@ export const emptySubPageRowForm = (): SubPageRowForm => ({
   cost: '',
   cycle: '',
 })
-
-const isBlank = (raw: string): boolean => raw.trim() === ''
-
-const rangeError = (
-  raw: string,
-  range: { min: number; max: number },
-  message: string,
-): string | undefined => {
-  if (isBlank(raw)) return undefined
-  const value = Number(raw)
-  if (Number.isNaN(value) || value < range.min || value > range.max) return message
-  return undefined
-}
 
 /**
  * Advisory validation for a sub-page add-row: Description required (ERR/FLD `Value Required`), and

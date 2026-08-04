@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,12 +41,14 @@ import org.springframework.transaction.annotation.Transactional;
  * + ((sch1 silvActualSpent[1] − sch3 silvAdmin.crownCost) + sch1 silvAccruedSpent[2])}, computed from
  * the persisted Schedule 1 detail rows (items 144, 1, 2).
  *
- * <p><b>AD-12 deviation:</b> the two Schedule-3 crown-cost operands of that formula
- * ({@code subtotalActualCosts.crownCost} and {@code silvicultureAdminCosts.crownCost}) are genuinely
- * unavailable — no Schedule 3 backend exists to derive them — so both are treated as null. With the
- * {@code CoreUtil} null-propagation below an absent term is a no-op, so {@code totalCompanyLogging.cost}
- * (and the {@code totalAverage} that folds it in) currently equals the Schedule-1-only terms; the two
- * crown-cost inputs will be supplied once Schedule 3 ships. Null propagation mirrors legacy
+ * <p><b>AD-12 deviation (open — pending product sign-off):</b> the two Schedule-3 crown-cost operands
+ * of that formula ({@code subtotalActualCosts.crownCost} and {@code silvicultureAdminCosts.crownCost})
+ * are still treated as null here, so {@code totalCompanyLogging.cost} (and the {@code totalAverage}
+ * that folds it in) currently equals the Schedule-1-only terms. NOTE: the Schedule 3 backend has since
+ * shipped (Epic 4) and can now supply both figures — this is no longer "unavailable" but a deferred
+ * integration awaiting a decision on two semantics (absent-Sch3 → 404 handling, zero-crown → 0 vs
+ * omitted); see {@code planning-artifacts/legacy-gap-analysis.md} finding #1. With the
+ * {@code CoreUtil} null-propagation below an absent term is a no-op. Null propagation mirrors legacy
  * {@code CoreUtil}: addition returns the non-null operand when one side is null (null only when both
  * null); subtraction returns the minuend when the subtrahend is null (null when the minuend is null);
  * division returns null when either operand is null or the denominator is zero.
@@ -135,9 +138,10 @@ public class Schedule2Service {
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      // Never log cost/volume values (AD-11) — action + status + exception type only.
-      log.warn("Schedule 2 save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      // Log the DB cause (constraint name / ORA text) but NEVER the cost/volume values (AD-11) — the
+      // most-specific cause is the SQL error, not business data, so this stays diagnosable in prod.
+      log.warn("Schedule 2 save failed for mill {} year {} [{}]: {}", millId, year,
+          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
@@ -160,8 +164,8 @@ public class Schedule2Service {
     try {
       repository.deleteSchedule(summary.get().summaryId());
     } catch (DataAccessException ex) {
-      log.warn("Schedule 2 delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 2 delete failed for mill {} year {} [{}]: {}", millId, year,
+          ex.getClass().getSimpleName(), NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
   }
@@ -284,15 +288,15 @@ public class Schedule2Service {
     //   subtotalLoggingCost = sch1.subtotalLoggingCost(144) + sch3.subtotalActualCosts.crownCost
     //   totalSilvCost       = (sch1.silvActualSpent(1) - sch3.silvAdmin.crownCost) + sch1.silvAccruedSpent(2)
     //   result              = subtotalLoggingCost + totalSilvCost
-    // TODO(AD-12): restore the two Schedule-3 crown-cost terms below once a Schedule 3 backend can
-    //   supply them; until then totalCompanyLogging is the Sch1-only partial (pending product sign-off).
-    // AD-12 deviation: the two Schedule-3 crown-cost operands (subtotalActualCosts.crownCost,
-    // silvicultureAdminCosts.crownCost) are genuinely unavailable — no Schedule 3 backend exists to
-    // derive them — so both are treated as null. CoreUtil null-propagation (add/subtract below) makes
-    // an absent Sch3 term a no-op, so the computed cost equals the Sch1-only terms until Schedule 3
-    // ships and these two crown-cost inputs can be supplied.
-    BigDecimal sch3SubtotalActualsCrownCost = null; // AD-12: unavailable (no Sch3 backend)
-    BigDecimal sch3SilvAdminCrownCost = null;        // AD-12: unavailable (no Sch3 backend)
+    // AD-12 deviation (OPEN — deferred pending product sign-off): the two Schedule-3 crown-cost
+    // operands (subtotalActualCosts.crownCost, silvicultureAdminCosts.crownCost) are still treated as
+    // null, so totalCompanyLogging is the Sch1-only partial. The Schedule 3 backend HAS since shipped
+    // (Epic 4) and can supply both — this is no longer "unavailable" but a deferred integration blocked
+    // on two semantics decisions (absent-Sch3 → 404 handling, zero-crown → 0 vs omitted). See
+    // planning-artifacts/legacy-gap-analysis.md finding #1. CoreUtil null-propagation makes an absent
+    // term a no-op below.
+    BigDecimal sch3SubtotalActualsCrownCost = null; // AD-12: deferred integration (gap-analysis #1)
+    BigDecimal sch3SilvAdminCrownCost = null;        // AD-12: deferred integration (gap-analysis #1)
     BigDecimal subtotalLoggingCostTerm =
         add(bd(sch1SubtotalLoggingCost), sch3SubtotalActualsCrownCost);
     BigDecimal silvBd = subtract(bd(sch1SilvActualSpent), sch3SilvAdminCrownCost);
