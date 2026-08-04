@@ -48,7 +48,11 @@ type FieldValues = Record<string, string>
 // Static page chrome — no props, so hoisted to module scope (allocated once, not per render).
 const PAGE_HEADER = (
   <Grid fullWidth className="app-page__header">
-    <PageTitle title="Schedule 2" subtitle="Cost of Purchased / Private Logs." />
+    <PageTitle
+      breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+      title="Schedule 2"
+      subtitle="Cost of Purchased / Private Logs."
+    />
   </Grid>
 )
 

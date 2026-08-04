@@ -279,7 +279,11 @@ const Schedule1: FC = () => {
 
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 1" subtitle="Average Cost of Logging." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 1"
+        subtitle="Average Cost of Logging."
+      />
     </Grid>
   )
 
@@ -528,27 +532,6 @@ const Schedule1: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-1__meta">
-          <dl className="schedule-1__summary">
-            <div className="schedule-1__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Crown Timber Volume</dt>
-              <dd>{fmt(data.crownVolume)}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
         {(data.warnings ?? []).map((w, i) => (
           // Static, append-only notification list (never reordered); index disambiguates messages
@@ -614,7 +597,7 @@ const Schedule1: FC = () => {
             <Table aria-label="Company Logging Costs" className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-1__num">Volume m³</TableHeader>
                   <TableHeader className="schedule-1__num">Cost $</TableHeader>
                   <TableHeader className="schedule-1__num">$ / m³</TableHeader>
@@ -641,7 +624,7 @@ const Schedule1: FC = () => {
             <Table aria-label="Silviculture" className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-1__num">Volume m³</TableHeader>
                   <TableHeader className="schedule-1__num">Cost $</TableHeader>
                   <TableHeader className="schedule-1__num">$ / m³</TableHeader>

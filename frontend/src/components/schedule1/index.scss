@@ -42,23 +42,23 @@
 
   th:first-child,
   td:first-child {
-    inline-size: 46%;
+    inline-size: 34%;
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
   th:not(:first-child),
   td:not(:first-child) {
-    inline-size: 18%;
+    inline-size: 22%;
   }
 }
 
 // Crown Timber Volume (Sch 3): a plain label + read-only box (not a table) laid out on the SAME fixed
-// column grid as the cost tables above/below (46% / 18% / 18% / 18%, with Carbon's cell inline padding)
+// column grid as the cost tables above/below (34% / 22% / 22% / 22%, with Carbon's cell inline padding)
 // so the box lines up under the Volume m³ column.
 .schedule-1__crown.schedule-1__section {
   display: grid;
-  grid-template-columns: 46% 18% 18% 18%;
+  grid-template-columns: 34% 22% 22% 22%;
   align-items: center;
 }
 

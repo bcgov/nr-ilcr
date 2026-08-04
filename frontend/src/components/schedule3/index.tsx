@@ -299,7 +299,11 @@ const Schedule3: FC = () => {
 
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 3" subtitle="Forest Management Administration Costs." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 3"
+        subtitle="Forest Management Administration Costs."
+      />
     </Grid>
   )
 
@@ -519,7 +523,7 @@ const Schedule3: FC = () => {
             <Table aria-label="Administration Costs" className="schedule-3__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-3__num">Harvest Total $</TableHeader>
                   <TableHeader className="schedule-3__num">PO&P $</TableHeader>
                   <TableHeader className="schedule-3__num">Crown $</TableHeader>
@@ -583,7 +587,7 @@ const Schedule3: FC = () => {
             >
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-3__num">Harvest Volume (m³)</TableHeader>
                   <TableHeader className="schedule-3__num">Total Cost $</TableHeader>
                   <TableHeader className="schedule-3__num">Cost per Unit ($/m³)</TableHeader>

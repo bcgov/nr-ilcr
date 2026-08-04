@@ -11,9 +11,10 @@ import java.util.List;
  * Batch "Save" request for the Other Acceptable Costs sub-page — the whole editable group set in one
  * call (legacy {@code Schedule3SubtotalOtherCostsMB.save()} persisted the entire collection). Each row
  * carries the group's TOT detail {@code id} so the server updates the matching TOT + PO&amp;P pair in
- * place; rows with a {@code null} id are ignored (add/delete are handled by the dedicated POST/DELETE
- * endpoints, which persist immediately). Validation mirrors {@link OtherAcceptableRequest} and resolves
- * the legacy bundle keys (AD-8).
+ * place; a group with no (or an unknown) id is INSERTED as a fresh pair, and any existing group absent
+ * from the request is DELETED (add/delete are also available as the dedicated POST/DELETE endpoints,
+ * which persist immediately). Validation mirrors {@link OtherAcceptableRequest} and resolves the legacy
+ * bundle keys (AD-8).
  *
  * @param rows the groups to persist (each validated)
  */

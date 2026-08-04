@@ -40,14 +40,14 @@
 
   th:first-child,
   td:first-child {
-    inline-size: 46%;
+    inline-size: 34%;
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
   th:not(:first-child),
   td:not(:first-child) {
-    inline-size: 18%;
+    inline-size: 22%;
   }
 }
 

@@ -3,34 +3,55 @@
 @use '../../../styles/variables' as variables;
 
 .page-title-col {
+  // Breadcrumb/title line on the left, the working-context banner horizontally centered in the row
+  // (three tracks: left content · centered context · empty right).
+  .page-title-row {
+    align-items: flex-start;
+    column-gap: $spacing-05;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  // Context banner stays top-aligned (its first line at the row top); the breadcrumb line is
+  // vertically centered so it lines up with the banner's middle (2nd) line.
+  .page-title-row .context-banner {
+    align-self: flex-start;
+  }
+
+  // Breadcrumb + title + subtitle on one baseline-aligned line, centered against the context banner.
+  .page-title-line {
+    align-items: baseline;
+    align-self: center;
+    column-gap: $spacing-03;
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  // Whole breadcrumb line (crumbs + separators + title) forced to 16px to match the context text.
+  // Carbon sizes its breadcrumb via 14px `type-style` and the links via `font: inherit`; this app
+  // doesn't emit Carbon's type CSS vars (so `type-style` falls back to 14px), and `inherit` picks up
+  // Carbon's 14px — so the size is set explicitly (1rem) on the container, items, links, and title.
   .page-title-breadcrumb {
-    margin-block-end: $spacing-03;
+    font-size: 1rem;
+    line-height: 1.5;
+    margin-block-end: 0;
+
+    .#{variables.$bcgov-prefix}--breadcrumb-item,
+    .#{variables.$bcgov-prefix}--link {
+      font-size: 1rem;
+      line-height: 1.5;
+    }
 
     .#{variables.$bcgov-prefix}--link {
       cursor: pointer;
     }
   }
 
-  .page-title-container {
-    display: flex;
-    flex-direction: column;
-    row-gap: $spacing-03;
-  }
-
-  .title-container {
-    align-items: center;
-    column-gap: $spacing-03;
-    display: flex;
-
-    h1 {
-      @include type.type-style('heading-05');
-      margin: 0;
-    }
-  }
-
-  .page-title-subtitle {
-    color: var(--cds-text-secondary);
+  .page-title-heading {
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
     margin: 0;
-    max-inline-size: 52rem;
   }
+
 }

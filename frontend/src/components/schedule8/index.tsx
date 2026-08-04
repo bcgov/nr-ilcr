@@ -239,7 +239,11 @@ const Schedule8: FC = () => {
 
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 8" subtitle="Report Tree to Truck Costs." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 8"
+        subtitle="Report Tree to Truck Costs."
+      />
     </Grid>
   )
 
