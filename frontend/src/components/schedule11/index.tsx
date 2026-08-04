@@ -90,14 +90,23 @@ const ENHANCED_ITEMS = [
 ] as const
 type EnhancedItem = (typeof ENHANCED_ITEMS)[number]
 
-const EnhancedDropdown: FC<{
-  id: string
-  label: string
-  value: boolean | null
-  disabled?: boolean
-  invalidText?: string
-  onChange: (value: boolean | null) => void
-}> = ({ id, label, value, disabled, invalidText, onChange }) => (
+type EnhancedDropdownProps = {
+  readonly id: string
+  readonly label: string
+  readonly value: boolean | null
+  readonly disabled?: boolean
+  readonly invalidText?: string
+  readonly onChange: (value: boolean | null) => void
+}
+
+const EnhancedDropdown: FC<EnhancedDropdownProps> = ({
+  id,
+  label,
+  value,
+  disabled,
+  invalidText,
+  onChange,
+}) => (
   <Dropdown<EnhancedItem>
     id={id}
     titleText={label}
@@ -116,14 +125,23 @@ const EnhancedDropdown: FC<{
 // input it debounces a server search; only a value chosen from the suggestions resolves to an option
 // (and thus an id) — free text that was never picked leaves the selection null (treated as empty).
 // Module-level so it isn't recreated per page render; reused by the Add panel and inline row edit.
-const BiogeoComboBox: FC<{
-  id: string
-  label: string
-  selected: BiogeoclimaticOption | null
-  disabled?: boolean
-  invalidText?: string
-  onSelect: (option: BiogeoclimaticOption | null) => void
-}> = ({ id, label, selected, disabled, invalidText, onSelect }) => {
+type BiogeoComboBoxProps = {
+  readonly id: string
+  readonly label: string
+  readonly selected: BiogeoclimaticOption | null
+  readonly disabled?: boolean
+  readonly invalidText?: string
+  readonly onSelect: (option: BiogeoclimaticOption | null) => void
+}
+
+const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
+  id,
+  label,
+  selected,
+  disabled,
+  invalidText,
+  onSelect,
+}) => {
   const [items, setItems] = useState<BiogeoclimaticOption[]>([])
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Monotonic search token: only the LATEST dispatched search may populate the list, so an older,
@@ -212,6 +230,170 @@ const PAGE_HEADER = (
 // Schedule 11's load never 404s specially at the UI level: any ProblemDetail detail (ERR-001/002/003)
 // renders verbatim (AC8); a network error with no detail falls back to a generic message.
 const mapLoadError = (detail: string | undefined): string => detail ?? 'Unable to load Schedule 11.'
+
+// A location row in its inline-edit state: input controls bound to the edit form, with the two
+// server-derived cells (Total Cost, $/NAR) shown read-only. Split out from the display rendering so
+// each mode reads on its own and new fields can be added without growing one 100+ line function.
+type EditRowProps = {
+  readonly row: SilvicultureLocation
+  readonly form: LocationFormValues
+  readonly errors: SilvicultureErrors
+  readonly saving: boolean
+  readonly onFieldChange: <K extends keyof LocationFormValues>(
+    key: K,
+    value: LocationFormValues[K],
+  ) => void
+  readonly onSave: () => void
+  readonly onCancel: () => void
+}
+
+const EditRow: FC<EditRowProps> = ({
+  row,
+  form,
+  errors,
+  saving,
+  onFieldChange,
+  onSave,
+  onCancel,
+}) => (
+  <>
+    <TableCell>
+      <TextInput
+        id={`edit-location-${row.locationId}`}
+        labelText="Edit Location"
+        hideLabel
+        size="sm"
+        maxLength={LOCATION_MAX_LENGTH}
+        disabled={saving}
+        value={form.location}
+        onChange={(e) => onFieldChange('location', e.target.value)}
+        invalid={Boolean(errors.location)}
+        invalidText={errors.location}
+      />
+    </TableCell>
+    <TableCell>
+      <EnhancedDropdown
+        id={`edit-enhanced-${row.locationId}`}
+        label="Edit Enhanced"
+        value={form.enhanced}
+        disabled={saving}
+        invalidText={errors.enhanced}
+        onChange={(v) => onFieldChange('enhanced', v)}
+      />
+    </TableCell>
+    <TableCell>
+      <BiogeoComboBox
+        id={`edit-bec-${row.locationId}`}
+        label="Edit Biogeo/Subzone/Variant"
+        selected={form.bec}
+        disabled={saving}
+        invalidText={errors.bec}
+        onSelect={(o) => onFieldChange('bec', o)}
+      />
+    </TableCell>
+    <TableCell className="schedule-11__num">
+      <TextInput
+        id={`edit-net-area-${row.locationId}`}
+        labelText="Edit NAR(ha)"
+        hideLabel
+        size="sm"
+        inputMode="decimal"
+        disabled={saving}
+        value={form.netArea}
+        onChange={(e) => onFieldChange('netArea', e.target.value)}
+        invalid={Boolean(errors.netArea)}
+        invalidText={errors.netArea}
+      />
+    </TableCell>
+    <TableCell className="schedule-11__num">
+      <TextInput
+        id={`edit-actual-cost-${row.locationId}`}
+        labelText="Edit Actual Cost ($)"
+        hideLabel
+        size="sm"
+        inputMode="numeric"
+        disabled={saving}
+        value={form.actualCost}
+        onChange={(e) => onFieldChange('actualCost', e.target.value)}
+        invalid={Boolean(errors.actualCost)}
+        invalidText={errors.actualCost}
+      />
+    </TableCell>
+    <TableCell className="schedule-11__num">
+      <TextInput
+        id={`edit-planned-cost-${row.locationId}`}
+        labelText="Edit Planned Cost ($)"
+        hideLabel
+        size="sm"
+        inputMode="numeric"
+        disabled={saving}
+        value={form.plannedCost}
+        onChange={(e) => onFieldChange('plannedCost', e.target.value)}
+        invalid={Boolean(errors.plannedCost)}
+        invalidText={errors.plannedCost}
+      />
+    </TableCell>
+    {/* Total Cost + $/NAR are server-derived (AD-5); shown read-only, they refresh on re-save. */}
+    <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
+    <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
+    <TableCell>
+      {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is
+          Add-panel-only, matching legacy). */}
+      <TextArea
+        id={`edit-comments-${row.locationId}`}
+        labelText="Edit Comments"
+        hideLabel
+        rows={3}
+        maxLength={COMMENTS_MAX_LENGTH}
+        disabled={saving}
+        value={form.comments}
+        onChange={(e) => onFieldChange('comments', e.target.value)}
+      />
+    </TableCell>
+    <TableCell>
+      <Button kind="primary" size="sm" disabled={saving} onClick={onSave}>
+        Save
+      </Button>
+      <Button kind="ghost" size="sm" disabled={saving} onClick={onCancel}>
+        Cancel
+      </Button>
+    </TableCell>
+  </>
+)
+
+// A location row in its read-only display state: formatted values (server-computed, AD-5) plus the
+// per-row Edit/Delete actions, rendered only when the schedule is editable.
+type DisplayRowProps = {
+  readonly row: SilvicultureLocation
+  readonly editable: boolean
+  readonly actionsDisabled: boolean
+  readonly onEdit: () => void
+  readonly onDelete: () => void
+}
+
+const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdit, onDelete }) => (
+  <>
+    <TableCell>{row.location}</TableCell>
+    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
+    <TableCell>{row.becLabel ?? ''}</TableCell>
+    <TableCell className="schedule-11__num">{area(row.netArea)}</TableCell>
+    <TableCell className="schedule-11__num">{money(row.actualCost)}</TableCell>
+    <TableCell className="schedule-11__num">{money(row.plannedCost)}</TableCell>
+    <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
+    <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
+    <TableCell>{row.comments ?? ''}</TableCell>
+    {editable && (
+      <TableCell>
+        <Button kind="ghost" size="sm" disabled={actionsDisabled} onClick={onEdit}>
+          Edit
+        </Button>
+        <Button kind="danger--ghost" size="sm" disabled={actionsDisabled} onClick={onDelete}>
+          Delete
+        </Button>
+      </TableCell>
+    )}
+  </>
+)
 
 const Schedule11: FC = () => {
   const { millId, year } = useMillYear()
@@ -511,148 +693,26 @@ const Schedule11: FC = () => {
   const editable = data.editable
   const columnCount = editable ? 10 : 9
 
-  const rowCells = (row: SilvicultureLocation) => {
-    if (editable && editingId === row.locationId) {
-      return (
-        <>
-          <TableCell>
-            <TextInput
-              id={`edit-location-${row.locationId}`}
-              labelText="Edit Location"
-              hideLabel
-              size="sm"
-              maxLength={LOCATION_MAX_LENGTH}
-              disabled={saving}
-              value={editForm.location}
-              onChange={(e) => setEditField('location', e.target.value)}
-              invalid={Boolean(editErrors.location)}
-              invalidText={editErrors.location}
-            />
-          </TableCell>
-          <TableCell>
-            <EnhancedDropdown
-              id={`edit-enhanced-${row.locationId}`}
-              label="Edit Enhanced"
-              value={editForm.enhanced}
-              disabled={saving}
-              invalidText={editErrors.enhanced}
-              onChange={(v) => setEditField('enhanced', v)}
-            />
-          </TableCell>
-          <TableCell>
-            <BiogeoComboBox
-              id={`edit-bec-${row.locationId}`}
-              label="Edit Biogeo/Subzone/Variant"
-              selected={editForm.bec}
-              disabled={saving}
-              invalidText={editErrors.bec}
-              onSelect={(o) => setEditField('bec', o)}
-            />
-          </TableCell>
-          <TableCell className="schedule-11__num">
-            <TextInput
-              id={`edit-net-area-${row.locationId}`}
-              labelText="Edit NAR(ha)"
-              hideLabel
-              size="sm"
-              inputMode="decimal"
-              disabled={saving}
-              value={editForm.netArea}
-              onChange={(e) => setEditField('netArea', e.target.value)}
-              invalid={Boolean(editErrors.netArea)}
-              invalidText={editErrors.netArea}
-            />
-          </TableCell>
-          <TableCell className="schedule-11__num">
-            <TextInput
-              id={`edit-actual-cost-${row.locationId}`}
-              labelText="Edit Actual Cost ($)"
-              hideLabel
-              size="sm"
-              inputMode="numeric"
-              disabled={saving}
-              value={editForm.actualCost}
-              onChange={(e) => setEditField('actualCost', e.target.value)}
-              invalid={Boolean(editErrors.actualCost)}
-              invalidText={editErrors.actualCost}
-            />
-          </TableCell>
-          <TableCell className="schedule-11__num">
-            <TextInput
-              id={`edit-planned-cost-${row.locationId}`}
-              labelText="Edit Planned Cost ($)"
-              hideLabel
-              size="sm"
-              inputMode="numeric"
-              disabled={saving}
-              value={editForm.plannedCost}
-              onChange={(e) => setEditField('plannedCost', e.target.value)}
-              invalid={Boolean(editErrors.plannedCost)}
-              invalidText={editErrors.plannedCost}
-            />
-          </TableCell>
-          {/* Total Cost + $/NAR are server-derived (AD-5); shown read-only, they refresh on re-save. */}
-          <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
-          <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
-          <TableCell>
-            {/* Legacy's table cell was a p:inputTextarea rows=3 (the character counter is
-                Add-panel-only, matching legacy). */}
-            <TextArea
-              id={`edit-comments-${row.locationId}`}
-              labelText="Edit Comments"
-              hideLabel
-              rows={3}
-              maxLength={COMMENTS_MAX_LENGTH}
-              disabled={saving}
-              value={editForm.comments}
-              onChange={(e) => setEditField('comments', e.target.value)}
-            />
-          </TableCell>
-          <TableCell>
-            <Button kind="primary" size="sm" disabled={saving} onClick={handleSaveEdit}>
-              Save
-            </Button>
-            <Button kind="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
-              Cancel
-            </Button>
-          </TableCell>
-        </>
-      )
-    }
-    return (
-      <>
-        <TableCell>{row.location}</TableCell>
-        <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
-        <TableCell>{row.becLabel ?? ''}</TableCell>
-        <TableCell className="schedule-11__num">{area(row.netArea)}</TableCell>
-        <TableCell className="schedule-11__num">{money(row.actualCost)}</TableCell>
-        <TableCell className="schedule-11__num">{money(row.plannedCost)}</TableCell>
-        <TableCell className="schedule-11__num">{money(row.totalCost)}</TableCell>
-        <TableCell className="schedule-11__num">{ratio(row.costPerNetArea)}</TableCell>
-        <TableCell>{row.comments ?? ''}</TableCell>
-        {editable && (
-          <TableCell>
-            <Button
-              kind="ghost"
-              size="sm"
-              disabled={saving || editingId !== null}
-              onClick={() => startEdit(row)}
-            >
-              Edit
-            </Button>
-            <Button
-              kind="danger--ghost"
-              size="sm"
-              disabled={saving || editingId !== null}
-              onClick={() => setConfirmDeleteId(row.locationId)}
-            >
-              Delete
-            </Button>
-          </TableCell>
-        )}
-      </>
+  const rowCells = (row: SilvicultureLocation) =>
+    editable && editingId === row.locationId ? (
+      <EditRow
+        row={row}
+        form={editForm}
+        errors={editErrors}
+        saving={saving}
+        onFieldChange={setEditField}
+        onSave={handleSaveEdit}
+        onCancel={cancelEdit}
+      />
+    ) : (
+      <DisplayRow
+        row={row}
+        editable={editable}
+        actionsDisabled={saving || editingId !== null}
+        onEdit={() => startEdit(row)}
+        onDelete={() => setConfirmDeleteId(row.locationId)}
+      />
     )
-  }
 
   const totals = data.totals
 
