@@ -9,6 +9,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRow;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsSummary;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -263,6 +265,48 @@ public class Schedule1Service {
     } catch (DataAccessException ex) {
       // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
       log.warn("Other-Costs delete failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildOtherCostsDocument(summaryId, true);
+  }
+
+  /**
+   * Batch "Save" the whole itemized Other-Costs row set in one transaction — the legacy
+   * {@code Schedule1OtherCostsMB.save()} reconcile: rows carrying an existing detail id are UPDATED in
+   * place, rows with no (or an unknown) id are INSERTED inheriting the shared volume (BR-06), and any
+   * existing itemized row absent from the request is DELETED. Draft-gated; recomputes the document.
+   */
+  @Transactional
+  public OtherCostsDocument saveOtherCosts(
+      long millId, int year, List<OtherCostSaveRequest.Row> rows, String user) {
+    int summaryId = requireEditableSummary(millId, year);
+    List<OtherCostSaveRequest.Row> incoming = rows == null ? List.of() : rows;
+    try {
+      BigDecimal sharedVolume = repository.findSharedOtherCostsVolume(summaryId).orElse(null);
+      Set<Integer> existingIds = new LinkedHashSet<>();
+      for (OtherCostDetailRow row : repository.findOtherCostRows(summaryId)) {
+        if (row.id() != null) {
+          existingIds.add(row.id());
+        }
+      }
+      Set<Integer> kept = new LinkedHashSet<>();
+      for (OtherCostSaveRequest.Row row : incoming) {
+        if (row.id() != null && existingIds.contains(row.id())) {
+          repository.updateOtherCost(row.id(), summaryId, row.description(), row.cost(), user);
+          kept.add(row.id());
+        } else {
+          repository.insertOtherCost(summaryId, row.description(), row.cost(), sharedVolume, user);
+        }
+      }
+      for (Integer id : existingIds) {
+        if (!kept.contains(id)) {
+          repository.deleteOtherCost(id, summaryId);
+        }
+      }
+    } catch (DataAccessException ex) {
+      // Type only — see addOtherCost: the root-cause message can leak SQL/schema detail.
+      log.warn("Other-Costs save failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }

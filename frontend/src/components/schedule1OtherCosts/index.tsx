@@ -213,6 +213,35 @@ const OtherCostsPage: FC = () => {
       .finally(() => setSaving(false))
   }
 
+  // Batch "Save" (legacy parity): persist the whole current row set in one call (server reconciles
+  // update/insert/delete) and echo the verbatim success message. Greyed out until there are rows.
+  const handleSave = () => {
+    if (!data || saving) {
+      return
+    }
+    const currentRows = data.rows ?? []
+    if (currentRows.length === 0) {
+      return
+    }
+    setMessage(null)
+    setActionError(null)
+    setSaving(true)
+    apiService
+      .getAxiosInstance()
+      .put<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}`, {
+        rows: currentRows.map((row) => ({
+          id: row.id,
+          description: row.description,
+          cost: row.cost,
+        })),
+      })
+      .then((response) => applyDocument(response.data))
+      .catch((error: unknown) => {
+        setActionError(extractDetail(error) || 'Other cost could not be saved.')
+      })
+      .finally(() => setSaving(false))
+  }
+
   const goBack = () => {
     navigate({ to: '/schedule-1' })
   }
@@ -343,7 +372,6 @@ const OtherCostsPage: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
       <Grid fullWidth className="app-page__body">
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
@@ -355,7 +383,9 @@ const OtherCostsPage: FC = () => {
             preview — both read-only; only Description and Cost are entered. */}
         {editable && (
           <Column sm={4} md={8} lg={16} className="schedule-1__section">
-            <h3 className="schedule-1__heading">Add Other Cost</h3>
+            <section className="oc-panel">
+              <h3 className="oc-panel__title">Add Other Cost</h3>
+              <div className="oc-panel__body">
             <div className="oc-add">
               <TextInput
                 id="add-description"
@@ -402,11 +432,16 @@ const OtherCostsPage: FC = () => {
                 </Button>
               </div>
             </div>
+              </div>
+            </section>
           </Column>
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
-          <TableContainer title="Other Cost List">
+          <section className="oc-panel">
+            <h3 className="oc-panel__title">Other Cost List</h3>
+            <div className="oc-panel__body">
+          <TableContainer>
             <Table aria-label="Other Cost List">
               <TableHead>
                 <TableRow>
@@ -435,9 +470,21 @@ const OtherCostsPage: FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+            </div>
+          </section>
         </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-1__actions">
+          {editable && (
+            <Button
+              kind="primary"
+              // Greyed out until there is data to save (and while saving / mid-edit) — legacy parity.
+              disabled={saving || editingId !== null || (data.rows ?? []).length === 0}
+              onClick={handleSave}
+            >
+              Save
+            </Button>
+          )}
           <Button kind="secondary" onClick={goBack}>
             Back to Schedule 1
           </Button>

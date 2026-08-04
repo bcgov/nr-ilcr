@@ -140,7 +140,9 @@ describe('Other Costs sub-page (Story 2.5)', () => {
     const cost = screen.getByLabelText('Edit cost')
     await user.clear(cost)
     await user.type(cost, '4000')
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // Scope to the row: the page footer also renders a "Save" button (batch save).
+    const editRow = desc.closest('tr') as HTMLElement
+    await user.click(within(editRow).getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(screen.getByText('Edited A')).toBeInTheDocument()
@@ -160,7 +162,9 @@ describe('Other Costs sub-page (Story 2.5)', () => {
     const cost = screen.getByLabelText('Edit cost')
     await user.clear(cost)
     await user.type(cost, '4000') // passes client validation; backend rejects
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // Scope to the row: the page footer also renders a "Save" button (batch save).
+    const editRow = cost.closest('tr') as HTMLElement
+    await user.click(within(editRow).getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Entered cost is invalid.')).toBeInTheDocument()
     // Edit stays open (PUT rejected); the original description is still in the edit field, unchanged.
@@ -218,5 +222,42 @@ describe('Other Costs sub-page (Story 2.5)', () => {
     await user.type(await screen.findByLabelText('Description'), 'Valid text')
     await user.click(screen.getByRole('button', { name: /^add$/i }))
     expect(await screen.findByText('Description: Value is required.')).toBeInTheDocument()
+  })
+
+  test('page Save is greyed out when there are no rows to save', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json({ ...doc, rows: [], count: 0, costSubtotal: 0 })),
+    )
+    render(<OtherCostsPage />)
+    await screen.findByText('No records found.')
+    // The footer batch-Save renders (editable) but is disabled with no data yet.
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
+  })
+
+  test('page Save batch-persists the whole row set (PUT) and shows verbatim success', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<OtherCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByText('Existing Row A')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // Each row sends id + description + cost; volume/$-per-m³ are server-derived and excluded.
+    expect(captured).toEqual({
+      rows: [
+        { id: 5051, description: 'Existing Row A', cost: 3000 },
+        { id: 5052, description: 'Existing Row B', cost: null },
+      ],
+    })
   })
 })
