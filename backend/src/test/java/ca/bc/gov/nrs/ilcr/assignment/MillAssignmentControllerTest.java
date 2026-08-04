@@ -1,9 +1,11 @@
 package ca.bc.gov.nrs.ilcr.assignment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.dto.AssignSubmitterRequest;
@@ -58,8 +60,8 @@ class MillAssignmentControllerTest {
     assertEquals("Mill 514 - Test Mill has been activated for user Pat Submitter.", body.message().text());
 
     ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
-    org.mockito.Mockito.verify(assignmentService).assign(eq(MILL), eq(GUID), user.capture());
-    assertEquals("dev-ilcr_admin", user.getValue()); // mock path → getName()
+    verify(assignmentService).assign(eq(MILL), eq(GUID), user.capture());
+    assertEquals("dev-ilcr_admin", user.getValue()); // mock principal name is the audit user
   }
 
   @Test
@@ -92,10 +94,11 @@ class MillAssignmentControllerTest {
         controller.end(MILL, GUID, new EndAssignmentRequest(0), auth).getBody();
 
     assertEquals("user.deactivate.mill", body.message().key());
+    // The audit user comes from the JWT via JwtPrincipalUtil (the nr-csp currentUsername pattern). It
+    // carries the provider name plus the username; with no provider claim in this test token, assert
+    // the username is present rather than pinning the exact provider-plus-username rendering.
     ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
-    org.mockito.Mockito.verify(assignmentService).end(eq(MILL), eq(GUID), eq(0), user.capture());
-    // jwt path -> JwtPrincipalUtil.getUserId = provider-then-username (nr-csp currentUsername pattern);
-    // provider is empty in this test JWT, so assert the username is carried rather than the exact format.
-    org.junit.jupiter.api.Assertions.assertTrue(user.getValue().contains("GRPASCUC"));
+    verify(assignmentService).end(eq(MILL), eq(GUID), eq(0), user.capture());
+    assertTrue(user.getValue().contains("GRPASCUC"));
   }
 }
