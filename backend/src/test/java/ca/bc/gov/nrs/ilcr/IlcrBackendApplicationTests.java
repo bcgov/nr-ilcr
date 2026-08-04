@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr;
 
+import ca.bc.gov.nrs.ilcr.assignment.MillUserProfileXrefRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
@@ -32,6 +33,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private MillContextRepository millContextRepository;
+
+  @MockitoBean
+  private MillUserProfileXrefRepository millUserProfileXrefRepository;
 
   @MockitoBean
   private Schedule2Repository schedule2Repository;
