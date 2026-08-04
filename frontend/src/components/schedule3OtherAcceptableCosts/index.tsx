@@ -9,7 +9,6 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
   subtitle: 'Grouped acceptable costs for Schedule 3.',
   tableTitle: 'Other Costs',
   addHeading: 'Add Other Cost',
-  deleteHeading: 'Delete other cost',
   descriptionMaxLength: DESCRIPTION_MAX_LENGTH,
   loadError: 'Unable to load Other Acceptable Costs.',
   saveError: 'Other cost could not be saved.',
@@ -18,7 +17,15 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
     { key: 'total', header: 'Total $', label: 'total', get: (row) => row.total },
     { key: 'pop', header: 'PO&P $', label: 'PO&P', get: (row) => row.pop },
   ],
-  readonlyColumns: [{ header: 'Crown $', value: (row) => row.crown }],
+  // Crown $ is derived live from the row's entered Total/PO&P (crown = total − pop; = total when PO&P
+  // is blank; null when both blank) so it tracks edits before Save, mirroring the legacy derived cell.
+  readonlyColumns: [
+    {
+      header: 'Crown $',
+      derive: (v) =>
+        v.total === null && v.pop === null ? null : (v.total ?? 0) - (v.pop ?? 0),
+    },
+  ],
   summaryItems: [
     { label: 'Subtotal Total $', value: (doc) => doc.subtotal?.harvest },
     { label: 'Subtotal PO&P $', value: (doc) => doc.subtotal?.pop },

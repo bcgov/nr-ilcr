@@ -59,6 +59,8 @@ public interface Schedule3OtherCostsApi {
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity —
+   *     the persistence is identical either way; only the success message differs)
    * @param request the full group set to persist (each row validated)
    * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
    * @return 200 with the recomputed document (success {@code message})
@@ -67,6 +69,7 @@ public interface Schedule3OtherCostsApi {
   ResponseEntity<OtherAcceptableDocument> saveOtherAcceptable(
       @RequestParam long millId,
       @RequestParam int year,
+      @RequestParam(defaultValue = "save") String intent,
       @Valid @RequestBody OtherAcceptableSaveRequest request,
       Authentication authentication);
 

@@ -36,6 +36,11 @@
   padding: 1rem;
 }
 
+// Bold table column headers (matches the legacy bold headers and the Schedule 3 sub-pages).
+.oc-panel .cds--data-table thead th {
+  font-weight: 700;
+}
+
 .schedule-1__actions {
   display: flex;
   gap: 0.5rem;

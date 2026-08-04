@@ -71,11 +71,13 @@ public class Schedule3UnacceptableCostsController implements Schedule3Unacceptab
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<UnacceptableDocument> saveUnacceptable(
-      long millId, int year, UnacceptableSaveRequest request, Authentication authentication) {
+      long millId, int year, String intent, UnacceptableSaveRequest request,
+      Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
     UnacceptableDocument doc =
         schedule3Service.saveUnacceptable(millId, year, request.rows(), authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+    // Persistence is identical for a save or a delete (legacy update()); only the message differs.
+    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override

@@ -71,11 +71,13 @@ public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<OtherCostsDocument> saveOtherCosts(
-      long millId, int year, OtherCostSaveRequest request, Authentication authentication) {
+      long millId, int year, String intent, OtherCostSaveRequest request,
+      Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
     OtherCostsDocument doc =
         schedule1Service.saveOtherCosts(millId, year, request.rows(), authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+    // Persistence is identical for a save or a delete (legacy update()); only the message differs.
+    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override

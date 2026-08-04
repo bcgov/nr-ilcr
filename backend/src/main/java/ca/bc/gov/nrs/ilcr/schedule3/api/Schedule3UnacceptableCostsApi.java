@@ -58,6 +58,8 @@ public interface Schedule3UnacceptableCostsApi {
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity —
+   *     the persistence is identical either way; only the success message differs)
    * @param request the full row set to persist (each row validated)
    * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
    * @return 200 with the recomputed document (success {@code message})
@@ -66,6 +68,7 @@ public interface Schedule3UnacceptableCostsApi {
   ResponseEntity<UnacceptableDocument> saveUnacceptable(
       @RequestParam long millId,
       @RequestParam int year,
+      @RequestParam(defaultValue = "save") String intent,
       @Valid @RequestBody UnacceptableSaveRequest request,
       Authentication authentication);
 

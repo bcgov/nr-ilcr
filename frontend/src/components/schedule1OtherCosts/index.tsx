@@ -1,7 +1,7 @@
 import type { FC } from 'react'
-import type { OtherCostRow, OtherCostsDocument } from '@/interfaces/OtherCosts'
+import type { OtherCostsDocument } from '@/interfaces/OtherCosts'
 import type { OtherCostErrors } from './validation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -17,6 +17,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { extractDetail } from '@/utils/error'
@@ -25,14 +26,21 @@ import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
-import RowActionButtons from '@/components/core/RowActionButtons'
 import { validateOtherCost, DESCRIPTION_MAX_LENGTH } from './validation'
 import './index.scss'
 
 // Client-side chrome (verbatim legacy text); SUC-* come from the API message.text (AD-8).
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const OTHER_COSTS_PATH = '/v1/schedule1/other-costs'
+
+/** One editable row held in local state. `id` is null for a row added but not yet saved. */
+interface EditRow {
+  key: number
+  id: number | null
+  description: string
+  cost: string
+}
 
 const OtherCostsPage: FC = () => {
   const { millId, year } = useMillYear()
@@ -46,20 +54,30 @@ const OtherCostsPage: FC = () => {
   const [actionError, setActionError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // The full editable row set (legacy: every row is a live input; nothing persists until Save).
+  const [rows, setRows] = useState<EditRow[]>([])
+  const [rowErrors, setRowErrors] = useState<Record<number, OtherCostErrors>>({})
+  const [dirty, setDirty] = useState(false)
+
   const [addDescription, setAddDescription] = useState('')
   const [addCost, setAddCost] = useState('')
   const [addErrors, setAddErrors] = useState<OtherCostErrors>({})
 
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editDescription, setEditDescription] = useState('')
-  const [editCost, setEditCost] = useState('')
-  const [editErrors, setEditErrors] = useState<OtherCostErrors>({})
+  const [confirmBackOpen, setConfirmBackOpen] = useState(false)
 
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  // Monotonic client key for React list identity (independent of the server id, null for new rows).
+  const keyCounter = useRef(0)
 
-  // Derived purely from millId/year (both effect deps), so the effect re-runs on any real change
-  // without listing this string. The request path is a module constant (OTHER_COSTS_PATH).
+  // Derived purely from millId/year (both effect deps). The request path is a module constant.
   const query = `?millId=${millId}&year=${year}`
+
+  const seedRows = (doc: OtherCostsDocument): EditRow[] =>
+    (doc.rows ?? []).map((r) => ({
+      key: keyCounter.current++,
+      id: r.id,
+      description: r.description,
+      cost: numStr(r.cost),
+    }))
 
   useEffect(() => {
     if (contextMissing) {
@@ -71,12 +89,9 @@ const OtherCostsPage: FC = () => {
     setErrorDetail(null)
     setMessage(null)
     setActionError(null)
-    // Also clear in-progress add/edit state so a context change can't strand an open editor with no
-    // Cancel (its row may be absent from the reloaded list, leaving all actions disabled).
-    setEditingId(null)
-    setEditErrors({})
-    setEditDescription('')
-    setEditCost('')
+    setRows([])
+    setRowErrors({})
+    setDirty(false)
     setAddDescription('')
     setAddCost('')
     setAddErrors({})
@@ -88,6 +103,7 @@ const OtherCostsPage: FC = () => {
       .then((response) => {
         if (active) {
           setData(response.data)
+          setRows(seedRows(response.data))
           setErrorDetail(null)
         }
       })
@@ -105,22 +121,89 @@ const OtherCostsPage: FC = () => {
     return () => {
       active = false
     }
-    // `query` is intentionally omitted: it is derived solely from millId/year (already listed), so
-    // adding it would imply an independent reactive input that doesn't exist.
+    // `query`/`seedRows` derive from millId/year (already listed); keep the effect keyed on context.
     // eslint-disable-next-line @eslint-react/exhaustive-deps
   }, [millId, year, contextMissing])
 
-  const applyDocument = (doc: OtherCostsDocument) => {
-    setData(doc)
-    setMessage(doc.message?.text ?? null)
-    setActionError(null)
+  // Live $/m³ = entered cost ÷ the shared Other-Costs volume; display-only (blank when either absent).
+  const perUnitOf = (costRaw: string): number | null => {
+    const c = toNum(costRaw)
+    return c !== null && data && data.volume !== null && data.volume !== 0 ? c / data.volume : null
   }
 
-  const handleAdd = () => {
+  const setRowDescription = (key: number, value: string) => {
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, description: value } : r)))
+    setDirty(true)
+  }
+
+  const setRowCost = (key: number, value: string) => {
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, cost: value } : r)))
+    setDirty(true)
+  }
+
+  const applyDocument = (doc: OtherCostsDocument) => {
+    setData(doc)
+    setRows(seedRows(doc))
+    setRowErrors({})
+    setMessage(doc.message?.text ?? null)
+    setActionError(null)
+    setDirty(false)
+  }
+
+  /**
+   * Persist the WHOLE current row set in one call — the legacy update() that every mutation (Add,
+   * Delete, Save) funnels through: validate each row, then the server reconciles insert/update/delete
+   * and re-derives the totals. `intent` only selects the success message ("Data saved successfully" vs
+   * "Data deleted successfully"); the persistence is identical either way.
+   */
+  const persist = (rowsToSave: EditRow[], intent: 'save' | 'delete') => {
     if (!data || saving) {
       return
     }
-    // Clear prior banners first so a validation failure never leaves a stale success/error notice.
+    const errs: Record<number, OtherCostErrors> = {}
+    for (const row of rowsToSave) {
+      const rowErr = validateOtherCost(row.description, row.cost)
+      if (Object.keys(rowErr).length > 0) {
+        errs[row.key] = rowErr
+      }
+    }
+    if (Object.keys(errs).length > 0) {
+      setRowErrors(errs)
+      return
+    }
+    setRowErrors({})
+    setMessage(null)
+    setActionError(null)
+    setSaving(true)
+    apiService
+      .getAxiosInstance()
+      .put<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}&intent=${intent}`, {
+        rows: rowsToSave.map((row) => ({
+          id: row.id,
+          description: row.description.trim(),
+          cost: toNum(row.cost),
+        })),
+      })
+      .then((response) => {
+        applyDocument(response.data)
+        // Save (not delete) clears the add form — legacy clearAddOtherCostForm() inside update(true).
+        if (intent === 'save') {
+          setAddDescription('')
+          setAddCost('')
+          setAddErrors({})
+        }
+      })
+      .catch((error: unknown) => {
+        setActionError(extractDetail(error) || 'Other cost could not be saved.')
+      })
+      .finally(() => setSaving(false))
+  }
+
+  // "Add" appends the entered row and immediately persists the whole set (legacy addOtherCost → save).
+  const handleAdd = () => {
+    if (saving) {
+      return
+    }
     setMessage(null)
     setActionError(null)
     const errors = validateOtherCost(addDescription, addCost)
@@ -129,121 +212,53 @@ const OtherCostsPage: FC = () => {
       return
     }
     setAddErrors({})
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .post<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}`, {
-        description: addDescription.trim(),
-        cost: toNum(addCost),
-      })
-      .then((response) => {
-        applyDocument(response.data)
-        setAddDescription('')
-        setAddCost('')
-      })
-      .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Other cost could not be saved.')
-      })
-      .finally(() => setSaving(false))
+    const next = [
+      ...rows,
+      { key: keyCounter.current++, id: null, description: addDescription.trim(), cost: addCost },
+    ]
+    setRows(next)
+    setAddDescription('')
+    setAddCost('')
+    setDirty(true)
+    persist(next, 'save')
   }
 
-  const startEdit = (row: OtherCostRow) => {
-    setEditingId(row.id)
-    setEditDescription(row.description)
-    setEditCost(numStr(row.cost))
-    setEditErrors({})
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditErrors({})
-    setEditDescription('')
-    setEditCost('')
-  }
-
-  const handleSaveEdit = () => {
-    if (editingId === null || saving) {
+  // "Remove" drops the row and immediately persists the whole set (legacy deleteOtherCost → delete →
+  // update(false)) so the row is deleted server-side and pending edits are flushed in the same call.
+  const removeRow = (key: number) => {
+    if (saving) {
       return
     }
-    setMessage(null)
-    setActionError(null)
-    const errors = validateOtherCost(editDescription, editCost)
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors)
-      return
-    }
-    setEditErrors({})
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .put<OtherCostsDocument>(`${OTHER_COSTS_PATH}/${editingId}${query}`, {
-        description: editDescription.trim(),
-        cost: toNum(editCost),
-      })
-      .then((response) => {
-        applyDocument(response.data)
-        setEditingId(null)
-        setEditDescription('')
-        setEditCost('')
-      })
-      .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Other cost could not be saved.')
-      })
-      .finally(() => setSaving(false))
+    const next = rows.filter((r) => r.key !== key)
+    setRows(next)
+    setRowErrors((prev) => {
+      const cleared = { ...prev }
+      delete cleared[key]
+      return cleared
+    })
+    setDirty(true)
+    persist(next, 'delete')
   }
 
-  const handleDelete = () => {
-    if (confirmDeleteId === null || saving) {
-      return
-    }
-    const id = confirmDeleteId
-    setConfirmDeleteId(null)
-    setSaving(true)
-    setMessage(null)
-    setActionError(null)
-    apiService
-      .getAxiosInstance()
-      .delete<OtherCostsDocument>(`${OTHER_COSTS_PATH}/${id}${query}`)
-      .then((response) => {
-        applyDocument(response.data)
-      })
-      .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Unable to delete other cost.')
-      })
-      .finally(() => setSaving(false))
-  }
-
-  // Batch "Save" (legacy parity): persist the whole current row set in one call (server reconciles
-  // update/insert/delete) and echo the verbatim success message. Greyed out until there are rows.
+  // "Save" persists the whole set (legacy save() → update(true)).
   const handleSave = () => {
-    if (!data || saving) {
+    if (rows.length === 0) {
       return
     }
-    const currentRows = data.rows ?? []
-    if (currentRows.length === 0) {
-      return
-    }
-    setMessage(null)
-    setActionError(null)
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .put<OtherCostsDocument>(`${OTHER_COSTS_PATH}${query}`, {
-        rows: currentRows.map((row) => ({
-          id: row.id,
-          description: row.description,
-          cost: row.cost,
-        })),
-      })
-      .then((response) => applyDocument(response.data))
-      .catch((error: unknown) => {
-        setActionError(extractDetail(error) || 'Other cost could not be saved.')
-      })
-      .finally(() => setSaving(false))
+    persist(rows, 'save')
   }
 
   const goBack = () => {
     navigate({ to: '/schedule-1' })
+  }
+
+  // Guard unsaved edits on Back (legacy confirmNavigationMsg); navigate directly when nothing is dirty.
+  const handleBack = () => {
+    if (dirty) {
+      setConfirmBackOpen(true)
+      return
+    }
+    goBack()
   }
 
   const header = (
@@ -303,52 +318,51 @@ const OtherCostsPage: FC = () => {
 
   const editable = data.editable
 
-  // Live $/m³ preview for the Add form (entered cost ÷ shared volume). Display-only; the authoritative
-  // value is server-computed and shown in the list after Add.
-  const addCostNum = toNum(addCost)
-  const addPerUnitPreview =
-    addCostNum !== null && data.volume !== null && data.volume !== 0
-      ? numStr(addCostNum / data.volume)
-      : ''
+  // Live $/m³ preview for the Add form (entered cost ÷ shared volume). Display-only.
+  const addPerUnitPreview = numStr(perUnitOf(addCost))
 
-  const rowCells = (row: OtherCostRow) => {
-    if (editable && editingId === row.id) {
+  const rowCells = (row: EditRow) => {
+    const errs = rowErrors[row.key] ?? {}
+    if (editable) {
       return (
         <>
           <TableCell>
             <TextInput
-              id={`edit-description-${row.id}`}
+              id={`row-description-${row.key}`}
               labelText="Edit description"
               hideLabel
               size="sm"
               maxLength={DESCRIPTION_MAX_LENGTH}
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              invalid={Boolean(editErrors.description)}
-              invalidText={editErrors.description}
+              value={row.description}
+              onChange={(e) => setRowDescription(row.key, e.target.value)}
+              invalid={Boolean(errs.description)}
+              invalidText={errs.description}
             />
           </TableCell>
           <TableCell className="schedule-1__num">{fmt(data.volume)}</TableCell>
           <TableCell className="schedule-1__num">
             <TextInput
-              id={`edit-cost-${row.id}`}
+              id={`row-cost-${row.key}`}
               labelText="Edit cost"
               hideLabel
               size="sm"
-              value={editCost}
-              onChange={(e) => setEditCost(e.target.value)}
-              invalid={Boolean(editErrors.cost)}
-              invalidText={editErrors.cost}
+              value={row.cost}
+              onChange={(e) => setRowCost(row.key, e.target.value)}
+              invalid={Boolean(errs.cost)}
+              invalidText={errs.cost}
             />
           </TableCell>
-          <TableCell className="schedule-1__num">{fmt(row.perUnit)}</TableCell>
+          <TableCell className="schedule-1__num">{fmt(perUnitOf(row.cost))}</TableCell>
           <TableCell>
-            <Button kind="primary" size="sm" disabled={saving} onClick={handleSaveEdit}>
-              Save
-            </Button>
-            <Button kind="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
-              Cancel
-            </Button>
+            <Button
+              kind="danger--ghost"
+              size="sm"
+              hasIconOnly
+              iconDescription="Remove"
+              renderIcon={TrashCan}
+              disabled={saving}
+              onClick={() => removeRow(row.key)}
+            />
           </TableCell>
         </>
       )
@@ -357,15 +371,8 @@ const OtherCostsPage: FC = () => {
       <>
         <TableCell>{row.description}</TableCell>
         <TableCell className="schedule-1__num">{fmt(data.volume)}</TableCell>
-        <TableCell className="schedule-1__num">{fmt(row.cost)}</TableCell>
-        <TableCell className="schedule-1__num">{fmt(row.perUnit)}</TableCell>
-        {editable && (
-          <RowActionButtons
-            disabled={saving || editingId !== null}
-            onEdit={() => startEdit(row)}
-            onDelete={() => setConfirmDeleteId(row.id)}
-          />
-        )}
+        <TableCell className="schedule-1__num">{fmt(toNum(row.cost))}</TableCell>
+        <TableCell className="schedule-1__num">{fmt(perUnitOf(row.cost))}</TableCell>
       </>
     )
   }
@@ -378,60 +385,60 @@ const OtherCostsPage: FC = () => {
           <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
         )}
 
-        {/* Legacy layout: the Add form sits ABOVE the list (Description, Volume, Cost, $/m³ stacked
-            with left labels). Volume is the shared Schedule 1 volume and $/m³ is a live cost÷volume
-            preview — both read-only; only Description and Cost are entered. */}
+        {/* Legacy layout: a titled "Add Other Cost" panel above the list (Description, Volume, Cost,
+            $/m³ stacked with left labels). Volume is the shared Schedule 1 volume and $/m³ is a live
+            cost÷volume preview — both read-only; only Description and Cost are entered. */}
         {editable && (
           <Column sm={4} md={8} lg={16} className="schedule-1__section">
             <section className="oc-panel">
               <h3 className="oc-panel__title">Add Other Cost</h3>
               <div className="oc-panel__body">
-            <div className="oc-add">
-              <TextInput
-                id="add-description"
-                className="oc-add__field oc-add__field--wide"
-                labelText="Description"
-                size="sm"
-                maxLength={DESCRIPTION_MAX_LENGTH}
-                value={addDescription}
-                onChange={(e) => setAddDescription(e.target.value)}
-                invalid={Boolean(addErrors.description)}
-                invalidText={addErrors.description}
-              />
-              <TextInput
-                id="add-volume"
-                className="oc-add__field oc-add__field--narrow"
-                labelText="Volume"
-                size="sm"
-                value={numStr(data.volume)}
-                onChange={() => undefined}
-                disabled
-              />
-              <TextInput
-                id="add-cost"
-                className="oc-add__field oc-add__field--narrow"
-                labelText="Cost"
-                size="sm"
-                value={addCost}
-                onChange={(e) => setAddCost(e.target.value)}
-                invalid={Boolean(addErrors.cost)}
-                invalidText={addErrors.cost}
-              />
-              <TextInput
-                id="add-perunit"
-                className="oc-add__field oc-add__field--narrow"
-                labelText="$ / m³"
-                size="sm"
-                value={addPerUnitPreview}
-                onChange={() => undefined}
-                disabled
-              />
-              <div className="oc-add__actions">
-                <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
-                  Add
-                </Button>
-              </div>
-            </div>
+                <div className="oc-add">
+                  <TextInput
+                    id="add-description"
+                    className="oc-add__field oc-add__field--wide"
+                    labelText="Description"
+                    size="sm"
+                    maxLength={DESCRIPTION_MAX_LENGTH}
+                    value={addDescription}
+                    onChange={(e) => setAddDescription(e.target.value)}
+                    invalid={Boolean(addErrors.description)}
+                    invalidText={addErrors.description}
+                  />
+                  <TextInput
+                    id="add-volume"
+                    className="oc-add__field oc-add__field--narrow"
+                    labelText="Volume"
+                    size="sm"
+                    value={numStr(data.volume)}
+                    onChange={() => undefined}
+                    disabled
+                  />
+                  <TextInput
+                    id="add-cost"
+                    className="oc-add__field oc-add__field--narrow"
+                    labelText="Cost"
+                    size="sm"
+                    value={addCost}
+                    onChange={(e) => setAddCost(e.target.value)}
+                    invalid={Boolean(addErrors.cost)}
+                    invalidText={addErrors.cost}
+                  />
+                  <TextInput
+                    id="add-perunit"
+                    className="oc-add__field oc-add__field--narrow"
+                    labelText="$ / m³"
+                    size="sm"
+                    value={addPerUnitPreview}
+                    onChange={() => undefined}
+                    disabled
+                  />
+                  <div className="oc-add__actions">
+                    <Button kind="primary" disabled={saving} onClick={handleAdd}>
+                      Add
+                    </Button>
+                  </div>
+                </div>
               </div>
             </section>
           </Column>
@@ -441,35 +448,36 @@ const OtherCostsPage: FC = () => {
           <section className="oc-panel">
             <h3 className="oc-panel__title">Other Cost List</h3>
             <div className="oc-panel__body">
-          <TableContainer>
-            <Table aria-label="Other Cost List">
-              <TableHead>
-                <TableRow>
-                  <TableHeader>Description</TableHeader>
-                  <TableHeader className="schedule-1__num">Volume m³</TableHeader>
-                  <TableHeader className="schedule-1__num">Cost $</TableHeader>
-                  <TableHeader className="schedule-1__num">$ / m³</TableHeader>
-                  {editable && <TableHeader>Action</TableHeader>}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(data.rows ?? []).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={editable ? 5 : 4}>No records found.</TableCell>
-                  </TableRow>
-                ) : (
-                  (data.rows ?? []).map((row) => <TableRow key={row.id}>{rowCells(row)}</TableRow>)
-                )}
-                <TableRow className="schedule-1-other-costs__totals">
-                  <TableCell>Totals</TableCell>
-                  <TableCell className="schedule-1__num">{fmt(data.volume)}</TableCell>
-                  <TableCell className="schedule-1__num">{fmt(data.costSubtotal)}</TableCell>
-                  <TableCell className="schedule-1__num">{fmt(data.perUnit)}</TableCell>
-                  {editable && <TableCell />}
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
+              <TableContainer>
+                <Table aria-label="Other Cost List">
+                  <TableHead>
+                    <TableRow>
+                      <TableHeader>Description</TableHeader>
+                      <TableHeader className="schedule-1__num">Volume m³</TableHeader>
+                      <TableHeader className="schedule-1__num">Cost $</TableHeader>
+                      <TableHeader className="schedule-1__num">$ / m³</TableHeader>
+                      {editable && <TableHeader>Action</TableHeader>}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={editable ? 5 : 4}>No records found.</TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((row) => <TableRow key={row.key}>{rowCells(row)}</TableRow>)
+                    )}
+                    {/* Totals footer — last-saved figures; refresh after Save (legacy recomputed on save). */}
+                    <TableRow className="schedule-1-other-costs__totals">
+                      <TableCell>Totals</TableCell>
+                      <TableCell className="schedule-1__num">{fmt(data.volume)}</TableCell>
+                      <TableCell className="schedule-1__num">{fmt(data.costSubtotal)}</TableCell>
+                      <TableCell className="schedule-1__num">{fmt(data.perUnit)}</TableCell>
+                      {editable && <TableCell />}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
             </div>
           </section>
         </Column>
@@ -478,14 +486,14 @@ const OtherCostsPage: FC = () => {
           {editable && (
             <Button
               kind="primary"
-              // Greyed out until there is data to save (and while saving / mid-edit) — legacy parity.
-              disabled={saving || editingId !== null || (data.rows ?? []).length === 0}
+              // Greyed out until there is data to save (and while saving) — legacy parity.
+              disabled={saving || rows.length === 0}
               onClick={handleSave}
             >
               Save
             </Button>
           )}
-          <Button kind="secondary" onClick={goBack}>
+          <Button kind="secondary" onClick={handleBack}>
             Back to Schedule 1
           </Button>
         </Column>
@@ -493,15 +501,17 @@ const OtherCostsPage: FC = () => {
 
       {editable && (
         <Modal
-          open={confirmDeleteId !== null}
-          danger
-          modalHeading="Delete other cost"
-          primaryButtonText="Delete"
+          open={confirmBackOpen}
+          modalHeading="Leave page"
+          primaryButtonText="Continue"
           secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmDeleteId(null)}
-          onRequestSubmit={handleDelete}
+          onRequestClose={() => setConfirmBackOpen(false)}
+          onRequestSubmit={() => {
+            setConfirmBackOpen(false)
+            goBack()
+          }}
         >
-          <p>{CONFIRM_DELETE}</p>
+          <p>{CONFIRM_NAVIGATION}</p>
         </Modal>
       )}
     </div>
