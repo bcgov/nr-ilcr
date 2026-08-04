@@ -93,6 +93,7 @@
 .schedule-1__actions {
   display: flex;
   gap: $spacing-03;
+  margin-block: $spacing-05;
 }
 
 // The "Subtotal Other Costs" label is a link/button inside the Company Logging table's label column;

@@ -10,11 +10,12 @@ import java.util.List;
 /**
  * Batch "Save" request for the Included Unacceptable Costs sub-page — the whole editable row set in one
  * call (legacy {@code Schedule3IncludedUnacceptableCostsMB.save()} persisted the entire collection).
- * Each row carries its detail {@code id} so the server updates the matching item-38 row in place; a
- * row with no (or an unknown) id is INSERTED, and any existing item-38 row absent from the request is
- * DELETED (add/delete are also available as the dedicated POST/DELETE endpoints, which persist
- * immediately). Validation mirrors {@link UnacceptableRequest} and resolves the legacy bundle keys
- * (AD-8).
+ * The server reconciles by detail {@code id}: a row with no id is INSERTED, a row whose id matches an
+ * existing item-38 row is UPDATED in place, and any existing row absent from the request is DELETED.
+ * A row carrying an id that is not an item-38 row under this summary (stale / concurrently deleted) is
+ * rejected with 404 rather than silently re-inserted. (Add/delete are also available as the dedicated
+ * POST/DELETE endpoints, which persist immediately.) Validation mirrors {@link UnacceptableRequest} and
+ * resolves the legacy bundle keys (AD-8).
  *
  * @param rows the rows to persist (each validated)
  */

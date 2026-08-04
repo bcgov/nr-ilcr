@@ -271,6 +271,28 @@ public class Schedule1Service {
     return buildOtherCostsDocument(summaryId, true);
   }
 
+  /** How one batch-save row maps onto the stored rows during reconcile. */
+  private enum SaveRowOp {
+    INSERT,
+    UPDATE
+  }
+
+  /**
+   * Classify a batch-save row by its {@code id}: a null id is a new INSERT, an id that matches a
+   * current row is an UPDATE, and a non-null id that is not a current row is a conflict (404) — so a
+   * stale / concurrently-deleted id fails loudly here rather than silently drifting into a re-insert.
+   * Keeps the reconcile loop reading as a sequence of insert/update operations.
+   */
+  private SaveRowOp classifySaveRow(Integer id, Set<Integer> currentIds) {
+    if (id == null) {
+      return SaveRowOp.INSERT;
+    }
+    if (currentIds.contains(id)) {
+      return SaveRowOp.UPDATE;
+    }
+    throw new OtherCostNotFoundException();
+  }
+
   /**
    * Batch "Save" the whole itemized Other-Costs row set in one transaction — the legacy
    * {@code Schedule1OtherCostsMB.save()} reconcile: rows carrying an existing detail id are UPDATED in
@@ -292,11 +314,14 @@ public class Schedule1Service {
       }
       Set<Integer> kept = new LinkedHashSet<>();
       for (OtherCostSaveRequest.Row row : incoming) {
-        if (row.id() != null && existingIds.contains(row.id())) {
-          repository.updateOtherCost(row.id(), summaryId, row.description(), row.cost(), user);
-          kept.add(row.id());
-        } else {
-          repository.insertOtherCost(summaryId, row.description(), row.cost(), sharedVolume, user);
+        switch (classifySaveRow(row.id(), existingIds)) {
+          case INSERT ->
+            // A newly-added row: INSERT (inherits the shared volume).
+            repository.insertOtherCost(summaryId, row.description(), row.cost(), sharedVolume, user);
+          case UPDATE -> {
+            repository.updateOtherCost(row.id(), summaryId, row.description(), row.cost(), user);
+            kept.add(row.id());
+          }
         }
       }
       for (Integer id : existingIds) {

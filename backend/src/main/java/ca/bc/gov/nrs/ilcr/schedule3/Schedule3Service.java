@@ -426,6 +426,28 @@ public class Schedule3Service {
     return buildOtherAcceptableDocument(summaryId, true);
   }
 
+  /** How one batch-save row maps onto the stored rows during reconcile. */
+  private enum SaveRowOp {
+    INSERT,
+    UPDATE
+  }
+
+  /**
+   * Classify a batch-save row by its {@code id}: a null id is a new INSERT, an id that matches a
+   * current row is an UPDATE, and a non-null id that is not a current row is a conflict (404) — so a
+   * stale / concurrently-deleted id fails loudly here rather than silently drifting into a re-insert.
+   * Keeps the reconcile loops reading as a sequence of insert/update operations.
+   */
+  private SaveRowOp classifySaveRow(Integer id, Set<Integer> currentIds) {
+    if (id == null) {
+      return SaveRowOp.INSERT;
+    }
+    if (currentIds.contains(id)) {
+      return SaveRowOp.UPDATE;
+    }
+    throw new OtherCostNotFoundException();
+  }
+
   /**
    * Batch "Save" the whole Other Acceptable group set in one transaction — the legacy
    * {@code Schedule3SubtotalOtherCostsMB.save()} reconcile over the item-124 TOT+PO&amp;P pairs: a group
@@ -453,22 +475,26 @@ public class Schedule3Service {
       Set<Integer> kept = new LinkedHashSet<>();
       int nextGroup = nextGroupNumber(summaryId);
       for (OtherAcceptableSaveRequest.Row row : incoming) {
-        SubPageRow existing = row.id() == null ? null : totById.get(row.id());
-        if (existing != null) {
-          String popComments = GROUPKEY_POP + existing.comments().substring(GROUPKEY_TOT.length());
-          repository.updateSubPageRowById(
-              row.id(), summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(), user);
-          repository.updateSubPageRowByComments(
-              summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(), popComments, user);
-          kept.add(row.id());
-        } else {
-          String suffix = String.valueOf(nextGroup++);
-          repository.insertSubPageRow(
-              summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(),
-              GROUPKEY_TOT + suffix, user);
-          repository.insertSubPageRow(
-              summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(),
-              GROUPKEY_POP + suffix, user);
+        switch (classifySaveRow(row.id(), totById.keySet())) {
+          case INSERT -> {
+            // A fresh TOT + PO&P pair under a new group number.
+            String suffix = String.valueOf(nextGroup++);
+            repository.insertSubPageRow(
+                summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(),
+                GROUPKEY_TOT + suffix, user);
+            repository.insertSubPageRow(
+                summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(),
+                GROUPKEY_POP + suffix, user);
+          }
+          case UPDATE -> {
+            SubPageRow existing = totById.get(row.id());
+            String popComments = GROUPKEY_POP + existing.comments().substring(GROUPKEY_TOT.length());
+            repository.updateSubPageRowById(
+                row.id(), summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(), user);
+            repository.updateSubPageRowByComments(
+                summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(), popComments, user);
+            kept.add(row.id());
+          }
         }
       }
       for (Map.Entry<Integer, SubPageRow> entry : totById.entrySet()) {
@@ -654,13 +680,14 @@ public class Schedule3Service {
       }
       Set<Integer> kept = new LinkedHashSet<>();
       for (UnacceptableSaveRequest.Row row : incoming) {
-        if (row.id() != null && existingIds.contains(row.id())) {
-          repository.updateSubPageRowById(
-              row.id(), summaryId, CODE_UNACCEPTABLE, row.total(), row.description(), user);
-          kept.add(row.id());
-        } else {
-          repository.insertSubPageRow(
+        switch (classifySaveRow(row.id(), existingIds)) {
+          case INSERT -> repository.insertSubPageRow(
               summaryId, CODE_UNACCEPTABLE, row.total(), row.description(), null, user);
+          case UPDATE -> {
+            repository.updateSubPageRowById(
+                row.id(), summaryId, CODE_UNACCEPTABLE, row.total(), row.description(), user);
+            kept.add(row.id());
+          }
         }
       }
       for (Integer id : existingIds) {

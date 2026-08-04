@@ -183,6 +183,18 @@ class Schedule1OtherCostsServiceTest {
   }
 
   @Test
+  void save_unknownId_throwsNotFound() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"),
+        List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+
+    // A row references an id that is not an itemized item-19 row here → conflict, not a silent insert.
+    List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(999999, "Ghost", 1));
+    assertThrows(OtherCostNotFoundException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+  }
+
+  @Test
   void save_persistenceFailure_translatesToScheduleNotSaved() {
     stubContext("D");
     stubRows(new BigDecimal("5000"),

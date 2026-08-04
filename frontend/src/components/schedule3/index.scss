@@ -59,6 +59,7 @@
 .schedule-3__actions {
   display: flex;
   gap: $spacing-03;
+  margin-block: $spacing-05;
 }
 
 // The Subtotal Other Costs / Included Unacceptable Costs labels are ghost link-buttons in the label

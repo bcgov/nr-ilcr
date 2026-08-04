@@ -1,4 +1,3 @@
-@use '@carbon/type';
 @use '@carbon/react/scss/spacing' as *;
 @use '../../../styles/variables' as variables;
 
@@ -27,20 +26,11 @@
     flex-wrap: wrap;
   }
 
-  // Whole breadcrumb line (crumbs + separators + title) forced to 16px to match the context text.
-  // Carbon sizes its breadcrumb via 14px `type-style` and the links via `font: inherit`; this app
-  // doesn't emit Carbon's type CSS vars (so `type-style` falls back to 14px), and `inherit` picks up
-  // Carbon's 14px — so the size is set explicitly (1rem) on the container, items, links, and title.
+  // NOTE: the breadcrumb/title FONT SIZING lives in the eager global stylesheet (styles/index.scss),
+  // not here, so it applies from first paint and doesn't flash Carbon's 14px before this code-split
+  // chunk loads. This chunk keeps only layout (margins, cursor).
   .page-title-breadcrumb {
-    font-size: 1rem;
-    line-height: 1.5;
     margin-block-end: 0;
-
-    .#{variables.$bcgov-prefix}--breadcrumb-item,
-    .#{variables.$bcgov-prefix}--link {
-      font-size: 1rem;
-      line-height: 1.5;
-    }
 
     .#{variables.$bcgov-prefix}--link {
       cursor: pointer;
@@ -48,9 +38,6 @@
   }
 
   .page-title-heading {
-    font-size: 1rem;
-    font-weight: 400;
-    line-height: 1.5;
     margin: 0;
   }
 

@@ -185,6 +185,19 @@ class Schedule3SubPageServiceTest {
         () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
   }
 
+  @Test
+  void saveOtherAcceptable_unknownId_throwsNotFound() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
+
+    // A row references a TOT id that is not a group under this summary → conflict, not a silent insert.
+    List<OtherAcceptableSaveRequest.Row> rows =
+        List.of(new OtherAcceptableSaveRequest.Row(999999, "Ghost", 1, 0));
+    assertThrows(OtherCostNotFoundException.class,
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+  }
+
   // ---- Included Unacceptable document ----
 
   @Test
@@ -209,8 +222,8 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 38))
         .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
     // Annual Rents (item 29) row present but its Harvest cost is null (not entered). Legacy renders
-    // this blank (Schedule3DO.getUnaccecptableCostsAnnualRents = annualRents.harvestTotalCost, nullable);
-    // firstCost() must return null, not NPE via Stream.findFirst() on a null-mapped element.
+    // this blank, since the annual-rents harvest total cost is nullable, so the read of the first cost
+    // must yield null rather than throwing when the selected detail row maps to a null cost.
     when(repository.findDetails(SUMMARY))
         .thenReturn(List.of(new DetailRow(29, null, null, null, null)));
 
@@ -252,6 +265,19 @@ class Schedule3SubPageServiceTest {
     List<UnacceptableSaveRequest.Row> rows =
         List.of(new UnacceptableSaveRequest.Row(5505, "Penalty!", 260));
     assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+  }
+
+  @Test
+  void saveUnacceptable_unknownId_throwsNotFound() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
+
+    // A row references a detail id that is not an item-38 row here → conflict, not a silent insert.
+    List<UnacceptableSaveRequest.Row> rows =
+        List.of(new UnacceptableSaveRequest.Row(999999, "Ghost", 1));
+    assertThrows(OtherCostNotFoundException.class,
         () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
   }
 
