@@ -18,7 +18,8 @@ import org.springframework.test.context.TestPropertySource;
  * <p>Security OFF ({@code ilcr.security.enabled=false}) so the mock {@code ILCR_SUBMITTER} principal
  * applies, isolating document assembly from authz (covered by {@link Schedule6AuthorizationIT}).
  * Asserts the pinned wire contract, the server-derived RMG / $/m3 / running totals, and the S18
- * lone-comment empty-list state against the V28 seed.
+ * lone-comment empty-list state against the V30 seed (whose DECOY rows also make these assertions
+ * pin the query's year / category-'6' / item-69 filters).
  */
 @DisplayName("GET /api/v1/schedule6 — road-record list (Schedule 6 read)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -54,6 +55,7 @@ class Schedule6DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.roadRecords[0].comments", is("Arrow FSR resurfacing")))
         // Record 8302 — TFL "18" -> RMG "4"; vol 400 / cost 30000 -> $/m3 75.00. supplyBlock omitted.
         .andExpect(jsonPath("$.roadRecords[1].recordId", is(8302)))
+        .andExpect(jsonPath("$.roadRecords[1].revisionCount", is(0)))
         .andExpect(jsonPath("$.roadRecords[1].areaType", is("TFL")))
         .andExpect(jsonPath("$.roadRecords[1].tflNumber", is("18")))
         .andExpect(jsonPath("$.roadRecords[1].supplyBlock").doesNotExist())
@@ -61,6 +63,7 @@ class Schedule6DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.roadRecords[1].volume", is(400)))
         .andExpect(jsonPath("$.roadRecords[1].cost", is(30000)))
         .andExpect(jsonPath("$.roadRecords[1].costPerVolume", is(75.0)))
+        .andExpect(jsonPath("$.roadRecords[1].comments", is("TFL 18 spur road")))
         // Running totals (BR-07): 1000+400 = 1400; 50000+30000 = 80000; 80000/1400 = 57.14 (scale 2).
         .andExpect(jsonPath("$.totalVolume", is(1400)))
         .andExpect(jsonPath("$.totalCost", is(80000)))
@@ -80,11 +83,20 @@ class Schedule6DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.trackStatus", is("S")))
         .andExpect(jsonPath("$.editable", is(false)))
         .andExpect(jsonPath("$.roadRecords.length()", is(1)))
+        .andExpect(jsonPath("$.roadRecords[0].recordId", is(8303)))
+        .andExpect(jsonPath("$.roadRecords[0].revisionCount", is(0)))
         .andExpect(jsonPath("$.roadRecords[0].areaType", is("03")))
         .andExpect(jsonPath("$.roadRecords[0].supplyBlock", is("03B")))
+        .andExpect(jsonPath("$.roadRecords[0].tflNumber").doesNotExist())
         .andExpect(jsonPath("$.roadRecords[0].rmg", is("1")))
+        .andExpect(jsonPath("$.roadRecords[0].volume", is(2000)))
+        .andExpect(jsonPath("$.roadRecords[0].cost", is(40000)))
         .andExpect(jsonPath("$.roadRecords[0].costPerVolume", is(20.0)))
-        .andExpect(jsonPath("$.totalCost", is(40000)));
+        .andExpect(jsonPath("$.roadRecords[0].comments", is("Bulkley haul road")))
+        .andExpect(jsonPath("$.generalComments", is("Submitted road comment.")))
+        .andExpect(jsonPath("$.totalVolume", is(2000)))
+        .andExpect(jsonPath("$.totalCost", is(40000)))
+        .andExpect(jsonPath("$.totalCostPerVolume", is(20.0)));
   }
 
   @Test

@@ -253,6 +253,8 @@ final class RoadGroupLookup {
       case "08", "15", "59" -> "7";
       case "48" -> "10";
       // "42" not used as described in TFL list v2 (ILCR-161)
+      // "52B" is legacy dead code kept for the verbatim port: the delivery column is VARCHAR2(2)
+      // and THE.TFL_NUMBER_CODE holds no 3-char value (delivery-DB verified 2026-08-04).
       case "52B", "05" -> "13";
       case "30", "52", "53" -> "14";
       case "03", "23" -> "15";

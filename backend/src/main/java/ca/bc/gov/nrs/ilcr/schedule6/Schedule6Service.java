@@ -61,7 +61,10 @@ public class Schedule6Service {
     for (CostDetailRow detail : repository.findCostDetails(millId, year)) {
       // One item-69 detail per road record is the invariant; if a duplicate ever exists,
       // first-by-id wins (rows ordered by detail id) so a derived total can't depend on row order.
-      costByRecord.putIfAbsent(detail.roadMaintenanceReportId(), detail);
+      if (costByRecord.putIfAbsent(detail.roadMaintenanceReportId(), detail) != null) {
+        log.warn("Schedule 6 mill {}/{}: duplicate item-69 cost detail for road record {}; "
+            + "keeping first-by-id", millId, year, detail.roadMaintenanceReportId());
+      }
     }
 
     List<RoadRecord> roadRecords = new ArrayList<>();
@@ -72,24 +75,38 @@ public class Schedule6Service {
     String generalComments = null;
 
     for (RoadRecordRow row : rows) {
-      generalComments = StringUtils.trimToNull(row.generalComment());
-      if (isPlaceholder(row)) {
-        continue; // general-comment-only row (S18) — contributes the comment, not a road record
+      // Comments are served raw, exactly as saved — legacy Schedule6DAO.getReport appends COMMENTS
+      // untrimmed (read-side normalization rejected at code review 2026-08-04, legacy-faithful).
+      generalComments = row.generalComment();
+      // Classification codes ARE normalized (trimToNull), once, so the TSA-vs-TFL split below and
+      // RoadGroupLookup.rmgFor decide from identical values; rmgFor's TFL-first "!= null" routing
+      // is legacy-verbatim (RoadMaintenanceReportType.getRmg).
+      String tsaNumber = StringUtils.trimToNull(row.tsaNumber());
+      String tsbNumberCode = StringUtils.trimToNull(row.tsbNumberCode());
+      String tflNumberCode = StringUtils.trimToNull(row.tflNumberCode());
+      if (tsaNumber == null && tsbNumberCode == null && tflNumberCode == null) {
+        // General-comment placeholder (S18, legacy Schedule6MB onlyGeneralCommentExists): no
+        // classification at all — contributes the comment, not a road record. A cost detail on a
+        // placeholder is a data anomaly whose money would silently vanish from totals; say so.
+        if (costByRecord.containsKey(row.recordId())) {
+          log.warn("Schedule 6 mill {}/{}: placeholder row {} carries an item-69 cost detail; "
+              + "excluded from records and totals", millId, year, row.recordId());
+        }
+        continue;
       }
       CostDetailRow detail = costByRecord.get(row.recordId());
       BigDecimal volume = detail == null ? null : detail.volume();
       Integer cost = detail == null ? null : detail.cost();
-      String comments = detail == null ? null : StringUtils.trimToNull(detail.comments());
+      String comments = detail == null ? null : detail.comments();
 
-      boolean tfl = StringUtils.isBlank(row.tsaNumber())
-          && StringUtils.isNotBlank(row.tflNumberCode());
+      boolean tfl = tsaNumber == null && tflNumberCode != null;
       roadRecords.add(new RoadRecord(
           row.recordId(),
           row.revisionCount(),
-          tfl ? AREA_TYPE_TFL : StringUtils.trimToNull(row.tsaNumber()),
-          tfl ? StringUtils.trimToNull(row.tflNumberCode()) : null,
-          tfl ? null : StringUtils.trimToNull(row.tsbNumberCode()),
-          RoadGroupLookup.rmgFor(row.tsaNumber(), row.tsbNumberCode(), row.tflNumberCode()),
+          tfl ? AREA_TYPE_TFL : tsaNumber,
+          tfl ? tflNumberCode : null,
+          tfl ? null : tsbNumberCode,
+          RoadGroupLookup.rmgFor(tsaNumber, tsbNumberCode, tflNumberCode),
           normalizeVolume(volume),
           cost,
           perUnit(cost == null ? null : (long) cost, volume),
@@ -113,16 +130,6 @@ public class Schedule6Service {
         totalCost,
         perUnit(totalCost, totalVolume),
         null);
-  }
-
-  /**
-   * A general-comment placeholder is a road-record row with NO classification at all (TSA, TSB, and
-   * TFL all blank) — legacy {@code Schedule6MB.loadSchedule} {@code onlyGeneralCommentExists} test.
-   */
-  private static boolean isPlaceholder(RoadRecordRow row) {
-    return StringUtils.isBlank(row.tsaNumber())
-        && StringUtils.isBlank(row.tsbNumberCode())
-        && StringUtils.isBlank(row.tflNumberCode());
   }
 
   /**

@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * Acceptance test — Schedule 6 read context guards (AD-4, AD-8). Missing/non-numeric param → 400
@@ -23,6 +24,7 @@ import org.springframework.http.MediaType;
  * reserved for the missing mill/year context.
  */
 @DisplayName("GET /api/v1/schedule6 — mill/year context guards")
+@TestPropertySource(properties = "ilcr.security.enabled=false")
 class Schedule6ContextGuardIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule6";
@@ -56,6 +58,33 @@ class Schedule6ContextGuardIT extends AbstractOracleIT {
   @DisplayName("non-numeric millId -> 400 verbatim ERR-001")
   void nonNumericMillId_returns400_verbatim() throws Exception {
     mockMvc.perform(get(ENDPOINT).param("millId", "abc").param("year", SEEDED_YEAR))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName("non-numeric year -> 400 verbatim ERR-001")
+  void nonNumericYear_returns400_verbatim() throws Exception {
+    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName("blank millId -> 400 verbatim ERR-001")
+  void blankMillId_returns400_verbatim() throws Exception {
+    mockMvc.perform(get(ENDPOINT).param("millId", "").param("year", SEEDED_YEAR))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName("blank year -> 400 verbatim ERR-001")
+  void blankYear_returns400_verbatim() throws Exception {
+    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", ""))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is(ERR_001)));

@@ -26,9 +26,6 @@ import org.springframework.data.repository.query.Param;
  */
 public interface Schedule6Repository extends Repository<RoadMaintenanceReportEntity, Integer> {
 
-  /** The Schedule 6 cost-item id ({@code Constant.REPORT_COST_ITEMS.Schedule6_1_Cost}). */
-  int SCHEDULE_6_COST_ITEM = 69;
-
   /** One Schedule 6 road record (a {@code ROAD_MAINTENANCE_REPORT} row); codes stored inline. */
   record RoadRecordRow(int recordId, String tsaNumber, String tsbNumberCode, String tflNumberCode,
       String generalComment, Integer revisionCount) {
