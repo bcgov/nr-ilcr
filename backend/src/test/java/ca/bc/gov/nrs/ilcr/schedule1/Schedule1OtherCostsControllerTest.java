@@ -10,8 +10,10 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -105,6 +107,47 @@ class Schedule1OtherCostsControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
     verify(doc).withMessage(any());
+  }
+
+  @Test
+  void saveOtherCosts_saveIntent_appliesSavedMessage() {
+    List<OtherCostSaveRequest.Row> rows = List.of();
+    OtherCostSaveRequest request = mock(OtherCostSaveRequest.class);
+    when(request.rows()).thenReturn(rows);
+    OtherCostsDocument doc = mockDocEchoingMessage();
+    when(authentication.getName()).thenReturn("dev-admin");
+    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
+    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("Data saved successfully.");
+
+    ResponseEntity<OtherCostsDocument> response =
+        controller.saveOtherCosts(MILL_ID, YEAR, "save", request, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    verify(messageSource)
+        .getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class));
+  }
+
+  @Test
+  void saveOtherCosts_deleteIntent_appliesDeletedMessage() {
+    List<OtherCostSaveRequest.Row> rows = List.of();
+    OtherCostSaveRequest request = mock(OtherCostSaveRequest.class);
+    when(request.rows()).thenReturn(rows);
+    OtherCostsDocument doc = mockDocEchoingMessage();
+    when(authentication.getName()).thenReturn("dev-admin");
+    when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
+    when(messageSource.getMessage(
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("Data deleted successfully.");
+
+    ResponseEntity<OtherCostsDocument> response =
+        controller.saveOtherCosts(MILL_ID, YEAR, "delete", request, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    verify(messageSource)
+        .getMessage(eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class));
   }
 
   @Test

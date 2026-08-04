@@ -72,7 +72,12 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     let intent: string | null = null
     server.use(
       http.get(URL, () =>
-        HttpResponse.json({ ...doc, rows: [], count: 0, subtotal: { harvest: 0, pop: 0, crown: 0 } }),
+        HttpResponse.json({
+          ...doc,
+          rows: [],
+          count: 0,
+          subtotal: { harvest: 0, pop: 0, crown: 0 },
+        }),
       ),
       http.put(URL, async ({ request }) => {
         intent = intentOf(request.url)
@@ -230,7 +235,12 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
   test('Save is greyed out when there are no groups to save', async () => {
     server.use(
       http.get(URL, () =>
-        HttpResponse.json({ ...doc, rows: [], count: 0, subtotal: { harvest: 0, pop: 0, crown: 0 } }),
+        HttpResponse.json({
+          ...doc,
+          rows: [],
+          count: 0,
+          subtotal: { harvest: 0, pop: 0, crown: 0 },
+        }),
       ),
     )
     render(<OtherAcceptableCostsPage />)

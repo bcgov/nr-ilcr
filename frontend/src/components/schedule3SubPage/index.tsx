@@ -145,14 +145,14 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
 
   // Monotonic client key for React list identity (independent of the server detail id, which is null
   // for freshly-added rows). Re-seeding after a load/save mints fresh keys so inputs remount cleanly.
-  const keyCounter = useRef(0)
+  const keyCounterRef = useRef(0)
 
   const base = config.base
   const query = `?millId=${millId}&year=${year}`
 
   const seedRows = (doc: TDoc): EditRow[] =>
     config.rows(doc).map((r) => ({
-      key: keyCounter.current++,
+      key: keyCounterRef.current++,
       id: r.id,
       description: r.description,
       values: Object.fromEntries(config.fields.map((f) => [f.key, numStr(f.get(r))])),
@@ -294,7 +294,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     const next = [
       ...rows,
       {
-        key: keyCounter.current++,
+        key: keyCounterRef.current++,
         id: null,
         description: addDescription.trim(),
         values: { ...addValues },

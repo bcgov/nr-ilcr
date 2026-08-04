@@ -22,8 +22,7 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
   readonlyColumns: [
     {
       header: 'Crown $',
-      derive: (v) =>
-        v.total === null && v.pop === null ? null : (v.total ?? 0) - (v.pop ?? 0),
+      derive: (v) => (v.total === null && v.pop === null ? null : (v.total ?? 0) - (v.pop ?? 0)),
     },
   ],
   summaryItems: [

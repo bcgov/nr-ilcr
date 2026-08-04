@@ -183,6 +183,19 @@ class Schedule1OtherCostsServiceTest {
   }
 
   @Test
+  void save_persistenceFailure_translatesToScheduleNotSaved() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"),
+        List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+    when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(5051, "Row A+", 3200));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+  }
+
+  @Test
   void update_persistenceFailure_translatesToScheduleNotSaved() {
     stubContext("D");
     when(repository.updateOtherCost(5051, SUMMARY, "x", 1, USER))

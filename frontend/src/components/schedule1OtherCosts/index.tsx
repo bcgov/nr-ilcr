@@ -66,14 +66,14 @@ const OtherCostsPage: FC = () => {
   const [confirmBackOpen, setConfirmBackOpen] = useState(false)
 
   // Monotonic client key for React list identity (independent of the server id, null for new rows).
-  const keyCounter = useRef(0)
+  const keyCounterRef = useRef(0)
 
   // Derived purely from millId/year (both effect deps). The request path is a module constant.
   const query = `?millId=${millId}&year=${year}`
 
   const seedRows = (doc: OtherCostsDocument): EditRow[] =>
     (doc.rows ?? []).map((r) => ({
-      key: keyCounter.current++,
+      key: keyCounterRef.current++,
       id: r.id,
       description: r.description,
       cost: numStr(r.cost),
@@ -214,7 +214,7 @@ const OtherCostsPage: FC = () => {
     setAddErrors({})
     const next = [
       ...rows,
-      { key: keyCounter.current++, id: null, description: addDescription.trim(), cost: addCost },
+      { key: keyCounterRef.current++, id: null, description: addDescription.trim(), cost: addCost },
     ]
     setRows(next)
     setAddDescription('')

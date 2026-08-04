@@ -31,6 +31,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Unit test for the Schedule 3 sub-page logic (Story 4.4): item-124 TOT+PO&P group pairing/encoding,
@@ -170,6 +171,20 @@ class Schedule3SubPageServiceTest {
     verify(repository).touchSummary(SUMMARY, "user");
   }
 
+  @Test
+  void saveOtherAcceptable_persistenceFailure_translatesToScheduleNotSaved() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
+    when(repository.updateSubPageRowById(5501, SUMMARY, 124, 850, "Consulting2", "user"))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<OtherAcceptableSaveRequest.Row> rows =
+        List.of(new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+  }
+
   // ---- Included Unacceptable document ----
 
   @Test
@@ -224,6 +239,20 @@ class Schedule3SubPageServiceTest {
     verify(repository).insertSubPageRow(SUMMARY, 38, 500, "New", null, "user");
     verify(repository).deleteSubPageRowById(5506, SUMMARY, 38);
     verify(repository).touchSummary(SUMMARY, "user");
+  }
+
+  @Test
+  void saveUnacceptable_persistenceFailure_translatesToScheduleNotSaved() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
+    when(repository.updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user"))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<UnacceptableSaveRequest.Row> rows =
+        List.of(new UnacceptableSaveRequest.Row(5505, "Penalty!", 260));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
   }
 
   // ---- Check-status sub-page branches ----
