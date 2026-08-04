@@ -3,8 +3,8 @@ import './index.scss'
 
 interface SubPanelProps {
   /** The grey header-bar title. */
-  title: string
-  children: ReactNode
+  readonly title: string
+  readonly children: ReactNode
 }
 
 /**

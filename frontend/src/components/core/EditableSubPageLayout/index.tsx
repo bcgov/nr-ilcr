@@ -12,17 +12,17 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 
 interface Props<TDoc extends EditableRowsDoc> {
-  editor: EditableCostRows<TDoc>
+  readonly editor: EditableCostRows<TDoc>
   /** Ancestor trail shown above the title (e.g. ILCR → Schedule 3). */
-  breadCrumbs?: BreadCrumb[]
-  title: string
-  subtitle?: string
+  readonly breadCrumbs?: BreadCrumb[]
+  readonly title: string
+  readonly subtitle?: string
   /** "Back to Schedule N" — also the error-state back button. */
-  backLabel: string
-  loadingLabel: string
-  errorTitle: string
+  readonly backLabel: string
+  readonly loadingLabel: string
+  readonly errorTitle: string
   /** The page-specific panels (add + list), rendered once data is present. */
-  children: (data: TDoc) => ReactNode
+  readonly children: (data: TDoc) => ReactNode
 }
 
 /**
