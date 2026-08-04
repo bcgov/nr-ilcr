@@ -16,6 +16,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRow;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.ThreeColumnTotal;
@@ -23,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.TimberBlock;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRow;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -424,6 +426,67 @@ public class Schedule3Service {
     return buildOtherAcceptableDocument(summaryId, true);
   }
 
+  /**
+   * Batch "Save" the whole Other Acceptable group set in one transaction — the legacy
+   * {@code Schedule3SubtotalOtherCostsMB.save()} reconcile over the item-124 TOT+PO&amp;P pairs: a group
+   * whose TOT id already exists is UPDATED in place (both its TOT and PO&amp;P rows), a group with no (or
+   * an unknown) id is INSERTED as a fresh pair, and any existing group absent from the request is
+   * DELETED (TOT + PO&amp;P). Draft-gated; recomputes the document.
+   */
+  @Transactional
+  public OtherAcceptableDocument saveOtherAcceptable(
+      long millId, int year, List<OtherAcceptableSaveRequest.Row> rows, String user) {
+    int summaryId = requireEditableSummary(millId, year).summaryId();
+    List<OtherAcceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
+    try {
+      // Lock the summary first (AR11): serialize concurrent writers and stop a concurrent add/save from
+      // reading the same max group number (which would mint a duplicate SCH3_2_*_GRP{n}).
+      repository.touchSummary(summaryId, user);
+      // Existing groups keyed by TOT detail id (value = the TOT row, for its group-key comments).
+      Map<Integer, SubPageRow> totById = new LinkedHashMap<>();
+      for (SubPageRow row : repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE)) {
+        if (row.detailId() != null && row.comments() != null
+            && row.comments().startsWith(GROUPKEY_TOT)) {
+          totById.put(row.detailId(), row);
+        }
+      }
+      Set<Integer> kept = new LinkedHashSet<>();
+      int nextGroup = nextGroupNumber(summaryId);
+      for (OtherAcceptableSaveRequest.Row row : incoming) {
+        SubPageRow existing = row.id() == null ? null : totById.get(row.id());
+        if (existing != null) {
+          String popComments = GROUPKEY_POP + existing.comments().substring(GROUPKEY_TOT.length());
+          repository.updateSubPageRowById(
+              row.id(), summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(), user);
+          repository.updateSubPageRowByComments(
+              summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(), popComments, user);
+          kept.add(row.id());
+        } else {
+          String suffix = String.valueOf(nextGroup++);
+          repository.insertSubPageRow(
+              summaryId, CODE_OTHER_ACCEPTABLE, row.total(), row.description(),
+              GROUPKEY_TOT + suffix, user);
+          repository.insertSubPageRow(
+              summaryId, CODE_OTHER_ACCEPTABLE, row.pop(), row.description(),
+              GROUPKEY_POP + suffix, user);
+        }
+      }
+      for (Map.Entry<Integer, SubPageRow> entry : totById.entrySet()) {
+        if (!kept.contains(entry.getKey())) {
+          String popComments =
+              GROUPKEY_POP + entry.getValue().comments().substring(GROUPKEY_TOT.length());
+          repository.deleteSubPageRowById(entry.getKey(), summaryId, CODE_OTHER_ACCEPTABLE);
+          repository.deleteSubPageRowByComments(summaryId, CODE_OTHER_ACCEPTABLE, popComments);
+        }
+      }
+    } catch (DataAccessException ex) {
+      log.warn("Other-Acceptable save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildOtherAcceptableDocument(summaryId, true);
+  }
+
   /** The TOT row for a group id under this summary, or {@link OtherCostNotFoundException} (404). */
   private SubPageRow findTotRow(int summaryId, int id) {
     return repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE).stream()
@@ -564,6 +627,51 @@ public class Schedule3Service {
       log.warn("Unacceptable delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotDeletedException();
+    }
+    return buildUnacceptableDocument(summaryId, true);
+  }
+
+  /**
+   * Batch "Save" the whole Included Unacceptable row set in one transaction — the legacy
+   * {@code Schedule3IncludedUnacceptableCostsMB.save()} reconcile: rows carrying an existing detail id
+   * are UPDATED in place, rows with no (or an unknown) id are INSERTED, and any existing item-38 row
+   * absent from the request is DELETED. Draft-gated; recomputes the document.
+   */
+  @Transactional
+  public UnacceptableDocument saveUnacceptable(
+      long millId, int year, List<UnacceptableSaveRequest.Row> rows, String user) {
+    int summaryId = requireEditableSummary(millId, year).summaryId();
+    List<UnacceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
+    try {
+      // Lock the summary first (AR11): serialize concurrent writers and invalidate a stale main-page
+      // optimistic-lock token before the reconcile writes below.
+      repository.touchSummary(summaryId, user);
+      Set<Integer> existingIds = new LinkedHashSet<>();
+      for (SubPageRow row : repository.findSubPageRows(summaryId, CODE_UNACCEPTABLE)) {
+        if (row.detailId() != null) {
+          existingIds.add(row.detailId());
+        }
+      }
+      Set<Integer> kept = new LinkedHashSet<>();
+      for (UnacceptableSaveRequest.Row row : incoming) {
+        if (row.id() != null && existingIds.contains(row.id())) {
+          repository.updateSubPageRowById(
+              row.id(), summaryId, CODE_UNACCEPTABLE, row.total(), row.description(), user);
+          kept.add(row.id());
+        } else {
+          repository.insertSubPageRow(
+              summaryId, CODE_UNACCEPTABLE, row.total(), row.description(), null, user);
+        }
+      }
+      for (Integer id : existingIds) {
+        if (!kept.contains(id)) {
+          repository.deleteSubPageRowById(id, summaryId, CODE_UNACCEPTABLE);
+        }
+      }
+    } catch (DataAccessException ex) {
+      log.warn("Unacceptable save failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
     }
     return buildUnacceptableDocument(summaryId, true);
   }

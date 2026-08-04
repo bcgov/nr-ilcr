@@ -277,6 +277,35 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
       .finally(() => setSaving(false))
   }
 
+  // Batch "Save" (legacy parity): persist the whole current row set in one call (server reconciles
+  // update/insert/delete). Add/Edit/Delete already persist per row, so this re-commits the collection
+  // and echoes the verbatim success message. Guarded on there being rows to save (button greys out).
+  const handleSave = () => {
+    if (!data || saving) {
+      return
+    }
+    const currentRows = config.rows(data)
+    if (currentRows.length === 0) {
+      return
+    }
+    setMessage(null)
+    setActionError(null)
+    setSaving(true)
+    const rowsPayload = currentRows.map((row) => ({
+      id: row.id,
+      description: row.description,
+      ...Object.fromEntries(config.fields.map((f) => [f.key, f.get(row)])),
+    }))
+    apiService
+      .getAxiosInstance()
+      .put<TDoc>(`${base}${query}`, { rows: rowsPayload })
+      .then((response) => applyDocument(response.data))
+      .catch((error: unknown) => {
+        setActionError(extractDetail(error) || config.saveError)
+      })
+      .finally(() => setSaving(false))
+  }
+
   const goBack = () => {
     navigate({ to: '/schedule-3' })
   }
@@ -414,111 +443,134 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
 
   return (
     <div className="app-page">
-      {header}
       <Grid fullWidth className="app-page__body">
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
           <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
         )}
 
-        {/* Add section — TOP (legacy: the "Add …" panel precedes the list). Intro + stacked fields. */}
+        {/* Add section — TOP (legacy: the "Add …" panel precedes the list). A titled panel: grey
+            header bar + padded body holding the intro and the stacked fields. */}
         {editable && (
           <Column sm={4} md={8} lg={16} className="schedule-3__section">
-            <h3 className="schedule-3__heading">{config.addHeading}</h3>
-            {config.intro && <p className="schedule-3__intro">{config.intro}</p>}
-            <div className="schedule-3-sub__add">
-              <TextInput
-                id="add-description"
-                className="schedule-3-sub__field schedule-3-sub__field--wide"
-                labelText="Description"
-                size="sm"
-                maxLength={config.descriptionMaxLength}
-                value={addDescription}
-                onChange={(e) => setAddDescription(e.target.value)}
-                invalid={Boolean(addErrors.description)}
-                invalidText={addErrors.description}
-              />
-              {config.fields.map((field) => (
-                <TextInput
-                  key={field.key}
-                  id={`add-${field.key}`}
-                  className="schedule-3-sub__field schedule-3-sub__field--narrow"
-                  labelText={field.header}
-                  size="sm"
-                  value={addValues[field.key] ?? ''}
-                  onChange={(e) =>
-                    setAddValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                  }
-                  invalid={Boolean(addErrors[field.key])}
-                  invalidText={addErrors[field.key]}
-                />
-              ))}
-              <div className="schedule-3-sub__actions">
-                <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
-                  Add
-                </Button>
+            <section className="schedule-3-sub__panel">
+              <h3 className="schedule-3-sub__panel-title">{config.addHeading}</h3>
+              <div className="schedule-3-sub__panel-body">
+                {config.intro && <p className="schedule-3__intro">{config.intro}</p>}
+                <div className="schedule-3-sub__add">
+                  <TextInput
+                    id="add-description"
+                    className="schedule-3-sub__field schedule-3-sub__field--wide"
+                    labelText="Description"
+                    size="sm"
+                    maxLength={config.descriptionMaxLength}
+                    value={addDescription}
+                    onChange={(e) => setAddDescription(e.target.value)}
+                    invalid={Boolean(addErrors.description)}
+                    invalidText={addErrors.description}
+                  />
+                  {config.fields.map((field) => (
+                    <TextInput
+                      key={field.key}
+                      id={`add-${field.key}`}
+                      className="schedule-3-sub__field schedule-3-sub__field--narrow"
+                      labelText={field.header}
+                      size="sm"
+                      value={addValues[field.key] ?? ''}
+                      onChange={(e) =>
+                        setAddValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                      }
+                      invalid={Boolean(addErrors[field.key])}
+                      invalidText={addErrors[field.key]}
+                    />
+                  ))}
+                  <div className="schedule-3-sub__actions">
+                    <Button
+                      kind="primary"
+                      disabled={saving || editingId !== null}
+                      onClick={handleAdd}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           </Column>
         )}
 
-        {/* List section — BELOW. The page title already names the section, so no in-panel heading; the
-            read-only meta field (Annual Rents S111) sits above the table, then the table with a "No
-            records found." empty state and a Totals footer row. */}
+        {/* List section — BELOW. A matching titled panel: header bar (the table title), then the
+            read-only meta field (Annual Rents S111), then the table with a "No records found." empty
+            state and a Totals footer row. */}
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
-          {config.metaField && (
-            <TextInput
-              id={config.metaField.id}
-              className="schedule-3-sub__meta-field"
-              labelText={config.metaField.label}
-              size="sm"
-              value={numStr(config.metaField.value(data))}
-              onChange={() => undefined}
-              disabled
-            />
-          )}
-          <TableContainer>
-            <Table aria-label={config.tableTitle}>
-              <TableHead>
-                <TableRow>
-                  <TableHeader>Description</TableHeader>
-                  {config.fields.map((field) => (
-                    <TableHeader key={field.key} className="schedule-3__num">
-                      {field.header}
-                    </TableHeader>
-                  ))}
-                  {readonlyColumns.map((col) => (
-                    <TableHeader key={col.header} className="schedule-3__num">
-                      {col.header}
-                    </TableHeader>
-                  ))}
-                  {editable && <TableHeader>Action</TableHeader>}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={totalColumns}>No records found.</TableCell>
-                  </TableRow>
-                ) : (
-                  rows.map((row) => <TableRow key={row.id}>{rowCells(row)}</TableRow>)
-                )}
-                {/* Totals footer: summaryItems align 1:1 with the numeric (field + readonly) columns. */}
-                <TableRow className="schedule-3-sub__totals">
-                  <TableCell>Totals</TableCell>
-                  {config.summaryItems.map((item) => (
-                    <TableCell key={item.label} className="schedule-3__num">
-                      {fmt(item.value(data))}
-                    </TableCell>
-                  ))}
-                  {editable && <TableCell />}
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <section className="schedule-3-sub__panel">
+            <h3 className="schedule-3-sub__panel-title">{config.tableTitle}</h3>
+            <div className="schedule-3-sub__panel-body">
+              {config.metaField && (
+                <TextInput
+                  id={config.metaField.id}
+                  className="schedule-3-sub__meta-field"
+                  labelText={config.metaField.label}
+                  size="sm"
+                  value={numStr(config.metaField.value(data))}
+                  onChange={() => undefined}
+                  disabled
+                />
+              )}
+              <TableContainer>
+                <Table aria-label={config.tableTitle}>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeader>Description</TableHeader>
+                      {config.fields.map((field) => (
+                        <TableHeader key={field.key} className="schedule-3__num">
+                          {field.header}
+                        </TableHeader>
+                      ))}
+                      {readonlyColumns.map((col) => (
+                        <TableHeader key={col.header} className="schedule-3__num">
+                          {col.header}
+                        </TableHeader>
+                      ))}
+                      {editable && <TableHeader>Action</TableHeader>}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={totalColumns}>No records found.</TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((row) => <TableRow key={row.id}>{rowCells(row)}</TableRow>)
+                    )}
+                    {/* Totals footer: summaryItems align 1:1 with the numeric (field + readonly) columns. */}
+                    <TableRow className="schedule-3-sub__totals">
+                      <TableCell>Totals</TableCell>
+                      {config.summaryItems.map((item) => (
+                        <TableCell key={item.label} className="schedule-3__num">
+                          {fmt(item.value(data))}
+                        </TableCell>
+                      ))}
+                      {editable && <TableCell />}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </div>
+          </section>
         </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-3__actions">
+          {editable && (
+            <Button
+              kind="primary"
+              // Greyed out until there is data to save (and while saving / mid-edit) — legacy parity.
+              disabled={saving || editingId !== null || rows.length === 0}
+              onClick={handleSave}
+            >
+              Save
+            </Button>
+          )}
           <Button kind="secondary" onClick={goBack}>
             Back to Schedule 3
           </Button>

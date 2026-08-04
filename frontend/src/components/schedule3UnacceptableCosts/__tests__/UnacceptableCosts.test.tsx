@@ -123,4 +123,36 @@ describe('Included Unacceptable Costs sub-page (Story 4.4)', () => {
     await user.click(await screen.findByRole('button', { name: /back to schedule 3/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3' })
   })
+
+  test('page Save is greyed out when there are no rows to save', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json({ ...doc, rows: [], count: 0, subtotalTotal: 0 })),
+    )
+    render(<UnacceptableCostsPage />)
+    await screen.findByText('No records found.')
+    // The footer batch-Save renders (editable) but is disabled with no data yet.
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
+  })
+
+  test('page Save batch-persists the whole row set (PUT) and shows verbatim success', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<UnacceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByText('Penalty')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // The whole current row set is sent (id + description + total); Annual Rents/crown are derived.
+    expect(captured).toEqual({ rows: [{ id: 5505, description: 'Penalty', total: 250 }] })
+  })
 })

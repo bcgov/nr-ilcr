@@ -18,7 +18,9 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -142,6 +144,32 @@ class Schedule3SubPageServiceTest {
         .updateSubPageRowByComments(SUMMARY, 124, 400, "Updated", "SCH3_2_POP_GRP1", "user");
   }
 
+  @Test
+  void saveOtherAcceptable_reconcilesUpdateInsertAndDelete() {
+    stubDraft();
+    // Existing: GRP1 (Consulting, id 5501) + GRP2 (Travel, id 5503) → next group number is 3.
+    when(repository.findSubPageRows(SUMMARY, 124)).thenReturn(List.of(
+        tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1),
+        tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2)));
+
+    // Request: update GRP1, insert a fresh group, and drop GRP2 (absent → delete).
+    service.saveOtherAcceptable(MILL, YEAR, List.of(
+        new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350),
+        new OtherAcceptableSaveRequest.Row(null, "Fresh", 900, 100)), "user");
+
+    // Update GRP1 (TOT by id + PO&P peer by comments).
+    verify(repository).updateSubPageRowById(5501, SUMMARY, 124, 850, "Consulting2", "user");
+    verify(repository)
+        .updateSubPageRowByComments(SUMMARY, 124, 350, "Consulting2", "SCH3_2_POP_GRP1", "user");
+    // Insert the new group as the next free number (3).
+    verify(repository).insertSubPageRow(SUMMARY, 124, 900, "Fresh", "SCH3_2_TOT_GRP3", "user");
+    verify(repository).insertSubPageRow(SUMMARY, 124, 100, "Fresh", "SCH3_2_POP_GRP3", "user");
+    // Delete the omitted GRP2 (TOT by id + PO&P peer by comments).
+    verify(repository).deleteSubPageRowById(5503, SUMMARY, 124);
+    verify(repository).deleteSubPageRowByComments(SUMMARY, 124, "SCH3_2_POP_GRP2");
+    verify(repository).touchSummary(SUMMARY, "user");
+  }
+
   // ---- Included Unacceptable document ----
 
   @Test
@@ -176,6 +204,26 @@ class Schedule3SubPageServiceTest {
     assertEquals(1, doc.count());
     assertEquals(250L, doc.subtotalTotal());
     assertNull(doc.annualRentsTotal());
+  }
+
+  @Test
+  void saveUnacceptable_reconcilesUpdateInsertAndDelete() {
+    stubDraft();
+    // Existing item-38 rows 5505 + 5506; findDetails (Annual Rents) empty for the rebuilt doc.
+    when(repository.findSubPageRows(SUMMARY, 38)).thenReturn(List.of(
+        new SubPageRow(5505, 250, "Penalty", null),
+        new SubPageRow(5506, 100, "Old", null)));
+    lenient().when(repository.findDetails(SUMMARY)).thenReturn(List.of());
+
+    // Request: update 5505, insert a new row, and drop 5506 (absent → delete).
+    service.saveUnacceptable(MILL, YEAR, List.of(
+        new UnacceptableSaveRequest.Row(5505, "Penalty!", 260),
+        new UnacceptableSaveRequest.Row(null, "New", 500)), "user");
+
+    verify(repository).updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user");
+    verify(repository).insertSubPageRow(SUMMARY, 38, 500, "New", null, "user");
+    verify(repository).deleteSubPageRowById(5506, SUMMARY, 38);
+    verify(repository).touchSummary(SUMMARY, "user");
   }
 
   // ---- Check-status sub-page branches ----

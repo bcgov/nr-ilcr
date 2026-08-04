@@ -170,7 +170,8 @@ describe('Other Acceptable Costs sub-page (Story 4.4)', () => {
 
     await user.clear(screen.getByLabelText('Edit total'))
     await user.type(screen.getByLabelText('Edit total'), '850')
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // Scope to the row: the page footer also renders a "Save" button (batch save).
+    await user.click(within(row).getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     // The PUT only fires because the handler matched `${URL}/5501` (the edited row's id).
@@ -214,10 +215,54 @@ describe('Other Acceptable Costs sub-page (Story 4.4)', () => {
     const row = (await screen.findByText('Consulting')).closest('tr') as HTMLElement
     await user.click(within(row).getByRole('button', { name: /edit/i }))
     await user.clear(screen.getByLabelText('Edit description'))
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // Scope to the row: the page footer also renders a "Save" button (batch save).
+    await user.click(within(row).getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Description: Value is required.')).toBeInTheDocument()
     expect(putCount).toBe(0)
+  })
+
+  test('page Save batch-persists all groups (PUT), sending total/pop but not derived crown', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json({
+          ...doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByText('Consulting')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // Each group sends id + description + total + pop; crown is server-derived and excluded.
+    expect(captured).toEqual({
+      rows: [
+        { id: 5501, description: 'Consulting', total: 800, pop: 300 },
+        { id: 5503, description: 'Travel', total: 600, pop: 200 },
+      ],
+    })
+  })
+
+  test('page Save is greyed out when there are no groups to save', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...doc,
+          rows: [],
+          count: 0,
+          subtotal: { harvest: 0, pop: 0, crown: 0 },
+        }),
+      ),
+    )
+    render(<OtherAcceptableCostsPage />)
+    await screen.findByText('No records found.')
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
   })
 
   test('an add failure surfaces the ProblemDetail as an action error', async () => {

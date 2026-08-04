@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule3.api;
 
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -48,6 +49,24 @@ public interface Schedule3UnacceptableCostsApi {
       @RequestParam long millId,
       @RequestParam int year,
       @Valid @RequestBody UnacceptableRequest request,
+      Authentication authentication);
+
+  /**
+   * Batch "Save" the whole row set (legacy {@code save()} reconcile): update rows with a known id,
+   * insert rows with none, delete existing rows absent from the request. Validation → 400; non-Draft or
+   * no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param request the full row set to persist (each row validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PutMapping
+  ResponseEntity<UnacceptableDocument> saveUnacceptable(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @Valid @RequestBody UnacceptableSaveRequest request,
       Authentication authentication);
 
   /**
