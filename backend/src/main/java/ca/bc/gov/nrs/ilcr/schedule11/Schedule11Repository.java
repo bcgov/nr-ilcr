@@ -85,6 +85,31 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
       """)
   int countBiogeo(@Param("biogeoId") long biogeoId);
 
+  /**
+   * Type-ahead search over the GLOBAL BEC catalogue for the forced-selection field (BR-09, S16;
+   * legacy {@code Schedule11MB.completeBiogeoSubzoneVariant}, {@code minQueryLength=1}). Matches
+   * {@code :term} case-insensitively as a PREFIX of the concatenated
+   * zone+subzone+variant+phase label — the SAME concat the served location rows use, so the WHERE
+   * and ORDER BY agree with the label the service derives in Java. Oracle {@code ||} treats a NULL
+   * variant/phase as {@code ""}, mirroring {@code getBiogeoSubZoneVariantPase()}. Ordered by that
+   * label and capped so the type-ahead payload stays bounded; the blank/whitespace short-circuit
+   * (empty result, no query) and the {@code LIKE}-metacharacter escaping (a user-typed {@code %}/
+   * {@code _} must match LITERALLY, not as a wildcard — legacy {@code String.startsWith}) live in
+   * {@link Schedule11Service}, paired with the {@code ESCAPE '\'} clause here.
+   *
+   * @param term the already-trimmed, non-blank, LIKE-escaped search prefix
+   * @return the matching catalogue rows, label-ordered, at most 50
+   */
+  @Query("""
+      SELECT c.BIOGEOCLIMATIC_CATALOGUE_ID, c.BEC_ZONE_CODE, c.SUBZONE, c.VARIANT, c.PHASE
+        FROM THE.BIOGEOCLIMATIC_CATALOGUE c
+       WHERE UPPER(c.BEC_ZONE_CODE || c.SUBZONE || c.VARIANT || c.PHASE)
+             LIKE UPPER(:term) || '%' ESCAPE '\\'
+       ORDER BY c.BEC_ZONE_CODE || c.SUBZONE || c.VARIANT || c.PHASE
+       FETCH FIRST 50 ROWS ONLY
+      """)
+  List<BiogeoclimaticCatalogueEntity> searchBiogeoCatalogue(@Param("term") String term);
+
   /** True iff a Schedule 11 location with this id exists under the mill/year (404-vs-409, AC7). */
   @Query("""
       SELECT COUNT(*)
