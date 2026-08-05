@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as Schedule8RouteImport } from './routes/schedule-8'
+import { Route as Schedule6RouteImport } from './routes/schedule-6'
 import { Route as Schedule4RouteImport } from './routes/schedule-4'
 import { Route as Schedule3RouteImport } from './routes/schedule-3'
 import { Route as Schedule2RouteImport } from './routes/schedule-2'
@@ -30,6 +31,11 @@ const SubmissionsRoute = SubmissionsRouteImport.update({
 const Schedule8Route = Schedule8RouteImport.update({
   id: '/schedule-8',
   path: '/schedule-8',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule6Route = Schedule6RouteImport.update({
+  id: '/schedule-6',
+  path: '/schedule-6',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Schedule4Route = Schedule4RouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-6': typeof Schedule6Route
   '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByTo {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-6': typeof Schedule6Route
   '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1/other-costs': typeof Schedule1OtherCostsRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   '/schedule-2': typeof Schedule2Route
   '/schedule-3': typeof Schedule3Route
   '/schedule-4': typeof Schedule4Route
+  '/schedule-6': typeof Schedule6Route
   '/schedule-8': typeof Schedule8Route
   '/submissions': typeof SubmissionsRoute
   '/schedule-1_/other-costs': typeof Schedule1OtherCostsRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-6'
     | '/schedule-8'
     | '/submissions'
     | '/schedule-1/other-costs'
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-6'
     | '/schedule-8'
     | '/submissions'
     | '/schedule-1/other-costs'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/schedule-2'
     | '/schedule-3'
     | '/schedule-4'
+    | '/schedule-6'
     | '/schedule-8'
     | '/submissions'
     | '/schedule-1_/other-costs'
@@ -181,6 +193,7 @@ export interface RootRouteChildren {
   Schedule2Route: typeof Schedule2Route
   Schedule3Route: typeof Schedule3Route
   Schedule4Route: typeof Schedule4Route
+  Schedule6Route: typeof Schedule6Route
   Schedule8Route: typeof Schedule8Route
   SubmissionsRoute: typeof SubmissionsRoute
   Schedule1OtherCostsRoute: typeof Schedule1OtherCostsRoute
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/schedule-8'
       fullPath: '/schedule-8'
       preLoaderRoute: typeof Schedule8RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-6': {
+      id: '/schedule-6'
+      path: '/schedule-6'
+      fullPath: '/schedule-6'
+      preLoaderRoute: typeof Schedule6RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule-4': {
@@ -285,6 +305,7 @@ const rootRouteChildren: RootRouteChildren = {
   Schedule2Route: Schedule2Route,
   Schedule3Route: Schedule3Route,
   Schedule4Route: Schedule4Route,
+  Schedule6Route: Schedule6Route,
   Schedule8Route: Schedule8Route,
   SubmissionsRoute: SubmissionsRoute,
   Schedule1OtherCostsRoute: Schedule1OtherCostsRoute,
