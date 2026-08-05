@@ -3,8 +3,6 @@ package ca.bc.gov.nrs.ilcr.schedule11.dto;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -29,8 +27,10 @@ import java.math.BigDecimal;
  * @param biogeoclimaticCatalogueId the BEC catalogue id (required; must resolve to a catalogue row —
  *     force-selection backend enforcement, S16 — else 400 {@code invalidBiogeoCode})
  * @param netArea the reforested net area / NAR(ha) (required, 0–999,999.9, at most one decimal)
- * @param actualCost the item-24 Actual cost (optional; &plusmn;99,999,999); null clears the row
- * @param plannedCost the item-23 Planned cost (optional; &plusmn;99,999,999); null clears the row
+ * @param actualCost the item-24 Actual cost (optional; whole dollars, &plusmn;99,999,999); null
+ *     clears the row
+ * @param plannedCost the item-23 Planned cost (optional; whole dollars, &plusmn;99,999,999); null
+ *     clears the row
  * @param comments the row comments (optional, &le; 3500)
  * @param revisionCount the optimistic-lock token echoed from the served row (required on UPDATE)
  */
@@ -55,13 +55,20 @@ public record SilvicultureLocationRequest(
     @Digits(integer = 7, fraction = 1, message = "{netAreaRangeErrorMsg}")
     BigDecimal netArea,
 
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer actualCost,
+    // Whole-dollar costs: legacy Oracle COST NUMBER(15) ROUNDED fractional input on insert, while
+    // an Integer wire type would let Jackson silently TRUNCATE it at deserialization. BigDecimal +
+    // fraction=0 turns a fractional cost into a clean 400 instead (the client rounds before send).
+    // fraction=0 is the load-bearing bound; integer=9 (not 8) leaves magnitude to @DecimalMin/Max
+    // so a just-over-range value trips ONE constraint (same idiom as netArea above).
+    @DecimalMin(value = "-99999999", message = "{costValidatorErrorMsg}")
+    @DecimalMax(value = "99999999", message = "{costValidatorErrorMsg}")
+    @Digits(integer = 9, fraction = 0, message = "{costValidatorErrorMsg}")
+    BigDecimal actualCost,
 
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer plannedCost,
+    @DecimalMin(value = "-99999999", message = "{costValidatorErrorMsg}")
+    @DecimalMax(value = "99999999", message = "{costValidatorErrorMsg}")
+    @Digits(integer = 9, fraction = 0, message = "{costValidatorErrorMsg}")
+    BigDecimal plannedCost,
 
     @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
     String comments,
