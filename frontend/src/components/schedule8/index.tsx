@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
 import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -64,12 +64,19 @@ const Schedule8: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
-  // Reset URL search parameters when millId or year switches (Comment 3)
+  // Clear stale sample/rates URL params when the mill/year context actually switches (Comment 3).
+  // Guarded by a ref so it fires only on a real mill/year change — never on in-app sub-navigation,
+  // which legitimately sets pageId/sampleId (otherwise every drill-down would reset itself).
+  const contextKey = `${String(millId)}:${String(year)}`
+  const contextKeyRef = useRef(contextKey)
   useEffect(() => {
-    if (search.pageId !== undefined || search.sampleId !== undefined) {
-      void navigate({ to: '/schedule-8', search: {}, replace: true })
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey
+      if (search.pageId !== undefined || search.sampleId !== undefined) {
+        void navigate({ to: '/schedule-8', search: {}, replace: true })
+      }
     }
-  }, [millId, year, navigate, search.pageId, search.sampleId])
+  }, [contextKey, navigate, search.pageId, search.sampleId])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)

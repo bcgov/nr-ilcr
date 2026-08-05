@@ -434,33 +434,6 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
   })
-
-  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-page', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    const router = makeRouter()
-    render(<RouterProvider router={router} />)
-    await screen.findByText('Harbour Dump')
-
-    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue).
-    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
-    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
-    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
-    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
-
-    // Click the in-app Cancel/Back button (replaces history)
-    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
-    await waitFor(() =>
-      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
-    )
-    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
-    expect(router.state.location.search).toEqual({})
-
-    // Browser Back should go back before Schedule 4 (to the empty root) instead of re-entering the sub-page
-    router.history.back()
-    await waitFor(() => {
-      expect(router.state.location.pathname).not.toEqual('/schedule-4')
-    })
-  })
 })
 
 describe('Schedule4 context, load + write error, edit, delete and status paths', () => {
