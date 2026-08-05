@@ -18,7 +18,7 @@ import org.springframework.test.context.TestPropertySource;
  * <p>Security OFF ({@code ilcr.security.enabled=false}) so the mock {@code ILCR_SUBMITTER} principal
  * applies, isolating document assembly from authz (covered by {@link Schedule6AuthorizationIT}).
  * Asserts the pinned wire contract, the server-derived RMG / $/m3 / running totals, and the S18
- * lone-comment empty-list state against the V30 seed (whose DECOY rows also make these assertions
+ * lone-comment empty-list state against the V31 seed (whose DECOY rows also make these assertions
  * pin the query's year / category-'6' / item-69 filters).
  */
 @DisplayName("GET /api/v1/schedule6 — road-record list (Schedule 6 read)")

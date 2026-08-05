@@ -53,7 +53,7 @@ public class Schedule6Service {
   private static final String STATUS_DRAFT = "D";
   private static final String AREA_TYPE_TFL = "TFL";
 
-  // TSA_NUMBER VARCHAR2(2) (V30 DDL, delivery-verified) — the TSA-branch width guard in classify().
+  // TSA_NUMBER VARCHAR2(2) (V31 DDL, delivery-verified) — the TSA-branch width guard in classify().
   private static final int TSA_NUMBER_MAX_LENGTH = 2;
 
   private static final String OUTCOME_MET = "MET";
@@ -389,10 +389,15 @@ public class Schedule6Service {
    * STORED value (deviation (h) — legacy normalizes only in the ajax listener; its validator-only
    * path stores an un-padded alias the FK cache silently NULLs, a defect not ported), then valid
    * iff the RMG lookup resolves it. Case-sensitive; max length 2 ({@code TFL_NUMBER_CODE
-   * VARCHAR2(2)} — the legacy {@code "52B"} lookup case is dead code and must not validate).
+   * VARCHAR2(2)}, legacy inputs {@code maxlength="2"}) — one rule stated in three agreeing places:
+   * the {@code RoadRecordRequest} {@code @Size(max = 2)}, the width guard below, and the lookup,
+   * out of which legacy's unstorable {@code "52B"} entry is commented out (code review 2026-08-05).
    */
   private static String requireValidTfl(String tflNumber) {
     String normalized = normalizeTflAlias(tflNumber);
+    // The width guard is redundant with the lookup now that no ported entry is 3 chars wide, and is
+    // kept deliberately: it holds the column width for direct service callers (which bypass Bean
+    // Validation) independently of what the verbatim table happens to contain.
     if (normalized == null || normalized.length() > 2
         || RoadGroupLookup.rmgFor(null, null, normalized) == null) {
       throw new InvalidTflNumberException();

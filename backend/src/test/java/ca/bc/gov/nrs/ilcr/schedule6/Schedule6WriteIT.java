@@ -33,7 +33,7 @@ import org.springframework.test.context.TestPropertySource;
  * keep this suite green when a fail-closed security default merges in (the recorded
  * merge-regression guard).
  *
- * <p>Mutating tests are ORDER-INDEPENDENT via the V31 context model: a context is (mill, YEAR), so
+ * <p>Mutating tests are ORDER-INDEPENDENT via the V32 context model: a context is (mill, YEAR), so
  * each destructive test method claims its own year on mill 661 — 2017 detail-update-in-place, 2019
  * add-TSA, 2020 add-TFL, 2021 stale-revision, 2022 edit/switch, 2024 TFL alias; 2023 is the
  * never-mutated rejection-fingerprint year and 2018 holds the placeholder the 404 probe rejects.
@@ -451,7 +451,7 @@ class Schedule6WriteIT extends AbstractOracleIT {
                 .andExpect(jsonPath("$.detail", is("Road record not found.")));
         // 8340 is 661/2018's general-comment placeholder: not a served record -> 404, never a silent
         // conversion into a real record. Deliberately NOT mill 664's placeholder 8324, which this
-        // used to target: 664 is declared read-only by V31 and fingerprinted by
+        // used to target: 664 is declared read-only by V32 and fingerprinted by
         // Schedule6CheckStatusIT, so a regression in the placeholder guard would have corrupted that
         // suite's ordinals instead of failing here (code review 2026-08-04).
         mockMvc.perform(put(RECORDS + "/8340").with(csrf()).param("millId", "661").param("year", "2018")

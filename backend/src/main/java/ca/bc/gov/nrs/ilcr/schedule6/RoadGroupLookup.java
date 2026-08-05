@@ -257,10 +257,19 @@ final class RoadGroupLookup {
       case "35" -> "5";
       case "08", "15", "59" -> "7";
       case "48" -> "10";
-      // "42" not used as described in TFL list v2 (ILCR-161)
-      // "52B" is legacy dead code kept for the verbatim port: the delivery column is VARCHAR2(2)
-      // and THE.TFL_NUMBER_CODE holds no 3-char value (delivery-DB verified 2026-08-04).
-      case "52B", "05" -> "13";
+      // Legacy's table carries two codes that can never resolve, both kept here as comments so the
+      // ported table stays a faithful record without offering a width the rest of the schedule
+      // rejects. "42" legacy itself commented out (not used as described in TFL list v2, ILCR-161).
+      // "52B" legacy left live but unreachable: a 3-char TFL is unstorable on both sides —
+      // ROAD_MAINTENANCE_REPORT.TFL_NUMBER_CODE and the THE.TFL_NUMBER_CODE reference key are each
+      // VARCHAR2(2) (delivery-DB verified 2026-08-05) — and legacy's own add/edit inputs are
+      // maxlength="2" (schedule6.xhtml:106,295), so no 3-char value ever reached this switch on read
+      // or on save. Demoted from a live case at code review (2026-08-05): as a case it read as an
+      // accepted value contradicting the RoadRecordRequest @Size(max = 2) and requireValidTfl width
+      // check, when in fact all three agree that a 3-char TFL is invalid.
+      // case "42" -> "11";
+      // case "52B" -> "13";
+      case "05" -> "13";
       case "30", "52", "53" -> "14";
       case "03", "23" -> "15";
       case "14" -> "16";

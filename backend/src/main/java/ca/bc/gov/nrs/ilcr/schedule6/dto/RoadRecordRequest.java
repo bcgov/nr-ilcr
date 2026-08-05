@@ -21,7 +21,10 @@ import java.math.BigDecimal;
  * TSA/Supply Block; TSA clears TFL) — the service, not this DTO, owns that. {@code tflNumber} is
  * validated in the service (normalize-alias-then-lookup, BR-03) because validity means "resolves to
  * an RMG", not a shape rule; the {@code @Size} cap matches the {@code TFL_NUMBER_CODE VARCHAR2(2)}
- * column, so an over-long code fails with the same verbatim FLD-002 text the lookup miss produces.
+ * column and legacy's own {@code maxlength="2"} inputs, so an over-long code fails with the same
+ * verbatim FLD-002 text the lookup miss produces. No accepted TFL value is excluded by that cap:
+ * legacy's 3-char {@code "52B"} lookup entry was never storable or enterable and is commented out
+ * of {@code RoadGroupLookup} for the same reason (code review 2026-08-05).
  *
  * <p><b>Every {@code @Size} here is column fidelity, not decoration</b> (code review 2026-08-04):
  * an over-long value that reaches Oracle raises ORA-12899, which the service's

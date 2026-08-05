@@ -32,7 +32,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * request is NOT 403, and the service's Draft gate rejects it 409 WITHOUT mutating anything — no
  * fixture churn.
  *
- * <p>Mill <b>666</b> is this class's own fixture (V31), added at code review 2026-08-04. These
+ * <p>Mill <b>666</b> is this class's own fixture (V32), added at code review 2026-08-04. These
  * probes previously fired at 661/2021 — the year {@code Schedule6WriteIT.optimisticLockPerRecord}
  * owns — so an {@code @PreAuthorize} regression would have let a write land on that test's lock
  * target and failed a different suite instead of this one.

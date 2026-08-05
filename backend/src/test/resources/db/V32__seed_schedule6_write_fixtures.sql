@@ -1,11 +1,11 @@
 -- Story 8.2 (UC-SCH6-001) seed: Schedule 6 WRITE + check-status fixtures. TEST-SCOPE ONLY.
--- V31 claimed 2026-08-04 (V30 is the highest on this branch; V28/V29 belong to the unmerged
--- schedule-11-frontend branch — the gap is deliberate; no in-flight PR claims V31). Mills 661-666
--- claimed fresh (8.1 read fixtures use 514/517/660 + the V2 mills 515/516 — never mutate those).
--- Master ids 8321-8340 + 8357-8358, detail ids 8341-8356 + 8359-8360 — inside the free 83xx gap
--- above V30's (masters
--- 8301-8306, details 8305-8313) and below the sequence starts (ILCR_COST_REPORT_DETAIL_SEQ 9000,
--- ILCR_REPORT_COMMON_SEQ 9500), so sequence-drawn ids for newly-added records never collide.
+-- V32 claimed (renumbered from V31 at PR review 2026-08-05, when main's own V30 forced this story's
+-- pair up to V31/V32 — this file must stay immediately after the V31 snapshot it seeds into).
+-- Mills 661-666 claimed fresh (8.1 read fixtures use 514/517/660 + the V2 mills 515/516 — never
+-- mutate those). Master ids 8321-8340 + 8357-8358, detail ids 8341-8356 + 8359-8360 — inside the
+-- free 83xx gap above V31's (masters 8301-8306, details 8305-8313) and below the sequence starts
+-- (ILCR_COST_REPORT_DETAIL_SEQ 9000, ILCR_REPORT_COMMON_SEQ 9500), so sequence-drawn ids for
+-- newly-added records never collide.
 --
 -- Isolation model (the V21 lesson, adapted): the shared container makes cleanup-free isolation
 -- context-based, and a context is (mill, YEAR) — so the two mills that mutating tests hammer
@@ -15,10 +15,10 @@
 --
 -- Delivery-faithfulness notes (Task 1, seeded real-data image 2026-08-04): every insert supplies
 -- REVISION_COUNT + both audit pairs where the local DDL demands them (ROAD_MAINTENANCE_REPORT's
--- five are NOT NULL, no defaults — V30 DDL is delivery-faithful). Delivery also has the composite
+-- five are NOT NULL, no defaults — V31 DDL is delivery-faithful). Delivery also has the composite
 -- FK RM_RPT_ILCR_RCAT_FK -> ILCR_REPORT_CATEGORY (report initialization pre-creates cat-6 rows for
 -- ALL 118 delivery mill/years, so app inserts can never trip it); the V1 test snapshot has no such
--- FK, matching V30's review-approved shape — not added here.
+-- FK, matching V31's review-approved shape — not added here.
 
 -- ============ Mill 661 — write playground (WriteIT): Draft years 2019-2024 ============
 -- One seeded record per year (TSA 01 + TSB 01B -> RMG 15; volume 1000 / cost 50000, REVISION_COUNT
@@ -151,7 +151,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ROAD_MAINTE
 -- as a confusing failure in another (order-dependently). Each now gets its own context.
 
 -- 661/2018 + placeholder 8340: the WriteIT placeholder-id-404 probe. Was PUTting 8324 in mill
--- 664/2021 — a context V31 declares read-only and Schedule6CheckStatusIT fingerprints — so a
+-- 664/2021 — a context V32 declares read-only and Schedule6CheckStatusIT fingerprints — so a
 -- regression in the placeholder guard would have converted a check-status fixture row into a real
 -- record and broken that suite's ordinals instead of failing locally.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2018, 661, 'D', 'SEED');
@@ -190,7 +190,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ROAD_MAINTE
   VALUES (8360, 8358, 69, 100, 1000, 'Authz row', 'SEED');
 
 -- Reused READ-ONLY: mill 515/2021 (V2 — ACT + Draft, zero cat-6 rows) for the check-status
--- zero-records vacuous pass; mill 660/2021 (V30 — lone-comment read fixture) for the check-status
+-- zero-records vacuous pass; mill 660/2021 (V31 — lone-comment read fixture) for the check-status
 -- lone-comment vacuous pass (deviation (d)); mill 516/2021 (CLS) for the 409 context guard; an
 -- unknown mill for the 404 guard. None of them is mutated by 8.2 tests.
 

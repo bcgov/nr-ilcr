@@ -62,10 +62,12 @@ class RoadGroupLookupTest {
   @ParameterizedTest(name = "TFL {0} -> RMG {1}")
   @CsvSource(nullValues = "NULL", value = {
       "01, 1", "41, 1", "18, 4", "35, 5", "08, 7", "15, 7", "59, 7", "48, 10",
-      "52B, 13", "05, 13", "62, 13", "30, 14", "52, 14", "53, 14", "03, 15", "23, 15",
+      "05, 13", "62, 13", "30, 14", "52, 14", "53, 14", "03, 15", "23, 15",
       "14, 16", "49, 26", "33, 27", "55, 27", "56, 27",
-      // "42" is commented out in the legacy table (TFL list v2, ILCR-161) — must stay unmapped.
-      "42, NULL", "99, NULL",
+      // Both unresolvable legacy codes stay unmapped: "42" legacy itself commented out (TFL list
+      // v2, ILCR-161), and "52B" cannot be stored or entered at all (TFL_NUMBER_CODE VARCHAR2(2),
+      // legacy inputs maxlength="2"), so it must not resolve where @Size/requireValidTfl reject it.
+      "42, NULL", "52B, NULL", "99, NULL",
       // The legacy TFL switch is exact-case (unlike the TSB equalsIgnoreCase lists) — preserved.
       "52b, NULL",
   })

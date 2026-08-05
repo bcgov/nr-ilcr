@@ -2,10 +2,12 @@
 -- table (one road-maintenance record per row: the TSA/TSB or TFL classification stored as codes, the
 -- schedule-level general comment in COMMENTS, own REVISION_COUNT, keyed by ILCR_MILL_ID + REPORT_YEAR
 -- + ILCR_CATEGORY_ID='6'), the ROAD_MAINTENANCE_REPORT_ID FK column on ILCR_COST_REPORT_DETAIL (absent
--- from the V1 snapshot -> added here), the Schedule 6 cost item (69), and read fixtures. V30 is the
--- next free migration number: V27 is the highest on this branch, but the unmerged
--- feat/schedule-11-frontend branch has already claimed V28/V29 (its renumbered biogeo seeds), so
--- Schedule 6 yields and takes V30 to avoid the merge collision (the "bump your own migration" rule).
+-- from the V1 snapshot -> added here), the Schedule 6 cost item (69), and read fixtures. V31 is the
+-- next free migration number: V27 was the highest when this branch opened, but main has since taken
+-- V28/V29 (schedule-11 biogeo) and V30 (ilcr_mill_user_profile_xref), so Schedule 6 yields again and
+-- takes V31 here + V32 for the write fixtures (the "bump your own migration" rule). Renumbered from
+-- V30/V31 at PR review 2026-08-05: main's V30 collided, which reds every IT at migrate() time and is
+-- exactly what FlywayMigrationVersionUniquenessTest exists to catch on the merged tree.
 --
 -- Storage model (delivery-DB confirmed 2026-08-04, Story 8.1 Task 1): a road record is one
 -- ROAD_MAINTENANCE_REPORT row; its cost/volume/per-record comment is the single ILCR_COST_REPORT_DETAIL

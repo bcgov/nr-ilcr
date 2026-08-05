@@ -27,7 +27,7 @@ import org.springframework.test.context.TestPropertySource;
 
 /**
  * Story 8.2 acceptance — {@code PUT /api/v1/schedule6/general-comments} (AC5; slice S04 + the
- * BR-09 lone-comment mechanics). Mill 665 carries one Draft year per destructive concern (the V31
+ * BR-09 lone-comment mechanics). Mill 665 carries one Draft year per destructive concern (the V32
  * context model): 2019 empty (insert-placeholder), 2021 placeholder-only (delete-on-blank), 2022
  * placeholder-only (reuse-on-add), 2023 two real records (replication invariant), 2020/2024 spare
  * empties. Security-off pinned; every mutation carries {@code .with(csrf())}.
