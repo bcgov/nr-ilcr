@@ -587,7 +587,7 @@ const Schedule3: FC = () => {
           {editable ? (
             <TextArea
               id="comments"
-              labelText="Comments"
+              labelText="If you have any additional comments, please enter them here:"
               enableCounter
               maxCount={COMMENTS_MAX}
               value={form['comments'] ?? ''}

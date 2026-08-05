@@ -18,7 +18,17 @@
 }
 
 // The BC Gov NR theme renders Carbon field labels bold. Keep the TextArea's label and its
-// character counter (both `.cds--label`, inside the label wrapper) at normal weight.
+// character counter (both `.cds--label`, inside the label wrapper) at normal weight and 14px.
 .cds--text-area__label-wrapper .cds--label {
   font-weight: 400;
+  font-size: 0.875rem; // 14px
+}
+
+// Read-only (disabled) field values render in Carbon's very light disabled grey, which is hard to
+// read for prefilled numbers (Volume, $/m³, Crown $). Darken to the secondary text token. Carbon
+// paints disabled inputs with -webkit-text-fill-color, so both properties are needed to take effect.
+.cds--text-input:disabled,
+.cds--text-area:disabled {
+  color: var(--cds-text-secondary);
+  -webkit-text-fill-color: var(--cds-text-secondary);
 }

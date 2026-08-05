@@ -95,7 +95,9 @@ describe('Schedule1 editable page', () => {
     // perUnit is server-computed, read-only text (not an input).
     expect(screen.getByText('50')).toBeInTheDocument()
     // Comments is editable.
-    expect(screen.getByLabelText('Comments')).toHaveValue('Seed comment for 514/2021')
+    expect(
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
+    ).toHaveValue('Seed comment for 514/2021')
     // Save renders (top + bottom) and is enabled.
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
     expect(screen.getByText(/Subtotal Other Costs\(2\)/)).toBeInTheDocument()

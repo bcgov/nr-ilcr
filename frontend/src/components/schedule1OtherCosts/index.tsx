@@ -18,6 +18,7 @@ import { fmt, numStr, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
+import { useRowSort } from '@/hooks/useRowSort'
 import { validateOtherCost, DESCRIPTION_MAX_LENGTH } from './validation'
 import './index.scss'
 
@@ -55,6 +56,16 @@ const OtherCostsPage: FC = () => {
     removeRow,
     saving,
   } = editor
+
+  // Client-side column sort, matching legacy schedule1OtherCosts.xhtml (Description / Volume / Cost
+  // sortable; the derived $/m³ column is not). See useRowSort for the snapshot-on-click semantics.
+  const sort = useRowSort(rows, {
+    description: (row) => row.description,
+    // Volume is the single shared Other-Costs volume (identical on every row), so sorting by it is a
+    // no-op in practice — kept sortable for legacy parity (the legacy column carried sortBy volume).
+    volume: () => editor.data?.volume ?? null,
+    cost: (row) => toNum(row.values.cost ?? ''),
+  })
 
   return (
     <EditableSubPageLayout
@@ -201,9 +212,32 @@ const OtherCostsPage: FC = () => {
                   <Table aria-label="Other Cost List">
                     <TableHead>
                       <TableRow>
-                        <TableHeader>Description</TableHeader>
-                        <TableHeader className="schedule-1__num">Volume m³</TableHeader>
-                        <TableHeader className="schedule-1__num">Cost $</TableHeader>
+                        <TableHeader
+                          isSortable
+                          isSortHeader={sort.activeKey === 'description'}
+                          sortDirection={sort.directionFor('description')}
+                          onClick={() => sort.toggleSort('description')}
+                        >
+                          Description
+                        </TableHeader>
+                        <TableHeader
+                          className="schedule-1__num"
+                          isSortable
+                          isSortHeader={sort.activeKey === 'volume'}
+                          sortDirection={sort.directionFor('volume')}
+                          onClick={() => sort.toggleSort('volume')}
+                        >
+                          Volume m³
+                        </TableHeader>
+                        <TableHeader
+                          className="schedule-1__num"
+                          isSortable
+                          isSortHeader={sort.activeKey === 'cost'}
+                          sortDirection={sort.directionFor('cost')}
+                          onClick={() => sort.toggleSort('cost')}
+                        >
+                          Cost $
+                        </TableHeader>
                         <TableHeader className="schedule-1__num">$ / m³</TableHeader>
                         {editable && <TableHeader>Action</TableHeader>}
                       </TableRow>
@@ -214,7 +248,9 @@ const OtherCostsPage: FC = () => {
                           <TableCell colSpan={editable ? 5 : 4}>No records found.</TableCell>
                         </TableRow>
                       ) : (
-                        rows.map((row) => <TableRow key={row.key}>{rowCells(row)}</TableRow>)
+                        sort.sortedRows.map((row) => (
+                          <TableRow key={row.key}>{rowCells(row)}</TableRow>
+                        ))
                       )}
                       {/* Totals footer — last-saved figures; refresh after Save (legacy recompute).
                           A null total (e.g. $/m³ when volume is 0/absent) shows 0, not an em dash,

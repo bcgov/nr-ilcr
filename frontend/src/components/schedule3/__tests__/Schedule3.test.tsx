@@ -87,7 +87,9 @@ describe('Schedule3 editable page (AC1/AC2)', () => {
     expect(screen.getByLabelText('Crown Timber Harvest Volume')).toHaveValue('7000')
     // Override menu defaults to No; Comments editable; Save enabled (top + bottom).
     expect(screen.getByLabelText('Override Harvest ⁄ Total PO&P $')).toHaveValue('N')
-    expect(screen.getByLabelText('Comments')).toHaveValue('Seed comment for 514/2021')
+    expect(
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
+    ).toHaveValue('Seed comment for 514/2021')
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
     // Sub-page links show their counts.
     expect(screen.getByRole('button', { name: /Subtotal Other Costs \(2\):/ })).toBeInTheDocument()

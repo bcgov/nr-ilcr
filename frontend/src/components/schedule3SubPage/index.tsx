@@ -17,6 +17,7 @@ import { fmt, numStr, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
+import { useRowSort } from '@/hooks/useRowSort'
 import './index.scss'
 
 /** Map of form/request keys (e.g. `total`, `pop`) to their raw string values. */
@@ -133,6 +134,19 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   // Numeric view of a row's entered values, for the live-derived read-only columns (e.g. Crown $).
   const numeric = (values: SubPageValues): Record<string, number | null> =>
     Object.fromEntries(config.fields.map((f) => [f.key, toNum(values[f.key])]))
+
+  // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
+  // editable field, AND each derived read-only column (e.g. Crown $) are sortable. Read-only columns
+  // are keyed by their header. See useRowSort for the snapshot-on-click semantics.
+  const sort = useRowSort(rows, {
+    description: (row) => row.description,
+    ...Object.fromEntries(
+      config.fields.map((f) => [f.key, (row: EditRow) => toNum(row.values[f.key])]),
+    ),
+    ...Object.fromEntries(
+      readonlyColumns.map((col) => [col.header, (row: EditRow) => col.derive(numeric(row.values))]),
+    ),
+  })
 
   const rowCells = (row: EditRow, editable: boolean) => {
     const nums = numeric(row.values)
@@ -280,14 +294,35 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                   <Table aria-label={config.tableTitle}>
                     <TableHead>
                       <TableRow>
-                        <TableHeader>Description</TableHeader>
+                        <TableHeader
+                          isSortable
+                          isSortHeader={sort.activeKey === 'description'}
+                          sortDirection={sort.directionFor('description')}
+                          onClick={() => sort.toggleSort('description')}
+                        >
+                          Description
+                        </TableHeader>
                         {config.fields.map((field) => (
-                          <TableHeader key={field.key} className="schedule-3__num">
+                          <TableHeader
+                            key={field.key}
+                            className="schedule-3__num"
+                            isSortable
+                            isSortHeader={sort.activeKey === field.key}
+                            sortDirection={sort.directionFor(field.key)}
+                            onClick={() => sort.toggleSort(field.key)}
+                          >
                             {field.header}
                           </TableHeader>
                         ))}
                         {readonlyColumns.map((col) => (
-                          <TableHeader key={col.header} className="schedule-3__num">
+                          <TableHeader
+                            key={col.header}
+                            className="schedule-3__num"
+                            isSortable
+                            isSortHeader={sort.activeKey === col.header}
+                            sortDirection={sort.directionFor(col.header)}
+                            onClick={() => sort.toggleSort(col.header)}
+                          >
                             {col.header}
                           </TableHeader>
                         ))}
@@ -300,7 +335,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                           <TableCell colSpan={totalColumns}>No records found.</TableCell>
                         </TableRow>
                       ) : (
-                        rows.map((row) => (
+                        sort.sortedRows.map((row) => (
                           <TableRow key={row.key}>{rowCells(row, editable)}</TableRow>
                         ))
                       )}
