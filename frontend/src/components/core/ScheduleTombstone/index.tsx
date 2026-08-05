@@ -15,11 +15,11 @@ type Props = {
 }
 
 // The schedule "tombstone": a two-column page header shared by every schedule. Left = page identity
-// (name + current sub-page); right = the working-context mill/status lines (the same data the global
-// ContextBanner shows). It replaces each schedule's PageTitle header, so it also owns the document.title
-// side effect PageTitle set. The right column reuses the shared useWorkingContext/WorkingContextLines
-// so it stays identical to the banner; it is intentionally NOT a landmark region (the global banner
-// already owns the "Working context" landmark — a second one would duplicate it for screen readers).
+// (name + current sub-page); right = the working-context mill/status lines (the same data the
+// ContextBanner shows). It replaces each schedule's PageTitle header (so it also owns the document.title
+// side effect PageTitle set) — which means these pages do NOT render the PageTitle-hosted ContextBanner.
+// The right column therefore carries the same "Working context" landmark ContextBanner uses, so screen
+// readers get one labelled region here just as they do on the PageTitle pages (no page has both).
 const ScheduleTombstone: FC<Props> = ({ title, subtitle }) => {
   const { millId, year } = useMillYear()
   const context = useWorkingContext(millId, year)
@@ -53,9 +53,9 @@ const ScheduleTombstone: FC<Props> = ({ title, subtitle }) => {
             )}
           </div>
           {context && (
-            <div className="schedule-tombstone__context">
+            <section className="schedule-tombstone__context" aria-label="Working context">
               <WorkingContextLines context={context} lineClassName="schedule-tombstone__line" />
-            </div>
+            </section>
           )}
         </div>
       </Column>

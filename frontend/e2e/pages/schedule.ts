@@ -9,10 +9,10 @@ export class SchedulePage {
     this.page = page
   }
 
-  // The tombstone's working-context block (right column of the two-column schedule header). Scoping
-  // the line assertions here proves the text comes from the header, not incidental body content.
+  // The tombstone's working-context block (right column of the two-column schedule header) — a labelled
+  // region, so it is addressable by role (matching the role/label locators used elsewhere in the suite).
   get context(): Locator {
-    return this.page.locator('.schedule-tombstone__context')
+    return this.page.getByRole('region', { name: 'Working context' })
   }
 
   // Client-side nav from Home into a schedule via the side nav, so the in-memory MillYearContext set

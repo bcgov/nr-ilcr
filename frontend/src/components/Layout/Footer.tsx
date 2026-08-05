@@ -3,10 +3,10 @@ import type { FC } from 'react'
 // The application footer: the ILCR version on the left, and the standard BC Gov site links centred.
 // The links open the government copyright/disclaimer/privacy/accessibility pages in a new tab.
 const FOOTER_LINKS: readonly { label: string; href: string }[] = [
-  { label: 'Copyright', href: 'http://www.gov.bc.ca/for/com/copyright.html' },
-  { label: 'Disclaimer', href: 'http://www.gov.bc.ca/for/com/disclaimer.html' },
+  { label: 'Copyright', href: 'https://www.gov.bc.ca/for/com/copyright.html' },
+  { label: 'Disclaimer', href: 'https://www.gov.bc.ca/for/com/disclaimer.html' },
   { label: 'Privacy', href: 'https://dlvrapps.nrs.gov.bc.ca/com/privacy.html' },
-  { label: 'Accessibility', href: 'http://www.gov.bc.ca/for/com/accessibility.html' },
+  { label: 'Accessibility', href: 'https://www.gov.bc.ca/for/com/accessibility.html' },
 ]
 
 // `typeof` guard so the component never throws if the __APP_VERSION__ define is absent (e.g. a raw
