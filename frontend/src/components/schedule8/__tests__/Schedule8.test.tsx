@@ -934,7 +934,9 @@ describe('Schedule8 additions/deductions level', () => {
     // browser Back: rates → samples
     router.history.back()
     await screen.findByRole('button', { name: /add new sample/i })
-    expect(screen.queryByText(/Additions \/ Deductions — Sample # 1 - C-1/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/Additions \/ Deductions — Sample # 1 - C-1/i),
+    ).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBe(8001)
     expect(router.state.location.search.sampleId).toBeUndefined()
 

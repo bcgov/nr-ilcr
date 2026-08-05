@@ -4,7 +4,7 @@ import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Sc
 import type Schedule8Options from '@/interfaces/Schedule8Options'
 import type { CodeOption } from '@/interfaces/Schedule8Options'
 import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -91,6 +91,20 @@ const Schedule8: FC = () => {
   // Sample/rates level from the URL (pageId, sampleId); navigate updates it.
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
+
+  // Clear stale sample/rates URL params when the mill/year context actually switches (Comment 3).
+  // Guarded by a ref so it fires only on a real mill/year change — never on in-app sub-navigation,
+  // which legitimately sets pageId/sampleId (otherwise every drill-down would reset itself).
+  const contextKey = `${String(millId)}:${String(year)}`
+  const contextKeyRef = useRef(contextKey)
+  useEffect(() => {
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey
+      if (search.pageId !== undefined || search.sampleId !== undefined) {
+        void navigate({ to: '/schedule-8', search: {}, replace: true })
+      }
+    }
+  }, [contextKey, navigate, search.pageId, search.sampleId])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
   // Reference-data option lists for the page-editor dropdowns. Fetched once (global, not mill/year
@@ -379,7 +393,7 @@ const Schedule8: FC = () => {
               pageTitle={pageTitle}
               skidTypes={options?.skidTypes ?? []}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-8', search: {} })}
+              onBack={() => void navigate({ to: '/schedule-8', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
               onOpenRates={(sampleId) =>
                 void navigate({ to: '/schedule-8', search: { pageId: nav.pageId, sampleId } })
@@ -416,7 +430,9 @@ const Schedule8: FC = () => {
               deductionCostItems={options?.deductionCostItems ?? []}
               costTypes={options?.costTypes ?? []}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-8', search: { pageId: nav.pageId } })}
+              onBack={() =>
+                void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })
+              }
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>
