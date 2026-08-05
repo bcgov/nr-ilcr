@@ -3,7 +3,7 @@ import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
 import type { GeneralCommentsRequest, RoadRecordRequest } from '@/interfaces/Schedule6Request'
 import type { RoadRecordErrors, RoadRecordFormValues } from './validation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Accordion,
   AccordionItem,
@@ -15,7 +15,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import useMillYear from '@/context/millYear/useMillYear'
+import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
@@ -363,19 +363,7 @@ const RecordEditor: FC<RecordEditorProps> = ({
 )
 
 const Schedule6: FC = () => {
-  const { millId, year } = useMillYear()
-  const contextMissing = millId === null || year === null
-
-  // The GET path's stale-response guard lives inside useScheduleDocument (its active flag); the
-  // write/check handlers need their own: a response dispatched under one mill/year must never apply
-  // after the context changes (the document it echoes belongs to the OLD context). Each handler
-  // closes over its dispatch-time context; the ref always holds the current one.
-  const contextRef = useRef({ millId, year })
-  useEffect(() => {
-    contextRef.current = { millId, year }
-  }, [millId, year])
-  const contextStillCurrent = () =>
-    contextRef.current.millId === millId && contextRef.current.year === year
+  const { millId, year, contextMissing, isCurrent: contextStillCurrent } = useScheduleContextGuard()
 
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
