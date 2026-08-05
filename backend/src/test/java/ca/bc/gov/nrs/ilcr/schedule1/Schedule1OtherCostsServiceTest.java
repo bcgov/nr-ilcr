@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import java.math.BigDecimal;
 import java.util.List;
@@ -162,6 +163,48 @@ class Schedule1OtherCostsServiceTest {
     assertEquals(1, doc.count());
     assertTrue(doc.editable());
     verify(repository).updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER);
+  }
+
+  @Test
+  void save_reconcilesUpdateInsertAndDelete() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"), List.of(
+        new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000")),
+        new OtherCostDetailRow(5052, "Row B", 100, new BigDecimal("5000"))));
+
+    // Update 5051, insert a fresh row (inherits shared volume), and drop 5052 (absent → delete).
+    service.saveOtherCosts(MILL, YEAR, List.of(
+        new OtherCostSaveRequest.Row(5051, "Row A+", 3200),
+        new OtherCostSaveRequest.Row(null, "Fresh", 500)), USER);
+
+    verify(repository).updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER);
+    verify(repository).insertOtherCost(SUMMARY, "Fresh", 500, new BigDecimal("5000"), USER);
+    verify(repository).deleteOtherCost(5052, SUMMARY);
+  }
+
+  @Test
+  void save_unknownId_throwsNotFound() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"),
+        List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+
+    // A row references an id that is not an itemized item-19 row here → conflict, not a silent insert.
+    List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(999999, "Ghost", 1));
+    assertThrows(OtherCostNotFoundException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+  }
+
+  @Test
+  void save_persistenceFailure_translatesToScheduleNotSaved() {
+    stubContext("D");
+    stubRows(new BigDecimal("5000"),
+        List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+    when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(5051, "Row A+", 3200));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
   }
 
   @Test

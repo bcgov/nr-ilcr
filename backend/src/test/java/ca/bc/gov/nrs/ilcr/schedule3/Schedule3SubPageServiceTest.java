@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -17,7 +18,9 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -28,6 +31,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Unit test for the Schedule 3 sub-page logic (Story 4.4): item-124 TOT+PO&P group pairing/encoding,
@@ -85,6 +89,25 @@ class Schedule3SubPageServiceTest {
   }
 
   @Test
+  void getOtherAcceptable_totWithoutPop_crownEqualsTotal() {
+    stubDraft();
+    // A group with a TOT row but no PO&P peer: legacy DescriptionCostType.getCrownCost
+    // (bigDecimalCostSubtraction) returns the Total itself when PO&P is blank — Crown = Total, NOT null.
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(List.of(tot(5501, 800, "Consulting", 1)));
+
+    OtherAcceptableDocument doc = service.getOtherAcceptableDocument(MILL, YEAR, true);
+
+    assertEquals(1, doc.count());
+    assertEquals(800, doc.rows().get(0).total());
+    assertNull(doc.rows().get(0).pop());
+    assertEquals(800, doc.rows().get(0).crown()); // = Total when PO&P is blank
+    assertEquals(800L, doc.subtotal().harvest());
+    assertEquals(0L, doc.subtotal().pop());
+    assertEquals(800L, doc.subtotal().crown());
+  }
+
+  @Test
   void addOtherAcceptable_insertsTotAndPopWithNextGroupNumber() {
     stubDraft();
     // One existing group (GRP1) → next group number is 2.
@@ -122,6 +145,59 @@ class Schedule3SubPageServiceTest {
         .updateSubPageRowByComments(SUMMARY, 124, 400, "Updated", "SCH3_2_POP_GRP1", "user");
   }
 
+  @Test
+  void saveOtherAcceptable_reconcilesUpdateInsertAndDelete() {
+    stubDraft();
+    // Existing: GRP1 (Consulting, id 5501) + GRP2 (Travel, id 5503) → next group number is 3.
+    when(repository.findSubPageRows(SUMMARY, 124)).thenReturn(List.of(
+        tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1),
+        tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2)));
+
+    // Request: update GRP1, insert a fresh group, and drop GRP2 (absent → delete).
+    service.saveOtherAcceptable(MILL, YEAR, List.of(
+        new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350),
+        new OtherAcceptableSaveRequest.Row(null, "Fresh", 900, 100)), "user");
+
+    // Update GRP1 (TOT by id + PO&P peer by comments).
+    verify(repository).updateSubPageRowById(5501, SUMMARY, 124, 850, "Consulting2", "user");
+    verify(repository)
+        .updateSubPageRowByComments(SUMMARY, 124, 350, "Consulting2", "SCH3_2_POP_GRP1", "user");
+    // Insert the new group as the next free number (3).
+    verify(repository).insertSubPageRow(SUMMARY, 124, 900, "Fresh", "SCH3_2_TOT_GRP3", "user");
+    verify(repository).insertSubPageRow(SUMMARY, 124, 100, "Fresh", "SCH3_2_POP_GRP3", "user");
+    // Delete the omitted GRP2 (TOT by id + PO&P peer by comments).
+    verify(repository).deleteSubPageRowById(5503, SUMMARY, 124);
+    verify(repository).deleteSubPageRowByComments(SUMMARY, 124, "SCH3_2_POP_GRP2");
+    verify(repository).touchSummary(SUMMARY, "user");
+  }
+
+  @Test
+  void saveOtherAcceptable_persistenceFailure_translatesToScheduleNotSaved() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
+    when(repository.updateSubPageRowById(5501, SUMMARY, 124, 850, "Consulting2", "user"))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<OtherAcceptableSaveRequest.Row> rows =
+        List.of(new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+  }
+
+  @Test
+  void saveOtherAcceptable_unknownId_throwsNotFound() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
+
+    // A row references a TOT id that is not a group under this summary → conflict, not a silent insert.
+    List<OtherAcceptableSaveRequest.Row> rows =
+        List.of(new OtherAcceptableSaveRequest.Row(999999, "Ghost", 1, 0));
+    assertThrows(OtherCostNotFoundException.class,
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+  }
+
   // ---- Included Unacceptable document ----
 
   @Test
@@ -135,8 +211,74 @@ class Schedule3SubPageServiceTest {
     UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, true);
 
     assertEquals(1, doc.count());
-    assertEquals(250L, doc.subtotalTotal());
+    // Legacy footer total = Σ item-38 rows (250) + Annual Rents Harvest (777) = 1027.
+    assertEquals(1027L, doc.subtotalTotal());
     assertEquals(777, doc.annualRentsTotal()); // item-29 Harvest, read-only
+  }
+
+  @Test
+  void getUnacceptable_nullAnnualRentsCost_returnsNullWithoutNpe() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
+    // Annual Rents (item 29) row present but its Harvest cost is null (not entered). Legacy renders
+    // this blank, since the annual-rents harvest total cost is nullable, so the read of the first cost
+    // must yield null rather than throwing when the selected detail row maps to a null cost.
+    when(repository.findDetails(SUMMARY))
+        .thenReturn(List.of(new DetailRow(29, null, null, null, null)));
+
+    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, true);
+
+    assertEquals(1, doc.count());
+    assertEquals(250L, doc.subtotalTotal());
+    assertNull(doc.annualRentsTotal());
+  }
+
+  @Test
+  void saveUnacceptable_reconcilesUpdateInsertAndDelete() {
+    stubDraft();
+    // Existing item-38 rows 5505 + 5506; findDetails (Annual Rents) empty for the rebuilt doc.
+    when(repository.findSubPageRows(SUMMARY, 38)).thenReturn(List.of(
+        new SubPageRow(5505, 250, "Penalty", null),
+        new SubPageRow(5506, 100, "Old", null)));
+    lenient().when(repository.findDetails(SUMMARY)).thenReturn(List.of());
+
+    // Request: update 5505, insert a new row, and drop 5506 (absent → delete).
+    service.saveUnacceptable(MILL, YEAR, List.of(
+        new UnacceptableSaveRequest.Row(5505, "Penalty!", 260),
+        new UnacceptableSaveRequest.Row(null, "New", 500)), "user");
+
+    verify(repository).updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user");
+    verify(repository).insertSubPageRow(SUMMARY, 38, 500, "New", null, "user");
+    verify(repository).deleteSubPageRowById(5506, SUMMARY, 38);
+    verify(repository).touchSummary(SUMMARY, "user");
+  }
+
+  @Test
+  void saveUnacceptable_persistenceFailure_translatesToScheduleNotSaved() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
+    when(repository.updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user"))
+        .thenThrow(new DataIntegrityViolationException("boom"));
+
+    List<UnacceptableSaveRequest.Row> rows =
+        List.of(new UnacceptableSaveRequest.Row(5505, "Penalty!", 260));
+    assertThrows(ScheduleNotSavedException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+  }
+
+  @Test
+  void saveUnacceptable_unknownId_throwsNotFound() {
+    stubDraft();
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
+
+    // A row references a detail id that is not an item-38 row here → conflict, not a silent insert.
+    List<UnacceptableSaveRequest.Row> rows =
+        List.of(new UnacceptableSaveRequest.Row(999999, "Ghost", 1));
+    assertThrows(OtherCostNotFoundException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
   }
 
   // ---- Check-status sub-page branches ----

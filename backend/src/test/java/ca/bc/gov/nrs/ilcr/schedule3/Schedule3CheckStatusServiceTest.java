@@ -100,11 +100,11 @@ class Schedule3CheckStatusServiceTest {
     stub("N", List.of());
     CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertFalse(result.requirementsMet());
-    assertTrue(hasError(result, "missingRequiredFieldMsg", "Licence, Fees, Insurance (Harvest Total $)"));
+    assertTrue(hasError(result, "missingRequiredFieldMsg", "Licenses, Fees, Insurance (Harvest Total $)"));
     assertTrue(hasError(result, "missingRequiredFieldMsg", "Annual Rents (Harvest Total $)"));
-    assertTrue(hasError(result, "missingRequiredFieldMsg", "Crown Timber (Harvest Volume)"));
+    assertTrue(hasError(result, "missingRequiredFieldMsg", "Crown Timber Harvest (Volume m³)"));
     // Harvest-only lines never emit a PO&P-required error.
-    assertFalse(hasError(result, "missingRequiredFieldMsg", "Annual Rents (PO&P Total $)"));
+    assertFalse(hasError(result, "missingRequiredFieldMsg", "Annual Rents (PO&P $)"));
   }
 
   @Test
@@ -117,7 +117,7 @@ class Schedule3CheckStatusServiceTest {
     CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertFalse(result.requirementsMet());
     assertTrue(hasError(result, "harvestNotGreaterThanPopErrorMsg",
-        "Licence, Fees, Insurance (Harvest Total $)"));
+        "Licenses, Fees, Insurance (Harvest Total $)"));
   }
 
   @Test
@@ -130,6 +130,6 @@ class Schedule3CheckStatusServiceTest {
     CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertTrue(result.requirementsMet());  // BR-03 suppressed; everything else present
     assertFalse(hasError(result, "harvestNotGreaterThanPopErrorMsg",
-        "Licence, Fees, Insurance (Harvest Total $)"));
+        "Licenses, Fees, Insurance (Harvest Total $)"));
   }
 }

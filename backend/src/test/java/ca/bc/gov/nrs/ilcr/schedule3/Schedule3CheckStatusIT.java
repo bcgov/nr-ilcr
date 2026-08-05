@@ -39,6 +39,6 @@ class Schedule3CheckStatusIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.requirementsMet", is(false)))
         .andExpect(jsonPath("$.errors.length()", greaterThan(0)))
         .andExpect(jsonPath("$.errors[*].text",
-            hasItem("Licence, Fees, Insurance (Harvest Total $): Value Required")));
+            hasItem("Licenses, Fees, Insurance (Harvest Total $): Value Required")));
   }
 }

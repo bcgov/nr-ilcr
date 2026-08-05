@@ -414,7 +414,11 @@ const Schedule4: FC = () => {
 
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 4" subtitle="Special Log Transportation Costs." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 4"
+        subtitle="Special Log Transportation Costs."
+      />
     </Grid>
   )
 

@@ -40,9 +40,6 @@ import './index.scss'
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
-const ALT_SAVE_BEFORE_OTHER = 'The schedule has to be saved before opening other costs'
-const ALT_SAVE_BEFORE_UNACCEPTABLE =
-  'The schedule has to be saved before opening Unacceptable costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const COMMENTS_MAX = 3500
@@ -122,6 +119,8 @@ const Schedule3: FC = () => {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
+  // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
   useEffect(() => {
     if (contextMissing) {
@@ -277,24 +276,34 @@ const Schedule3: FC = () => {
       .finally(() => setChecking(false))
   }
 
-  const openSubPage = (route: string, altText: string) => {
-    // S18/S19: before the schedule is saved/open, opening a sub-page is blocked with the ALT gate.
-    // In the current backend model an openable schedule is always saved (GET 404s for no summary),
-    // so this guard is effectively unreachable — mirrors Schedule 1's Other Costs guard.
-    if (!data) {
-      window.alert(altText)
-      return
-    }
-    // Navigating away from an editable schedule discards unsaved edits — confirm first.
-    if (data.editable && !window.confirm(CONFIRM_NAVIGATION)) {
+  const openSubPage = (route: string) => {
+    // Navigating away from an editable schedule discards unsaved edits — confirm via a Carbon Modal
+    // (legacy confirmNavigationMsg) instead of a native browser dialog. A read-only schedule has
+    // nothing to lose, so open directly.
+    if (data?.editable) {
+      setPendingRoute(route)
       return
     }
     navigate({ to: route })
   }
 
+  // Confirmed via the "Leave Schedule 3" Modal: discard unsaved edits and open the pending sub-page.
+  const confirmLeave = () => {
+    if (pendingRoute === null) {
+      return
+    }
+    const route = pendingRoute
+    setPendingRoute(null)
+    navigate({ to: route })
+  }
+
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 3" subtitle="Forest Management Administration Costs." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 3"
+        subtitle="Forest Management Administration Costs."
+      />
     </Grid>
   )
 
@@ -399,22 +408,30 @@ const Schedule3: FC = () => {
   )
 
   // A read-only derived total row whose label cell is the count-labelled sub-page link (Story 4.4).
+  // `popHidden` blanks the PO&P cell (—) for Included Unacceptable Costs, whose PO&P is a legacy
+  // inputHidden (never shown) — matching the Annual Rents / Silviculture Admin blanks (POP_HIDDEN),
+  // NOT the backend's 0. Subtotal Other Costs keeps its shown PO&P (legacy disabled box).
   const subPageRow = (
     key: string,
     label: string,
     count: number,
     route: string,
-    altText: string,
     total: ThreeColumnTotal,
+    popHidden = false,
   ) => (
     <TableRow key={key}>
       <TableCell>
-        <Button kind="ghost" size="sm" onClick={() => openSubPage(route, altText)}>
+        <Button
+          kind="ghost"
+          size="sm"
+          className="schedule-3__link"
+          onClick={() => openSubPage(route)}
+        >
           {`${label} (${count}):`}
         </Button>
       </TableCell>
       <TableCell className="schedule-3__num">{fmt(total.harvest)}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.pop)}</TableCell>
+      <TableCell className="schedule-3__num">{popHidden ? '—' : fmt(total.pop)}</TableCell>
       <TableCell className="schedule-3__num">{fmt(total.crown)}</TableCell>
     </TableRow>
   )
@@ -452,23 +469,6 @@ const Schedule3: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-3__meta">
-          <dl className="schedule-3__summary">
-            <div className="schedule-3__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-3__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-3__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {/* Advisory warnings from a mutation echo (BR-09 crown push). Verbatim text (AD-8). */}
         {saveWarnings.map((w) => (
           <NotificationColumn key={`warn-${w}`} kind="warning" title="Notice" subtitle={w} />
@@ -501,11 +501,12 @@ const Schedule3: FC = () => {
         {actions}
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
-          <TableContainer title="Administration Costs">
-            <Table aria-label="Administration Costs">
+          {/* No visible section title (legacy form has none); aria-label carries the name for a11y. */}
+          <TableContainer>
+            <Table aria-label="Administration Costs" className="schedule-3__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-3__num">Harvest Total $</TableHeader>
                   <TableHeader className="schedule-3__num">PO&P $</TableHeader>
                   <TableHeader className="schedule-3__num">Crown $</TableHeader>
@@ -524,7 +525,6 @@ const Schedule3: FC = () => {
                   'Subtotal Other Costs',
                   data.otherAcceptableCount,
                   ROUTE_OTHER_ACCEPTABLE,
-                  ALT_SAVE_BEFORE_OTHER,
                   data.subtotalOtherCosts,
                 )}
                 {totalRow('subtotalActual', 'Subtotal (Actual Costs)', data.subtotalActualCosts)}
@@ -533,34 +533,44 @@ const Schedule3: FC = () => {
                   'Included Unacceptable Costs',
                   data.unacceptableCount,
                   ROUTE_UNACCEPTABLE,
-                  ALT_SAVE_BEFORE_UNACCEPTABLE,
                   data.includedUnacceptableCosts,
+                  true, // PO&P is a legacy inputHidden — render blank (—), not the backend's 0
                 )}
                 {totalRow('totalCosts', 'Total Costs', data.totalCosts)}
+                {/* Legacy: the Override dropdown is the last row of this table (in the Harvest column). */}
+                <TableRow key="overrideHarvestTotalPop">
+                  <TableCell>Override Harvest ⁄ Total PO&P $</TableCell>
+                  <TableCell>
+                    <Select
+                      id="overrideHarvestTotalPop"
+                      labelText="Override Harvest ⁄ Total PO&P $"
+                      hideLabel
+                      size="sm"
+                      value={form['overrideHarvestTotalPop'] ?? 'N'}
+                      onChange={setField('overrideHarvestTotalPop')}
+                      disabled={!editable}
+                    >
+                      <SelectItem value="N" text="No" />
+                      <SelectItem value="Y" text="Yes" />
+                    </Select>
+                  </TableCell>
+                  <TableCell className="schedule-3__num" />
+                  <TableCell className="schedule-3__num" />
+                </TableRow>
               </TableBody>
             </Table>
           </TableContainer>
         </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
-          <Select
-            id="overrideHarvestTotalPop"
-            labelText="Override Harvest ⁄ Total PO&P $"
-            value={form['overrideHarvestTotalPop'] ?? 'N'}
-            onChange={setField('overrideHarvestTotalPop')}
-            disabled={!editable}
-          >
-            <SelectItem value="N" text="No" />
-            <SelectItem value="Y" text="Yes" />
-          </Select>
-        </Column>
-
-        <Column sm={4} md={8} lg={16} className="schedule-3__section">
           <TableContainer title="Total Overhead and Cost Per Unit Calculation">
-            <Table aria-label="Total Overhead and Cost Per Unit Calculation">
+            <Table
+              aria-label="Total Overhead and Cost Per Unit Calculation"
+              className="schedule-3__cost-table"
+            >
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-3__num">Harvest Volume (m³)</TableHeader>
                   <TableHeader className="schedule-3__num">Total Cost $</TableHeader>
                   <TableHeader className="schedule-3__num">Cost per Unit ($/m³)</TableHeader>
@@ -611,6 +621,20 @@ const Schedule3: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {/* Discard-unsaved-edits confirm before leaving an editable schedule for a sub-page. */}
+      {editable && (
+        <Modal
+          open={pendingRoute !== null}
+          modalHeading="Leave Schedule 3"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setPendingRoute(null)}
+          onRequestSubmit={confirmLeave}
+        >
+          <p>{CONFIRM_NAVIGATION}</p>
         </Modal>
       )}
     </div>

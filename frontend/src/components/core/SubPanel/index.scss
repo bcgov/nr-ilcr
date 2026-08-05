@@ -1,0 +1,24 @@
+// A bordered panel with a grey header bar (legacy sub-page panel look), shared by the Schedule 1 and
+// Schedule 3 cost sub-pages.
+.sub-panel {
+  border: 1px solid var(--cds-border-subtle);
+  background: var(--cds-layer-01);
+}
+
+.sub-panel__title {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  background: var(--cds-layer-accent-01);
+  border-block-end: 1px solid var(--cds-border-subtle);
+}
+
+.sub-panel__body {
+  padding: 1rem;
+}
+
+// Bold table column headers (matches the legacy bold headers).
+.sub-panel .cds--data-table thead th {
+  font-weight: 700;
+}

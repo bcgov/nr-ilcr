@@ -61,9 +61,9 @@ const WRITABLE = new Set<number>(WRITABLE_LINE_ITEM_CODES)
 // cost, while 139's cost is pulled from Schedule 3 and 140's is derived (both costs read-only).
 const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['silviculture'] }[] = [
   { code: 1, label: 'Actual $ Spent', key: 'actualSpent' },
-  { code: 2, label: 'Accrued less Actual $ Spent', key: 'accruedLessActual' },
   { code: 139, label: 'Less Silviculture Admin Costs', key: 'lessAdmin' },
-  { code: 140, label: 'Total Silviculture', key: 'total' },
+  { code: 2, label: 'Accrued less Actual $ Spent', key: 'accruedLessActual' },
+  { code: 140, label: 'Total Silviculture (As per Financial Statements)', key: 'total' },
 ]
 
 type FieldValues = Record<string, string>
@@ -279,7 +279,11 @@ const Schedule1: FC = () => {
 
   const header = (
     <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 1" subtitle="Average Cost of Logging." />
+      <PageTitle
+        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
+        title="Schedule 1"
+        subtitle="Average Cost of Logging."
+      />
     </Grid>
   )
 
@@ -443,6 +447,42 @@ const Schedule1: FC = () => {
     </TableRow>
   )
 
+  // Subtotal Other Costs (legacy: sits between Depletion & Amortization and Subtotal Company Logging).
+  // The label is a link/button that opens the Other Costs sub-page (Story 2.5); the VOLUME is
+  // user-entered (editable schedules) while the cost subtotal and $/m³ are server-derived (read-only).
+  const otherCostsRow = (
+    <TableRow key="other-costs">
+      <TableCell>
+        <Button
+          kind="ghost"
+          size="sm"
+          className="schedule-1__other-costs-link"
+          onClick={handleOtherCosts}
+        >
+          Subtotal Other Costs({data.otherCosts.count}):
+        </Button>
+      </TableCell>
+      {editable ? (
+        <TableCell className="schedule-1__num">
+          <TextInput
+            id="otherCostsVolume"
+            labelText="Subtotal Other Costs volume"
+            hideLabel
+            size="sm"
+            value={form['otherCostsVolume'] ?? ''}
+            onChange={setField('otherCostsVolume')}
+            invalid={Boolean(fieldErrors['otherCostsVolume'])}
+            invalidText={fieldErrors['otherCostsVolume']}
+          />
+        </TableCell>
+      ) : (
+        <TableCell className="schedule-1__num">{fmt(data.otherCosts.volume)}</TableCell>
+      )}
+      <TableCell className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</TableCell>
+      <TableCell className="schedule-1__num">{fmt(data.otherCosts.perUnit)}</TableCell>
+    </TableRow>
+  )
+
   // Grand-total row (legacy "Total Company Logging Costs (Including total Silviculture Cost)"): the
   // Total Harvested Crown Timber volume (Sch 3), the total logging cost, and its $/m³ average.
   const totalCompanyLoggingRow = (
@@ -452,6 +492,28 @@ const Schedule1: FC = () => {
       <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingCost)}</TableCell>
       <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingPerUnit)}</TableCell>
     </TableRow>
+  )
+
+  // Crown Timber Volume for all fields (Sch 3): BR-03 source, read-only. A plain label + read-only box
+  // (no table) laid out on the SAME fixed column grid as the cost tables below (46% / 18% / 18% / 18%)
+  // so the box lines up under the Volume m³ column (legacy layout). hideLabel keeps the descriptive
+  // text as the input's a11y name (visually hidden) while "Volume m³" shows as the caption.
+  const crownVolumeField = (
+    <Column sm={4} md={8} lg={16} className="schedule-1__section schedule-1__crown">
+      <span className="schedule-1__crown-label">Crown Timber Volume for all fields (Sch 3):</span>
+      <div className="schedule-1__crown-field">
+        <span className="schedule-1__crown-unit">Volume m³</span>
+        <TextInput
+          id="schedule3CrownVolume"
+          labelText="Crown Timber Volume for all fields (Sch 3)"
+          hideLabel
+          size="sm"
+          value={numStr(data.schedule3CrownVolume)}
+          onChange={() => undefined}
+          disabled
+        />
+      </div>
+    </Column>
   )
 
   const actions = (
@@ -470,27 +532,6 @@ const Schedule1: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-1__meta">
-          <dl className="schedule-1__summary">
-            <div className="schedule-1__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-            <div className="schedule-1__summary-item">
-              <dt>Crown Timber Volume</dt>
-              <dd>{fmt(data.crownVolume)}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
         {(data.warnings ?? []).map((w, i) => (
           // Static, append-only notification list (never reordered); index disambiguates messages
@@ -548,41 +589,31 @@ const Schedule1: FC = () => {
 
         {actions}
 
-        <Column sm={4} md={8} lg={16} className="schedule-1__section">
-          {/* BR-03 source, read-only: the Schedule 3 Crown Timber volume that drives the pre-fill. */}
-          <TextInput
-            id="schedule3CrownVolume"
-            labelText="Crown Timber Volume for all fields (Sch 3)"
-            size="sm"
-            value={numStr(data.schedule3CrownVolume)}
-            onChange={() => undefined}
-            disabled
-          />
-        </Column>
+        {crownVolumeField}
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
-          <TableContainer title="Company Logging Costs">
-            <Table aria-label="Company Logging Costs">
+          {/* No visible section title (legacy form has none); aria-label carries the name for a11y. */}
+          <TableContainer>
+            <Table aria-label="Company Logging Costs" className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
-                  <TableHeader className="schedule-1__num">Volume</TableHeader>
-                  <TableHeader className="schedule-1__num">Cost</TableHeader>
-                  <TableHeader className="schedule-1__num">$/m³</TableHeader>
+                  <TableHeader aria-label="Cost item" />
+                  <TableHeader className="schedule-1__num">Volume m³</TableHeader>
+                  <TableHeader className="schedule-1__num">Cost $</TableHeader>
+                  <TableHeader className="schedule-1__num">$ / m³</TableHeader>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {/* Legacy form order: 12–16, 143, 17, 18, 144 (schedule1.xhtml). */}
-                {[12, 13, 14, 15, 16, 143, 17, 18, 144].map((code) => {
+                {/* Legacy form order: 12–16, 143, 17, 18, Other Costs, 144 (schedule1.xhtml). */}
+                {[12, 13, 14, 15, 16, 143, 17, 18].map((code) => {
                   if (code === 143) {
                     return forestMgmtAdminRow
-                  }
-                  if (code === 144) {
-                    return subtotalCompanyLoggingRow
                   }
                   const item = data.lineItems.find((li) => li.costItemCode === code)
                   return item ? lineItemRow(item) : null
                 })}
+                {otherCostsRow}
+                {subtotalCompanyLoggingRow}
               </TableBody>
             </Table>
           </TableContainer>
@@ -590,13 +621,13 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           <TableContainer title="Silviculture">
-            <Table aria-label="Silviculture">
+            <Table aria-label="Silviculture" className="schedule-1__cost-table">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
-                  <TableHeader className="schedule-1__num">Volume</TableHeader>
-                  <TableHeader className="schedule-1__num">Cost</TableHeader>
-                  <TableHeader className="schedule-1__num">$/m³</TableHeader>
+                  <TableHeader aria-label="Cost item" />
+                  <TableHeader className="schedule-1__num">Volume m³</TableHeader>
+                  <TableHeader className="schedule-1__num">Cost $</TableHeader>
+                  <TableHeader className="schedule-1__num">$ / m³</TableHeader>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -605,28 +636,6 @@ const Schedule1: FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
-        </Column>
-
-        <Column sm={4} md={8} lg={16} className="schedule-1__section">
-          <div className="schedule-1__other-costs">
-            {/* Opens the Other Costs sub-page (Story 2.5) for both editable and read-only schedules. */}
-            <Button kind="ghost" size="sm" onClick={handleOtherCosts}>
-              Subtotal Other Costs({data.otherCosts.count}):
-            </Button>
-            <span className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</span>
-            <span className="schedule-1__num">$/m³: {fmt(data.otherCosts.perUnit)}</span>
-          </div>
-          {editable && (
-            <TextInput
-              id="otherCostsVolume"
-              labelText="Subtotal Other Costs volume"
-              size="sm"
-              value={form['otherCostsVolume'] ?? ''}
-              onChange={setField('otherCostsVolume')}
-              invalid={Boolean(fieldErrors['otherCostsVolume'])}
-              invalidText={fieldErrors['otherCostsVolume']}
-            />
-          )}
         </Column>
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">

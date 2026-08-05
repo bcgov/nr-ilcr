@@ -34,7 +34,8 @@ class Schedule3UnacceptableIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.count", is(1)))
         .andExpect(jsonPath("$.rows[?(@.description == 'Penalty')].total", contains(250)))
-        .andExpect(jsonPath("$.subtotalTotal", is(250)))
+        // Legacy footer total = Σ item-38 rows (250) + Annual Rents Harvest (777) = 1027.
+        .andExpect(jsonPath("$.subtotalTotal", is(1027)))
         // Annual Rents (Forest Act, S111) = the item-29 Harvest (read-only).
         .andExpect(jsonPath("$.annualRentsTotal", is(777)));
   }

@@ -5,11 +5,10 @@ import { validateOtherAcceptable, DESCRIPTION_MAX_LENGTH } from './validation'
 
 const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument> = {
   base: '/v1/schedule3/other-acceptable-costs',
-  title: 'Other Acceptable Costs',
+  title: 'Other Costs',
   subtitle: 'Grouped acceptable costs for Schedule 3.',
-  tableTitle: 'Other Acceptable Costs',
-  addHeading: 'Add Other Acceptable Cost',
-  deleteHeading: 'Delete other cost',
+  tableTitle: 'Other Costs',
+  addHeading: 'Add Other Cost',
   descriptionMaxLength: DESCRIPTION_MAX_LENGTH,
   loadError: 'Unable to load Other Acceptable Costs.',
   saveError: 'Other cost could not be saved.',
@@ -18,7 +17,15 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
     { key: 'total', header: 'Total $', label: 'total', get: (row) => row.total },
     { key: 'pop', header: 'PO&P $', label: 'PO&P', get: (row) => row.pop },
   ],
-  readonlyColumns: [{ header: 'Crown $', value: (row) => row.crown }],
+  // Crown $ is derived live from the row's entered Total/PO&P, matching the backend rule
+  // (otherAcceptableCrown): null whenever Total is blank, else Total − PO&P (PO&P treated as 0). This
+  // avoids showing −PO&P for a PO&P-only row and keeps the live value consistent with post-save.
+  readonlyColumns: [
+    {
+      header: 'Crown $',
+      derive: (v) => (v.total === null ? null : v.total - (v.pop ?? 0)),
+    },
+  ],
   summaryItems: [
     { label: 'Subtotal Total $', value: (doc) => doc.subtotal?.harvest },
     { label: 'Subtotal PO&P $', value: (doc) => doc.subtotal?.pop },

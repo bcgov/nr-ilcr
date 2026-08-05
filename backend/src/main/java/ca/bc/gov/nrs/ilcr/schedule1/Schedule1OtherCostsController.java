@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.api.Schedule1OtherCostsApi;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import org.springframework.context.MessageSource;
@@ -65,6 +66,18 @@ public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
     OtherCostsDocument doc =
         schedule1Service.addOtherCost(millId, year, request, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<OtherCostsDocument> saveOtherCosts(
+      long millId, int year, String intent, OtherCostSaveRequest request,
+      Authentication authentication) {
+    millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
+    OtherCostsDocument doc =
+        schedule1Service.saveOtherCosts(millId, year, request.rows(), authentication.getName());
+    // Persistence is identical for a save or a delete (legacy update()); only the message differs.
+    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override
