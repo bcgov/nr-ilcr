@@ -200,8 +200,7 @@ const Schedule4: FC = () => {
     if (search.loc !== undefined || search.sub !== undefined) {
       void navigate({ to: '/schedule-4', search: {}, replace: true })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [millId, year])
+  }, [millId, year, navigate, search.loc, search.sub])
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)

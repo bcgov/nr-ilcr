@@ -69,8 +69,7 @@ const Schedule8: FC = () => {
     if (search.pageId !== undefined || search.sampleId !== undefined) {
       void navigate({ to: '/schedule-8', search: {}, replace: true })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [millId, year])
+  }, [millId, year, navigate, search.pageId, search.sampleId])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
@@ -369,7 +368,9 @@ const Schedule8: FC = () => {
               additions={sample.additions}
               deductions={sample.deductions}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })}
+              onBack={() =>
+                void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })
+              }
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>

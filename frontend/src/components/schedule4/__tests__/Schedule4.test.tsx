@@ -457,9 +457,9 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
 
     // Browser Back should go back before Schedule 4 (to the empty root) instead of re-entering the sub-page
     router.history.back()
-    await waitFor(() =>
-      expect(router.state.location.pathname).not.toEqual('/schedule-4'),
-    )
+    await waitFor(() => {
+      expect(router.state.location.pathname).not.toEqual('/schedule-4')
+    })
   })
 })
 

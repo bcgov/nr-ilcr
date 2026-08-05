@@ -938,9 +938,9 @@ describe('Schedule8 additions/deductions level', () => {
 
     // Browser Back should now go before Schedule 8 (to the empty root) instead of re-entering the samples list
     router.history.back()
-    await waitFor(() =>
-      expect(router.state.location.pathname).not.toEqual('/schedule-8'),
-    )
+    await waitFor(() => {
+      expect(router.state.location.pathname).not.toEqual('/schedule-8')
+    })
   })
 
   test('add an addition POSTs the rate sub-resource and shows the success message', async () => {
