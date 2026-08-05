@@ -49,6 +49,23 @@ export const restHandlers = [
     })
   }),
   http.get('http://localhost:3000/api/v1/schedule1', () => HttpResponse.json(schedule1Doc)),
+  // Default working-context handler: the ScheduleTombstone (and the global ContextBanner) fetch
+  // GET /v1/mill-context on the current context, so schedule pages rendered in isolation would trip
+  // MSW's onUnhandledRequest: 'error' without this. Echoes the requested millId/year so the tombstone's
+  // stale-guard passes. Tests that assert specific banner content override this via server.use(...).
+  http.get('http://localhost:3000/api/v1/mill-context', ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const millId = Number(params.get('millId'))
+    const reportYear = Number(params.get('year'))
+    return HttpResponse.json({
+      millId,
+      millNumber: String(millId),
+      millName: 'Test Mill',
+      reportYear,
+      schedules1To10Status: { code: 'D', description: 'Draft', date: '2017-01-01' },
+      millViewable: true,
+    })
+  }),
 ]
 
 // Exported so tests can register per-scenario handlers with server.use(...).

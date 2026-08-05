@@ -5,7 +5,7 @@ import { CLOSED_MILL, liveDataEnabled, MSG, OPEN_MILL_WITH_STATUS } from './util
 // Story 1.5 AC2 (the headline outcome): a context saved on Home actually DRIVES a schedule page —
 // Schedule 1 operates on the selected mill/year, demonstrably NOT the 514/2021 scaffold default.
 // Also carries S06's schedule-page half: a closed mill's Schedule 1 is blocked from viewing
-// (its banner half is asserted in home.spec.ts — the two tests do not overlap).
+// (its working-context display half is asserted in tombstone.spec.ts — the two tests do not overlap).
 
 // Navigate from Home to Schedule 1 entirely client-side (TanStack Router <Link>s), so the in-memory
 // MillYearContext set by the Home Save survives. A full `page.goto('/schedule-1')` would reload the

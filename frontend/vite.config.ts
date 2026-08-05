@@ -1,9 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import { createRequire } from 'node:module'
+
+// Expose the package version to the app (footer). createRequire reads package.json without an import
+// attribute (portable across the esbuild/vitest config loaders); `define` inlines it as __APP_VERSION__.
+const { version: appVersion } = createRequire(import.meta.url)('./package.json') as {
+  version: string
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     tanstackRouter({
       target: 'react',

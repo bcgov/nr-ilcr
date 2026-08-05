@@ -35,25 +35,16 @@ export class HomePage {
     return this.page.getByText(text)
   }
 
-  // The working-context banner (ContextBanner.tsx) — a labelled region, so it is addressable by role.
-  get banner(): Locator {
-    return this.page.getByRole('region', { name: 'Working context' })
-  }
-
   async goto(): Promise<void> {
-    // Settle point for the banner's mount-time fetch: ContextBanner fires
-    // GET /v1/mill-context for the DEFAULT context (514/2021) as soon as the app mounts. Registered
-    // BEFORE navigation and awaited here so banner-absence assertions and axe scans run against a
-    // settled DOM instead of racing an in-flight response (a vacuous-pass window otherwise).
-    const contextSettled = this.page.waitForResponse('**/api/v1/mill-context*')
+    // Home no longer fetches GET /v1/mill-context on mount — the working-context display moved off the
+    // Home banner (removed) onto the schedule ScheduleTombstone, which fetches it on the schedule page.
+    // So Home's only mount fetches are the mills/years lists; the visible dropdown proves they landed.
     await this.page.goto(baseURL)
-    // Home shows a LoadingScreen until the mills/years fetch resolves; the dropdown proves it landed.
     await expect(this.millDropdown).toBeVisible()
     // Fail fast at the entry point if the option lists failed to load — Home renders the dropdowns
     // (empty) alongside the "Unable to load" notification, which would otherwise surface as an
     // opaque option-not-found timeout deep inside a scenario.
     await expect(this.page.getByText('Unable to load')).toHaveCount(0)
-    await contextSettled
   }
 
   async selectMill(mill: MillFixture): Promise<void> {

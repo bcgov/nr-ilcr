@@ -24,7 +24,7 @@ import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   ALL_CATEGORIES,
   DISTANCE_CATEGORIES,
@@ -412,11 +412,11 @@ const Schedule4: FC = () => {
     }
   }
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle title="Schedule 4" subtitle="Special Log Transportation Costs." />
-    </Grid>
+  const SCH4_BASE = 'Special Log Transportation Costs'
+  const renderHeader = (trail: string[] = [SCH4_BASE]) => (
+    <ScheduleTombstone title="Schedule 4" subtitle={trail} />
   )
+  const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
     <div className="app-page">
@@ -462,9 +462,10 @@ const Schedule4: FC = () => {
   if (subPage) {
     const location = data.locations.find((l) => l.id === subPage.locationId)
     const rows = (location?.subPageRows ?? []).filter((row) => row.code === subPage.def.code)
+    const subPageTrail = [SCH4_BASE, ...(location?.name ? [location.name] : []), subPage.def.label]
     return (
       <div className="app-page">
-        {header}
+        {renderHeader(subPageTrail)}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <SubPage
@@ -642,23 +643,6 @@ const Schedule4: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-4__meta">
-          <dl className="schedule-4__summary">
-            <div className="schedule-4__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-4__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-4__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {saveMessage && (
           <Column sm={4} md={8} lg={16}>
             <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
