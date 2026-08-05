@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule4 from '@/components/schedule4'
+import { Route as realScheduleRoute } from '@/routes/schedule-4'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Location } from '@/interfaces/Schedule4Response'
 
@@ -23,10 +24,7 @@ function makeRouter(initialUrl = '/schedule-4') {
   const scheduleRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/schedule-4',
-    validateSearch: (s: Record<string, unknown>) => ({
-      loc: s.loc == null || s.loc === '' ? undefined : Number(s.loc),
-      sub: s.sub as 'TOWING' | 'TRUCK_REHAUL' | 'OTHER' | undefined,
-    }),
+    validateSearch: realScheduleRoute.options.validateSearch,
     component: Schedule4,
   })
   return createRouter({
