@@ -33,7 +33,7 @@ import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   validateLocation,
   parseDecimalInput,
@@ -222,9 +222,7 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
 }
 
 const PAGE_HEADER = (
-  <Grid fullWidth className="app-page__header">
-    <PageTitle title="Schedule 11" subtitle="Report Basic Silviculture Costs." />
-  </Grid>
+  <ScheduleTombstone title="Schedule 11" subtitle="Report Basic Silviculture Costs" />
 )
 
 // Schedule 11's load never 404s specially at the UI level: any ProblemDetail detail (ERR-001/002/003)

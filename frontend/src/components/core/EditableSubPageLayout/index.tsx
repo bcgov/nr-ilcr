@@ -3,7 +3,8 @@ import { Button, Column, Grid, Modal } from '@carbon/react'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle, { type BreadCrumb } from '@/components/core/PageTitle'
+import { type BreadCrumb } from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import type { EditableCostRows, EditableRowsDoc } from '@/hooks/useEditableCostRows'
 import './index.scss'
 
@@ -59,11 +60,11 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
     onBack,
   } = editor
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle breadCrumbs={breadCrumbs} title={title} subtitle={subtitle} />
-    </Grid>
-  )
+  // Match the schedule pages' tombstone header: the parent schedule (the last breadcrumb) is the
+  // title, and the sub-page name (plus any extra subtitle) forms the crumb trail beneath it.
+  const scheduleName = breadCrumbs?.at(-1)?.name ?? title
+  const subPageTrail = subtitle ? [title, subtitle] : title
+  const header = <ScheduleTombstone title={scheduleName} subtitle={subPageTrail} />
 
   if (contextMissing) {
     return (

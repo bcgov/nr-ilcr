@@ -30,7 +30,7 @@ import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule3 } from './validation'
 import './index.scss'
@@ -298,13 +298,7 @@ const Schedule3: FC = () => {
   }
 
   const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 3"
-        subtitle="Forest Management Administration Costs."
-      />
-    </Grid>
+    <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
   )
 
   if (contextMissing) {

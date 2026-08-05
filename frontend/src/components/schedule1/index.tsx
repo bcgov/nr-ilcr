@@ -29,7 +29,7 @@ import { extractDetail } from '@/utils/error'
 import { fmt, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule1 } from './validation'
 import './index.scss'
@@ -277,15 +277,7 @@ const Schedule1: FC = () => {
     navigate({ to: '/schedule-1/other-costs' })
   }
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 1"
-        subtitle="Average Cost of Logging."
-      />
-    </Grid>
-  )
+  const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
 
   if (contextMissing) {
     return (

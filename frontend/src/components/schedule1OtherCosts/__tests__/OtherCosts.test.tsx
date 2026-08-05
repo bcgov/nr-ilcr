@@ -238,7 +238,7 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<OtherCostsPage />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /back to schedule 1/i }))
+    await user.click(await screen.findByRole('button', { name: /^back$/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1' })
   })
 
@@ -252,7 +252,7 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     const cost = within(rowOf('Existing Row A')).getByLabelText('Edit cost')
     await user.clear(cost)
     await user.type(cost, '9')
-    await user.click(screen.getByRole('button', { name: /back to schedule 1/i }))
+    await user.click(screen.getByRole('button', { name: /^back$/i }))
 
     const dialog = await screen.findByRole('dialog')
     expect(mockNavigate).not.toHaveBeenCalled()
