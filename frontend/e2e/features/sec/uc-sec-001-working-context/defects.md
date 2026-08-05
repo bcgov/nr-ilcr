@@ -114,3 +114,9 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 - **Home "Save" writes nothing.** It is a read/resolve (`GET /v1/mill-context`) that sets the client-side
   MillYearContext and returns SUC-001 — no report rows are created, so no teardown is needed and scenarios
   are parallel-safe. A deliberate design (client-side context, AR11), not a defect.
+- **Banner → tombstone (bcgov #227) — re-grounded GREEN.** The global working-context ContextBanner was
+  removed; the mill/status lines a Home Save establishes now render on each schedule page's
+  `ScheduleTombstone` header (same `region[name="Working context"]` landmark + `WorkingContextLines`, so
+  the exact text is unchanged). bcgov's `tombstone.spec.ts` (S01 display / S03 switch / S06 closed / S07
+  no-status) is ported here as `schedule-tombstone.feature` (on Schedule 2), verified green incl. axe.
+  An app design move, not a defect — recorded so the ported source is traceable.

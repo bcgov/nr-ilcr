@@ -24,6 +24,10 @@ every scenario is parallel-safe by construction.
 | S06 Selected mill is closed — schedule blocked (=SCH1 S20) | S06 consequence; epics Story-1.5 AC1; ERR-002 | `GET /v1/schedule1` closed mill → 409; page shows verbatim block | `context-drives-schedule.feature` `@S06 @UC-SCH1-001 @S20` | covered | Also flips UC-SCH1-001 S20 → covered |
 | S07 No report-status row for mill/year | S07.feature (Alt) | `mill-context` 200 with null statuses; banner mill line only | `working-context.feature` `@S07` | covered | Legacy S07 banner was `[UNKNOWN]`; re-grounded — defects.md Spec gap #1 |
 | S08 Both mill and year missing | S08.feature (Exc); FLD-001+002 | Backend `mill-context` 400 with BOTH messages | — | not-applicable (UI) / covered-by-contract | Same root cause as S04/S05 |
+| S01 Saved context DISPLAYS on the schedule tombstone (banner → tombstone) | S01 display arm; bcgov #227 | `ScheduleTombstone` renders the shared `WorkingContextLines` in the `region[name="Working context"]` landmark on schedule pages | `schedule-tombstone.feature` `@S01 @tombstone @a11y` (Schedule 2) | covered | Ports bcgov `tombstone.spec.ts` S01; a11y clean on Schedule 2 |
+| S03 Switching context replaces the tombstone lines | S03 display arm; bcgov #227 | client-side re-nav; `useWorkingContext` re-fetch on the tombstone | `schedule-tombstone.feature` `@S03 @tombstone` | covered | New mill + statuses render; the prior dated line is gone |
+| S06 Closed mill's tombstone renders like an open mill | S06 display arm; bcgov #227 | `ScheduleTombstone` header renders even when the schedule body is blocked (409); no closed-mill wording | `schedule-tombstone.feature` `@S06 @tombstone` | covered | Header parity; the block itself is the S06/S20 body concern above |
+| S07 No-status pair renders the tombstone mill line only | S07 display arm; bcgov #227 | `WorkingContextLines` suppresses both track lines when statuses are null | `schedule-tombstone.feature` `@S07 @tombstone` | covered | Ports `tombstone.spec.ts` S07 |
 
 ## HOME-1.5 acceptance-criteria compliance (this BDD suite)
 
@@ -42,8 +46,9 @@ structure. Behavioral parity against the ACs:
 | AC1 S06 closed saves + schedule blocked | ✅ | `@S06` (Home banner) + `@S06 @S20` (schedule 409 block) |
 | AC1 S07 no-status pair | ✅ | `@S07` |
 | AC2 context drives a schedule page | ✅ | `@drives-schedule` — schedule GET carries the saved mill/year |
+| AC2 context DISPLAYS on the schedule tombstone | ✅ | `@tombstone` — Schedule 2 header shows the saved mill + both track statuses (banner → tombstone, #227) |
 | AC3 AD-10 (verification, not red) | ✅ | Post-implementation assertions of observed behavior |
-| AC4 axe WCAG 2.1 AA, zero/triaged | ✅ | `@a11y` on landing + populated-banner (`wcag2a/2aa/21a/21aa`) → zero violations |
+| AC4 axe WCAG 2.1 AA, zero/triaged | ✅ | `@a11y` on landing + populated-banner + the Schedule 2 tombstone (`wcag2a/2aa/21a/21aa`) → zero violations |
 | AC5 CI wired or manual gate documented | ✅ (manual gate) | See **Manual verification gate** below; no CI (app+DB not containerized for CI here) |
 | AC6 data-reality confirmed, not invented | ✅ | All anchors grounded via live API 2026-07-30; finding queries pinned in `fixtures/sec/` |
 
@@ -71,6 +76,10 @@ ported here or explicitly accounted for — `home.spec.ts` S01/S03/S06/S07 porte
 **superseded + flagged stale** (default changed `514`→`13050`, Divergence #2); S05/S08 same conclusion;
 `schedule-context.spec.ts` AC2 + closed-mill block **ported** (`context-drives-schedule.feature`);
 `app-shell.spec.ts` smoke subsumed by `openApp`'s Header assertion in every Background; **axe ported**.
+The bcgov **banner → tombstone** move (#227) added `tombstone.spec.ts` (the working-context *display*
+arm moved off Home onto the schedule pages' `ScheduleTombstone`); its S01/S03/S06/S07 are now **ported**
+(`schedule-tombstone.feature`, on Schedule 2). #227 also gutted `home.spec.ts` (display scenarios moved
+to the tombstone — still covered here on Home) and added a Vitest `Footer.test.tsx` (unit, not E2E).
 
 **Recorded coverage drop — `tombstone.spec.ts` (Story 1.5, schedule-*page* `ScheduleTombstone`):** deleted
 with this migration (it and its only page object `pages/schedule.ts` imported the retired `pages/home.ts`

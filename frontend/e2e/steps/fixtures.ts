@@ -1,6 +1,7 @@
 import { test as base, createBdd } from 'playwright-bdd';
 import { HomePage } from '../pages/common/homePage';
 import { AppShellPage } from '../pages/common/appShell';
+import { SchedulePage } from '../pages/common/schedulePage';
 import { Schedule1Page } from '../pages/sch1/schedule1Page';
 import { OtherCostsPage } from '../pages/sch1/otherCostsPage';
 import {
@@ -45,6 +46,7 @@ export type OtherCostsCleanup = { millId: number; year: number; marker: string }
 type Fixtures = {
   homePage: HomePage;
   appShell: AppShellPage;
+  schedulePage: SchedulePage;
   schedule1Page: Schedule1Page;
   otherCostsPage: OtherCostsPage;
   /**
@@ -98,6 +100,10 @@ export const test = base.extend<Fixtures>({
 
   appShell: async ({ page }, use) => {
     await use(new AppShellPage(page));
+  },
+
+  schedulePage: async ({ page }, use) => {
+    await use(new SchedulePage(page));
   },
 
   schedule1Page: async ({ page }, use) => {
