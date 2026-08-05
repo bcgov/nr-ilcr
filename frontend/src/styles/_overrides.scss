@@ -68,6 +68,11 @@
 
 .#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
+  // Global button height: 40px for every size variant (sm/md/lg and icon-only). Overriding Carbon's
+  // layout height token — which drives BOTH the min-block-size and the centering padding-block — keeps
+  // the label/icon vertically centered at any size, unlike a raw min-height override that would push
+  // sm/lg labels off-centre.
+  --cds-layout-size-height-local: 2.5rem;
 }
 
 .#{variables.$bcgov-prefix}--text-input,

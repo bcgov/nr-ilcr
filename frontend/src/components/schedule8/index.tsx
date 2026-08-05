@@ -25,7 +25,7 @@ import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   emptyPageForm,
   isTflSelected,
@@ -241,15 +241,11 @@ const Schedule8: FC = () => {
     setNav({ level: 'samples', pageId })
   }
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 8"
-        subtitle="Report Tree to Truck Costs."
-      />
-    </Grid>
+  const SCH8_BASE = 'Report Tree to Truck Costs'
+  const renderHeader = (trail: string[] = [SCH8_BASE]) => (
+    <ScheduleTombstone title="Schedule 8" subtitle={trail} />
   )
+  const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
     <div className="app-page">
@@ -297,9 +293,10 @@ const Schedule8: FC = () => {
     if (!page) {
       return shell(<InlineNotification kind="warning" lowContrast title="Page not found" />)
     }
+    const pageLabel = page.license ?? `Page ${page.id}`
     return (
       <div className="app-page">
-        {header}
+        {renderHeader([SCH8_BASE, `${pageLabel} — TtT Samples`])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <SamplePage
@@ -324,16 +321,18 @@ const Schedule8: FC = () => {
     if (!page || !sample) {
       return shell(<InlineNotification kind="warning" lowContrast title="Sample not found" />)
     }
+    const pageLabel = page.license ?? `Page ${page.id}`
+    const sampleTitle = sample.contractId ?? `Sample ${sample.id}`
     return (
       <div className="app-page">
-        {header}
+        {renderHeader([SCH8_BASE, pageLabel, sampleTitle])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <RatesPage
               millId={millId as number}
               year={year as number}
               sampleId={nav.sampleId}
-              sampleTitle={sample.contractId ?? `Sample ${sample.id}`}
+              sampleTitle={sampleTitle}
               additions={sample.additions}
               deductions={sample.deductions}
               editable={editable}
@@ -505,23 +504,6 @@ const Schedule8: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-8__meta">
-          <dl className="schedule-8__summary">
-            <div className="schedule-8__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-8__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-8__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}

@@ -90,7 +90,8 @@ export const MSG = {
     'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
 } as const
 
-// Banner line builders — mirror ContextBanner.tsx exactly (the Mill line and statusLine formats).
+// Working-context line builders — mirror WorkingContextLines.tsx exactly (the Mill line and
+// statusLine formats). Shared by the ScheduleTombstone (schedule headers) and the former banner.
 export const NOT_INITIATED = 'Not Initiated'
 export const bannerMillLine = (m: MillFixture): string =>
   `Mill: ${m.millNumber} ${m.millName} - Year: ${m.year}`
