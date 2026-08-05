@@ -34,9 +34,48 @@
   }
 }
 
-.schedule-1-other-costs__add {
+// Legacy "Add Other Cost" form: fields stacked vertically with the label to the LEFT of each input.
+// Each Carbon form-item becomes a two-column grid (label | input) so the Carbon label sits left
+// without a second <label> (keeps the accessible name intact for tests).
+.oc-add {
   display: flex;
-  gap: 1rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-inline-size: 40rem;
+}
+
+.oc-add__field.cds--form-item {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: 1rem;
+}
+
+.oc-add__field .cds--label {
+  margin: 0;
+}
+
+// Legacy labels read "Description:", "Volume:", etc. The colon is decorative (::after is not part of
+// the accessible name), so getByLabelText('Description') still resolves.
+.oc-add__field .cds--label::after {
+  content: ':';
+}
+
+// Bound the Description input so it reads as a field (not a full-bleed bar) — legacy sized it modestly.
+.oc-add__field--wide .cds--text-input__field-outer-wrapper {
+  max-inline-size: 24rem;
+}
+
+.oc-add__field--narrow .cds--text-input__field-outer-wrapper {
+  max-inline-size: 12rem;
+}
+
+// Align the Add button under the input column (7rem label + 1rem gap).
+.oc-add__actions {
+  padding-inline-start: 8rem;
+}
+
+.schedule-1-other-costs__totals td {
+  font-weight: 700;
+  background: var(--cds-layer-accent-01);
 }

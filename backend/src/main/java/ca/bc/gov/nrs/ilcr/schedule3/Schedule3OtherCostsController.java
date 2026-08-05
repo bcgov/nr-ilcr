@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3OtherCostsApi;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -66,6 +67,18 @@ public class Schedule3OtherCostsController implements Schedule3OtherCostsApi {
     OtherAcceptableDocument doc =
         schedule3Service.addOtherAcceptable(millId, year, request, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<OtherAcceptableDocument> saveOtherAcceptable(
+      long millId, int year, String intent, OtherAcceptableSaveRequest request,
+      Authentication authentication) {
+    millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
+    OtherAcceptableDocument doc =
+        schedule3Service.saveOtherAcceptable(millId, year, request.rows(), authentication.getName());
+    // Persistence is identical for a save or a delete (legacy update()); only the message differs.
+    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override

@@ -41,6 +41,13 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   private static final String UNACCEPT_BODY = """
       { "description": "Penalty", "total": 100 }
       """;
+  // Batch-save (collection PUT) bodies for the new sub-page save endpoints.
+  private static final String OA_SAVE_BODY = """
+      { "rows": [ { "id": 1, "description": "Consulting", "total": 100, "pop": 50 } ] }
+      """;
+  private static final String UNACCEPT_SAVE_BODY = """
+      { "rows": [ { "id": 1, "description": "Penalty", "total": 100 } ] }
+      """;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -101,6 +108,16 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 
+  @Test
+  @DisplayName("Other Acceptable batch PUT (save) without EDIT_SCHEDULE -> 403")
+  void otherAcceptableBatchPut_noPermission_returns403() throws Exception {
+    mockMvc.perform(put(OTHER_ACCEPTABLE).param("millId", MILL).param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(OA_SAVE_BODY)
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
   // ---- Included Unacceptable Costs --------------------------------------------------------------
 
   @Test
@@ -144,6 +161,16 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @DisplayName("Unacceptable DELETE without EDIT_SCHEDULE -> 403")
   void unacceptableDelete_noPermission_returns403() throws Exception {
     mockMvc.perform(delete(UNACCEPTABLE + "/1").param("millId", MILL).param("year", "2021")
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("Unacceptable batch PUT (save) without EDIT_SCHEDULE -> 403")
+  void unacceptableBatchPut_noPermission_returns403() throws Exception {
+    mockMvc.perform(put(UNACCEPTABLE).param("millId", MILL).param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(UNACCEPT_SAVE_BODY)
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));

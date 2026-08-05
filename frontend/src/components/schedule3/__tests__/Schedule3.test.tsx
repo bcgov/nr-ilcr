@@ -258,7 +258,9 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
 
     await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
     await user.click(screen.getAllByRole('button', { name: /delete/i })[0])
-    const dialog = await screen.findByRole('dialog')
+    // Scope to the delete-confirm modal by heading — the page also renders the "Leave Schedule 3"
+    // navigation modal, so a bare dialog role is ambiguous.
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
     expect(
       within(dialog).getByText('This will delete the current record. Do you want to continue?'),
     ).toBeInTheDocument()
@@ -370,30 +372,38 @@ describe('Schedule3 Check Status (AC5)', () => {
 })
 
 describe('Schedule3 sub-page navigation (AC6)', () => {
-  test('clicking a sub-page link confirms then navigates to the Story 4.4 route', async () => {
+  test('clicking a sub-page link confirms via the Modal then navigates to the Story 4.4 route', async () => {
     mockNavigate.mockClear()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     server.use(http.get(URL, () => HttpResponse.json(schedule3Doc)))
     render(<Schedule3 />)
     const user = userEvent.setup()
 
+    // A Carbon Modal (not a native window.confirm) gates the navigation.
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs \(2\):/ }))
+    const otherDialog = await screen.findByRole('dialog', { name: 'Leave Schedule 3' })
+    expect(
+      within(otherDialog).getByText(
+        'Any unsaved data will be lost. Are you sure you would like to continue?',
+      ),
+    ).toBeInTheDocument()
+    await user.click(within(otherDialog).getByRole('button', { name: /continue/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/other-acceptable-costs' })
 
     await user.click(screen.getByRole('button', { name: /Included Unacceptable Costs \(1\):/ }))
+    const unacceptableDialog = await screen.findByRole('dialog', { name: 'Leave Schedule 3' })
+    await user.click(within(unacceptableDialog).getByRole('button', { name: /continue/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3/included-unacceptable-costs' })
-    confirmSpy.mockRestore()
   })
 
-  test('cancelling the confirm does NOT navigate (editable)', async () => {
+  test('cancelling the Modal does NOT navigate (editable)', async () => {
     mockNavigate.mockClear()
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     server.use(http.get(URL, () => HttpResponse.json(schedule3Doc)))
     render(<Schedule3 />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs \(2\):/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Leave Schedule 3' })
+    await user.click(within(dialog).getByRole('button', { name: /cancel/i }))
     expect(mockNavigate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
   })
 })

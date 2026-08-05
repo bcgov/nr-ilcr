@@ -34,10 +34,15 @@ jobs:
           java-cache: maven
           java-distribution: temurin
           java-version: "21"
+          # cpd.exclusions: RoadGroupLookup is a verbatim port of the legacy RMG tables
+          # (RoadGroupUtil.setRmgByTfaTsbNumberCode/setRmgByTflNumberCode), where ~18 of the
+          # TSA cases are token-identical apart from their literals. CPD reads that as 174
+          # duplicated lines; the table is the business rule and must not be de-duplicated.
           sonar_args: >
             -Dsonar.organization=bcgov-sonarcloud
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_backend
             -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.cpd.exclusions=**/schedule6/RoadGroupLookup.java
           sonar_token: ${{ secrets.sonar_token_backend }}
           triggers: ('backend/')
 

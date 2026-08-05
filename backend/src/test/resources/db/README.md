@@ -52,3 +52,15 @@ this branch's schedule 2 fixtures collided on both version numbers and seed IDs.
   the `12xx` block (`1222–1225`, `1228`); non-colliding `1002`/`1023` left as-is.
 - **Cost-item 135** — was `INSERT`ed identically by both schedule 3 (`V5`) and schedule 2 (`V10`);
   the duplicate `INSERT` was dropped from `V10`, which now references schedule 3's definition.
+
+## History: Schedule 6 version collision (resolved)
+
+Schedule 6 (#225) claimed `V30`/`V31` while open, yielding once already because schedule 11 had taken
+`V28`/`V29`. `main` then merged `V30__ilcr_mill_user_profile_xref.sql`, so the pair moved again to
+`V31`/`V32` — both files renumbered together to keep the write fixtures immediately after the
+snapshot they seed into, with the `V3x` references in the `schedule6` `*IT`s and service moved in
+lockstep. Version numbers only; no seed-ID clash (schedule 6 owns mills `660–666`).
+
+This is the third version collision on this convention (schedule 2, schedule 11, schedule 6), and
+each one was caught only after CI went red on a branch that was otherwise green. The
+timestamp-version escape hatch in convention 1 above is worth taking.

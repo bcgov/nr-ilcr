@@ -352,7 +352,9 @@ describe('Schedule1 crown pre-fill & Schedule 3 pulls (Story 2.3)', () => {
     expect(screen.getByLabelText('Forest Management Administration volume')).toHaveValue('7777')
     expect(screen.getByLabelText('Subtotal Company Logging volume')).toHaveValue('7777')
     expect(screen.getByLabelText('Less Silviculture Admin Costs volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Total Silviculture volume')).toHaveValue('7777')
+    expect(
+      screen.getByLabelText('Total Silviculture (As per Financial Statements) volume'),
+    ).toHaveValue('7777')
   })
 
   test('no warning banner when warnings are empty (AC2)', async () => {
@@ -412,7 +414,7 @@ describe('Schedule1 editable pulled/derived volumes (Story 2.6 / D2 reversal)', 
     const lessAdmin = screen.getByLabelText('Less Silviculture Admin Costs volume')
     await user.clear(lessAdmin)
     await user.type(lessAdmin, '77')
-    const total = screen.getByLabelText('Total Silviculture volume')
+    const total = screen.getByLabelText('Total Silviculture (As per Financial Statements) volume')
     await user.type(total, '88')
     // Their cost cells are read-only (no cost inputs).
     expect(
