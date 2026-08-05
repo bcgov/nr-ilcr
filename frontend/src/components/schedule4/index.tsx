@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Column,
@@ -195,6 +195,14 @@ const Schedule4: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
+  // Reset URL search parameters when millId or year switches (Comment 3)
+  useEffect(() => {
+    if (search.loc !== undefined || search.sub !== undefined) {
+      void navigate({ to: '/schedule-4', search: {}, replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [millId, year])
+
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -297,7 +305,7 @@ const Schedule4: FC = () => {
     id: panelMode === 'edit' ? panelEditId : null,
     revisionCount: panelMode === 'edit' ? (panelRevision ?? 0) : null,
     name: panelName.trim(),
-    comments: panelComments.trim() === '' ? null : panelComments,
+    comments: panelComments.trim() || null,
     categories: ALL_CATEGORIES.flatMap((def) => {
       const value = panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }
       const isDistance = def.kind === 'DISTANCE'
@@ -512,7 +520,7 @@ const Schedule4: FC = () => {
               def={subPage.def}
               rows={rows}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-4', search: {} })}
+              onBack={() => void navigate({ to: '/schedule-4', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>

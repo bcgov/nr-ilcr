@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule4 from '@/components/schedule4'
+import { Route as realScheduleRoute } from '@/routes/schedule-4'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Location } from '@/interfaces/Schedule4Response'
 
@@ -23,10 +24,7 @@ function makeRouter(initialUrl = '/schedule-4') {
   const scheduleRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/schedule-4',
-    validateSearch: (s: Record<string, unknown>) => ({
-      loc: s.loc == null || s.loc === '' ? undefined : Number(s.loc),
-      sub: s.sub as 'TOWING' | 'TRUCK_REHAUL' | 'OTHER' | undefined,
-    }),
+    validateSearch: realScheduleRoute.options.validateSearch,
     component: Schedule4,
   })
   return createRouter({
@@ -435,6 +433,33 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     )
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
+  })
+
+  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-page', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Harbour Dump')
+
+    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue).
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+
+    // Click the in-app Cancel/Back button (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await waitFor(() =>
+      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+    expect(router.state.location.search).toEqual({})
+
+    // Browser Back should go back before Schedule 4 (to the empty root) instead of re-entering the sub-page
+    router.history.back()
+    await waitFor(() =>
+      expect(router.state.location.pathname).not.toEqual('/schedule-4'),
+    )
   })
 })
 

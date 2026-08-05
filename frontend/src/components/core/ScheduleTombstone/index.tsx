@@ -10,7 +10,7 @@ type Props = {
   // The page name — left column, e.g. "Schedule 2".
   title: string
   // The sub-page trail under the title, rendered breadcrumb-style. A single string is one crumb; an
-  // array threads the current level (e.g. ["Special Log Transportation Costs", "Harbour Dump", "Towing"]).
+  // array threads the current level (e.g. ["Special Log Transportation Systems", "Harbour Dump", "Towing"]).
   subtitle?: string | string[]
 }
 

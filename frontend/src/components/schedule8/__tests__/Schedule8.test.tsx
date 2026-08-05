@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule8 from '@/components/schedule8'
+import { Route as realScheduleRoute } from '@/routes/schedule-8'
 import type { Page, Sample } from '@/interfaces/Schedule8Response'
 
 // Schedule 8's samples/rates levels are URL-driven (search: pageId + sampleId), so render it inside a
@@ -21,10 +22,7 @@ function makeRouter(initialUrl = '/schedule-8') {
   const scheduleRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/schedule-8',
-    validateSearch: (s: Record<string, unknown>) => ({
-      pageId: s.pageId == null || s.pageId === '' ? undefined : Number(s.pageId),
-      sampleId: s.sampleId == null || s.sampleId === '' ? undefined : Number(s.sampleId),
-    }),
+    validateSearch: realScheduleRoute.options.validateSearch,
     component: Schedule8,
   })
   return createRouter({
@@ -911,6 +909,38 @@ describe('Schedule8 additions/deductions level', () => {
     await screen.findByRole('button', { name: /add new page/i })
     expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBeUndefined()
+  })
+
+  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-pages', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('LIC1')
+
+    // pages → samples (page 8001)
+    await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
+    await screen.findByText(/Samples — LIC1/i)
+
+    // samples → rates (sample 8101)
+    await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
+    await screen.findByText(/Additions \/ Deductions — C-1/i)
+
+    // Click in-app Cancel/Back to return to samples (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await screen.findByText(/Samples — LIC1/i)
+    expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
+
+    // Click in-app Cancel/Back to return to pages (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await screen.findByRole('button', { name: /add new page/i })
+    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+
+    // Browser Back should now go before Schedule 8 (to the empty root) instead of re-entering the samples list
+    router.history.back()
+    await waitFor(() =>
+      expect(router.state.location.pathname).not.toEqual('/schedule-8'),
+    )
   })
 
   test('add an addition POSTs the rate sub-resource and shows the success message', async () => {

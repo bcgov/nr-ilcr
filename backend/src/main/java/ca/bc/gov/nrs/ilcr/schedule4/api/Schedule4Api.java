@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public interface Schedule4Api {
 
   /**
-   * Get the Schedule 4 (Special Log Transportation Costs) read document for a mill and reporting
+   * Get the Schedule 4 (Special Log Transportation Systems) read document for a mill and reporting
    * year: the list of dump locations, each with its in-scope transportation-category amounts (9 fixed
    * + 3 distance-based). Context guards (400/404/409/403) are enforced by {@code MillContextService} +
    * method security. A valid, active mill/year with no {@code TRANSPORTATION_REPORT} rows for category

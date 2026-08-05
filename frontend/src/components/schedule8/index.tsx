@@ -64,6 +64,14 @@ const Schedule8: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
+  // Reset URL search parameters when millId or year switches (Comment 3)
+  useEffect(() => {
+    if (search.pageId !== undefined || search.sampleId !== undefined) {
+      void navigate({ to: '/schedule-8', search: {}, replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [millId, year])
+
   const [data, setData] = useState<Schedule8Response | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!contextMissing)
@@ -327,7 +335,7 @@ const Schedule8: FC = () => {
               year={year as number}
               page={page}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-8', search: {} })}
+              onBack={() => void navigate({ to: '/schedule-8', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
               onOpenRates={(sampleId) =>
                 void navigate({ to: '/schedule-8', search: { pageId: nav.pageId, sampleId } })
@@ -361,7 +369,7 @@ const Schedule8: FC = () => {
               additions={sample.additions}
               deductions={sample.deductions}
               editable={editable}
-              onBack={() => void navigate({ to: '/schedule-8', search: { pageId: nav.pageId } })}
+              onBack={() => void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>
