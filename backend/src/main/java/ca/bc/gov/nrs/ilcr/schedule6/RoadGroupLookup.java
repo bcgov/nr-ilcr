@@ -188,10 +188,15 @@ final class RoadGroupLookup {
           }
           break;
         case "26":
-          // TSB Quesnel
+          // TSB Quesnel. Legacy wrote this class as [E-ie-i], whose E..i span runs past 'Z'
+          // through the ASCII punctuation gap ([ \ ] ^ _ `) and so also matches J-Z. Spelled
+          // here as two same-case ranges instead: same matches for every TSB value (none can
+          // end in punctuation), minus the cross-case range CodeQL flags as unintended width.
+          // The J-Z reach is kept rather than narrowed to E-I because it is legacy behaviour;
+          // THE.TSB_NUMBER_CODE stops at 26I, so it resolves nothing in practice either way.
           if (tsbNumberCode.matches(".*[A-Da-d]")) {
             rmg = "19";
-          } else if (tsbNumberCode.matches(".*[E-ie-i]")) {
+          } else if (tsbNumberCode.matches(".*[E-Za-i]")) {
             rmg = "14";
           }
           break;

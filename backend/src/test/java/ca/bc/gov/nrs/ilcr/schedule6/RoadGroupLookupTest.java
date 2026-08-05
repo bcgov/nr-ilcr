@@ -43,8 +43,9 @@ class RoadGroupLookupTest {
       // 24 Prince George (regex ranges; I rides with E-F -> 13).
       "24, 24A, 11", "24, 24B, 11", "24, 24C, 11", "24, 24D, 12", "24, 24E, 13",
       "24, 24F, 13", "24, 24I, 13", "24, 24G, 14", "24, 24H, 14", "24, 24Z, NULL",
-      // 26 Quesnel — the legacy [E-ie-i] char class spans E..i in ASCII, so EVERY uppercase
-      // letter E-Z (26Z included) resolves 14; a legacy quirk preserved by the verbatim port.
+      // 26 Quesnel — legacy's [E-ie-i] spans E..i in ASCII, so EVERY uppercase letter E-Z
+      // (26Z included) resolves 14, not just E-I; 26Z pins that width so the rewritten
+      // [E-Za-i] class cannot silently narrow it.
       "26, 26A, 19", "26, 26D, 19", "26, 26E, 14", "26, 26I, 14", "26, 26Z, 14",
       // 29 Williams Lake (regex ranges; I with A-E, J with F-H).
       "29, 29A, 20", "29, 29E, 20", "29, 29I, 20", "29, 29F, 21", "29, 29H, 21",
