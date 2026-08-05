@@ -16,5 +16,7 @@ export default interface Schedule4LocationRequest {
   readonly id: number | null
   readonly revisionCount: number | null
   readonly name: string
+  // Per-location free-text comments (≤ 2000, the TRANSPORTATION_REPORT.COMMENTS width); null when blank.
+  readonly comments: string | null
   readonly categories: CategoryInput[]
 }

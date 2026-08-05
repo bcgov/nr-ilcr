@@ -11,6 +11,10 @@ class ResizeObserverMock implements ResizeObserver {
 
 globalThis.ResizeObserver = ResizeObserverMock
 
+// jsdom doesn't implement scrollTo; TanStack Router calls it on navigation (scroll restoration). Stub
+// it so router-driven tests don't emit "Not implemented" noise.
+globalThis.scrollTo = () => {}
+
 const users = [
   {
     id: 1,

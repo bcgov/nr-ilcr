@@ -102,6 +102,7 @@ public class Schedule4Service {
     List<LocationRow> locationRows = repository.findLocations(millId, year);
     Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
     Map<Integer, String> nameByReport = new HashMap<>();
+    Map<Integer, String> commentsByReport = new HashMap<>();
     Map<Integer, Integer> revisionByReport = new HashMap<>();
     Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
     // The location's stable, rename-safe id (§Decision 2): the distance-null primary report if the
@@ -111,6 +112,7 @@ public class Schedule4Service {
     for (LocationRow loc : locationRows) {
       distanceByReport.put(loc.transportationReportId(), loc.distance());
       nameByReport.put(loc.transportationReportId(), loc.locationDescription());
+      commentsByReport.put(loc.transportationReportId(), loc.comments());
       revisionByReport.put(loc.transportationReportId(), loc.revisionCount());
       categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
       minIdByName.merge(loc.locationDescription(), loc.transportationReportId(), Math::min);
@@ -161,7 +163,8 @@ public class Schedule4Service {
     List<Location> locations = new ArrayList<>(categoriesByName.size());
     categoriesByName.forEach((name, categories) -> {
       Integer primaryId = primaryIdByName.getOrDefault(name, minIdByName.get(name));
-      locations.add(new Location(primaryId, revisionByReport.get(primaryId), name, categories,
+      locations.add(new Location(primaryId, revisionByReport.get(primaryId), name,
+          commentsByReport.get(primaryId), categories,
           subPageByName.getOrDefault(name, List.of())));
     });
 
@@ -256,14 +259,17 @@ public class Schedule4Service {
     }
     try {
       int primaryId;
+      // Per-location comments (nullable) live on the primary report's COMMENTS column; the bump
+      // re-stamps them on both create (0 -> 1) and edit (mirrors Schedules 1/2/3).
+      String comments = request.comments();
       if (request.id() == null) {
         primaryId = repository.insertReport(millId, year, name, null, user); // primary: distance null
-        repository.bumpRevision(primaryId, 0, millId, year, user); // 0 -> 1 (mirrors Schedule 2)
+        repository.bumpRevision(primaryId, 0, millId, year, comments, user); // 0 -> 1
       } else {
         primaryId = request.id();
         int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
         // bump is mill/year-scoped: a foreign id (or stale token) affects 0 rows -> 409.
-        if (repository.bumpRevision(primaryId, expectedRevision, millId, year, user) == 0) {
+        if (repository.bumpRevision(primaryId, expectedRevision, millId, year, comments, user) == 0) {
           throw new StaleRevisionException();
         }
         if (oldName != null && !oldName.equals(name)) {

@@ -16,7 +16,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmt, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, toNum } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import {
   emptySubPageRowForm,
@@ -75,17 +75,18 @@ const SubPage: FC<SubPageProps> = ({
       setForm((prev) => ({ ...prev, [field]: value }))
     }
 
-  const handleAdd = () => {
-    if (busy) return
+  // POST the entered add-row (each row saves immediately). Resolves true on success, false on
+  // validation failure / API error. Shared by "Add row" and "Save and Back".
+  const addRow = (): Promise<boolean> => {
     const validation = validateSubPageRow(form, def.hasCycle)
     if (Object.keys(validation).length > 0) {
       setShowErrors(true)
-      return
+      return Promise.resolve(false)
     }
     setBusy(true)
     setAddMessage(null)
     setAddError(null)
-    apiService
+    return apiService
       .getAxiosInstance()
       .post<Schedule4Response>(
         `/v1/schedule4/locations/${locationId}/rows?millId=${millId}&year=${year}`,
@@ -103,9 +104,38 @@ const SubPage: FC<SubPageProps> = ({
         setForm(emptySubPageRowForm())
         setShowErrors(false)
         setAddMessage(response.data.message?.text ?? null)
+        return true
       })
-      .catch((error: unknown) => setAddError(extractDetail(error) || 'Row could not be saved.'))
+      .catch((error: unknown) => {
+        setAddError(extractDetail(error) || 'Row could not be saved.')
+        return false
+      })
       .finally(() => setBusy(false))
+  }
+
+  const handleAdd = () => {
+    if (!busy) void addRow()
+  }
+
+  // Any add-row input the user has typed but not yet committed with "Add row".
+  const hasPendingRow = (): boolean =>
+    form.description.trim() !== '' ||
+    form.distance.trim() !== '' ||
+    form.volume.trim() !== '' ||
+    form.cost.trim() !== '' ||
+    (def.hasCycle && form.cycle.trim() !== '')
+
+  // Save: commit any pending add-row input, then return to the location. With nothing pending it just
+  // returns (each row is already saved on Add).
+  const handleSave = () => {
+    if (busy) return
+    if (hasPendingRow()) {
+      void addRow().then((ok) => {
+        if (ok) onBack()
+      })
+    } else {
+      onBack()
+    }
   }
 
   const handleDeleteRow = () => {
@@ -144,9 +174,6 @@ const SubPage: FC<SubPageProps> = ({
   return (
     <div className="schedule-4__subpage">
       <div className="schedule-4__subpage-header">
-        <Button kind="ghost" size="sm" onClick={onBack}>
-          ← Back to location
-        </Button>
         <h3 className="schedule-4__heading">
           {def.label} — {locationName}
         </h3>
@@ -185,9 +212,9 @@ const SubPage: FC<SubPageProps> = ({
           <TableHead>
             <TableRow>
               <TableHeader>Description</TableHeader>
-              <TableHeader className="schedule-4__num">Distance</TableHeader>
-              <TableHeader className="schedule-4__num">Volume</TableHeader>
-              <TableHeader className="schedule-4__num">Cost</TableHeader>
+              <TableHeader className="schedule-4__num">Distance (km)</TableHeader>
+              <TableHeader className="schedule-4__num">Volume (m³)</TableHeader>
+              <TableHeader className="schedule-4__num">Cost $</TableHeader>
               {def.hasCycle && <TableHeader className="schedule-4__num">Cycle</TableHeader>}
               <TableHeader className="schedule-4__num">$/m³</TableHeader>
               {editable && <TableHeader>Actions</TableHeader>}
@@ -199,55 +226,73 @@ const SubPage: FC<SubPageProps> = ({
                 <TableCell colSpan={editable ? 7 : 6}>No rows have been added.</TableCell>
               </TableRow>
             ) : (
-              rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>{row.description ?? '—'}</TableCell>
-                  <TableCell className="schedule-4__num">{fmt(row.distance)}</TableCell>
-                  <TableCell className="schedule-4__num">{fmt(row.volume)}</TableCell>
-                  <TableCell className="schedule-4__num">{fmt(row.cost)}</TableCell>
+              <>
+                {rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>{row.description ?? '—'}</TableCell>
+                    <TableCell className="schedule-4__num">{fmtNumber(row.distance)}</TableCell>
+                    <TableCell className="schedule-4__num">{fmtNumber(row.volume)}</TableCell>
+                    <TableCell className="schedule-4__num">{fmtNumber(row.cost)}</TableCell>
+                    {def.hasCycle && (
+                      <TableCell className="schedule-4__num">{fmtNumber(row.cycle)}</TableCell>
+                    )}
+                    <TableCell className="schedule-4__num">{fmtCurrency(row.perUnit)}</TableCell>
+                    {editable && (
+                      <TableCell>
+                        <Button
+                          kind="danger--ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => setConfirmDeleteRow(row)}
+                        >
+                          Delete
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+                {/* Summary row: totals of the respective columns (last row of the table). */}
+                <TableRow className="schedule-4__totals-row">
+                  <TableCell>Totals</TableCell>
+                  <TableCell className="schedule-4__num">
+                    {fmtNumber(sum(rows, (r) => r.distance))}
+                  </TableCell>
+                  <TableCell className="schedule-4__num">
+                    {fmtNumber(sum(rows, (r) => r.volume))}
+                  </TableCell>
+                  <TableCell className="schedule-4__num">
+                    {fmtNumber(sum(rows, (r) => r.cost))}
+                  </TableCell>
                   {def.hasCycle && (
-                    <TableCell className="schedule-4__num">{fmt(row.cycle)}</TableCell>
-                  )}
-                  <TableCell className="schedule-4__num">{fmt(row.perUnit)}</TableCell>
-                  {editable && (
-                    <TableCell>
-                      <Button
-                        kind="danger--ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => setConfirmDeleteRow(row)}
-                      >
-                        Delete
-                      </Button>
+                    <TableCell className="schedule-4__num">
+                      {fmtNumber(sum(rows, (r) => r.cycle))}
                     </TableCell>
                   )}
+                  <TableCell className="schedule-4__num" />
+                  {editable && <TableCell />}
                 </TableRow>
-              ))
+              </>
             )}
           </TableBody>
         </Table>
       </TableContainer>
 
-      <dl className="schedule-4__totals" aria-label={`${def.label} totals`}>
-        <div>
-          <dt>Total Distance</dt>
-          <dd>{fmt(sum(rows, (r) => r.distance))}</dd>
-        </div>
-        <div>
-          <dt>Total Volume</dt>
-          <dd>{fmt(sum(rows, (r) => r.volume))}</dd>
-        </div>
-        <div>
-          <dt>Total Cost</dt>
-          <dd>{fmt(sum(rows, (r) => r.cost))}</dd>
-        </div>
-        {def.hasCycle && (
-          <div>
-            <dt>Total Cycle</dt>
-            <dd>{fmt(sum(rows, (r) => r.cycle))}</dd>
-          </div>
+      <div className="schedule-4__panel-actions">
+        {editable ? (
+          <>
+            <Button kind="primary" disabled={busy} onClick={handleSave}>
+              Save
+            </Button>
+            <Button kind="secondary" disabled={busy} onClick={onBack}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button kind="secondary" onClick={onBack}>
+            Back
+          </Button>
         )}
-      </dl>
+      </div>
 
       {editable && (
         <Modal
