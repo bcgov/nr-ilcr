@@ -10,6 +10,11 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: 'src/test-setup.ts',
+    // The RTL + userEvent + MSW component suites run ~5x slower under coverage instrumentation on CI,
+    // so the default 5s timeout flakily trips on the async-heavy edit/save tests (which complete in
+    // ~2s uninstrumented). 20s gives ample headroom without masking a genuine hang.
+    testTimeout: 20000,
+    hookTimeout: 20000,
     // you might want to disable it, if you don't have tests that rely on CSS
     // since parsing CSS is slow
     css: false,
