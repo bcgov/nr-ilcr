@@ -444,9 +444,12 @@ const Schedule6: FC = () => {
   const setEditField = (key: keyof RoadRecordFormValues, value: string) =>
     setEditForm((prev) => ({ ...prev, [key]: value }))
 
-  // Shared tail for all four mutations: apply on success, keep entered values and surface the API's
-  // verbatim detail on failure, and release the in-flight lock — each branch guarded, including the
-  // `finally`, where an unguarded release would free a lock belonging to a NEWER request.
+  // Shared tail for the three DOCUMENT mutations (add, edit, general comment): apply on success, keep
+  // entered values and surface the API's verbatim detail on failure, and release the in-flight lock —
+  // each branch guarded, including the `finally`, where an unguarded release would free a lock
+  // belonging to a NEWER request. Check Status shares the same three-branch guarding but deliberately
+  // not this helper: it applies no document (read-only) and owns its own error text, so routing it
+  // through here would mean threading an unused onSuccess and an unused applyDocument.
   const runMutation = (
     request: Promise<{ data: Schedule6Response }>,
     onSuccess: (doc: Schedule6Response) => void,

@@ -40,6 +40,9 @@ coverage/
 *.lcov
 .nyc_output/
 .vite/
+# TanStack Router plugin scratch dir. Its tmp/ children are already caught by the blanket `tmp/`
+# rule below; this entry is explicit so anything else the plugin writes here stays untracked too.
+.tanstack/
 .cache/
 *.tsbuildinfo
 npm-debug.log*

@@ -394,6 +394,11 @@ describe('Schedule 6 page (Story 8.3)', () => {
   test('inline edit PUTs the row with ITS OWN revisionCount, including a falsy 0 (AC4)', async () => {
     const captured: Record<number, RoadRecordRequest> = {}
     let capturedUrl: string | null = null
+    // The echo returns the SAVED row (volume 2,000) rather than the pre-edit one, so the render
+    // assertions below can prove the response document is applied to page state. An echo of the
+    // unchanged record cannot: the success banner rides its own setter, so a dropped setData() would
+    // still show the banner over stale values.
+    const savedTsaRecord: RoadRecord = { ...tsaRecord, volume: 2000, costPerVolume: 25 }
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))),
       http.put(`${RECORDS_URL}/:recordId`, async ({ request, params }) => {
@@ -401,7 +406,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
         capturedUrl = request.url
         return HttpResponse.json(
           doc({
-            roadRecords: [tsaRecord, tflRecord],
+            roadRecords: [savedTsaRecord, tflRecord],
+            totalVolume: 2500,
+            totalCost: 75000,
+            totalCostPerVolume: 30,
             message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
           }),
         )
@@ -430,6 +438,11 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured[9501].volume).toBe(2000)
     expect(captured[9501].cost).toBe(50000)
     expect(captured[9501].comments).toBe('Culvert replacement')
+    // The echoed document replaces page state: the editor is torn down and the row re-renders the
+    // SAVED volume, not the pre-edit 1,000 — a save that only banners is a silent data-staleness bug.
+    expect(within(rowPanel(1)).queryByLabelText('Edit Volume m³')).not.toBeInTheDocument()
+    expect(within(rowPanel(1)).getByText('2,000')).toBeInTheDocument()
+    expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
 
     // Row 2's token is 0: it must travel as 0, never be dropped or coerced by a falsy check.
     await user.click(within(rowPanel(2)).getByRole('button', { name: /^edit$/i }))
@@ -1006,6 +1019,156 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
   })
 
+  test('a load failure carrying no detail falls back to the generic load message (AC7)', async () => {
+    // A network failure has no `response`, so extractDetail yields undefined and mapLoadError's
+    // client-owned fallback must fill in — the guard-state tests only cover the verbatim branch, and
+    // an unfilled fallback renders an error panel with an empty subtitle.
+    server.use(http.get(URL, () => HttpResponse.error()))
+    render(<Schedule6 />)
+
+    expect(await screen.findByText('Unable to load Schedule 6.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^add$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Totals' })).not.toBeInTheDocument()
+  })
+
+  test('a detail-less add failure falls back to the record-save message (AC10)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      // A 500 with no problem+json body: the verbatim branch has nothing to render, so the page's own
+      // fallback must surface rather than an "Action failed" banner with no subtitle.
+      http.post(RECORDS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await user.type(within(panel).getByLabelText('Volume m³'), '1000')
+    await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
+
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
+    // add-is-save: the panel and its values survive a server-side failure so the entry is not retyped.
+    expect(screen.getByRole('region', { name: 'Add Road Maintenance report' })).toBeInTheDocument()
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+  })
+
+  test('an edit failure renders the detail verbatim and leaves the editor open (AC4 / AC10)', async () => {
+    const detail = 'Entered RMG could not be resolved for the supplied Supply Block.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${RECORDS_URL}/9501`, () => problemBody(400, detail)),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText(detail)).toBeInTheDocument()
+    // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
+    // it can be corrected, page state is not replaced, and no success banner appears alongside.
+    expect(within(rowPanel(1)).getByLabelText('Edit Volume m³')).toHaveValue('2000')
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    // The in-flight lock releases on the error path too, or Save is dead until reload.
+    await waitFor(() =>
+      expect(within(rowPanel(1)).getByRole('button', { name: /^save$/i })).toBeEnabled(),
+    )
+  })
+
+  test('a General Comment failure falls back to its OWN message and keeps the text (AC5)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(COMMENTS_URL, () => new HttpResponse(null, { status: 500 })),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const region = await waitFor(() => commentsRegion())
+    await user.clear(within(region).getByLabelText('General Comments'))
+    await user.type(within(region).getByLabelText('General Comments'), 'Revised summary')
+    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+
+    // The comment mutation owns a DIFFERENT fallback than the record mutations — sharing the record
+    // string here would misattribute which save failed.
+    expect(await screen.findByText('Comments could not be saved.')).toBeInTheDocument()
+    expect(screen.queryByText('Schedule could not be saved.')).not.toBeInTheDocument()
+    expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
+      'Revised summary',
+    )
+  })
+
+  test.each([
+    [
+      'renders a problem+json detail verbatim',
+      () => problemBody(400, 'Schedule status could not be evaluated.'),
+      'Schedule status could not be evaluated.',
+    ],
+    [
+      'falls back when the failure carries no detail',
+      () => new HttpResponse(null, { status: 500 }),
+      'Unable to check status.',
+    ],
+  ])(
+    'a failed Check Status %s, paints no verdict and unlocks (AC9 / AC11)',
+    async (_case, respond, expected) => {
+      server.use(
+        http.get(URL, () => HttpResponse.json(doc())),
+        http.post(CHECK_URL, respond),
+      )
+      render(<Schedule6 />)
+      const user = userEvent.setup()
+
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+      await user.click(screen.getByRole('button', { name: /check status/i }))
+
+      // handleCheckStatus owns its own error text and lock, separate from runMutation's.
+      expect(await screen.findByText(expected)).toBeInTheDocument()
+      expect(screen.queryByText('Requirements met')).not.toBeInTheDocument()
+      expect(screen.queryByText('Action required')).not.toBeInTheDocument()
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled(),
+      )
+    },
+  )
+
+  test('a success response with NO message applies the document silently (optional field)', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ roadRecords: [], totalVolume: 0, totalCost: 0, totalCostPerVolume: null }),
+        ),
+      ),
+      // `message` is optional on the 8.2 response. It always arrives today, but an absent one must
+      // apply the document and banner nothing — never a success banner with an undefined subtitle.
+      http.post(RECORDS_URL, () => HttpResponse.json(doc())),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await user.type(within(panel).getByLabelText('Volume m³'), '1000')
+    await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
+
+    // The document still lands (row + totals) and the panel still collapses...
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }),
+    ).toBeInTheDocument()
+    expect(within(totalsRegion()).getByText('1,000')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: 'Add Road Maintenance report' }),
+      ).not.toBeInTheDocument(),
+    )
+    // ...with no banner of either kind.
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Action failed')).not.toBeInTheDocument()
+  })
+
   test('a stale GET (mill/year changed mid-flight) is ignored (AC11)', async () => {
     server.use(
       http.get(URL, async ({ request }) => {
@@ -1100,6 +1263,80 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(
       screen.queryByText('All requirements for this schedule have been met'),
     ).not.toBeInTheDocument()
+  })
+
+  test('a stale edit response (mill/year changed mid-flight) never applies (AC11)', async () => {
+    server.use(
+      http.get(URL, ({ request }) =>
+        request.url.includes('millId=999')
+          ? HttpResponse.json(otherContextDoc())
+          : HttpResponse.json(doc()),
+      ),
+      http.put(`${RECORDS_URL}/9501`, async () => {
+        await delay(300)
+        return HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Other mill record')).toBeInTheDocument()
+    // Let the stale PUT resolve. The edit branch carries the widest blast radius of the four: an
+    // unguarded response would banner a save the new mill never made AND overwrite its rows.
+    await delay(400)
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
+    expect(screen.getByText('Other mill record')).toBeInTheDocument()
+  })
+
+  test('a stale comment response (mill/year changed mid-flight) never applies (AC11)', async () => {
+    server.use(
+      http.get(URL, ({ request }) =>
+        request.url.includes('millId=999')
+          ? HttpResponse.json(otherContextDoc())
+          : HttpResponse.json(doc()),
+      ),
+      http.put(COMMENTS_URL, async () => {
+        await delay(300)
+        return HttpResponse.json(
+          doc({
+            generalComments: 'Revised summary',
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    const region = await waitFor(() => commentsRegion())
+    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Other mill record')).toBeInTheDocument()
+    // The comment PUT returns the WHOLE document, so an unguarded stale response replaces the new
+    // mill's rows and comment with the old mill's — the fourth mutation, guarded like the other three.
+    await delay(400)
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
+    expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
+      'Other mill comment',
+    )
   })
 
   test('changing mill/year resets the add panel, banners and check result (AC11)', async () => {
