@@ -75,6 +75,13 @@
   padding-inline-start: 8rem;
 }
 
+// Match the Add button width to the narrow Volume/Cost fields (12rem), label centred.
+.oc-add__actions .cds--btn {
+  inline-size: 12rem;
+  max-inline-size: 12rem;
+  justify-content: center;
+}
+
 .schedule-1-other-costs__totals td {
   font-weight: 700;
   background: var(--cds-layer-accent-01);

@@ -211,7 +211,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
         { name: 'Schedule 3', path: '/schedule-3' },
       ]}
       title={config.title}
-      backLabel="Back to Schedule 3"
+      backLabel="Back"
       loadingLabel={`Loading ${config.title}`}
       errorTitle={`Unable to load ${config.title}`}
     >
@@ -252,7 +252,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                       />
                     ))}
                     <div className="schedule-3-sub__actions">
-                      <Button kind="primary" disabled={saving} onClick={handleAdd}>
+                      <Button kind="primary" size="md" disabled={saving} onClick={handleAdd}>
                         Add
                       </Button>
                     </div>

@@ -64,7 +64,7 @@ const OtherCostsPage: FC = () => {
         { name: 'Schedule 1', path: '/schedule-1' },
       ]}
       title="Subtotal Other Costs"
-      backLabel="Back to Schedule 1"
+      backLabel="Back"
       loadingLabel="Loading Other Costs"
       errorTitle="Unable to load Other Costs"
     >
@@ -186,7 +186,7 @@ const OtherCostsPage: FC = () => {
                       disabled
                     />
                     <div className="oc-add__actions">
-                      <Button kind="primary" disabled={saving} onClick={handleAdd}>
+                      <Button kind="primary" size="md" disabled={saving} onClick={handleAdd}>
                         Add
                       </Button>
                     </div>
@@ -216,12 +216,16 @@ const OtherCostsPage: FC = () => {
                       ) : (
                         rows.map((row) => <TableRow key={row.key}>{rowCells(row)}</TableRow>)
                       )}
-                      {/* Totals footer — last-saved figures; refresh after Save (legacy recompute). */}
+                      {/* Totals footer — last-saved figures; refresh after Save (legacy recompute).
+                          A null total (e.g. $/m³ when volume is 0/absent) shows 0, not an em dash,
+                          so the empty/zero-volume Totals row reads 0 across every column. */}
                       <TableRow className="schedule-1-other-costs__totals">
                         <TableCell>Totals</TableCell>
-                        <TableCell className="schedule-1__num">{fmt(volume)}</TableCell>
-                        <TableCell className="schedule-1__num">{fmt(data.costSubtotal)}</TableCell>
-                        <TableCell className="schedule-1__num">{fmt(data.perUnit)}</TableCell>
+                        <TableCell className="schedule-1__num">{fmt(volume ?? 0)}</TableCell>
+                        <TableCell className="schedule-1__num">
+                          {fmt(data.costSubtotal ?? 0)}
+                        </TableCell>
+                        <TableCell className="schedule-1__num">{fmt(data.perUnit ?? 0)}</TableCell>
                         {editable && <TableCell />}
                       </TableRow>
                     </TableBody>

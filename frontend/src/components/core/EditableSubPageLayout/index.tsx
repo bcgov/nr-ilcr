@@ -17,7 +17,7 @@ interface Props<TDoc extends EditableRowsDoc> {
   readonly breadCrumbs?: BreadCrumb[]
   readonly title: string
   readonly subtitle?: string
-  /** "Back to Schedule N" — also the error-state back button. */
+  /** The back button label (e.g. "Back") — also used for the error-state back button. */
   readonly backLabel: string
   readonly loadingLabel: string
   readonly errorTitle: string
@@ -95,7 +95,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
         notification={{ kind: 'error', title: errorTitle, subtitle: errorDetail }}
       >
         <Column sm={4} md={8} lg={16}>
-          <Button kind="secondary" onClick={onBack}>
+          <Button kind="secondary" size="md" onClick={onBack}>
             {backLabel}
           </Button>
         </Column>
@@ -124,6 +124,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
           {editable && (
             <Button
               kind="primary"
+              size="md"
               // Greyed out until there is data to save (and while saving) — legacy parity.
               disabled={saving || rows.length === 0}
               onClick={handleSave}
@@ -131,7 +132,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
               Save
             </Button>
           )}
-          <Button kind="secondary" onClick={handleBack}>
+          <Button kind="secondary" size="md" onClick={handleBack}>
             {backLabel}
           </Button>
         </Column>
