@@ -20,6 +20,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import {
@@ -41,7 +42,9 @@ import './index.scss'
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const EMPTY_LIST = 'No road maintenance reports have been added.'
+// Legacy's empty substitute list (schedule6.xhtml:459-464) sets no emptyMessage, so PrimeFaces
+// rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
+const EMPTY_LIST = 'No records found.'
 const ADD_PANEL_HEADING = 'Add Road Maintenance report'
 const SCHEDULE6_PATH = '/v1/schedule6'
 const RECORDS_PATH = `${SCHEDULE6_PATH}/records`
@@ -515,10 +518,19 @@ const Schedule6: FC = () => {
   }
 
   const handleSaveEdit = () => {
-    if (editingId === null || editRevision === null || saving) {
+    if (editingId === null || saving) {
       return
     }
     clearBanners()
+    // Contract guard: 8.1 always serves revisionCount, but the type admits null/absent. A silent
+    // early-return would leave an enabled Save that does nothing and mask the contract regression —
+    // surface it instead (client-owned generic fallback, AD-8).
+    if (editRevision === null) {
+      setActionError(
+        'This record cannot be saved because it is missing its revision token. Reload the page and try again.',
+      )
+      return
+    }
     const errors = validateRoadRecord(editForm)
     if (Object.keys(errors).length > 0) {
       setEditErrors(errors)
@@ -629,6 +641,12 @@ const Schedule6: FC = () => {
   const editable = data.editable
   const editing = editingId !== null
   const entryLocked = !editable || saving || editing
+  // Legacy's Check Status was an ajax="false" full postback (schedule6.xhtml:226-229): JSF applied
+  // the on-screen values to the model BEFORE checkStatus() evaluated it, so the verdict always
+  // reflected the screen. The modern check reads only the DB, so it is disabled while unsaved
+  // entries are on screen (open row editor, or Add panel with entered values) — a verdict must
+  // never contradict visible unsaved input.
+  const addDirty = showAdd && Object.values(addForm).some((value) => value.trim() !== '')
 
   return (
     <div className="app-page">
@@ -651,30 +669,21 @@ const Schedule6: FC = () => {
           </dl>
         </Column>
 
-        {message && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
-          </Column>
-        )}
+        {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={actionError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
         )}
         {checkResult && (
           <Column sm={4} md={8} lg={16} className="schedule-6__check">
-            {/* Severity rides `kind` AND a title word, never colour alone (NFR1). */}
+            {/* Severity rides `kind` AND a title word, never colour alone (NFR1). Schedule-level
+                messages arrive only on MET today, but severity follows the outcome discriminant so a
+                message on an ISSUES response can never render under a success banner. */}
             {checkResult.messages.map((entry, index) => (
               <InlineNotification
                 key={`sch6-check-message-${String(index)}-${entry.key}`}
-                kind="success"
+                kind={checkResult.outcome === 'MET' ? 'success' : 'error'}
                 lowContrast
-                title="Requirements met"
+                title={checkResult.outcome === 'MET' ? 'Requirements met' : 'Action required'}
                 subtitle={entry.text}
               />
             ))}
@@ -710,7 +719,11 @@ const Schedule6: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-6__actions">
           {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
               disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
-          <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            disabled={!editable || saving || editing || addDirty}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
           <Button

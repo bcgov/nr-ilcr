@@ -136,6 +136,13 @@ async function openAddPanel(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByRole('region', { name: 'Add Road Maintenance report' })
 }
 
+// The provider persists any un-`initial`ed context change to localStorage (MillYearProvider.tsx:67);
+// without this, the stale-race tests' setContext(999, 2020) leaks into every later bare render and
+// test order silently decides which mill the page loads.
+afterEach(() => {
+  window.localStorage.clear()
+})
+
 describe('Schedule 6 page (Story 8.3)', () => {
   test('accordion titles use the 1-based ORDINAL, never recordId (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
@@ -213,9 +220,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     server.use(http.get(URL, () => HttpResponse.json(loneCommentDoc())))
     render(<Schedule6 />)
 
-    expect(
-      await screen.findByText(/no road maintenance reports have been added/i),
-    ).toBeInTheDocument()
+    // Legacy's empty substitute list has no emptyMessage, so PrimeFaces rendered its default.
+    expect(await screen.findByText('No records found.')).toBeInTheDocument()
     const totals = totalsRegion()
     // totalVolume/totalCost are real zeros and must show; totalCostPerVolume is null (0/0) -> blank.
     expect(within(totals).getAllByText('0')).toHaveLength(2)
@@ -248,10 +254,16 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
   test('Add Report POSTs the entered record, echoes the message verbatim and clears the form (AC2)', async () => {
     let captured: RoadRecordRequest | null = null
+    let capturedUrl: string | null = null
     server.use(
-      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ roadRecords: [], totalVolume: 0, totalCost: 0, totalCostPerVolume: null }),
+        ),
+      ),
       http.post(RECORDS_URL, async ({ request }) => {
         captured = (await request.json()) as RoadRecordRequest
+        capturedUrl = request.url
         return HttpResponse.json(
           doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
         )
@@ -270,6 +282,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(captured).not.toBeNull()
+    // The 8.2 endpoints require the mill/year request params — a path without them 400s in delivery.
+    const params = new window.URL(capturedUrl!).searchParams
+    expect(params.get('millId')).toBe('13050')
+    expect(params.get('year')).toBe('2017')
+    // The echoed document replaces the page state wholesale: the new row and its totals render
+    // without a reload (the GET served an empty list and zero totals).
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }),
+    ).toBeInTheDocument()
+    const totals = totalsRegion()
+    expect(within(totals).getByText('1,000')).toBeInTheDocument()
+    expect(within(totals).getByText('50,000')).toBeInTheDocument()
+    expect(within(totals).getByText('50.00')).toBeInTheDocument()
     expect(captured!.areaType).toBe('01')
     expect(captured!.supplyBlock).toBe('01B')
     // Grouped input reaches the wire as a number, not the NaN/null Number('1,000') would yield.
@@ -368,10 +393,12 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
   test('inline edit PUTs the row with ITS OWN revisionCount, including a falsy 0 (AC4)', async () => {
     const captured: Record<number, RoadRecordRequest> = {}
+    let capturedUrl: string | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))),
       http.put(`${RECORDS_URL}/:recordId`, async ({ request, params }) => {
         captured[Number(params.recordId)] = (await request.json()) as RoadRecordRequest
+        capturedUrl = request.url
         return HttpResponse.json(
           doc({
             roadRecords: [tsaRecord, tflRecord],
@@ -391,6 +418,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // The PUT carries the mill/year request params the 8.2 endpoint requires.
+    const params = new window.URL(capturedUrl!).searchParams
+    expect(params.get('millId')).toBe('13050')
+    expect(params.get('year')).toBe('2017')
     expect(captured[9501].revisionCount).toBe(3)
     // The whole seeded body is pinned — a mis-seeded editor or mis-mapped body must fail here.
     expect(captured[9501].areaType).toBe('01')
@@ -449,10 +480,12 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
   test('the General Comment saves independently via PUT /general-comments (AC5)', async () => {
     let captured: GeneralCommentsRequest | null = null
+    let capturedUrl: string | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
       http.put(COMMENTS_URL, async ({ request }) => {
         captured = (await request.json()) as GeneralCommentsRequest
+        capturedUrl = request.url
         return HttpResponse.json(
           doc({
             generalComments: 'Revised summary',
@@ -472,6 +505,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(captured).toEqual({ generalComments: 'Revised summary' })
+    // The PUT carries the mill/year request params the 8.2 endpoint requires.
+    const params = new window.URL(capturedUrl!).searchParams
+    expect(params.get('millId')).toBe('13050')
+    expect(params.get('year')).toBe('2017')
   })
 
   test('the General Comment saves with zero road records (the BR-09 placeholder branch, AC5)', async () => {
@@ -592,10 +629,12 @@ describe('Schedule 6 page (Story 8.3)', () => {
   })
 
   test('Check Status MET renders the single schedule banner verbatim (AC9 / S10)', async () => {
+    let capturedUrl: string | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.post(CHECK_URL, () =>
-        HttpResponse.json({
+      http.post(CHECK_URL, ({ request }) => {
+        capturedUrl = request.url
+        return HttpResponse.json({
           outcome: 'MET',
           messages: [
             {
@@ -604,8 +643,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
             },
           ],
           records: [],
-        }),
-      ),
+        })
+      }),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
@@ -617,6 +656,34 @@ describe('Schedule 6 page (Story 8.3)', () => {
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
     expect(screen.queryByText(/Value Required/)).not.toBeInTheDocument()
+    // The POST carries the mill/year request params the 8.2 endpoint requires.
+    const params = new window.URL(capturedUrl!).searchParams
+    expect(params.get('millId')).toBe('13050')
+    expect(params.get('year')).toBe('2017')
+  })
+
+  test('a schedule-level message on an ISSUES outcome renders as an error, never success (AC9)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      // The backend sends messages only on MET today; severity must still follow the outcome
+      // discriminant so contract drift can never paint a failure under a green banner.
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [{ key: 'someScheduleLevelMsg', text: 'Schedule-level failure text' }],
+          records: [],
+        }),
+      ),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(screen.getByRole('button', { name: /check status/i }))
+
+    expect(await screen.findByText('Schedule-level failure text')).toBeInTheDocument()
+    expect(screen.getByText('Action required')).toBeInTheDocument()
+    expect(screen.queryByText('Requirements met')).not.toBeInTheDocument()
   })
 
   test('Check Status ISSUES renders each composed line plus the clean rows’ met banners (AC9 / S09, S11)', async () => {
@@ -731,6 +798,107 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await waitFor(() => expect(button).toBeDisabled())
     await waitFor(() => expect(button).toBeEnabled())
     expect(check).toHaveBeenCalledTimes(1)
+  })
+
+  test('Add Report locks while in flight — one POST per double-click (AC11)', async () => {
+    const post = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      http.post(RECORDS_URL, async () => {
+        post()
+        await delay(150)
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    const button = within(panel).getByRole('button', { name: /^add report$/i })
+    await user.click(button)
+    // Second click lands while the first POST is in flight — the saving lock must swallow it, or a
+    // double-click creates a duplicate road record.
+    await user.click(button)
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: 'Add Road Maintenance report' }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  test('Check Status is disabled while unsaved entries are on screen (dirty gate)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    const check = screen.getByRole('button', { name: /check status/i })
+
+    // Legacy's full postback applied the on-screen values before evaluating; the modern check reads
+    // only the DB, so a verdict must never contradict visible unsaved input.
+    const panel = await openAddPanel(user)
+    expect(check).toBeEnabled() // open but empty — nothing unsaved yet
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '0')
+    expect(check).toBeDisabled()
+    await user.clear(within(panel).getByLabelText('TSA or TFL'))
+    expect(check).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: /^close$/i }))
+
+    // An open row editor is unsaved input from the first keystroke it might carry — disabled outright.
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    expect(check).toBeDisabled()
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
+    expect(check).toBeEnabled()
+  })
+
+  test('a row served without a revisionCount surfaces an error on Save, never a silent no-op (AC4)', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ roadRecords: [{ ...tsaRecord, revisionCount: null }] })),
+      ),
+      http.put(`${RECORDS_URL}/9501`, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+
+    // 8.1 always serves the token, so this is a contract-regression surface: it must be VISIBLE.
+    expect(await screen.findByText(/missing its revision token/i)).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  test('a later invalid submit clears the prior success banner (AC10)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      http.post(RECORDS_URL, () =>
+        HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        ),
+      ),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // Re-open and submit an invalid (blank) form: the stale success banner must not sit beside the
+    // fresh field error telling the user the bad entry was saved.
+    const reopened = await openAddPanel(user)
+    await user.click(within(reopened).getByRole('button', { name: /^add report$/i }))
+    expect(screen.getByText('TSA or TFL: Value is required.')).toBeInTheDocument()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
   })
 
   test('a blank area type blocks the POST with the advisory message (AC10 / S12)', async () => {
@@ -893,6 +1061,47 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(screen.getByText('Other mill record')).toBeInTheDocument()
   })
 
+  test('a stale check-status response (mill/year changed mid-flight) never applies (AC11)', async () => {
+    server.use(
+      http.get(URL, ({ request }) =>
+        request.url.includes('millId=999')
+          ? HttpResponse.json(otherContextDoc())
+          : HttpResponse.json(doc()),
+      ),
+      http.post(CHECK_URL, async () => {
+        await delay(300)
+        return HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          records: [],
+        })
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Other mill record')).toBeInTheDocument()
+    // Let the stale check response resolve, then confirm the old mill's verdict never painted onto
+    // the new mill's page (handleCheckStatus guards independently of runMutation).
+    await delay(400)
+    expect(
+      screen.queryByText('All requirements for this schedule have been met'),
+    ).not.toBeInTheDocument()
+  })
+
   test('changing mill/year resets the add panel, banners and check result (AC11)', async () => {
     server.use(
       http.get(URL, ({ request }) =>
@@ -920,12 +1129,15 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    // Check first (the dirty gate disables the button once the Add panel holds a value), then dirty
+    // the Add panel so the context change has both a check result and an open panel to reset.
+    await waitFor(() => expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: /check status/i }))
     expect(
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
+    const panel = await openAddPanel(user)
+    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
 
     await user.click(screen.getByRole('button', { name: /change/i }))
 

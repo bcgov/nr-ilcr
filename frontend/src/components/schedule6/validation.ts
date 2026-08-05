@@ -59,13 +59,15 @@ export interface RoadRecordFormValues {
 }
 
 // Legacy JSF numeric fields (volume, cost) bind through a US-locale DecimalFormat converter
-// (ILCRVolumeConverter/ILCRCostConverter :36), so the accepted syntax is: an optional leading '-',
-// digits with optional comma grouping, and an optional '.' fractional part — the same format the page
-// DISPLAYS. Native Number() diverges both ways and must NOT be used here: it rejects grouped input
-// the legacy app accepts (`Number('1,000')` -> NaN) and silently accepts JS-only forms the legacy app
-// never allowed (`1e2` -> 100, `0x10` -> 16, `Infinity`). Parsing with an explicit format keeps both
-// this advisory gate AND the submitted body faithful to legacy. Returns the numeric value, or null
-// when the string is blank or not a valid decimal in that format.
+// (ILCRVolumeConverter/ILCRCostConverter :36). This parser accepts that format — an optional leading
+// '-', digits with optional comma grouping, and an optional '.' fractional part (the same format the
+// page DISPLAYS) — but is deliberately STRICTER than legacy: DecimalFormat.parse has no
+// consumed-length check, so legacy also accepted junk-suffixed/mis-grouped input by silently
+// mangling it ('12,34' -> 1234, '1e2' -> 1, '1000abc' -> 1000); this gate rejects those outright
+// (recorded deviation (L), Story 8.3). Native Number() diverges the other way and must NOT be used:
+// it rejects grouped input legacy accepts (`Number('1,000')` -> NaN) and accepts JS-only forms
+// legacy never allowed as full values (`1e2` -> 100, `0x10` -> 16, `Infinity`). Returns the numeric
+// value, or null when the string is blank or not a valid decimal in this strict format.
 const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
 export const parseDecimalInput = (raw: string): number | null => {
   const trimmed = raw.trim()

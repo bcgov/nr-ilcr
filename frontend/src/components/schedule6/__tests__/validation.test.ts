@@ -43,8 +43,11 @@ describe('exported caps mirror the 8.2 DTO columns', () => {
 
 // Legacy's numeric fields (volume, cost) bound through a US-locale DecimalFormat, NOT JS Number().
 // These lock the two ways Number() diverges from that format: grouped input the legacy app accepts,
-// and JS-only syntax (exponent, hex, Infinity) it rejects but Number() silently coerces.
-describe('parseDecimalInput (legacy DecimalFormat parity)', () => {
+// and JS-only syntax (exponent, hex, Infinity) Number() silently coerces. The parser is deliberately
+// STRICTER than legacy on malformed input — DecimalFormat.parse had no consumed-length check, so
+// legacy silently mangled '12,34'->1234, '1e2'->1, '1000abc'->1000; this gate rejects those outright
+// (recorded deviation (L), Story 8.3).
+describe('parseDecimalInput (legacy DecimalFormat display format, strict full-string)', () => {
   it('accepts comma-grouped values Number() would reject as NaN', () => {
     expect(parseDecimalInput('1,000')).toBe(1000)
     expect(parseDecimalInput('1,000,000')).toBe(1000000)
@@ -65,8 +68,10 @@ describe('parseDecimalInput (legacy DecimalFormat parity)', () => {
     expect(parseDecimalInput('   ')).toBeNull()
   })
 
+  // Legacy's lenient DecimalFormat.parse coerced '1e2' to 1 (prefix parse) where Number() coerces
+  // it to 100 — rejecting outright is the deviation-(L) strictness, safer than either coercion.
   it('rejects JS-only numeric syntax that Number() silently coerces', () => {
-    expect(parseDecimalInput('1e2')).toBeNull() // Number('1e2') === 100
+    expect(parseDecimalInput('1e2')).toBeNull() // Number('1e2') === 100; legacy parsed the '1' prefix
     expect(parseDecimalInput('0x10')).toBeNull() // Number('0x10') === 16
     expect(parseDecimalInput('Infinity')).toBeNull()
     expect(parseDecimalInput('-Infinity')).toBeNull()
@@ -74,7 +79,9 @@ describe('parseDecimalInput (legacy DecimalFormat parity)', () => {
     expect(parseDecimalInput('1_000')).toBeNull()
   })
 
-  it('rejects non-numeric and malformed input', () => {
+  // Legacy ACCEPTED most of these by silently mangling them ('12,34'->1234, '1.2.3'->1.2,
+  // '1000abc'->1000); rejecting is deliberately stricter (deviation (L)).
+  it('rejects non-numeric and malformed input legacy would have silently mangled', () => {
     expect(parseDecimalInput('abc')).toBeNull()
     expect(parseDecimalInput('1.2.3')).toBeNull()
     expect(parseDecimalInput('12,34')).toBeNull() // grouping must be 3-digit groups
