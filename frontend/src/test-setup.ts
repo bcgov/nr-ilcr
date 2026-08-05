@@ -46,6 +46,41 @@ const schedule1Doc = {
   warnings: [],
 }
 
+// Default Schedule 8 dropdown option lists (code + description) for the page editor, which fetches
+// GET /v1/schedule8/options on mount — schedule-8 tests would trip onUnhandledRequest: 'error'
+// without this. Descriptions mirror the *Label values on the canonical page fixtures so a seeded
+// page's selected option renders the same text. Tests override via server.use(...) as needed.
+const schedule8Options = {
+  supportCentres: [
+    { code: 'SC1', description: 'Support Centre 1' },
+    { code: 'SC2', description: 'Support Centre 2' },
+  ],
+  regions: [{ code: 'R1', description: 'Region 1' }],
+  becZones: [{ code: 'BZ1', description: 'BEC 1' }],
+  tsaNumbers: [{ code: 'TSA1', description: 'TSA 1' }],
+  tflNumbers: [{ code: 'TFL1', description: 'TFL One' }],
+  supplyBlocks: [
+    { code: 'A', description: 'Block A' },
+    { code: 'B', description: 'Block B' },
+  ],
+  skidTypes: [
+    { code: 'NA', description: 'Not Applicable' },
+    { code: 'HO', description: 'Horse' },
+  ],
+  additionCostItems: [
+    { code: '82', description: 'Bridge Construction' },
+    { code: '83', description: 'Road Construction' },
+  ],
+  deductionCostItems: [
+    { code: '101', description: 'Road Credit' },
+    { code: '102', description: 'Salvage Credit' },
+  ],
+  costTypes: [
+    { code: 'CT1', description: 'Fixed' },
+    { code: 'CT2', description: 'Variable' },
+  ],
+}
+
 export const restHandlers = [
   http.get('http://localhost:3000/api/v1/users', () => {
     return new HttpResponse(JSON.stringify(users), {
@@ -53,6 +88,9 @@ export const restHandlers = [
     })
   }),
   http.get('http://localhost:3000/api/v1/schedule1', () => HttpResponse.json(schedule1Doc)),
+  http.get('http://localhost:3000/api/v1/schedule8/options', () =>
+    HttpResponse.json(schedule8Options),
+  ),
   // Default working-context handler: the ScheduleTombstone (and the global ContextBanner) fetch
   // GET /v1/mill-context on the current context, so schedule pages rendered in isolation would trip
   // MSW's onUnhandledRequest: 'error' without this. Echoes the requested millId/year so the tombstone's

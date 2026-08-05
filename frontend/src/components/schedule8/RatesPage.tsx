@@ -1,9 +1,11 @@
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { RateRow } from '@/interfaces/Schedule8Response'
+import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
+  Dropdown,
   InlineNotification,
   Modal,
   Table,
@@ -34,6 +36,9 @@ interface RatesPageProps {
   sampleTitle: string
   additions: RateRow[]
   deductions: RateRow[]
+  additionCostItems: CodeOption[]
+  deductionCostItems: CodeOption[]
+  costTypes: CodeOption[]
   editable: boolean
   onBack: () => void
   onDocUpdate: (doc: Schedule8Response) => void
@@ -53,6 +58,9 @@ const RatesPage: FC<RatesPageProps> = ({
   sampleTitle,
   additions,
   deductions,
+  additionCostItems,
+  deductionCostItems,
+  costTypes,
   editable,
   onBack,
   onDocUpdate,
@@ -161,24 +169,33 @@ const RatesPage: FC<RatesPageProps> = ({
     setForm: (updater: (prev: RateForm) => RateForm) => void,
     errors: Record<string, string>,
     onAdd: () => void,
+    costItems: CodeOption[],
   ) => {
     const setField = (field: keyof RateForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
       const { value } = event.target
       setForm((prev) => ({ ...prev, [field]: value }))
     }
+    const setCode = (field: keyof RateForm) => (code: string) =>
+      setForm((prev) => ({ ...prev, [field]: code }))
+    // Resolve a stored cost-item code to its name for the table cell (falls back to the raw code).
+    const costItemName = (code: number | null) =>
+      costItems.find((o) => o.code === String(code))?.description ?? fmt(code)
     return (
-      <div className="schedule-8__section">
+      <div className="schedule-8__rate-section">
+        <h4 className="schedule-8__rate-heading">{`${label} (${rows.length})`}</h4>
         {editable && (
           <div className="schedule-8__form">
-            <TextInput
+            <Dropdown<CodeOption>
               id={`${kind}-costItemCode`}
-              labelText={`${label} — Cost Item`}
+              titleText={`${label} — Cost Item`}
+              label="Select"
               size="sm"
-              inputMode="numeric"
-              value={form.costItemCode}
-              onChange={setField('costItemCode')}
+              items={costItems}
+              itemToString={(item) => item?.description ?? ''}
+              selectedItem={costItems.find((o) => o.code === form.costItemCode) ?? null}
               invalid={Boolean(errors.costItemCode)}
               invalidText={errors.costItemCode}
+              onChange={({ selectedItem }) => setCode('costItemCode')(selectedItem?.code ?? '')}
             />
             <TextInput
               id={`${kind}-costingRate`}
@@ -190,14 +207,17 @@ const RatesPage: FC<RatesPageProps> = ({
               invalid={Boolean(errors.costingRate)}
               invalidText={errors.costingRate}
             />
-            <TextInput
+            <Dropdown<CodeOption>
               id={`${kind}-costTypeCode`}
-              labelText={`${label} — Cost Type`}
+              titleText={`${label} — Cost Type`}
+              label="Select"
               size="sm"
-              value={form.costTypeCode}
-              onChange={setField('costTypeCode')}
+              items={costTypes}
+              itemToString={(item) => item?.description ?? ''}
+              selectedItem={costTypes.find((o) => o.code === form.costTypeCode) ?? null}
               invalid={Boolean(errors.costTypeCode)}
               invalidText={errors.costTypeCode}
+              onChange={({ selectedItem }) => setCode('costTypeCode')(selectedItem?.code ?? '')}
             />
             <TextInput
               id={`${kind}-itemDescription`}
@@ -215,7 +235,7 @@ const RatesPage: FC<RatesPageProps> = ({
           </div>
         )}
 
-        <TableContainer title={`${label} (${rows.length})`} className="schedule-8__grid">
+        <TableContainer className="schedule-8__grid">
           <Table aria-label={label}>
             <TableHead>
               <TableRow>
@@ -234,7 +254,7 @@ const RatesPage: FC<RatesPageProps> = ({
               ) : (
                 rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{fmt(row.costItemCode)}</TableCell>
+                    <TableCell>{costItemName(row.costItemCode)}</TableCell>
                     <TableCell>{row.itemDescription ?? '—'}</TableCell>
                     <TableCell className="schedule-8__num">{fmt(row.costingRate)}</TableCell>
                     <TableCell>{row.costTypeDescription ?? row.costTypeCode ?? '—'}</TableCell>
@@ -253,16 +273,20 @@ const RatesPage: FC<RatesPageProps> = ({
                   </TableRow>
                 ))
               )}
+              {rows.length > 0 && (
+                // Totals as the table's last row (the $/m³ column carries the sum), like the legacy
+                // footer and the Schedule 4 sub-page.
+                <TableRow className="schedule-8__totals-row">
+                  <TableCell>{label} Total</TableCell>
+                  <TableCell />
+                  <TableCell className="schedule-8__num">{fmt(sumRates(rows))}</TableCell>
+                  <TableCell />
+                  {editable && <TableCell />}
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
-
-        <dl className="schedule-8__totals" aria-label={`${label} total`}>
-          <div>
-            <dt>{label} Total</dt>
-            <dd>{fmt(sumRates(rows))}</dd>
-          </div>
-        </dl>
       </div>
     )
   }
@@ -270,9 +294,6 @@ const RatesPage: FC<RatesPageProps> = ({
   return (
     <div className="schedule-8__level">
       <div className="schedule-8__level-header">
-        <Button kind="ghost" size="sm" onClick={requestBack}>
-          ← Back to sample
-        </Button>
         <h3 className="schedule-8__heading">Additions / Deductions — {sampleTitle}</h3>
       </div>
 
@@ -291,6 +312,7 @@ const RatesPage: FC<RatesPageProps> = ({
         setAddForm,
         showAddErrors ? validateRateForm(addForm) : {},
         handleAddAddition,
+        additionCostItems,
       )}
       {rateTable(
         'deduction',
@@ -300,7 +322,21 @@ const RatesPage: FC<RatesPageProps> = ({
         setDedForm,
         showDedErrors ? validateRateForm(dedForm) : {},
         handleAddDeduction,
+        deductionCostItems,
       )}
+
+      {/* Rows persist as you Add them; Save simply returns to the sample, Cancel confirms first.
+          Read-only shows a single Close (nothing to save). */}
+      <div className="schedule-8__panel-actions">
+        {editable && (
+          <Button kind="primary" disabled={busy} onClick={onBack}>
+            Save
+          </Button>
+        )}
+        <Button kind="secondary" disabled={busy} onClick={requestBack}>
+          {editable ? 'Cancel' : 'Close'}
+        </Button>
+      </div>
 
       {editable && (
         <Modal

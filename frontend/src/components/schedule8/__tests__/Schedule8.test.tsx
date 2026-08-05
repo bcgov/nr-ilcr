@@ -36,6 +36,13 @@ function makeRouter(initialUrl = '/schedule-8') {
 const renderSchedule8 = (initialUrl = '/schedule-8') =>
   render(<RouterProvider router={makeRouter(initialUrl)} />)
 
+// The page-editor code fields are Carbon Dropdowns (combobox trigger + option list): open the named
+// dropdown, then click the option by its (description) label.
+const selectOption = async (dropdown: string, option: RegExp | string) => {
+  await userEvent.click(await screen.findByRole('combobox', { name: dropdown }))
+  await userEvent.click(await screen.findByRole('option', { name: option }))
+}
+
 const URL = 'http://localhost:3000/api/v1/schedule8'
 const PAGES_URL = `${URL}/pages`
 const CHECK_URL = `${URL}/check-status`
@@ -159,28 +166,28 @@ const doc = (overrides: Record<string, unknown> = {}) => ({
 const savedMsg = { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' }
 
 describe('Schedule8 page level', () => {
-  test('lists pages with sample counts; Add New Page enabled (editable)', async () => {
+  test('lists pages (composite label); Add New Page enabled (editable)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
 
-    expect(await screen.findByText('LIC1')).toBeInTheDocument()
-    expect(screen.getByText('LIC2')).toBeInTheDocument()
+    // Each page shows the legacy composite label; the sample-count link now lives in the page editor.
+    expect(await screen.findByText(/Page # 1 -TSA: TSA1 -CP: CP1/)).toBeInTheDocument()
+    expect(screen.getByText(/Page # 2/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add new page/i })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /TtT Samples \(1\)/i })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
   })
 
   test('Add New Page opens the editor with editable inputs', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
 
     expect(screen.getByText('New Page')).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('')
-    expect(screen.getByLabelText('Support Centre')).toBeInTheDocument()
-    expect(screen.getByLabelText('TSA or TFL')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Support Centre' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'TSA or TFL' })).toBeInTheDocument()
   })
 
   test('save a new page PUTs and shows the API success message', async () => {
@@ -189,17 +196,28 @@ describe('Schedule8 page level', () => {
       http.put(PAGES_URL, () => HttpResponse.json(doc({ message: savedMsg }))),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
     await userEvent.type(screen.getByLabelText('License'), 'LIC9')
-    await userEvent.type(screen.getByLabelText('Support Centre'), 'SC1')
-    await userEvent.type(screen.getByLabelText('Region'), 'R1')
-    await userEvent.type(screen.getByLabelText('Biogeoclimatic Zone'), 'BZ1')
-    await userEvent.type(screen.getByLabelText('TSA or TFL'), 'TSA1')
+    await selectOption('Support Centre', 'Support Centre 1')
+    await selectOption('Region', 'Region 1')
+    await selectOption('Biogeoclimatic Zone', 'BEC 1')
+    await selectOption('TSA or TFL', 'TSA 1')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+  })
+
+  test('Phone entry auto-formats digits as 222-222-2222', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+    await userEvent.type(screen.getByLabelText('Phone'), '2505551212')
+
+    expect(screen.getByLabelText('Phone')).toHaveValue('250-555-1212')
   })
 
   test('blank required fields block save with verbatim Value Required (no PUT)', async () => {
@@ -212,7 +230,7 @@ describe('Schedule8 page level', () => {
       }),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
@@ -224,13 +242,16 @@ describe('Schedule8 page level', () => {
   test('Copy opens a prefilled editor (create path)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
 
     expect(screen.getByText('Copy Page')).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('LIC1')
-    expect(screen.getByLabelText('Support Centre')).toHaveValue('SC1')
+    // The seeded code (SC1) resolves to its option description on the dropdown trigger.
+    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveTextContent(
+      'Support Centre 1',
+    )
   })
 
   test('Check Status (all pages) renders the per-page / per-sample results', async () => {
@@ -268,7 +289,7 @@ describe('Schedule8 page level', () => {
       ),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
@@ -279,7 +300,7 @@ describe('Schedule8 page level', () => {
   test('editable:false renders View and disables Add/Copy/Delete (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     expect(screen.getByRole('button', { name: /add new page/i })).toBeDisabled()
     expect(screen.getAllByRole('button', { name: /^view$/i }).length).toBeGreaterThan(0)
@@ -308,7 +329,7 @@ describe('Schedule8 page level', () => {
       }),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     expect(screen.getByText('Edit Page')).toBeInTheDocument()
@@ -326,7 +347,7 @@ describe('Schedule8 page level', () => {
       ),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
@@ -337,7 +358,7 @@ describe('Schedule8 page level', () => {
   test('View renders read-only values (no inputs) and a Close button (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
     expect(screen.getByText('View Page')).toBeInTheDocument()
@@ -356,14 +377,16 @@ describe('Schedule8 page level', () => {
       }),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
     const deletes = screen.getAllByRole('button', { name: /^delete$/i })
     await userEvent.click(deletes[deletes.length - 1])
 
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByText('LIC1')).not.toBeInTheDocument())
+    // The deleted page's unique composite (-CP: CP1) is gone; the row numbers re-index, so assert on
+    // its cutting permit rather than "Page # 1" (which the remaining page now occupies).
+    await waitFor(() => expect(screen.queryByText(/-CP: CP1/)).not.toBeInTheDocument())
   })
 
   test('a failed delete surfaces the verbatim ProblemDetail.detail', async () => {
@@ -374,7 +397,7 @@ describe('Schedule8 page level', () => {
       ),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
     const deletes = screen.getAllByRole('button', { name: /^delete$/i })
@@ -391,7 +414,7 @@ describe('Schedule8 page level', () => {
       ),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
@@ -410,31 +433,32 @@ describe('Schedule8 page level', () => {
       ),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText('All requirements met.')).toBeInTheDocument()
   })
 
-  test('typing TFL in TSA-or-TFL enables the TFL field and disables Supply Block (STA-002)', async () => {
+  test('selecting TFL in TSA-or-TFL enables the TFL field and disables Supply Block (STA-002)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
-    expect(screen.getByLabelText('TFL')).toBeDisabled()
-    expect(screen.getByLabelText('Supply Block')).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeEnabled()
 
-    await userEvent.type(screen.getByLabelText('TSA or TFL'), 'TFL')
-    expect(screen.getByLabelText('TFL')).toBeEnabled()
-    expect(screen.getByLabelText('Supply Block')).toBeDisabled()
+    // The TSA-or-TFL selector carries the legacy 'TFL' marker; choosing it flips the two selectors.
+    await selectOption('TSA or TFL', 'TFL')
+    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
   })
 
   test('Cancel closes the editor panel', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
     expect(screen.getByText('New Page')).toBeInTheDocument()
@@ -456,7 +480,7 @@ describe('Schedule8 page level', () => {
       http.put(PAGES_URL, () => HttpResponse.json({}, { status: 500 })),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
@@ -477,7 +501,7 @@ describe('Schedule8 page level', () => {
       http.delete(`${PAGES_URL}/8001`, () => HttpResponse.json({}, { status: 500 })),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
     const deletes = screen.getAllByRole('button', { name: /^delete$/i })
@@ -492,44 +516,47 @@ describe('Schedule8 page level', () => {
       http.post(CHECK_URL, () => HttpResponse.json({}, { status: 500 })),
     )
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
   })
 
-  test('null labels/license render the em-dash and Page-id fallbacks in the summary', async () => {
+  test('a page with null tsa / cutting-permit renders the composite label with fallbacks', async () => {
     const bare: Page = {
       ...emptyPage,
       id: 8009,
       license: null,
-      supportCentre: null,
-      supportCentreLabel: null,
-      region: null,
-      regionLabel: null,
+      tsaNumber: null,
+      cuttingPermit: null,
     }
     server.use(http.get(URL, () => HttpResponse.json(doc({ pages: [bare] }))))
     renderSchedule8()
 
-    expect(await screen.findByText('Page 8009')).toBeInTheDocument()
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    // The composite still renders — empty TSA shows nothing after "-TSA:", cutting permit falls to " - ".
+    const cell = await screen.findByText(
+      (text) => text.startsWith('Page # 1') && text.includes('-CP:'),
+    )
+    expect(cell).toBeInTheDocument()
   })
 })
 
 describe('Schedule8 sample level', () => {
   const openSamples = async () => {
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
   }
 
   test('the TtT Samples link opens the sample list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openSamples()
     expect(screen.getByRole('button', { name: /add new sample/i })).toBeEnabled()
-    expect(screen.getByText('C-1')).toBeInTheDocument()
+    // Each sample renders the legacy composite label (row number + contract id).
+    expect(screen.getByText(/Sample # 1 - C-1/)).toBeInTheDocument()
   })
 
   test('add a sample PUTs and shows the API success message', async () => {
@@ -646,9 +673,9 @@ describe('Schedule8 sample level', () => {
     await userEvent.type(screen.getByLabelText('Contract ID'), 'C-H')
     await userEvent.type(screen.getByLabelText('Helicopter %'), '100')
 
-    // The Helicopter sub-block is now visible.
-    expect(screen.getByLabelText('Distance')).toBeInTheDocument()
-    expect(screen.getByLabelText('Cycle Time')).toBeInTheDocument()
+    // The Helicopter section is always shown; its fields become required once Helicopter % ≠ 0.
+    expect(screen.getByLabelText('Distance (km)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Cycle Time (min)')).toBeInTheDocument()
 
     // Save is blocked because the conditional fields are blank.
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
@@ -666,8 +693,8 @@ describe('Schedule8 sample level', () => {
     await userEvent.click(screen.getByRole('button', { name: /add new sample/i }))
     await userEvent.type(screen.getByLabelText('Contract ID'), 'C-H')
     await userEvent.type(screen.getByLabelText('Helicopter %'), '100')
-    await userEvent.type(screen.getByLabelText('Distance'), '500')
-    await userEvent.type(screen.getByLabelText('Cycle Time'), '12')
+    await userEvent.type(screen.getByLabelText('Distance (km)'), '500')
+    await userEvent.type(screen.getByLabelText('Cycle Time (min)'), '12')
     await userEvent.selectOptions(screen.getByLabelText('Direction'), 'Y')
     await userEvent.selectOptions(screen.getByLabelText('Dump Destination'), 'N')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
@@ -691,7 +718,7 @@ describe('Schedule8 sample level', () => {
     await userEvent.type(screen.getByLabelText('Other %'), '100')
 
     // NA is treated as blank → still required.
-    await userEvent.type(screen.getByLabelText('Skid Type'), 'NA')
+    await selectOption('Skid Type', 'Not Applicable')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
     expect(await screen.findAllByText('Value Required')).not.toHaveLength(0)
     expect(put).not.toHaveBeenCalled()
@@ -787,9 +814,10 @@ describe('Schedule8 sample level', () => {
   test('View sample renders read-only values and a Close button (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
 
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     expect(screen.getByText('View Sample')).toBeInTheDocument()
@@ -838,16 +866,18 @@ describe('Schedule8 sample level', () => {
     expect(await screen.findByText('Unable to check status.')).toBeInTheDocument()
   })
 
-  test('a sample with null contract id / cut block renders em-dash placeholders', async () => {
+  test('a sample with a null contract id renders the composite label with an empty suffix', async () => {
     const bareSample: Sample = { ...sample8101, id: 8155, contractId: null, cutBlock: null }
     const pageBare: Page = { ...fullPage, samples: [bareSample], sampleCount: 1 }
     server.use(http.get(URL, () => HttpResponse.json(doc({ pages: [pageBare, emptyPage] }))))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
 
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    // Legacy parity: a blank contract id still renders "Sample # 1 -" (empty suffix, no placeholder).
+    expect(screen.getByText(/^Sample # 1 -/)).toBeInTheDocument()
   })
 
   test('Cancel from the sample confirm modal keeps the editor open (S13)', async () => {
@@ -866,12 +896,13 @@ describe('Schedule8 sample level', () => {
 describe('Schedule8 additions/deductions level', () => {
   const openRates = async () => {
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
-    await screen.findByText(/Additions \/ Deductions — C-1/i)
+    await screen.findByText(/Additions \/ Deductions — Sample # 1 - C-1/i)
   }
 
   test('the Additions link opens the rate tables with the existing rows', async () => {
@@ -886,30 +917,31 @@ describe('Schedule8 additions/deductions level', () => {
     // Build the router directly so the test can reach router.history (the browser Back button).
     const router = makeRouter()
     render(<RouterProvider router={router} />)
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
 
     // pages → samples (page 8001)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
     expect(router.state.location.search).toMatchObject({ pageId: 8001 })
 
     // samples → rates (sample 8101)
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
-    await screen.findByText(/Additions \/ Deductions — C-1/i)
+    await screen.findByText(/Additions \/ Deductions — Sample # 1 - C-1/i)
     expect(router.state.location.search).toMatchObject({ pageId: 8001, sampleId: 8101 })
 
     // browser Back: rates → samples
     router.history.back()
-    await screen.findByText(/Samples — LIC1/i)
-    expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
+    await screen.findByRole('button', { name: /add new sample/i })
+    expect(screen.queryByText(/Additions \/ Deductions — Sample # 1 - C-1/i)).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBe(8001)
     expect(router.state.location.search.sampleId).toBeUndefined()
 
     // browser Back: samples → pages
     router.history.back()
     await screen.findByRole('button', { name: /add new page/i })
-    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add new sample/i })).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBeUndefined()
   })
 
@@ -920,9 +952,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Additions — Cost Item'), '82')
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
     await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
-    await userEvent.type(screen.getByLabelText('Additions — Cost Type'), 'CT1')
+    await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
@@ -955,9 +987,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Deductions — Cost Item'), '101')
+    await selectOption('Deductions — Cost Item', 'Road Credit')
     await userEvent.type(screen.getByLabelText('Deductions — $/m³'), '3')
-    await userEvent.type(screen.getByLabelText('Deductions — Cost Type'), 'CT2')
+    await selectOption('Deductions — Cost Type', 'Variable')
     await userEvent.click(screen.getByRole('button', { name: /add deductions/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
@@ -991,9 +1023,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Additions — Cost Item'), '82')
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
     await userEvent.type(screen.getByLabelText('Additions — $/m³'), '99999999')
-    await userEvent.type(screen.getByLabelText('Additions — Cost Type'), 'CT1')
+    await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
     expect(
@@ -1011,9 +1043,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Additions — Cost Item'), '82')
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
     await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
-    await userEvent.type(screen.getByLabelText('Additions — Cost Type'), 'CT1')
+    await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
     expect(await screen.findByText('Cost item is not valid for additions.')).toBeInTheDocument()
@@ -1035,17 +1067,18 @@ describe('Schedule8 additions/deductions level', () => {
     expect(await screen.findByText('Row is locked and cannot be deleted.')).toBeInTheDocument()
   })
 
-  test('Back from the rates screen confirms and returns to the sample list', async () => {
+  test('Cancel from the rates screen confirms and returns to the sample list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openRates()
 
-    await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
+    // Cancel (the action-bar button, first in DOM) triggers the unsaved-changes confirm.
+    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
     expect(
       screen.getByText('Unsaved data will be lost. Are you sure to continue?'),
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
 
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /add new sample/i })).toBeInTheDocument()
   })
 
   test('blank required deduction fields block the add and show Value Required', async () => {
@@ -1076,15 +1109,16 @@ describe('Schedule8 additions/deductions level', () => {
     expect(screen.getByText('Bridge build')).toBeInTheDocument()
   })
 
-  test('Cancel from the rates Back confirm stays on the rates screen', async () => {
+  test('Cancel from the rates confirm modal stays on the rates screen', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openRates()
 
-    await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
+    // Action-bar Cancel opens the confirm; dismissing it (the modal's Cancel, last in DOM) stays put.
+    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
     const cancels = screen.getAllByRole('button', { name: /^cancel$/i })
     await userEvent.click(cancels[cancels.length - 1])
 
-    expect(screen.getByText(/Additions \/ Deductions — C-1/i)).toBeInTheDocument()
+    expect(screen.getByText(/Additions \/ Deductions — Sample # 1 - C-1/i)).toBeInTheDocument()
   })
 
   test('a rate row with null description / cost-type description falls back to a dash / the code', async () => {
@@ -1123,9 +1157,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Additions — Cost Item'), '82')
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
     await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
-    await userEvent.type(screen.getByLabelText('Additions — Cost Type'), 'CT1')
+    await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.type(screen.getByLabelText('Additions — Description'), 'Culvert')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
@@ -1168,9 +1202,9 @@ describe('Schedule8 additions/deductions level', () => {
     )
     await openRates()
 
-    await userEvent.type(screen.getByLabelText('Additions — Cost Item'), '82')
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
     await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
-    await userEvent.type(screen.getByLabelText('Additions — Cost Type'), 'CT1')
+    await selectOption('Additions — Cost Type', 'Fixed')
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
     expect(await screen.findByText('Row could not be saved.')).toBeInTheDocument()
@@ -1193,16 +1227,17 @@ describe('Schedule8 additions/deductions level', () => {
   test('read-only rates screen hides the add form and per-row Delete (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     renderSchedule8()
-    await screen.findByText('LIC1')
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByRole('button', { name: /add new sample/i })
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
-    await screen.findByText(/Additions \/ Deductions — C-1/i)
+    await screen.findByText(/Additions \/ Deductions — Sample # 1 - C-1/i)
 
     expect(screen.queryByLabelText('Additions — Cost Item')).not.toBeInTheDocument()
-    // Read-only back skips the confirm modal and returns immediately.
-    await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    // Read-only shows a single Close (the action-bar button, first in DOM) that returns immediately.
+    await userEvent.click(screen.getAllByRole('button', { name: /^close$/i })[0])
+    expect(await screen.findByRole('button', { name: /add new sample/i })).toBeInTheDocument()
   })
 })

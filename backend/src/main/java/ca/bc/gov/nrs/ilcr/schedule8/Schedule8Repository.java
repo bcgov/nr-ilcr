@@ -464,17 +464,19 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   // Addition/deduction split (§Decision 1) — cost item id → its ILCR_SUBCATEGORY_ID.
   // -------------------------------------------------------------------------------------------------
 
-  /** Minimal {@code ILCR_REPORT_COST_ITEM} projection: a category-{@code '8'} item and its subcategory. */
+  /** {@code ILCR_REPORT_COST_ITEM} projection: a category-{@code '8'} item, its name + subcategory. */
   @Table(name = "ILCR_REPORT_COST_ITEM", schema = "THE")
   record CostItemRow(
       @Id @Column("ILCR_REPORT_COST_ITEM_ID") Integer id,
+      @Column("ITEM_NAME") String itemName,
       @Column("ILCR_SUBCATEGORY_ID") String subcategoryId) {
   }
 
   @Query("""
-      SELECT ILCR_REPORT_COST_ITEM_ID, ILCR_SUBCATEGORY_ID
+      SELECT ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_SUBCATEGORY_ID
         FROM THE.ILCR_REPORT_COST_ITEM
        WHERE ILCR_CATEGORY_ID = '8'
+       ORDER BY ITEM_NAME
       """)
   List<CostItemRow> findCategory8CostItems();
 

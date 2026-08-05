@@ -143,7 +143,7 @@ class Schedule8RepositoryMapperTest {
   @Test
   void costItemSubcategories_mapsIdToSubcategory() {
     when(repo.findCategory8CostItems()).thenReturn(List.of(
-        new CostItemRow(47, "1"), new CostItemRow(48, "3")));
+        new CostItemRow(47, "Truck Barge/Ferry", "1"), new CostItemRow(48, "Crew Barge/Ferry", "3")));
     when(repo.costItemSubcategories()).thenCallRealMethod();
 
     Map<Integer, String> byId = repo.costItemSubcategories();
