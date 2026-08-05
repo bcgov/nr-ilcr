@@ -355,7 +355,7 @@ const Schedule2: FC = () => {
               <TableHead>
                 <TableRow>
                   <TableHeader>Cost Item</TableHeader>
-                  <TableHeader className="schedule-2__num">Volume</TableHeader>
+                  <TableHeader className="schedule-2__num">Volume (m³)</TableHeader>
                   <TableHeader className="schedule-2__num">Cost</TableHeader>
                   <TableHeader className="schedule-2__num">$/m³</TableHeader>
                 </TableRow>
