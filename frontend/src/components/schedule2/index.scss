@@ -19,6 +19,23 @@
 // Right-align numeric columns (Carbon DataTable defaults to left).
 .schedule-2__num {
   text-align: right;
+
+  // Right-align the entered numbers too, so editable inputs line up with the read-only cells.
+  .cds--text-input {
+    text-align: right;
+  }
+}
+
+// The Comments label reads as a full sentence at 14px (both the editable field label and the
+// read-only heading).
+.schedule-2__comments-field .cds--label,
+.schedule-2__comments-label {
+  font-size: 14px;
+}
+
+.schedule-2__comments-label {
+  margin: 0 0 $spacing-03;
+  font-weight: 400;
 }
 
 // Visual divider between the 4 cost groups: a heavier top border on the first row of each group

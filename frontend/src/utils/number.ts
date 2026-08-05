@@ -36,3 +36,27 @@ export const toNum = (raw: string): number | null => {
 /** Render a numeric value as a form input string, blank when null/undefined. */
 export const numStr = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : String(value)
+
+/**
+ * Group the integer part of a form input string with thousands separators for DISPLAY in an editable
+ * number field, preserving the (partial) decimal being typed (e.g. "1234" → "1,234", "1234.5" →
+ * "1,234.5", "1234." → "1,234."). Store the comma-less raw value in form state (strip commas on
+ * change) so {@link toNum}/validation still parse it; this is display-only. Non-numeric input passes
+ * through unchanged.
+ */
+export const withCommas = (raw: string): string => {
+  const cleaned = raw.replace(/,/g, '')
+  if (cleaned === '' || cleaned === '-') {
+    return cleaned
+  }
+  const negative = cleaned.startsWith('-')
+  const body = negative ? cleaned.slice(1) : cleaned
+  const dot = body.indexOf('.')
+  const intPart = dot === -1 ? body : body.slice(0, dot)
+  const decPart = dot === -1 ? '' : body.slice(dot) // keeps the '.' and any typed decimals
+  if (intPart !== '' && Number.isNaN(Number(intPart))) {
+    return raw
+  }
+  const grouped = intPart === '' ? '' : Number(intPart).toLocaleString('en-CA')
+  return (negative ? '-' : '') + grouped + decPart
+}
