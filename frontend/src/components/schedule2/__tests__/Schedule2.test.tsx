@@ -188,8 +188,8 @@ describe('Schedule2 page', () => {
     expect(body.purchasedLogCostCost).toBe(60000)
     expect(body.lessLogSalesVolume).toBe(200)
     expect(body.lessLogSalesCost).toBe(8000)
-    // Reseeded from the echo (60000/1000 = 60 read-only display).
-    expect(screen.getByText('60')).toBeInTheDocument()
+    // Reseeded from the echo (60000/1000 = 60 read-only display), shown in the currency style ($/m³).
+    expect(screen.getByText('60.00')).toBeInTheDocument()
   })
 
   test('out-of-range value is blocked client-side — inline error, no PUT (AC3)', async () => {

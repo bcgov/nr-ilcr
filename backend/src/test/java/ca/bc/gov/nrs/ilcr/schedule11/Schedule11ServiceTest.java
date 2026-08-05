@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
@@ -64,8 +65,12 @@ class Schedule11ServiceTest {
   private Schedule11Service service;
 
   private static SilvicultureLocationRequest request(Integer actual, Integer planned, Integer rev) {
+    // Costs are whole-dollar BigDecimals on the wire (fraction=0); the service narrows them back to
+    // the Integer COST column via wholeDollars — the upsertCost verifications pin that narrowing.
     return new SilvicultureLocationRequest(
-        "North Ridge", true, 8801L, new BigDecimal("125.5"), actual, planned, null, rev);
+        "North Ridge", true, 8801L, new BigDecimal("125.5"),
+        actual == null ? null : BigDecimal.valueOf(actual),
+        planned == null ? null : BigDecimal.valueOf(planned), null, rev);
   }
 
   private void stubTrack(String code) {
@@ -536,5 +541,58 @@ class Schedule11ServiceTest {
   private void stubEmpty() {
     when(repository.findLocations(YEAR, MILL)).thenReturn(List.of());
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+  }
+
+  // ---- BEC catalogue type-ahead (AC6/BR-09/S16) ------------------------------------------------
+
+  private static BiogeoclimaticCatalogueEntity catalogue(
+      long id, String zone, String subzone, String variant, String phase) {
+    return new BiogeoclimaticCatalogueEntity(id, zone, subzone, variant, phase);
+  }
+
+  @Test
+  void searchBiogeoCatalogue_mapsRowsToLabelWithNullsAsEmpty() {
+    // Same concat as SilvicultureLocation.becLabel (getBiogeoSubZoneVariantPase): nulls -> "".
+    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
+        catalogue(8804L, "SBS", "dk", null, null),
+        catalogue(8806L, "SBS", "wk", "1", "a")));
+
+    List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("SBS");
+
+    assertEquals(2, options.size());
+    assertEquals(8804L, options.get(0).id());
+    assertEquals("SBSdk", options.get(0).label());   // null variant + phase -> ""
+    assertEquals("SBSwk1a", options.get(1).label());  // full zone+subzone+variant+phase
+  }
+
+  @Test
+  void searchBiogeoCatalogue_trimsTermBeforeQuery() {
+    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
+        catalogue(8804L, "SBS", "dk", null, null)));
+
+    List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("  SBS  ");
+
+    assertEquals(1, options.size());
+    verify(repository).searchBiogeoCatalogue("SBS"); // surrounding whitespace stripped
+  }
+
+  @Test
+  void searchBiogeoCatalogue_escapesLikeMetacharactersForLiteralPrefixMatch() {
+    // Legacy completeBiogeoSubzoneVariant used String.startsWith — '%', '_' and '\' are literal
+    // characters there, so they must reach the LIKE clause escaped (paired with ESCAPE '\').
+    when(repository.searchBiogeoCatalogue("50\\%\\_\\\\")).thenReturn(List.of());
+
+    assertTrue(service.searchBiogeoCatalogue("50%_\\").isEmpty());
+
+    verify(repository).searchBiogeoCatalogue("50\\%\\_\\\\");
+  }
+
+  @Test
+  void searchBiogeoCatalogue_blankOrNullTerm_returnsEmptyWithoutQuery() {
+    // Legacy minQueryLength=1: a blank/whitespace/null term never touches the catalogue.
+    assertTrue(service.searchBiogeoCatalogue("   ").isEmpty());
+    assertTrue(service.searchBiogeoCatalogue("").isEmpty());
+    assertTrue(service.searchBiogeoCatalogue(null).isEmpty());
+    verify(repository, never()).searchBiogeoCatalogue(anyString());
   }
 }

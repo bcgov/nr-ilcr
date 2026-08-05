@@ -86,6 +86,32 @@ mvn spring-boot:run
 
 Do not commit real database passwords. Put local values in `.env`; the file is git-ignored.
 
+## Frontend Shared Conventions
+
+Reusable building blocks and global styles that new schedule/feature pages should adopt rather than
+re-implement (paths under `frontend/src`):
+
+- **Schedule tombstone header** — `components/core/ScheduleTombstone`. A two-column page header: left
+  is the page identity (`title` + a `subtitle` sub-page label), right is the working-context
+  mill/status lines. It replaces the old `PageTitle` header on schedule pages and owns the
+  `document.title` side effect. `subtitle` accepts a string or a `string[]` rendered breadcrumb-style,
+  so deeper sub-pages can thread their level (e.g. `["Report Tree to Truck Costs", "License", "Sample"]`).
+- **Working context** — `components/core/WorkingContext`. `useWorkingContext(millId, year)` fetches
+  `GET /v1/mill-context` with the stale-response guards; `WorkingContextLines` renders the three legacy
+  lines (`Mill: … - Year: …`, `Sch 1-10 …`, `Sch 11 …`). Both the tombstone and any future banner reuse
+  these. The former global `ContextBanner` was removed from `Layout` — mill/status now renders once, in
+  the tombstone header.
+- **Currency formatting** — `fmtCurrency` in `utils/number.ts`. Thousands-separated with two decimals
+  (`1234.5 → "1,234.50"`, `null → "—"`), no `$` sign (the column header carries the unit). Use it for
+  `$/m³`/rate and other currency read-only cells; keep `fmt` for plain integer/quantity cells.
+- **Footer** — `components/Layout/Footer`, rendered once by `Layout` on every route. Shows the app
+  version (left) and the BC Gov copyright/disclaimer/privacy/accessibility links (centred). The version
+  comes from `__APP_VERSION__`, inlined from `package.json` by a Vite `define` (see `vite.config.ts`;
+  typed in `src/vite-env.d.ts`) — reuse that global for any other build-time constant.
+- **Global styles** (`styles/_overrides.scss`, `styles/_custom.scss`) — all Carbon buttons are 40px
+  high across size variants (via the `--cds-layout-size-height-local` token, so labels stay centred);
+  text areas share the same light-grey field background (`#f4f4f4`) as the text inputs.
+
 ## Git Ignore Policy
 
 The repository tracks source, deploy templates, and safe examples such as `.env.example`. It ignores local secrets, certificates, build outputs, dependency folders, coverage reports, Playwright reports, Maven `target/`, and Vite `dist/`.

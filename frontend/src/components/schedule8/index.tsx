@@ -24,7 +24,8 @@ import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
-import PageTitle from '@/components/core/PageTitle'
+import NotificationColumn from '@/components/core/NotificationColumn'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   emptyPageForm,
   isTflSelected,
@@ -32,6 +33,7 @@ import {
   validatePageForm,
   type PageForm,
 } from './validation'
+import CheckStatusResult from './CheckStatusResult'
 import SamplePage from './SamplePage'
 import RatesPage from './RatesPage'
 import './index.scss'
@@ -156,10 +158,10 @@ const Schedule8: FC = () => {
     return {
       id: panelMode === 'edit' ? editId : null,
       revisionCount: panelMode === 'edit' ? (revision ?? 0) : null,
-      license: form.license,
-      supportCentre: form.supportCentre,
-      region: form.region,
-      becZone: form.becZone,
+      license: form.license.trim(),
+      supportCentre: form.supportCentre.trim(),
+      region: form.region.trim(),
+      becZone: form.becZone.trim(),
       tsaNumber: blankToNull(form.tsaNumber),
       tflNumber: tfl ? blankToNull(form.tflNumber) : null,
       supplyBlock: tfl ? null : blankToNull(form.supplyBlock),
@@ -221,6 +223,7 @@ const Schedule8: FC = () => {
 
   const handleCheckStatus = () => {
     if (saving) return
+    setSaving(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
     clearMessages()
     apiService
       .getAxiosInstance()
@@ -229,6 +232,7 @@ const Schedule8: FC = () => {
       )
       .then((response) => setCheckResult(response.data))
       .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
+      .finally(() => setSaving(false))
   }
 
   const openSamples = (pageId: number) => {
@@ -237,15 +241,11 @@ const Schedule8: FC = () => {
     setNav({ level: 'samples', pageId })
   }
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 8"
-        subtitle="Report Tree to Truck Costs."
-      />
-    </Grid>
+  const SCH8_BASE = 'Report Tree to Truck Costs'
+  const renderHeader = (trail: string[] = [SCH8_BASE]) => (
+    <ScheduleTombstone title="Schedule 8" subtitle={trail} />
   )
+  const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
     <div className="app-page">
@@ -293,9 +293,10 @@ const Schedule8: FC = () => {
     if (!page) {
       return shell(<InlineNotification kind="warning" lowContrast title="Page not found" />)
     }
+    const pageLabel = page.license ?? `Page ${page.id}`
     return (
       <div className="app-page">
-        {header}
+        {renderHeader([SCH8_BASE, `${pageLabel} — TtT Samples`])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <SamplePage
@@ -320,16 +321,18 @@ const Schedule8: FC = () => {
     if (!page || !sample) {
       return shell(<InlineNotification kind="warning" lowContrast title="Sample not found" />)
     }
+    const pageLabel = page.license ?? `Page ${page.id}`
+    const sampleTitle = sample.contractId ?? `Sample ${sample.id}`
     return (
       <div className="app-page">
-        {header}
+        {renderHeader([SCH8_BASE, pageLabel, sampleTitle])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
             <RatesPage
               millId={millId as number}
               year={year as number}
               sampleId={nav.sampleId}
-              sampleTitle={sample.contractId ?? `Sample ${sample.id}`}
+              sampleTitle={sampleTitle}
               additions={sample.additions}
               deductions={sample.deductions}
               editable={editable}
@@ -501,71 +504,15 @@ const Schedule8: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-8__meta">
-          <dl className="schedule-8__summary">
-            <div className="schedule-8__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-8__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-8__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {saveMessage && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
-          </Column>
+          <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Action failed"
-              subtitle={saveError}
-            />
-          </Column>
+          <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
         {checkResult && (
           <Column sm={4} md={8} lg={16} className="schedule-8__check">
-            {checkResult.messages.map((msg) => (
-              <InlineNotification
-                key={`sch-${msg.key}-${msg.text}`}
-                kind="success"
-                lowContrast
-                title="Check Status"
-                subtitle={msg.text}
-              />
-            ))}
-            {checkResult.pages.flatMap((page) => [
-              ...page.issues.map((issue) => (
-                <InlineNotification
-                  key={`page-${page.id}-${issue.field}`}
-                  kind="warning"
-                  lowContrast
-                  title={`Page — ${issue.field}`}
-                  subtitle={issue.message.text}
-                />
-              )),
-              ...page.samples.flatMap((sample) =>
-                sample.issues.map((issue) => (
-                  <InlineNotification
-                    key={`sample-${sample.id}-${issue.field}`}
-                    kind="warning"
-                    lowContrast
-                    title={`Sample — ${issue.field}`}
-                    subtitle={issue.message.text}
-                  />
-                )),
-              ),
-            ])}
+            <CheckStatusResult result={checkResult} />
           </Column>
         )}
 

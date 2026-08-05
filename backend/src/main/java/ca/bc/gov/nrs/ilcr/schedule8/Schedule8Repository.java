@@ -114,11 +114,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            ILCR_SUPPORT_CENTRE_CODE, ILCR_FOREST_REGION_CODE, BEC_ZONE_CODE, TSA_NUMBER,
            TSB_NUMBER_CODE, TFL_NUMBER_CODE, CUTTING_PERMIT_NUMBER, HARVEST_LICENSE_NUMBER,
            DIVISION_LOCATION, CONTACT_NAME, CONTACT_PHONE_NUMBER, COMMENTS, REVISION_COUNT,
-           ENTRY_USERID, ENTRY_TIMESTAMP)
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :year, :millId, '8', :supportCentre, :region, :becZone, :tsaNumber, :supplyBlock,
            :tflNumber, :cuttingPermit, :license, :division, :contact, :phone, :comments, 0,
-           :user, SYSTIMESTAMP)
+           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertPageRow(
       @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
@@ -245,12 +245,13 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            SKYLINE_SLOPE_DISTANCE, SKYLINE_SUPPORT_NUMBER, SUPPORT_AVERAGE_DISTANCE, CYCLE_TIME,
            DISTANCE, WATER_DUMP_DESTINATION_IND, UPHILL_DIRECTION_IND, ILCR_SKID_TYPE_CODE,
            CONIFEROUS_VOLUME, DECIDUOUS_VOLUME, ORIGINAL_TREE_TO_TRUCK_RATE, REVISION_COUNT,
-           ENTRY_USERID, ENTRY_TIMESTAMP)
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :pageId, :contractId, :cutBlock, :groundBasePct, :grapplePct, :skylinePct,
            :highleadPct, :helicopterPct, :otherSkiddingPct, :skylineSlopeDistance,
            :skylineSupportNumber, :supportAvgDistance, :cycleTime, :distance, :waterDump, :uphill,
-           :skidTypeCode, :coniferousVolume, :deciduousVolume, :originalRate, 0, :user, SYSTIMESTAMP)
+           :skidTypeCode, :coniferousVolume, :deciduousVolume, :originalRate, 0, :user, SYSTIMESTAMP,
+           :user, SYSTIMESTAMP)
       """)
   int insertSampleRow(
       @Param("id") int id, @Param("pageId") int pageId, @Param("contractId") String contractId,
@@ -381,10 +382,10 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       INSERT INTO THE.TREE_TO_TRUCK_RATE_DETAIL
           (TREE_TO_TRUCK_RATE_DETAIL_ID, TREE_TO_TRUCK_DETAIL_REPORT_ID, ILCR_RATE_COST_TYPE_CODE,
            ILCR_REPORT_COST_ITEM_ID, ITEM_DESCRIPTION, COSTING_RATE, REVISION_COUNT,
-           ENTRY_USERID, ENTRY_TIMESTAMP)
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
       VALUES
           (:id, :sampleId, :costTypeCode, :costItemCode, :itemDescription, :costingRate, 0,
-           :user, SYSTIMESTAMP)
+           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertRateRow(
       @Param("id") int id, @Param("sampleId") int sampleId,

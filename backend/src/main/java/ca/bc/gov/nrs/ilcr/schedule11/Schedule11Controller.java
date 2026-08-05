@@ -4,10 +4,12 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule11.api.Schedule11Api;
+import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import java.util.List;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -94,6 +96,14 @@ public class Schedule11Controller implements Schedule11Api {
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     return ResponseEntity.ok(schedule11Service.checkStatus(context.millId(), context.year()));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<List<BiogeoclimaticOption>> searchBiogeoCatalogue(
+      String q, Authentication authentication) {
+    // Global catalogue lookup: no mill/year context to validate, nothing mutated (BR-09, S16).
+    return ResponseEntity.ok(schedule11Service.searchBiogeoCatalogue(q));
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutation-echo success message. */

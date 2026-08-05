@@ -22,11 +22,11 @@ import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
 import './index.scss'
 
@@ -45,15 +45,11 @@ const F_COMMENTS = 'comments'
 
 type FieldValues = Record<string, string>
 
-// Static page chrome — no props, so hoisted to module scope (allocated once, not per render).
+// The tombstone page header (left: page + sub-page identity; right: working-context mill/status). It
+// owns hooks (mill-context fetch, document.title), so it renders as an element per branch below rather
+// than a module-scope const.
 const PAGE_HEADER = (
-  <Grid fullWidth className="app-page__header">
-    <PageTitle
-      breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-      title="Schedule 2"
-      subtitle="Cost of Purchased / Private Logs."
-    />
-  </Grid>
+  <ScheduleTombstone title="Schedule 2" subtitle="Purchased/Priv. Log Costs & Sales" />
 )
 
 // Schedule 2's load never 404s specially (unlike Schedule 1's not-found): any detail passes through.
@@ -269,7 +265,12 @@ const Schedule2: FC = () => {
   )
 
   const readOnlyCell = (value: number | null | undefined) => (
-    <TableCell className="schedule-2__num">{fmt(value)}</TableCell>
+    <TableCell className="schedule-2__num">{fmtNumber(value)}</TableCell>
+  )
+
+  // The $/m³ column is currency: thousands-separated with two decimals (shared currency style).
+  const perUnitCell = (value: number | null | undefined) => (
+    <TableCell className="schedule-2__num">{fmtCurrency(value)}</TableCell>
   )
 
   // Item 25 — Purchased/Private Log Costs: volume carried (read-only), cost editable, perUnit read-only.
@@ -280,7 +281,7 @@ const Schedule2: FC = () => {
       {editable
         ? inputCell(F_ITEM25_COST, 'Purchased Log Cost cost')
         : readOnlyCell(data.purchasedLogCost.cost)}
-      {readOnlyCell(data.purchasedLogCost.perUnit)}
+      {perUnitCell(data.purchasedLogCost.perUnit)}
     </TableRow>
   )
 
@@ -294,7 +295,7 @@ const Schedule2: FC = () => {
       {editable
         ? inputCell(F_ITEM26_COST, 'Less Log Sales cost')
         : readOnlyCell(data.lessLogSales.cost)}
-      {readOnlyCell(data.lessLogSales.perUnit)}
+      {perUnitCell(data.lessLogSales.perUnit)}
     </TableRow>
   )
 
@@ -304,7 +305,7 @@ const Schedule2: FC = () => {
       <TableCell>{label}</TableCell>
       {readOnlyCell(block.volume)}
       {readOnlyCell(block.cost)}
-      {readOnlyCell(block.perUnit)}
+      {perUnitCell(block.perUnit)}
     </TableRow>
   )
 
@@ -330,23 +331,6 @@ const Schedule2: FC = () => {
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-2__meta">
-          <dl className="schedule-2__summary">
-            <div className="schedule-2__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-2__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-2__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
@@ -371,7 +355,7 @@ const Schedule2: FC = () => {
               <TableHead>
                 <TableRow>
                   <TableHeader>Cost Item</TableHeader>
-                  <TableHeader className="schedule-2__num">Volume</TableHeader>
+                  <TableHeader className="schedule-2__num">Volume (m³)</TableHeader>
                   <TableHeader className="schedule-2__num">Cost</TableHeader>
                   <TableHeader className="schedule-2__num">$/m³</TableHeader>
                 </TableRow>
