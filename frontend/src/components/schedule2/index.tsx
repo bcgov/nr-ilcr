@@ -300,8 +300,9 @@ const Schedule2: FC = () => {
   )
 
   // Read-only derived / carried block (never inputs, never sent on write).
-  const derivedRow = (label: string, block: CostBlock) => (
-    <TableRow key={label}>
+  // `sectionStart` draws a heavier top border to visually divide the table into its 4 cost groups.
+  const derivedRow = (label: string, block: CostBlock, sectionStart = false) => (
+    <TableRow key={label} className={sectionStart ? 'schedule-2__section-start' : undefined}>
       <TableCell>{label}</TableCell>
       {readOnlyCell(block.volume)}
       {readOnlyCell(block.cost)}
@@ -366,11 +367,11 @@ const Schedule2: FC = () => {
               <TableBody>
                 {item25Row}
                 {derivedRow('Purchased/Private Wood Overhead:', data.purchasedWoodOverhead)}
-                {derivedRow('Subtotal:', data.subtotal)}
+                {derivedRow('Subtotal:', data.subtotal, true)}
                 {item26Row}
-                {derivedRow('Net Purchased/Private Log Cost:', data.netPurchased)}
+                {derivedRow('Net Purchased/Private Log Cost:', data.netPurchased, true)}
                 {derivedRow('Total Company Logging Costs(Sch 1):', data.totalCompanyLogging)}
-                {derivedRow('Total Average Logging Costs:', data.totalAverage)}
+                {derivedRow('Total Average Logging Costs:', data.totalAverage, true)}
               </TableBody>
             </Table>
           </TableContainer>

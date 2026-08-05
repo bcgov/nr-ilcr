@@ -43,6 +43,24 @@
   margin-block-end: $spacing-05;
 }
 
+// Read-only (View mode) comments block: a secondary label above the stored text.
+.schedule-4__field {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-02;
+  margin-block: $spacing-05;
+
+  .schedule-4__field-label {
+    color: var(--cds-text-secondary);
+    margin-block-end: 0;
+  }
+}
+
+.schedule-4__comments {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .schedule-4__grid {
   margin-block: $spacing-05;
 }
@@ -50,6 +68,8 @@
 .schedule-4__panel-actions {
   display: flex;
   gap: $spacing-03;
+  // Breathing room above Save/Cancel so they don't butt up against the Comments textarea.
+  margin-block-start: $spacing-06;
 }
 
 .schedule-4__check {
@@ -59,12 +79,10 @@
   margin-block-end: $spacing-05;
 }
 
-.schedule-4__subpage-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: $spacing-03;
-  margin-block: $spacing-05;
+// The sub-page group rows inside the category grid: render the link flush with the row-label column
+// (strip the ghost button's inline padding) so it lines up with the category labels above/below it.
+.schedule-4__subpage-link {
+  padding-inline: 0;
 }
 
 .schedule-4__subpage-header {
@@ -82,19 +100,9 @@
   margin-block-end: $spacing-06;
 }
 
-.schedule-4__totals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: $spacing-07;
-  margin-block: $spacing-05;
-
-  dt {
-    color: var(--cds-text-secondary);
-    font-size: 0.75rem;
-  }
-
-  dd {
-    color: var(--cds-text-primary);
-    margin: 0;
-  }
+// Sub-page summary row (last row of the table): totals of the respective columns, set apart from the
+// data rows with a heavier top border and bold cells.
+.schedule-4__totals-row td {
+  border-block-start: 0.0625rem solid var(--cds-border-strong);
+  font-weight: 600;
 }

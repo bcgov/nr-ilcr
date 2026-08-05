@@ -40,7 +40,7 @@ class Schedule4RepositoryMapperTest {
   @Test
   void findLocations_mapsReportEntitiesToLocationRows() {
     when(repo.findReportEntities(MILL, YEAR)).thenReturn(List.of(
-        new TransportationReportEntity(8001, "Dump A", null, null, 0)));
+        new TransportationReportEntity(8001, "Dump A", null, null, null, 0)));
     when(repo.findLocations(MILL, YEAR)).thenCallRealMethod();
 
     List<LocationRow> rows = repo.findLocations(MILL, YEAR);
@@ -67,7 +67,7 @@ class Schedule4RepositoryMapperTest {
   @Test
   void findSubPageRows_joinsReportContext_andToleratesMissingReport() {
     when(repo.findReportEntities(MILL, YEAR)).thenReturn(List.of(
-        new TransportationReportEntity(8010, "Rehaul A", new BigDecimal("5"), 30, 0)));
+        new TransportationReportEntity(8010, "Rehaul A", new BigDecimal("5"), 30, null, 0)));
     when(repo.findSubPageDetailEntities(MILL, YEAR)).thenReturn(List.of(
         new CostReportDetailEntity(5100, 8010, 46, new BigDecimal("2"), 200, "note"),
         new CostReportDetailEntity(5101, 9999, 46, new BigDecimal("3"), 300, "orphan")));

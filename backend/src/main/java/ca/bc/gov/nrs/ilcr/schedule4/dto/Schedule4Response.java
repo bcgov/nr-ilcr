@@ -4,7 +4,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import java.util.List;
 
 /**
- * The Schedule 4 (Special Log Transportation Costs) read document (AD-5, AD-12) — the pinned GET
+ * The Schedule 4 (Special Log Transportation Systems) read document (AD-5, AD-12) — the pinned GET
  * response, frozen for all Schedule 4 stories. Unlike Schedules 1–3 (flat aggregates on
  * {@code ILCR_REPORT_SUMMARY}), Schedule 4 is a multi-location structure: each {@link Location} is a
  * {@code TRANSPORTATION_REPORT} row with its transportation-category amounts.
