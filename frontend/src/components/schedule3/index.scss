@@ -23,17 +23,31 @@
 
 .schedule-3__section {
   margin-block-end: $spacing-06;
+}
 
-  // Carbon tables default to table-layout: fixed (equal columns), which truncates long cost-item
-  // labels. Let the label column size to content (gotcha #6, from Schedule 1).
-  .cds--data-table {
-    table-layout: auto;
+// Both Schedule 3 tables share one fixed column geometry so their columns line up (Harvest / PO&P /
+// Crown over Volume / Cost / $per below). Fixed layout with wrapping labels avoids the truncation
+// that table-layout:auto guarded against (gotcha #6), matching the Schedule 1 treatment.
+.schedule-3__cost-table.cds--data-table {
+  table-layout: fixed;
+  inline-size: 100%;
+
+  // Bold column-header text (Carbon defaults to semibold).
+  thead th,
+  thead .cds--table-header-label {
+    font-weight: 700;
   }
 
-  .cds--data-table td,
-  .cds--data-table th {
-    width: auto;
-    max-width: none;
+  th:first-child,
+  td:first-child {
+    inline-size: 34%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  th:not(:first-child),
+  td:not(:first-child) {
+    inline-size: 22%;
   }
 }
 
@@ -45,4 +59,13 @@
 .schedule-3__actions {
   display: flex;
   gap: $spacing-03;
+  margin-block: $spacing-05;
+}
+
+// The Subtotal Other Costs / Included Unacceptable Costs labels are ghost link-buttons in the label
+// column; strip the ghost button's default inline padding so they line up flush with the plain-text
+// row labels above/below them.
+.schedule-3__link.cds--btn {
+  padding-inline: 0;
+  min-block-size: auto;
 }

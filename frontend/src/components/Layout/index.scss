@@ -4,13 +4,11 @@
   min-height: 100vh;
 }
 
-// The working-context banner (legacy `#subMenu` strip). Plain-text info lines in a subtle bar under
-// the main menu; conveys nothing by color alone (WCAG 2.1 AA — Story 1.4 AC8).
+// The working-context info (legacy `#subMenu` strip), now rendered inline on the right of the page
+// header row (see PageTitle) rather than as a full-width bar. Plain text lines; conveys nothing by
+// color alone (WCAG 2.1 AA — Story 1.4 AC8).
 .context-banner {
-  background: var(--cds-layer-01);
-  border-block-end: 0.0625rem solid var(--cds-border-subtle);
   color: var(--cds-text-primary);
-  padding: $spacing-03 $spacing-05;
 
   &__line {
     margin: 0;

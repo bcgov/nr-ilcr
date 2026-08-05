@@ -1,4 +1,5 @@
 @use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
 
 .schedule-1__meta {
   margin-block-end: $spacing-05;
@@ -23,18 +24,65 @@
 
 .schedule-1__section {
   margin-block-end: $spacing-06;
+}
 
-  // Carbon tables default to table-layout: fixed (equal columns), which truncates long cost-item
-  // labels. Let the label column size to content (gotcha #6).
-  .cds--data-table {
-    table-layout: auto;
+// The Crown, Company Logging, and Silviculture tables share one fixed column geometry so the
+// standalone Crown Timber table (rendered above) lines up with the Volume column of the tables
+// below. Fixed layout with wrapping labels avoids the truncation that table-layout:auto guarded
+// against (gotcha #6) while keeping the columns aligned across all three tables.
+.schedule-1__cost-table.cds--data-table {
+  table-layout: fixed;
+  inline-size: 100%;
+
+  // Bold column-header text (Carbon defaults to semibold).
+  thead th,
+  thead .cds--table-header-label {
+    font-weight: 700;
   }
 
-  .cds--data-table td,
-  .cds--data-table th {
-    width: auto;
-    max-width: none;
+  th:first-child,
+  td:first-child {
+    inline-size: 34%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
+
+  th:not(:first-child),
+  td:not(:first-child) {
+    inline-size: 22%;
+  }
+}
+
+// Crown Timber Volume (Sch 3): a plain label + read-only box (not a table) laid out on the SAME fixed
+// column grid as the cost tables above/below (34% / 22% / 22% / 22%, with Carbon's cell inline padding)
+// so the box lines up under the Volume m³ column.
+.schedule-1__crown.schedule-1__section {
+  display: grid;
+  grid-template-columns: 34% 22% 22% 22%;
+  align-items: center;
+}
+
+.schedule-1__crown-label {
+  // Match the cost-table cell typography (Carbon data-table cells use body-compact-01).
+  @include type-style('body-compact-01');
+
+  padding-inline: $spacing-05;
+  color: var(--cds-text-primary);
+}
+
+.schedule-1__crown-field {
+  grid-column: 2;
+  padding-inline: $spacing-05;
+}
+
+.schedule-1__crown-unit {
+  // Match the (now bold) cost-table column-header typography (Carbon headers use heading-compact-01).
+  @include type-style('heading-compact-01');
+
+  display: block;
+  font-weight: 700;
+  color: var(--cds-text-primary);
+  margin-block-end: $spacing-02;
 }
 
 // Right-align numeric columns (Carbon DataTable defaults to left).
@@ -45,4 +93,12 @@
 .schedule-1__actions {
   display: flex;
   gap: $spacing-03;
+  margin-block: $spacing-05;
+}
+
+// The "Subtotal Other Costs" label is a link/button inside the Company Logging table's label column;
+// strip the ghost button's default inline padding so it lines up flush with the other row labels.
+.schedule-1__other-costs-link.cds--btn {
+  padding-inline: 0;
+  min-block-size: auto;
 }

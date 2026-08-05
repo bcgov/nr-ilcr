@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule3.api;
 
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -49,6 +50,27 @@ public interface Schedule3OtherCostsApi {
       @RequestParam long millId,
       @RequestParam int year,
       @Valid @RequestBody OtherAcceptableRequest request,
+      Authentication authentication);
+
+  /**
+   * Batch "Save" the whole group set (legacy {@code save()} reconcile): update groups with a known TOT
+   * id, insert groups with none, delete existing groups absent from the request. Validation → 400;
+   * non-Draft or no summary → 409; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param intent {@code "delete"} to echo the delete message, else the save message (legacy parity —
+   *     the persistence is identical either way; only the success message differs)
+   * @param request the full group set to persist (each row validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PutMapping
+  ResponseEntity<OtherAcceptableDocument> saveOtherAcceptable(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @RequestParam(defaultValue = "save") String intent,
+      @Valid @RequestBody OtherAcceptableSaveRequest request,
       Authentication authentication);
 
   /**

@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -65,6 +66,17 @@ class Schedule1OtherCostsAuthorizationIT extends AbstractOracleIT {
   @DisplayName("no EDIT_SCHEDULE -> DELETE 403 problem+json")
   void delete_noPermission_returns403() throws Exception {
     mockMvc.perform(delete(ENDPOINT + "/5081").param("millId", "526").param("year", "2021")
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("no EDIT_SCHEDULE -> batch PUT (save) 403 problem+json")
+  void save_noPermission_returns403() throws Exception {
+    mockMvc.perform(put(ENDPOINT).param("millId", "526").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{ \"rows\": [ { \"id\": 1, \"description\": \"x\", \"cost\": 1 } ] }")
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));

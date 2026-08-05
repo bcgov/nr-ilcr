@@ -15,7 +15,6 @@ const config: Schedule3SubPageConfig<UnacceptableRow, UnacceptableDocument> = {
   subtitle: 'Costs excluded from acceptable admin costs for Schedule 3.',
   tableTitle: 'Included Unacceptable Costs',
   addHeading: 'Add Included Unacceptable Cost',
-  deleteHeading: 'Delete unacceptable cost',
   descriptionMaxLength: DESCRIPTION_MAX_LENGTH,
   loadError: 'Unable to load Included Unacceptable Costs.',
   saveError: 'Unacceptable cost could not be saved.',

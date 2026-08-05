@@ -16,6 +16,23 @@ body {
   padding-block-end: $spacing-09;
 }
 
+// Header breadcrumb + title sizing (16px, matching the working-context text). Kept in this eager
+// global bundle — NOT the code-split PageTitle chunk — so it applies from first paint and avoids a
+// flash of Carbon's default 14px breadcrumb before that chunk's CSS loads. Carbon sizes its
+// breadcrumb via 14px type-style and its links via `font: inherit`, so the override is set explicitly.
+.page-title-col .page-title-breadcrumb,
+.page-title-col .page-title-breadcrumb .#{$bcgov-prefix}--breadcrumb-item,
+.page-title-col .page-title-breadcrumb .#{$bcgov-prefix}--link {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.page-title-col .page-title-heading {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
 .app-page__header {
   @include page-band;
   padding-inline: $spacing-05;

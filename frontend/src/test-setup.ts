@@ -49,6 +49,12 @@ export const restHandlers = [
     })
   }),
   http.get('http://localhost:3000/api/v1/schedule1', () => HttpResponse.json(schedule1Doc)),
+  // ContextBanner (rendered by PageTitle on every page) fetches this; default to 404 so it stays
+  // hidden in page tests (it silently suppresses on failure). Its own tests override via server.use.
+  http.get(
+    'http://localhost:3000/api/v1/mill-context',
+    () => new HttpResponse(null, { status: 404 }),
+  ),
 ]
 
 // Exported so tests can register per-scenario handlers with server.use(...).
