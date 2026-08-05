@@ -500,7 +500,7 @@ describe('Schedule8 sample level', () => {
     render(<Schedule8 />)
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
   }
 
   test('the TtT Samples link opens the sample list', async () => {
@@ -767,7 +767,7 @@ describe('Schedule8 sample level', () => {
     render(<Schedule8 />)
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
 
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     expect(screen.getByText('View Sample')).toBeInTheDocument()
@@ -823,7 +823,7 @@ describe('Schedule8 sample level', () => {
     render(<Schedule8 />)
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
 
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
@@ -846,7 +846,7 @@ describe('Schedule8 additions/deductions level', () => {
     render(<Schedule8 />)
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
     await screen.findByText(/Additions \/ Deductions — C-1/i)
@@ -991,7 +991,7 @@ describe('Schedule8 additions/deductions level', () => {
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
 
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    expect(await screen.findByText(/LIC1 — TtT Samples/i)).toBeInTheDocument()
   })
 
   test('blank required deduction fields block the add and show Value Required', async () => {
@@ -1141,7 +1141,7 @@ describe('Schedule8 additions/deductions level', () => {
     render(<Schedule8 />)
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
     await screen.findByText(/Additions \/ Deductions — C-1/i)
@@ -1149,6 +1149,6 @@ describe('Schedule8 additions/deductions level', () => {
     expect(screen.queryByLabelText('Additions — Cost Item')).not.toBeInTheDocument()
     // Read-only back skips the confirm modal and returns immediately.
     await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    expect(await screen.findByText(/LIC1 — TtT Samples/i)).toBeInTheDocument()
   })
 })
