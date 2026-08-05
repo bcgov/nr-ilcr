@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -196,11 +196,15 @@ const Schedule4: FC = () => {
   const navigate = scheduleRoute.useNavigate()
 
   // Reset URL search parameters when millId or year switches (Comment 3)
+  const contextRef = useRef({ millId, year })
   useEffect(() => {
-    if (search.loc !== undefined || search.sub !== undefined) {
-      void navigate({ to: '/schedule-4', search: {}, replace: true })
+    if (contextRef.current.millId !== millId || contextRef.current.year !== year) {
+      contextRef.current = { millId, year }
+      if (search.loc !== undefined || search.sub !== undefined) {
+        void navigate({ to: '/schedule-4', search: {}, replace: true })
+      }
     }
-  }, [millId, year, navigate, search.loc, search.sub])
+  }, [millId, year, search.loc, search.sub, navigate])
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)

@@ -448,17 +448,17 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
 
     // Click the in-app Cancel/Back button (replaces history)
-    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
     await waitFor(() =>
       expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
 
-    // Browser Back should go back before Schedule 4 (to the empty root) instead of re-entering the sub-page
+    // Browser Back should return to the first /schedule-4 entry with empty search params instead of re-entering the sub-page
     router.history.back()
     await waitFor(() => {
-      expect(router.state.location.pathname).not.toEqual('/schedule-4')
+      expect(router.state.location.search).toEqual({})
     })
   })
 })

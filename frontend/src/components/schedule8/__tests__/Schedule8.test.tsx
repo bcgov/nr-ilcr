@@ -520,7 +520,7 @@ describe('Schedule8 sample level', () => {
     renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
   }
 
   test('the TtT Samples link opens the sample list', async () => {
@@ -787,7 +787,7 @@ describe('Schedule8 sample level', () => {
     renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
 
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     expect(screen.getByText('View Sample')).toBeInTheDocument()
@@ -843,7 +843,7 @@ describe('Schedule8 sample level', () => {
     renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
 
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
@@ -866,7 +866,7 @@ describe('Schedule8 additions/deductions level', () => {
     renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
     await screen.findByText(/Additions \/ Deductions — C-1/i)
@@ -888,7 +888,7 @@ describe('Schedule8 additions/deductions level', () => {
 
     // pages → samples (page 8001)
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     expect(router.state.location.search).toMatchObject({ pageId: 8001 })
 
     // samples → rates (sample 8101)
@@ -899,7 +899,7 @@ describe('Schedule8 additions/deductions level', () => {
 
     // browser Back: rates → samples
     router.history.back()
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBe(8001)
     expect(router.state.location.search.sampleId).toBeUndefined()
@@ -907,7 +907,7 @@ describe('Schedule8 additions/deductions level', () => {
     // browser Back: samples → pages
     router.history.back()
     await screen.findByRole('button', { name: /add new page/i })
-    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/LIC1 — TtT Samples/i)).not.toBeInTheDocument()
     expect(router.state.location.search.pageId).toBeUndefined()
   })
 
@@ -919,7 +919,7 @@ describe('Schedule8 additions/deductions level', () => {
 
     // pages → samples (page 8001)
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
 
     // samples → rates (sample 8101)
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
@@ -927,19 +927,21 @@ describe('Schedule8 additions/deductions level', () => {
     await screen.findByText(/Additions \/ Deductions — C-1/i)
 
     // Click in-app Cancel/Back to return to samples (replaces history)
-    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
+    // Unsaved changes confirm modal opens (Story S13 / NAV-002)
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    await screen.findByText(/LIC1 — TtT Samples/i)
     expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
 
     // Click in-app Cancel/Back to return to pages (replaces history)
-    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /back to page/i }))
     await screen.findByRole('button', { name: /add new page/i })
-    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/LIC1 — TtT Samples/i)).not.toBeInTheDocument()
 
-    // Browser Back should now go before Schedule 8 (to the empty root) instead of re-entering the samples list
+    // Browser Back should return to the first /schedule-8 entry with pageId search params
     router.history.back()
     await waitFor(() => {
-      expect(router.state.location.pathname).not.toEqual('/schedule-8')
+      expect(router.state.location.search).toEqual({ pageId: 8001 })
     })
   })
 
@@ -1075,7 +1077,7 @@ describe('Schedule8 additions/deductions level', () => {
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
 
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    expect(await screen.findByText(/LIC1 — TtT Samples/i)).toBeInTheDocument()
   })
 
   test('blank required deduction fields block the add and show Value Required', async () => {
@@ -1225,7 +1227,7 @@ describe('Schedule8 additions/deductions level', () => {
     renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
-    await screen.findByText(/Samples — LIC1/i)
+    await screen.findByText(/LIC1 — TtT Samples/i)
     await userEvent.click(screen.getByRole('button', { name: /^view$/i }))
     await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
     await screen.findByText(/Additions \/ Deductions — C-1/i)
@@ -1233,6 +1235,6 @@ describe('Schedule8 additions/deductions level', () => {
     expect(screen.queryByLabelText('Additions — Cost Item')).not.toBeInTheDocument()
     // Read-only back skips the confirm modal and returns immediately.
     await userEvent.click(screen.getByRole('button', { name: /back to sample/i }))
-    expect(await screen.findByText(/Samples — LIC1/i)).toBeInTheDocument()
+    expect(await screen.findByText(/LIC1 — TtT Samples/i)).toBeInTheDocument()
   })
 })

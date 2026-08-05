@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
 import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -65,11 +65,15 @@ const Schedule8: FC = () => {
   const navigate = scheduleRoute.useNavigate()
 
   // Reset URL search parameters when millId or year switches (Comment 3)
+  const contextRef = useRef({ millId, year })
   useEffect(() => {
-    if (search.pageId !== undefined || search.sampleId !== undefined) {
-      void navigate({ to: '/schedule-8', search: {}, replace: true })
+    if (contextRef.current.millId !== millId || contextRef.current.year !== year) {
+      contextRef.current = { millId, year }
+      if (search.pageId !== undefined || search.sampleId !== undefined) {
+        void navigate({ to: '/schedule-8', search: {}, replace: true })
+      }
     }
-  }, [millId, year, navigate, search.pageId, search.sampleId])
+  }, [millId, year, search.pageId, search.sampleId, navigate])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
