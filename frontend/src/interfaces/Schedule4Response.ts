@@ -38,6 +38,9 @@ export interface Location {
   readonly id: number | null
   readonly revisionCount: number | null
   readonly name: string
+  // Per-location free-text comments (TRANSPORTATION_REPORT.COMMENTS, ≤ 2000). Jackson non_null omits
+  // it when absent, so render defensively.
+  readonly comments?: string | null
   readonly categories: CategoryAmount[]
   readonly subPageRows: SubPageRow[]
 }

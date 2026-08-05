@@ -19,6 +19,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
@@ -44,16 +45,31 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
-// In-component level switching (the three-level tree): the page list/editor, then a page's samples,
-// then a sample's additions/deductions.
+// The three-level tree: the page list/editor, then a page's samples, then a sample's additions/
+// deductions. The level is derived from the URL search (pageId, sampleId) so browser Back steps back.
 type NavView =
   | { level: 'pages' }
   | { level: 'samples'; pageId: number }
   | { level: 'rates'; pageId: number; sampleId: number }
 
+// Typed accessor for this page's route: the samples/rates levels are URL-driven (search: pageId +
+// sampleId) so the browser Back button steps back through them.
+const scheduleRoute = getRouteApi('/schedule-8')
+
 const Schedule8: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
+
+  // Sample/rates level from the URL (pageId, sampleId); navigate updates it.
+  const search = scheduleRoute.useSearch()
+  const navigate = scheduleRoute.useNavigate()
+
+  // Reset URL search parameters when millId or year switches (Comment 3)
+  useEffect(() => {
+    if (search.pageId !== undefined || search.sampleId !== undefined) {
+      void navigate({ to: '/schedule-8', search: {}, replace: true })
+    }
+  }, [millId, year, navigate, search.pageId, search.sampleId])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
@@ -62,8 +78,6 @@ const Schedule8: FC = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [checkResult, setCheckResult] = useState<Schedule8CheckStatusResponse | null>(null)
-
-  const [nav, setNav] = useState<NavView>({ level: 'pages' })
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<PageForm>(() => emptyPageForm())
@@ -82,7 +96,6 @@ const Schedule8: FC = () => {
     setSaveError(null)
     setCheckResult(null)
     setPanelMode('closed')
-    setNav({ level: 'pages' })
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
     apiService
@@ -238,7 +251,8 @@ const Schedule8: FC = () => {
   const openSamples = (pageId: number) => {
     clearMessages()
     setPanelMode('closed')
-    setNav({ level: 'samples', pageId })
+    // Push a history entry (search: pageId) so browser Back returns here to the page list.
+    void navigate({ to: '/schedule-8', search: { pageId } })
   }
 
   const SCH8_BASE = 'Report Tree to Truck Costs'
@@ -287,6 +301,22 @@ const Schedule8: FC = () => {
 
   const editable = data.editable
 
+  // The samples/rates level is URL-driven (search: pageId + sampleId) so browser Back steps back.
+  // Derive it from the search + loaded data; a stale/unknown pageId or sampleId (e.g. after a mill/year
+  // change) falls back to the pages list.
+  const currentPage =
+    search.pageId != null ? data.pages.find((p) => p.id === search.pageId) : undefined
+  const currentSample =
+    currentPage && search.sampleId != null
+      ? currentPage.samples.find((s) => s.id === search.sampleId)
+      : undefined
+  const nav: NavView =
+    currentPage && currentSample
+      ? { level: 'rates', pageId: currentPage.id as number, sampleId: currentSample.id as number }
+      : currentPage
+        ? { level: 'samples', pageId: currentPage.id as number }
+        : { level: 'pages' }
+
   // ---- Sample level replaces the list/panel when open. -------------------------------------------
   if (nav.level === 'samples') {
     const page = data.pages.find((p) => p.id === nav.pageId)
@@ -304,9 +334,11 @@ const Schedule8: FC = () => {
               year={year as number}
               page={page}
               editable={editable}
-              onBack={() => setNav({ level: 'pages' })}
+              onBack={() => void navigate({ to: '/schedule-8', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
-              onOpenRates={(sampleId) => setNav({ level: 'rates', pageId: nav.pageId, sampleId })}
+              onOpenRates={(sampleId) =>
+                void navigate({ to: '/schedule-8', search: { pageId: nav.pageId, sampleId } })
+              }
             />
           </Column>
         </Grid>
@@ -336,7 +368,9 @@ const Schedule8: FC = () => {
               additions={sample.additions}
               deductions={sample.deductions}
               editable={editable}
-              onBack={() => setNav({ level: 'samples', pageId: nav.pageId })}
+              onBack={() =>
+                void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })
+              }
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>

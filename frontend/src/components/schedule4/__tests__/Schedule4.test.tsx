@@ -1,19 +1,40 @@
-import type { ReactNode } from 'react'
 import { vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
-
-// PageTitle / TanStack Link throw outside a RouterProvider; mock the router like Schedule2.test.tsx.
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
-  Link: ({ children }: { children: ReactNode }) => children,
-}))
-
 import Schedule4 from '@/components/schedule4'
+import { Route as realScheduleRoute } from '@/routes/schedule-4'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Location } from '@/interfaces/Schedule4Response'
+
+// Schedule 4's sub-page level is URL-driven (search: loc + sub), so render it inside a REAL memory
+// router — the component's route search hooks + navigation (and the browser Back button) need router
+// context. `makeRouter` mirrors the app's /schedule-4 route (validateSearch); tests that need the
+// browser Back button build the router directly to reach `router.history`.
+function makeRouter(initialUrl = '/schedule-4') {
+  const rootRoute = createRootRoute()
+  const scheduleRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/schedule-4',
+    validateSearch: realScheduleRoute.options.validateSearch,
+    component: Schedule4,
+  })
+  return createRouter({
+    routeTree: rootRoute.addChildren([scheduleRoute]),
+    history: createMemoryHistory({ initialEntries: [initialUrl] }),
+  })
+}
+
+const renderSchedule4 = (initialUrl = '/schedule-4') =>
+  render(<RouterProvider router={makeRouter(initialUrl)} />)
 
 const URL = 'http://localhost:3000/api/v1/schedule4'
 const LOCATIONS_URL = 'http://localhost:3000/api/v1/schedule4/locations'
@@ -23,6 +44,7 @@ const harbour: Location = {
   id: 7001,
   revisionCount: 0,
   name: 'Harbour Dump',
+  comments: 'Harbour dock notes',
   categories: [
     { code: 40, kind: 'FIXED', volume: 2000, cost: 100000, distance: null, perUnit: 50.0 },
     { code: 47, kind: 'DISTANCE', volume: 500, cost: 25000, distance: 120.5, perUnit: 50.0 },
@@ -58,9 +80,9 @@ const doc = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('Schedule4 page', () => {
-  test('lists existing locations with sub-page counts; Add New Location enabled (editable)', async () => {
+  test('lists existing locations (name + actions); Add New Location enabled (editable)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule4 />)
+    renderSchedule4()
 
     expect(await screen.findByText('Harbour Dump')).toBeInTheDocument()
     expect(screen.getByText('Empty Landing')).toBeInTheDocument()
@@ -72,7 +94,7 @@ describe('Schedule4 page', () => {
 
   test('Add New Location opens the category-grid panel with editable inputs', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
@@ -93,7 +115,7 @@ describe('Schedule4 page', () => {
         ),
       ),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
@@ -102,6 +124,70 @@ describe('Schedule4 page', () => {
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+  })
+
+  test('after creating a location with category data, Edit shows the saved amounts (round-trip)', async () => {
+    const created: Location = {
+      id: 9001,
+      revisionCount: 1,
+      name: 'New Dump',
+      comments: null,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 5000, distance: null, perUnit: 2.5 },
+      ],
+      subPageRows: [],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({
+            locations: [harbour, emptyLanding, created],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await userEvent.type(screen.getByLabelText('Location Name'), 'New Dump')
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump cost'), '5000')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await screen.findByText('Data saved successfully')
+
+    // Re-open the newly created location — its saved amounts must be seeded into the panel.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[2])
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('5000')
+    expect(screen.getByLabelText('Lakeside Dry Dump volume')).toHaveValue('2000')
+  })
+
+  test('Edit seeds the location comments; Save sends the edited comments in the PUT', async () => {
+    let captured: unknown = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, async ({ request }) => {
+        captured = await request.json()
+        return HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // Edit the first row (Harbour Dump) — the panel seeds its stored comments.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    const comments = screen.getByLabelText('Comments')
+    expect(comments).toHaveValue('Harbour dock notes')
+
+    await userEvent.clear(comments)
+    await userEvent.type(comments, 'Updated dock notes')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect((captured as { comments: string }).comments).toBe('Updated dock notes')
   })
 
   test('blank name blocks save with the verbatim ERR-001 (no PUT fired)', async () => {
@@ -113,7 +199,7 @@ describe('Schedule4 page', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
@@ -127,7 +213,7 @@ describe('Schedule4 page', () => {
 
   test('Copy opens a prefilled panel with a cleared name and the WRN-001 nudge', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     // The first Copy button is Harbour Dump's row.
@@ -177,7 +263,7 @@ describe('Schedule4 page', () => {
         }),
       ),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -190,7 +276,7 @@ describe('Schedule4 page', () => {
 
   test('editable:false renders View actions and disables Add/Copy/Delete (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     expect(screen.getByRole('button', { name: /add new location/i })).toBeDisabled()
@@ -206,7 +292,7 @@ const ROWS_7001 = 'http://localhost:3000/api/v1/schedule4/locations/7001/rows'
 describe('Schedule4 sub-pages (Story 10.6)', () => {
   // Open Harbour Dump's Towing sub-page: Edit → panel → "Towing Total (1)" → NAV-002 → Continue.
   const openTowing = async () => {
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
@@ -309,16 +395,71 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
-  test('← Back to location returns from a sub-page to the list', async () => {
+  test('Cancel returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
     expect(screen.getByText('Towing Total — Harbour Dump')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /back to location/i }))
+    // The action-bar Cancel (scoped — the always-rendered delete-confirm modal also has a "Cancel").
+    const [cancel] = screen
+      .getAllByRole('button', { name: /^cancel$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(cancel)
 
     expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument()
     // Back on the list.
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
+
+  test('the sub-page level is URL-driven; the browser Back button returns to the list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    // Build the router directly so the test can reach router.history (the browser Back button).
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Harbour Dump')
+
+    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue).
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    // The level is reflected in the URL search (loc + sub) — refreshable / shareable.
+    expect(router.state.location.search).toMatchObject({ loc: 7001, sub: 'TOWING' })
+
+    // Browser Back pops the sub-page entry and returns to the location list.
+    router.history.back()
+    await waitFor(() =>
+      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+    expect(router.state.location.search).toEqual({})
+  })
+
+  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-page', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Harbour Dump')
+
+    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue).
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+
+    // Click the in-app Cancel/Back button (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await waitFor(() =>
+      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+    expect(router.state.location.search).toEqual({})
+
+    // Browser Back should go back before Schedule 4 (to the empty root) instead of re-entering the sub-page
+    router.history.back()
+    await waitFor(() => {
+      expect(router.state.location.pathname).not.toEqual('/schedule-4')
+    })
   })
 })
 
@@ -331,7 +472,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     )
     render(
       <MillYearProvider initial={{ millId: null, year: null }}>
-        <Schedule4 />
+        <RouterProvider router={makeRouter()} />
       </MillYearProvider>,
     )
 
@@ -343,7 +484,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
   test('a load failure surfaces the default unable-to-load message', async () => {
     server.use(http.get(URL, () => HttpResponse.error()))
-    render(<Schedule4 />)
+    renderSchedule4()
 
     expect(await screen.findByText('Unable to load Schedule 4.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
@@ -355,7 +496,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
       http.get(URL, () => HttpResponse.json(doc())),
       http.put(LOCATIONS_URL, () => HttpResponse.json({ detail }, { status: 409 })),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
@@ -379,7 +520,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
         )
       }),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
@@ -403,7 +544,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
         })
       }),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
@@ -423,7 +564,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
       http.get(URL, () => HttpResponse.json(doc())),
       http.delete(LOCATIONS_URL, () => HttpResponse.json({ detail }, { status: 409 })),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
@@ -449,7 +590,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
         }),
       ),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -465,7 +606,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -475,7 +616,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
   test('View opens a read-only panel (no Save) and sub-pages open directly (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
@@ -513,7 +654,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
         ),
       ),
     )
-    render(<Schedule4 />)
+    renderSchedule4()
     await screen.findByText('Harbour Dump')
 
     await userEvent.click(screen.getByRole('button', { name: /add new location/i }))

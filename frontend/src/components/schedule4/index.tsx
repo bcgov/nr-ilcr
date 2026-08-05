@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Column,
@@ -16,19 +16,19 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TextArea,
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, numStr, toNum } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import { getRouteApi } from '@tanstack/react-router'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   ALL_CATEGORIES,
-  DISTANCE_CATEGORIES,
-  FIXED_CATEGORIES,
   isLocationFormValid,
   validateLocationForm,
   type CategoryForm,
@@ -45,12 +45,15 @@ const CONFIRM_DELETE = 'This will delete the current record. Do you want to cont
 const copyWarning = (name: string): string =>
   `To complete copy of Location: ${name}, provide a new Location Name and invoke save.`
 
-const TOWING = 43
-const TRUCK_REHAUL = 46
-const OTHER = 55
-
 // NAV-002 (leaving a saved location to a sub-page — unsaved edits discarded) and NAV-003 (leaving an
 // unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
+// Per-location comments cap — the TRANSPORTATION_REPORT.COMMENTS column width (backend @Size(2000)).
+const COMMENTS_MAX = 2000
+
+// Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
+// browser Back button returns from a sub-page to the location list.
+const scheduleRoute = getRouteApi('/schedule-4')
+
 const NAV_UNSAVED_LOST = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const NAV_SAVE_FIRST =
   'The information for the New Location must be saved before you can add other Transportation. Would you like to save the information now?'
@@ -90,6 +93,18 @@ const subPageCount = (location: Location, code: number): number =>
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
 
+// The category grid renders every transportation line in legacy code order (40–55): the 12 amount
+// categories interleaved with the 3 list sub-page group rows (43 Towing, 46 Truck Rehaul, 55 Other).
+// A sub-page row links to its own list page and shows a row count instead of amounts.
+type GridEntry =
+  | { kind: 'category'; code: number; def: CategoryDef }
+  | { kind: 'subpage'; code: number; def: SubPageDef }
+
+const GRID_ENTRIES: GridEntry[] = [
+  ...ALL_CATEGORIES.map((def) => ({ kind: 'category' as const, code: def.code, def })),
+  ...SUB_PAGE_DEFS.map((def) => ({ kind: 'subpage' as const, code: def.code, def })),
+].sort((a, b) => a.code - b.code)
+
 // A single category grid cell: an editable numeric input, or its value as read-only text in View
 // mode. Module-level (only depends on its props) so it is not recreated on every page render.
 const CategoryCell: FC<{
@@ -120,8 +135,9 @@ const CategoryCell: FC<{
   )
 }
 
-// One category row (Volume / Cost / Distance / read-only $/m³). Distance cell only for the distance
-// categories. Module-level so it is not recreated on every page render.
+// One category row in legacy column order: Dist Km (distance categories only) / Volume / Cost inputs,
+// read-only $/m³, and a Cycle Time placeholder (categories carry no cycle — only the Truck Rehaul
+// sub-page rows do). Module-level so it is not recreated on every page render.
 const CategoryRow: FC<{
   def: CategoryDef
   values: { volume: string; cost: string; distance: string }
@@ -136,7 +152,19 @@ const CategoryRow: FC<{
   const isDistance = def.kind === 'DISTANCE'
   return (
     <TableRow>
-      <TableCell>{def.label}</TableCell>
+      <TableCell>{def.label}:</TableCell>
+      {isDistance ? (
+        <CategoryCell
+          inputId={`${def.code}-distance`}
+          label={`${def.label} distance`}
+          value={values.distance}
+          readOnly={readOnly}
+          invalidText={fieldErrors[`${def.code}-distance`]}
+          onChange={onFieldChange(def.code, 'distance')}
+        />
+      ) : (
+        <TableCell className="schedule-4__num">—</TableCell>
+      )}
       <CategoryCell
         inputId={`${def.code}-volume`}
         label={`${def.label} volume`}
@@ -153,19 +181,8 @@ const CategoryRow: FC<{
         invalidText={fieldErrors[`${def.code}-cost`]}
         onChange={onFieldChange(def.code, 'cost')}
       />
-      {isDistance ? (
-        <CategoryCell
-          inputId={`${def.code}-distance`}
-          label={`${def.label} distance`}
-          value={values.distance}
-          readOnly={readOnly}
-          invalidText={fieldErrors[`${def.code}-distance`]}
-          onChange={onFieldChange(def.code, 'distance')}
-        />
-      ) : (
-        <TableCell className="schedule-4__num">—</TableCell>
-      )}
-      <TableCell className="schedule-4__num">{fmt(perUnit)}</TableCell>
+      <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
+      <TableCell className="schedule-4__num">—</TableCell>
     </TableRow>
   )
 }
@@ -173,6 +190,17 @@ const CategoryRow: FC<{
 const Schedule4: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
+
+  // Sub-page level from the URL (loc = location id, sub = sub-page type); navigate updates it.
+  const search = scheduleRoute.useSearch()
+  const navigate = scheduleRoute.useNavigate()
+
+  // Reset URL search parameters when millId or year switches (Comment 3)
+  useEffect(() => {
+    if (search.loc !== undefined || search.sub !== undefined) {
+      void navigate({ to: '/schedule-4', search: {}, replace: true })
+    }
+  }, [millId, year, navigate, search.loc, search.sub])
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -186,9 +214,8 @@ const Schedule4: FC = () => {
   const [panelPerUnit, setPanelPerUnit] = useState<Record<number, number | null>>({})
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
+  const [panelComments, setPanelComments] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<Location | null>(null)
-  // Sub-page (Story 10.6): when set, the sub-page view replaces the list/panel.
-  const [subPage, setSubPage] = useState<{ def: SubPageDef; locationId: number } | null>(null)
   // Pending sub-page open awaiting a NAV-002 (existing) / NAV-003 (new, save-first) confirm.
   const [navConfirm, setNavConfirm] = useState<{
     kind: 'existing' | 'new'
@@ -233,6 +260,7 @@ const Schedule4: FC = () => {
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
+    setPanelComments('')
   }
 
   const openEditOrView = (location: Location, mode: 'edit' | 'view') => {
@@ -244,6 +272,7 @@ const Schedule4: FC = () => {
     setPanelPerUnit(seeded.perUnit)
     setPanelEditId(location.id)
     setPanelRevision(location.revisionCount)
+    setPanelComments(location.comments ?? '')
   }
 
   const openCopy = (location: Location) => {
@@ -255,6 +284,7 @@ const Schedule4: FC = () => {
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
+    setPanelComments(location.comments ?? '') // copy clones the comments (not the name)
     setWarnMessage(copyWarning(location.name))
   }
 
@@ -274,6 +304,7 @@ const Schedule4: FC = () => {
     id: panelMode === 'edit' ? panelEditId : null,
     revisionCount: panelMode === 'edit' ? (panelRevision ?? 0) : null,
     name: panelName.trim(),
+    comments: panelComments.trim() || null,
     categories: ALL_CATEGORIES.flatMap((def) => {
       const value = panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }
       const isDistance = def.kind === 'DISTANCE'
@@ -378,7 +409,8 @@ const Schedule4: FC = () => {
   const openSubPage = (def: SubPageDef, locationId: number) => {
     clearMessages()
     setPanelMode('closed')
-    setSubPage({ def, locationId })
+    // Push a history entry (search: loc + sub) so browser Back returns here to the list.
+    void navigate({ to: '/schedule-4', search: { loc: locationId, sub: def.type } })
   }
 
   // Save the panel (create path) and return the new location's id, or null on validation/API failure.
@@ -412,7 +444,7 @@ const Schedule4: FC = () => {
     }
   }
 
-  const SCH4_BASE = 'Special Log Transportation Costs'
+  const SCH4_BASE = 'Special Log Transportation Systems'
   const renderHeader = (trail: string[] = [SCH4_BASE]) => (
     <ScheduleTombstone title="Schedule 4" subtitle={trail} />
   )
@@ -458,6 +490,17 @@ const Schedule4: FC = () => {
 
   const editable = data.editable
 
+  // The open sub-page is URL-driven (search: loc + sub) so browser Back returns to the list. Derive it
+  // from the search + loaded data; a stale/unknown loc or sub (e.g. after a mill/year change) falls
+  // back to the list.
+  const subPageDef = search.sub ? SUB_PAGE_DEFS.find((d) => d.type === search.sub) : undefined
+  const subPageLocation =
+    search.loc != null ? data.locations.find((l) => l.id === search.loc) : undefined
+  const subPage =
+    subPageDef && subPageLocation
+      ? { def: subPageDef, locationId: subPageLocation.id as number }
+      : null
+
   // ---- Sub-page view (Story 10.6) replaces the list/panel when open. -----------------------------
   if (subPage) {
     const location = data.locations.find((l) => l.id === subPage.locationId)
@@ -476,7 +519,7 @@ const Schedule4: FC = () => {
               def={subPage.def}
               rows={rows}
               editable={editable}
-              onBack={() => setSubPage(null)}
+              onBack={() => void navigate({ to: '/schedule-4', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
             />
           </Column>
@@ -501,28 +544,18 @@ const Schedule4: FC = () => {
         <TableHead>
           <TableRow>
             <TableHeader>Location Name</TableHeader>
-            <TableHeader className="schedule-4__num">Categories</TableHeader>
-            <TableHeader className="schedule-4__num">Towing Total</TableHeader>
-            <TableHeader className="schedule-4__num">Truck Rehaul</TableHeader>
-            <TableHeader className="schedule-4__num">Other</TableHeader>
             <TableHeader>Actions</TableHeader>
           </TableRow>
         </TableHead>
         <TableBody>
           {data.locations.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6}>No locations have been added.</TableCell>
+              <TableCell colSpan={2}>No locations have been added.</TableCell>
             </TableRow>
           ) : (
             data.locations.map((location) => (
               <TableRow key={location.id ?? location.name}>
                 <TableCell>{location.name}</TableCell>
-                <TableCell className="schedule-4__num">{location.categories.length}</TableCell>
-                <TableCell className="schedule-4__num">{subPageCount(location, TOWING)}</TableCell>
-                <TableCell className="schedule-4__num">
-                  {subPageCount(location, TRUCK_REHAUL)}
-                </TableCell>
-                <TableCell className="schedule-4__num">{subPageCount(location, OTHER)}</TableCell>
                 <TableCell>
                   <div className="schedule-4__row-actions">
                     <Button
@@ -571,6 +604,25 @@ const Schedule4: FC = () => {
     />
   )
 
+  // A list sub-page appears as a group row inside the grid (legacy code position): its label + current
+  // row count link to the sub-page; the amount columns are blank (its rows live on that page).
+  const renderSubPageRow = (def: SubPageDef) => (
+    <TableRow key={`sub-${def.code}`}>
+      <TableCell>
+        <Button
+          kind="ghost"
+          size="sm"
+          className="schedule-4__subpage-link"
+          disabled={saving}
+          onClick={() => requestOpenSubPage(def)}
+        >
+          {`${def.label} (${panelSubCount(def.code)}):`}
+        </Button>
+      </TableCell>
+      <TableCell colSpan={5} />
+    </TableRow>
+  )
+
   const panel = panelOpen && (
     <div className="schedule-4__panel">
       <h3 className="schedule-4__heading">
@@ -593,38 +645,43 @@ const Schedule4: FC = () => {
         />
       )}
 
-      <TableContainer title="Transportation Categories" className="schedule-4__grid">
+      <TableContainer className="schedule-4__grid">
         <Table aria-label="Transportation Categories">
           <TableHead>
             <TableRow>
-              <TableHeader>Category</TableHeader>
-              <TableHeader className="schedule-4__num">Volume</TableHeader>
-              <TableHeader className="schedule-4__num">Cost</TableHeader>
-              <TableHeader className="schedule-4__num">Distance</TableHeader>
+              <TableHeader aria-label="Transportation category" />
+              <TableHeader className="schedule-4__num">Distance (km)</TableHeader>
+              <TableHeader className="schedule-4__num">Volume (m³)</TableHeader>
+              <TableHeader className="schedule-4__num">Cost $</TableHeader>
               <TableHeader className="schedule-4__num">$/m³</TableHeader>
+              <TableHeader className="schedule-4__num">Cycle Time</TableHeader>
             </TableRow>
           </TableHead>
           <TableBody>
-            {FIXED_CATEGORIES.map(renderCategoryRow)}
-            {DISTANCE_CATEGORIES.map(renderCategoryRow)}
+            {GRID_ENTRIES.map((entry) =>
+              entry.kind === 'category'
+                ? renderCategoryRow(entry.def)
+                : renderSubPageRow(entry.def),
+            )}
           </TableBody>
         </Table>
       </TableContainer>
 
-      <div className="schedule-4__subpage-links">
-        <span className="schedule-4__field-label">Transportation sub-pages:</span>
-        {SUB_PAGE_DEFS.map((def) => (
-          <Button
-            key={def.type}
-            kind="ghost"
-            size="sm"
-            disabled={saving}
-            onClick={() => requestOpenSubPage(def)}
-          >
-            {def.label} ({panelSubCount(def.code)})
-          </Button>
-        ))}
-      </div>
+      {readOnlyPanel ? (
+        <div className="schedule-4__field">
+          <span className="schedule-4__field-label">Comments</span>
+          <p className="schedule-4__comments">{panelComments || '—'}</p>
+        </div>
+      ) : (
+        <TextArea
+          id="location-comments"
+          labelText="Comments"
+          enableCounter
+          maxCount={COMMENTS_MAX}
+          value={panelComments}
+          onChange={(event) => setPanelComments(event.target.value)}
+        />
+      )}
 
       <div className="schedule-4__panel-actions">
         {!readOnlyPanel && (

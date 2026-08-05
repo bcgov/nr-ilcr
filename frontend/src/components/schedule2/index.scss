@@ -21,6 +21,12 @@
   text-align: right;
 }
 
+// Visual divider between the 4 cost groups: a heavier top border on the first row of each group
+// (Subtotal, Net Purchased, Total Average).
+.schedule-2__section-start td {
+  border-block-start: 0.125rem solid var(--cds-border-strong);
+}
+
 .schedule-2__actions {
   display: flex;
   gap: $spacing-03;

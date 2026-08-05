@@ -28,6 +28,7 @@ public record Location(
     Integer id,
     Integer revisionCount,
     String name,
+    String comments,
     List<CategoryAmount> categories,
     List<SubPageRow> subPageRows) {
 }

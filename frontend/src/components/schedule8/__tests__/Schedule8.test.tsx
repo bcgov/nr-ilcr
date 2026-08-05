@@ -1,18 +1,38 @@
-import type { ReactNode } from 'react'
 import { vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
-
-// PageTitle / TanStack Link throw outside a RouterProvider; mock the router like the other schedules.
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
-  Link: ({ children }: { children: ReactNode }) => children,
-}))
-
 import Schedule8 from '@/components/schedule8'
+import { Route as realScheduleRoute } from '@/routes/schedule-8'
 import type { Page, Sample } from '@/interfaces/Schedule8Response'
+
+// Schedule 8's samples/rates levels are URL-driven (search: pageId + sampleId), so render it inside a
+// REAL memory router — the route search hooks + navigation (and the browser Back button) need router
+// context. Tests that need the browser Back button build the router directly to reach router.history.
+function makeRouter(initialUrl = '/schedule-8') {
+  const rootRoute = createRootRoute()
+  const scheduleRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/schedule-8',
+    validateSearch: realScheduleRoute.options.validateSearch,
+    component: Schedule8,
+  })
+  return createRouter({
+    routeTree: rootRoute.addChildren([scheduleRoute]),
+    history: createMemoryHistory({ initialEntries: [initialUrl] }),
+  })
+}
+
+const renderSchedule8 = (initialUrl = '/schedule-8') =>
+  render(<RouterProvider router={makeRouter(initialUrl)} />)
 
 const URL = 'http://localhost:3000/api/v1/schedule8'
 const PAGES_URL = `${URL}/pages`
@@ -139,7 +159,7 @@ const savedMsg = { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved success
 describe('Schedule8 page level', () => {
   test('lists pages with sample counts; Add New Page enabled (editable)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule8 />)
+    renderSchedule8()
 
     expect(await screen.findByText('LIC1')).toBeInTheDocument()
     expect(screen.getByText('LIC2')).toBeInTheDocument()
@@ -150,7 +170,7 @@ describe('Schedule8 page level', () => {
 
   test('Add New Page opens the editor with editable inputs', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
@@ -166,7 +186,7 @@ describe('Schedule8 page level', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.put(PAGES_URL, () => HttpResponse.json(doc({ message: savedMsg }))),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
@@ -189,7 +209,7 @@ describe('Schedule8 page level', () => {
         return HttpResponse.json(doc())
       }),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
@@ -201,7 +221,7 @@ describe('Schedule8 page level', () => {
 
   test('Copy opens a prefilled editor (create path)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
@@ -245,7 +265,7 @@ describe('Schedule8 page level', () => {
         }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -256,7 +276,7 @@ describe('Schedule8 page level', () => {
 
   test('editable:false renders View and disables Add/Copy/Delete (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     expect(screen.getByRole('button', { name: /add new page/i })).toBeDisabled()
@@ -271,7 +291,7 @@ describe('Schedule8 page level', () => {
         HttpResponse.json({ detail: 'Schedule 8 is not open for this year.' }, { status: 404 }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
 
     expect(await screen.findByText('Schedule 8 is not open for this year.')).toBeInTheDocument()
   })
@@ -285,7 +305,7 @@ describe('Schedule8 page level', () => {
         return HttpResponse.json(doc({ message: savedMsg }))
       }),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
@@ -303,7 +323,7 @@ describe('Schedule8 page level', () => {
         HttpResponse.json({ detail: 'License already exists for this year.' }, { status: 409 }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
@@ -314,7 +334,7 @@ describe('Schedule8 page level', () => {
 
   test('View renders read-only values (no inputs) and a Close button (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
@@ -333,7 +353,7 @@ describe('Schedule8 page level', () => {
         return HttpResponse.json({ message: { key: 'x', text: 'Data deleted successfully' } })
       }),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
@@ -351,7 +371,7 @@ describe('Schedule8 page level', () => {
         HttpResponse.json({ detail: 'Page has samples and cannot be deleted.' }, { status: 409 }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
@@ -368,7 +388,7 @@ describe('Schedule8 page level', () => {
         HttpResponse.json({ detail: 'Check status is unavailable.' }, { status: 500 }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -387,7 +407,7 @@ describe('Schedule8 page level', () => {
         }),
       ),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -397,7 +417,7 @@ describe('Schedule8 page level', () => {
 
   test('typing TFL in TSA-or-TFL enables the TFL field and disables Supply Block (STA-002)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
@@ -411,7 +431,7 @@ describe('Schedule8 page level', () => {
 
   test('Cancel closes the editor panel', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
@@ -423,7 +443,7 @@ describe('Schedule8 page level', () => {
 
   test('an empty document renders the no-pages placeholder', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ pages: [] }))))
-    render(<Schedule8 />)
+    renderSchedule8()
 
     expect(await screen.findByText('No pages have been added.')).toBeInTheDocument()
   })
@@ -433,7 +453,7 @@ describe('Schedule8 page level', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.put(PAGES_URL, () => HttpResponse.json({}, { status: 500 })),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
@@ -444,7 +464,7 @@ describe('Schedule8 page level', () => {
 
   test('a detail-less load error falls back to the generic load message', async () => {
     server.use(http.get(URL, () => HttpResponse.json({}, { status: 500 })))
-    render(<Schedule8 />)
+    renderSchedule8()
 
     expect(await screen.findByText('Unable to load Schedule 8.')).toBeInTheDocument()
   })
@@ -454,7 +474,7 @@ describe('Schedule8 page level', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.delete(`${PAGES_URL}/8001`, () => HttpResponse.json({}, { status: 500 })),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
@@ -469,7 +489,7 @@ describe('Schedule8 page level', () => {
       http.get(URL, () => HttpResponse.json(doc())),
       http.post(CHECK_URL, () => HttpResponse.json({}, { status: 500 })),
     )
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
 
     await userEvent.click(screen.getByRole('button', { name: /check status/i }))
@@ -488,7 +508,7 @@ describe('Schedule8 page level', () => {
       regionLabel: null,
     }
     server.use(http.get(URL, () => HttpResponse.json(doc({ pages: [bare] }))))
-    render(<Schedule8 />)
+    renderSchedule8()
 
     expect(await screen.findByText('Page 8009')).toBeInTheDocument()
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
@@ -497,7 +517,7 @@ describe('Schedule8 page level', () => {
 
 describe('Schedule8 sample level', () => {
   const openSamples = async () => {
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByText(/Samples — LIC1/i)
@@ -764,7 +784,7 @@ describe('Schedule8 sample level', () => {
 
   test('View sample renders read-only values and a Close button (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByText(/Samples — LIC1/i)
@@ -820,7 +840,7 @@ describe('Schedule8 sample level', () => {
     const bareSample: Sample = { ...sample8101, id: 8155, contractId: null, cutBlock: null }
     const pageBare: Page = { ...fullPage, samples: [bareSample], sampleCount: 1 }
     server.use(http.get(URL, () => HttpResponse.json(doc({ pages: [pageBare, emptyPage] }))))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByText(/Samples — LIC1/i)
@@ -843,7 +863,7 @@ describe('Schedule8 sample level', () => {
 
 describe('Schedule8 additions/deductions level', () => {
   const openRates = async () => {
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByText(/Samples — LIC1/i)
@@ -857,6 +877,70 @@ describe('Schedule8 additions/deductions level', () => {
     await openRates()
     expect(screen.getByText('Bridge build')).toBeInTheDocument()
     expect(screen.getByText('Road credit')).toBeInTheDocument()
+  })
+
+  test('the levels are URL-driven; the browser Back button steps rates → samples → pages', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    // Build the router directly so the test can reach router.history (the browser Back button).
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('LIC1')
+
+    // pages → samples (page 8001)
+    await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
+    await screen.findByText(/Samples — LIC1/i)
+    expect(router.state.location.search).toMatchObject({ pageId: 8001 })
+
+    // samples → rates (sample 8101)
+    await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
+    await screen.findByText(/Additions \/ Deductions — C-1/i)
+    expect(router.state.location.search).toMatchObject({ pageId: 8001, sampleId: 8101 })
+
+    // browser Back: rates → samples
+    router.history.back()
+    await screen.findByText(/Samples — LIC1/i)
+    expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
+    expect(router.state.location.search.pageId).toBe(8001)
+    expect(router.state.location.search.sampleId).toBeUndefined()
+
+    // browser Back: samples → pages
+    router.history.back()
+    await screen.findByRole('button', { name: /add new page/i })
+    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+    expect(router.state.location.search.pageId).toBeUndefined()
+  })
+
+  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-pages', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('LIC1')
+
+    // pages → samples (page 8001)
+    await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
+    await screen.findByText(/Samples — LIC1/i)
+
+    // samples → rates (sample 8101)
+    await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
+    await userEvent.click(screen.getByRole('button', { name: /Additions \(1\):/i }))
+    await screen.findByText(/Additions \/ Deductions — C-1/i)
+
+    // Click in-app Cancel/Back to return to samples (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await screen.findByText(/Samples — LIC1/i)
+    expect(screen.queryByText(/Additions \/ Deductions — C-1/i)).not.toBeInTheDocument()
+
+    // Click in-app Cancel/Back to return to pages (replaces history)
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await screen.findByRole('button', { name: /add new page/i })
+    expect(screen.queryByText(/Samples — LIC1/i)).not.toBeInTheDocument()
+
+    // Browser Back should now go before Schedule 8 (to the empty root) instead of re-entering the samples list
+    router.history.back()
+    await waitFor(() => {
+      expect(router.state.location.pathname).not.toEqual('/schedule-8')
+    })
   })
 
   test('add an addition POSTs the rate sub-resource and shows the success message', async () => {
@@ -1138,7 +1222,7 @@ describe('Schedule8 additions/deductions level', () => {
 
   test('read-only rates screen hides the add form and per-row Delete (STA-001)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
-    render(<Schedule8 />)
+    renderSchedule8()
     await screen.findByText('LIC1')
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByText(/Samples — LIC1/i)

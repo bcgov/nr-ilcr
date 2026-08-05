@@ -34,7 +34,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
 
   /** One Schedule 4 location (a {@code TRANSPORTATION_REPORT} row). */
   record LocationRow(int transportationReportId, String locationDescription, BigDecimal distance,
-      Integer revisionCount) {
+      String comments, Integer revisionCount) {
   }
 
   /** One in-scope transportation-category detail row for a location. */
@@ -58,7 +58,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   /** The category-{@code "4"} report rows for a mill/year, ordered by report id (legacy order). */
   @Query("""
       SELECT TRANSPORTATION_REPORT_ID, LOCATION_DESCRIPTION, DISTANCE,
-             TRANSPORTATION_CYCLE_TIME, REVISION_COUNT
+             TRANSPORTATION_CYCLE_TIME, COMMENTS, REVISION_COUNT
         FROM THE.TRANSPORTATION_REPORT
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
@@ -75,7 +75,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   default List<LocationRow> findLocations(long millId, int year) {
     return findReportEntities(millId, year).stream()
         .map(e -> new LocationRow(
-            e.transportationReportId(), e.locationDescription(), e.distance(), e.revisionCount()))
+            e.transportationReportId(), e.locationDescription(), e.distance(), e.comments(),
+            e.revisionCount()))
         .toList();
   }
 
@@ -309,9 +310,10 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   }
 
   /**
-   * Optimistic-lock bump of a report (§Decision 3): increments {@code REVISION_COUNT} + audit ONLY
-   * when the stored revision still matches {@code expectedRevision} AND the report is a
-   * category-{@code "4"} report for THIS mill/year. Returns rows affected — {@code 1} on success,
+   * Optimistic-lock bump of a report (§Decision 3): increments {@code REVISION_COUNT}, re-stamps the
+   * location {@code COMMENTS} (per-location free text on the primary report), and audit ONLY when the
+   * stored revision still matches {@code expectedRevision} AND the report is a category-{@code "4"}
+   * report for THIS mill/year. Returns rows affected — {@code 1} on success,
    * {@code 0} when stale OR when the {@code reportId} is not in the caller's context (→ 409). The
    * mill/year scoping is a security guard: it prevents bumping a foreign context's report (IDOR).
    */
@@ -319,6 +321,7 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
   @Query("""
       UPDATE THE.TRANSPORTATION_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
+             COMMENTS = :comments,
              UPDATE_USERID = :user,
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE TRANSPORTATION_REPORT_ID = :reportId
@@ -329,7 +332,8 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       """)
   int bumpRevision(
       @Param("reportId") int reportId, @Param("expectedRevision") int expectedRevision,
-      @Param("millId") long millId, @Param("year") int year, @Param("user") String user);
+      @Param("millId") long millId, @Param("year") int year, @Param("comments") String comments,
+      @Param("user") String user);
 
   /** Re-stamp the distance on a distance-child report (audit updated). */
   @Modifying
