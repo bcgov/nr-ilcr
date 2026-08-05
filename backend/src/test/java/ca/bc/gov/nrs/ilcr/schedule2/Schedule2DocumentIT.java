@@ -42,7 +42,8 @@ class Schedule2DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.purchasedLogCost.volume", is(10000)))
         .andExpect(jsonPath("$.purchasedLogCost.cost", is(500000)))
         .andExpect(jsonPath("$.purchasedLogCost.perUnit", is(50.0)))
-        // purchasedWoodOverhead: volume 118 = 10000; cost 135 = 20000; perUnit 2.0
+        // purchasedWoodOverhead: volume Sch3 PO&P timber = 10000; cost = Sch3 Subtotal Actual Costs
+        // PO&P column = 20000 (items 27/125); perUnit 2.0
         .andExpect(jsonPath("$.purchasedWoodOverhead.volume", is(10000)))
         .andExpect(jsonPath("$.purchasedWoodOverhead.cost", is(20000)))
         .andExpect(jsonPath("$.purchasedWoodOverhead.perUnit", is(2.0)))
@@ -58,13 +59,15 @@ class Schedule2DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.netPurchased.volume", is(8000)))
         .andExpect(jsonPath("$.netPurchased.cost", is(420000)))
         .andExpect(jsonPath("$.netPurchased.perUnit", is(52.5)))
-        // totalCompanyLogging: volume Sch3 Crown 119 = 12345; cost Sch1 144 = 617250; perUnit 50.0
+        // totalCompanyLogging: volume Sch3 Crown = 12345; cost = 617250 (Sch1 144)
+        //   + 100000 (Sch3 actual-costs crown) + ((20000 Sch1 silvActual − 5000 Sch3 silvAdmin crown)
+        //   + 8450 Sch1 silvAccrued) = 740700; perUnit 740700/12345 = 60.0
         .andExpect(jsonPath("$.totalCompanyLogging.volume", is(12345)))
-        .andExpect(jsonPath("$.totalCompanyLogging.cost", is(617250)))
-        .andExpect(jsonPath("$.totalCompanyLogging.perUnit", is(50.0)))
-        // totalAverage: volume 8000+12345=20345; cost 420000+617250=1037250
+        .andExpect(jsonPath("$.totalCompanyLogging.cost", is(740700)))
+        .andExpect(jsonPath("$.totalCompanyLogging.perUnit", is(60.0)))
+        // totalAverage: volume 8000+12345=20345; cost 420000+740700=1160700
         .andExpect(jsonPath("$.totalAverage.volume", is(20345)))
-        .andExpect(jsonPath("$.totalAverage.cost", is(1037250)));
+        .andExpect(jsonPath("$.totalAverage.cost", is(1160700)));
   }
 
   @Test
@@ -83,21 +86,27 @@ class Schedule2DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("517/2021 no Schedule 3 data — carried/derived dependent figures omitted (null)")
-  void missingSchedule3Data_dependentFiguresOmitted() throws Exception {
+  @DisplayName("517/2021 empty Schedule 3 — computed-from-zero subtotals (legacy CoreUtil seeds at 0)")
+  void emptySchedule3_computedFromZeroSubtotals() throws Exception {
+    // 517 has an EMPTY category-'3' summary (no PO&P timber / Crown timber / actual-cost lines) and a
+    // minimal Schedule 1 (one logging line, item 12 = 40000). Legacy CoreUtil subtotals seed at 0, so
+    // the Schedule-3 PO&P actual cost is 0 (not null) — the "absent Schedule 3 → null" case (no
+    // category-'3' summary at all) is covered by the Schedule2Service unit test.
     mockMvc.perform(get(ENDPOINT)
             .param("millId", "517")
             .param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        // No Sch3 118 -> purchasedLogCost.volume and purchasedWoodOverhead.* omitted.
+        // No PO&P timber volume (no item 118) -> purchasedLogCost.volume + perUnit omitted.
         .andExpect(jsonPath("$.purchasedLogCost.volume").doesNotExist())
         .andExpect(jsonPath("$.purchasedLogCost.perUnit").doesNotExist())
-        .andExpect(jsonPath("$.purchasedWoodOverhead.cost").doesNotExist())
-        // No Crown / Sch1 144 -> totalCompanyLogging.volume and .cost omitted.
+        // Subtotal Actual Costs PO&P column of the empty Schedule 3 = 0 (seeds at zero).
+        .andExpect(jsonPath("$.purchasedWoodOverhead.cost", is(0)))
+        // No Crown timber volume (no item 119) -> totalCompanyLogging.volume omitted.
         .andExpect(jsonPath("$.totalCompanyLogging.volume").doesNotExist())
-        .andExpect(jsonPath("$.totalCompanyLogging.cost").doesNotExist())
-        // stored line item still present (item 25 cost).
+        // totalCompanyLogging.cost = Sch1 subtotal logging (item 12 = 40000) + 0 crown + null silv.
+        .andExpect(jsonPath("$.totalCompanyLogging.cost", is(40000)))
+        // subtotal cost = item 25 (333000) + 0 PO&P actual cost.
         .andExpect(jsonPath("$.subtotal.cost", is(333000)));
   }
 

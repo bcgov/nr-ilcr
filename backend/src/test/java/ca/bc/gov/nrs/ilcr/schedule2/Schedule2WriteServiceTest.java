@@ -13,11 +13,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +47,12 @@ class Schedule2WriteServiceTest {
   @Mock
   private Schedule2Repository repository;
 
+  @Mock
+  private Schedule1Service schedule1Service;
+
+  @Mock
+  private Schedule3Service schedule3Service;
+
   @InjectMocks
   private Schedule2Service service;
 
@@ -61,10 +70,10 @@ class Schedule2WriteServiceTest {
     // non-locking findTrackStatus), so keep these lenient.
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
-    lenient().when(repository.findSch3PopTimberVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3PopActualCost(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3CrownVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch1SubtotalLoggingCost(MILL, YEAR)).thenReturn(Optional.empty());
+    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
+    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
   }
 
   @Test
@@ -90,10 +99,10 @@ class Schedule2WriteServiceTest {
     when(repository.insertSummary(MILL, YEAR, "c", USER)).thenReturn(9001);
     when(repository.bumpRevision(eq(9001), eq(0), anyString(), eq(USER))).thenReturn(1);
     lenient().when(repository.findDetails(9001)).thenReturn(List.of());
-    lenient().when(repository.findSch3PopTimberVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3PopActualCost(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3CrownVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch1SubtotalLoggingCost(MILL, YEAR)).thenReturn(Optional.empty());
+    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
+    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
 
     // null revisionCount from the client means "new/unsaved" -> matches the freshly-inserted 0.
     service.saveSchedule2(MILL, YEAR, request(null, 500000, new BigDecimal("2000"), 100000), true, USER);
