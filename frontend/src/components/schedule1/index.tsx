@@ -642,7 +642,6 @@ const Schedule1: FC = () => {
           {editable ? (
             <TextArea
               id="comments"
-              className="schedule-1__comments-input"
               labelText="Comments"
               enableCounter
               maxCount={COMMENTS_MAX}

@@ -65,6 +65,8 @@
 
 .schedule-3-sub__field .cds--label {
   margin: 0;
+  // Override the section-wide bold (line ~9) so the Add-form field labels read as normal weight.
+  font-weight: 400;
 }
 
 // Legacy labels read "Description:", "Total $:", etc. The colon is decorative (::after is not part of
@@ -85,6 +87,13 @@
 // Align the Add button under the input column (8rem label + 1rem gap).
 .schedule-3-sub__actions {
   padding-inline-start: 9rem;
+}
+
+// Match the Add button width to the narrow numeric fields (12rem), label centred.
+.schedule-3-sub__actions .cds--btn {
+  inline-size: 12rem;
+  max-inline-size: 12rem;
+  justify-content: center;
 }
 
 // The read-only Annual Rents (S111) field sits above the list table with its label INLINE to the left

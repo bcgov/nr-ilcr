@@ -53,6 +53,8 @@
 
 .oc-add__field .cds--label {
   margin: 0;
+  // Add-form field labels read as normal weight (matching the Schedule 3 Other Costs sub-page).
+  font-weight: 400;
 }
 
 // Legacy labels read "Description:", "Volume:", etc. The colon is decorative (::after is not part of
