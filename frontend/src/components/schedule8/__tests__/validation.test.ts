@@ -185,4 +185,8 @@ describe('validatePageForm phone validation', () => {
   test('a complete 10-digit phone passes', () => {
     expect(validatePageForm({ ...validBase(), phone: '250-555-1212' }).phone).toBeUndefined()
   })
+
+  test('a 10-digit phone seeded without dashes still passes (matches the formatted display)', () => {
+    expect(validatePageForm({ ...validBase(), phone: '4564564566' }).phone).toBeUndefined()
+  })
 })

@@ -47,9 +47,6 @@ export const MESSAGES = {
   phone: 'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
 } as const
 
-// A complete phone in the 222-222-2222 shape the phone input produces (legacy mask 999-999-9999).
-const PHONE_PATTERN = /^\d{3}-\d{3}-\d{4}$/
-
 const PERCENT = { min: 0, max: 100 }
 const VOLUME = { min: 0, max: 9_999_999 }
 const ORIGINAL_RATE = { min: 0, max: 999_999.99 }
@@ -121,8 +118,10 @@ export function validatePageForm(form: PageForm): Record<string, string> {
   // TSA-or-TFL context: the TSA-or-TFL field must be chosen (BR-03).
   if (isBlank(form.tsaNumber)) errors.tsaNumber = MESSAGES.required
   // Phone is optional at Save (required only at Check Status), but a partial entry is rejected — it
-  // must be a complete 10-digit number (legacy enforced the 999-999-9999 input mask).
-  if (!isBlank(form.phone) && !PHONE_PATTERN.test(form.phone.trim())) errors.phone = MESSAGES.phone
+  // must be a complete 10-digit number. Count digits (format-agnostic) rather than matching the dashed
+  // shape, so a stored value seeded without dashes (e.g. 4564564566) still validates as it displays.
+  const phoneDigits = form.phone.replace(/\D/g, '')
+  if (phoneDigits.length > 0 && phoneDigits.length !== 10) errors.phone = MESSAGES.phone
   return errors
 }
 
