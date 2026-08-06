@@ -41,14 +41,16 @@
     justify-content: center;
   }
 
-  // White + underlined so the links stay legible and distinguishable on the blue (not colour-alone).
+  // White, no underline; underline on hover/focus keeps them distinguishable without relying on colour
+  // alone for keyboard/pointer affordance.
   &__link {
     color: var(--cds-text-on-color);
-    text-decoration: underline;
+    text-decoration: none;
 
     &:hover,
     &:focus {
       color: var(--cds-text-on-color);
+      text-decoration: underline;
     }
   }
 }
