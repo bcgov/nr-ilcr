@@ -310,7 +310,8 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
   test('open a sub-page from a saved location (NAV-002) shows its rows', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
-    expect(screen.getByText('Deferred towing row')).toBeInTheDocument()
+    // Rows are inline-editable, so the description is an input value (not static text).
+    expect(screen.getByDisplayValue('Deferred towing row')).toBeInTheDocument()
   })
 
   test('clicking a sortable column header reorders the data rows', async () => {
@@ -352,17 +353,18 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(2\)/i }))
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
-    const table = await screen.findByRole('table', { name: /Towing Total/i })
+    await screen.findByRole('table', { name: /Towing Total/i })
 
-    const alphaBeforeZebra = () => {
-      const text = table.textContent ?? ''
-      return text.indexOf('Alpha row') < text.indexOf('Zebra row')
-    }
+    // Rows are inline-editable — read the description inputs' values in DOM order to check row order.
+    const descOrder = () =>
+      screen
+        .getAllByRole('textbox', { name: /description \(row/i })
+        .map((el) => (el as HTMLInputElement).value)
 
     // As-loaded order is Zebra then Alpha; sorting Description ascending flips them.
-    expect(alphaBeforeZebra()).toBe(false)
-    await userEvent.click(screen.getByRole('button', { name: /description/i }))
-    expect(alphaBeforeZebra()).toBe(true)
+    expect(descOrder()).toEqual(['Zebra row', 'Alpha row'])
+    await userEvent.click(screen.getByRole('button', { name: /^description$/i }))
+    expect(descOrder()).toEqual(['Alpha row', 'Zebra row'])
   })
 
   test('add a row PUTs the sub-resource and shows the API success message', async () => {
@@ -405,7 +407,32 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(screen.getByRole('button', { name: /add row/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(screen.getByText('Added Towing')).toBeInTheDocument()
+    // The added row renders as an inline-editable input (value), not static text.
+    expect(screen.getByDisplayValue('Added Towing')).toBeInTheDocument()
+  })
+
+  test('editing an existing row and clicking Save PUTs the changed row', async () => {
+    let body: { cost?: unknown; description?: unknown } | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${ROWS_7001}/7013`, async ({ request }) => {
+        body = (await request.json()) as typeof body
+        return HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    await openTowing()
+
+    // Edit the existing row's Cost cell inline, then Save (row edits persist only on Save).
+    const cost = screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i })
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '12345')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() =>
+      expect(body).toMatchObject({ cost: 12345, description: 'Deferred towing row' }),
+    )
   })
 
   test('blank description blocks Add with Value Required (no POST)', async () => {

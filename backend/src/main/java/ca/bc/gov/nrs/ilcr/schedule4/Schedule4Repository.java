@@ -382,6 +382,45 @@ public interface Schedule4Repository extends Repository<TransportationReportEnti
       @Param("reportId") int reportId, @Param("code") int code,
       @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
 
+  /**
+   * Re-stamp a sub-page row report's own {@code DISTANCE} and {@code TRANSPORTATION_CYCLE_TIME} (cycle
+   * for Truck Rehaul only, null otherwise) — the report half of a sub-page row edit (Story 4.3, audit
+   * updated).
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.TRANSPORTATION_REPORT
+         SET DISTANCE = :distance,
+             TRANSPORTATION_CYCLE_TIME = :cycle,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+      """)
+  void updateSubPageReport(
+      @Param("reportId") int reportId, @Param("distance") BigDecimal distance,
+      @Param("cycle") Integer cycle, @Param("user") String user);
+
+  /**
+   * Re-stamp a sub-page row's single detail (its {@code VOLUME}/{@code COST}/{@code ITEM_DESCRIPTION})
+   * — the detail half of a sub-page row edit (Story 4.3). Scoped by the row's own report id + its
+   * item code (43/46/55); returns rows affected.
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET VOLUME = :volume,
+             COST = :cost,
+             ITEM_DESCRIPTION = :description,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE TRANSPORTATION_REPORT_ID = :reportId
+         AND ILCR_REPORT_COST_ITEM_ID = :code
+      """)
+  int updateSubPageDetail(
+      @Param("reportId") int reportId, @Param("code") int code,
+      @Param("volume") BigDecimal volume, @Param("cost") Integer cost,
+      @Param("description") String description, @Param("user") String user);
+
   @Modifying
   @Query("""
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL

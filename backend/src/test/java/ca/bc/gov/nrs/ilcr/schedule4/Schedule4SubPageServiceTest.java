@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -136,6 +137,87 @@ class Schedule4SubPageServiceTest {
 
     assertThrows(ScheduleNotSavedException.class, () -> service.addSubPageRow(
         MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+  }
+
+  @Test
+  void update_towing_updatesReportAndDescriptionDetail_noCycle() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
+    stubRecompute();
+
+    service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER);
+
+    verify(repository).updateSubPageReport(9100, bd("30.0"), null, USER); // no cycle for Towing
+    // code 43, description trimmed.
+    verify(repository).updateSubPageDetail(9100, 43, bd("100"), 3000, "New Row", USER);
+  }
+
+  @Test
+  void update_truckRehaul_writesCycle() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    when(repository.isSubPageRowOfLocation(9101, NAME, MILL, YEAR)).thenReturn(true);
+    stubRecompute();
+
+    service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 9101, req(SubPageRowType.TRUCK_REHAUL, 7), true, USER);
+
+    verify(repository).updateSubPageReport(9101, bd("30.0"), 7, USER); // cycle kept
+    verify(repository).updateSubPageDetail(9101, 46, bd("100"), 3000, "New Row", USER);
+  }
+
+  @Test
+  void update_unknownLocation_throws404_writesNothing() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.empty());
+
+    assertThrows(ScheduleNotFoundException.class, () -> service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+
+    verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
+    verify(repository, never()).updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(),
+        anyString());
+  }
+
+  @Test
+  void update_rowNotUnderThisLocation_throws404_writesNothing() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    // Not a sub-page row of THIS location (a primary/category report, or a row under another
+    // location in the same mill/year) — the path-scoped guard makes it a 404.
+    when(repository.isSubPageRowOfLocation(8050, NAME, MILL, YEAR)).thenReturn(false);
+
+    assertThrows(ScheduleNotFoundException.class, () -> service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 8050, req(SubPageRowType.TOWING, null), true, USER));
+
+    verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
+    verify(repository, never()).updateSubPageDetail(anyInt(), anyInt(), any(), any(), anyString(),
+        anyString());
+  }
+
+  @Test
+  void update_notDraft_throws409_writesNothing() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+
+    assertThrows(ScheduleNotEditableException.class, () -> service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+
+    verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
+    verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
+  }
+
+  @Test
+  void update_persistenceFailure_translatesToScheduleNotSaved() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findLocationName(LOCATION_ID, MILL, YEAR)).thenReturn(Optional.of(NAME));
+    when(repository.isSubPageRowOfLocation(9100, NAME, MILL, YEAR)).thenReturn(true);
+    doThrow(new DataIntegrityViolationException("boom"))
+        .when(repository).updateSubPageReport(anyInt(), any(), any(), anyString());
+
+    assertThrows(ScheduleNotSavedException.class, () -> service.updateSubPageRow(
+        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
   }
 
   @Test

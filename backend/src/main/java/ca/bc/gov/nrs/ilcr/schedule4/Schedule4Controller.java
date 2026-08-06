@@ -97,6 +97,20 @@ public class Schedule4Controller implements Schedule4Api {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule4Response> updateSubPageRow(
+      long millId, int year, int locationId, int rowId, Schedule4SubPageRowRequest request,
+      Authentication authentication) {
+    millContextService.validateMillYearActive(millId, year);
+    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    String user = authentication.getName();
+    Schedule4Response saved =
+        schedule4Service.updateSubPageRow(millId, year, locationId, rowId, request, callerMayEdit,
+            user);
+    return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule4Response> deleteSubPageRow(
       long millId, int year, int locationId, int rowId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
