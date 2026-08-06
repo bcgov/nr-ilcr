@@ -41,6 +41,15 @@
   }
 }
 
+// Totals row set apart from the data rows the same way the sibling schedules do it
+// (.schedule-1-other-costs__totals / .schedule-3-sub__totals): bold cells on the SAME
+// layer-accent token the Carbon data-table header uses, so the row reads as a summary
+// band rather than another editable location.
+.schedule-11__totals td {
+  font-weight: 700;
+  background: var(--cds-layer-accent-01);
+}
+
 .schedule-11__add {
   display: flex;
   gap: 1rem;

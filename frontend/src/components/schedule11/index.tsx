@@ -907,7 +907,7 @@ const Schedule11: FC = () => {
                   ))
                 )}
                 {/* Footer Totals (BR-08/CNT-001) — server-computed, null renders blank not 0. */}
-                <TableRow>
+                <TableRow className="schedule-11__totals">
                   <TableCell>Totals</TableCell>
                   <TableCell />
                   <TableCell />
