@@ -5,6 +5,8 @@
 // fields — Story 4.2). NOTE: Schedule 3 volumes are NON-NEGATIVE [0, 9,999,999] (volumeValidatorErrorMsg),
 // distinct from Schedule 1's signed 7-digit range.
 
+import { stripGroup } from '@/utils/number'
+
 const COST = { min: -99_999_999, max: 99_999_999 } // FLD-001 (costValidatorErrorMsg)
 const VOLUME = { min: 0, max: 9_999_999 } // FLD-002 (volumeValidatorErrorMsg) — non-negative
 
@@ -34,7 +36,9 @@ function validateValue(raw: string, kind: FieldKind): string | null {
   if (raw.trim() === '') {
     return null
   }
-  const value = Number(raw)
+  // The field displays (and legacy accepted) grouped input, so strip the separators before parsing —
+  // Number('1,000') is NaN and would report a valid entry as invalid.
+  const value = Number(stripGroup(raw))
   if (Number.isNaN(value)) {
     return kind === 'cost' ? VALIDATION_MESSAGES.costInvalid : VALIDATION_MESSAGES.volumeInvalid
   }

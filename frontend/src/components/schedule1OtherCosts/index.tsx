@@ -14,7 +14,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
@@ -36,7 +36,7 @@ const OtherCostsPage: FC = () => {
       (doc.rows ?? []).map((r) => ({
         id: r.id,
         description: r.description,
-        values: { cost: numStr(r.cost) },
+        values: { cost: numStrGroup(r.cost) },
       })),
     validate: (description, values) => validateOtherCost(description, values.cost),
     onBack: () => navigate({ to: '/schedule-1' }),
@@ -104,8 +104,8 @@ const OtherCostsPage: FC = () => {
                     invalidText={errs.description}
                   />
                 </TableCell>
-                <TableCell className="schedule-1__num">{fmt(volume)}</TableCell>
-                <TableCell className="schedule-1__num">
+                <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
+                <TableCell className="schedule-1__num schedule-1__num--input">
                   <TextInput
                     id={`row-cost-${row.key}`}
                     labelText="Edit cost"
@@ -113,12 +113,14 @@ const OtherCostsPage: FC = () => {
                     size="sm"
                     value={row.values.cost ?? ''}
                     onChange={(e) => setRowValue(row.key, 'cost', e.target.value)}
+                    // Re-group on blur only — regrouping mid-keystroke would fight the caret.
+                    onBlur={() => setRowValue(row.key, 'cost', groupInput(row.values.cost ?? ''))}
                     invalid={Boolean(errs.cost)}
                     invalidText={errs.cost}
                   />
                 </TableCell>
                 <TableCell className="schedule-1__num">
-                  {fmt(perUnitOf(row.values.cost ?? ''))}
+                  {fmtCurrency(perUnitOf(row.values.cost ?? ''))}
                 </TableCell>
                 <TableCell>
                   <Button
@@ -137,10 +139,12 @@ const OtherCostsPage: FC = () => {
           return (
             <>
               <TableCell>{row.description}</TableCell>
-              <TableCell className="schedule-1__num">{fmt(volume)}</TableCell>
-              <TableCell className="schedule-1__num">{fmt(toNum(row.values.cost ?? ''))}</TableCell>
+              <TableCell className="schedule-1__num">{fmtNumber(volume)}</TableCell>
               <TableCell className="schedule-1__num">
-                {fmt(perUnitOf(row.values.cost ?? ''))}
+                {fmtNumber(toNum(row.values.cost ?? ''))}
+              </TableCell>
+              <TableCell className="schedule-1__num">
+                {fmtCurrency(perUnitOf(row.values.cost ?? ''))}
               </TableCell>
             </>
           )
@@ -170,7 +174,7 @@ const OtherCostsPage: FC = () => {
                       className="oc-add__field oc-add__field--narrow"
                       labelText="Volume"
                       size="sm"
-                      value={numStr(volume)}
+                      value={numStrGroup(volume)}
                       onChange={() => undefined}
                       disabled
                     />
@@ -181,6 +185,7 @@ const OtherCostsPage: FC = () => {
                       size="sm"
                       value={addValues.cost ?? ''}
                       onChange={(e) => setAddValue('cost', e.target.value)}
+                      onBlur={() => setAddValue('cost', groupInput(addValues.cost ?? ''))}
                       invalid={Boolean(addErrors.cost)}
                       invalidText={addErrors.cost}
                     />
@@ -189,7 +194,7 @@ const OtherCostsPage: FC = () => {
                       className="oc-add__field oc-add__field--narrow"
                       labelText="$ / m³"
                       size="sm"
-                      value={numStr(perUnitOf(addValues.cost ?? ''))}
+                      value={numStrGroup(perUnitOf(addValues.cost ?? ''))}
                       onChange={() => undefined}
                       disabled
                     />
@@ -206,7 +211,7 @@ const OtherCostsPage: FC = () => {
             <Column sm={4} md={8} lg={16} className="schedule-1__section">
               <SubPanel title="Other Cost List">
                 <TableContainer>
-                  <Table aria-label="Other Cost List">
+                  <Table aria-label="Other Cost List" className="schedule-1-other-costs__table">
                     <TableHead>
                       <TableRow>
                         <TableHeader
@@ -254,11 +259,13 @@ const OtherCostsPage: FC = () => {
                           so the empty/zero-volume Totals row reads 0 across every column. */}
                       <TableRow className="schedule-1-other-costs__totals">
                         <TableCell>Totals</TableCell>
-                        <TableCell className="schedule-1__num">{fmt(volume ?? 0)}</TableCell>
+                        <TableCell className="schedule-1__num">{fmtNumber(volume ?? 0)}</TableCell>
                         <TableCell className="schedule-1__num">
-                          {fmt(data.costSubtotal ?? 0)}
+                          {fmtNumber(data.costSubtotal ?? 0)}
                         </TableCell>
-                        <TableCell className="schedule-1__num">{fmt(data.perUnit ?? 0)}</TableCell>
+                        <TableCell className="schedule-1__num">
+                          {fmtCurrency(data.perUnit ?? 0)}
+                        </TableCell>
                         {editable && <TableCell />}
                       </TableRow>
                     </TableBody>

@@ -1,7 +1,35 @@
+@use '@carbon/react/scss/spacing' as *;
+
 // Self-contained layout for the Schedule 3 list sub-pages (global scss, like the Schedule 3 page).
 // The .schedule-3__* class names are reused for visual consistency with the parent page.
 .schedule-3__num {
   text-align: right;
+}
+
+// Restated here (not inherited from schedule3/index.scss — that sheet ships in the Schedule 3 chunk
+// and is not loaded on this page): indent read-only numeric cells by the inline padding a Carbon
+// TextInput adds to its own value, so the figures in fields and the plain-text ones share a left
+// edge. See schedule3/index.scss for the full reasoning.
+.cds--data-table td.schedule-3__num {
+  padding-inline-start: $spacing-05 * 2;
+}
+
+.cds--data-table td.schedule-3__num--input {
+  padding-inline-start: $spacing-05;
+}
+
+// Description carries the only variable-length content, but sized from content it loses out to the
+// numeric columns (an editable cell holds a TextInput, whose intrinsic width is the input default of
+// ~20 characters). Give it the largest share and let the numeric columns keep their content-derived
+// widths — pinning those too made them far too narrow. The column count varies by config (3 columns
+// on Unacceptable Costs, 5 on Other Acceptable), which a percentage handles either way.
+.schedule-3-sub__table.cds--data-table {
+  th:first-child,
+  td:first-child {
+    inline-size: 40%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 // Field labels (Annual Rents, Add form) at 14px bold, and bold table column headers — matches the
@@ -26,6 +54,7 @@
 .schedule-3__intro {
   margin-block-start: 0;
   margin-block-end: 1rem;
+  font-size: 14px;
 }
 
 .schedule-3__actions {

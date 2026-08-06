@@ -51,6 +51,14 @@
   td:not(:first-child) {
     inline-size: 22%;
   }
+
+  // Legacy schedule1.xhtml ends the Silviculture panel before the grand total and draws it in its own
+  // bordered block; here it is the last row of the same table, so a rule above it reproduces that
+  // break. 2px because the table border-collapses: at equal width the previous row's subtle bottom
+  // border would win, so this has to be the wider of the two to survive the collapse.
+  tr.schedule-1__grand-total-row td {
+    border-block-start: 2px solid var(--cds-border-strong-01);
+  }
 }
 
 // Crown Timber Volume (Sch 3): a plain label + read-only box (not a table) laid out on the SAME fixed
@@ -85,9 +93,24 @@
   margin-block-end: $spacing-02;
 }
 
-// Right-align numeric columns (Carbon DataTable defaults to left).
 .schedule-1__num {
   text-align: right;
+}
+
+// Numeric values line up on their left edge. A read-only cell's text starts at the cell's own
+// inline-start padding, but an editable cell's value sits inside a TextInput that indents it by a
+// further $spacing-05 (`.cds--text-input` uses layout density 'normal', so size="sm" does NOT shrink
+// that padding) — leaving read-only figures 16px to the left of the ones in fields. Indent the
+// plain-text cells to match. Qualified with the table class and the element so this outranks Carbon's
+// own `.cds--data-table td { padding-inline }` rule at (0,1,1).
+.cds--data-table td.schedule-1__num {
+  padding-inline-start: $spacing-05 * 2;
+}
+
+// ...except the cells that hold the field, where the input itself supplies the indent. Same
+// specificity as the rule above, so this must stay after it to win.
+.cds--data-table td.schedule-1__num--input {
+  padding-inline-start: $spacing-05;
 }
 
 .schedule-1__actions {

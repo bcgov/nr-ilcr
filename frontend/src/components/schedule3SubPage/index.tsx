@@ -13,7 +13,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
@@ -110,7 +110,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
       config.rows(doc).map((r) => ({
         id: r.id,
         description: r.description,
-        values: Object.fromEntries(config.fields.map((f) => [f.key, numStr(f.get(r))])),
+        values: Object.fromEntries(config.fields.map((f) => [f.key, numStrGroup(f.get(r))])),
       })),
     validate: config.validate,
     onBack: () => navigate({ to: '/schedule-3' }),
@@ -170,7 +170,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
             />
           </TableCell>
           {config.fields.map((field) => (
-            <TableCell key={field.key} className="schedule-3__num">
+            <TableCell key={field.key} className="schedule-3__num schedule-3__num--input">
               <TextInput
                 id={`row-${field.key}-${row.key}`}
                 labelText={`Edit ${field.label}`}
@@ -178,6 +178,10 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 size="sm"
                 value={row.values[field.key] ?? ''}
                 onChange={(e) => setRowValue(row.key, field.key, e.target.value)}
+                // Re-group on blur only — regrouping mid-keystroke would fight the caret.
+                onBlur={() =>
+                  setRowValue(row.key, field.key, groupInput(row.values[field.key] ?? ''))
+                }
                 invalid={Boolean(errs[field.key])}
                 invalidText={errs[field.key]}
               />
@@ -185,7 +189,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
           ))}
           {readonlyColumns.map((col) => (
             <TableCell key={col.key} className="schedule-3__num">
-              {fmt(col.derive(nums))}
+              {fmtNumber(col.derive(nums))}
             </TableCell>
           ))}
           <TableCell>
@@ -207,12 +211,12 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
         <TableCell>{row.description}</TableCell>
         {config.fields.map((field) => (
           <TableCell key={field.key} className="schedule-3__num">
-            {fmt(nums[field.key])}
+            {fmtNumber(nums[field.key])}
           </TableCell>
         ))}
         {readonlyColumns.map((col) => (
           <TableCell key={col.key} className="schedule-3__num">
-            {fmt(col.derive(nums))}
+            {fmtNumber(col.derive(nums))}
           </TableCell>
         ))}
       </>
@@ -260,6 +264,9 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         size="sm"
                         value={addValues[field.key] ?? ''}
                         onChange={(e) => setAddValue(field.key, e.target.value)}
+                        onBlur={() =>
+                          setAddValue(field.key, groupInput(addValues[field.key] ?? ''))
+                        }
                         invalid={Boolean(addErrors[field.key])}
                         invalidText={addErrors[field.key]}
                       />
@@ -284,13 +291,13 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                     className="schedule-3-sub__meta-field"
                     labelText={config.metaField.label}
                     size="sm"
-                    value={numStr(config.metaField.value(data))}
+                    value={numStrGroup(config.metaField.value(data))}
                     onChange={() => undefined}
                     disabled
                   />
                 )}
                 <TableContainer>
-                  <Table aria-label={config.tableTitle}>
+                  <Table aria-label={config.tableTitle} className="schedule-3-sub__table">
                     <TableHead>
                       <TableRow>
                         <TableHeader
@@ -344,7 +351,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         <TableCell>Totals</TableCell>
                         {config.summaryItems.map((item) => (
                           <TableCell key={item.label} className="schedule-3__num">
-                            {fmt(item.value(data))}
+                            {fmtNumber(item.value(data))}
                           </TableCell>
                         ))}
                         {editable && <TableCell />}

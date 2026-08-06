@@ -1,7 +1,43 @@
+@use '@carbon/react/scss/spacing' as *;
+
 // Self-contained layout for the Other Costs sub-page (global scss, like the Schedule 1 page). The
 // .schedule-1__* class names are reused for visual consistency with the parent page.
 .schedule-1__num {
   text-align: right;
+}
+
+// Restated here (not inherited from schedule1/index.scss — that sheet ships in the Schedule 1 chunk
+// and is not loaded on this page): indent read-only numeric cells by the inline padding a Carbon
+// TextInput adds to its own value, so the figures in fields and the plain-text ones share a left
+// edge. See schedule1/index.scss for the full reasoning.
+.cds--data-table td.schedule-1__num {
+  padding-inline-start: $spacing-05 * 2;
+}
+
+.cds--data-table td.schedule-1__num--input {
+  padding-inline-start: $spacing-05;
+}
+
+.schedule-1-other-costs__table.cds--data-table {
+  // Description carries the only variable-length content, so it gets the largest share and wraps
+  // rather than truncating.
+  th:first-child,
+  td:first-child {
+    inline-size: 40%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  // Volume and Cost are sized from their content otherwise, so they disagree — and by a different
+  // amount per view (an editable Cost cell holds a TextInput and grows; an empty list has no data
+  // rows at all, which leaves the browser to hand the slack to Volume). One shared width keeps the
+  // pair equal in every state; change this single value to resize both columns together.
+  th:nth-child(2),
+  td:nth-child(2),
+  th:nth-child(3),
+  td:nth-child(3) {
+    inline-size: 14rem;
+  }
 }
 
 .schedule-1__section {
@@ -55,6 +91,8 @@
   margin: 0;
   // Add-form field labels read as normal weight (matching the Schedule 3 Other Costs sub-page).
   font-weight: 400;
+  // Carbon's label token is 12px; the legacy form set these a step larger.
+  font-size: 14px;
 }
 
 // Legacy labels read "Description:", "Volume:", etc. The colon is decorative (::after is not part of
