@@ -44,5 +44,5 @@ public record Schedule8PageRequest(
     @Size(max = 50, message = "Contact can not exceed 50 characters.") String contact,
     @Size(max = 20, message = "Phone can not exceed 20 characters.") String phone,
     @Size(max = 10, message = "Cutting permit can not exceed 10 characters.") String cuttingPermit,
-    @Size(max = 2000, message = "Comments can not exceed 2000 characters.") String comments) {
+    @Size(max = 3500, message = "Comments can not exceed 3500 characters.") String comments) {
 }

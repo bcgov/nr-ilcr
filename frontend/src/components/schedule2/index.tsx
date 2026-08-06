@@ -365,7 +365,7 @@ const Schedule2: FC = () => {
                 <TableRow>
                   <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-2__num">Volume (m³)</TableHeader>
-                  <TableHeader className="schedule-2__num">Cost</TableHeader>
+                  <TableHeader className="schedule-2__num">Cost ($)</TableHeader>
                   <TableHeader className="schedule-2__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>

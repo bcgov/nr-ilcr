@@ -47,8 +47,8 @@ const copyWarning = (name: string): string =>
 
 // NAV-002 (leaving a saved location to a sub-page — unsaved edits discarded) and NAV-003 (leaving an
 // unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
-// Per-location comments cap — the TRANSPORTATION_REPORT.COMMENTS column width (backend @Size(2000)).
-const COMMENTS_MAX = 2000
+// Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
+const COMMENTS_MAX = 3500
 
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
 // browser Back button returns from a sub-page to the location list.

@@ -16,22 +16,18 @@
   }
 }
 
-// Right-align the numeric columns (read-only figures + headers) and the numbers inside the editable
-// inputs, so every column's digits share a right edge.
+// Left-align the numeric columns so the read-only figures line up with the (left-aligned) numbers in
+// the editable input fields.
 .schedule-2__num {
-  text-align: right;
+  text-align: left;
 }
 
-.schedule-2__num .cds--text-input {
-  text-align: right;
-}
-
-// A Carbon text input insets its text from the cell's right edge by its own padding + border, so a
-// plain read-only cell's number would sit ~1rem further right than an input's number. Pad the
-// non-input numeric cells (read-only figures + column headers) by that inset so every column's numbers
-// line up on the same right edge. Input cells are excluded — the input already supplies the inset.
+// A Carbon text input insets its text by its own padding + border, so a plain read-only cell's number
+// sits ~1rem to the left of an input's number. Indent the non-input numeric cells (read-only figures
+// and the column headers) by that inset so every column's numbers line up. Input cells are excluded —
+// the input already supplies the inset.
 .schedule-2__num:not(:has(.cds--text-input)) {
-  padding-inline-end: calc(1rem + 1px);
+  text-indent: calc(1rem + 1px);
 }
 
 // The Comments label reads as a full sentence at 14px (both the editable field label and the
