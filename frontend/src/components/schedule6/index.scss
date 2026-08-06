@@ -1,0 +1,78 @@
+// Self-contained layout for the Schedule 6 page (global scss, like the sibling schedule pages). The
+// .schedule-6__* class names mirror the schedule11 layout for visual consistency; no new global
+// styles and no Carbon token overrides.
+.schedule-6__num {
+  text-align: right;
+}
+
+.schedule-6__section {
+  margin-block: 1rem;
+}
+
+.schedule-6__meta {
+  margin-block-end: 1rem;
+}
+
+.schedule-6__heading {
+  margin-block-end: 0.5rem;
+}
+
+.schedule-6__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+.schedule-6__check {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.schedule-6__summary {
+  display: flex;
+  gap: 2rem;
+  margin-block-start: 0.5rem;
+}
+
+.schedule-6__field {
+  dt {
+    font-weight: 600;
+  }
+}
+
+// The add/edit field grid and the record display grid share one shape so a row reads the same in
+// both modes (legacy's two field rows: type/TFL/block/RMG then volume/cost/$ per m³, then Comments).
+.schedule-6__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.schedule-6__derived {
+  align-self: flex-end;
+}
+
+// Comments spans the grid so a two-row textarea is not squeezed into one narrow column.
+.schedule-6__comments {
+  grid-column: 1 / -1;
+}
+
+.schedule-6__comments-save {
+  margin-block-start: 1rem;
+}
+
+.schedule-6__totals {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.schedule-6__totals-label {
+  font-weight: 600;
+}
+
+.schedule-6__empty {
+  margin-block: 1rem;
+}

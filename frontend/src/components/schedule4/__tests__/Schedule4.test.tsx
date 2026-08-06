@@ -489,6 +489,38 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
   })
+
+  test('the in-app Back button replaces history so browser Back does not re-open the sub-page', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    // Build the router directly so the test can reach router.history (the browser Back button).
+    const router = makeRouter()
+    render(<RouterProvider router={router} />)
+    await screen.findByText('Harbour Dump')
+
+    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue) — a history push.
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
+
+    // The in-app Cancel/Back navigates with replace: true (index.tsx:529), collapsing the sub-page
+    // entry into the list rather than pushing a new one.
+    const [cancel] = screen
+      .getAllByRole('button', { name: /^cancel$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(cancel)
+    await waitFor(() =>
+      expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument(),
+    )
+    expect(router.state.location.search).toEqual({})
+
+    // Because the in-app Back REPLACED the sub-page entry (not pushed the list on top of it), browser
+    // Back skips past the sub-page rather than re-opening it — the intended replace: true behavior.
+    router.history.back()
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
+  })
 })
 
 describe('Schedule4 context, load + write error, edit, delete and status paths', () => {
