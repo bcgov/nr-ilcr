@@ -4,6 +4,13 @@
   text-align: right;
 }
 
+// A sortable header's label lives inside Carbon's flex button (justify-content: space-between,
+// inline-size: 100%), so text-align on the th no longer positions it — the numeric labels would
+// drift left of their right-aligned cells. Push the label + sort icon to the end instead.
+.schedule-11__num .cds--table-sort {
+  justify-content: flex-end;
+}
+
 .schedule-11__section {
   margin-block: 1rem;
 }

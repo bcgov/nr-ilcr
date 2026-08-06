@@ -221,6 +221,83 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   )
 }
 
+// Column order, header text and which columns sort are all legacy-verbatim: every legacy
+// p:column carries sortBy EXCEPT Comments (xhtml:353) and Delete (xhtml:364), so those two
+// alone stay unsorted. Keeping the definitions in one list means the header row cannot drift
+// out of step with the sortable set.
+type SortKey =
+  | 'location'
+  | 'becLabel'
+  | 'enhancedIndicator'
+  | 'netArea'
+  | 'actualCost'
+  | 'plannedCost'
+  | 'totalCost'
+  | 'costPerNetArea'
+
+type SortDirection = 'NONE' | 'ASC' | 'DESC'
+
+type SilvicultureColumn = {
+  readonly label: string
+  readonly sortKey: SortKey | null
+  readonly numeric?: boolean
+}
+
+const COLUMNS: readonly SilvicultureColumn[] = [
+  { label: 'Location', sortKey: 'location' }, // xhtml:208
+  { label: 'Biogeo/Subzone/Variant', sortKey: 'becLabel' }, // xhtml:228
+  { label: 'ES', sortKey: 'enhancedIndicator' }, // xhtml:255
+  { label: 'NAR(ha)', sortKey: 'netArea', numeric: true }, // xhtml:274
+  { label: 'Actual Cost ($)', sortKey: 'actualCost', numeric: true }, // xhtml:296
+  { label: 'Planned Cost ($)', sortKey: 'plannedCost', numeric: true }, // xhtml:313
+  { label: 'Total Act Plus Plan Cost ($)', sortKey: 'totalCost', numeric: true }, // xhtml:334
+  { label: 'Total/NAR(ha)', sortKey: 'costPerNetArea', numeric: true }, // xhtml:344
+  { label: 'Comments', sortKey: null }, // xhtml:353 — no sortBy
+]
+
+// ASC -> DESC -> NONE, where NONE restores the server's order. Carbon's own DataTable cycles
+// through the same three states; legacy PrimeFaces only toggled asc/desc, which left no way
+// back to the document order the API returned.
+const NEXT_DIRECTION: Record<SortDirection, SortDirection> = {
+  NONE: 'ASC',
+  ASC: 'DESC',
+  DESC: 'NONE',
+}
+
+// Blank cells rank last in BOTH directions: a null carries no position of its own, so letting
+// the direction flip it would push empty rows above real data on the descending pass. Booleans
+// compare false < true (legacy sorted the raw enhancedIndicator, xhtml:255).
+const compareRows = (
+  a: SilvicultureLocation,
+  b: SilvicultureLocation,
+  key: SortKey,
+  direction: SortDirection,
+): number => {
+  const left = a[key]
+  const right = b[key]
+  if (left === null || left === undefined) {
+    return right === null || right === undefined ? 0 : 1
+  }
+  if (right === null || right === undefined) {
+    return -1
+  }
+  const base =
+    typeof left === 'string' && typeof right === 'string'
+      ? left.localeCompare(right)
+      : Number(left) - Number(right)
+  return direction === 'DESC' ? -base : base
+}
+
+// Copy before sorting — sorting `data.locations` in place would mutate React state.
+const sortLocations = (
+  rows: readonly SilvicultureLocation[],
+  key: SortKey | null,
+  direction: SortDirection,
+): readonly SilvicultureLocation[] =>
+  key === null || direction === 'NONE'
+    ? rows
+    : [...rows].sort((a, b) => compareRows(a, b, key, direction))
+
 const PAGE_HEADER = (
   <Grid fullWidth className="app-page__header">
     <PageTitle title="Schedule 11" subtitle="Report Basic Silviculture Costs." />
@@ -426,6 +503,19 @@ const Schedule11: FC = () => {
   const [editErrors, setEditErrors] = useState<SilvicultureErrors>({})
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+
+  // Presentation-only, so it deliberately survives saves: a re-sort after every add/edit would
+  // yank the row the user is working on back to document order.
+  const [sortColumn, setSortColumn] = useState<SortKey | null>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>('NONE')
+
+  const handleSort = (key: SortKey) => {
+    // A different column always starts fresh at ascending rather than inheriting the previous
+    // column's direction.
+    const next = key === sortColumn ? NEXT_DIRECTION[sortDirection] : 'ASC'
+    setSortDirection(next)
+    setSortColumn(next === 'NONE' ? null : key)
+  }
 
   // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
   // so a context change can't strand an open editor or a stale banner (Story 2.5 carryover patch).
@@ -716,6 +806,10 @@ const Schedule11: FC = () => {
       />
     )
 
+  // Only the data rows are sorted; the Totals row is rendered after this list, so it stays
+  // pinned to the bottom exactly as legacy's footer column group did (xhtml:377-412).
+  const sortedLocations = sortLocations(data.locations, sortColumn, sortDirection)
+
   const totals = data.totals
 
   return (
@@ -875,21 +969,26 @@ const Schedule11: FC = () => {
             <Table aria-label="Silviculture Locations">
               <TableHead>
                 <TableRow>
-                  {/* Column order and header text are legacy-verbatim (schedule11.xhtml:208-375),
-                      so a user moving off the legacy grid reads the same columns in the same
-                      places. The table says "ES" while the Add panel below says "Enhanced" —
-                      that asymmetry is legacy's too (xhtml:71 labels the form field "Enhanced"). */}
-                  <TableHeader>Location</TableHeader>
-                  <TableHeader>Biogeo/Subzone/Variant</TableHeader>
-                  <TableHeader>ES</TableHeader>
-                  <TableHeader className="schedule-11__num">NAR(ha)</TableHeader>
-                  <TableHeader className="schedule-11__num">Actual Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Planned Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">
-                    Total Act Plus Plan Cost ($)
-                  </TableHeader>
-                  <TableHeader className="schedule-11__num">Total/NAR(ha)</TableHeader>
-                  <TableHeader>Comments</TableHeader>
+                  {/* Order, header text and sortability all come from COLUMNS (legacy-verbatim).
+                      The table says "ES" while the Add panel below says "Enhanced" — that
+                      asymmetry is legacy's too (xhtml:71 labels the form field "Enhanced"). */}
+                  {COLUMNS.map(({ label, sortKey, numeric }) => {
+                    const isSortHeader = sortKey !== null && sortKey === sortColumn
+                    return (
+                      <TableHeader
+                        key={label}
+                        className={numeric ? 'schedule-11__num' : undefined}
+                        isSortable={sortKey !== null}
+                        isSortHeader={isSortHeader}
+                        // Carbon reads aria-sort off this, so an inactive column must report
+                        // NONE rather than the active column's direction.
+                        sortDirection={isSortHeader ? sortDirection : 'NONE'}
+                        onClick={sortKey === null ? undefined : () => handleSort(sortKey)}
+                      >
+                        {label}
+                      </TableHeader>
+                    )
+                  })}
                   {editable && <TableHeader>Actions</TableHeader>}
                 </TableRow>
               </TableHead>
@@ -901,7 +1000,7 @@ const Schedule11: FC = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.locations.map((row) => (
+                  sortedLocations.map((row) => (
                     <TableRow key={row.locationId}>{rowCells(row)}</TableRow>
                   ))
                 )}
