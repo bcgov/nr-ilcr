@@ -90,11 +90,15 @@
   padding-inline: 0;
 }
 
-.schedule-4__subpage-header {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-03;
-  margin-block-end: $spacing-05;
+// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title both read
+// at 20px (the two sub-page headers).
+.schedule-4__subpage-title {
+  font-size: 20px;
+  margin-block: $spacing-05 $spacing-03;
+}
+
+.schedule-4__subpage-table .cds--data-table-header__title {
+  font-size: 20px;
 }
 
 .schedule-4__subpage-form {
@@ -103,6 +107,12 @@
   align-items: flex-end;
   gap: $spacing-05;
   margin-block-end: $spacing-06;
+}
+
+// The compact Add-row button: 32px, overriding the global 40px button height (the CSS var drives both
+// the min-height and the centering padding, so the label stays vertically centred).
+.schedule-4__add-row {
+  --cds-layout-size-height-local: 2rem;
 }
 
 // Sub-page summary row (last row of the table): totals of the respective columns, set apart from the

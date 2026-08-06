@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { SubPageRow } from '@/interfaces/Schedule4Response'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Button,
   InlineNotification,
@@ -16,7 +16,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, fmtNumber, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, toNum, withCommas } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import {
   emptySubPageRowForm,
@@ -27,6 +27,9 @@ import {
 
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
 
+// The sortable row columns (everything except Actions).
+type SortKey = 'description' | 'distance' | 'volume' | 'cost' | 'cycle' | 'perUnit'
+
 const sum = (rows: SubPageRow[], pick: (r: SubPageRow) => number | null): number =>
   rows.reduce((total, r) => total + (pick(r) ?? 0), 0)
 
@@ -34,7 +37,6 @@ interface SubPageProps {
   millId: number
   year: number
   locationId: number
-  locationName: string
   def: SubPageDef
   rows: SubPageRow[]
   editable: boolean
@@ -53,7 +55,6 @@ const SubPage: FC<SubPageProps> = ({
   millId,
   year,
   locationId,
-  locationName,
   def,
   rows,
   editable,
@@ -69,9 +70,40 @@ const SubPage: FC<SubPageProps> = ({
 
   const errors = showErrors ? validateSubPageRow(form, def.hasCycle) : {}
 
+  // Client-side column sort of the data rows (the totals row always stays last). Three-state per
+  // header: unsorted → ascending → descending → unsorted. Nulls sort last in either direction.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'ASC' | 'DESC' } | null>(null)
+  const toggleSort = (key: SortKey) =>
+    setSort((prev) => {
+      if (prev?.key !== key) return { key, dir: 'ASC' }
+      return prev.dir === 'ASC' ? { key, dir: 'DESC' } : null
+    })
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows
+    const { key, dir } = sort
+    const factor = dir === 'ASC' ? 1 : -1
+    return [...rows].sort((a, b) => {
+      const av = a[key]
+      const bv = b[key]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * factor
+      return String(av).localeCompare(String(bv)) * factor
+    })
+  }, [rows, sort])
+
   const setField =
     (field: keyof SubPageRowForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
       const { value } = event.target
+      setForm((prev) => ({ ...prev, [field]: value }))
+    }
+
+  // Number add-row fields strip display commas so the form keeps the raw numeric string (toNum /
+  // validation parse it); withCommas re-groups for display on each render.
+  const setNumber =
+    (field: keyof SubPageRowForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value.replace(/,/g, '')
       setForm((prev) => ({ ...prev, [field]: value }))
     }
 
@@ -164,21 +196,28 @@ const SubPage: FC<SubPageProps> = ({
       labelText={label}
       size="sm"
       inputMode="numeric"
-      value={form[field]}
-      onChange={setField(field)}
+      value={withCommas(form[field])}
+      onChange={setNumber(field)}
       invalid={Boolean(errors[field])}
       invalidText={errors[field]}
     />
   )
 
+  // Sortable column header (all but Actions). Carbon renders the sort affordance + aria-sort.
+  const sortHeader = (key: SortKey, label: string, numeric = false) => (
+    <TableHeader
+      className={numeric ? 'schedule-4__num' : undefined}
+      isSortable
+      isSortHeader={sort?.key === key}
+      sortDirection={sort?.key === key ? sort.dir : 'NONE'}
+      onClick={() => toggleSort(key)}
+    >
+      {label}
+    </TableHeader>
+  )
+
   return (
     <div className="schedule-4__subpage">
-      <div className="schedule-4__subpage-header">
-        <h3 className="schedule-4__heading">
-          {def.label} — {locationName}
-        </h3>
-      </div>
-
       {addMessage && (
         <InlineNotification kind="success" lowContrast title="Success" subtitle={addMessage} />
       )}
@@ -187,37 +226,46 @@ const SubPage: FC<SubPageProps> = ({
       )}
 
       {editable && (
-        <div className="schedule-4__subpage-form">
-          <TextInput
-            id="subpage-description"
-            labelText="Description"
-            maxLength={120}
-            value={form.description}
-            onChange={setField('description')}
-            invalid={Boolean(errors.description)}
-            invalidText={errors.description}
-          />
-          {numberField('distance', 'Distance')}
-          {numberField('volume', 'Volume')}
-          {numberField('cost', 'Cost')}
-          {def.hasCycle && numberField('cycle', 'Cycle')}
-          <Button kind="primary" size="sm" disabled={busy} onClick={handleAdd}>
-            Add row
-          </Button>
-        </div>
+        <>
+          <h3 className="schedule-4__subpage-title">Add {def.label}</h3>
+          <div className="schedule-4__subpage-form">
+            <TextInput
+              id="subpage-description"
+              labelText="Description"
+              maxLength={120}
+              value={form.description}
+              onChange={setField('description')}
+              invalid={Boolean(errors.description)}
+              invalidText={errors.description}
+            />
+            {numberField('distance', 'Distance (km)')}
+            {numberField('volume', 'Volume (m³)')}
+            {numberField('cost', 'Cost $')}
+            {def.hasCycle && numberField('cycle', 'Cycle')}
+            <Button
+              kind="primary"
+              size="sm"
+              className="schedule-4__add-row"
+              disabled={busy}
+              onClick={handleAdd}
+            >
+              Add row
+            </Button>
+          </div>
+        </>
       )}
 
-      <TableContainer title={`${def.label} rows`} className="schedule-4__grid">
+      <TableContainer title={def.label} className="schedule-4__grid schedule-4__subpage-table">
         <Table aria-label={`${def.label} rows`}>
           <TableHead>
             <TableRow>
-              <TableHeader>Description</TableHeader>
-              <TableHeader className="schedule-4__num">Distance (km)</TableHeader>
-              <TableHeader className="schedule-4__num">Volume (m³)</TableHeader>
-              <TableHeader className="schedule-4__num">Cost $</TableHeader>
-              {def.hasCycle && <TableHeader className="schedule-4__num">Cycle</TableHeader>}
-              <TableHeader className="schedule-4__num">$/m³</TableHeader>
-              {editable && <TableHeader>Actions</TableHeader>}
+              {sortHeader('description', 'Description')}
+              {sortHeader('distance', 'Distance (km)', true)}
+              {sortHeader('volume', 'Volume (m³)', true)}
+              {sortHeader('cost', 'Cost $', true)}
+              {def.hasCycle && sortHeader('cycle', 'Cycle', true)}
+              {sortHeader('perUnit', '$/m³', true)}
+              {editable && <TableHeader>Action</TableHeader>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -227,7 +275,7 @@ const SubPage: FC<SubPageProps> = ({
               </TableRow>
             ) : (
               <>
-                {rows.map((row) => (
+                {sortedRows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>{row.description ?? '—'}</TableCell>
                     <TableCell className="schedule-4__num">{fmtNumber(row.distance)}</TableCell>

@@ -526,7 +526,6 @@ const Schedule4: FC = () => {
               millId={millId as number}
               year={year as number}
               locationId={subPage.locationId}
-              locationName={location?.name ?? ''}
               def={subPage.def}
               rows={rows}
               editable={editable}
