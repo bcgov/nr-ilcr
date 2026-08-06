@@ -327,7 +327,7 @@ const Schedule8: FC = () => {
   const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
@@ -391,7 +391,7 @@ const Schedule8: FC = () => {
     }
     const pageTitle = pageLabel(page, pageIndex)
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, pageTitle, 'Samples'])}
         <Grid fullWidth className="app-page__body">
           {optionsError && (
@@ -431,7 +431,7 @@ const Schedule8: FC = () => {
     const sampleIndex = page.samples.findIndex((s) => s.id === nav.sampleId)
     const sampleTitle = sampleLabel(sample, sampleIndex)
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, sampleTitle, 'Additions / Deductions'])}
         <Grid fullWidth className="app-page__body">
           {optionsError && (
@@ -707,7 +707,7 @@ const Schedule8: FC = () => {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         {optionsError && (

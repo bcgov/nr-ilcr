@@ -69,6 +69,13 @@ body {
   .#{$bcgov-prefix}--label {
     font-size: 14px;
   }
+
+  // Sub-section headers (the Schedule 8 sample-editor blocks: Skidding / Skyline / Helicopter /
+  // Other / Volumes / Rate) sit one level below the 20px panel headings — 16px so they read as
+  // subordinate group titles rather than competing with the main header.
+  .schedule-8__subheading {
+    font-size: 16px;
+  }
 }
 
 .app-section {
