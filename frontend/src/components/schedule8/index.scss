@@ -122,6 +122,12 @@
   align-self: flex-end;
 }
 
+// The TSA-or-TFL selector carries the longest option descriptions (TSA / TFL names), so give it a
+// wider min-width than the default field so the text isn't truncated to an ellipsis.
+.schedule-8__tsa-tfl {
+  min-inline-size: 18rem;
+}
+
 .schedule-8__grid {
   margin-block: $spacing-05;
 }

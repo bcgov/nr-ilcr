@@ -543,9 +543,6 @@ const SamplePage: FC<SamplePageProps> = ({
   return (
     <div className="schedule-8__level">
       <div className="schedule-8__level-header">
-        <Button kind="ghost" size="sm" onClick={requestBack}>
-          ← Back to pages
-        </Button>
         <h3 className="schedule-8__heading">{pageTitle} → Samples</h3>
       </div>
 
@@ -562,6 +559,9 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
 
       <div className="schedule-8__actions">
+        <Button kind="ghost" onClick={requestBack}>
+          ← Back to pages
+        </Button>
         <Button kind="primary" disabled={!editable || busy || panelOpen} onClick={openNew}>
           Add New Sample
         </Button>

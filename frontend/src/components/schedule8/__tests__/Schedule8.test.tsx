@@ -446,12 +446,13 @@ describe('Schedule8 page level', () => {
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
-    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeDisabled()
+    // TFL is a free-text input (legacy ILCR-161), not a dropdown; Supply Block is a dropdown.
+    expect(screen.getByRole('textbox', { name: 'TFL' })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeEnabled()
 
-    // The TSA-or-TFL selector carries the legacy 'TFL' marker; choosing it flips the two selectors.
+    // The TSA-or-TFL selector carries the legacy 'TFL' marker; choosing it flips the TFL/Supply Block pair.
     await selectOption('TSA or TFL', 'TFL')
-    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'TFL' })).toBeEnabled()
     expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
   })
 

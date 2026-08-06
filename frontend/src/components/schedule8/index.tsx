@@ -538,17 +538,27 @@ const Schedule8: FC = () => {
     field: keyof PageForm,
     label: string,
     items: CodeOption[],
-    opts: { disabled?: boolean; onChange?: (code: string) => void } = {},
+    opts: { disabled?: boolean; onChange?: (code: string) => void; className?: string } = {},
   ) => {
-    const selected = items.find((option) => option.code === form[field]) ?? null
+    const current = form[field]
     if (readOnly) {
+      const selected = items.find((option) => option.code === current) ?? null
       return (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
-          <span>{selected?.description || form[field] || '—'}</span>
+          <span>{selected?.description || current || '—'}</span>
         </div>
       )
     }
+    // A stored code that the reference/options list doesn't carry (e.g. a legacy TFL/TSA code no longer
+    // in its code table) would otherwise resolve to null and the Dropdown would show the empty "Select"
+    // placeholder, silently dropping the saved value. Surface it as its own (code-labelled) option so
+    // the field still shows what's stored instead of appearing unselected.
+    const itemList =
+      current && !items.some((option) => option.code === current)
+        ? [...items, { code: current, description: current }]
+        : items
+    const selected = itemList.find((option) => option.code === current) ?? null
     const handleChange = opts.onChange
       ? ({ selectedItem }: { selectedItem: CodeOption | null }) =>
           opts.onChange!(selectedItem?.code ?? '')
@@ -558,9 +568,10 @@ const Schedule8: FC = () => {
     return (
       <Dropdown<CodeOption>
         id={`page-${field}`}
+        className={opts.className}
         titleText={label}
         label="Select"
-        items={items}
+        items={itemList}
         itemToString={(item) => item?.description ?? ''}
         selectedItem={selected ?? undefined}
         disabled={opts.disabled}
@@ -646,6 +657,7 @@ const Schedule8: FC = () => {
         {dropdownField('region', 'Region', options?.regions ?? [])}
         {dropdownField('becZone', 'Biogeoclimatic Zone', options?.becZones ?? [])}
         {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
+          className: 'schedule-8__tsa-tfl',
           onChange: (code) =>
             setForm((prev) => {
               const next = { ...prev, tsaNumber: code }
@@ -657,7 +669,9 @@ const Schedule8: FC = () => {
               return next
             }),
         })}
-        {dropdownField('tflNumber', 'TFL', options?.tflNumbers ?? [], { disabled: !tflActive })}
+        {/* TFL is a free-text 2-char code (legacy ILCRTflNumberValidator, ILCR-161: NOT restricted to
+            the TFL_NUMBER_CODE table), enabled only when the TSA-or-TFL selector holds 'TFL'. */}
+        {textField('tflNumber', 'TFL', { maxLength: 2, disabled: !tflActive })}
         {dropdownField('supplyBlock', 'Supply Block', options?.supplyBlocks ?? [], {
           disabled: tflActive,
         })}
