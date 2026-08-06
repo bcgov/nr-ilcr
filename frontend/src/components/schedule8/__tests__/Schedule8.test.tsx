@@ -1073,6 +1073,9 @@ describe('Schedule8 additions/deductions level', () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openRates()
 
+    // Make the form dirty to trigger the unsaved-changes confirm
+    await userEvent.type(screen.getByLabelText('Additions — $/m³'), '5')
+
     // Cancel (the action-bar button, first in DOM) triggers the unsaved-changes confirm.
     await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
     expect(
@@ -1114,6 +1117,9 @@ describe('Schedule8 additions/deductions level', () => {
   test('Cancel from the rates confirm modal stays on the rates screen', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openRates()
+
+    // Make the form dirty to trigger the unsaved-changes confirm
+    await userEvent.type(screen.getByLabelText('Additions — $/m³'), '5')
 
     // Action-bar Cancel opens the confirm; dismissing it (the modal's Cancel, last in DOM) stays put.
     await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])

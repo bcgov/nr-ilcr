@@ -110,6 +110,7 @@ const Schedule8: FC = () => {
   // Reference-data option lists for the page-editor dropdowns. Fetched once (global, not mill/year
   // scoped); null until loaded — the dropdowns fall back to an empty list so the panel still renders.
   const [options, setOptions] = useState<Schedule8Options | null>(null)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
@@ -167,10 +168,16 @@ const Schedule8: FC = () => {
       .getAxiosInstance()
       .get<Schedule8Options>('/v1/schedule8/options')
       .then((response) => {
-        if (active) setOptions(response.data)
+        if (active) {
+          setOptions(response.data)
+          setOptionsError(null)
+        }
       })
-      .catch(() => {
-        if (active) setOptions(null)
+      .catch((err) => {
+        if (active) {
+          setOptions(null)
+          setOptionsError(extractDetail(err) || 'Failed to load reference options.')
+        }
       })
     return () => {
       active = false
@@ -501,7 +508,7 @@ const Schedule8: FC = () => {
     field: keyof PageForm,
     label: string,
     items: CodeOption[],
-    opts: { disabled?: boolean } = {},
+    opts: { disabled?: boolean; onChange?: (code: string) => void } = {},
   ) => {
     const selected = items.find((option) => option.code === form[field]) ?? null
     if (readOnly) {
@@ -512,6 +519,10 @@ const Schedule8: FC = () => {
         </div>
       )
     }
+    const handleChange = opts.onChange
+      ? ({ selectedItem }: { selectedItem: CodeOption | null }) => opts.onChange!(selectedItem?.code ?? '')
+      : ({ selectedItem }: { selectedItem: CodeOption | null }) => setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
+
     return (
       <Dropdown<CodeOption>
         id={`page-${field}`}
@@ -523,9 +534,7 @@ const Schedule8: FC = () => {
         disabled={opts.disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
-        onChange={({ selectedItem }) =>
-          setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
-        }
+        onChange={handleChange}
       />
     )
   }
@@ -604,7 +613,18 @@ const Schedule8: FC = () => {
         {dropdownField('supportCentre', 'Support Centre', options?.supportCentres ?? [])}
         {dropdownField('region', 'Region', options?.regions ?? [])}
         {dropdownField('becZone', 'Biogeoclimatic Zone', options?.becZones ?? [])}
-        {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems)}
+        {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
+          onChange: (code) =>
+            setForm((prev) => {
+              const next = { ...prev, tsaNumber: code }
+              if (code === 'TFL') {
+                next.supplyBlock = ''
+              } else {
+                next.tflNumber = ''
+              }
+              return next
+            }),
+        })}
         {dropdownField('tflNumber', 'TFL', options?.tflNumbers ?? [], { disabled: !tflActive })}
         {dropdownField('supplyBlock', 'Supply Block', options?.supplyBlocks ?? [], {
           disabled: tflActive,
@@ -650,6 +670,9 @@ const Schedule8: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
+        {optionsError && (
+          <NotificationColumn kind="error" title="Reference options failed to load" subtitle={optionsError} />
+        )}
         {saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}

@@ -75,8 +75,12 @@ const RatesPage: FC<RatesPageProps> = ({
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<RateRow | null>(null)
   const [confirmBack, setConfirmBack] = useState(false)
 
+  const isAddDirty = addForm.costItemCode.trim() !== '' || addForm.costingRate.trim() !== '' || addForm.costTypeCode.trim() !== ''
+  const isDedDirty = dedForm.costItemCode.trim() !== '' || dedForm.costingRate.trim() !== '' || dedForm.costTypeCode.trim() !== ''
+  const isDirty = isAddDirty || isDedDirty
+
   const requestBack = () => {
-    if (editable) setConfirmBack(true)
+    if (editable && isDirty) setConfirmBack(true)
     else onBack()
   }
 
