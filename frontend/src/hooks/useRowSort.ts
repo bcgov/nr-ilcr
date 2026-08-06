@@ -45,6 +45,11 @@ export function useRowSort(rows: EditRow[], extractors: SortExtractors): RowSort
   const [order, setOrder] = useState<number[] | null>(null)
 
   const toggleSort = (key: string) => {
+    // A header with no extractor cannot be sorted — ignore the click rather than throwing (or
+    // parking the table in an "active sort" state that never reorders anything).
+    if (!extractors[key]) {
+      return
+    }
     const next: SortDirection =
       activeKey !== key
         ? 'ASC'

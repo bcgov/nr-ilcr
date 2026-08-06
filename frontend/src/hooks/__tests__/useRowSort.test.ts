@@ -86,4 +86,19 @@ describe('useRowSort', () => {
     rerender({ rows: withRemoved })
     expect(keysOf(result.current.sortedRows)).toEqual([2, 3, 4]) // removed key dropped
   })
+
+  // Callers build the extractor map dynamically (see Schedule3SubPage), so a header marked sortable
+  // can drift out of sync with it. That must degrade to an inert header, never a TypeError.
+  test('a header with no extractor is inert: no throw, no sort state', () => {
+    const { result } = renderHook(() => useRowSort(seed, extractors))
+
+    expect(() => act(() => result.current.toggleSort('crown'))).not.toThrow()
+    expect(keysOf(result.current.sortedRows)).toEqual([1, 2, 3])
+    expect(result.current.activeKey).toBeNull()
+    expect(result.current.directionFor('crown')).toBe('NONE')
+
+    // The unknown key must not poison the cycle for real columns either.
+    act(() => result.current.toggleSort('cost'))
+    expect(keysOf(result.current.sortedRows)).toEqual([2, 1, 3])
+  })
 })

@@ -3,7 +3,6 @@ import { Button, Column, Grid, Modal } from '@carbon/react'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import { type BreadCrumb } from '@/components/core/PageTitle'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import type { EditableCostRows, EditableRowsDoc } from '@/hooks/useEditableCostRows'
 import './index.scss'
@@ -14,8 +13,11 @@ const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you woul
 
 interface Props<TDoc extends EditableRowsDoc> {
   readonly editor: EditableCostRows<TDoc>
-  /** Ancestor trail shown above the title (e.g. ILCR → Schedule 3). */
-  readonly breadCrumbs?: BreadCrumb[]
+  /**
+   * The parent schedule's name (e.g. "Schedule 3"), rendered as the tombstone title. Plain text, not
+   * a link — up-navigation is the Back button.
+   */
+  readonly scheduleName: string
   readonly title: string
   readonly subtitle?: string
   /** The back button label (e.g. "Back") — also used for the error-state back button. */
@@ -35,7 +37,7 @@ interface Props<TDoc extends EditableRowsDoc> {
  */
 export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
   editor,
-  breadCrumbs,
+  scheduleName,
   title,
   subtitle,
   backLabel,
@@ -60,9 +62,8 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
     onBack,
   } = editor
 
-  // Match the schedule pages' tombstone header: the parent schedule (the last breadcrumb) is the
-  // title, and the sub-page name (plus any extra subtitle) forms the crumb trail beneath it.
-  const scheduleName = breadCrumbs?.at(-1)?.name ?? title
+  // Match the schedule pages' tombstone header: the parent schedule is the title, and the sub-page
+  // name (plus any extra subtitle) forms the crumb trail beneath it.
   const subPageTrail = subtitle ? [title, subtitle] : title
   const header = <ScheduleTombstone title={scheduleName} subtitle={subPageTrail} />
 

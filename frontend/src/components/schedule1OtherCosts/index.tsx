@@ -70,10 +70,7 @@ const OtherCostsPage: FC = () => {
   return (
     <EditableSubPageLayout
       editor={editor}
-      breadCrumbs={[
-        { name: 'ILCR', path: '/' },
-        { name: 'Schedule 1', path: '/schedule-1' },
-      ]}
+      scheduleName="Schedule 1"
       title="Subtotal Other Costs"
       backLabel="Back"
       loadingLabel="Loading Other Costs"

@@ -51,6 +51,8 @@ export interface Schedule3SubPageField<TRow extends Schedule3SubPageRow> {
  * it tracks edits before Save, mirroring the legacy disabled/derived cell.
  */
 export interface Schedule3SubPageColumn {
+  /** Stable sort/React key (e.g. {@code 'crown'}) — decoupled from the display label. */
+  key: string
   header: string
   derive: (values: Record<string, number | null>) => number | null
 }
@@ -136,15 +138,15 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     Object.fromEntries(config.fields.map((f) => [f.key, toNum(values[f.key])]))
 
   // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
-  // editable field, AND each derived read-only column (e.g. Crown $) are sortable. Read-only columns
-  // are keyed by their header. See useRowSort for the snapshot-on-click semantics.
+  // editable field, AND each derived read-only column (e.g. Crown $) are sortable. See useRowSort for
+  // the snapshot-on-click semantics.
   const sort = useRowSort(rows, {
     description: (row) => row.description,
     ...Object.fromEntries(
       config.fields.map((f) => [f.key, (row: EditRow) => toNum(row.values[f.key])]),
     ),
     ...Object.fromEntries(
-      readonlyColumns.map((col) => [col.header, (row: EditRow) => col.derive(numeric(row.values))]),
+      readonlyColumns.map((col) => [col.key, (row: EditRow) => col.derive(numeric(row.values))]),
     ),
   })
 
@@ -182,7 +184,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
             </TableCell>
           ))}
           {readonlyColumns.map((col) => (
-            <TableCell key={col.header} className="schedule-3__num">
+            <TableCell key={col.key} className="schedule-3__num">
               {fmt(col.derive(nums))}
             </TableCell>
           ))}
@@ -209,7 +211,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
           </TableCell>
         ))}
         {readonlyColumns.map((col) => (
-          <TableCell key={col.header} className="schedule-3__num">
+          <TableCell key={col.key} className="schedule-3__num">
             {fmt(col.derive(nums))}
           </TableCell>
         ))}
@@ -220,10 +222,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   return (
     <EditableSubPageLayout
       editor={editor}
-      breadCrumbs={[
-        { name: 'ILCR', path: '/' },
-        { name: 'Schedule 3', path: '/schedule-3' },
-      ]}
+      scheduleName="Schedule 3"
       title={config.title}
       backLabel="Back"
       loadingLabel={`Loading ${config.title}`}
@@ -316,12 +315,12 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         ))}
                         {readonlyColumns.map((col) => (
                           <TableHeader
-                            key={col.header}
+                            key={col.key}
                             className="schedule-3__num"
                             isSortable
-                            isSortHeader={sort.activeKey === col.header}
-                            sortDirection={sort.directionFor(col.header)}
-                            onClick={() => sort.toggleSort(col.header)}
+                            isSortHeader={sort.activeKey === col.key}
+                            sortDirection={sort.directionFor(col.key)}
+                            onClick={() => sort.toggleSort(col.key)}
                           >
                             {col.header}
                           </TableHeader>
