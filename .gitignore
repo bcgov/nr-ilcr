@@ -87,6 +87,6 @@ tmp/
 # AI/workspace scratch
 .workspaces/
 .copilot-memory
-# Codex/agent scratch (dev-server logs etc.) — never committed.
-.codex-tmp/
-.codex*
+# Codex/agent scratch dir (dev-server logs etc.) — never committed. Anchored to the repo root; broader
+# personal agent scratch belongs in a global gitignore / .git/info/exclude, not this shared file.
+/.codex-tmp/

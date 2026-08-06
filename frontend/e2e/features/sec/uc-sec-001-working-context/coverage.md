@@ -72,6 +72,19 @@ ported here or explicitly accounted for — `home.spec.ts` S01/S03/S06/S07 porte
 `schedule-context.spec.ts` AC2 + closed-mill block **ported** (`context-drives-schedule.feature`);
 `app-shell.spec.ts` smoke subsumed by `openApp`'s Header assertion in every Background; **axe ported**.
 
+**Recorded coverage drop — `tombstone.spec.ts` (Story 1.5, schedule-*page* `ScheduleTombstone`):** deleted
+with this migration (it and its only page object `pages/schedule.ts` imported the retired `pages/home.ts`
+/ `utils/` modules and were uncollected by the bdd `testDir`). Its four scenarios asserted the
+working-context lines on the **schedule page's** header (S01 display + a11y; S03 stale-line replacement on
+context switch; S06 closed-mill parity; S07 no-status-row → Mill-line-only) — i.e. the same
+`ScheduleTombstone` component, one route deeper than the Home `ContextBanner`. The **data-shape** arms are
+reproduced Home-side here (`@S01 @landing`, `@S03`, `@S06`, `@S07` on `working-context.feature`) and the
+context→schedule wiring by `context-drives-schedule.feature`; what is **not** re-asserted is the
+`ScheduleTombstone`'s own render of those lines on the schedule route. **Decision:** accepted as a
+low-risk drop rather than ported — `ScheduleTombstone` is a presentational component fed the same
+mill-context payload, unit-covered in Vitest, and re-rendered on every schedule-page Vitest suite; a
+dedicated BDD scenario is deferred (re-add if the header regresses). Not an accidental omission.
+
 **Role / permission coverage:** re-grounded — legacy `ILCR_LICENSEE` does not exist (two-group model, PRD
 DL-23); scenarios run as the fixed mock authority. Role-gated branches `blocked` (single authority).
 

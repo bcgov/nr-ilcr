@@ -195,7 +195,7 @@ export const test = base.extend<Fixtures>({
       if (req.method() === 'PUT' && !/\/other-costs\/\d+/.test(req.url())) {
         spy.mutations += 1;
       }
-      await route.continue();
+      await route.fallback();
     });
     await use(spy);
   },
@@ -220,7 +220,7 @@ export const test = base.extend<Fixtures>({
         });
         return;
       }
-      await route.continue();
+      await route.fallback();
     });
     await use(fault);
   },
@@ -228,13 +228,15 @@ export const test = base.extend<Fixtures>({
   schedule1SaveSpy: async ({ page }, use) => {
     // Lazy + per-scenario: only a scenario that references this fixture installs the route, so the
     // happy-path save (S01) is unaffected. The spy sits in front of Vite's /api proxy and lets every
-    // request continue untouched — it only tallies mutations (PUT) to the Schedule 1 endpoint.
+    // request through untouched — it only tallies mutations (PUT) to the Schedule 1 endpoint.
+    // route.fallback() (not continue()) so overlapping schedule1 handlers stay composable: it defers
+    // to any earlier-registered matching handler instead of short-circuiting straight to the network.
     const spy = { puts: 0 };
     await page.route('**/api/v1/schedule1**', async (route) => {
       if (route.request().method() === 'PUT') {
         spy.puts += 1;
       }
-      await route.continue();
+      await route.fallback();
     });
     await use(spy);
   },

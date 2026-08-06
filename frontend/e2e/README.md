@@ -257,9 +257,13 @@ env-guarded/opt-in job; keep it off the default path so it never runs without li
   proxy blocks the chromium CDN); on a box with no system Chrome, `npx playwright install chromium` and
   set `E2E_BROWSER_CHANNEL=chromium` in `.env` (see *Install & run*).
 - **python-oracledb** for the S13/S24 DB snapshot-restore and the S12/S17/S18 row seeding
-  (`scripts/sch1_db_restore.py`): `python -m pip install oracledb`. This host has **no local sqlplus**
-  and reaches the Oracle directly on `:1525`, so the suite's DB work goes through thin-mode oracledb
-  rather than the scaffold's sqlplus wrapper. `ORACLE_DSN` in `.env` points it at the seeded DB.
+  (`scripts/sch1_db_restore.py`). Reproducible setup (needs Python 3.9+ on PATH): `npm run setup:python`
+  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==2.4.1`). The
+  DB runner (`steps/sch1/schedule1DbRestore.ts`) **auto-detects** that venv, so no `PYTHON` export is
+  needed (override with `PYTHON=/path/to/python` to point at an oracledb kept elsewhere). This host has
+  **no local sqlplus** and reaches the Oracle directly on `:1525`, so the suite's DB work goes through
+  thin-mode oracledb rather than the scaffold's sqlplus wrapper. `ORACLE_DSN` in `.env` points it at the
+  seeded DB.
 
 **Run the gate:**
 ```bash
