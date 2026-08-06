@@ -272,16 +272,6 @@ const EditRow: FC<EditRowProps> = ({
       />
     </TableCell>
     <TableCell>
-      <EnhancedDropdown
-        id={`edit-enhanced-${row.locationId}`}
-        label="Edit Enhanced"
-        value={form.enhanced}
-        disabled={saving}
-        invalidText={errors.enhanced}
-        onChange={(v) => onFieldChange('enhanced', v)}
-      />
-    </TableCell>
-    <TableCell>
       <BiogeoComboBox
         id={`edit-bec-${row.locationId}`}
         label="Edit Biogeo/Subzone/Variant"
@@ -289,6 +279,18 @@ const EditRow: FC<EditRowProps> = ({
         disabled={saving}
         invalidText={errors.bec}
         onSelect={(o) => onFieldChange('bec', o)}
+      />
+    </TableCell>
+    <TableCell>
+      {/* Hidden label stays "Enhanced", not the "ES" header abbreviation — the accessible name is
+          what a screen reader announces for the control, and legacy names the field "Enhanced". */}
+      <EnhancedDropdown
+        id={`edit-enhanced-${row.locationId}`}
+        label="Edit Enhanced"
+        value={form.enhanced}
+        disabled={saving}
+        invalidText={errors.enhanced}
+        onChange={(v) => onFieldChange('enhanced', v)}
       />
     </TableCell>
     <TableCell className="schedule-11__num">
@@ -374,8 +376,8 @@ type DisplayRowProps = {
 const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdit, onDelete }) => (
   <>
     <TableCell>{row.location}</TableCell>
-    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
     <TableCell>{row.becLabel ?? ''}</TableCell>
+    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
     <TableCell className="schedule-11__num">{area(row.netArea)}</TableCell>
     <TableCell className="schedule-11__num">{money(row.actualCost)}</TableCell>
     <TableCell className="schedule-11__num">{money(row.plannedCost)}</TableCell>
@@ -874,14 +876,20 @@ const Schedule11: FC = () => {
             <Table aria-label="Silviculture Locations">
               <TableHead>
                 <TableRow>
+                  {/* Column order and header text are legacy-verbatim (schedule11.xhtml:208-375),
+                      so a user moving off the legacy grid reads the same columns in the same
+                      places. The table says "ES" while the Add panel below says "Enhanced" —
+                      that asymmetry is legacy's too (xhtml:71 labels the form field "Enhanced"). */}
                   <TableHeader>Location</TableHeader>
-                  <TableHeader>Enhanced</TableHeader>
                   <TableHeader>Biogeo/Subzone/Variant</TableHeader>
+                  <TableHeader>ES</TableHeader>
                   <TableHeader className="schedule-11__num">NAR(ha)</TableHeader>
                   <TableHeader className="schedule-11__num">Actual Cost ($)</TableHeader>
                   <TableHeader className="schedule-11__num">Planned Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Total Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">$/NAR(ha)</TableHeader>
+                  <TableHeader className="schedule-11__num">
+                    Total Act Plus Plan Cost ($)
+                  </TableHeader>
+                  <TableHeader className="schedule-11__num">Total/NAR(ha)</TableHeader>
                   <TableHeader>Comments</TableHeader>
                   {editable && <TableHeader>Actions</TableHeader>}
                 </TableRow>
