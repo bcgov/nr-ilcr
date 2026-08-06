@@ -1,0 +1,6 @@
+# Intentionally scoped to e2e/ and redundant with the repo-root .gitattributes, which
+# already pins *.sh to LF repo-wide. Kept so this folder stays self-contained when it
+# lifts into the app repo later (the root file won't travel with it): its scripts must stay
+# LF to run under bash on any OS — a clone with core.autocrlf=true would otherwise check
+# them out as CRLF and bash fails with `$'\r': command not found`.
+*.sh text eol=lf
