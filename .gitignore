@@ -87,3 +87,6 @@ tmp/
 # AI/workspace scratch
 .workspaces/
 .copilot-memory
+# Codex/agent scratch (dev-server logs etc.) — never committed.
+.codex-tmp/
+.codex*
