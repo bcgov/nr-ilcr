@@ -865,7 +865,13 @@ const Schedule11: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-11__section">
-          <TableContainer title="Silviculture Locations">
+          {/* Titled with the same h3 + class as "Add New Location" rather than TableContainer's
+              `title` prop: Carbon renders that prop through its Section/Heading pair, which both
+              sizes it at heading-03 AND picks its own level (h2), so the two section headings on
+              this page disagreed on size and skipped a level. Same element + class = same size by
+              construction. The table keeps its own accessible name via aria-label. */}
+          <h3 className="schedule-11__heading">Silviculture Locations</h3>
+          <TableContainer>
             <Table aria-label="Silviculture Locations">
               <TableHead>
                 <TableRow>
