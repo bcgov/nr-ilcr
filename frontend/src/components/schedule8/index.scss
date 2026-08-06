@@ -61,10 +61,13 @@
   font-size: 0.75rem;
 }
 
+// Match the Carbon input/comments label (.cds--label): 14px, primary text, normal weight — so the
+// computed-field + read-only labels read the same as the editable-field labels beside them.
 .schedule-8__field-label {
   display: block;
-  color: var(--cds-text-secondary);
-  font-size: 0.75rem;
+  color: var(--cds-text-primary);
+  font-size: 14px;
+  font-weight: 400;
 }
 
 // A field label carrying an info tooltip (the legacy "Note:" entry hints) — label + icon inline.
