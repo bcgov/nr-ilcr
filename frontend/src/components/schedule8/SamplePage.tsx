@@ -550,6 +550,15 @@ const SamplePage: FC<SamplePageProps> = ({
         {computedField('Final TtT Rate', openSample?.finalRate)}
       </div>
 
+      {/* Save feedback shown in the panel (next to the Save button) so it's visible where the user is
+          acting — the panel opens below the table, far from the page-top notifications. */}
+      {message && (
+        <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
+      )}
+      {error && (
+        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={error} />
+      )}
+
       <div className="schedule-8__panel-actions">
         {!readOnly && (
           <Button kind="primary" disabled={busy} onClick={handleSave}>
@@ -569,10 +578,12 @@ const SamplePage: FC<SamplePageProps> = ({
         <h3 className="schedule-8__heading">{pageTitle} → Samples</h3>
       </div>
 
-      {message && (
+      {/* Page-level feedback (Check Status / delete) shows here when no editor panel is open; while the
+          panel is open its own copy (above the Save button) carries the save feedback instead. */}
+      {!panelOpen && message && (
         <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
       )}
-      {error && (
+      {!panelOpen && error && (
         <InlineNotification kind="error" lowContrast title="Action failed" subtitle={error} />
       )}
       {checkResult && (

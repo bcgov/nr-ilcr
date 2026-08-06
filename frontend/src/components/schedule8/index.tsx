@@ -727,6 +727,15 @@ const Schedule8: FC = () => {
         />
       )}
 
+      {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —
+          the panel opens below the table, far from the page-top notifications. */}
+      {saveMessage && (
+        <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
+      )}
+      {saveError && (
+        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={saveError} />
+      )}
+
       <div className="schedule-8__panel-actions">
         {!readOnly && (
           <Button kind="primary" disabled={saving} onClick={handleSave}>
@@ -751,10 +760,11 @@ const Schedule8: FC = () => {
             subtitle={optionsError}
           />
         )}
-        {saveMessage && (
+        {/* When the editor panel is open its own copy (above Save) carries the save feedback. */}
+        {!panelOpen && saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
-        {saveError && (
+        {!panelOpen && saveError && (
           <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
         {checkResult && (
