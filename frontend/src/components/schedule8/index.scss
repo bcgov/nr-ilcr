@@ -115,6 +115,13 @@
   padding-inline-start: calc(1rem + 1px);
 }
 
+// The "TtT Samples" ghost button sits in the selector row with no label of its own, so with the row's
+// top-alignment it floats up level with the field labels. Bottom-align it so it lines up with the
+// input boxes (its row-mates) instead.
+.schedule-8__samples-action {
+  align-self: flex-end;
+}
+
 .schedule-8__grid {
   margin-block: $spacing-05;
 }

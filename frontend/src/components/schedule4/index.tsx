@@ -704,14 +704,14 @@ const Schedule4: FC = () => {
       {readOnlyPanel ? (
         <div className="schedule-4__field">
           <span className="schedule-4__field-label">
-            If you have any additional comments, please enter them here.
+            If you have any additional comments, please enter them here:
           </span>
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
         <TextArea
           id="location-comments"
-          labelText="If you have any additional comments, please enter them here."
+          labelText="If you have any additional comments, please enter them here:"
           enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}

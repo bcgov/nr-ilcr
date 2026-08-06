@@ -522,7 +522,9 @@ const Schedule8: FC = () => {
         labelText={label}
         maxLength={opts.maxLength}
         disabled={opts.disabled}
-        value={form[field]}
+        // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
+        // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
+        value={opts.format ? opts.format(form[field]) : form[field]}
         onChange={onChange}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
@@ -665,6 +667,7 @@ const Schedule8: FC = () => {
           <Button
             kind="ghost"
             size="sm"
+            className="schedule-8__samples-action"
             disabled={saving}
             onClick={() => requestOpenSamples(editId)}
           >
@@ -675,13 +678,15 @@ const Schedule8: FC = () => {
 
       {readOnly ? (
         <div className="schedule-8__field">
-          <span className="schedule-8__field-label">Comments</span>
+          <span className="schedule-8__field-label">
+            If you have any additional comments, please enter them here:
+          </span>
           <span>{form.comments || '—'}</span>
         </div>
       ) : (
         <TextArea
           id="page-comments"
-          labelText="Comments"
+          labelText="If you have any additional comments, please enter them here:"
           maxLength={3500}
           value={form.comments}
           onChange={setComments}

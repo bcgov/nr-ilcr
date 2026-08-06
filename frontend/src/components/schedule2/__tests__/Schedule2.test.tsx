@@ -68,7 +68,7 @@ describe('Schedule2 page', () => {
     expect(screen.getByLabelText('Less Log Sales volume')).toHaveValue('200')
     expect(screen.getByLabelText('Less Log Sales cost')).toHaveValue('8,000')
     expect(
-      screen.getByLabelText('If you have any additional comments, please enter them here.'),
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
     ).toHaveValue('Seed comment for 514/2021')
 
     // Carried purchasedLogCost.volume is read-only (never an input).
