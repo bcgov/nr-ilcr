@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
@@ -81,6 +85,19 @@ class Schedule8ControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
+  }
+
+  @Test
+  void getOptions_delegates_withoutContextValidation() {
+    Schedule8Options options = mock(Schedule8Options.class);
+    when(schedule8Service.getOptions()).thenReturn(options);
+
+    ResponseEntity<Schedule8Options> response = controller.getOptions(authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertSame(options, response.getBody());
+    // Reference data is global — the controller must NOT run the mill/year context guard.
+    verify(millContextService, never()).validateMillYearActive(anyLong(), anyInt());
   }
 
   @Test

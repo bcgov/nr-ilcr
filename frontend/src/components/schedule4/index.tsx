@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
 import type Schedule4LocationRequest from '@/interfaces/Schedule4Request'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -195,12 +195,19 @@ const Schedule4: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
-  // Reset URL search parameters when millId or year switches (Comment 3)
+  // Clear stale location/sub-page URL params when the mill/year context actually switches (Comment 3).
+  // Guarded by a ref so it fires only on a real mill/year change — never on in-app sub-navigation,
+  // which legitimately sets loc/sub (otherwise every drill-down would reset itself).
+  const contextKey = `${String(millId)}:${String(year)}`
+  const contextKeyRef = useRef(contextKey)
   useEffect(() => {
-    if (search.loc !== undefined || search.sub !== undefined) {
-      void navigate({ to: '/schedule-4', search: {}, replace: true })
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey
+      if (search.loc !== undefined || search.sub !== undefined) {
+        void navigate({ to: '/schedule-4', search: {}, replace: true })
+      }
     }
-  }, [millId, year, navigate, search.loc, search.sub])
+  }, [contextKey, navigate, search.loc, search.sub])
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)

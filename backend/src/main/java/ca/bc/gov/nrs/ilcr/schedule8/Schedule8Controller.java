@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.api.Schedule8Api;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
@@ -59,6 +60,13 @@ public class Schedule8Controller implements Schedule8Api {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(schedule8Service.getSchedule8(millId, year, callerMayEdit));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<Schedule8Options> getOptions(Authentication authentication) {
+    // Reference data (global): no mill/year context to validate.
+    return ResponseEntity.ok(schedule8Service.getOptions());
   }
 
   @Override

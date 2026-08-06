@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import java.math.BigDecimal;
 import java.util.List;
@@ -214,6 +215,38 @@ class Schedule8ServiceTest {
     eq("8.25", sample.additionsTotal());   // 5.00 + 3.25  (subcats '1' + '2')
     eq("3.75", sample.deductionsTotal());  // 2.00 + 1.75  (subcats '3' + '4')
     eq("30", sample.finalRate());          // 25.50 + 8.25 − 3.75
+  }
+
+  @Test
+  void getOptions_partitionsCategory8CostItemsIntoAdditionsAndDeductions() {
+    // Category-8 cost items spanning all four subcategories: '1'/'2' are additions, '3'/'4' deductions
+    // (§Decision 1). getOptions must split the single query result into the two per-form lists, keying
+    // each choice by String(id) + itemName and preserving the query's ITEM_NAME order.
+    when(repository.findCategory8CostItems()).thenReturn(List.of(
+        new Schedule8Repository.CostItemRow(82, "Add subcat 1", "1"),
+        new Schedule8Repository.CostItemRow(100, "Add subcat 2", "2"),
+        new Schedule8Repository.CostItemRow(101, "Ded subcat 3", "3"),
+        new Schedule8Repository.CostItemRow(107, "Ded subcat 4", "4")));
+
+    Schedule8Options options = service.getOptions();
+
+    assertEquals(
+        List.of(
+            new Schedule8Options.CodeOption("82", "Add subcat 1"),
+            new Schedule8Options.CodeOption("100", "Add subcat 2")),
+        options.additionCostItems());
+    assertEquals(
+        List.of(
+            new Schedule8Options.CodeOption("101", "Ded subcat 3"),
+            new Schedule8Options.CodeOption("107", "Ded subcat 4")),
+        options.deductionCostItems());
+    // The plain code→label lists reshape the label maps (§Decision 3), code + DESCRIPTION.
+    assertEquals(
+        List.of(new Schedule8Options.CodeOption("SC1", "Support Centre One")),
+        options.supportCentres());
+    assertEquals(
+        List.of(new Schedule8Options.CodeOption("48", "Tree Farm Licence 48")),
+        options.tflNumbers());
   }
 
   @Test
