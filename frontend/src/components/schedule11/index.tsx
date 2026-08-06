@@ -722,23 +722,9 @@ const Schedule11: FC = () => {
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-11__meta">
-          <dl className="schedule-11__summary">
-            <div className="schedule-11__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-11__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-11__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
+        {/* No per-page mill/year/status summary: legacy's equivalent panel is commented out in
+            schedule11.xhtml:40-54, and the app-wide ContextBanner (the modern #subMenu strip)
+            already carries the working context on every page. */}
         {message && (
           <Column sm={4} md={8} lg={16}>
             <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />

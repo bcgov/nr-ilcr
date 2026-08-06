@@ -9,58 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SubmissionsRouteImport } from './routes/submissions'
-import { Route as Schedule8RouteImport } from './routes/schedule-8'
-import { Route as Schedule6RouteImport } from './routes/schedule-6'
-import { Route as Schedule4RouteImport } from './routes/schedule-4'
-import { Route as Schedule3RouteImport } from './routes/schedule-3'
-import { Route as Schedule2RouteImport } from './routes/schedule-2'
-import { Route as Schedule11RouteImport } from './routes/schedule-11'
-import { Route as Schedule1RouteImport } from './routes/schedule-1'
-import { Route as MillAssociationsRouteImport } from './routes/mill-associations'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as Schedule3OtherAcceptableCostsRouteImport } from './routes/schedule-3_.other-acceptable-costs'
-import { Route as Schedule3IncludedUnacceptableCostsRouteImport } from './routes/schedule-3_.included-unacceptable-costs'
+import { Route as MillAssociationsRouteImport } from './routes/mill-associations'
+import { Route as Schedule1RouteImport } from './routes/schedule-1'
+import { Route as Schedule11RouteImport } from './routes/schedule-11'
+import { Route as Schedule2RouteImport } from './routes/schedule-2'
+import { Route as Schedule3RouteImport } from './routes/schedule-3'
+import { Route as Schedule4RouteImport } from './routes/schedule-4'
+import { Route as Schedule6RouteImport } from './routes/schedule-6'
+import { Route as Schedule8RouteImport } from './routes/schedule-8'
+import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as Schedule1OtherCostsRouteImport } from './routes/schedule-1_.other-costs'
+import { Route as Schedule3IncludedUnacceptableCostsRouteImport } from './routes/schedule-3_.included-unacceptable-costs'
+import { Route as Schedule3OtherAcceptableCostsRouteImport } from './routes/schedule-3_.other-acceptable-costs'
 
-const SubmissionsRoute = SubmissionsRouteImport.update({
-  id: '/submissions',
-  path: '/submissions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule8Route = Schedule8RouteImport.update({
-  id: '/schedule-8',
-  path: '/schedule-8',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule6Route = Schedule6RouteImport.update({
-  id: '/schedule-6',
-  path: '/schedule-6',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule4Route = Schedule4RouteImport.update({
-  id: '/schedule-4',
-  path: '/schedule-4',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule3Route = Schedule3RouteImport.update({
-  id: '/schedule-3',
-  path: '/schedule-3',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule2Route = Schedule2RouteImport.update({
-  id: '/schedule-2',
-  path: '/schedule-2',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule11Route = Schedule11RouteImport.update({
-  id: '/schedule-11',
-  path: '/schedule-11',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Schedule1Route = Schedule1RouteImport.update({
-  id: '/schedule-1',
-  path: '/schedule-1',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MillAssociationsRoute = MillAssociationsRouteImport.update({
@@ -68,28 +33,63 @@ const MillAssociationsRoute = MillAssociationsRouteImport.update({
   path: '/mill-associations',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const Schedule1Route = Schedule1RouteImport.update({
+  id: '/schedule-1',
+  path: '/schedule-1',
   getParentRoute: () => rootRouteImport,
 } as any)
-const Schedule3OtherAcceptableCostsRoute =
-  Schedule3OtherAcceptableCostsRouteImport.update({
-    id: '/schedule-3_/other-acceptable-costs',
-    path: '/schedule-3/other-acceptable-costs',
-    getParentRoute: () => rootRouteImport,
-  } as any)
+const Schedule11Route = Schedule11RouteImport.update({
+  id: '/schedule-11',
+  path: '/schedule-11',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule2Route = Schedule2RouteImport.update({
+  id: '/schedule-2',
+  path: '/schedule-2',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule3Route = Schedule3RouteImport.update({
+  id: '/schedule-3',
+  path: '/schedule-3',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule4Route = Schedule4RouteImport.update({
+  id: '/schedule-4',
+  path: '/schedule-4',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule6Route = Schedule6RouteImport.update({
+  id: '/schedule-6',
+  path: '/schedule-6',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule8Route = Schedule8RouteImport.update({
+  id: '/schedule-8',
+  path: '/schedule-8',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubmissionsRoute = SubmissionsRouteImport.update({
+  id: '/submissions',
+  path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Schedule1OtherCostsRoute = Schedule1OtherCostsRouteImport.update({
+  id: '/schedule-1_/other-costs',
+  path: '/schedule-1/other-costs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Schedule3IncludedUnacceptableCostsRoute =
   Schedule3IncludedUnacceptableCostsRouteImport.update({
     id: '/schedule-3_/included-unacceptable-costs',
     path: '/schedule-3/included-unacceptable-costs',
     getParentRoute: () => rootRouteImport,
   } as any)
-const Schedule1OtherCostsRoute = Schedule1OtherCostsRouteImport.update({
-  id: '/schedule-1_/other-costs',
-  path: '/schedule-1/other-costs',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const Schedule3OtherAcceptableCostsRoute =
+  Schedule3OtherAcceptableCostsRouteImport.update({
+    id: '/schedule-3_/other-acceptable-costs',
+    path: '/schedule-3/other-acceptable-costs',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -203,60 +203,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/submissions': {
-      id: '/submissions'
-      path: '/submissions'
-      fullPath: '/submissions'
-      preLoaderRoute: typeof SubmissionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-8': {
-      id: '/schedule-8'
-      path: '/schedule-8'
-      fullPath: '/schedule-8'
-      preLoaderRoute: typeof Schedule8RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-6': {
-      id: '/schedule-6'
-      path: '/schedule-6'
-      fullPath: '/schedule-6'
-      preLoaderRoute: typeof Schedule6RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-4': {
-      id: '/schedule-4'
-      path: '/schedule-4'
-      fullPath: '/schedule-4'
-      preLoaderRoute: typeof Schedule4RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-3': {
-      id: '/schedule-3'
-      path: '/schedule-3'
-      fullPath: '/schedule-3'
-      preLoaderRoute: typeof Schedule3RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-2': {
-      id: '/schedule-2'
-      path: '/schedule-2'
-      fullPath: '/schedule-2'
-      preLoaderRoute: typeof Schedule2RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-11': {
-      id: '/schedule-11'
-      path: '/schedule-11'
-      fullPath: '/schedule-11'
-      preLoaderRoute: typeof Schedule11RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/schedule-1': {
-      id: '/schedule-1'
-      path: '/schedule-1'
-      fullPath: '/schedule-1'
-      preLoaderRoute: typeof Schedule1RouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mill-associations': {
@@ -266,18 +217,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MillAssociationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/schedule-1': {
+      id: '/schedule-1'
+      path: '/schedule-1'
+      fullPath: '/schedule-1'
+      preLoaderRoute: typeof Schedule1RouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/schedule-3_/other-acceptable-costs': {
-      id: '/schedule-3_/other-acceptable-costs'
-      path: '/schedule-3/other-acceptable-costs'
-      fullPath: '/schedule-3/other-acceptable-costs'
-      preLoaderRoute: typeof Schedule3OtherAcceptableCostsRouteImport
+    '/schedule-11': {
+      id: '/schedule-11'
+      path: '/schedule-11'
+      fullPath: '/schedule-11'
+      preLoaderRoute: typeof Schedule11RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-2': {
+      id: '/schedule-2'
+      path: '/schedule-2'
+      fullPath: '/schedule-2'
+      preLoaderRoute: typeof Schedule2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-3': {
+      id: '/schedule-3'
+      path: '/schedule-3'
+      fullPath: '/schedule-3'
+      preLoaderRoute: typeof Schedule3RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-4': {
+      id: '/schedule-4'
+      path: '/schedule-4'
+      fullPath: '/schedule-4'
+      preLoaderRoute: typeof Schedule4RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-6': {
+      id: '/schedule-6'
+      path: '/schedule-6'
+      fullPath: '/schedule-6'
+      preLoaderRoute: typeof Schedule6RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-8': {
+      id: '/schedule-8'
+      path: '/schedule-8'
+      fullPath: '/schedule-8'
+      preLoaderRoute: typeof Schedule8RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/submissions': {
+      id: '/submissions'
+      path: '/submissions'
+      fullPath: '/submissions'
+      preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule-1_/other-costs': {
+      id: '/schedule-1_/other-costs'
+      path: '/schedule-1/other-costs'
+      fullPath: '/schedule-1/other-costs'
+      preLoaderRoute: typeof Schedule1OtherCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schedule-3_/included-unacceptable-costs': {
@@ -287,11 +287,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Schedule3IncludedUnacceptableCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/schedule-1_/other-costs': {
-      id: '/schedule-1_/other-costs'
-      path: '/schedule-1/other-costs'
-      fullPath: '/schedule-1/other-costs'
-      preLoaderRoute: typeof Schedule1OtherCostsRouteImport
+    '/schedule-3_/other-acceptable-costs': {
+      id: '/schedule-3_/other-acceptable-costs'
+      path: '/schedule-3/other-acceptable-costs'
+      fullPath: '/schedule-3/other-acceptable-costs'
+      preLoaderRoute: typeof Schedule3OtherAcceptableCostsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
