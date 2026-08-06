@@ -20,7 +20,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, numStr, toNum, withCommas } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum, withCommas } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { getRouteApi } from '@tanstack/react-router'
@@ -86,9 +86,6 @@ function seedCategoryForm(location: Location): {
   }
   return { form, perUnit }
 }
-
-const subPageCount = (location: Location, code: number): number =>
-  location.subPageRows.filter((row) => row.code === code).length
 
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
@@ -544,8 +541,24 @@ const Schedule4: FC = () => {
   const readOnlyPanel = panelMode === 'view'
   const panelLocation =
     panelEditId !== null ? data.locations.find((l) => l.id === panelEditId) : undefined
-  const panelSubCount = (code: number): number =>
-    panelLocation ? subPageCount(panelLocation, code) : 0
+  // Aggregate the group's sub-page rows for its grid row (legacy Towing/Truck-Rehaul/Other totals):
+  // summed Distance/Volume/Cost/Cycle + derived $/m³ (total cost ÷ total volume). Empty when the group
+  // has no rows.
+  const panelSubTotals = (code: number) => {
+    const rows = (panelLocation?.subPageRows ?? []).filter((row) => row.code === code)
+    const distance = rows.reduce((total, row) => total + (row.distance ?? 0), 0)
+    const volume = rows.reduce((total, row) => total + (row.volume ?? 0), 0)
+    const cost = rows.reduce((total, row) => total + (row.cost ?? 0), 0)
+    const cycle = rows.reduce((total, row) => total + (row.cycle ?? 0), 0)
+    return {
+      count: rows.length,
+      distance,
+      volume,
+      cost,
+      cycle,
+      perUnit: volume !== 0 ? cost / volume : null,
+    }
+  }
 
   // ---- Existing Locations table. -----------------------------------------------------------------
   const locationsTable = (
@@ -615,23 +628,34 @@ const Schedule4: FC = () => {
   )
 
   // A list sub-page appears as a group row inside the grid (legacy code position): its label + current
-  // row count link to the sub-page; the amount columns are blank (its rows live on that page).
-  const renderSubPageRow = (def: SubPageDef) => (
-    <TableRow key={`sub-${def.code}`}>
-      <TableCell>
-        <Button
-          kind="ghost"
-          size="sm"
-          className="schedule-4__subpage-link"
-          disabled={saving}
-          onClick={() => requestOpenSubPage(def)}
-        >
-          {`${def.label} (${panelSubCount(def.code)}):`}
-        </Button>
-      </TableCell>
-      <TableCell colSpan={5} />
-    </TableRow>
-  )
+  // row count link to the sub-page, and the amount columns show the group's read-only totals summed
+  // from its sub-page rows (legacy towing/truck-rehaul/other totals). Cycle Time only for Truck Rehaul.
+  const renderSubPageRow = (def: SubPageDef) => {
+    const totals = panelSubTotals(def.code)
+    const has = totals.count > 0
+    return (
+      <TableRow key={`sub-${def.code}`}>
+        <TableCell>
+          <Button
+            kind="ghost"
+            size="sm"
+            className="schedule-4__subpage-link"
+            disabled={saving}
+            onClick={() => requestOpenSubPage(def)}
+          >
+            {`${def.label} (${totals.count}):`}
+          </Button>
+        </TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.distance) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.volume) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.cost) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{fmtCurrency(totals.perUnit)}</TableCell>
+        <TableCell className="schedule-4__num">
+          {def.hasCycle && has ? fmtNumber(totals.cycle) : '—'}
+        </TableCell>
+      </TableRow>
+    )
+  }
 
   const panel = panelOpen && (
     <div className="schedule-4__panel">
