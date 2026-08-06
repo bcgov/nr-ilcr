@@ -8,10 +8,6 @@ on:
         description: GitHub/OpenShift environment
         default: ""
         type: string
-      security_enabled:
-        description: Backend ILCR_SECURITY_ENABLED; flip to "true" per environment when FAM login lands
-        default: "false"
-        type: string
       target:
         description: Deployment target; usually PR number, test or prod
         default: ${{ github.event.number }}
@@ -79,10 +75,14 @@ jobs:
         include:
           - name: backend
             file: backend/openshift.deploy.yml
+            # ILCR_SECURITY_ENABLED comes from GitHub vars, resolved
+            # environment-first: set it on the test/prod environments to
+            # enforce auth there while PR zones (no environment) stay on the
+            # repo-level value or the "false" fallback.
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
               -p ORACLEDB_HOST="${{ vars.ORACLEDB_HOST }}"
               -p ORACLEDB_SERVICENAME="${{ vars.ORACLEDB_SERVICENAME }}"
-              -p ILCR_SECURITY_ENABLED="${{ inputs.security_enabled }}"
+              -p ILCR_SECURITY_ENABLED="${{ vars.ILCR_SECURITY_ENABLED || 'false' }}"
           - name: frontend
             file: frontend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
