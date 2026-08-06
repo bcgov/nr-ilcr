@@ -101,7 +101,9 @@
 
 .#{variables.$bcgov-prefix}--content {
   background: var(--cds-background);
-  min-height: 100vh;
+  // Grow to fill the #root flex column (sticky footer) instead of forcing a full 100vh, which pushed
+  // the footer below the viewport.
+  flex: 1 0 auto;
   padding: 0;
 }
 

@@ -1,7 +1,9 @@
 @use '@carbon/react/scss/spacing' as *;
 
+// Grows to fill the #root flex column so the footer sits at the bottom of the viewport (sticky footer)
+// rather than being pushed below it by a full-viewport-tall content area.
 .app-content {
-  min-height: 100vh;
+  flex: 1 0 auto;
 }
 
 // The working-context info (legacy `#subMenu` strip), now rendered inline on the right of the page

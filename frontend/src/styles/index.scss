@@ -12,6 +12,14 @@ body {
   margin: 0;
 }
 
+// Sticky footer: stack header / content / footer in a viewport-tall flex column so the content grows
+// to fill and the footer sits at the bottom of the viewport (not pushed below it by a 100vh content).
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 .app-page {
   padding-block-end: $spacing-09;
 }
