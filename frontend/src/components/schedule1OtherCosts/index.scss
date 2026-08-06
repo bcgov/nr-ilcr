@@ -87,6 +87,16 @@
   column-gap: 1rem;
 }
 
+// The panel paints --cds-layer-01, and a Carbon field defaults to the field token at that SAME layer
+// step — which in the dark theme is the identical value (#262626 on #262626), so the input vanished
+// apart from its underline. The list table never had the problem because Carbon's data table bumps
+// the layer for its own contents. Lift just these fields onto the same step the table's fields land
+// on, so the two read alike. Dark only: in light the panel is #ffffff and the field #f4f4f4, which
+// already matches the table exactly.
+:root[data-carbon-theme='g100'] .oc-add__field .cds--text-input {
+  background-color: var(--cds-layer-accent-01);
+}
+
 .oc-add__field .cds--label {
   margin: 0;
   // Add-form field labels read as normal weight (matching the Schedule 3 Other Costs sub-page).
