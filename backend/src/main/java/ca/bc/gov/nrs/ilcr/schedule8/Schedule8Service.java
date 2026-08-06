@@ -681,6 +681,9 @@ public class Schedule8Service {
     if (subcategory == null) {
       return RateClass.UNKNOWN;
     }
+    // Trim: ILCR_SUBCATEGORY_ID is a fixed-width column, so a stored value can carry padding whitespace
+    // ("1 ") that would otherwise fail the exact set match and silently drop the row from the roll-up.
+    subcategory = subcategory.trim();
     if (ADDITION_SUBCATEGORIES.contains(subcategory)) {
       return RateClass.ADDITION;
     }
