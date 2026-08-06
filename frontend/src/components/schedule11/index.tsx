@@ -789,53 +789,6 @@ const Schedule11: FC = () => {
           </Button>
         </Column>
 
-        <Column sm={4} md={8} lg={16} className="schedule-11__section">
-          <TableContainer title="Silviculture Locations">
-            <Table aria-label="Silviculture Locations">
-              <TableHead>
-                <TableRow>
-                  <TableHeader>Location</TableHeader>
-                  <TableHeader>Enhanced</TableHeader>
-                  <TableHeader>Biogeo/Subzone/Variant</TableHeader>
-                  <TableHeader className="schedule-11__num">NAR(ha)</TableHeader>
-                  <TableHeader className="schedule-11__num">Actual Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Planned Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Total Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">$/NAR(ha)</TableHeader>
-                  <TableHeader>Comments</TableHeader>
-                  {editable && <TableHeader>Actions</TableHeader>}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.locations.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columnCount}>
-                      No silviculture locations have been added.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  data.locations.map((row) => (
-                    <TableRow key={row.locationId}>{rowCells(row)}</TableRow>
-                  ))
-                )}
-                {/* Footer Totals (BR-08/CNT-001) — server-computed, null renders blank not 0. */}
-                <TableRow>
-                  <TableCell>Totals</TableCell>
-                  <TableCell />
-                  <TableCell />
-                  <TableCell className="schedule-11__num">{area(totals.netArea)}</TableCell>
-                  <TableCell className="schedule-11__num">{money(totals.actualCost)}</TableCell>
-                  <TableCell className="schedule-11__num">{money(totals.plannedCost)}</TableCell>
-                  <TableCell className="schedule-11__num">{money(totals.totalCost)}</TableCell>
-                  <TableCell className="schedule-11__num">{ratio(totals.costPerNetArea)}</TableCell>
-                  <TableCell />
-                  {editable && <TableCell />}
-                </TableRow>
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Column>
-
         {editable && (
           <Column sm={4} md={8} lg={16} className="schedule-11__section">
             <h3 className="schedule-11__heading">Add New Location</h3>
@@ -915,6 +868,53 @@ const Schedule11: FC = () => {
             </div>
           </Column>
         )}
+
+        <Column sm={4} md={8} lg={16} className="schedule-11__section">
+          <TableContainer title="Silviculture Locations">
+            <Table aria-label="Silviculture Locations">
+              <TableHead>
+                <TableRow>
+                  <TableHeader>Location</TableHeader>
+                  <TableHeader>Enhanced</TableHeader>
+                  <TableHeader>Biogeo/Subzone/Variant</TableHeader>
+                  <TableHeader className="schedule-11__num">NAR(ha)</TableHeader>
+                  <TableHeader className="schedule-11__num">Actual Cost ($)</TableHeader>
+                  <TableHeader className="schedule-11__num">Planned Cost ($)</TableHeader>
+                  <TableHeader className="schedule-11__num">Total Cost ($)</TableHeader>
+                  <TableHeader className="schedule-11__num">$/NAR(ha)</TableHeader>
+                  <TableHeader>Comments</TableHeader>
+                  {editable && <TableHeader>Actions</TableHeader>}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.locations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={columnCount}>
+                      No silviculture locations have been added.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  data.locations.map((row) => (
+                    <TableRow key={row.locationId}>{rowCells(row)}</TableRow>
+                  ))
+                )}
+                {/* Footer Totals (BR-08/CNT-001) — server-computed, null renders blank not 0. */}
+                <TableRow>
+                  <TableCell>Totals</TableCell>
+                  <TableCell />
+                  <TableCell />
+                  <TableCell className="schedule-11__num">{area(totals.netArea)}</TableCell>
+                  <TableCell className="schedule-11__num">{money(totals.actualCost)}</TableCell>
+                  <TableCell className="schedule-11__num">{money(totals.plannedCost)}</TableCell>
+                  <TableCell className="schedule-11__num">{money(totals.totalCost)}</TableCell>
+                  <TableCell className="schedule-11__num">{ratio(totals.costPerNetArea)}</TableCell>
+                  <TableCell />
+                  {editable && <TableCell />}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Column>
       </Grid>
 
       {editable && (
