@@ -332,11 +332,14 @@ describe('Schedule8 page level', () => {
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
-    expect(screen.getByText('Edit Page')).toBeInTheDocument()
+    // The Edit Page heading now carries the page label ("Edit Page — Page # 1 …").
+    expect(screen.getByRole('heading', { name: /^Edit Page —/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(body).toMatchObject({ id: 8001, revisionCount: 0 })
+    // Save stays on the record — the edit panel remains open.
+    expect(screen.getByRole('heading', { name: /^Edit Page —/ })).toBeInTheDocument()
   })
 
   test('a failed save surfaces the verbatim ProblemDetail.detail', async () => {
@@ -786,11 +789,14 @@ describe('Schedule8 sample level', () => {
     await openSamples()
 
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
-    expect(screen.getByText('Edit Sample')).toBeInTheDocument()
+    // The Edit Sample heading now carries the sample label ("Edit Sample — Sample # 1 …").
+    expect(screen.getByRole('heading', { name: /^Edit Sample —/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(body).toMatchObject({ id: 8101, revisionCount: 0 })
+    // Save stays on the record — the sample edit panel remains open.
+    expect(screen.getByRole('heading', { name: /^Edit Sample —/ })).toBeInTheDocument()
   })
 
   test('Delete a sample DELETEs and shows the success message', async () => {

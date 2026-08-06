@@ -30,6 +30,11 @@
   gap: $spacing-02;
 }
 
+// Highlight the page row currently open in the editor panel (the list stays visible below the panel).
+.schedule-8__row--editing td {
+  background-color: var(--cds-highlight);
+}
+
 .schedule-8__panel {
   border: 1px solid var(--cds-border-subtle);
   padding: $spacing-05;

@@ -261,13 +261,27 @@ const Schedule8: FC = () => {
     }
     setSaving(true)
     clearMessages()
+    // Page ids present before the save — used to find a freshly created page (new/copy) in the reply.
+    const prevIds = new Set(data.pages.map((p) => p.id))
     apiService
       .getAxiosInstance()
       .put<Schedule8Response>(`/v1/schedule8/pages?millId=${millId}&year=${year}`, buildRequest())
       .then((response) => {
         setData(response.data)
         setSaveMessage(response.data.message?.text ?? null)
-        setPanelMode('closed')
+        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+        const saved =
+          panelMode === 'edit' && editId !== null
+            ? response.data.pages.find((p) => p.id === editId)
+            : response.data.pages.find((p) => p.id != null && !prevIds.has(p.id))
+        if (saved && saved.id != null) {
+          setPanelMode('edit')
+          setEditId(saved.id)
+          setRevision(saved.revisionCount ?? 0)
+        } else {
+          setPanelMode('closed')
+        }
       })
       .catch((error: unknown) =>
         setSaveError(extractDetail(error) || 'Schedule could not be saved.'),
@@ -598,7 +612,14 @@ const Schedule8: FC = () => {
             </TableRow>
           ) : (
             data.pages.map((page, index) => (
-              <TableRow key={page.id}>
+              <TableRow
+                key={page.id}
+                className={
+                  panelOpen && page.id != null && page.id === editId
+                    ? 'schedule-8__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{pageLabel(page, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
@@ -639,7 +660,13 @@ const Schedule8: FC = () => {
     <div className="schedule-8__panel">
       <h3 className="schedule-8__heading">
         {panelMode === 'new' && 'New Page'}
-        {panelMode === 'edit' && 'Edit Page'}
+        {panelMode === 'edit' &&
+          (panelPage
+            ? `Edit Page — ${pageLabel(
+                panelPage,
+                data.pages.findIndex((p) => p.id === editId),
+              )}`
+            : 'Edit Page')}
         {panelMode === 'copy' && 'Copy Page'}
         {panelMode === 'view' && 'View Page'}
       </h3>
@@ -744,7 +771,7 @@ const Schedule8: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-8__actions">
-          <Button kind="primary" disabled={!editable || saving || panelOpen} onClick={openNew}>
+          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
             Add New Page
           </Button>
           <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>

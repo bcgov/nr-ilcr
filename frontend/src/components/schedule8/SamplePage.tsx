@@ -184,6 +184,8 @@ const SamplePage: FC<SamplePageProps> = ({
     }
     setBusy(true)
     clearMessages()
+    // Sample ids present before the save — used to find a freshly created sample (new/copy) in the reply.
+    const prevIds = new Set(samples.map((s) => s.id))
     apiService
       .getAxiosInstance()
       .put<Schedule8Response>(
@@ -193,7 +195,20 @@ const SamplePage: FC<SamplePageProps> = ({
       .then((response) => {
         onDocUpdate(response.data)
         setMessage(response.data.message?.text ?? null)
-        setPanelMode('closed')
+        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+        const pageSamples = response.data.pages.find((p) => p.id === pageId)?.samples ?? []
+        const saved =
+          panelMode === 'edit' && editId !== null
+            ? pageSamples.find((s) => s.id === editId)
+            : pageSamples.find((s) => s.id != null && !prevIds.has(s.id))
+        if (saved && saved.id != null) {
+          setPanelMode('edit')
+          setEditId(saved.id)
+          setRevision(saved.revisionCount ?? 0)
+        } else {
+          setPanelMode('closed')
+        }
       })
       .catch((err: unknown) => setError(extractDetail(err) || 'Sample could not be saved.'))
       .finally(() => setBusy(false))
@@ -334,7 +349,14 @@ const SamplePage: FC<SamplePageProps> = ({
             </TableRow>
           ) : (
             samples.map((sample, index) => (
-              <TableRow key={sample.id}>
+              <TableRow
+                key={sample.id}
+                className={
+                  panelOpen && sample.id != null && sample.id === editId
+                    ? 'schedule-8__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{sampleLabel(sample, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
@@ -376,7 +398,13 @@ const SamplePage: FC<SamplePageProps> = ({
     <div className="schedule-8__panel">
       <h3 className="schedule-8__heading">
         {panelMode === 'new' && 'New Sample'}
-        {panelMode === 'edit' && 'Edit Sample'}
+        {panelMode === 'edit' &&
+          (openSample
+            ? `Edit Sample — ${sampleLabel(
+                openSample,
+                samples.findIndex((s) => s.id === editId),
+              )}`
+            : 'Edit Sample')}
         {panelMode === 'copy' && 'Copy Sample'}
         {panelMode === 'view' && 'View Sample'}
       </h3>
@@ -559,10 +587,10 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
 
       <div className="schedule-8__actions">
-        <Button kind="ghost" onClick={requestBack}>
-          ← Back to pages
+        <Button kind="secondary" onClick={requestBack}>
+          Back to pages
         </Button>
-        <Button kind="primary" disabled={!editable || busy || panelOpen} onClick={openNew}>
+        <Button kind="primary" disabled={!editable || busy} onClick={openNew}>
           Add New Sample
         </Button>
         <Button kind="tertiary" disabled={busy} onClick={handleCheckStatus}>
