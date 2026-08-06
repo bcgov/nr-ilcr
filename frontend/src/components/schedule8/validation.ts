@@ -44,7 +44,11 @@ export const MESSAGES = {
   originalRate: 'Entered rate must be between 0 and 999,999.99.',
   costingRate: 'Entered rate must be between 0 and 9,999,999.99.',
   descriptionMax: 'Description can not exceed 30 characters.',
+  phone: 'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
 } as const
+
+// A complete phone in the 222-222-2222 shape the phone input produces (legacy mask 999-999-9999).
+const PHONE_PATTERN = /^\d{3}-\d{3}-\d{4}$/
 
 const PERCENT = { min: 0, max: 100 }
 const VOLUME = { min: 0, max: 9_999_999 }
@@ -116,6 +120,9 @@ export function validatePageForm(form: PageForm): Record<string, string> {
   if (isBlank(form.becZone)) errors.becZone = MESSAGES.required
   // TSA-or-TFL context: the TSA-or-TFL field must be chosen (BR-03).
   if (isBlank(form.tsaNumber)) errors.tsaNumber = MESSAGES.required
+  // Phone is optional at Save (required only at Check Status), but a partial entry is rejected — it
+  // must be a complete 10-digit number (legacy enforced the 999-999-9999 input mask).
+  if (!isBlank(form.phone) && !PHONE_PATTERN.test(form.phone.trim())) errors.phone = MESSAGES.phone
   return errors
 }
 

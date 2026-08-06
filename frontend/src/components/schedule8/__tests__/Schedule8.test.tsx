@@ -220,6 +220,34 @@ describe('Schedule8 page level', () => {
     expect(screen.getByLabelText('Phone')).toHaveValue('250-555-1212')
   })
 
+  test('a partial phone blocks save with the complete-number message (no PUT)', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    // Fill the required fields so only the (partial) phone can block the save.
+    await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+    await userEvent.type(screen.getByLabelText('License'), 'LIC9')
+    await selectOption('Support Centre', 'Support Centre 1')
+    await selectOption('Region', 'Region 1')
+    await selectOption('Biogeoclimatic Zone', 'BEC 1')
+    await selectOption('TSA or TFL', 'TSA 1')
+    await userEvent.type(screen.getByLabelText('Phone'), '250555')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(
+      screen.getByText('Phone must be a complete 10-digit number (e.g. 250-555-1212).'),
+    ).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+  })
+
   test('blank required fields block save with verbatim Value Required (no PUT)', async () => {
     const put = vi.fn()
     server.use(
