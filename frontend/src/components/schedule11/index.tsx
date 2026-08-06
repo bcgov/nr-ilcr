@@ -781,75 +781,82 @@ const Schedule11: FC = () => {
           <Column sm={4} md={8} lg={16} className="schedule-11__section">
             <h3 className="schedule-11__heading">Add New Location</h3>
             <div className="schedule-11__add">
-              <TextInput
-                id="add-location"
-                labelText="Location"
-                size="sm"
-                maxLength={LOCATION_MAX_LENGTH}
-                disabled={saving}
-                value={addForm.location}
-                onChange={(e) => setAddField('location', e.target.value)}
-                invalid={Boolean(addErrors.location)}
-                invalidText={addErrors.location}
-              />
-              <EnhancedDropdown
-                id="add-enhanced"
-                label="Enhanced"
-                value={addForm.enhanced}
-                disabled={saving}
-                invalidText={addErrors.enhanced}
-                onChange={(v) => setAddField('enhanced', v)}
-              />
-              <BiogeoComboBox
-                id="add-bec"
-                label="Biogeo/Subzone/Variant"
-                selected={addForm.bec}
-                disabled={saving}
-                invalidText={addErrors.bec}
-                onSelect={(o) => setAddField('bec', o)}
-              />
-              <TextInput
-                id="add-net-area"
-                labelText="NAR(ha)"
-                size="sm"
-                inputMode="decimal"
-                disabled={saving}
-                value={addForm.netArea}
-                onChange={(e) => setAddField('netArea', e.target.value)}
-                invalid={Boolean(addErrors.netArea)}
-                invalidText={addErrors.netArea}
-              />
-              <TextInput
-                id="add-actual-cost"
-                labelText="Actual Cost ($)"
-                size="sm"
-                inputMode="numeric"
-                disabled={saving}
-                value={addForm.actualCost}
-                onChange={(e) => setAddField('actualCost', e.target.value)}
-                invalid={Boolean(addErrors.actualCost)}
-                invalidText={addErrors.actualCost}
-              />
-              <TextInput
-                id="add-planned-cost"
-                labelText="Planned Cost ($)"
-                size="sm"
-                inputMode="numeric"
-                disabled={saving}
-                value={addForm.plannedCost}
-                onChange={(e) => setAddField('plannedCost', e.target.value)}
-                invalid={Boolean(addErrors.plannedCost)}
-                invalidText={addErrors.plannedCost}
-              />
-              <TextArea
-                id="add-comments"
-                labelText="Comments"
-                enableCounter
-                maxCount={COMMENTS_MAX_LENGTH}
-                disabled={saving}
-                value={addForm.comments}
-                onChange={(e) => setAddField('comments', e.target.value)}
-              />
+              <div className="schedule-11__add-fields">
+                <TextInput
+                  id="add-location"
+                  labelText="Location"
+                  size="sm"
+                  maxLength={LOCATION_MAX_LENGTH}
+                  disabled={saving}
+                  value={addForm.location}
+                  onChange={(e) => setAddField('location', e.target.value)}
+                  invalid={Boolean(addErrors.location)}
+                  invalidText={addErrors.location}
+                />
+                <EnhancedDropdown
+                  id="add-enhanced"
+                  label="Enhanced"
+                  value={addForm.enhanced}
+                  disabled={saving}
+                  invalidText={addErrors.enhanced}
+                  onChange={(v) => setAddField('enhanced', v)}
+                />
+                <BiogeoComboBox
+                  id="add-bec"
+                  label="Biogeo/Subzone/Variant"
+                  selected={addForm.bec}
+                  disabled={saving}
+                  invalidText={addErrors.bec}
+                  onSelect={(o) => setAddField('bec', o)}
+                />
+                <TextInput
+                  id="add-net-area"
+                  labelText="NAR(ha)"
+                  size="sm"
+                  inputMode="decimal"
+                  disabled={saving}
+                  value={addForm.netArea}
+                  onChange={(e) => setAddField('netArea', e.target.value)}
+                  invalid={Boolean(addErrors.netArea)}
+                  invalidText={addErrors.netArea}
+                />
+                <TextInput
+                  id="add-actual-cost"
+                  labelText="Actual Cost ($)"
+                  size="sm"
+                  inputMode="numeric"
+                  disabled={saving}
+                  value={addForm.actualCost}
+                  onChange={(e) => setAddField('actualCost', e.target.value)}
+                  invalid={Boolean(addErrors.actualCost)}
+                  invalidText={addErrors.actualCost}
+                />
+                <TextInput
+                  id="add-planned-cost"
+                  labelText="Planned Cost ($)"
+                  size="sm"
+                  inputMode="numeric"
+                  disabled={saving}
+                  value={addForm.plannedCost}
+                  onChange={(e) => setAddField('plannedCost', e.target.value)}
+                  invalid={Boolean(addErrors.plannedCost)}
+                  invalidText={addErrors.plannedCost}
+                />
+              </div>
+              {/* Comments sits on its own row beneath the field row so the box gets the width
+                  legacy gave it (cols="75", xhtml:140-141) instead of being squeezed into the
+                  wrap flow beside the short numeric inputs. */}
+              <div className="schedule-11__add-comments">
+                <TextArea
+                  id="add-comments"
+                  labelText="Comments"
+                  enableCounter
+                  maxCount={COMMENTS_MAX_LENGTH}
+                  disabled={saving}
+                  value={addForm.comments}
+                  onChange={(e) => setAddField('comments', e.target.value)}
+                />
+              </div>
               <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
                 Add
               </Button>
