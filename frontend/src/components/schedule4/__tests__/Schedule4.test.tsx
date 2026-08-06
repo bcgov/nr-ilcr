@@ -159,8 +159,9 @@ describe('Schedule4 page', () => {
 
     // Re-open the newly created location — its saved amounts must be seeded into the panel.
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[2])
-    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('5000')
-    expect(screen.getByLabelText('Lakeside Dry Dump volume')).toHaveValue('2000')
+    // Editable numbers display thousands-grouped (commas).
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('5,000')
+    expect(screen.getByLabelText('Lakeside Dry Dump volume')).toHaveValue('2,000')
   })
 
   test('Edit seeds the location comments; Save sends the edited comments in the PUT', async () => {
@@ -226,8 +227,8 @@ describe('Schedule4 page', () => {
         'To complete copy of Location: Harbour Dump, provide a new Location Name and invoke save.',
       ),
     ).toBeInTheDocument()
-    // Amounts cloned from the source.
-    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100000')
+    // Amounts cloned from the source (thousands-grouped).
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
   })
 
   test('Check Status renders the per-location results', async () => {

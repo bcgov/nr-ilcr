@@ -17,6 +17,11 @@
 
 .schedule-4__num {
   text-align: right;
+
+  // Right-align the entered numbers too, so editable inputs line up with the read-only cells.
+  .cds--text-input {
+    text-align: right;
+  }
 }
 
 .schedule-4__actions {

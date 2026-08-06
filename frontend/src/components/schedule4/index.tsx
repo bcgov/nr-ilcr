@@ -20,7 +20,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, numStr, toNum, withCommas } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { getRouteApi } from '@tanstack/react-router'
@@ -116,7 +116,9 @@ const CategoryCell: FC<{
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void
 }> = ({ inputId, label, value, readOnly, invalidText, onChange }) => {
   if (readOnly) {
-    return <TableCell className="schedule-4__num">{value === '' ? '—' : value}</TableCell>
+    return (
+      <TableCell className="schedule-4__num">{value === '' ? '—' : withCommas(value)}</TableCell>
+    )
   }
   return (
     <TableCell className="schedule-4__num">
@@ -126,7 +128,7 @@ const CategoryCell: FC<{
         hideLabel
         size="sm"
         inputMode="numeric"
-        value={value}
+        value={withCommas(value)}
         onChange={onChange}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
@@ -300,7 +302,9 @@ const Schedule4: FC = () => {
   const setCategoryField =
     (code: number, field: 'volume' | 'cost' | 'distance') =>
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const { value } = event.target
+      // Strip display commas so the form keeps the raw numeric string (toNum / validation parse it);
+      // withCommas re-groups it for display on each render.
+      const value = event.target.value.replace(/,/g, '')
       setPanelCategories((prev) => ({
         ...prev,
         [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
