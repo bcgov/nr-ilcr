@@ -76,6 +76,13 @@ body {
   .schedule-8__subheading {
     font-size: 16px;
   }
+
+  // Soften the Carbon row-hover on the schedule tables (2/4/8) — the default hover grey reads too heavy
+  // on the dense data grids; a subtle tint is enough to track the row under the cursor.
+  .#{$bcgov-prefix}--data-table tbody tr:hover td,
+  .#{$bcgov-prefix}--data-table tbody tr:hover th {
+    background-color: rgba(22, 22, 22, 0.04);
+  }
 }
 
 .app-section {
