@@ -16,13 +16,13 @@ import {
   TableHeader,
   TableRow,
   TextArea,
-  TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { fmtCurrency, fmtNumber, numStr, toNum, withCommas } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -246,26 +246,19 @@ const Schedule2: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
-  // Strip the display commas before storing so the form keeps the raw numeric string (toNum /
-  // validation parse it); withCommas re-groups it for display on each render.
-  const setNumberField = (fieldKey: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = event.target.value.replace(/,/g, '')
-    setForm((prev) => ({ ...prev, [fieldKey]: raw }))
-  }
-
-  // An editable value cell: a TextInput when the field is entered-by-user and the schedule is
-  // editable, otherwise read-only text. The value is thousands-grouped (commas) and right-aligned so
-  // the entered numbers line up with the read-only cells above/below. The hidden `labelText` is a
-  // terse, stable a11y name (the visible legacy label lives in the row's first cell).
+  // An editable value cell: a caret-preserving comma-grouped input when the field is entered-by-user
+  // and the schedule is editable, otherwise read-only text. Right-aligned so the entered numbers line
+  // up with the read-only cells above/below. The hidden `labelText` is a terse, stable a11y name (the
+  // visible legacy label lives in the row's first cell).
   const inputCell = (fieldKey: string, label: string) => (
     <TableCell className="schedule-2__num">
-      <TextInput
+      <CommaNumberInput
         id={fieldKey}
         labelText={label}
         hideLabel
         size="sm"
-        value={withCommas(form[fieldKey] ?? '')}
-        onChange={setNumberField(fieldKey)}
+        value={form[fieldKey] ?? ''}
+        onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />

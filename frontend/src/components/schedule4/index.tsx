@@ -26,6 +26,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { getRouteApi } from '@tanstack/react-router'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   ALL_CATEGORIES,
@@ -110,8 +111,8 @@ const CategoryCell: FC<{
   value: string
   readOnly: boolean
   invalidText?: string
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange }) => {
+  onValueChange: (raw: string) => void
+}> = ({ inputId, label, value, readOnly, invalidText, onValueChange }) => {
   if (readOnly) {
     return (
       <TableCell className="schedule-4__num">{value === '' ? '—' : withCommas(value)}</TableCell>
@@ -119,14 +120,13 @@ const CategoryCell: FC<{
   }
   return (
     <TableCell className="schedule-4__num">
-      <TextInput
+      <CommaNumberInput
         id={inputId}
         labelText={label}
         hideLabel
         size="sm"
-        inputMode="numeric"
-        value={withCommas(value)}
-        onChange={onChange}
+        value={value}
+        onValueChange={onValueChange}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
@@ -143,10 +143,7 @@ const CategoryRow: FC<{
   perUnit: number | null | undefined
   readOnly: boolean
   fieldErrors: Record<string, string>
-  onFieldChange: (
-    code: number,
-    field: CategoryField,
-  ) => (event: React.ChangeEvent<HTMLInputElement>) => void
+  onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
 }> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
@@ -159,7 +156,7 @@ const CategoryRow: FC<{
           value={values.distance}
           readOnly={readOnly}
           invalidText={fieldErrors[`${def.code}-distance`]}
-          onChange={onFieldChange(def.code, 'distance')}
+          onValueChange={onFieldChange(def.code, 'distance')}
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -170,7 +167,7 @@ const CategoryRow: FC<{
         value={values.volume}
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-volume`]}
-        onChange={onFieldChange(def.code, 'volume')}
+        onValueChange={onFieldChange(def.code, 'volume')}
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -178,7 +175,7 @@ const CategoryRow: FC<{
         value={values.cost}
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-cost`]}
-        onChange={onFieldChange(def.code, 'cost')}
+        onValueChange={onFieldChange(def.code, 'cost')}
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
@@ -297,11 +294,8 @@ const Schedule4: FC = () => {
   const closePanel = () => setPanelMode('closed')
 
   const setCategoryField =
-    (code: number, field: 'volume' | 'cost' | 'distance') =>
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      // Strip display commas so the form keeps the raw numeric string (toNum / validation parse it);
-      // withCommas re-groups it for display on each render.
-      const value = event.target.value.replace(/,/g, '')
+    (code: number, field: 'volume' | 'cost' | 'distance') => (value: string) => {
+      // value is already the raw digit string (CommaNumberInput strips its display grouping).
       setPanelCategories((prev) => ({
         ...prev,
         [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },

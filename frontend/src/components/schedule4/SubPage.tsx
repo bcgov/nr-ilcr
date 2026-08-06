@@ -16,7 +16,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, fmtNumber, numStr, toNum, withCommas } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import CommaNumberInput from '@/components/core/CommaNumberInput'
 import { extractDetail } from '@/utils/error'
 import {
   emptySubPageRowForm,
@@ -120,14 +121,6 @@ const SubPage: FC<SubPageProps> = ({
   const setField =
     (field: keyof SubPageRowForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
       const { value } = event.target
-      setForm((prev) => ({ ...prev, [field]: value }))
-    }
-
-  // Number add-row fields strip display commas so the form keeps the raw numeric string (toNum /
-  // validation parse it); withCommas re-groups for display on each render.
-  const setNumber =
-    (field: keyof SubPageRowForm) => (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value.replace(/,/g, '')
       setForm((prev) => ({ ...prev, [field]: value }))
     }
 
@@ -266,13 +259,12 @@ const SubPage: FC<SubPageProps> = ({
   }
 
   const numberField = (field: keyof SubPageRowForm, label: string) => (
-    <TextInput
+    <CommaNumberInput
       id={`subpage-${field}`}
       labelText={label}
       size="sm"
-      inputMode="numeric"
-      value={withCommas(form[field])}
-      onChange={setNumber(field)}
+      value={form[field]}
+      onValueChange={(raw) => setForm((prev) => ({ ...prev, [field]: raw }))}
       invalid={Boolean(errors[field])}
       invalidText={errors[field]}
     />
@@ -372,24 +364,30 @@ const SubPage: FC<SubPageProps> = ({
                   const cell = (field: keyof SubPageRowForm, label: string, numeric = true) => (
                     <TableCell className={numeric ? 'schedule-4__num' : undefined}>
                       {editable ? (
-                        <TextInput
-                          id={`row-${row.id}-${field}`}
-                          labelText={`${label} (row ${row.id})`}
-                          hideLabel
-                          size="sm"
-                          inputMode={numeric ? 'numeric' : undefined}
-                          maxLength={field === 'description' ? 120 : undefined}
-                          value={numeric ? withCommas(rf[field]) : rf[field]}
-                          onChange={(event) =>
-                            setRowField(
-                              row,
-                              field,
-                              numeric ? event.target.value.replace(/,/g, '') : event.target.value,
-                            )
-                          }
-                          invalid={Boolean(rowErrors[field])}
-                          invalidText={rowErrors[field]}
-                        />
+                        numeric ? (
+                          <CommaNumberInput
+                            id={`row-${row.id}-${field}`}
+                            labelText={`${label} (row ${row.id})`}
+                            hideLabel
+                            size="sm"
+                            value={rf[field]}
+                            onValueChange={(raw) => setRowField(row, field, raw)}
+                            invalid={Boolean(rowErrors[field])}
+                            invalidText={rowErrors[field]}
+                          />
+                        ) : (
+                          <TextInput
+                            id={`row-${row.id}-${field}`}
+                            labelText={`${label} (row ${row.id})`}
+                            hideLabel
+                            size="sm"
+                            maxLength={120}
+                            value={rf[field]}
+                            onChange={(event) => setRowField(row, field, event.target.value)}
+                            invalid={Boolean(rowErrors[field])}
+                            invalidText={rowErrors[field]}
+                          />
+                        )
                       ) : numeric ? (
                         fmtNumber(row[field as 'distance' | 'volume' | 'cost' | 'cycle'])
                       ) : (
