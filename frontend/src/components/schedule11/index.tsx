@@ -96,6 +96,9 @@ type EnhancedDropdownProps = {
   readonly value: boolean | null
   readonly disabled?: boolean
   readonly invalidText?: string
+  // Set inside table rows, where the column header already names the field and a per-cell label
+  // would print as stray text above every control. Carbon keeps it in the a11y tree.
+  readonly hideLabel?: boolean
   readonly onChange: (value: boolean | null) => void
 }
 
@@ -105,11 +108,13 @@ const EnhancedDropdown: FC<EnhancedDropdownProps> = ({
   value,
   disabled,
   invalidText,
+  hideLabel,
   onChange,
 }) => (
   <Dropdown<EnhancedItem>
     id={id}
     titleText={label}
+    hideLabel={hideLabel}
     label="Select"
     items={ENHANCED_ITEMS as unknown as EnhancedItem[]}
     itemToString={(item) => item?.label ?? ''}
@@ -131,6 +136,7 @@ type BiogeoComboBoxProps = {
   readonly selected: BiogeoclimaticOption | null
   readonly disabled?: boolean
   readonly invalidText?: string
+  readonly hideLabel?: boolean
   readonly onSelect: (option: BiogeoclimaticOption | null) => void
 }
 
@@ -140,6 +146,7 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   selected,
   disabled,
   invalidText,
+  hideLabel,
   onSelect,
 }) => {
   const [items, setItems] = useState<BiogeoclimaticOption[]>([])
@@ -195,7 +202,12 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   return (
     <ComboBox
       id={id}
-      titleText={label}
+      // Unlike Dropdown, ComboBox has no hideLabel prop — but it falls back to aria-label for the
+      // input whenever titleText is absent (ComboBox.js:486), so dropping the visible label still
+      // leaves the control with an accessible name. Passing both is safe: Carbon ignores the
+      // aria-label while titleText is set.
+      titleText={hideLabel ? undefined : label}
+      aria-label={label}
       placeholder="Type to search"
       disabled={disabled}
       items={items}
@@ -352,6 +364,7 @@ const EditRow: FC<EditRowProps> = ({
       <BiogeoComboBox
         id={`edit-bec-${row.locationId}`}
         label="Edit Biogeo/Subzone/Variant"
+        hideLabel
         selected={form.bec}
         disabled={saving}
         invalidText={errors.bec}
@@ -364,6 +377,7 @@ const EditRow: FC<EditRowProps> = ({
       <EnhancedDropdown
         id={`edit-enhanced-${row.locationId}`}
         label="Edit Enhanced"
+        hideLabel
         value={form.enhanced}
         disabled={saving}
         invalidText={errors.enhanced}

@@ -332,6 +332,33 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(captured!.comments).toBeNull()
   })
 
+  test('inline edit prints no per-cell field labels, but every control keeps its name', async () => {
+    // The column headers already name these fields; a visible per-cell label printed "Edit
+    // Enhanced" / "Edit Biogeo/Subzone/Variant" as stray text above the controls in every row.
+    // Hiding them must not cost the controls their accessible names.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const editRow = (screen.getByLabelText('Edit Location').closest('tr') ?? null) as HTMLElement
+
+    // Dropdown keeps the label element but visually hides it (Carbon's hideLabel).
+    expect(within(editRow).getByText('Edit Enhanced')).toHaveClass('cds--visually-hidden')
+    // ComboBox has no hideLabel, so the visible label is dropped entirely.
+    expect(within(editRow).queryByText('Edit Biogeo/Subzone/Variant')).not.toBeInTheDocument()
+
+    // Both remain reachable by name — this is what would break if the labels were display:none'd
+    // or the aria-label fallback were dropped.
+    expect(within(editRow).getByRole('combobox', { name: 'Edit Enhanced' })).toBeInTheDocument()
+    expect(
+      within(editRow).getByRole('combobox', { name: 'Edit Biogeo/Subzone/Variant' }),
+    ).toBeInTheDocument()
+
+    // The Add panel below still shows its labels — hideLabel is row-scoped, not global.
+    expect(screen.getByText('Enhanced')).not.toHaveClass('cds--visually-hidden')
+  })
+
   test('an invalid inline edit blocks the PUT with the advisory error (AC5)', async () => {
     const put = vi.fn()
     server.use(
