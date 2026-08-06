@@ -245,8 +245,8 @@ public class Schedule8Service {
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 page save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 8 page save failed for mill {} year {} [{}: {}]",
+          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
@@ -271,8 +271,8 @@ public class Schedule8Service {
     try {
       repository.deletePage(id);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 page delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 8 page delete failed for mill {} year {} [{}: {}]",
+          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
   }
@@ -333,8 +333,8 @@ public class Schedule8Service {
     } catch (StaleRevisionException | ScheduleNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 sample save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 8 sample save failed for mill {} year {} [{}: {}]",
+          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
@@ -360,8 +360,8 @@ public class Schedule8Service {
       try {
         repository.deleteSample(sampleId);
       } catch (DataAccessException ex) {
-        log.warn("Schedule 8 sample delete failed for mill {} year {} [{}]",
-            millId, year, ex.getClass().getSimpleName());
+        log.warn("Schedule 8 sample delete failed for mill {} year {} [{}: {}]",
+            millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
         throw new ScheduleNotSavedException();
       }
     }
@@ -418,8 +418,8 @@ public class Schedule8Service {
     } catch (StaleRevisionException | ScheduleNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 rate save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn("Schedule 8 rate save failed for mill {} year {} [{}: {}]",
+          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
@@ -445,8 +445,8 @@ public class Schedule8Service {
       try {
         repository.deleteRateRow(rowId);
       } catch (DataAccessException ex) {
-        log.warn("Schedule 8 rate delete failed for mill {} year {} [{}]",
-            millId, year, ex.getClass().getSimpleName());
+        log.warn("Schedule 8 rate delete failed for mill {} year {} [{}: {}]",
+            millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
         throw new ScheduleNotSavedException();
       }
     }
