@@ -368,7 +368,23 @@ const Schedule4: FC = () => {
   const handleSave = () => {
     if (saving || panelMode === 'closed' || panelMode === 'view') return
     void putLocation().then((document) => {
-      if (document) setPanelMode('closed')
+      if (!document) return
+      // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
+      // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
+      // save doesn't 409. The panel form already holds the saved values, so nothing re-seeds.
+      const saved =
+        panelMode === 'edit' && panelEditId !== null
+          ? document.locations.find((l) => l.id === panelEditId)
+          : document.locations.find(
+              (l) => (l.name ?? '').toLowerCase() === panelName.trim().toLowerCase(),
+            )
+      if (saved && saved.id != null) {
+        setPanelMode('edit')
+        setPanelEditId(saved.id)
+        setPanelRevision(saved.revisionCount ?? 0)
+      } else {
+        setPanelMode('closed')
+      }
     })
   }
 
@@ -577,7 +593,14 @@ const Schedule4: FC = () => {
             </TableRow>
           ) : (
             data.locations.map((location) => (
-              <TableRow key={location.id ?? location.name}>
+              <TableRow
+                key={location.id ?? location.name}
+                className={
+                  panelOpen && location.id != null && location.id === panelEditId
+                    ? 'schedule-4__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{location.name}</TableCell>
                 <TableCell>
                   <div className="schedule-4__row-actions">
@@ -798,7 +821,7 @@ const Schedule4: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-4__actions">
-          <Button kind="primary" disabled={!editable || saving || panelOpen} onClick={openNew}>
+          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
             Add New Location
           </Button>
           <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>

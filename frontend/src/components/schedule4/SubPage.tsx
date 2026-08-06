@@ -215,7 +215,7 @@ const SubPage: FC<SubPageProps> = ({
 
   // Save: commit a pending add-row draft AND every edited existing row (each row already-Added is only
   // re-persisted if the user changed it). Blocks on the first invalid row (surfacing its cell errors),
-  // then returns to the location. With nothing pending/dirty it just returns.
+  // then STAYS on the sub-page (Back is the leave action) — mirrors the location panel's Save.
   const handleSave = () => {
     if (busy) return
     const dirty = rows.filter(isRowDirty)
@@ -233,17 +233,14 @@ const SubPage: FC<SubPageProps> = ({
     const tasks: Array<() => Promise<boolean>> = []
     if (pending) tasks.push(addRow)
     dirty.forEach((row) => tasks.push(() => putRow(row)))
-    if (tasks.length === 0) {
-      onBack()
-      return
-    }
+    if (tasks.length === 0) return // nothing pending/dirty — stay put
     void tasks
       .reduce((chain, task) => chain.then((ok) => (ok ? task() : false)), Promise.resolve(true))
       .then((ok) => {
         if (ok) {
+          // Clear the local edit overrides so the rows re-seed from the freshly saved doc, and stay.
           setEdits({})
           setShowRowErrors(false)
-          onBack()
         }
       })
   }

@@ -193,6 +193,31 @@ describe('Schedule4 page', () => {
     expect((captured as { comments: string }).comments).toBe('Updated dock notes')
   })
 
+  test('Save stays on the record — the edit panel stays open and its row is highlighted', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        ),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // Panel stays open on the same record (not closed) …
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    // … and that location's list row is highlighted.
+    expect(screen.getByRole('cell', { name: 'Harbour Dump' }).closest('tr')).toHaveClass(
+      'schedule-4__row--editing',
+    )
+  })
+
   test('blank name blocks save with the verbatim ERR-001 (no PUT fired)', async () => {
     const put = vi.fn()
     server.use(
