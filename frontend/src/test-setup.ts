@@ -15,6 +15,11 @@ globalThis.ResizeObserver = ResizeObserverMock
 // it so router-driven tests don't emit "Not implemented" noise.
 globalThis.scrollTo = () => {}
 
+// jsdom doesn't implement Element.scrollIntoView; Carbon's Dropdown calls it on the highlighted item
+// when an open dropdown already has a selection, throwing inside its effect. Stub it so editing a
+// page/sample with a pre-selected code value can open its dropdowns in tests.
+Element.prototype.scrollIntoView = () => {}
+
 const users = [
   {
     id: 1,

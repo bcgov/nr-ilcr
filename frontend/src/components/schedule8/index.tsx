@@ -124,6 +124,8 @@ const Schedule8: FC = () => {
   const [revision, setRevision] = useState<number | null>(null)
   const [showErrors, setShowErrors] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Page | null>(null)
+  // Set to a page id when the user clicks TtT Samples with unsaved page edits (nav-away confirm).
+  const [confirmSamplesPageId, setConfirmSamplesPageId] = useState<number | null>(null)
 
   useEffect(() => {
     if (contextMissing) return
@@ -392,6 +394,13 @@ const Schedule8: FC = () => {
       <div className="app-page">
         {renderHeader([SCH8_BASE, pageTitle, 'Samples'])}
         <Grid fullWidth className="app-page__body">
+          {optionsError && (
+            <NotificationColumn
+              kind="error"
+              title="Reference options failed to load"
+              subtitle={optionsError}
+            />
+          )}
           <Column sm={4} md={8} lg={16}>
             <SamplePage
               millId={millId as number}
@@ -425,6 +434,13 @@ const Schedule8: FC = () => {
       <div className="app-page">
         {renderHeader([SCH8_BASE, sampleTitle, 'Additions / Deductions'])}
         <Grid fullWidth className="app-page__body">
+          {optionsError && (
+            <NotificationColumn
+              kind="error"
+              title="Reference options failed to load"
+              subtitle={optionsError}
+            />
+          )}
           <Column sm={4} md={8} lg={16}>
             <RatesPage
               millId={millId as number}
@@ -455,6 +471,18 @@ const Schedule8: FC = () => {
   const tflActive = isTflSelected(form)
   // The page being edited/viewed (has an id); its samples open from inside the panel.
   const panelPage = editId !== null ? data.pages.find((p) => p.id === editId) : undefined
+
+  // Unsaved edits in the page editor (edit mode only): the current form differs from the stored page.
+  const pageDirty =
+    panelMode === 'edit' && panelPage
+      ? JSON.stringify(form) !== JSON.stringify(seedPageForm(panelPage))
+      : false
+
+  // Opening the samples from the page editor discards unsaved page edits — confirm first when dirty.
+  const requestOpenSamples = (pageId: number) => {
+    if (pageDirty) setConfirmSamplesPageId(pageId)
+    else openSamples(pageId)
+  }
 
   // The TSA-or-TFL selector lists every TSA plus the legacy 'TFL' marker (unless the code table
   // already carries it). Choosing 'TFL' sets tsaNumber='TFL' → isTflSelected → enables the TFL list
@@ -520,8 +548,10 @@ const Schedule8: FC = () => {
       )
     }
     const handleChange = opts.onChange
-      ? ({ selectedItem }: { selectedItem: CodeOption | null }) => opts.onChange!(selectedItem?.code ?? '')
-      : ({ selectedItem }: { selectedItem: CodeOption | null }) => setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
+      ? ({ selectedItem }: { selectedItem: CodeOption | null }) =>
+          opts.onChange!(selectedItem?.code ?? '')
+      : ({ selectedItem }: { selectedItem: CodeOption | null }) =>
+          setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
 
     return (
       <Dropdown<CodeOption>
@@ -632,7 +662,12 @@ const Schedule8: FC = () => {
         {/* A saved page's Tree-to-Truck samples open from inside the page (not the list Actions);
             sits beside Supply Block, aligned to the bottom of the selector row. */}
         {editId !== null && (
-          <Button kind="ghost" size="sm" disabled={saving} onClick={() => openSamples(editId)}>
+          <Button
+            kind="ghost"
+            size="sm"
+            disabled={saving}
+            onClick={() => requestOpenSamples(editId)}
+          >
             TtT Samples ({panelPage?.sampleCount ?? 0})
           </Button>
         )}
@@ -671,7 +706,11 @@ const Schedule8: FC = () => {
       {header}
       <Grid fullWidth className="app-page__body">
         {optionsError && (
-          <NotificationColumn kind="error" title="Reference options failed to load" subtitle={optionsError} />
+          <NotificationColumn
+            kind="error"
+            title="Reference options failed to load"
+            subtitle={optionsError}
+          />
         )}
         {saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
@@ -716,6 +755,23 @@ const Schedule8: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {editable && (
+        <Modal
+          open={confirmSamplesPageId !== null}
+          modalHeading="Unsaved changes"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmSamplesPageId(null)}
+          onRequestSubmit={() => {
+            const pageId = confirmSamplesPageId
+            setConfirmSamplesPageId(null)
+            if (pageId !== null) openSamples(pageId)
+          }}
+        >
+          <p>Unsaved data will be lost. Are you sure to continue?</p>
         </Modal>
       )}
     </div>

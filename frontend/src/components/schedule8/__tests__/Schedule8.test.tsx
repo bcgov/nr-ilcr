@@ -455,6 +455,38 @@ describe('Schedule8 page level', () => {
     expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
   })
 
+  test('switching a saved TFL page to a TSA clears tflNumber before PUT (BR-03)', async () => {
+    // Regression: editing a page that was saved as a TFL, then choosing a TSA in the TSA-or-TFL
+    // selector must not leave the old tflNumber in the request — the backend treats any non-blank
+    // tflNumber as TFL mode, so a stale value would silently re-persist the page as a TFL.
+    const tflPage: Page = {
+      ...fullPage,
+      tsaNumber: 'TFL',
+      tsaNumberLabel: 'TFL',
+      tflNumber: 'TFL1',
+      tflNumberLabel: 'TFL One',
+      supplyBlock: null,
+      supplyBlockLabel: null,
+    }
+    let body: { tsaNumber?: unknown; tflNumber?: unknown; supplyBlock?: unknown } | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ pages: [tflPage] }))),
+      http.put(PAGES_URL, async ({ request }) => {
+        body = (await request.json()) as typeof body
+        return HttpResponse.json(doc({ pages: [tflPage], message: savedMsg }))
+      }),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await selectOption('TSA or TFL', 'TSA 1')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(body).toMatchObject({ tsaNumber: 'TSA1', tflNumber: null })
+  })
+
   test('Cancel closes the editor panel', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
@@ -960,6 +992,35 @@ describe('Schedule8 additions/deductions level', () => {
     await userEvent.click(screen.getByRole('button', { name: /add additions/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+  })
+
+  test('Save commits a typed-but-not-yet-Added addition draft before leaving (review #3)', async () => {
+    // Rate rows persist on Add, so Save is meaningful only for a draft the user typed but did not Add.
+    // It must POST that draft (not silently discard it) and then return to the sample.
+    const post = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(RATES_8101, async ({ request }) => {
+        post(await request.json())
+        return HttpResponse.json(doc({ message: savedMsg }))
+      }),
+    )
+    await openRates()
+
+    // Type an addition draft but do NOT click "Add additions" — then click the action-bar Save.
+    await selectOption('Additions — Cost Item', 'Bridge Construction')
+    await userEvent.type(screen.getByLabelText('Additions — $/m³'), '7')
+    await selectOption('Additions — Cost Type', 'Fixed')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    expect(post.mock.calls[0][0]).toMatchObject({ costingRate: 7 })
+    // Back on the samples level (the rates panel closed).
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Additions \/ Deductions — Sample # 1 - C-1/i),
+      ).not.toBeInTheDocument(),
+    )
   })
 
   test('delete a rate row DELETEs the sub-resource', async () => {

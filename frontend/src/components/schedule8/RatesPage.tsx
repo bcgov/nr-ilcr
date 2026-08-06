@@ -75,10 +75,17 @@ const RatesPage: FC<RatesPageProps> = ({
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<RateRow | null>(null)
   const [confirmBack, setConfirmBack] = useState(false)
 
-  const isAddDirty = addForm.costItemCode.trim() !== '' || addForm.costingRate.trim() !== '' || addForm.costTypeCode.trim() !== ''
-  const isDedDirty = dedForm.costItemCode.trim() !== '' || dedForm.costingRate.trim() !== '' || dedForm.costTypeCode.trim() !== ''
+  // A form is "dirty" when the user has typed a not-yet-Added row (any field, INCLUDING description).
+  const dirty = (form: RateForm) =>
+    form.costItemCode.trim() !== '' ||
+    form.costingRate.trim() !== '' ||
+    form.costTypeCode.trim() !== '' ||
+    form.itemDescription.trim() !== ''
+  const isAddDirty = dirty(addForm)
+  const isDedDirty = dirty(dedForm)
   const isDirty = isAddDirty || isDedDirty
 
+  // Cancel = discard; confirm first only when there is an uncommitted draft (rows persist on Add).
   const requestBack = () => {
     if (editable && isDirty) setConfirmBack(true)
     else onBack()
@@ -142,6 +149,31 @@ const RatesPage: FC<RatesPageProps> = ({
         setDedForm(emptyRateForm())
         setShowDedErrors(false)
       }
+    })
+  }
+
+  // Save = commit any typed-but-not-yet-Added draft row(s), then return to the sample. An invalid
+  // draft blocks the exit and surfaces its inline errors (never silently discarded). With nothing
+  // pending it just returns (each Added row already persisted).
+  const handleSave = () => {
+    if (busy) return
+    if (isAddDirty && Object.keys(validateRateForm(addForm)).length > 0) {
+      setShowAddErrors(true)
+      return
+    }
+    if (isDedDirty && Object.keys(validateRateForm(dedForm)).length > 0) {
+      setShowDedErrors(true)
+      return
+    }
+    const pending: Promise<boolean>[] = []
+    if (isAddDirty) pending.push(submitRate(addForm))
+    if (isDedDirty) pending.push(submitRate(dedForm))
+    if (pending.length === 0) {
+      onBack()
+      return
+    }
+    void Promise.all(pending).then((results) => {
+      if (results.every(Boolean)) onBack()
     })
   }
 
@@ -329,11 +361,11 @@ const RatesPage: FC<RatesPageProps> = ({
         deductionCostItems,
       )}
 
-      {/* Rows persist as you Add them; Save simply returns to the sample, Cancel confirms first.
-          Read-only shows a single Close (nothing to save). */}
+      {/* Save commits any typed-but-not-yet-Added draft then returns; Cancel discards (confirming only
+          when there is a draft). Read-only shows a single Close (nothing to save). */}
       <div className="schedule-8__panel-actions">
         {editable && (
-          <Button kind="primary" disabled={busy} onClick={onBack}>
+          <Button kind="primary" disabled={busy} onClick={handleSave}>
             Save
           </Button>
         )}

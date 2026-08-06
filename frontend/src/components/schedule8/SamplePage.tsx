@@ -321,8 +321,10 @@ const SamplePage: FC<SamplePageProps> = ({
       <Table aria-label="Samples">
         <TableHead>
           <TableRow>
+            {/* Legacy samples list (schedule8Detail.xhtml) uses this exact "Tree To Truck Pages"
+                header + singular "Action" — kept verbatim. */}
             <TableHeader>Tree to Truck Pages</TableHeader>
-            <TableHeader>Actions</TableHeader>
+            <TableHeader>Action</TableHeader>
           </TableRow>
         </TableHead>
         <TableBody>
