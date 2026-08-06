@@ -950,14 +950,17 @@ describe('Schedule 11 column sorting (legacy p:column sortBy parity)', () => {
     expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
   })
 
-  test('sorting survives a save so the edited row does not jump back (AC2 interaction)', async () => {
+  test('sorting survives a save so the edited row does not jump back (AC3 interaction)', async () => {
+    // The sort is presentation-only and deliberately outlives a mutation (index.tsx: a re-sort
+    // after every add/edit would yank the row the user is working on back to document order).
+    // The sort stays ACTIVE across the PUT here — releasing it first would test nothing.
     const user = await renderSorted()
     server.use(
-      http.delete(`${LOCATIONS_URL}/9002`, () =>
+      http.put(`${LOCATIONS_URL}/9003`, () =>
         HttpResponse.json(
           doc({
-            locations: [northRidge, alderFlat],
-            message: { key: 'deleteMessage', text: 'Record deleted successfully' },
+            locations: [northRidge, midSlope, { ...alderFlat, location: 'Zulu Flat' }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
           }),
         ),
       ),
@@ -966,16 +969,18 @@ describe('Schedule 11 column sorting (legacy p:column sortBy parity)', () => {
     await user.click(within(header('Location')).getByRole('button'))
     expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
 
-    // Delete Mid Slope (2nd row under the ascending sort) and confirm.
-    await user.click(within(header('Location')).getByRole('button'))
-    await user.click(within(header('Location')).getByRole('button'))
-    const midRow = screen.getByText('Mid Slope').closest('tr') as HTMLElement
-    await user.click(within(midRow).getByRole('button', { name: /^delete$/i }))
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^delete$/i }))
+    // Rename the FIRST row to a name that sorts LAST, so the two failure modes separate: if the
+    // save dropped the sort the refreshed rows come back in document order (North Ridge, Mid
+    // Slope, Zulu Flat); if it kept a stale pre-save ordering Zulu Flat stays first.
+    const alderRow = screen.getByText('Alder Flat').closest('tr') as HTMLElement
+    await user.click(within(alderRow).getByRole('button', { name: /^edit$/i }))
+    const location = screen.getByLabelText('Edit Location')
+    await user.clear(location)
+    await user.type(location, 'Zulu Flat')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(await screen.findByText('Record deleted successfully')).toBeInTheDocument()
-    // Re-sort and confirm the refreshed document sorts too (no stale ordering).
-    await user.click(within(header('Location')).getByRole('button'))
-    expect(rowLabels()).toEqual(['Alder Flat', 'North Ridge', 'Totals'])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(rowLabels()).toEqual(['Mid Slope', 'North Ridge', 'Zulu Flat', 'Totals'])
+    expect(header('Location')).toHaveAttribute('aria-sort', 'ascending')
   })
 })
