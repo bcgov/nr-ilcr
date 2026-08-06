@@ -177,6 +177,12 @@ legend.#{variables.$bcgov-prefix}--label {
   color: var(--cds-text-primary);
 }
 
+// Dropdown / ComboBox / Select menu options wrap instead of truncating with an ellipsis, so a long
+// option string is fully readable when the menu is open (used by the shared CodeComboBox selectors).
+.#{variables.$bcgov-prefix}--list-box__menu-item__option {
+  white-space: normal;
+}
+
 .#{variables.$bcgov-prefix}--date-picker__input,
 .#{variables.$bcgov-prefix}--date-picker-container,
 .#{variables.$bcgov-prefix}--date-picker--single,

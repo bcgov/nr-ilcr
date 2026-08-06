@@ -6,7 +6,6 @@ import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
-  Dropdown,
   InlineNotification,
   Modal,
   Select,
@@ -36,6 +35,7 @@ import {
   type SampleForm,
 } from './validation'
 import CheckStatusResult from './CheckStatusResult'
+import CodeComboBox from '@/components/core/CodeComboBox'
 
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
@@ -481,19 +481,14 @@ const SamplePage: FC<SamplePageProps> = ({
             </span>
           </div>
         ) : (
-          <Dropdown<CodeOption>
+          <CodeComboBox
             id="sample-skidTypeCode"
             titleText="Skid Type"
-            label="Select"
-            size="sm"
             items={skidTypes}
-            itemToString={(item) => item?.description ?? ''}
-            selectedItem={skidTypes.find((o) => o.code === form.skidTypeCode) ?? null}
+            selectedCode={form.skidTypeCode}
             invalid={Boolean(errors.skidTypeCode)}
             invalidText={errors.skidTypeCode}
-            onChange={({ selectedItem }) =>
-              setForm((prev) => ({ ...prev, skidTypeCode: selectedItem?.code ?? '' }))
-            }
+            onSelect={(code) => setForm((prev) => ({ ...prev, skidTypeCode: code }))}
           />
         )}
         {numberField('otherSkiddingPct', 'Other %')}

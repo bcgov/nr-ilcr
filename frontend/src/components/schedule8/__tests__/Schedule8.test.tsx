@@ -276,8 +276,8 @@ describe('Schedule8 page level', () => {
 
     expect(screen.getByText('Copy Page')).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('LIC1')
-    // The seeded code (SC1) resolves to its option description on the dropdown trigger.
-    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveTextContent(
+    // The seeded code (SC1) resolves to its option description in the combobox input value.
+    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveValue(
       'Support Centre 1',
     )
   })

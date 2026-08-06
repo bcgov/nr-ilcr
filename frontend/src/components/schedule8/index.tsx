@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
-  Dropdown,
   Grid,
   InlineNotification,
   Modal,
@@ -29,6 +28,7 @@ import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import CodeComboBox from '@/components/core/CodeComboBox'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   emptyPageForm,
@@ -572,26 +572,19 @@ const Schedule8: FC = () => {
       current && !items.some((option) => option.code === current)
         ? [...items, { code: current, description: current }]
         : items
-    const selected = itemList.find((option) => option.code === current) ?? null
-    const handleChange = opts.onChange
-      ? ({ selectedItem }: { selectedItem: CodeOption | null }) =>
-          opts.onChange!(selectedItem?.code ?? '')
-      : ({ selectedItem }: { selectedItem: CodeOption | null }) =>
-          setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
-
     return (
-      <Dropdown<CodeOption>
+      <CodeComboBox
         id={`page-${field}`}
         className={opts.className}
         titleText={label}
-        label="Select"
         items={itemList}
-        itemToString={(item) => item?.description ?? ''}
-        selectedItem={selected ?? undefined}
+        selectedCode={current}
+        onSelect={(code) =>
+          opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
+        }
         disabled={opts.disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
-        onChange={handleChange}
       />
     )
   }
