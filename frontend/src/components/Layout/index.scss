@@ -1,9 +1,10 @@
 @use '@carbon/react/scss/spacing' as *;
 
-// Grows to fill the #root flex column so the footer sits at the bottom of the viewport (sticky footer)
-// rather than being pushed below it by a full-viewport-tall content area.
+// Grows to fill the #root flex column so short pages still reach the fixed footer, and reserves bottom
+// space equal to the (single-row) footer height so its content is never hidden behind the fixed bar.
 .app-content {
   flex: 1 0 auto;
+  padding-block-end: $spacing-09;
 }
 
 // The working-context info (legacy `#subMenu` strip), now rendered inline on the right of the page
@@ -29,6 +30,11 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   padding: $spacing-04 $spacing-05;
+  // Pinned to the bottom of the viewport so it fills the whitespace on short pages and stays visible
+  // while scrolling. The content reserves matching bottom space (.app-content) so it's never covered.
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
 
   &__version {
     justify-self: start;
