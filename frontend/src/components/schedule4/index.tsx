@@ -195,16 +195,19 @@ const Schedule4: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
-  // Reset URL search parameters when millId or year switches (Comment 3)
-  const contextRef = useRef({ millId, year })
+  // Clear stale location/sub-page URL params when the mill/year context actually switches (Comment 3).
+  // Guarded by a ref so it fires only on a real mill/year change — never on in-app sub-navigation,
+  // which legitimately sets loc/sub (otherwise every drill-down would reset itself).
+  const contextKey = `${String(millId)}:${String(year)}`
+  const contextKeyRef = useRef(contextKey)
   useEffect(() => {
-    if (contextRef.current.millId !== millId || contextRef.current.year !== year) {
-      contextRef.current = { millId, year }
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey
       if (search.loc !== undefined || search.sub !== undefined) {
         void navigate({ to: '/schedule-4', search: {}, replace: true })
       }
     }
-  }, [millId, year, search.loc, search.sub, navigate])
+  }, [contextKey, navigate, search.loc, search.sub])
 
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)

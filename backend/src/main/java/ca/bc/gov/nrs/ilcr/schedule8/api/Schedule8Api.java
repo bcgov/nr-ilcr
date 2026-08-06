@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule8.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
@@ -43,6 +44,18 @@ public interface Schedule8Api {
   @GetMapping
   ResponseEntity<Schedule8Response> getSchedule8(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
+
+  /**
+   * Get the reference-data option lists for the page-editor dropdowns (Support Centre / Region / BEC
+   * Zone / TSA / TFL / Supply Block) — each a code + its {@code DESCRIPTION} label. Global reference
+   * data (no mill/year scope); {@code VIEW_SCHEDULE} authorizes the read. Lets the editor render
+   * descriptions instead of raw codes.
+   *
+   * @param authentication the caller (authorized for VIEW_SCHEDULE)
+   * @return 200 with the six ordered option lists
+   */
+  @GetMapping("/options")
+  ResponseEntity<Schedule8Options> getOptions(Authentication authentication);
 
   /**
    * Save (create-or-edit) one Schedule 8 report page for a mill/year and return the recomputed

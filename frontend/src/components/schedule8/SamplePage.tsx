@@ -2,9 +2,11 @@ import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
 import type { Schedule8SampleRequest } from '@/interfaces/Schedule8Request'
+import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
+  Dropdown,
   InlineNotification,
   Modal,
   Select,
@@ -17,7 +19,9 @@ import {
   TableHeader,
   TableRow,
   TextInput,
+  Tooltip,
 } from '@carbon/react'
+import { Information } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
@@ -42,10 +46,21 @@ interface SamplePageProps {
   millId: number
   year: number
   page: Page
+  /** The parent page's composite label (e.g. "Page # 1  -TSA: TFL -CP: cp123") for the breadcrumb. */
+  pageTitle: string
+  /** Skid-type options (code + description) for the Other skid-type dropdown. */
+  skidTypes: CodeOption[]
   editable: boolean
   onBack: () => void
   onDocUpdate: (doc: Schedule8Response) => void
   onOpenRates: (sampleId: number) => void
+}
+
+// The legacy Tree-to-Truck sample label (TreeToTruckDetailReportDO): the 1-based row number and the
+// contract id — e.g. "Sample # 1 - one". A blank contract id leaves the trailing "- " (legacy parity).
+const sampleLabel = (sample: Sample, index: number): string => {
+  const contract = sample.contractId && sample.contractId.trim() !== '' ? sample.contractId : ''
+  return `Sample # ${index + 1} - ${contract}`
 }
 
 /**
@@ -60,6 +75,8 @@ const SamplePage: FC<SamplePageProps> = ({
   millId,
   year,
   page,
+  pageTitle,
+  skidTypes,
   editable,
   onBack,
   onDocUpdate,
@@ -219,15 +236,28 @@ const SamplePage: FC<SamplePageProps> = ({
   const readOnly = panelMode === 'view'
   const panelOpen = panelMode !== 'closed'
   const errors = showErrors && !readOnly ? validateSampleForm(form) : {}
-  const helicopterActive = (toNum(form.helicopterPct) ?? 0) !== 0
-  const otherActive = (toNum(form.otherSkiddingPct) ?? 0) !== 0
 
   // ---- Editor field helpers ----------------------------------------------------------------------
-  const numberField = (field: keyof SampleForm, label: string) => {
+  // A field label with an optional info tooltip carrying the legacy "Note:" entry hint (hover/focus).
+  const fieldLabel = (label: string, note?: string) =>
+    note ? (
+      <span className="schedule-8__label-note">
+        {label}
+        <Tooltip label={note} align="top">
+          <button type="button" className="schedule-8__note-trigger" aria-label={note}>
+            <Information />
+          </button>
+        </Tooltip>
+      </span>
+    ) : (
+      label
+    )
+
+  const numberField = (field: keyof SampleForm, label: string, note?: string) => {
     if (readOnly) {
       return (
         <div className="schedule-8__field">
-          <span className="schedule-8__field-label">{label}</span>
+          <span className="schedule-8__field-label">{fieldLabel(label, note)}</span>
           <span>{form[field] === '' ? '—' : form[field]}</span>
         </div>
       )
@@ -235,7 +265,7 @@ const SamplePage: FC<SamplePageProps> = ({
     return (
       <TextInput
         id={`sample-${field}`}
-        labelText={label}
+        labelText={fieldLabel(label, note)}
         size="sm"
         inputMode="numeric"
         value={form[field]}
@@ -281,7 +311,7 @@ const SamplePage: FC<SamplePageProps> = ({
   const computedField = (label: string, value: number | null | undefined) => (
     <div className="schedule-8__field">
       <span className="schedule-8__field-label">{label}</span>
-      <span>{fmt(value)}</span>
+      <span className="schedule-8__field-value">{fmt(value)}</span>
     </div>
   )
 
@@ -291,25 +321,21 @@ const SamplePage: FC<SamplePageProps> = ({
       <Table aria-label="Samples">
         <TableHead>
           <TableRow>
-            <TableHeader>Contract ID</TableHeader>
-            <TableHeader>Cut Block</TableHeader>
-            <TableHeader className="schedule-8__num">% Total</TableHeader>
-            <TableHeader className="schedule-8__num">Final Rate</TableHeader>
-            <TableHeader>Actions</TableHeader>
+            {/* Legacy samples list (schedule8Detail.xhtml) uses this exact "Tree To Truck Pages"
+                header + singular "Action" — kept verbatim. */}
+            <TableHeader>Tree to Truck Pages</TableHeader>
+            <TableHeader>Action</TableHeader>
           </TableRow>
         </TableHead>
         <TableBody>
           {samples.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5}>No samples have been added.</TableCell>
+              <TableCell colSpan={2}>No samples have been added.</TableCell>
             </TableRow>
           ) : (
-            samples.map((sample) => (
+            samples.map((sample, index) => (
               <TableRow key={sample.id}>
-                <TableCell>{sample.contractId ?? '—'}</TableCell>
-                <TableCell>{sample.cutBlock ?? '—'}</TableCell>
-                <TableCell className="schedule-8__num">{fmt(sample.percentTotal)}</TableCell>
-                <TableCell className="schedule-8__num">{fmt(sample.finalRate)}</TableCell>
+                <TableCell>{sampleLabel(sample, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
                     <Button
@@ -388,13 +414,60 @@ const SamplePage: FC<SamplePageProps> = ({
         )}
       </div>
 
-      <h4 className="schedule-8__subheading">Skidding / Yarding %</h4>
+      {/* Legacy sectioning (schedule8EditDetail.xhtml): each skidding system is its own section with
+          its associated detail fields; Skyline/Helicopter are always shown (their fields become
+          required only when the matching % is non-zero, enforced in validateSampleForm). */}
+      <h4 className="schedule-8__subheading schedule-8__section-start">Skidding / Yarding</h4>
       <div className="schedule-8__fields">
         {numberField('groundBasePct', 'Ground Base %')}
         {numberField('grapplePct', 'Grapple %')}
         {numberField('highleadPct', 'Highlead %')}
+      </div>
+
+      <h4 className="schedule-8__subheading schedule-8__section-start">Skyline Support</h4>
+      <div className="schedule-8__fields">
         {numberField('skylinePct', 'Skyline %')}
+        {numberField('skylineSlopeDistance', 'Slope Distance (m)')}
+        {numberField('skylineSupportNumber', 'Support Number', 'enter number')}
+        {numberField('supportAvgDistance', 'Support Avg Distance (m)', 'enter number - average')}
+      </div>
+
+      <h4 className="schedule-8__subheading schedule-8__section-start">Helicopter</h4>
+      <div className="schedule-8__fields">
         {numberField('helicopterPct', 'Helicopter %')}
+        {numberField('distance', 'Distance (km)')}
+        {numberField('cycleTime', 'Cycle Time (min)')}
+        {ynSelect('uphillDirection', 'Direction', 'Uphill', 'Downhill')}
+        {ynSelect('waterDumpDestination', 'Dump Destination', 'Water Dump', 'Land Dump')}
+      </div>
+
+      <h4 className="schedule-8__subheading schedule-8__section-start">Other / Total</h4>
+      <div className="schedule-8__fields">
+        {readOnly ? (
+          <div className="schedule-8__field">
+            <span className="schedule-8__field-label">Skid Type</span>
+            <span>
+              {skidTypes.find((o) => o.code === form.skidTypeCode)?.description ||
+                form.skidTypeCode ||
+                '—'}
+            </span>
+          </div>
+        ) : (
+          <Dropdown<CodeOption>
+            id="sample-skidTypeCode"
+            titleText="Skid Type"
+            label="Select"
+            size="sm"
+            items={skidTypes}
+            itemToString={(item) => item?.description ?? ''}
+            selectedItem={skidTypes.find((o) => o.code === form.skidTypeCode) ?? null}
+            invalid={Boolean(errors.skidTypeCode)}
+            invalidText={errors.skidTypeCode}
+            onChange={({ selectedItem }) =>
+              setForm((prev) => ({ ...prev, skidTypeCode: selectedItem?.code ?? '' }))
+            }
+          />
+        )}
         {numberField('otherSkiddingPct', 'Other %')}
         {computedField('Total %', skiddingTotal(form))}
       </div>
@@ -408,73 +481,51 @@ const SamplePage: FC<SamplePageProps> = ({
         />
       )}
 
-      <h4 className="schedule-8__subheading">Skyline Support</h4>
+      <h4 className="schedule-8__subheading schedule-8__section-start">Harvested Volumes</h4>
       <div className="schedule-8__fields">
-        {numberField('skylineSlopeDistance', 'Slope Distance')}
-        {numberField('skylineSupportNumber', 'Support Number')}
-        {numberField('supportAvgDistance', 'Support Avg Distance')}
+        {numberField('coniferousVolume', 'Coniferous Volume (m³)')}
+        {numberField('deciduousVolume', 'Deciduous Volume (m³)')}
+        {computedField('Actual Harvested (m³)', liveActualHarvested(form))}
       </div>
 
-      {helicopterActive && (
-        <>
-          <h4 className="schedule-8__subheading">Helicopter</h4>
-          <div className="schedule-8__fields">
-            {numberField('distance', 'Distance')}
-            {numberField('cycleTime', 'Cycle Time')}
-            {ynSelect('uphillDirection', 'Direction', 'Uphill', 'Downhill')}
-            {ynSelect('waterDumpDestination', 'Dump Destination', 'Water Dump', 'Land Dump')}
-          </div>
-        </>
-      )}
-
-      {otherActive && (
-        <>
-          <h4 className="schedule-8__subheading">Other Skid Type</h4>
-          <div className="schedule-8__fields">
-            {readOnly ? (
-              <div className="schedule-8__field">
-                <span className="schedule-8__field-label">Skid Type</span>
-                <span>{form.skidTypeCode || '—'}</span>
-              </div>
-            ) : (
-              <TextInput
-                id="sample-skidTypeCode"
-                labelText="Skid Type"
-                value={form.skidTypeCode}
-                onChange={setField('skidTypeCode')}
-                invalid={Boolean(errors.skidTypeCode)}
-                invalidText={errors.skidTypeCode}
-              />
-            )}
-          </div>
-        </>
-      )}
-
-      <h4 className="schedule-8__subheading">Volumes</h4>
+      <h4 className="schedule-8__subheading schedule-8__section-start">Rate</h4>
       <div className="schedule-8__fields">
-        {numberField('coniferousVolume', 'Coniferous Volume')}
-        {numberField('deciduousVolume', 'Deciduous Volume')}
-        {computedField('Actual Harvested', liveActualHarvested(form))}
+        {numberField('originalRate', 'Original TtT Rate')}
+        {openSample && editId !== null ? (
+          <>
+            {/* Additions/Deductions: label row is a link into the rate detail (with its count); the
+                total sits on the value row below it, in line with the other data. */}
+            <div className="schedule-8__field">
+              <Button
+                kind="ghost"
+                size="sm"
+                className="schedule-8__rate-link"
+                onClick={() => onOpenRates(editId)}
+              >
+                Additions ({openSample.additionCount}):
+              </Button>
+              <span className="schedule-8__field-value">{fmt(openSample.additionsTotal)}</span>
+            </div>
+            <div className="schedule-8__field">
+              <Button
+                kind="ghost"
+                size="sm"
+                className="schedule-8__rate-link"
+                onClick={() => onOpenRates(editId)}
+              >
+                Deductions ({openSample.deductionCount}):
+              </Button>
+              <span className="schedule-8__field-value">{fmt(openSample.deductionsTotal)}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            {computedField('Additions', openSample?.additionsTotal)}
+            {computedField('Deductions', openSample?.deductionsTotal)}
+          </>
+        )}
+        {computedField('Final TtT Rate', openSample?.finalRate)}
       </div>
-
-      <h4 className="schedule-8__subheading">Rate</h4>
-      <div className="schedule-8__fields">
-        {numberField('originalRate', 'Original Rate')}
-        {computedField('Additions', openSample?.additionsTotal)}
-        {computedField('Deductions', openSample?.deductionsTotal)}
-        {computedField('Final Rate', openSample?.finalRate)}
-      </div>
-
-      {openSample && editId !== null && (
-        <div className="schedule-8__nav-links">
-          <Button kind="ghost" size="sm" onClick={() => onOpenRates(editId)}>
-            Additions ({openSample.additionCount}):
-          </Button>
-          <Button kind="ghost" size="sm" onClick={() => onOpenRates(editId)}>
-            Deductions ({openSample.deductionCount}):
-          </Button>
-        </div>
-      )}
 
       <div className="schedule-8__panel-actions">
         {!readOnly && (
@@ -495,7 +546,7 @@ const SamplePage: FC<SamplePageProps> = ({
         <Button kind="ghost" size="sm" onClick={requestBack}>
           ← Back to pages
         </Button>
-        <h3 className="schedule-8__heading">Samples — {page.license ?? `Page ${page.id}`}</h3>
+        <h3 className="schedule-8__heading">{pageTitle} → Samples</h3>
       </div>
 
       {message && (

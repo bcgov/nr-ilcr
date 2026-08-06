@@ -43,22 +43,72 @@
   margin-block: $spacing-05 $spacing-03;
 }
 
+// Visually separate each sample-editor section (Skidding / Skyline / Helicopter / Other / Volumes /
+// Rate) with a divider above its heading — mirrors the section breaks on the Schedule 2 table.
+.schedule-8__section-start {
+  border-block-start: 0.125rem solid var(--cds-border-strong);
+  padding-block-start: $spacing-05;
+}
+
+// The Additions/Deductions links in the Rate section act as the field's label row: a flush-left
+// ghost button sized like a field label, so its value drops onto the data row below it (in line
+// with the other fields' data).
+.schedule-8__rate-link.cds--btn {
+  justify-content: flex-start;
+  padding: 0;
+  min-block-size: 0;
+  block-size: auto;
+  font-size: 0.75rem;
+}
+
 .schedule-8__field-label {
   display: block;
   color: var(--cds-text-secondary);
   font-size: 0.75rem;
 }
 
+// A field label carrying an info tooltip (the legacy "Note:" entry hints) — label + icon inline.
+.schedule-8__label-note {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-02;
+}
+
+.schedule-8__note-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cds-icon-secondary);
+  cursor: pointer;
+}
+
 .schedule-8__fields {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  // Top-align so every field's heading (label) lines up on one row — the read-only/computed values
+  // (Total %, Actual Harvested, Final TtT Rate, Additions, Deductions) then sit under the same
+  // heading line as the editable inputs beside them, instead of floating out of line.
+  align-items: flex-start;
   gap: $spacing-05;
   margin-block-end: $spacing-05;
 }
 
 .schedule-8__field {
   min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+}
+
+// A read-only/computed data value (Total %, Actual Harvested, the Rate figures): sits on the second
+// row at the height of a Carbon size-sm input box (2rem) with a matching top gap, so it lines up with
+// the editable inputs beside it — labels on row 1, data on row 2.
+.schedule-8__field-value {
+  display: flex;
+  align-items: center;
+  min-block-size: 2rem;
+  margin-block-start: $spacing-03;
 }
 
 .schedule-8__grid {
@@ -101,19 +151,23 @@
   margin-block-end: $spacing-06;
 }
 
-.schedule-8__totals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: $spacing-07;
-  margin-block: $spacing-05;
+// Additions/Deductions table totals as the last row: a heavier top border + bold cells set it apart
+// from the data rows (mirrors the Schedule 4 sub-page totals row).
+.schedule-8__totals-row td {
+  border-block-start: 0.0625rem solid var(--cds-border-strong);
+  font-weight: 600;
+}
 
-  dt {
-    color: var(--cds-text-secondary);
-    font-size: 0.75rem;
-  }
+// Each rate table (Additions / Deductions) is a bordered card with a bold titled divider and a wide
+// gap below it, so the two are clearly separated (the plain table border alone read as too subtle).
+.schedule-8__rate-section {
+  border: 1px solid var(--cds-border-subtle);
+  padding: $spacing-05;
+  margin-block-end: $spacing-07;
+}
 
-  dd {
-    color: var(--cds-text-primary);
-    margin: 0;
-  }
+.schedule-8__rate-heading {
+  margin-block-end: $spacing-05;
+  padding-block-end: $spacing-03;
+  border-block-end: 0.125rem solid var(--cds-border-strong);
 }

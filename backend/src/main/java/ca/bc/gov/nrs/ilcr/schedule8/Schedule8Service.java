@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
@@ -125,6 +126,48 @@ public class Schedule8Service {
     }
 
     return new Schedule8Response(millId, year, trackStatus, editable, pages, null);
+  }
+
+  /**
+   * Load the option lists for the page-editor dropdowns (Support Centre / Region / BEC Zone / TSA /
+   * TFL / Supply Block) from the {@code THE.*_CODE} tables — the same code→label maps the read uses,
+   * reshaped as ordered {@code code + description} pairs. Global (not mill/year scoped): the code
+   * tables are reference data. The UI adds the {@code "TFL"} marker to the TSA-or-TFL selector.
+   *
+   * @return the six option lists, each ordered as its code table returns rows
+   */
+  @Transactional(readOnly = true)
+  public Schedule8Options getOptions() {
+    // Category-8 cost items split by subcategory: additions ('1'/'2') vs deductions ('3'/'4') — the
+    // same discriminator the read uses (§Decision 1) — so each add-row form lists only its own items.
+    List<Schedule8Repository.CostItemRow> costItems = repository.findCategory8CostItems();
+    return new Schedule8Options(
+        toOptions(repository.supportCentreLabels()),
+        toOptions(repository.regionLabels()),
+        toOptions(repository.becZoneLabels()),
+        toOptions(repository.tsaNumberLabels()),
+        toOptions(repository.tflNumberLabels()),
+        toOptions(repository.supplyBlockLabels()),
+        toOptions(repository.skidTypeLabels()),
+        costItemOptions(costItems, ADDITION_SUBCATEGORIES),
+        costItemOptions(costItems, DEDUCTION_SUBCATEGORIES),
+        toOptions(repository.costTypeLabels()));
+  }
+
+  /** Reshape a code→label map into an ordered list of {@code CodeOption} choices (insertion order). */
+  private static List<Schedule8Options.CodeOption> toOptions(Map<String, String> labels) {
+    return labels.entrySet().stream()
+        .map(e -> new Schedule8Options.CodeOption(e.getKey(), e.getValue()))
+        .toList();
+  }
+
+  /** Cost items in the given subcategories, as {@code code(id) + description(name)} dropdown choices. */
+  private static List<Schedule8Options.CodeOption> costItemOptions(
+      List<Schedule8Repository.CostItemRow> items, Set<String> subcategories) {
+    return items.stream()
+        .filter(item -> subcategories.contains(item.subcategoryId()))
+        .map(item -> new Schedule8Options.CodeOption(String.valueOf(item.id()), item.itemName()))
+        .toList();
   }
 
   /**

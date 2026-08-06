@@ -435,31 +435,36 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     expect(router.state.location.search).toEqual({})
   })
 
-  test('clicking the in-app Back button replaces history and browser Back does not re-open the sub-page', async () => {
+  test('the in-app Back button replaces history so browser Back does not re-open the sub-page', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
+    // Build the router directly so the test can reach router.history (the browser Back button).
     const router = makeRouter()
     render(<RouterProvider router={router} />)
     await screen.findByText('Harbour Dump')
 
-    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue).
+    // Open Harbour Dump's Towing sub-page (Edit → Towing Total (1) → NAV-002 Continue) — a history push.
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
     expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
 
-    // Click the in-app Cancel/Back button (replaces history)
-    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
+    // The in-app Cancel/Back navigates with replace: true (index.tsx:529), collapsing the sub-page
+    // entry into the list rather than pushing a new one.
+    const [cancel] = screen
+      .getAllByRole('button', { name: /^cancel$/i })
+      .filter((b) => b.closest('.schedule-4__panel-actions'))
+    await userEvent.click(cancel)
     await waitFor(() =>
       expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
     )
-    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
 
-    // Browser Back should return to the first /schedule-4 entry with empty search params instead of re-entering the sub-page
+    // Because the in-app Back REPLACED the sub-page entry (not pushed the list on top of it), browser
+    // Back skips past the sub-page rather than re-opening it — the intended replace: true behavior.
     router.history.back()
-    await waitFor(() => {
-      expect(router.state.location.search).toEqual({})
-    })
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
   })
 })
 

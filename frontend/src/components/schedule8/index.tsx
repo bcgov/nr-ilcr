@@ -1,11 +1,14 @@
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
-import type { Page, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
+import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
+import type Schedule8Options from '@/interfaces/Schedule8Options'
+import type { CodeOption } from '@/interfaces/Schedule8Options'
 import type { Schedule8PageRequest } from '@/interfaces/Schedule8Request'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
+  Dropdown,
   Grid,
   InlineNotification,
   Modal,
@@ -56,6 +59,31 @@ type NavView =
 // sampleId) so the browser Back button steps back through them.
 const scheduleRoute = getRouteApi('/schedule-8')
 
+// The legacy Tree-to-Truck page label (TreeToTruckReportDO): a composite of the 1-based row number,
+// the TSA/TFL identifier, and the cutting permit — e.g. "Page # 1  -TSA: TFL -CP: cp123".
+const pageLabel = (page: Page, index: number): string => {
+  const tsa = page.tsaNumber ?? ''
+  const cp = page.cuttingPermit && page.cuttingPermit.trim() !== '' ? page.cuttingPermit : ' - '
+  return `Page # ${index + 1}  -TSA: ${tsa} -CP: ${cp}`
+}
+
+// The legacy Tree-to-Truck sample label (TreeToTruckDetailReportDO): the 1-based row number and the
+// contract id — e.g. "Sample # 1 - one".
+const sampleLabel = (sample: Sample, index: number): string => {
+  const contract = sample.contractId && sample.contractId.trim() !== '' ? sample.contractId : ''
+  return `Sample # ${index + 1} - ${contract}`
+}
+
+// Format a phone as 222-222-2222 — used both for read-only display and to live-format entry as the
+// user types: keep only digits (max 10) and insert dashes so the value reads 222, 222-222, then
+// 222-222-2222. A value with fewer than 10 digits formats the digits it has (no padding).
+const phoneInput = (raw: string): string => {
+  const digits = raw.replace(/\D/g, '').slice(0, 10)
+  if (digits.length <= 3) return digits
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
 const Schedule8: FC = () => {
   const { millId, year } = useMillYear()
   const contextMissing = millId === null || year === null
@@ -64,18 +92,25 @@ const Schedule8: FC = () => {
   const search = scheduleRoute.useSearch()
   const navigate = scheduleRoute.useNavigate()
 
-  // Reset URL search parameters when millId or year switches (Comment 3)
-  const contextRef = useRef({ millId, year })
+  // Clear stale sample/rates URL params when the mill/year context actually switches (Comment 3).
+  // Guarded by a ref so it fires only on a real mill/year change — never on in-app sub-navigation,
+  // which legitimately sets pageId/sampleId (otherwise every drill-down would reset itself).
+  const contextKey = `${String(millId)}:${String(year)}`
+  const contextKeyRef = useRef(contextKey)
   useEffect(() => {
-    if (contextRef.current.millId !== millId || contextRef.current.year !== year) {
-      contextRef.current = { millId, year }
+    if (contextKeyRef.current !== contextKey) {
+      contextKeyRef.current = contextKey
       if (search.pageId !== undefined || search.sampleId !== undefined) {
         void navigate({ to: '/schedule-8', search: {}, replace: true })
       }
     }
-  }, [millId, year, search.pageId, search.sampleId, navigate])
+  }, [contextKey, navigate, search.pageId, search.sampleId])
 
   const [data, setData] = useState<Schedule8Response | null>(null)
+  // Reference-data option lists for the page-editor dropdowns. Fetched once (global, not mill/year
+  // scoped); null until loaded — the dropdowns fall back to an empty list so the panel still renders.
+  const [options, setOptions] = useState<Schedule8Options | null>(null)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!contextMissing)
   const [saving, setSaving] = useState(false)
@@ -89,6 +124,8 @@ const Schedule8: FC = () => {
   const [revision, setRevision] = useState<number | null>(null)
   const [showErrors, setShowErrors] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Page | null>(null)
+  // Set to a page id when the user clicks TtT Samples with unsaved page edits (nav-away confirm).
+  const [confirmSamplesPageId, setConfirmSamplesPageId] = useState<number | null>(null)
 
   useEffect(() => {
     if (contextMissing) return
@@ -124,6 +161,30 @@ const Schedule8: FC = () => {
       active = false
     }
   }, [millId, year, contextMissing])
+
+  // Load the dropdown option lists once — reference data, independent of mill/year. A failure leaves
+  // options null (dropdowns show empty lists); it never blocks the schedule read.
+  useEffect(() => {
+    let active = true
+    apiService
+      .getAxiosInstance()
+      .get<Schedule8Options>('/v1/schedule8/options')
+      .then((response) => {
+        if (active) {
+          setOptions(response.data)
+          setOptionsError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setOptions(null)
+          setOptionsError(extractDetail(err) || 'Failed to load reference options.')
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const clearMessages = () => {
     setSaveMessage(null)
@@ -259,7 +320,7 @@ const Schedule8: FC = () => {
     void navigate({ to: '/schedule-8', search: { pageId } })
   }
 
-  const SCH8_BASE = 'Report Tree to Truck Costs'
+  const SCH8_BASE = 'Tree to Truck'
   const renderHeader = (trail: string[] = [SCH8_BASE]) => (
     <ScheduleTombstone title="Schedule 8" subtitle={trail} />
   )
@@ -323,20 +384,30 @@ const Schedule8: FC = () => {
 
   // ---- Sample level replaces the list/panel when open. -------------------------------------------
   if (nav.level === 'samples') {
-    const page = data.pages.find((p) => p.id === nav.pageId)
+    const pageIndex = data.pages.findIndex((p) => p.id === nav.pageId)
+    const page = pageIndex >= 0 ? data.pages[pageIndex] : undefined
     if (!page) {
       return shell(<InlineNotification kind="warning" lowContrast title="Page not found" />)
     }
-    const pageLabel = page.license ?? `Page ${page.id}`
+    const pageTitle = pageLabel(page, pageIndex)
     return (
       <div className="app-page">
-        {renderHeader([SCH8_BASE, `${pageLabel} — TtT Samples`])}
+        {renderHeader([SCH8_BASE, pageTitle, 'Samples'])}
         <Grid fullWidth className="app-page__body">
+          {optionsError && (
+            <NotificationColumn
+              kind="error"
+              title="Reference options failed to load"
+              subtitle={optionsError}
+            />
+          )}
           <Column sm={4} md={8} lg={16}>
             <SamplePage
               millId={millId as number}
               year={year as number}
               page={page}
+              pageTitle={pageTitle}
+              skidTypes={options?.skidTypes ?? []}
               editable={editable}
               onBack={() => void navigate({ to: '/schedule-8', search: {}, replace: true })}
               onDocUpdate={(doc) => setData(doc)}
@@ -357,12 +428,19 @@ const Schedule8: FC = () => {
     if (!page || !sample) {
       return shell(<InlineNotification kind="warning" lowContrast title="Sample not found" />)
     }
-    const pageLabel = page.license ?? `Page ${page.id}`
-    const sampleTitle = sample.contractId ?? `Sample ${sample.id}`
+    const sampleIndex = page.samples.findIndex((s) => s.id === nav.sampleId)
+    const sampleTitle = sampleLabel(sample, sampleIndex)
     return (
       <div className="app-page">
-        {renderHeader([SCH8_BASE, pageLabel, sampleTitle])}
+        {renderHeader([SCH8_BASE, sampleTitle, 'Additions / Deductions'])}
         <Grid fullWidth className="app-page__body">
+          {optionsError && (
+            <NotificationColumn
+              kind="error"
+              title="Reference options failed to load"
+              subtitle={optionsError}
+            />
+          )}
           <Column sm={4} md={8} lg={16}>
             <RatesPage
               millId={millId as number}
@@ -371,6 +449,9 @@ const Schedule8: FC = () => {
               sampleTitle={sampleTitle}
               additions={sample.additions}
               deductions={sample.deductions}
+              additionCostItems={options?.additionCostItems ?? []}
+              deductionCostItems={options?.deductionCostItems ?? []}
+              costTypes={options?.costTypes ?? []}
               editable={editable}
               onBack={() =>
                 void navigate({ to: '/schedule-8', search: { pageId: nav.pageId }, replace: true })
@@ -388,20 +469,53 @@ const Schedule8: FC = () => {
   const panelOpen = panelMode !== 'closed'
   const errors = showErrors && !readOnly ? validatePageForm(form) : {}
   const tflActive = isTflSelected(form)
+  // The page being edited/viewed (has an id); its samples open from inside the panel.
+  const panelPage = editId !== null ? data.pages.find((p) => p.id === editId) : undefined
+
+  // Unsaved edits in the page editor (edit mode only): the current form differs from the stored page.
+  const pageDirty =
+    panelMode === 'edit' && panelPage
+      ? JSON.stringify(form) !== JSON.stringify(seedPageForm(panelPage))
+      : false
+
+  // Opening the samples from the page editor discards unsaved page edits — confirm first when dirty.
+  const requestOpenSamples = (pageId: number) => {
+    if (pageDirty) setConfirmSamplesPageId(pageId)
+    else openSamples(pageId)
+  }
+
+  // The TSA-or-TFL selector lists every TSA plus the legacy 'TFL' marker (unless the code table
+  // already carries it). Choosing 'TFL' sets tsaNumber='TFL' → isTflSelected → enables the TFL list
+  // and disables the supply-block list (BR-03).
+  const tsaNumbers = options?.tsaNumbers ?? []
+  const tsaOrTflItems: CodeOption[] = tsaNumbers.some((o) => o.code === 'TFL')
+    ? tsaNumbers
+    : [...tsaNumbers, { code: 'TFL', description: 'TFL' }]
 
   const textField = (
     field: keyof PageForm,
     label: string,
-    opts: { maxLength?: number; disabled?: boolean } = {},
+    opts: {
+      maxLength?: number
+      disabled?: boolean
+      format?: (value: string) => string
+    } = {},
   ) => {
     if (readOnly) {
+      const raw = form[field]
+      const shown = raw ? (opts.format ? opts.format(raw) : raw) : '—'
       return (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
-          <span>{form[field] || '—'}</span>
+          <span>{shown}</span>
         </div>
       )
     }
+    // When a formatter is supplied it also normalizes entry live (e.g. phone → 222-222-2222).
+    const onChange = opts.format
+      ? (event: React.ChangeEvent<HTMLInputElement>) =>
+          setForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
+      : setField(field)
     return (
       <TextInput
         id={`page-${field}`}
@@ -409,9 +523,48 @@ const Schedule8: FC = () => {
         maxLength={opts.maxLength}
         disabled={opts.disabled}
         value={form[field]}
-        onChange={setField(field)}
+        onChange={onChange}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
+      />
+    )
+  }
+
+  // Code-backed selector: shows each option's description (never the raw code) and writes back the
+  // code. View mode renders the resolved description; an unknown/legacy code falls back to itself.
+  const dropdownField = (
+    field: keyof PageForm,
+    label: string,
+    items: CodeOption[],
+    opts: { disabled?: boolean; onChange?: (code: string) => void } = {},
+  ) => {
+    const selected = items.find((option) => option.code === form[field]) ?? null
+    if (readOnly) {
+      return (
+        <div className="schedule-8__field">
+          <span className="schedule-8__field-label">{label}</span>
+          <span>{selected?.description || form[field] || '—'}</span>
+        </div>
+      )
+    }
+    const handleChange = opts.onChange
+      ? ({ selectedItem }: { selectedItem: CodeOption | null }) =>
+          opts.onChange!(selectedItem?.code ?? '')
+      : ({ selectedItem }: { selectedItem: CodeOption | null }) =>
+          setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
+
+    return (
+      <Dropdown<CodeOption>
+        id={`page-${field}`}
+        titleText={label}
+        label="Select"
+        items={items}
+        itemToString={(item) => item?.description ?? ''}
+        selectedItem={selected ?? undefined}
+        disabled={opts.disabled}
+        invalid={Boolean(errors[field])}
+        invalidText={errors[field]}
+        onChange={handleChange}
       />
     )
   }
@@ -421,34 +574,19 @@ const Schedule8: FC = () => {
       <Table aria-label="Page Summary">
         <TableHead>
           <TableRow>
-            <TableHeader>Tree To Truck Pages</TableHeader>
-            <TableHeader>Support Centre</TableHeader>
-            <TableHeader>Region</TableHeader>
-            <TableHeader>Samples</TableHeader>
+            <TableHeader>Tree to Truck Pages</TableHeader>
             <TableHeader>Actions</TableHeader>
           </TableRow>
         </TableHead>
         <TableBody>
           {data.pages.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5}>No pages have been added.</TableCell>
+              <TableCell colSpan={2}>No pages have been added.</TableCell>
             </TableRow>
           ) : (
-            data.pages.map((page) => (
+            data.pages.map((page, index) => (
               <TableRow key={page.id}>
-                <TableCell>{page.license ?? `Page ${page.id}`}</TableCell>
-                <TableCell>{page.supportCentreLabel ?? page.supportCentre ?? '—'}</TableCell>
-                <TableCell>{page.regionLabel ?? page.region ?? '—'}</TableCell>
-                <TableCell>
-                  <Button
-                    kind="ghost"
-                    size="sm"
-                    disabled={saving}
-                    onClick={() => openSamples(page.id as number)}
-                  >
-                    TtT Samples ({page.sampleCount})
-                  </Button>
-                </TableCell>
+                <TableCell>{pageLabel(page, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
                     <Button
@@ -497,17 +635,42 @@ const Schedule8: FC = () => {
         {textField('division', 'Division', { maxLength: 30 })}
         {textField('license', 'License', { maxLength: 8 })}
         {textField('contact', 'Contact', { maxLength: 50 })}
-        {textField('phone', 'Phone', { maxLength: 12 })}
+        {textField('phone', 'Phone', { maxLength: 12, format: phoneInput })}
         {textField('cuttingPermit', 'Cutting Permit', { maxLength: 10 })}
       </div>
 
       <div className="schedule-8__fields">
-        {textField('supportCentre', 'Support Centre')}
-        {textField('region', 'Region')}
-        {textField('becZone', 'Biogeoclimatic Zone')}
-        {textField('tsaNumber', 'TSA or TFL')}
-        {textField('tflNumber', 'TFL', { maxLength: 2, disabled: !tflActive })}
-        {textField('supplyBlock', 'Supply Block', { disabled: tflActive })}
+        {dropdownField('supportCentre', 'Support Centre', options?.supportCentres ?? [])}
+        {dropdownField('region', 'Region', options?.regions ?? [])}
+        {dropdownField('becZone', 'Biogeoclimatic Zone', options?.becZones ?? [])}
+        {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
+          onChange: (code) =>
+            setForm((prev) => {
+              const next = { ...prev, tsaNumber: code }
+              if (code === 'TFL') {
+                next.supplyBlock = ''
+              } else {
+                next.tflNumber = ''
+              }
+              return next
+            }),
+        })}
+        {dropdownField('tflNumber', 'TFL', options?.tflNumbers ?? [], { disabled: !tflActive })}
+        {dropdownField('supplyBlock', 'Supply Block', options?.supplyBlocks ?? [], {
+          disabled: tflActive,
+        })}
+        {/* A saved page's Tree-to-Truck samples open from inside the page (not the list Actions);
+            sits beside Supply Block, aligned to the bottom of the selector row. */}
+        {editId !== null && (
+          <Button
+            kind="ghost"
+            size="sm"
+            disabled={saving}
+            onClick={() => requestOpenSamples(editId)}
+          >
+            TtT Samples ({panelPage?.sampleCount ?? 0})
+          </Button>
+        )}
       </div>
 
       {readOnly ? (
@@ -542,6 +705,13 @@ const Schedule8: FC = () => {
     <div className="app-page">
       {header}
       <Grid fullWidth className="app-page__body">
+        {optionsError && (
+          <NotificationColumn
+            kind="error"
+            title="Reference options failed to load"
+            subtitle={optionsError}
+          />
+        )}
         {saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
@@ -585,6 +755,23 @@ const Schedule8: FC = () => {
           onRequestSubmit={handleDelete}
         >
           <p>{CONFIRM_DELETE}</p>
+        </Modal>
+      )}
+
+      {editable && (
+        <Modal
+          open={confirmSamplesPageId !== null}
+          modalHeading="Unsaved changes"
+          primaryButtonText="Continue"
+          secondaryButtonText="Cancel"
+          onRequestClose={() => setConfirmSamplesPageId(null)}
+          onRequestSubmit={() => {
+            const pageId = confirmSamplesPageId
+            setConfirmSamplesPageId(null)
+            if (pageId !== null) openSamples(pageId)
+          }}
+        >
+          <p>Unsaved data will be lost. Are you sure to continue?</p>
         </Modal>
       )}
     </div>
