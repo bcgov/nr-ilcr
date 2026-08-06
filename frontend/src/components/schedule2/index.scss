@@ -51,4 +51,6 @@
 .schedule-2__actions {
   display: flex;
   gap: $spacing-03;
+  // Space the action bar off the adjacent table/comments (matches Schedule 4's action bar).
+  margin-block-end: $spacing-05;
 }
