@@ -44,7 +44,10 @@
   // White, no underline; underline on hover/focus keeps them distinguishable without relying on colour
   // alone for keyboard/pointer affordance.
   &__link {
+    align-items: center;
     color: var(--cds-text-on-color);
+    display: inline-flex;
+    gap: $spacing-02;
     text-decoration: none;
 
     &:hover,
@@ -52,6 +55,18 @@
       color: var(--cds-text-on-color);
       text-decoration: underline;
     }
+  }
+
+  // The "opens in a new tab" launch icon: its space is reserved (no hover layout shift) and it fades
+  // in on hover/focus of the link.
+  &__launch {
+    fill: currentcolor;
+    opacity: 0;
+  }
+
+  &__link:hover &__launch,
+  &__link:focus &__launch {
+    opacity: 1;
   }
 }
 
