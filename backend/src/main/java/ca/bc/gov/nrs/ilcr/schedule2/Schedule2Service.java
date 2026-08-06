@@ -260,6 +260,8 @@ public class Schedule2Service {
     try {
       sch3 = schedule3Service.getSchedule3(millId, year, false);
     } catch (ScheduleNotFoundException ex) {
+      // Expected when the mill/year has no category-'3' summary — the carried Sch3 figures drop to null.
+      log.debug("No Schedule 3 for mill {} year {}; carried Sch3 figures null", millId, year);
       sch3 = null;
     }
     BigDecimal popTimberVolume = sch3 == null ? null : sch3.popTimber().volume();
@@ -276,6 +278,8 @@ public class Schedule2Service {
     try {
       sch1 = schedule1Service.getSchedule1(millId, year, false);
     } catch (ScheduleNotFoundException ex) {
+      // Expected when the mill/year has no Schedule 1 summary — the carried Sch1 terms drop.
+      log.debug("No Schedule 1 for mill {} year {}; carried Sch1 terms null", millId, year);
       sch1 = null;
     }
     Integer sch1SubtotalLoggingCost = sch1 == null ? null : subtotalLoggingNoFma(sch1);
@@ -409,13 +413,21 @@ public class Schedule2Service {
   }
 
   /**
-   * Null-safe {@code Long}→{@code Integer} (whole-dollar cost). {@code toIntExact} throws rather than
-   * silently wrapping an out-of-int-range subtotal — Schedule 3 sums are {@code Long}, but a per-mill
-   * PO&amp;P actual-cost subtotal is well within {@code Integer} range in practice (legacy stored COST
-   * as an int).
+   * Null-safe {@code Long}→{@code Integer} (whole-dollar cost). An out-of-int-range value null-
+   * propagates (with a debug log) rather than throwing an {@code ArithmeticException} to the client —
+   * consistent with the rest of this service's null handling. Schedule 3 sums are {@code Long}, but a
+   * per-mill PO&amp;P actual-cost subtotal is well within {@code Integer} range in practice (legacy
+   * stored COST as an int), so the guard is theoretical.
    */
   private static Integer longToInt(Long value) {
-    return value == null ? null : Math.toIntExact(value);
+    if (value == null) {
+      return null;
+    }
+    if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+      log.debug("Schedule 2 cross-schedule cost {} is out of Integer range — treated as null", value);
+      return null;
+    }
+    return value.intValue();
   }
 
   /**
@@ -429,7 +441,7 @@ public class Schedule2Service {
       return null;
     }
     long fma = sch1.forestMgmtAdminCost() == null ? 0L : sch1.forestMgmtAdminCost();
-    return Math.toIntExact(subtotalWithFma - fma);
+    return longToInt(subtotalWithFma - fma); // range-safe (null-propagates on overflow, never 500)
   }
 
   /**
