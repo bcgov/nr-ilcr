@@ -450,16 +450,16 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
-  test('Cancel returns from a sub-page to the location list', async () => {
+  test('Back returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
     expect(screen.getByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
 
-    // The action-bar Cancel (scoped — the always-rendered delete-confirm modal also has a "Cancel").
-    const [cancel] = screen
-      .getAllByRole('button', { name: /^cancel$/i })
+    // The action-bar Back (scoped — the always-rendered delete-confirm modal has a "Cancel").
+    const [back] = screen
+      .getAllByRole('button', { name: /^back$/i })
       .filter((b) => b.closest('.schedule-4__panel-actions'))
-    await userEvent.click(cancel)
+    await userEvent.click(back)
 
     expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
     // Back on the list.
@@ -503,12 +503,12 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
     expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
 
-    // The in-app Cancel/Back navigates with replace: true (index.tsx:529), collapsing the sub-page
-    // entry into the list rather than pushing a new one.
-    const [cancel] = screen
-      .getAllByRole('button', { name: /^cancel$/i })
+    // The in-app Back navigates with replace: true (index.tsx:529), collapsing the sub-page entry
+    // into the list rather than pushing a new one.
+    const [back] = screen
+      .getAllByRole('button', { name: /^back$/i })
       .filter((b) => b.closest('.schedule-4__panel-actions'))
-    await userEvent.click(cancel)
+    await userEvent.click(back)
     await waitFor(() =>
       expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument(),
     )

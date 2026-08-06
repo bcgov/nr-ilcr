@@ -726,7 +726,7 @@ const Schedule4: FC = () => {
           </Button>
         )}
         <Button kind="secondary" disabled={saving} onClick={closePanel}>
-          {readOnlyPanel ? 'Close' : 'Cancel'}
+          {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>

@@ -488,15 +488,15 @@ describe('Schedule8 page level', () => {
     expect(body).toMatchObject({ tsaNumber: 'TSA1', tflNumber: null })
   })
 
-  test('Cancel closes the editor panel', async () => {
+  test('Back closes the editor panel', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
     expect(screen.getByText('New Page')).toBeInTheDocument()
-    // The always-mounted delete modal contributes a hidden Cancel; the panel Cancel is the first.
-    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
+    // The panel's discard button is now "Back" (the always-mounted modals still carry "Cancel").
+    await userEvent.click(screen.getByRole('button', { name: /^back$/i }))
     expect(screen.queryByText('New Page')).not.toBeInTheDocument()
   })
 

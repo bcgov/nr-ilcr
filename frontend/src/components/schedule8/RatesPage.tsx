@@ -370,7 +370,7 @@ const RatesPage: FC<RatesPageProps> = ({
           </Button>
         )}
         <Button kind="secondary" disabled={busy} onClick={requestBack}>
-          {editable ? 'Cancel' : 'Close'}
+          {editable ? 'Back' : 'Close'}
         </Button>
       </div>
 

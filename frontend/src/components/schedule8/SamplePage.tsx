@@ -534,7 +534,7 @@ const SamplePage: FC<SamplePageProps> = ({
           </Button>
         )}
         <Button kind="secondary" disabled={busy} onClick={closePanel}>
-          {readOnly ? 'Close' : 'Cancel'}
+          {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>

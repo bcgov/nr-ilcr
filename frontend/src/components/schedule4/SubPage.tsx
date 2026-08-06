@@ -332,7 +332,7 @@ const SubPage: FC<SubPageProps> = ({
               Save
             </Button>
             <Button kind="secondary" disabled={busy} onClick={onBack}>
-              Cancel
+              Back
             </Button>
           </>
         ) : (
