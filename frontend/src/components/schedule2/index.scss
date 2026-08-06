@@ -16,14 +16,10 @@
   }
 }
 
-// Right-align numeric columns (Carbon DataTable defaults to left).
+// Left-align the numeric columns so the read-only figures line up with the (left-aligned) numbers in
+// the editable input fields.
 .schedule-2__num {
-  text-align: right;
-
-  // Right-align the entered numbers too, so editable inputs line up with the read-only cells.
-  .cds--text-input {
-    text-align: right;
-  }
+  text-align: left;
 }
 
 // The Comments label reads as a full sentence at 14px (both the editable field label and the
