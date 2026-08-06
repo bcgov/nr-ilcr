@@ -50,6 +50,27 @@ body {
   max-inline-size: 100%;
 }
 
+// Consistent typography across Schedules 2/4/8 and their sub-pages (scoped to .schedule-page so it
+// does not leak to other routes): main headers — panel/section headings + Carbon table titles — at
+// 20px; row + field labels — Carbon input labels, including Comments — at 14px. So equivalent headers
+// (e.g. "Existing Locations" and "Edit Location") and equivalent labels (e.g. "Location Name" and the
+// edit-grid row labels) match across the schedules.
+.schedule-page {
+  .schedule-2__heading,
+  .schedule-4__heading,
+  .schedule-8__heading,
+  .schedule-4__subpage-title,
+  .schedule-8__rate-heading,
+  .#{$bcgov-prefix}--data-table-header__title {
+    font-size: 20px;
+  }
+
+  .schedule-2__comments-label,
+  .#{$bcgov-prefix}--label {
+    font-size: 14px;
+  }
+}
+
 .app-section {
   margin-block-start: $spacing-05;
 }

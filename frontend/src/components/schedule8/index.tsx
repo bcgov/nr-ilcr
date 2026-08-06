@@ -269,7 +269,7 @@ const Schedule8: FC = () => {
   const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
@@ -332,7 +332,7 @@ const Schedule8: FC = () => {
     }
     const pageLabel = page.license ?? `Page ${page.id}`
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, `${pageLabel} — TtT Samples`])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
@@ -363,7 +363,7 @@ const Schedule8: FC = () => {
     const pageLabel = page.license ?? `Page ${page.id}`
     const sampleTitle = sample.contractId ?? `Sample ${sample.id}`
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, pageLabel, sampleTitle])}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
@@ -515,13 +515,15 @@ const Schedule8: FC = () => {
 
       {readOnly ? (
         <div className="schedule-8__field">
-          <span className="schedule-8__field-label">Comments</span>
+          <span className="schedule-8__field-label">
+            If you have any additional comments, please enter them here.
+          </span>
           <span>{form.comments || '—'}</span>
         </div>
       ) : (
         <TextArea
           id="page-comments"
-          labelText="Comments"
+          labelText="If you have any additional comments, please enter them here."
           maxLength={3500}
           value={form.comments}
           onChange={setComments}
@@ -542,7 +544,7 @@ const Schedule8: FC = () => {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (

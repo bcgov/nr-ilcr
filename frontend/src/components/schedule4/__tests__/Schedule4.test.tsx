@@ -180,7 +180,9 @@ describe('Schedule4 page', () => {
 
     // Edit the first row (Harbour Dump) — the panel seeds its stored comments.
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
-    const comments = screen.getByLabelText('Comments')
+    const comments = screen.getByLabelText(
+      'If you have any additional comments, please enter them here.',
+    )
     expect(comments).toHaveValue('Harbour dock notes')
 
     await userEvent.clear(comments)

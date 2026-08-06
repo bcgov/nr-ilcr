@@ -337,7 +337,7 @@ const Schedule2: FC = () => {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
@@ -390,7 +390,7 @@ const Schedule2: FC = () => {
             <TextArea
               id="comments"
               className="schedule-2__comments-field"
-              labelText="If you have any additional comments, please enter them here:"
+              labelText="If you have any additional comments, please enter them here."
               enableCounter
               maxCount={COMMENTS_MAX}
               value={form[F_COMMENTS] ?? ''}
@@ -399,7 +399,7 @@ const Schedule2: FC = () => {
           ) : (
             <>
               <h3 className="schedule-2__comments-label">
-                If you have any additional comments, please enter them here:
+                If you have any additional comments, please enter them here.
               </h3>
               <p className="schedule-2__comments">{data.comments ?? '—'}</p>
             </>

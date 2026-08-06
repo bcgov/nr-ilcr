@@ -459,7 +459,7 @@ const Schedule4: FC = () => {
   const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
@@ -515,7 +515,7 @@ const Schedule4: FC = () => {
     const rows = (location?.subPageRows ?? []).filter((row) => row.code === subPage.def.code)
     const subPageTrail = [SCH4_BASE, ...(location?.name ? [location.name] : []), subPage.def.label]
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader(subPageTrail)}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
@@ -703,13 +703,15 @@ const Schedule4: FC = () => {
 
       {readOnlyPanel ? (
         <div className="schedule-4__field">
-          <span className="schedule-4__field-label">Comments</span>
+          <span className="schedule-4__field-label">
+            If you have any additional comments, please enter them here.
+          </span>
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
         <TextArea
           id="location-comments"
-          labelText="Comments"
+          labelText="If you have any additional comments, please enter them here."
           enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}
@@ -731,7 +733,7 @@ const Schedule4: FC = () => {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
