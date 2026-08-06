@@ -50,6 +50,12 @@ public class Schedule8Service {
 
   private static final String STATUS_DRAFT = "D";
   private static final String IND_YES = "Y";
+  /**
+   * ILCR_SKID_TYPE_CODE is NOT NULL: a sample with no specific skid type (Other % is 0) stores the
+   * "NA" (Not Applicable) code, mirroring the legacy default — the sample rules already treat "NA" as
+   * "no skid type" for the Other-% requirement.
+   */
+  private static final String SKID_TYPE_NOT_APPLICABLE = "NA";
 
   // Check Status (Story 14.6) — bundle keys (controller resolves to verbatim text, AD-8) + outcomes.
   private static final String OUTCOME_MET = "MET";
@@ -302,6 +308,11 @@ public class Schedule8Service {
     if (request.skidTypeCode() != null) {
       requireKnownCode(repository.skidTypeLabels(), request.skidTypeCode().trim());
     }
+    // Skid type is NOT NULL in the DB; default a blank selection to the "NA" code (legacy behaviour).
+    String skidType = trimToNull(request.skidTypeCode());
+    if (skidType == null) {
+      skidType = SKID_TYPE_NOT_APPLICABLE;
+    }
     String uphill = toIndicator(request.uphillDirection());
     String waterDump = toIndicator(request.waterDumpDestination());
     try {
@@ -311,7 +322,7 @@ public class Schedule8Service {
             request.skylinePct(), request.highleadPct(), request.helicopterPct(),
             request.otherSkiddingPct(), request.skylineSlopeDistance(),
             request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
-            request.distance(), waterDump, uphill, trimToNull(request.skidTypeCode()),
+            request.distance(), waterDump, uphill, skidType,
             request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
         repository.bumpSampleRevision(id, 0, user); // 0 -> 1
       } else {
@@ -327,7 +338,7 @@ public class Schedule8Service {
             request.skylinePct(), request.highleadPct(), request.helicopterPct(),
             request.otherSkiddingPct(), request.skylineSlopeDistance(),
             request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
-            request.distance(), waterDump, uphill, trimToNull(request.skidTypeCode()),
+            request.distance(), waterDump, uphill, skidType,
             request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
       }
     } catch (StaleRevisionException | ScheduleNotFoundException ex) {
