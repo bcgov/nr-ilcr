@@ -22,6 +22,20 @@ export interface RowSort {
 
 const isBlank = (v: SortValue): boolean => v === null || v === undefined || v === ''
 
+/** Next direction in the header-click cycle: NONE → ASC → DESC → NONE, restarting at ASC on a new column. */
+const nextDirection = (sameColumn: boolean, current: SortDirection): SortDirection => {
+  if (!sameColumn) {
+    return 'ASC'
+  }
+  if (current === 'ASC') {
+    return 'DESC'
+  }
+  if (current === 'DESC') {
+    return 'NONE'
+  }
+  return 'ASC'
+}
+
 /** Compare two present values; missing values are handled by the caller (always last). */
 const compareValues = (a: SortValue, b: SortValue): number => {
   if (typeof a === 'number' && typeof b === 'number') {
@@ -50,14 +64,7 @@ export function useRowSort(rows: EditRow[], extractors: SortExtractors): RowSort
     if (!extractors[key]) {
       return
     }
-    const next: SortDirection =
-      activeKey !== key
-        ? 'ASC'
-        : direction === 'ASC'
-          ? 'DESC'
-          : direction === 'DESC'
-            ? 'NONE'
-            : 'ASC'
+    const next = nextDirection(activeKey === key, direction)
     setDirection(next)
     setActiveKey(next === 'NONE' ? null : key)
     if (next === 'NONE') {

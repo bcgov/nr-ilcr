@@ -4,12 +4,15 @@
   text-align: right;
 }
 
-.schedule-11__section {
-  margin-block: 1rem;
+// A sortable header's label lives inside Carbon's flex button (justify-content: space-between,
+// inline-size: 100%), so text-align on the th no longer positions it — the numeric labels would
+// drift left of their right-aligned cells. Push the label + sort icon to the end instead.
+.schedule-11__num .cds--table-sort {
+  justify-content: flex-end;
 }
 
-.schedule-11__meta {
-  margin-block-end: 1rem;
+.schedule-11__section {
+  margin-block: 1rem;
 }
 
 .schedule-11__heading {
@@ -29,21 +32,45 @@
   margin-block: 1rem;
 }
 
-.schedule-11__summary {
-  display: flex;
-  gap: 2rem;
-  margin-block-start: 0.5rem;
+// Totals row set apart from the data rows the same way the sibling schedules do it
+// (.schedule-1-other-costs__totals / .schedule-3-sub__totals): bold cells on the SAME
+// layer-accent token the Carbon data-table header uses, so the row reads as a summary
+// band rather than another editable location.
+.schedule-11__totals td {
+  font-weight: 700;
+  background: var(--cds-layer-accent-01);
 }
 
-.schedule-11__summary-item {
-  dt {
-    font-weight: 600;
-  }
-}
-
+// The Add panel stacks: the short fields wrap across one row, then Comments on its own
+// row, then the Add button. align-items keeps the stack left-aligned so the button does
+// not stretch to the panel width.
 .schedule-11__add {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.schedule-11__add-fields {
   display: flex;
   gap: 1rem;
   align-items: flex-end;
   flex-wrap: wrap;
+}
+
+// Ported from legacy's cols="75" (xhtml:141) as a ch cap rather than a pixel width: it
+// scales with the font and keeps comment lines at a readable measure on wide viewports,
+// while still filling narrow ones.
+.schedule-11__add-comments {
+  width: 100%;
+  max-width: 75ch;
+}
+
+// Add-panel field labels at 14px instead of Carbon's 12px label-01, matching the sibling
+// sub-page precedent (.schedule-3__section .cds--label): Carbon's default is noticeably
+// smaller than the 12px Verdana the legacy screens used, which reads larger at the same
+// nominal size. This also picks up the Comments character counter, which Carbon renders
+// with .cds--label — so the counter stays the same size as the label beside it.
+.schedule-11__add .cds--label {
+  font-size: 0.875rem;
 }
