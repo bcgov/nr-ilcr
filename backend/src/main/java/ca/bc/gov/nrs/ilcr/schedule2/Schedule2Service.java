@@ -434,6 +434,11 @@ public class Schedule2Service {
    * The legacy {@code Schedule1DO.getSubtotalLoggingCost} (Subtotal Company Logging Cost, no
    * silviculture) — the harvest cost blocks + Subtotal Other Costs, EXCLUDING Forest Management Admin.
    * Schedule 1's own {@code subtotalCompanyLoggingCost} includes FMA, so subtract it back out.
+   *
+   * <p>Follow-up: this inverse arithmetic couples Schedule 2's totals to Schedule 1's subtotal
+   * composition; {@code Schedule1Service} should expose the no-FMA subtotal directly. Tracked in
+   * bcgov/nr-ilcr#252 (the relationship is pinned by
+   * {@code Schedule2ServiceTest.totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal}).
    */
   private static Integer subtotalLoggingNoFma(Schedule1Response sch1) {
     Long subtotalWithFma = sch1.subtotalCompanyLoggingCost();
