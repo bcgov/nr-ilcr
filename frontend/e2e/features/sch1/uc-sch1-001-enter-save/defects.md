@@ -84,11 +84,31 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 **Coverage gaps (not tested yet — no app problem):**
 
-- **#1 — Role/permission branches can't be exercised under single-role mock auth (authorization).**
-  - **Why not:** With security off, `MockPrincipalFilter` seeds the SecurityContext with ONE configurable role authority per run (default `SUBMITTER`), so admin-only and permission-denied (403) branches of Schedule 1 can't be produced — the mock principal never changes within a run, and the header's mock-user selector does not change the backend authority.
-  - **Future action:** revisit once FAM auth + finer roles land (the auth story); cover the authorization guards as backend tests meanwhile.
-  - **Status:** OPEN. Re-verified 2026-08-07 (unchanged — `MockPrincipalFilter` still takes a single `Role mockRole`).
-  - **Test:** none — `blocked` in coverage.md.
+- **#1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
+  earlier wording said role branches were "blocked by mock auth", which implied we were failing to cover
+  behaviour that exists. Re-checked against the code: that behaviour does not exist yet.)_
+  - **Why not:** `ILCR_ADMIN` and `ILCR_SUBMITTER` are granted **exactly the same actions**. From
+    `security/SchedulePermissions.java:28-29`:
+    `ROLE_ACTIONS.put(Role.ADMIN, EnumSet.of(VIEW_SCHEDULE, EDIT_SCHEDULE));`
+    `ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(VIEW_SCHEDULE, EDIT_SCHEDULE));`
+    — with the comment "Both FAM production roles may view and edit schedules; the two tracks /
+    Draft-gate are enforced separately in the domain services (AD-9)". Every Schedule 1 endpoint is
+    guarded by `VIEW_SCHEDULE` or `EDIT_SCHEDULE` only, so **no admin-only branch and no role-driven 403
+    exists on this UC**. There is nothing to assert, not merely something we cannot reach.
+  - **On the header's mock-user selector (ILCR_ADMIN / ILCR_SUBMITTER / both):** it is a **frontend-only
+    display affordance** and does NOT grant roles. `context/auth/mockUsers.ts` persists the choice to
+    `localStorage` under `nr-ilcr.mock-user`; no header or interceptor carries it to the API. The backend
+    stamps ONE authority on every request from the startup property
+    `ilcr.security.mock-role` (default `ILCR_SUBMITTER`, `SecurityConfiguration.java:38` →
+    `MockPrincipalFilter`). The only consumer of the selected user anywhere in the app is
+    `Dashboard.tsx`, which renders `user.displayName` / `user.email` / role chips — nothing branches on
+    it. So switching it changes the name on the Home card, not what you may do.
+  - **Future action:** revisit when FAM auth lands **and the two `ROLE_ACTIONS` sets actually diverge**.
+    At that point the lever is a CI matrix — a second suite run against a backend started with
+    `ilcr.security.mock-role=ILCR_ADMIN` — not a per-test switch, because the authority is fixed per
+    process. Until the maps differ, that second job would assert nothing new.
+  - **Status:** OPEN (informational). Re-verified 2026-08-07.
+  - **Test:** none needed today — `not-applicable (no role-dependent behaviour)` in coverage.md.
 
 - **#2 — CLOSED: S02 (crown pre-fill) is now automated.**
   - **What this used to say:** that S02 needed a mill/year whose Schedule 3 carries a Crown Timber volume while the Schedule 1 volumes are all still empty, that no such anchor existed, and that manufacturing one meant seeding Schedule 3 — out of scope.
@@ -98,9 +118,28 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 - **#3 — S08 (open Other Costs before first save) is unreachable in the current backend model.**
   - **Why not:** The legacy guard blocked opening Other Costs before Schedule 1 was saved. In the new app an openable schedule is always already saved (the GET 404s when no summary exists), so `Schedule1.handleOtherCosts`'s `!data` branch (the ALT-001 "save first" Modal) cannot be produced through the UI against real data.
-  - **Future action:** cover the guard as a component/unit test (mock a no-summary state) rather than E2E; keep `deferred` here.
-  - **Status:** OPEN. Re-verified 2026-08-07 (unchanged — the `!data` branch is still present and still carries the "effectively unreachable" comment at `index.tsx:258`, and the button that calls it only renders once `data` exists).
-  - **Test:** none — `deferred` in coverage.md.
+  - **It is unreachable by construction, not for want of data (proved 2026-08-07).** No seed patch or
+    probe can produce it, because the requirement is self-contradictory within one render:
+    `index.tsx:341` is `if (!data) { return null }`, and the "Subtotal Other Costs(N):" button that calls
+    `handleOtherCosts` is rendered *below* that guard. So triggering the `if (!data)` branch at
+    `index.tsx:261` needs `data` to be null, while clicking the button that reaches it needs `data` to be
+    non-null. Dead code — the component's own comment already says "effectively unreachable".
+  - **Not related to Bug/Regression #3**, despite the shared number (different registers). When the GET
+    500s, `data` is null, so the component renders the error state and the button never exists — Bug #3
+    stops the page rendering rather than exposing this branch.
+  - **No unit test covers it either (searched 2026-08-07).** `ALT_SAVE_BEFORE_OTHER_COSTS` appears
+    exactly twice in the whole repo — its definition (`index.tsx:42`) and its render (`index.tsx:698`) —
+    and never in a test. `Schedule1.test.tsx`'s `describe('Schedule1 Other Costs navigation (Story 2.5)')`
+    block has three tests (confirm-then-navigate, cancel-does-not-navigate, read-only-opens-without-
+    confirm) and none forces a null-data state. The BR-06 hits in
+    `Schedule1OtherCostsServiceTest`/`Schedule1OtherCostsIT` are about the shared-volume **inheritance**
+    rule, not the save-before-open gate. So this branch is currently covered by nothing, at any level.
+  - **Future action:** raise with the dev — either delete the dead branch (a guard that cannot fire is a
+    maintenance trap) or, if it is being kept for a future backend model with create-on-open, add the
+    component test that mounts `Schedule1` with a forced null-data state. Either way it is not an E2E
+    concern.
+  - **Status:** OPEN. Re-verified 2026-08-07.
+  - **Test:** none, at any level — `not-applicable (E2E; unreachable by construction)` in coverage.md.
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 

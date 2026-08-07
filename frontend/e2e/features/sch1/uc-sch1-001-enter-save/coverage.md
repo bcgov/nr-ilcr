@@ -16,8 +16,10 @@ render states S19–S22 (`render-states.feature`); delete S13 (`delete.feature`)
 S09–S12 (`other-costs.feature`); **Other Costs inline edit (`other-costs-inline-edit.feature`, spec gap
 SG-1)**; **clearing a saved amount (`clear-amounts.feature`)**; persistence + retry S23–S24
 (`persistence.feature`); and WCAG 2.1 AA accessibility on the Schedule 1 page + Other Costs sub-page
-(`accessibility.feature`, AC4/NFR1 — zero violations). Only **S08** (open-Other-Costs-before-save, guard
-unreachable in the current backend model) remains `deferred` — see defects.md Coverage gaps.
+(`accessibility.feature`, AC4/NFR1 — zero violations). **Every slice is now dispositioned**: the last
+outstanding one, **S08** (open-Other-Costs-before-save), was reclassified 2026-08-07 from `deferred` to
+`not-applicable (E2E)` — it is unreachable by construction, not awaiting a fixture. See defects.md
+Coverage gap #3.
 
 **2026-08-07 re-review.** The app moved underneath this matrix and it was re-reconciled end to end
 against the current write path, the slice matrix, and the message catalog. What changed:
@@ -61,7 +63,7 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S05 Volume out of 7-digit range rejected | S05.feature (Exc); FLD-002 | `validation.ts` `VOLUME_7_DIGIT` ±9,999,999 (vol-12..18, sil 1/2/139/140) → inline error; `handleSave` gate | `validation.feature` `@S05 @FLD-002 @p1` (Outline ×4: line item, silv 1, silv 139, silv 140) | covered | Widened 2026-08-07 to the restored 139/140 volumes. Entry-mechanism divergence — see defects.md |
 | S06 Volume out of 8-digit range rejected | S06.feature (Exc); FLD-003 | `validation.ts` `VOLUME_8_DIGIT` ±99,999,999 (`otherCostsVolume`, `vol-143`, `vol-144`) → inline error; `handleSave` gate | `validation.feature` `@S06 @FLD-003 @p1` (Outline ×3 — all three editable 8-digit volumes) | covered | Widened 2026-08-07: legacy's three editable 8-digit fields are editable again (Divergence #2 retired), so all three are now exercised rather than one |
 | S07 Non-numeric volume rejected | S07.feature (Exc); FLD-005 | `validation.ts` `volumeInvalid` (`Number(raw)` NaN) → inline error; `handleSave` gate | `validation.feature` `@S07 @FLD-005 @p1` | covered | Entry-mechanism divergence — see defects.md |
-| S08 Open Other Costs before first save | S08.feature (Exc) | Other Costs sub-page gate (Story 2.5) | — | deferred | — |
+| S08 Open Other Costs before first save | S08.feature (Exc) | `Schedule1.handleOtherCosts` `!data` branch (`index.tsx:261`) → ALT-001 "Save required" Modal (`:698`) | — | not-applicable (E2E; unreachable by construction) | Dead code: `index.tsx:341` returns null when `!data`, and the button that calls the branch renders below that guard — so it needs `data` to be both null and non-null. Covered by NO test at any level (`ALT_SAVE_BEFORE_OTHER_COSTS` never appears in a test). Dev call: delete the branch or add a forced-null-data component test — defects.md Coverage gap #3 |
 | S09 Add line item on Other Costs sub-page | S09.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=save`) → SUC-002; row added + count updates | `other-costs.feature` `@S09 @p1` (add target 25050/2017) | covered | Add now persists the whole set (2026-08 bcgov sync); original delivery-DB insert 500 — defects.md Bug/Regression #1 (historical) |
 | S10 Other cost line without description | S10.feature (Exc) | `validateOtherCost` `descriptionRequired` → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S10 @p1` | covered | Re-grounded FLD-006 message to the new bundle |
 | S11 Other cost line invalid cost | S11.feature (Exc) | `validateOtherCost` cost range / non-numeric → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S11 @p1` (Outline: out-of-range; non-numeric) | covered | — |
@@ -104,11 +106,14 @@ Three mirrors were **completed** by this re-review, each of which had one arm si
 - **Pre-fill served ↔ stored.** S02 asserts the pre-filled values render *and* that the database is
   untouched — the second arm is what makes WRN-001's "please check and save" meaningful.
 
-Only open-before-save S08 stays `deferred` (unreachable — see defects.md Coverage gap #3), and the
-`toOtherCosts` NPE row is `not-applicable (E2E)` with its reason recorded. No asymmetric silent omission.
+Two rows are `not-applicable (E2E)` with their reasons recorded rather than left open: S08 (unreachable
+by construction — defects.md Coverage gap #3) and the `toOtherCosts` NPE (state no user can reach —
+Bug/Regression #3). Nothing is `deferred` any more. No asymmetric silent omission.
 
-**Role / permission coverage:** partial — automated as `ILCR_SUBMITTER` (the backend mock authority with
-security off). Admin-only branches and the legacy `ILCR_LICENSEE` role are **blocked by mock auth** (single fixed
-authority per run); the UI mock-user persona does not change the backend authority. See defects.md.
+**Role / permission coverage:** complete for what exists. `SchedulePermissions` grants `ILCR_ADMIN` and
+`ILCR_SUBMITTER` the identical action set (`VIEW_SCHEDULE` + `EDIT_SCHEDULE`), so Schedule 1 has **no
+role-dependent behaviour and no role-driven 403** to assert. Scenarios run as `ILCR_SUBMITTER` (the
+backend's fixed mock authority); the header's mock-user selector is frontend-display only and does not
+change it. Revisit when FAM lands and the two action sets diverge — defects.md Coverage gap #1.
 
 **Status values:** `covered` · `covered (+ spec-gap)` · `not-applicable` (legacy-only, by design) · `deferred` (see Coverage gaps) · `blocked` (env/auth can't reach the state) · `divergence` / `bug` (a genuinely-failing `@discovered-divergence` / `@discovered-bug` test — see this UC's `defects.md`).
