@@ -94,6 +94,12 @@ class Schedule2DocumentIT extends AbstractOracleIT {
     // minimal Schedule 1 (one logging line, item 12 = 40000). Legacy CoreUtil subtotals seed at 0, so
     // the Schedule-3 PO&P actual cost is 0 (not null) — the "absent Schedule 3 → null" case (no
     // category-'3' summary at all) is covered by the Schedule2Service unit test.
+    //
+    // AD-12 (product-confirmed): an empty-but-present Schedule 3 reports purchasedWoodOverhead.cost = 0
+    // (a real computed subtotal that happens to be zero), NOT an omitted field. This is deliberately
+    // distinct from an ABSENT Schedule 3, where the figure is null and Jackson non_null omits it. The
+    // two cases are different data states and the UI shows $0 vs blank accordingly. This matches the
+    // legacy CoreUtil behaviour (subtotals initialise to 0). Registry: BMAD architecture decisions.
     mockMvc.perform(get(ENDPOINT)
             .param("millId", "517")
             .param("year", "2021")
