@@ -12,9 +12,17 @@ preserved). The audit/check triggers stay ENABLED (never globally disabled — t
 scenarios writing in parallel); they are safe here: the summary audit trigger is state-gated off for a
 Draft and reassigns no PK, and the detail check trigger re-accepts rows that were already valid.
 
-Usage (called by the S13/S24 fixtures; also runnable by hand):
-    python sch1_db_restore.py snapshot <millId> <year>
-    python sch1_db_restore.py restore  <millId> <year>
+`first-entry` exists for the S02 crown pre-fill precondition. The BR-03 pre-fill only fires when
+EVERY stored Schedule 1 detail volume is NULL (Schedule1Service.allVolumesEmpty), and the app cannot
+produce that state through the API: the five volume-only fields are guarded by `!= null` on the write
+path, so a blanking PUT is a silent no-op (defects.md Bug/Regression #2). Nulling the VOLUME column
+directly is therefore the only way to reach the first-entry state on real seeded data — always paired
+with `snapshot` before and `restore` after, so the schedule is left exactly as found.
+
+Usage (called by the S02/S13/S24 fixtures; also runnable by hand):
+    python sch1_db_restore.py snapshot      <millId> <year>
+    python sch1_db_restore.py restore       <millId> <year>
+    python sch1_db_restore.py first-entry   <millId> <year>
 
 Connection: ORACLE_DSN (default THE/default@localhost:1525/DBDOCK_01), thin-mode `oracledb` (no client).
 This host has no local sqlplus and the seeded Oracle is reached directly on :1525, so the suite's DB
@@ -121,12 +129,69 @@ def restore(mill_id: int, year: int) -> None:
     con.commit()
 
 
+def first_entry(mill_id: int, year: int) -> None:
+    """Put a schedule into the genuine FIRST-ENTRY state the BR-03 crown pre-fill requires (S02).
+
+    Two things must hold, and the second is not optional:
+
+    1. Every stored detail VOLUME is null — `Schedule1Service.allVolumesEmpty`, the pre-fill trigger.
+    2. The schedule carries NO item-19 Other-Costs rows. `toOtherCosts` reads the shared row's volume
+       with `.map(DetailRow::volume).findFirst()`, and `Stream.findFirst()` throws NPE on a null
+       element — so a shared item-19 row with a null volume makes the GET 500 instead of pre-filling
+       (defects.md Bug/Regression #3). Nulling volumes without removing those rows would therefore
+       manufacture a 500, not a first entry.
+
+    A real first entry has no Other-Costs rows anyway (they are created later through the sub-page), so
+    removing them is what the state actually looks like. Always paired with `snapshot` before and
+    `restore` after, which puts every deleted row back verbatim.
+    """
+    con = connect()
+    cur = con.cursor()
+    sid = find_summary_id(cur, SUMMARY, mill_id, year)
+    if sid is None:
+        raise SystemExit(f"first-entry: no Schedule 1 summary for {mill_id}/{year}")
+    cur.execute(
+        f"DELETE FROM {DETAIL} WHERE ILCR_REPORT_SUMMARY_ID = :s AND ILCR_REPORT_COST_ITEM_ID = 19",
+        [sid],
+    )
+    removed = cur.rowcount
+    cur.execute(f"UPDATE {DETAIL} SET VOLUME = NULL WHERE ILCR_REPORT_SUMMARY_ID = :s", [sid])
+    blanked = cur.rowcount
+    con.commit()
+    print(f"first-entry ok: {mill_id}/{year} summaryId={sid} blanked={blanked} otherCostsRemoved={removed}")
+
+
+def count_volumes(mill_id: int, year: int) -> None:
+    """Print how many detail rows hold a non-null VOLUME — lets S02 prove the pre-fill is SERVED ONLY.
+
+    The GET renders the pre-filled volumes, so an API read-back cannot distinguish "pre-filled in the
+    response" from "persisted". Only the stored column can, hence this direct count.
+    """
+    con = connect()
+    cur = con.cursor()
+    sid = find_summary_id(cur, SUMMARY, mill_id, year)
+    if sid is None:
+        raise SystemExit(f"count-volumes: no Schedule 1 summary for {mill_id}/{year}")
+    cur.execute(
+        f"SELECT COUNT(*) FROM {DETAIL} WHERE ILCR_REPORT_SUMMARY_ID = :s AND VOLUME IS NOT NULL",
+        [sid],
+    )
+    print(cur.fetchone()[0])
+
+
 def main() -> None:
     args = sys.argv[1:]
-    if len(args) != 3 or args[0] not in ("snapshot", "restore"):
-        raise SystemExit("usage: sch1_db_restore.py {snapshot|restore} <millId> <year>")
+    if len(args) != 3 or args[0] not in ("snapshot", "restore", "first-entry", "count-volumes"):
+        raise SystemExit(
+            "usage: sch1_db_restore.py {snapshot|restore|first-entry|count-volumes} <millId> <year>"
+        )
     action, mill_id, year = args[0], int(args[1]), int(args[2])
-    (snapshot if action == "snapshot" else restore)(mill_id, year)
+    {
+        "snapshot": snapshot,
+        "restore": restore,
+        "first-entry": first_entry,
+        "count-volumes": count_volumes,
+    }[action](mill_id, year)
 
 
 if __name__ == "__main__":

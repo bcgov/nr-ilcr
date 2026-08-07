@@ -2,6 +2,13 @@ import { Given, When, Then, expect } from '../fixtures';
 import {
   CHECK_STATUS_ANCHORS,
   CHECK_STATUS_SEED_ANCHORS,
+  CLEAR_AMOUNTS_ANCHOR,
+  CLEAR_AMOUNTS_ANCHOR_MILL,
+  CLEAR_GUARDED_ANCHOR,
+  CLEAR_GUARDED_ANCHOR_MILL,
+  CROWN_PREFILL_ANCHOR,
+  CROWN_PREFILL_ANCHOR_MILL,
+  CROWN_PREFILL_VOLUME,
   DELETE_ANCHOR,
   DELETE_ANCHOR_MILL,
   MUTABLE_DRAFT,
@@ -14,7 +21,11 @@ import {
   millOptionText,
   scheduleUrl,
 } from '../../fixtures/sch1/schedule1-test-data';
-import { snapshotSchedule1 } from './schedule1DbRestore';
+import {
+  makeSchedule1FirstEntry,
+  countSchedule1Volumes,
+  snapshotSchedule1,
+} from './schedule1DbRestore';
 import { addOtherCost } from './otherCostsApi';
 
 /**
@@ -224,6 +235,177 @@ Given(
   },
 );
 
+Given(
+  'the crown pre-fill target is an editable Draft with no volumes entered',
+  async ({ request, world, schedule1DeleteRestore }) => {
+    // S02 needs a genuine FIRST ENTRY — every stored detail volume null (Schedule1Service.allVolumesEmpty)
+    // — which no seeded schedule is in and the app cannot produce (a blanking PUT is a no-op, see
+    // Bug/Regression #2). So: snapshot the dedicated target, NULL its volumes at the DB, and register the
+    // exact delete-then-reinsert restore. Nothing here writes through the app.
+    world.scheduleKey = CROWN_PREFILL_ANCHOR;
+    world.millOption = millOptionText(CROWN_PREFILL_ANCHOR_MILL);
+
+    const { millId, year } = CROWN_PREFILL_ANCHOR;
+    const res = await request.get(scheduleUrl(millId, year));
+    expect(res.ok(), `precondition: GET Schedule 1 for ${millId}/${year} -> HTTP ${res.status()}`).toBeTruthy();
+    const doc = (await res.json()) as {
+      trackStatus: string;
+      editable: boolean;
+      schedule3CrownVolume: number | null;
+    };
+    expect(doc.trackStatus, 'precondition: pre-fill target must be Draft ("D")').toBe('D');
+    expect(doc.editable, 'precondition: pre-fill target must be editable').toBe(true);
+    // Pin the Schedule 3 source: without a crown volume BR-03 never fires and the scenario would pass
+    // vacuously. A re-extract that drops it fails HERE, as a re-ground, not as a confusing UI timeout.
+    expect(
+      Number(doc.schedule3CrownVolume),
+      'precondition: the target’s Schedule 3 must carry the pinned Crown Timber (item 119) volume',
+    ).toBe(CROWN_PREFILL_VOLUME);
+
+    snapshotSchedule1(millId, year);
+    schedule1DeleteRestore.push(CROWN_PREFILL_ANCHOR);
+    makeSchedule1FirstEntry(millId, year);
+  },
+);
+
+Then(
+  'every Schedule 1 volume field is pre-filled with the Schedule 3 Crown Timber volume',
+  async ({ schedule1Page }) => {
+    // BR-03 copies the crown volume into the full legacy 13-field volume set: line items 12–18 + the
+    // volume-only rows 143/144, and silviculture 1, 2, 139, 140. The shared Other-Costs volume is
+    // deliberately NOT pre-filled — asserting that too keeps the "13-field set" claim honest.
+    const expected = String(CROWN_PREFILL_VOLUME);
+    for (const code of [12, 13, 14, 15, 16, 17, 18, 143, 144, 1, 2, 139, 140]) {
+      await expect(
+        schedule1Page.field(`#vol-${code}`),
+        `volume field #vol-${code} should carry the pre-filled crown volume`,
+      ).toHaveValue(expected);
+    }
+    await expect(
+      schedule1Page.field('#otherCostsVolume'),
+      'the shared Other-Costs volume is outside the pre-filled set',
+    ).not.toHaveValue(expected);
+  },
+);
+
+Then('the pre-filled Schedule 1 volumes are not yet persisted', async ({ world }) => {
+  // WRN-001 says "Please check and save schedule" — the pre-fill is SERVED ONLY. The GET renders the
+  // pre-filled values, so an API read-back cannot tell served from stored; only the column can.
+  const { millId, year } = world.scheduleKey!;
+  expect(
+    countSchedule1Volumes(millId, year),
+    'the crown pre-fill must not write to the database until the user saves',
+  ).toBe(0);
+});
+
+Given(
+  'the clear-amounts target is an editable Draft',
+  async ({ request, world, schedule1DeleteRestore }) => {
+    // clear-amounts writes values and then clears them. The five guarded volume fields cannot be
+    // cleared through the API (Bug/Regression #2), so the blank-fields PUT restore cannot undo this
+    // scenario — snapshot and re-insert the exact rows instead.
+    world.scheduleKey = CLEAR_AMOUNTS_ANCHOR;
+    world.millOption = millOptionText(CLEAR_AMOUNTS_ANCHOR_MILL);
+
+    const { millId, year } = CLEAR_AMOUNTS_ANCHOR;
+    const res = await request.get(scheduleUrl(millId, year));
+    expect(res.ok(), `precondition: GET Schedule 1 for ${millId}/${year} -> HTTP ${res.status()}`).toBeTruthy();
+    const doc = (await res.json()) as { trackStatus: string; editable: boolean };
+    expect(doc.trackStatus, 'precondition: clear-amounts target must be Draft ("D")').toBe('D');
+    expect(doc.editable, 'precondition: clear-amounts target must be editable').toBe(true);
+
+    snapshotSchedule1(millId, year);
+    schedule1DeleteRestore.push(CLEAR_AMOUNTS_ANCHOR);
+  },
+);
+
+Given(
+  'the guarded-fields clear target is an editable Draft',
+  async ({ request, world, schedule1DeleteRestore }) => {
+    // A SEPARATE key from the clear-amounts target: both scenarios snapshot/restore, and the suite is
+    // fullyParallel, so sharing one schedule races (value bleed + failed restores).
+    world.scheduleKey = CLEAR_GUARDED_ANCHOR;
+    world.millOption = millOptionText(CLEAR_GUARDED_ANCHOR_MILL);
+
+    const { millId, year } = CLEAR_GUARDED_ANCHOR;
+    const res = await request.get(scheduleUrl(millId, year));
+    expect(res.ok(), `precondition: GET Schedule 1 for ${millId}/${year} -> HTTP ${res.status()}`).toBeTruthy();
+    const doc = (await res.json()) as { trackStatus: string; editable: boolean };
+    expect(doc.trackStatus, 'precondition: guarded-fields target must be Draft ("D")').toBe('D');
+    expect(doc.editable, 'precondition: guarded-fields target must be editable').toBe(true);
+
+    snapshotSchedule1(millId, year);
+    schedule1DeleteRestore.push(CLEAR_GUARDED_ANCHOR);
+  },
+);
+
+When('I clear the Schedule 1 {string} field', async ({ schedule1Page }, label) => {
+  await schedule1Page.enterField(label, '');
+});
+
+When('I enter the following Schedule 1 field values:', async ({ schedule1Page }, dataTable) => {
+  for (const { field, value } of dataTable.hashes()) {
+    await schedule1Page.enterField(field, value);
+  }
+});
+
+When('I clear the following Schedule 1 fields:', async ({ schedule1Page }, dataTable) => {
+  for (const { field } of dataTable.hashes()) {
+    await schedule1Page.enterField(field, '');
+  }
+});
+
+Then(
+  'the saved Schedule 1 volumes for the following rows should be empty:',
+  async ({ request, world }, dataTable) => {
+    const rows = dataTable.hashes().map((r: { row: string }) => Number(r.row));
+    const { millId, year } = world.scheduleKey!;
+    // One poll over ALL rows: re-read the record until every listed row is blank, then report the map
+    // so a failure names exactly which fields are still holding a value.
+    await expect
+      .poll(async () => {
+        const res = await request.get(scheduleUrl(millId, year));
+        if (!res.ok()) return { error: `GET -> HTTP ${res.status()}` };
+        const doc = await res.json();
+        return Object.fromEntries(rows.map((row) => [row, volumeOfRow(doc, row)]));
+      })
+      .toEqual(Object.fromEntries(rows.map((row) => [row, null])));
+  },
+);
+
+/** Where a row's stored volume surfaces in the GET: the two silviculture-only rows and item 19 are not
+ * `lineItems` entries, so a read-back keyed purely on `lineItems` would silently miss them. */
+function volumeOfRow(
+  doc: {
+    lineItems: { costItemCode: number; volume: number | null }[];
+    silviculture: Record<string, { volume: number | null } | null>;
+    otherCosts: { volume: number | null };
+  },
+  row: number,
+): number | null {
+  if (row === 139 || row === 140) {
+    return doc.silviculture[row === 139 ? 'lessAdmin' : 'total']?.volume ?? null;
+  }
+  if (row === 19) {
+    return doc.otherCosts.volume ?? null;
+  }
+  return doc.lineItems.find((li) => li.costItemCode === row)?.volume ?? null;
+}
+
+Then(
+  'the saved Schedule 1 volume for row {int} should be empty',
+  async ({ request, world }, row) => {
+    const { millId, year } = world.scheduleKey!;
+    await expect
+      .poll(async () => {
+        const res = await request.get(scheduleUrl(millId, year));
+        if (!res.ok()) return `GET -> HTTP ${res.status()}`;
+        return volumeOfRow(await res.json(), row);
+      })
+      .toBeNull();
+  },
+);
+
 Then(
   'the Schedule 1 {string} field still shows {string}',
   async ({ schedule1Page }, label, value) => {
@@ -321,6 +503,55 @@ Then(
         return a ? { volume: Number(a.volume), cost: Number(a.cost) } : null;
       })
       .toEqual({ volume, cost });
+  },
+);
+
+/**
+ * Read-back for the VOLUME-ONLY line items (143 Forest Mgmt Admin, 144 Subtotal Company Logging). Their
+ * cost is a Schedule 3 pull / derivation, so only the volume round-trips through the PUT — asserting a
+ * cost here would assert a server-owned figure, not what the scenario wrote.
+ */
+Then(
+  'the saved Schedule 1 should have line item {int} with volume {int}',
+  async ({ request, world }, code, volume) => {
+    const { millId, year } = world.scheduleKey!;
+    await expect
+      .poll(async () => {
+        const res = await request.get(scheduleUrl(millId, year));
+        if (!res.ok()) return null;
+        const doc = (await res.json()) as {
+          lineItems: { costItemCode: number; volume: number | null }[];
+        };
+        const li = doc.lineItems.find((x) => x.costItemCode === code);
+        return li && li.volume !== null ? Number(li.volume) : null;
+      })
+      .toBe(volume);
+  },
+);
+
+/** The silviculture block keys whose VOLUME is user-entered but whose cost is pulled (139) / derived (140). */
+const VOLUME_ONLY_SILV: Record<string, 'lessAdmin' | 'total'> = {
+  'Less Silviculture Admin': 'lessAdmin',
+  'Total Silviculture': 'total',
+};
+
+Then(
+  'the saved Schedule 1 should have {string} silviculture with volume {int}',
+  async ({ request, world }, label, volume) => {
+    const key = VOLUME_ONLY_SILV[label];
+    expect(key, `unknown volume-only silviculture row: "${label}"`).toBeTruthy();
+    const { millId, year } = world.scheduleKey!;
+    await expect
+      .poll(async () => {
+        const res = await request.get(scheduleUrl(millId, year));
+        if (!res.ok()) return null;
+        const doc = (await res.json()) as {
+          silviculture: Record<string, { volume: number | null } | null>;
+        };
+        const row = doc.silviculture[key];
+        return row && row.volume !== null ? Number(row.volume) : null;
+      })
+      .toBe(volume);
   },
 );
 

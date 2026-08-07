@@ -65,6 +65,40 @@ export class OtherCostsPage {
     await this.table.getByRole('button', { name: 'Remove' }).nth(idx).click();
   }
 
+  /** The per-row Save action (EditableSubPageLayout) — persists the WHOLE row set with `intent=save`. */
+  get saveButton(): Locator {
+    return this.page.getByRole('button', { name: 'Save', exact: true });
+  }
+
+  /**
+   * Row order for a listed description. Both inline inputs and the Remove button share row order, so an
+   * index resolved from the description values addresses the whole row. Rows carry client-generated ids
+   * (`#row-description-<key>`), and the key is a mount-order counter, not the server id — so the index
+   * is the stable way in, not the id.
+   */
+  private async rowIndex(description: string): Promise<number> {
+    const idx = (await this.descriptions()).indexOf(description);
+    expect(idx, `Other Cost row "${description}" not found`).toBeGreaterThanOrEqual(0);
+    return idx;
+  }
+
+  /** Edit a listed row's description in place (the row set is persisted later by Save). */
+  async editRowDescription(description: string, next: string): Promise<void> {
+    const idx = await this.rowIndex(description);
+    await this.table.getByRole('textbox', { name: 'Edit description' }).nth(idx).fill(next);
+  }
+
+  /** Edit a listed row's cost in place (the row set is persisted later by Save). */
+  async editRowCost(description: string, next: string): Promise<void> {
+    const idx = await this.rowIndex(description);
+    await this.table.getByRole('textbox', { name: 'Edit cost' }).nth(idx).fill(next);
+  }
+
+  /** Persist the whole edited row set (legacy `save()` → update(true)). */
+  async save(): Promise<void> {
+    await this.saveButton.click();
+  }
+
   async backToSchedule1(): Promise<void> {
     await this.backButton.click();
   }

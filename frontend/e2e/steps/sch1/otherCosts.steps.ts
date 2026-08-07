@@ -62,8 +62,38 @@ Given('an itemized Other Cost line item exists to remove', async ({ request, wor
   await addOtherCost(request, anchor.key.millId, anchor.key.year, anchor.marker, 4200);
 });
 
+Given('an itemized Other Cost line item exists to edit', async ({ request, world, otherCostsCleanup }) => {
+  // Inline-edit precondition (spec gap SG-1): seed a row via the real API on the dedicated edit target
+  // and register its marker cleanup, then the scenario edits it through the sub-page.
+  const anchor = OTHER_COSTS_ANCHORS['inline-edit'];
+  world.scheduleKey = anchor.key;
+  world.millOption = millOptionText(anchor.mill);
+  await assertEditableDraft(request, anchor.key.millId, anchor.key.year);
+  otherCostsCleanup.push({
+    millId: anchor.key.millId,
+    year: anchor.key.year,
+    marker: anchor.marker,
+  });
+  await addOtherCost(request, anchor.key.millId, anchor.key.year, anchor.marker, 4200);
+});
+
 Given('a spy is watching the Other Costs add request', async ({ otherCostsSpy }) => {
   expect(otherCostsSpy.mutations, 'spy must start at zero mutating requests').toBe(0);
+});
+
+When(
+  'I edit the Other Cost {string} cost to {string}',
+  async ({ otherCostsPage }, description, cost) => {
+    await otherCostsPage.editRowCost(description, cost);
+  },
+);
+
+When('I clear the Other Cost {string} description', async ({ otherCostsPage }, description) => {
+  await otherCostsPage.editRowDescription(description, '');
+});
+
+When('I save the Other Costs', async ({ otherCostsPage }) => {
+  await otherCostsPage.save();
 });
 
 When('I note the Subtotal Other Costs count', async ({ schedule1Page, world }) => {

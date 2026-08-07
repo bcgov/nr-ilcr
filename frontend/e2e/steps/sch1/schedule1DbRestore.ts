@@ -29,12 +29,32 @@ function resolvePython(): string {
 
 const PYTHON = resolvePython();
 
-function run(...args: string[]): void {
-  execFileSync(PYTHON, [SCRIPT, ...args], { stdio: 'pipe' });
+function run(...args: string[]): string {
+  return execFileSync(PYTHON, [SCRIPT, ...args], { stdio: 'pipe' }).toString();
 }
 
-export const snapshotSchedule1 = (millId: number, year: number): void =>
+export const snapshotSchedule1 = (millId: number, year: number): void => {
   run('snapshot', String(millId), String(year));
+};
 
-export const restoreSchedule1 = (millId: number, year: number): void =>
+export const restoreSchedule1 = (millId: number, year: number): void => {
   run('restore', String(millId), String(year));
+};
+
+/**
+ * How many detail rows currently hold a non-null VOLUME. S02 asserts 0 to prove the crown pre-fill is
+ * SERVED ONLY — the GET renders the pre-filled values, so only the stored column can tell the two apart.
+ */
+export const countSchedule1Volumes = (millId: number, year: number): number =>
+  Number(run('count-volumes', String(millId), String(year)).trim());
+
+/**
+ * Put a schedule into the genuine first-entry state the S02 crown pre-fill needs: NULL every stored
+ * detail volume AND remove its item-19 Other-Costs rows. The app cannot reach this state itself (a
+ * blanking PUT is a no-op for the five `!= null`-guarded volume fields — defects.md Bug/Regression #2),
+ * and nulling volumes WITHOUT removing the Other-Costs rows produces a 500 rather than a pre-fill
+ * (Bug/Regression #3). Always call `snapshotSchedule1` first and register the key for teardown.
+ */
+export const makeSchedule1FirstEntry = (millId: number, year: number): void => {
+  run('first-entry', String(millId), String(year));
+};

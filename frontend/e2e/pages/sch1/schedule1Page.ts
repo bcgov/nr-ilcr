@@ -6,12 +6,18 @@ import { MILL_YEAR_STORAGE_KEY, MSG_SAVED } from '../../fixtures/sch1/schedule1-
  * Schedule 1 — Average Cost of Logging (components/schedule1/index.tsx). Writable fields are Carbon
  * TextInputs with stable ids, so selectors live here (not in steps). Line items #vol-<code>/#cost-<code>
  * for codes 12–18; silviculture #vol-1/#cost-1 (Actual $ Spent) & #vol-2/#cost-2 (Accrued less Actual);
- * #otherCostsVolume; #comments. The page requires the Home context to be set first, else it renders
- * "Please Select Mill and Reporting Year in the Home Page." and no inputs.
+ * the four VOLUME-ONLY rows #vol-143/#vol-144/#vol-139/#vol-140 (their costs are pulled from Schedule 3
+ * or derived, so they render as plain text); #otherCostsVolume; #comments. The page requires the Home
+ * context to be set first, else it renders "Please Select Mill and Reporting Year in the Home Page."
+ * and no inputs.
  */
 
-/** Map re-grounded line-item labels (the app's own vocabulary) to their input ids. */
-const FIELD_IDS: Record<string, { vol: string; cost: string }> = {
+/**
+ * Map re-grounded line-item labels (the app's own table-row vocabulary) to their input ids. `cost` is
+ * omitted for the volume-only rows: BR-04 makes 143/139's cost a Schedule 3 pull and 144/140's cost
+ * derived, so only their VOLUME is user-entered (see `numberCell`/`silvicultureRow` in index.tsx).
+ */
+const FIELD_IDS: Record<string, { vol: string; cost?: string }> = {
   'Standing Tree to Loaded Truck': { vol: '#vol-12', cost: '#cost-12' },
   'Log Transportation': { vol: '#vol-13', cost: '#cost-13' },
   'Road Management': { vol: '#vol-14', cost: '#cost-14' },
@@ -21,12 +27,19 @@ const FIELD_IDS: Record<string, { vol: string; cost: string }> = {
   'Depletion and Amortization': { vol: '#vol-18', cost: '#cost-18' },
   'Actual $ Spent': { vol: '#vol-1', cost: '#cost-1' },
   'Accrued less Actual $ Spent': { vol: '#vol-2', cost: '#cost-2' },
+  // Volume-only rows — user-entered volume restored to legacy parity by backend commit 0b58057
+  // ("restore legacy parity for derived costs"). 143/144 take the 8-digit range (FLD-003), 139/140 the
+  // 7-digit range (FLD-002); see `fieldKind` in components/schedule1/validation.ts.
+  'Forest Management Administration Costs (Sch 3)': { vol: '#vol-143' },
+  'Subtotal Company Logging Cost (no Silviculture)': { vol: '#vol-144' },
+  'Less Silviculture Admin Costs': { vol: '#vol-139' },
+  'Total Silviculture (As per Financial Statements)': { vol: '#vol-140' },
 };
 
 /**
  * Fields addressed by a single label (outside the line-item vol/cost grid). Subtotal Other Costs volume
- * is the ONLY editable 8-digit-range volume in the app (Forest Mgmt Admin / Subtotal Company Logging
- * are read-only, unlike legacy) — so it is the exemplar for the 8-digit volume validation.
+ * is the shared 8-digit volume; Forest Mgmt Admin (143) and Subtotal Company Logging (144) carry the
+ * same 8-digit range and are reachable through FIELD_IDS by their row label.
  */
 const NAMED_FIELDS: Record<string, string> = {
   'Subtotal Other Costs volume': '#otherCostsVolume',
@@ -100,6 +113,9 @@ export class Schedule1Page {
       await this.field(ids.vol).fill(volume);
     }
     if (cost !== undefined && cost !== '') {
+      if (!ids.cost) {
+        throw new Error(`Schedule 1 line item "${label}" has no editable cost (pulled/derived).`);
+      }
       await this.field(ids.cost).fill(cost);
     }
   }
@@ -118,7 +134,13 @@ export class Schedule1Page {
     if (match) {
       const ids = FIELD_IDS[match[1]];
       if (ids) {
-        return match[2] === 'volume' ? ids.vol : ids.cost;
+        if (match[2] === 'volume') {
+          return ids.vol;
+        }
+        if (!ids.cost) {
+          throw new Error(`Schedule 1 line item "${match[1]}" has no editable cost (pulled/derived).`);
+        }
+        return ids.cost;
       }
     }
     throw new Error(`Unknown Schedule 1 field label: "${label}"`);
