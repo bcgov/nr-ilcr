@@ -28,7 +28,25 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Expected vs actual:** Expected a cleared box to save as empty, exactly as clearing "Standing Tree to Loaded Truck volume" does. Actual — the save reports success and the previous value is retained.
   - **How we caught it (verified on real data 2026-08-07):** The S01 happy-path cleanup stopped working after these fields became editable. Reproduced directly against the API on 13050/2017: a `PUT /api/v1/schedule1` sending `forestMgmtAdminVolume: null` returned HTTP 200 but read back `143 → 400` unchanged; the same PUT sending `0` wrote `0`. So null is ignored and only a real number lands.
   - **Why (technical):** `Schedule1Service.writeWritableDetails` / `writeSilviculture` guard these five scalars with `if (request.<field>() != null)`. The comment says the guard exists "so a request that omits the field leaves the stored volume untouched" — but the React client (`buildRequest` in `components/schedule1/index.tsx`) *always sends* all five, using `null` to mean "the user cleared this box". Omitted and cleared are indistinguishable at the server, so cleared loses. Note the inconsistency: the nested `lineItems[]` and `silviculture.actualSpent/accruedLessActual` objects are guarded at the OBJECT level and pass their inner `volume: null` straight through — which is why those fields clear correctly.
-  - **Is it a defect?** Yes — user-visible data the user cannot correct, with a success message that misreports what happened.
+  - **Is it a defect? YES — and now CONFIRMED AGAINST LEGACY (2026-08-07), not just against our own app:**
+    - **Legacy allowed these fields to be blank.** In the legacy source only the *Description* inputs
+      carry `required="true"` (technical.md:90,96) — none of the five volume fields do. Blank was
+      accepted at Save; our own `components/schedule1/validation.ts` header records the same rule
+      ("legacy accepts blank amounts at Save; Check Status catches missing required fields").
+    - **Legacy had dedicated rules whose whole purpose is to detect these fields being null**, which only
+      makes sense if null was a reachable, persisted state: **FLD-007** reports "`{Field Label}: Value
+      Required`" at Check Status for a missing mandatory Volume/Cost, explicitly "applies to every fixed
+      line item and to **Subtotal Company Logging volume** and all Silviculture fields"
+      (technical.md:131); **FLD-010** fires when "**Subtotal Other Costs volume field itself is null**"
+      (technical.md:134).
+    - **So this is a functional regression, and it breaks a legacy workflow**: a user can no longer
+      produce the very state FLD-007 / FLD-010 exist to catch. Once one of these five fields has a value,
+      it can never be returned to "not yet entered".
+  - **The seeded data proves the state is real, and that our own tests depend on it:** 9 seeded detail
+    rows carry a NULL volume on the four guarded line-item/silviculture fields, and the S15 Check Status
+    anchor (13050/2016) has a null shared Other-Costs volume. **Our `@S15` scenario passes only because
+    the seed contains a null the application itself can no longer create.** Nothing in the new app could
+    set up that scenario from scratch.
   - **Priority / env:** p1 · branch `e2e/schedule1-recheck-and-defect-restale` · local seeded delivery DB.
   - **Status:** OPEN. Found 2026-08-07.
   - **Test:** `clear-amounts.feature` — the `@discovered-bug @p1` scenario is a genuine RED tracking this and will go green when it is fixed. Its mirror arm (`@p1`, clearing an ordinary line-item volume) is GREEN, which is the proof that clearing is supposed to work.
@@ -38,7 +56,18 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Expected vs actual:** Expected the shared Other-Costs volume to render blank. Actual — HTTP 500 and no page.
   - **How we caught it (verified on real data 2026-08-07):** Building the S02 first-entry precondition. Nulling every detail volume on 22051/2017 made `GET /api/v1/schedule1?millId=22051&year=2017` return 500; backend log: `java.lang.NullPointerException at Schedule1Service.toOtherCosts(Schedule1Service.java:773)`.
   - **Why (technical):** `toOtherCosts` reads the shared row's volume with `…filter(descriptionIsEmpty).map(DetailRow::volume).findFirst().orElse(null)`. `Stream.findFirst()` throws NPE when the first element is `null` — the `.orElse(null)` never gets a chance to run. It needs the null-tolerant form (map to `Optional.ofNullable` / use `reduce`), not `findFirst`.
-  - **Is it a defect?** Yes, but **latent** — please read the reachability note before prioritising. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and Bug/Regression #2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state.
+  - **Checked against LEGACY (2026-08-07):** legacy **rendered** a schedule whose Subtotal Other Costs
+    volume was null without failing — it reported the condition at Check Status via **FLD-010**
+    ("Subtotal Other Costs volume field itself is null", technical.md:134) rather than refusing to open
+    the page. So a null there was an ordinary, supported state in legacy; the new app returns a 500 for
+    it. That makes this a genuine regression, not merely a hardening gap.
+  - **Precision for whoever fixes it:** the NPE needs an item-19 shared row that EXISTS with a null
+    VOLUME. A schedule with *no* item-19 row at all is fine — `findFirst()` on an empty stream returns
+    an empty Optional and `.orElse(null)` works; it is a null *element* that throws. (13050/2016 has no
+    shared row, which is why it opens normally despite reporting a null shared volume.)
+  - **Is it a defect?** Yes, but **latent** — please read the reachability note before prioritising. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and Bug/Regression #2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state — and that is not hypothetical:
+    the seed already carries 9 detail rows with a NULL volume on the sibling guarded fields, so nulls of
+    this class are demonstrably present in real extracted data.
   - **Priority / env:** p2 today, but **must ship with the fix for #2** · local seeded delivery DB.
   - **Status:** OPEN. Found 2026-08-07.
   - **Test:** none — deliberately not automated. Producing the state needs direct DB manipulation, so an E2E red here would assert a state no user can reach; it is covered instead by the note above and by `scripts/sch1_db_restore.py first-entry`, which documents and works around it. `not-applicable (E2E)` in coverage.md.
