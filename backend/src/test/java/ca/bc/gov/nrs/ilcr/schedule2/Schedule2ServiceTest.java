@@ -163,6 +163,31 @@ class Schedule2ServiceTest {
   }
 
   @Test
+  void totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal() {
+    // The no-FMA logging subtotal Schedule 2 consumes is Schedule 1's subtotalCompanyLoggingCost
+    // (which INCLUDES Forest Management Admin) MINUS forestMgmtAdminCost. The stubFullDraft fixture
+    // uses FMA=0, so the subtraction is a no-op there. Here FMA is non-zero: a regression that fed the
+    // raw subtotal into the total would inflate it by exactly the FMA (823450 instead of 740700).
+    when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.of(new SummaryRow(1002, "c", 0)));
+    lenient().when(repository.findDetails(1002)).thenReturn(List.of(
+        new DetailRow(25, null, 500000),
+        new DetailRow(26, new BigDecimal("2000"), 100000)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+        .thenReturn(sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000));
+    // subtotalWithFma 700000, FMA 82750 -> no-FMA subtotal 617250 (same downstream total as the FMA=0
+    // fixture, isolating the subtraction as the only thing under test).
+    Schedule1Response sch1 = sch1Doc(700000L, 82750L);
+    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false)).thenReturn(sch1);
+    lenient().when(repository.findSch1SilvActualSpentCost(MILL, YEAR)).thenReturn(Optional.of(20000));
+    lenient().when(repository.findSch1SilvAccruedSpentCost(MILL, YEAR)).thenReturn(Optional.of(8450));
+
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    // 617250 (700000 − 82750) + 100000 crown + ((20000 − 5000) + 8450) = 740700, NOT 823450.
+    assertEquals(740700, doc.totalCompanyLogging().cost());
+  }
+
+  @Test
   void absentSchedule3_dependentFiguresNull() {
     // Sch2 present, but Schedule 3 absent (404) and no Sch1 144 -> carried/derived dependents null.
     stubNoCrossSchedule("D", Optional.of(new SummaryRow(1028, "c", 3)),

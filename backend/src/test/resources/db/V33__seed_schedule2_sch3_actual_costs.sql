@@ -9,15 +9,18 @@
 --
 -- Summary 1203 = 621/2021 category-'3' (CROWN_VOLUME 12345; item 118 PO&P timber volume 10000, in V10).
 -- Actual-cost lines:
---   item 27  (Licenses, Fees, Insurance) Harvest 115000, PO&P peer item 125 = 20000  -> crown 95000
+--   item 27  (Licenses, Fees, Insurance) Harvest 115000, PO&P peer item 125 = 21000  -> crown 94000
 --   item 37  (Silviculture Admin, Harvest-only, PO&P forced 0) Harvest 5000          -> crown 5000
--- => Subtotal Actual Costs: PO&P 20000, Crown 100000.  Silviculture Admin crown = 5000.
+-- => Subtotal Actual Costs: PO&P 21000, Crown 99000.  Silviculture Admin crown = 5000.
+-- NB: item 125 = 21000 (NOT the inert V10 "item 135" stored 20000) and item 12 = 620000 (NOT the inert
+-- V10 item-144 stored 617250) ON PURPOSE — the two must differ so the IT proves the service reads the
+-- COMPUTED Schedule 3 / Schedule 1 documents, not the old stored rows (equal values are value-blind).
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL
     (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
   VALUES (9500, 1203, 27, NULL, 115000, NULL, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL
     (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
-  VALUES (9501, 1203, 125, NULL, 20000, NULL, 'SEED');
+  VALUES (9501, 1203, 125, NULL, 21000, NULL, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL
     (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
   VALUES (9502, 1203, 37, NULL, 5000, NULL, 'SEED');
@@ -29,11 +32,11 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL
 
 -- Schedule 1 category-'1' summary 1201: Subtotal Company Logging is now Schedule 1's COMPUTED value
 -- (Schedule1Service sums logging items 12-18, + FMA + Other Costs; Schedule 2 uses it minus FMA), NOT
--- the stored item 144. Seed one logging line (item 12) = 617250 so the no-FMA subtotal is 617250 (no
+-- the stored item 144. Seed one logging line (item 12) = 620000 so the no-FMA subtotal is 620000 (no
 -- FMA / Other Costs seeded for 621). The old item-144 row (V10) is now display-only.
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL
     (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
-  VALUES (9505, 1201, 12, NULL, 617250, NULL, 'SEED');
+  VALUES (9505, 1201, 12, NULL, 620000, NULL, 'SEED');
 
 -- The two silviculture $ terms of getTotalLoggingCost (both need NULL ITEM_DESCRIPTION — the
 -- fixed-line rows). item 1 = Actual $ Spent, item 2 = Accrued less Actual.
