@@ -332,6 +332,33 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(captured!.comments).toBeNull()
   })
 
+  test('inline edit prints no per-cell field labels, but every control keeps its name', async () => {
+    // The column headers already name these fields; a visible per-cell label printed "Edit
+    // Enhanced" / "Edit Biogeo/Subzone/Variant" as stray text above the controls in every row.
+    // Hiding them must not cost the controls their accessible names.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const editRow = (screen.getByLabelText('Edit Location').closest('tr') ?? null) as HTMLElement
+
+    // Dropdown keeps the label element but visually hides it (Carbon's hideLabel).
+    expect(within(editRow).getByText('Edit Enhanced')).toHaveClass('cds--visually-hidden')
+    // ComboBox has no hideLabel, so the visible label is dropped entirely.
+    expect(within(editRow).queryByText('Edit Biogeo/Subzone/Variant')).not.toBeInTheDocument()
+
+    // Both remain reachable by name — this is what would break if the labels were display:none'd
+    // or the aria-label fallback were dropped.
+    expect(within(editRow).getByRole('combobox', { name: 'Edit Enhanced' })).toBeInTheDocument()
+    expect(
+      within(editRow).getByRole('combobox', { name: 'Edit Biogeo/Subzone/Variant' }),
+    ).toBeInTheDocument()
+
+    // The Add panel below still shows its labels — hideLabel is row-scoped, not global.
+    expect(screen.getByText('Enhanced')).not.toHaveClass('cds--visually-hidden')
+  })
+
   test('an invalid inline edit blocks the PUT with the advisory error (AC5)', async () => {
     const put = vi.fn()
     server.use(
@@ -774,5 +801,186 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     expect(screen.queryByText('North Ridge')).not.toBeInTheDocument()
     expect(screen.getByText('South Valley')).toBeInTheDocument()
+  })
+})
+
+describe('Schedule 11 column sorting (legacy p:column sortBy parity)', () => {
+  // netArea 9 vs 60 vs 120.5 catches a lexicographic sort ("120.5" < "60" < "9" as strings).
+  // Alder Flat's null actualCost pins down where blank cells rank.
+  const midSlope: SilvicultureLocation = {
+    locationId: 9002,
+    location: 'Mid Slope',
+    enhancedIndicator: true,
+    biogeoclimaticCatalogueId: 322,
+    becLabel: 'MSdm2',
+    netArea: 60,
+    actualCost: 5000,
+    plannedCost: 1000,
+    totalCost: 6000,
+    costPerNetArea: 100,
+    comments: 'second',
+    revisionCount: 1,
+  }
+
+  const alderFlat: SilvicultureLocation = {
+    locationId: 9003,
+    location: 'Alder Flat',
+    enhancedIndicator: false,
+    biogeoclimaticCatalogueId: 323,
+    becLabel: 'CWHxm1',
+    netArea: 9,
+    actualCost: null,
+    plannedCost: 2000,
+    totalCost: 2000,
+    costPerNetArea: 222.22,
+    comments: 'third',
+    revisionCount: 1,
+  }
+
+  // Document order as the API returned it, which the third click must restore.
+  const threeRows = [northRidge, midSlope, alderFlat]
+  const DOC_ORDER = ['North Ridge', 'Mid Slope', 'Alder Flat', 'Totals']
+
+  const renderSorted = async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ locations: threeRows }))))
+    render(<Schedule11 />)
+    await screen.findByText('North Ridge')
+    return userEvent.setup()
+  }
+
+  // First cell of every body row, so assertions read as the visible order. The Totals row is part
+  // of the same tbody, which is exactly why it appears in these expectations — it must stay last.
+  const rowLabels = () => {
+    const [, body] = screen.getAllByRole('rowgroup')
+    return within(body)
+      .getAllByRole('row')
+      .map((row) => (row as HTMLTableRowElement).cells[0].textContent)
+  }
+
+  // Resolved via the label element, not getByRole('columnheader', { name }): Carbon renders its
+  // screen-reader sort hint INSIDE the th, so the header's accessible name is really
+  // "Click to sort rows by Location header in ascending order Location" — and it changes as the
+  // sort state changes. The label div is stable and present in both the sortable and plain
+  // branches of TableHeader. Scoping by selector also avoids colliding with the identically
+  // named Add-panel field labels.
+  const header = (name: string) =>
+    screen.getByText(name, { selector: '.cds--table-header-label' }).closest('th') as HTMLElement
+
+  test('every column carries a sort control except Comments and Actions (xhtml:353/364)', async () => {
+    await renderSorted()
+
+    for (const name of [
+      'Location',
+      'Biogeo/Subzone/Variant',
+      'ES',
+      'NAR(ha)',
+      'Actual Cost ($)',
+      'Planned Cost ($)',
+      'Total Act Plus Plan Cost ($)',
+      'Total/NAR(ha)',
+    ]) {
+      expect(within(header(name)).getByRole('button')).toBeInTheDocument()
+    }
+    // The two legacy columns with no sortBy stay inert.
+    expect(within(header('Comments')).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(header('Actions')).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  test('a text column cycles ascending -> descending -> document order', async () => {
+    const user = await renderSorted()
+    expect(rowLabels()).toEqual(DOC_ORDER)
+
+    await user.click(within(header('Location')).getByRole('button'))
+    expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
+    expect(header('Location')).toHaveAttribute('aria-sort', 'ascending')
+
+    await user.click(within(header('Location')).getByRole('button'))
+    expect(rowLabels()).toEqual(['North Ridge', 'Mid Slope', 'Alder Flat', 'Totals'])
+    expect(header('Location')).toHaveAttribute('aria-sort', 'descending')
+
+    // Third click releases the sort — back to the order the API sent.
+    await user.click(within(header('Location')).getByRole('button'))
+    expect(rowLabels()).toEqual(DOC_ORDER)
+    expect(header('Location')).toHaveAttribute('aria-sort', 'none')
+  })
+
+  test('numeric columns sort by value, not lexicographically', async () => {
+    const user = await renderSorted()
+
+    await user.click(within(header('NAR(ha)')).getByRole('button'))
+    // Lexicographic would give 120.5 < 60 < 9.
+    expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
+
+    await user.click(within(header('NAR(ha)')).getByRole('button'))
+    expect(rowLabels()).toEqual(['North Ridge', 'Mid Slope', 'Alder Flat', 'Totals'])
+  })
+
+  test('blank cells rank last in BOTH directions, never above real values', async () => {
+    const user = await renderSorted()
+
+    // Alder Flat has no actual cost: 5,000 then 25,000 then the blank.
+    await user.click(within(header('Actual Cost ($)')).getByRole('button'))
+    expect(rowLabels()).toEqual(['Mid Slope', 'North Ridge', 'Alder Flat', 'Totals'])
+
+    // Descending flips the two real values but must NOT lift the blank to the top.
+    await user.click(within(header('Actual Cost ($)')).getByRole('button'))
+    expect(rowLabels()).toEqual(['North Ridge', 'Mid Slope', 'Alder Flat', 'Totals'])
+  })
+
+  test('booleans sort false-before-true (legacy sorted the raw indicator, xhtml:255)', async () => {
+    const user = await renderSorted()
+
+    await user.click(within(header('ES')).getByRole('button'))
+    // North Ridge (No) and Alder Flat (No) precede Mid Slope (Yes).
+    expect(rowLabels().slice(0, 2).sort()).toEqual(['Alder Flat', 'North Ridge'])
+    expect(rowLabels()[2]).toBe('Mid Slope')
+  })
+
+  test('sorting one column resets any other column to unsorted', async () => {
+    const user = await renderSorted()
+
+    await user.click(within(header('Location')).getByRole('button'))
+    await user.click(within(header('Location')).getByRole('button'))
+    expect(header('Location')).toHaveAttribute('aria-sort', 'descending')
+
+    // Switching columns starts fresh at ascending rather than inheriting 'descending'.
+    await user.click(within(header('NAR(ha)')).getByRole('button'))
+    expect(header('NAR(ha)')).toHaveAttribute('aria-sort', 'ascending')
+    expect(header('Location')).toHaveAttribute('aria-sort', 'none')
+    expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
+  })
+
+  test('sorting survives a save so the edited row does not jump back (AC3 interaction)', async () => {
+    // The sort is presentation-only and deliberately outlives a mutation (index.tsx: a re-sort
+    // after every add/edit would yank the row the user is working on back to document order).
+    // The sort stays ACTIVE across the PUT here — releasing it first would test nothing.
+    const user = await renderSorted()
+    server.use(
+      http.put(`${LOCATIONS_URL}/9003`, () =>
+        HttpResponse.json(
+          doc({
+            locations: [northRidge, midSlope, { ...alderFlat, location: 'Zulu Flat' }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+
+    await user.click(within(header('Location')).getByRole('button'))
+    expect(rowLabels()).toEqual(['Alder Flat', 'Mid Slope', 'North Ridge', 'Totals'])
+
+    // Rename the FIRST row to a name that sorts LAST, so the two failure modes separate: if the
+    // save dropped the sort the refreshed rows come back in document order (North Ridge, Mid
+    // Slope, Zulu Flat); if it kept a stale pre-save ordering Zulu Flat stays first.
+    const alderRow = screen.getByText('Alder Flat').closest('tr') as HTMLElement
+    await user.click(within(alderRow).getByRole('button', { name: /^edit$/i }))
+    const location = screen.getByLabelText('Edit Location')
+    await user.clear(location)
+    await user.type(location, 'Zulu Flat')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(rowLabels()).toEqual(['Mid Slope', 'North Ridge', 'Zulu Flat', 'Totals'])
+    expect(header('Location')).toHaveAttribute('aria-sort', 'ascending')
   })
 })
