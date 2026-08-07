@@ -28,10 +28,18 @@ public interface Schedule5Api {
   /**
    * Get the Schedule 5 camp-and-access-expenses document for a mill and reporting year.
    *
-   * <p>Guards (UC-SCH5-001, verbatim legacy text resolved from the message bundle):
-   * missing/blank/non-numeric params → 400 ERR-003; mill not {@code ACT} for the year → 409
-   * ERR-004; no {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-005; no {@code VIEW_SCHEDULE} → 403.
-   * A mill/year with zero camps is a valid 200 with {@code camps: []}, never a 404.
+   * <p>Guards (verbatim legacy text resolved from the message bundle): missing/blank/non-numeric
+   * params → 400 UC-SCH5-001 ERR-003; mill not {@code ACT} for the year → 409 UC-SCH5-001 ERR-004;
+   * no {@code ILCR_MILL_REPORT_STATUS} row → 404 UC-SCH5-001 ERR-005; no {@code VIEW_SCHEDULE} →
+   * 403. A mill/year with zero camps is a valid 200 with {@code camps: []}, never a 404.
+   *
+   * <p><strong>The ERR-00n numbers are per use case, so always cite the UC with them.</strong>
+   * These three outcomes come from the shared {@code MillContextService}, whose own javadoc numbers
+   * the same three exceptions ERR-001/002/003 — its numbering follows a different UC. An
+   * unqualified "ERR-003" is therefore ambiguous between "select a mill" and "schedule not found"
+   * depending on which file the reader has open; the UC prefix is what disambiguates a support
+   * ticket. Schedule 1 numbers them differently again
+   * ({@code uc-slice-epic-parity-audit:102}).
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)

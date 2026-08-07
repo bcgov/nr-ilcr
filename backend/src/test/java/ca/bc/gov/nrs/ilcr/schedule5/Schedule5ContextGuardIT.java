@@ -24,8 +24,13 @@ import org.springframework.test.context.TestPropertySource;
  * {@code CAMP_REPORT} rows returns 200 with {@code camps: []} (deviation (a); mill 515 covers it in
  * {@link Schedule5DocumentIT}). The 404 is reserved for a missing mill/year context row.
  *
- * <p>⚠ The UC message IDs differ from Schedule 1's: here {@code Schedule not found.} is ERR-005 and
- * ERR-003 is the no-context message, the reverse of SCH1 (uc-slice-epic-parity-audit:102).
+ * <p>⚠ <strong>ERR-00n numbers are per use case — always cite the UC alongside them.</strong> The
+ * three constants below are UC-SCH5-001's numbering. Schedule 1 numbers the same outcomes
+ * differently ({@code Schedule not found.} is ERR-005 here, the reverse of SCH1 —
+ * {@code uc-slice-epic-parity-audit:102}), and the shared {@code MillContextService} that actually
+ * throws these three exceptions numbers them ERR-001/002/003 in its own javadoc. All three
+ * numberings are correct within their own document, so an unqualified "ERR-003" in a support
+ * ticket is ambiguous between "select a mill" and "schedule not found".
  */
 @DisplayName("GET /api/v1/schedule5 — mill/year context guards")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -36,10 +41,13 @@ class Schedule5ContextGuardIT extends AbstractOracleIT {
   private static final String SEEDED_MILL = "514";
   private static final String SEEDED_YEAR = "2021";
 
-  // ERR-003 — the trailing space is real (messages.properties millYearNotSelectedErrorMsg:9).
+  // UC-SCH5-001 ERR-003 — the trailing space is real (messages.properties
+  // millYearNotSelectedErrorMsg:9). Thrown by MillContextService, which calls it ERR-001.
   private static final String ERR_003 = "Please Select Mill and Reporting Year in the Home Page. ";
+  // UC-SCH5-001 ERR-004 (MillContextService: ERR-002).
   private static final String ERR_004 = "This Mill is not active for the current Reporting Year. "
       + "Please select another mill from the Home Page.";
+  // UC-SCH5-001 ERR-005 (MillContextService: ERR-003).
   private static final String ERR_005 = "Schedule not found.";
 
   @Test

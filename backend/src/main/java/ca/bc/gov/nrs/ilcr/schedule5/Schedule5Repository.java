@@ -27,14 +27,27 @@ import org.springframework.data.repository.query.Param;
  */
 public interface Schedule5Repository extends Repository<CampReportEntity, Integer> {
 
-  /** One Schedule 5 camp (a {@code CAMP_REPORT} row); indicator stays raw {@code Y}/{@code N}. */
+  /**
+   * One Schedule 5 camp (a {@code CAMP_REPORT} row); indicator stays raw {@code Y}/{@code N}.
+   *
+   * <p>{@code campId} and {@code revisionCount} are primitives because both columns are
+   * {@code NOT NULL}; the nullable descriptors stay boxed.
+   */
   record CampRow(int campId, String campName, BigDecimal distanceToOperatingArea,
       Integer sizeOfCamp, BigDecimal associatedCampVolume, String isolatedCampInd, String comments,
-      Integer revisionCount) {
+      int revisionCount) {
   }
 
-  /** One keyed category-amount row; {@code costItemId} decides which category it feeds. */
-  record DetailRow(int detailId, int campId, int costItemId, BigDecimal volume, Integer cost) {
+  /**
+   * One keyed category-amount row; {@code costItemId} decides which category it feeds.
+   *
+   * <p>{@code costItemId} is boxed even though delivery declares the column {@code NOT NULL} (Task
+   * 1 gate (iii)): the V1 snapshot does not, and an unboxing conversion here would turn the one
+   * unrecognized item id the service cannot name into an NPE that 500s the entire document —
+   * defeating the log-and-drop path {@link Schedule5Service} exists to provide. A null id is
+   * dropped by the same branch that drops item 57.
+   */
+  record DetailRow(int detailId, int campId, Integer costItemId, BigDecimal volume, Integer cost) {
   }
 
   // ---------------------------------------------------------------------------------------------

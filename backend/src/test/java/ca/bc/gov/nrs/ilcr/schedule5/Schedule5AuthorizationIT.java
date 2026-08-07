@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -66,22 +68,28 @@ class Schedule5AuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_SUBMITTER group -> passes authz (not 403)")
+  @DisplayName("ILCR_SUBMITTER group -> passes authz and gets editable:true on the Draft context")
   void submitter_passesAuthorization() throws Exception {
     mockMvc.perform(get(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
-        .andExpect(status().is2xxSuccessful());
+        .andExpect(status().is2xxSuccessful())
+        // Asserting the flag, not just the status, is what proves the controller's EDIT_SCHEDULE
+        // lookup reaches the response through the real security chain. It cannot prove the FALSE
+        // branch — both shipped roles hold EDIT_SCHEDULE, so no JWT can produce a view-only
+        // caller; Schedule5ControllerTest mocks the collaborator to cover that half.
+        .andExpect(jsonPath("$.editable", is(true)));
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN group -> passes authz (not 403)")
+  @DisplayName("ILCR_ADMIN group -> passes authz and gets editable:true on the Draft context")
   void admin_passesAuthorization() throws Exception {
     mockMvc.perform(get(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
-        .andExpect(status().is2xxSuccessful());
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.editable", is(true)));
   }
 }

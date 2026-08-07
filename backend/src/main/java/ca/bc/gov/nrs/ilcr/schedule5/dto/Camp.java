@@ -23,6 +23,10 @@ import java.math.BigDecimal;
  * <p>{@code revisionCount} is this camp's own optimistic-lock token. Schedule 5 has no
  * category-{@code '5'} {@code ILCR_REPORT_SUMMARY} row (delivery-confirmed, Story 7.1 Task 1 gate
  * (ii)), so there is no schedule-level revision — the AR11 keying delta, recorded as deviation (b).
+ * It is a primitive {@code int} for the same reason {@code campId} is: {@code REVISION_COUNT} is
+ * {@code NOT NULL} in delivery and in the snapshot. Boxing it would let {@code NON_NULL} drop the
+ * token from the JSON silently, and 7.2's write path needs it present — a client that sent a write
+ * with no token would get no signal that one was expected.
  *
  * <p>{@code isolatedCamp} is the {@code Y}/{@code N} indicator as a Boolean. It is nullable only
  * defensively (deviation (e)): the delivery column is {@code NOT NULL DEFAULT 'N'}, so no stored
@@ -33,7 +37,7 @@ import java.math.BigDecimal;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Camp(
     int campId,
-    Integer revisionCount,
+    int revisionCount,
     String campName,
     BigDecimal roadDistanceToOperatingArea,
     Integer sizeOfCamp,

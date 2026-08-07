@@ -102,8 +102,15 @@ public class Schedule5Service {
       long millId, int year, String trackStatus, boolean callerMayEdit) {
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
+    // Camps FIRST, then their details. The two reads are separate statements and Oracle READ
+    // COMMITTED gives each its own snapshot, so a camp committed between them is visible to one
+    // and not the other. In this order the newcomer is simply not in the camp list yet — a
+    // consistent older view. Reversed, it would appear in the list with no details found and be
+    // served with every category empty and every total absent, indistinguishable from a genuine
+    // zero-detail camp: wrong money, silently. 7.2's write path makes that reachable in normal use.
+    List<CampRow> campRows = repository.findCamps(millId, year);
     Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
-    List<Camp> camps = repository.findCamps(millId, year).stream()
+    List<Camp> camps = campRows.stream()
         .map(row -> toCamp(millId, year, row,
             detailsByCamp.getOrDefault(row.campId(), CampDetails.empty())))
         .toList();
@@ -130,9 +137,16 @@ public class Schedule5Service {
 
     for (DetailRow row : repository.findCostDetails(millId, year)) {
       CampDetails camp = byCamp.computeIfAbsent(row.campId(), id -> CampDetails.empty());
-      int itemId = row.costItemId();
+      Integer itemId = row.costItemId();
 
-      if (itemId == ITEM_OTHER_CAMP_EXPENSE_ROW) {
+      if (itemId == null) {
+        // Delivery declares the column NOT NULL (Task 1 gate (iii)) so this is unreachable there,
+        // but the V1 snapshot does not, and an unrecognized id must degrade rather than crash.
+        log.warn(
+            "Schedule 5 mill {} year {} camp {} has a NULL cost item id (detail id {}); row"
+                + " dropped",
+            millId, year, row.campId(), row.detailId());
+      } else if (itemId == ITEM_OTHER_CAMP_EXPENSE_ROW) {
         camp.otherCampRows().add(row);
       } else if (itemId == ITEM_OTHER_ACCESS_EXPENSE_ROW) {
         camp.otherAccessRows().add(row);
