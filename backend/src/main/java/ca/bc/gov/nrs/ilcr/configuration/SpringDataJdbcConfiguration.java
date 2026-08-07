@@ -7,6 +7,7 @@ import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository;
+import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Repository;
@@ -38,6 +39,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule2Repository.class,
       Schedule3Repository.class,
       Schedule4Repository.class,
+      Schedule5Repository.class,
       Schedule6Repository.class,
       Schedule7aRepository.class,
       Schedule8Repository.class,
