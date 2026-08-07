@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,8 +104,12 @@ public class Schedule5Service {
   private static final int ITEM_OTHER_CAMP_EXPENSES_VOLUME = 141;
   private static final int ITEM_OTHER_ACCESS_EXPENSES_VOLUME = 142;
 
-  /** The single-row items: at most one row per camp, so a second is a duplicate (deviation (f)). */
-  private static final Set<Integer> SINGLE_ROW_ITEMS = Set.of(
+  /**
+   * The single-row items: at most one row per camp, so a second is a duplicate (deviation (f)).
+   * Package-private so the tests can tie BOTH consumers — the read routing (7.1's review patch) and
+   * {@link #writeCategoryRows}'s twelve-item write map — to this one set.
+   */
+  static final Set<Integer> SINGLE_ROW_ITEMS = Set.of(
       ITEM_CATERING_AND_FOOD, ITEM_WAGES_AND_BENEFITS, ITEM_DEPRECIATION_LEASE,
       ITEM_GENERAL_CAMP_EXPENSES, ITEM_RECOVERIES, ITEM_CREW_TRANSPORTATION, ITEM_EQUIP_LAND,
       ITEM_EQUIP_RAIL, ITEM_EQUIP_AIR, ITEM_EQUIP_WATER, ITEM_OTHER_CAMP_EXPENSES_VOLUME,
@@ -532,7 +537,9 @@ public class Schedule5Service {
     // BR-02 as a PRE-CHECK, not a caught constraint violation: nothing in delivery enforces
     // camp-name uniqueness (Task 1 gates (i)/(vi) — CAMP_REPORT has only its PK, the category FK
     // and eleven NOT NULL checks), so a duplicate would simply persist if this were left to the
-    // database.
+    // database. That also means the check races: two concurrent creates of the same name can both
+    // count zero and both commit. Accepted residual risk (deviation (I) note) — legacy's in-memory
+    // equalsIgnoreCase had the identical window and no backstop is possible without new DDL.
     if (repository.countCampsNamed(millId, year, campName) > 0) {
       throw new CampNameConflictException();
     }
@@ -548,8 +555,12 @@ public class Schedule5Service {
       // parent.
       writeCategoryRows(campId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      // Class name plus most-specific cause, the Schedule 2 idiom (Schedule2Service.java:143-144):
+      // an ORA code and its message carry no cost or volume values (AD-11), and without them a
+      // production save failure is undiagnosable.
+      log.warn("Schedule 5 add failed for mill {} year {} [{}]: {}",
+          millId, year, ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -591,6 +602,14 @@ public class Schedule5Service {
     // !isCampSaved, set true at :296), so a rename-then-save bypassed BR-02 outright; that is a
     // defect, not ported (deviation (I)).
     if (repository.countCampsNamedExcluding(millId, year, campName, campId) > 0) {
+      // The 404 contract outranks the 409: for an absent or foreign id the exclusion excludes
+      // nothing, so a colliding name would otherwise answer "Camp name already exists." about a
+      // camp the caller cannot even see — leaking name existence across the tenancy boundary the
+      // scoped probe exists to hold (deviation (M)). Probed only on the conflict path, so a clean
+      // save costs no extra query.
+      if (repository.countCamp(campId, millId, year) == 0) {
+        throw new CampNotFoundException();
+      }
       throw new CampNameConflictException();
     }
     try {
@@ -608,8 +627,9 @@ public class Schedule5Service {
       }
       writeCategoryRows(campId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 update failed for mill {} year {} camp {} [{}]",
-          millId, year, campId, ex.getClass().getSimpleName());
+      log.warn("Schedule 5 update failed for mill {} year {} camp {} [{}]: {}",
+          millId, year, campId, ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -642,7 +662,7 @@ public class Schedule5Service {
       if (repository.countCamp(campId, millId, year) == 0) {
         throw new CampNotFoundException();
       }
-      repository.deleteCostDetailsForCamp(campId);
+      repository.deleteCostDetailsForCamp(campId, millId, year);
       if (repository.deleteCamp(campId, millId, year) == 0) {
         // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
         // the count rather than assuming success is the 8.2 lesson: a void delete reported "Data
@@ -650,8 +670,9 @@ public class Schedule5Service {
         throw new CampNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 5 delete failed for mill {} year {} camp {} [{}]",
-          millId, year, campId, ex.getClass().getSimpleName());
+      log.warn("Schedule 5 delete failed for mill {} year {} camp {} [{}]: {}",
+          millId, year, campId, ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);

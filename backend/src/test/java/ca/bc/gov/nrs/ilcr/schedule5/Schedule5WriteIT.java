@@ -354,9 +354,14 @@ class Schedule5WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("the master REVISION_COUNT increments by exactly one and ENTRY_* is preserved")
   void updateCamp_bumpsMasterRevisionOnly() throws Exception {
+    // Backdated FIRST so the restamp is observable: the column holds second-granularity values and
+    // a sibling test may have PUT this camp within the same second, which would make a "moved"
+    // assertion against the live value flaky in exactly the way it is meant to be deterministic.
+    jdbc().update("UPDATE THE.CAMP_REPORT SET UPDATE_TIMESTAMP = TIMESTAMP '2000-01-01 00:00:00' "
+        + "WHERE CAMP_REPORT_ID = 8201");
     Map<String, Object> before = jdbc().queryForMap(
-        "SELECT REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP FROM THE.CAMP_REPORT "
-            + "WHERE CAMP_REPORT_ID = 8201");
+        "SELECT REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP "
+            + "FROM THE.CAMP_REPORT WHERE CAMP_REPORT_ID = 8201");
     int revision = currentRevision(2017, 8201);
 
     mockMvc.perform(put(CAMPS + "/8201").with(csrf()).param("millId", "670").param("year", "2017")
@@ -371,8 +376,15 @@ class Schedule5WriteIT extends AbstractOracleIT {
         ((Number) after.get("REVISION_COUNT")).intValue());
     assertEquals(before.get("ENTRY_USERID"), after.get("ENTRY_USERID"));
     assertEquals(before.get("ENTRY_TIMESTAMP"), after.get("ENTRY_TIMESTAMP"));
+    // RESTAMPED, not merely non-null: the seed populates 'SEED'/SYSDATE, so a repository that
+    // dropped UPDATE_USERID = :user / UPDATE_TIMESTAMP = SYSTIMESTAMP would pass a null check on
+    // the stale seed values (the review's regression gap — the detail-side test already asserts
+    // equality with the acting user).
     assertNotNull(after.get("UPDATE_USERID"));
-    assertNotNull(after.get("UPDATE_TIMESTAMP"));
+    assertNotEquals("SEED", after.get("UPDATE_USERID"),
+        "UPDATE_USERID must be restamped with the acting user, not left at the seed value");
+    assertNotEquals(before.get("UPDATE_TIMESTAMP"), after.get("UPDATE_TIMESTAMP"),
+        "UPDATE_TIMESTAMP must move on an edit");
   }
 
   @Test
@@ -488,6 +500,33 @@ class Schedule5WriteIT extends AbstractOracleIT {
     mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON).content(body("Duplicate Name Camp", null)))
         .andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("S13: a RENAME onto another camp's name -> 409 verbatim, and the rename is not stored")
+  void renameOntoAnotherCampsName_conflicts() throws Exception {
+    // Both camps are created HERE, in the add year, so this test owns its fixtures and no other
+    // test's expectations depend on them. This is the branch legacy disarmed after a new camp's
+    // first save (deviation (I)) — the edit-path conflict, not the create-path one.
+    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2019")
+            .contentType(MediaType.APPLICATION_JSON).content(body("Rename Source Camp", null)))
+        .andExpect(status().isOk());
+    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2019")
+            .contentType(MediaType.APPLICATION_JSON).content(body("Rename Incumbent Camp", null)))
+        .andExpect(status().isOk());
+    int sourceId = campIdByName(2019, "Rename Source Camp");
+    int revision = currentRevision(2019, sourceId);
+
+    // Case-varied on purpose: the edit path must be as case-insensitive as the create path.
+    mockMvc.perform(put(CAMPS + "/" + sourceId).with(csrf())
+            .param("millId", "670").param("year", "2019")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body("RENAME INCUMBENT CAMP", revision)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail", is("Camp name already exists.")));
+
+    // A fresh GET, not the echo: the source camp still carries its own name.
+    assertEquals(sourceId, campIdByName(2019, "Rename Source Camp"));
   }
 
   @Test
@@ -680,13 +719,32 @@ class Schedule5WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("an UNKNOWN camp id -> 404, not 409")
   void unknownCamp_404() throws Exception {
-    mockMvc.perform(put(CAMPS + "/9999").with(csrf()).param("millId", "670").param("year", "2024")
+    // 7999 sits BELOW the 8200 fixture block, so it is categorically unknown. An id at or above the
+    // sequence start (ILCR_REPORT_COMMON_SEQ begins at 9500) could eventually be MINTED by the
+    // create tests on a long-lived container, turning this probe into a mutation of live state.
+    mockMvc.perform(put(CAMPS + "/7999").with(csrf()).param("millId", "670").param("year", "2024")
             .contentType(MediaType.APPLICATION_JSON).content(body("Nowhere Camp", 0)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail", is("Camp not found.")));
-    mockMvc.perform(delete(CAMPS + "/9999").with(csrf())
+    mockMvc.perform(delete(CAMPS + "/7999").with(csrf())
             .param("millId", "670").param("year", "2024"))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("an unknown id whose SUBMITTED NAME collides is still the 404 — never a leaked 409")
+  void unknownCampWithConflictingName_404() throws Exception {
+    List<Map<String, Object>> before = fingerprint(2023);
+
+    // "Duplicate Name Camp" is held by camp 8206 in 670/2023. Running the name-conflict check
+    // before the existence probe would answer 409 "Camp name already exists." about a camp id the
+    // caller cannot see — contradicting the documented 404 and confirming the name exists.
+    mockMvc.perform(put(CAMPS + "/7999").with(csrf()).param("millId", "670").param("year", "2023")
+            .contentType(MediaType.APPLICATION_JSON).content(body("Duplicate Name Camp", 0)))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail", is("Camp not found.")));
+
+    assertEquals(before, fingerprint(2023), "the rejected write must not touch a single column");
   }
 
   @Test

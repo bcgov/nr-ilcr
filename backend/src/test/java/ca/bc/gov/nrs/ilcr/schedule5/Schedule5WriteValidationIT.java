@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -251,6 +252,51 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
             .contentType(MediaType.APPLICATION_JSON)
             .content(bodyWith("\"cateringAndFood\": { \"cost\": 1234.99 }")))
         .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("an out-of-range value in a category's EXCLUDED half is rejected, not ignored")
+  void outOfRangeExcludedHalfIsRejected() throws Exception {
+    // The pinned contract's "the excluded half is ignored" holds for IN-RANGE values (the write map
+    // hard-codes the null); Bean Validation still runs first, so an out-of-range excluded value is
+    // a 400. Recorded as a deliberate divergence from legacy's never-validated disabled inputs —
+    // review decision 2026-08-07: accepted and pinned rather than refactoring every declarative
+    // bound into programmatic checks for a value the server was going to discard.
+    expectRejected("\"recoveries\": { \"volume\": -1 }",
+        "Entered volume must be between 0 and 9,999,999.");
+    expectRejected("\"otherCampExpenses\": { \"cost\": 100000000 }",
+        "Entered cost must be between -99,999,999 and 99,999,999.");
+  }
+
+  // ---- the SAME declarative and programmatic bounds hold on PUT (the edit path) ------------------
+
+  @Test
+  @DisplayName("PUT enforces the Default-group bounds too — the groups are Default + OnUpdate")
+  void putEnforcesTheDefaultGroupBounds() throws Exception {
+    // Regressing @Validated({Default.class, OnUpdate.class}) to OnUpdate-only would silently drop
+    // every declarative bound from the edit path while missingRevisionCount_400 stayed green (the
+    // review's regression gap). Camp 8206 belongs to 670/2023; the rejection persists nothing, so
+    // the class fingerprint holds.
+    mockMvc.perform(put(CAMPS + "/8206").with(csrf()).param("millId", "670").param("year", "2023")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"campName\":\"" + "C".repeat(31)
+                + "\",\"isolatedCamp\":false,\"revisionCount\":0}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
+  }
+
+  @Test
+  @DisplayName("PUT enforces the two programmatic cost ranges too")
+  void putEnforcesTheProgrammaticRanges() throws Exception {
+    // validateCostRanges runs on updateCamp before the name check and the guarded UPDATE, so the
+    // stale revisionCount 0 never matters — the 400 wins.
+    mockMvc.perform(put(CAMPS + "/8206").with(csrf()).param("millId", "670").param("year", "2023")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
+                + "\"revisionCount\":0,\"recoveries\":{\"cost\":-1}}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is("Entered cost must be between 0 and 9,999,999.")));
   }
 
   @Test

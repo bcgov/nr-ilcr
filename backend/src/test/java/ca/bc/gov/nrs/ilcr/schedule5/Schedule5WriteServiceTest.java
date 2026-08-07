@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,8 +32,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 /**
@@ -58,7 +58,6 @@ import org.springframework.dao.DataAccessResourceFailureException;
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("Schedule5Service — the write branch matrices")
 class Schedule5WriteServiceTest {
 
@@ -75,11 +74,14 @@ class Schedule5WriteServiceTest {
   @BeforeEach
   void setUp() {
     service = new Schedule5Service(repository);
-    // Draft by default; the document rebuild at the end of every write reads an empty mill.
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
-    when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
-    when(repository.nextCampReportId()).thenReturn(9501);
+    // Draft by default; the document rebuild at the end of every write reads an empty mill. These
+    // four are lenient() INDIVIDUALLY — the rejection tests never reach the rebuild, so class-wide
+    // LENIENT would be the alternative, and that would also disable unnecessary-stubbing detection
+    // for every stub a test declares itself.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
+    lenient().when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
+    lenient().when(repository.nextCampReportId()).thenReturn(9501);
   }
 
   /** A full twelve-category request; {@code revisionCount} matters only on update. */
@@ -187,6 +189,23 @@ class Schedule5WriteServiceTest {
     }
 
     @Test
+    @DisplayName("the write map IS SINGLE_ROW_ITEMS — the read routing and the writes cannot drift")
+    void writeMapEqualsTheSingleRowItemSet() {
+      service.addCamp(MILL, YEAR, request("New Camp", null), true, USER);
+
+      ArgumentCaptor<Integer> items = ArgumentCaptor.forClass(Integer.class);
+      verify(repository, org.mockito.Mockito.times(12))
+          .upsertCostDetail(anyInt(), items.capture(), any(), any(), anyString());
+
+      // Tied to the CONSTANT, not to a duplicated literal: a cost item added to SINGLE_ROW_ITEMS
+      // but not to writeCategoryRows (or vice versa) would serve rows it never writes, or write
+      // rows it then drops as unknown on the read path. 7.1's everyKnownItemIsRouted ties the read
+      // half to the same set.
+      assertThat(new HashSet<>(items.getAllValues()))
+          .isEqualTo(Schedule5Service.SINGLE_ROW_ITEMS);
+    }
+
+    @Test
     @DisplayName("per-category volumes are stored VERBATIM — never re-derived from the camp volume "
         + "(deviation (A))")
     void categoryVolumesAreNotReDerived() {
@@ -264,6 +283,52 @@ class Schedule5WriteServiceTest {
       verify(repository).insertCamp(eq(9501), eq(MILL), eq(YEAR), eq("Padded Camp"), any(), any(),
           any(), anyString(), any(), eq(USER));
     }
+
+    @Test
+    @DisplayName("the name is trimmed on the UPDATE path too — deviation (I) is 'both paths'")
+    void nameIsTrimmedOnTheUpdatePathToo() {
+      when(repository.countCampsNamedExcluding(MILL, YEAR, "Padded Camp", CAMP)).thenReturn(0);
+      when(repository.updateCamp(eq(CAMP), eq(MILL), eq(YEAR), eq(0), anyString(), any(), any(),
+          any(), anyString(), any(), anyString())).thenReturn(1);
+
+      service.updateCamp(MILL, YEAR, CAMP, request("  Padded Camp  ", 0), true, USER);
+
+      // Deviation (I)'s whole point is BOTH paths: legacy compared the stored value UNTRIMMED on
+      // edit (:309), which is half of how " Cedar " and "Cedar" coexisted.
+      verify(repository).countCampsNamedExcluding(MILL, YEAR, "Padded Camp", CAMP);
+      verify(repository).updateCamp(eq(CAMP), eq(MILL), eq(YEAR), eq(0), eq("Padded Camp"), any(),
+          any(), any(), anyString(), any(), eq(USER));
+    }
+
+    @Test
+    @DisplayName("a rename onto ANOTHER camp's name rejects on the update path, before any write")
+    void updateRejectsARenameOntoAnotherCampsName() {
+      when(repository.countCampsNamedExcluding(MILL, YEAR, "Taken Name", CAMP)).thenReturn(1);
+      when(repository.countCamp(CAMP, MILL, YEAR)).thenReturn(1);
+
+      // The conflict BRANCH, not just the query call: updateExcludesItselfById above only proves
+      // the right query runs — this proves its result is acted on (the review's regression gap).
+      assertThatThrownBy(
+          () -> service.updateCamp(MILL, YEAR, CAMP, request("Taken Name", 0), true, USER))
+          .isInstanceOf(CampNameConflictException.class);
+
+      verify(repository, never()).updateCamp(anyInt(), anyLong(), anyInt(), anyInt(), anyString(),
+          any(), any(), any(), anyString(), any(), anyString());
+      verify(repository, never()).upsertCostDetail(anyInt(), anyInt(), any(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a name conflict on an UNKNOWN or foreign id is the 404, never a leaked 409")
+    void conflictOnAnUnknownIdIsNotFound() {
+      when(repository.countCampsNamedExcluding(MILL, YEAR, "Taken Name", CAMP)).thenReturn(1);
+      when(repository.countCamp(CAMP, MILL, YEAR)).thenReturn(0);
+
+      // A 409 "Camp name already exists." for an id the caller cannot see would both contradict
+      // the API's documented 404 and confirm the name exists across the tenancy boundary.
+      assertThatThrownBy(
+          () -> service.updateCamp(MILL, YEAR, CAMP, request("Taken Name", 0), true, USER))
+          .isInstanceOf(CampNotFoundException.class);
+    }
   }
 
   @Nested
@@ -338,7 +403,7 @@ class Schedule5WriteServiceTest {
       // raises ORA-02292 there. The LOCAL snapshot has no such FK, so this ordering assertion is the
       // only thing standing between the port and a production-only failure.
       InOrder order = inOrder(repository);
-      order.verify(repository).deleteCostDetailsForCamp(CAMP);
+      order.verify(repository).deleteCostDetailsForCamp(CAMP, MILL, YEAR);
       order.verify(repository).deleteCamp(CAMP, MILL, YEAR);
     }
 
@@ -350,7 +415,7 @@ class Schedule5WriteServiceTest {
       assertThatThrownBy(() -> service.deleteCamp(MILL, YEAR, CAMP, true))
           .isInstanceOf(CampNotFoundException.class);
 
-      verify(repository, never()).deleteCostDetailsForCamp(anyInt());
+      verify(repository, never()).deleteCostDetailsForCamp(anyInt(), anyLong(), anyInt());
       verify(repository, never()).deleteCamp(anyInt(), anyLong(), anyInt());
     }
 
@@ -413,6 +478,21 @@ class Schedule5WriteServiceTest {
 
       assertThatCode(() -> service.addCamp(MILL, YEAR, withCost(5, 0), true, USER))
           .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("the programmatic ranges apply on the UPDATE path too, before any write")
+    void rangesApplyOnUpdateToo() {
+      // Every other range test goes through addCamp; deleting validateCostRanges from updateCamp
+      // alone kept the whole suite green (the review's regression gap). The Bean Validation bounds
+      // are WIDER (±99,999,999), so they cannot catch what this rejects.
+      assertThatThrownBy(
+          () -> service.updateCamp(MILL, YEAR, CAMP, withCost(5, -1), true, USER))
+          .isInstanceOf(CampCostOutOfRangeException.class)
+          .hasMessage("costValidatorSchedule9ErrorMsg");
+
+      verify(repository, never()).updateCamp(anyInt(), anyLong(), anyInt(), anyInt(), anyString(),
+          any(), any(), any(), anyString(), any(), anyString());
     }
 
     @Test

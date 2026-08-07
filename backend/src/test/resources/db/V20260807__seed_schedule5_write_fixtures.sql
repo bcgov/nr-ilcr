@@ -48,8 +48,9 @@
 -- mutates nothing). The authorization IT gets its OWN mill (the 8.2/12.2 lesson).
 
 -- ================================================================================================
--- Mill 670 -- the write playground (Schedule5WriteIT). ACT + Draft 2017-2024, one destructive
+-- Mill 670 -- the write playground (Schedule5WriteIT). ACT + Draft 2016-2024, one destructive
 -- concern per year:
+--   2016  camp 8218 -> the CLEAR-target year (see its own block comment below)
 --   2017  camp 8201 WITH all twelve category rows  -> the detail upsert's UPDATE-IN-PLACE branch
 --   2018  camp 8202 with ZERO category rows        -> the upsert's INSERT branch ON AN EDIT. This is
 --                                                     the DELIVERY-REAL shape: all 61 real camps are

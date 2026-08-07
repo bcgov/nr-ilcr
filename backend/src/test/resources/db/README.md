@@ -43,7 +43,8 @@ two such branches merge:
    taking next time". Flyway orders `20260807` after `34`, so it still applies immediately after the
    `V34` snapshot it seeds into, and no future merge can force a renumber of it or of anyone else's.
    It seeds Schedule 5's reserved mills **`670–676`**, which `V34` reserved and left empty: `670`
-   write playground (Draft years 2017–2024, one destructive concern per year), `671` non-Draft `S` →
+   write playground (Draft years 2016–2024, one destructive concern per year — 2016 is the
+   cleared-value target added alongside 2017–2024), `671` non-Draft `S` →
    write-gate 409, `672` check-status all-met, `673` check-status issues/mixed, `674` zero camps →
    vacuously met, `675` neighbour (per-mill/year name scoping + the untouched-neighbour delete proof),
    `676` owned solely by the authorization IT. Its PK ranges are a **new block, `82xx`**, verified

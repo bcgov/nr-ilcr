@@ -338,6 +338,12 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * How many camps in this mill/year already hold this name, case-insensitively (BR-02, the CREATE
    * path). {@code UPPER(CAMP_NAME) = UPPER(:name)} is the case-insensitive comparison legacy did in
    * memory with {@code equalsIgnoreCase} ({@code Schedule5MB.java:313, 315}).
+   *
+   * <p>The STORED side is deliberately not {@code TRIM}med: legacy persisted names untrimmed
+   * ({@code Schedule5DAO.java:373}) and compared the raw stored value, so a legacy-persisted
+   * {@code " Cedar "} does not collide with a new {@code "Cedar"} there either. Matching that is
+   * legacy parity, not an oversight (deviation (I) note) — adding {@code TRIM(CAMP_NAME)} would
+   * retroactively 409 edits next to padded incumbents legacy accepted.
    */
   @Query("""
       SELECT COUNT(*)
@@ -384,14 +390,27 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * to cascade only because {@code CampReport.java:93} declares Hibernate's {@code CascadeType.ALL}
    * — there is no DDL cascade anywhere.
    *
+   * <p>Scoped by an {@code EXISTS} against the mill/year/category-{@code '5'} parent, like every
+   * other write here (the IDOR guard, deviation (M)): the service's prior probe makes the scope
+   * redundant at today's one call site, but a guard that holds only by call-order convention is
+   * exactly the hole the guarded UPDATE closes on the master row — this method must be safe in
+   * isolation too.
+   *
    * @return rows deleted — {@code 0} is normal, and is in fact the delivery-typical case
    */
   @Modifying
   @Query("""
-      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
-       WHERE CAMP_REPORT_ID = :campId
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL d
+       WHERE d.CAMP_REPORT_ID = :campId
+         AND EXISTS (SELECT 1
+                       FROM THE.CAMP_REPORT c
+                      WHERE c.CAMP_REPORT_ID = d.CAMP_REPORT_ID
+                        AND c.ILCR_MILL_ID = :millId
+                        AND c.REPORT_YEAR = :year
+                        AND c.ILCR_CATEGORY_ID = '5')
       """)
-  int deleteCostDetailsForCamp(@Param("campId") int campId);
+  int deleteCostDetailsForCamp(
+      @Param("campId") int campId, @Param("millId") long millId, @Param("year") int year);
 
   /**
    * Delete one camp, scoped to mill/year/category (the IDOR guard — deviation (M)). Call only after

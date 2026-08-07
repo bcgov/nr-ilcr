@@ -200,13 +200,20 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("countCampsNamed is case-insensitive and scoped to (mill, year, category '5')")
   void nameCountIsCaseInsensitiveAndScoped() {
+    // 670/2023 holds exactly one "Duplicate Name Camp" (8206) and every endpoint attempt to add
+    // another is a 409, so these three counts are order-safe against the committed suites.
     assertThat(repository.countCampsNamed(MILL, 2023, "Duplicate Name Camp")).isEqualTo(1);
     assertThat(repository.countCampsNamed(MILL, 2023, "duplicate name camp")).isEqualTo(1);
     assertThat(repository.countCampsNamed(MILL, 2023, "DUPLICATE NAME CAMP")).isEqualTo(1);
-    // Another year of the same mill, and another mill entirely, both see zero — the scope is
-    // (mill, year, category '5'), which is what makes S08 pass.
-    assertThat(repository.countCampsNamed(MILL, 2019, "Duplicate Name Camp")).isZero();
-    assertThat(repository.countCampsNamed(675L, 2023, "Duplicate Name Camp")).isZero();
+    // The SCOPE proof seeds its own name inside this rolled-back transaction. It must not probe
+    // "Duplicate Name Camp" in other contexts: Schedule5WriteIT.sameNameOtherMillYear_succeeds
+    // COMMITS that name into 675/2023 and 670/2019, so zero-count assertions there would hold or
+    // fail depending on class execution order (the review's collision finding).
+    repository.insertCamp(repository.nextCampReportId(), MILL, EDIT_YEAR, "Scope Probe Camp",
+        null, null, null, "N", null, USER);
+    assertThat(repository.countCampsNamed(MILL, EDIT_YEAR, "scope probe camp")).isEqualTo(1);
+    assertThat(repository.countCampsNamed(MILL, BARE_YEAR, "Scope Probe Camp")).isZero();
+    assertThat(repository.countCampsNamed(675L, EDIT_YEAR, "Scope Probe Camp")).isZero();
   }
 
   @Test
@@ -231,22 +238,32 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("delete removes children FIRST, then the parent — the order delivery's FK demands")
   void deleteRemovesChildrenThenParent() {
-    // Camp 8203 carries 12 fixed rows + one item-62 + one item-68.
-    assertThat(childCount(8203)).isEqualTo(14);
+    // The family is seeded HERE, inside this rolled-back transaction, rather than borrowing camp
+    // 8203 — Schedule5WriteIT.deleteCamp_removesTheWholeFamily COMMITS 8203's deletion, so a
+    // fixture-based version of this test passes or fails on class execution order alone (the
+    // review's collision finding). Sub-page items 62/68 are included: the family goes together.
+    int campId = repository.nextCampReportId();
+    repository.insertCamp(campId, MILL, BARE_YEAR, "Family Delete Camp", null, null, null, "N",
+        null, USER);
+    repository.insertCostDetail(repository.nextCostDetailId(), campId, 56, new BigDecimal("1"), 10,
+        USER);
+    repository.insertCostDetail(repository.nextCostDetailId(), campId, 62, null, 20, USER);
+    repository.insertCostDetail(repository.nextCostDetailId(), campId, 68, null, 30, USER);
+    assertThat(childCount(campId)).isEqualTo(3);
 
-    int children = repository.deleteCostDetailsForCamp(8203);
-    assertThat(children).isEqualTo(14);
+    int children = repository.deleteCostDetailsForCamp(campId, MILL, BARE_YEAR);
+    assertThat(children).isEqualTo(3);
     // The sub-page rows go too — the camp family goes together (AC5).
-    assertThat(childCount(8203)).isZero();
+    assertThat(childCount(campId)).isZero();
 
-    assertThat(repository.deleteCamp(8203, MILL, 2020)).isEqualTo(1);
+    assertThat(repository.deleteCamp(campId, MILL, BARE_YEAR)).isEqualTo(1);
     assertThat(jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CAMP_REPORT WHERE CAMP_REPORT_ID = 8203", Integer.class))
+        "SELECT COUNT(*) FROM THE.CAMP_REPORT WHERE CAMP_REPORT_ID = ?", Integer.class, campId))
         .isZero();
   }
 
   @Test
-  @DisplayName("the camp DELETE is tenancy-scoped — a foreign id affects zero rows")
+  @DisplayName("BOTH deletes are tenancy-scoped — a foreign id affects zero rows, parent and child")
   void deleteIsTenancyScoped() {
     // Legacy's deleteCampFromReport loaded by primary key alone with no tenancy check
     // (Schedule5DAO.java:550). Camp 8216 belongs to mill 675.
@@ -256,6 +273,12 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
         .isEqualTo(1);
     // Right camp, wrong year -> also zero.
     assertThat(repository.deleteCamp(8216, 675L, 2023)).isZero();
+
+    // The CHILD delete is scoped the same way (the review's call-order-convention finding): a
+    // foreign camp id removes none of the neighbour's detail rows.
+    int neighbourChildren = childCount(8216);
+    assertThat(repository.deleteCostDetailsForCamp(8216, MILL, 2020)).isZero();
+    assertThat(childCount(8216)).isEqualTo(neighbourChildren);
   }
 
   @Test

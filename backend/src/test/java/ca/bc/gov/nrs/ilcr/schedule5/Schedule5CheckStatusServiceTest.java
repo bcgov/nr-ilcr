@@ -24,8 +24,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 /**
  * The Check Status condition matrix (BR-08), transcribed from
@@ -42,7 +40,6 @@ import org.mockito.quality.Strictness;
  * both the epics AC and {@code UC-SCH5-001-detailed.md:151}, so legacy wins by explicit decision.
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("Schedule5Service.checkStatus — the eight conditions and the two outcomes")
 class Schedule5CheckStatusServiceTest {
 
