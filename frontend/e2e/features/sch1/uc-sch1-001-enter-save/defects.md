@@ -58,7 +58,21 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 - **#2 — RETIRED (obsolete): the 8-digit volume fields are editable again.**
   - **What this used to say:** that legacy FLD-003's three editable 8-digit volumes were reduced to one here — Forest Mgmt Admin (143) and Subtotal Company Logging (144) rendering read-only/derived and impossible to type into — so S06 was re-grounded onto Subtotal Other Costs volume as the only editable 8-digit field.
   - **Why it is retired (verified 2026-08-07):** backend commit `0b58057` "restore legacy parity for derived costs" reversed this. `components/schedule1/index.tsx` now renders `#vol-143` and `#vol-144` as editable TextInputs (`numberCell(…, true, …)`), `validation.ts` `fieldKind()` routes both to the 8-digit rule, and `Schedule1Request` carries `forestMgmtAdminVolume` / `subtotalCompanyLoggingVolume`. Only their COSTS remain read-only, which matches legacy BR-04 ("their cost comes from Sch 3 / is derived"), not a divergence. The same commit also made silviculture 139/140 volume-editable. `UC-SCH1-001-slices.md` confirms the legacy inventory this now matches: 3 editable 8-digit volumes (`forestManagementAdminCostsVol`, `subTotalOtherCostsVol`, `subtotalCompanyLoggingCostsVol`) and 11 editable 7-digit volumes (including `lessSilvAdminCostsVol`, `totalSilvVol`).
-  - **Action:** none — parity is restored, so there is nothing for BA/QA to adjudicate. Coverage was widened to match: `validation.feature` `@S06` now exercises all three 8-digit fields and `@S05` all four 7-digit groups; `happy-path.feature` writes and reads back all four restored volume-only fields.
+  - **Re-verified against LEGACY (2026-08-07), not just against our current source.** The technical
+    sidecar confirms our implementation now matches legacy field-for-field — editable volume at the
+    stated range, read-only pulled/derived cost:
+    | Legacy control | Legacy behaviour | Ours today |
+    |---|---|---|
+    | `forestManagementAdminCostsVol` (143) | `p:inputText`, 8-digit range (technical.md:60) | `#vol-143` editable, 8-digit ✓ |
+    | `forestManagementAdminCostsCos` | `p:inputText` **disabled** — pulled from Sch 3 per BR-04 (:61) | read-only, pulled ✓ |
+    | `subtotalCompanyLoggingCostsVol` (144) | `p:inputText`, 8-digit range (:70) | `#vol-144` editable, 8-digit ✓ |
+    | `lessSilvAdminCostsVol` (139) | `p:inputText`, 7-digit (:74) | `#vol-139` editable, 7-digit ✓ |
+    | `lessSilvAdminCostsCos` | **disabled** — pulled from Sch 3 per BR-04 (:75) | read-only, pulled ✓ |
+    | `totalSilvVol` (140) | `p:inputText`, 7-digit (:77) | `#vol-140` editable, 7-digit ✓ |
+    | `totalSilvCosCal` | **disabled** — derived (:78) | read-only, derived ✓ |
+    The retirement stands: this is genuine parity, confirmed at the source rather than inferred from the
+    commit message.
+  - **Action:** none — parity is restored and legacy-verified, so there is nothing for BA/QA to adjudicate. Coverage was widened to match: `validation.feature` `@S06` now exercises all three 8-digit fields and `@S05` all four 7-digit groups; `happy-path.feature` writes and reads back all four restored volume-only fields.
   - **Status:** CLOSED 2026-08-07 (superseded by the app; no defect).
   - **Test:** `validation.feature` `@S05`/`@S06`, `happy-path.feature` `@S01` — GREEN.
 
@@ -66,10 +80,28 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **What's wrong:** Legacy-derived S12 removes an itemized Other Cost "after confirming the prompt" — the fork's app popped a Carbon danger Modal ("Delete other cost") to confirm before deleting. After the 2026-08 sync to bcgov's shared `EditableSubPageLayout` / `useEditableCostRows` rewrite, the per-row delete is an icon-only **"Remove"** button that deletes the row **immediately** (optimistic) and persists the whole set via one `PUT …?intent=delete` — there is no confirmation step.
   - **Expected vs actual:** Expected a confirm-before-delete prompt (legacy S12). Actual — Remove deletes immediately; SUC-002 "Data deleted successfully" is echoed from the API after the whole-set PUT.
   - **How we caught it (verified 2026-08, re-verified 2026-08-07):** Re-grounding S12. Still accurate: `components/schedule1OtherCosts/index.tsx` renders a `hasIconOnly iconDescription="Remove"` button whose `onClick` → `useEditableCostRows.removeRow` → immediate `persist(next, 'delete')`; no dialog is rendered.
-  - **Is it a defect?** A behaviour/parity change owned upstream (bcgov), not this suite. BA/QA to confirm whether the confirmation should exist (does legacy ILCR confirm a per-row Other Costs delete?). If it should, it is a parity regression to raise upstream; if not, dropping it is fine.
-  - **Action:** BA/QA to confirm parity. S12 re-grounded to the no-confirm behaviour and kept **GREEN**. (Note: the whole-schedule delete S13 still has its "Delete schedule" confirm Modal — only the per-row Other Costs confirm was removed.)
+  - **Is it a defect? LEGACY SAYS YES — this is a CONFIRMED PARITY REGRESSION (checked 2026-08-07).**
+    The earlier version of this entry left "does legacy ILCR confirm a per-row Other Costs delete?" as an
+    open question for BA/QA. Our own sidecars already answered it, in three places:
+    - technical.md:102 — the per-row Delete is a `p:commandButton` with **`p:confirm` bound to
+      `confirmDeleteMsg`**.
+    - technical.md:154 — "Delete confirm dialog … PrimeFaces styled modal (NOT a native browser dialog)
+      — shows `confirmDeleteMsg` for Delete actions", listed for **both** `schedule1.xhtml` **and
+      `schedule1OtherCosts.xhtml`**.
+    - detailed.md:66 (AF2 step 1) — clicking Delete on a row "Prompts a PrimeFaces confirm dialog
+      (message key `confirmDeleteMsg`)"; and slices.md:538 carries it in S12's own message table.
+    So legacy DID require a confirmation before removing a row, and the new app removes it immediately
+    with no prompt. A user can now destroy an itemized cost with one mis-click and no undo.
+  - **It is also now internally inconsistent:** the whole-schedule delete (S13) KEPT its "Delete
+    schedule" confirm Modal, so the same app confirms the large destructive action and not the small one.
+  - **Action — BA/QA decision needed (this is the one genuinely open call in this file):** confirm
+    whether the per-row confirmation should be restored. It is owned upstream (bcgov's shared
+    `EditableSubPageLayout` / `useEditableCostRows` rewrite), so restoring it is an upstream change, not
+    a fork-local one. **If you rule it a defect, S12 should flip from its current GREEN
+    (re-grounded to the no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red** that
+    tracks the missing prompt until it is restored — say the word and I will make that change.
   - **Priority / env:** p1 · local seeded DB.
-  - **Status:** OPEN. Found 2026-08 (bcgov sync); re-verified 2026-08-07.
+  - **Status:** OPEN — awaiting BA/QA ruling. Found 2026-08 (bcgov sync); legacy-confirmed 2026-08-07.
   - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
 
 - **#4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
@@ -108,6 +140,11 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     **This indicator only appears once the report has left Draft** and the entered value differs from
     the original." Named instances: `commentsOB`/`commentsTT` on the main page (technical.md:84) and
     `descriptionOB` / `costOB` per row on the Other Costs sub-page (technical.md:97,100).
+  - **Corroborated while re-checking Divergence #2:** the indicator is named individually on each of the
+    four volume-only fields whose editability was just restored — `forestManagementAdminCostsVolOB`,
+    `subtotalCompanyLoggingCostsVolOB`, `lessSilvAdminCostsVolOB`, `totalSilvVolOB` (technical.md:60,70,
+    74,77). So restoring the volumes to parity (Divergence #2) restored only half of what legacy showed
+    for those fields; the change-tracking half is still missing.
   - **How we caught it (2026-08-07):** re-checking Divergence #4 against the legacy sidecars rather than
     assuming our implementation was right. Grepped the new app for any equivalent: none in
     `components/schedule1/index.tsx`, `components/schedule1OtherCosts/index.tsx`,
