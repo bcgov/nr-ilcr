@@ -32,3 +32,15 @@ export default interface BridgeRequest {
   // Required on UPDATE only (read from the loaded row, never hardcoded or coerced).
   readonly revisionCount?: number
 }
+
+/**
+ * Mirrors the backend BridgeSaveAllRequest — the page-level Save, which persists EVERY bridge of the
+ * schedule in one transaction (legacy `Schedule7aMB.save()`). Each entry carries its own
+ * `revisionCount`, so a stale row aborts the whole batch rather than saving around it.
+ */
+export interface BridgeSaveAllRequest {
+  readonly bridges: readonly {
+    readonly bridgeReportId: number
+    readonly bridge: BridgeRequest
+  }[]
+}

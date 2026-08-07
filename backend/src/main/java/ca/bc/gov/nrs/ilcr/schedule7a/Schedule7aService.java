@@ -7,6 +7,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import java.math.BigDecimal;
@@ -102,16 +103,22 @@ public class Schedule7aService {
     for (BridgeReportEntity row : bridgeRows) {
       bridges.add(toBridge(row, rowCounter++, costs.getOrDefault(row.bridgeReportId(), Map.of())));
     }
-    return new Schedule7aResponse(millId, year, trackStatus, editable, bridges, codeLists(), null);
+    return new Schedule7aResponse(
+        millId, year, trackStatus, editable, bridges, codeLists(year), null);
   }
 
-  private BridgeCodeLists codeLists() {
+  /**
+   * The five bridge code lists as offered for THIS reporting year. Legacy filtered every list to the
+   * codes effective on January 1 of the year ({@code LookupCache.getCacheList(year)}), so a retired
+   * code disappears from an older year's form rather than being offered indefinitely.
+   */
+  private BridgeCodeLists codeLists(int year) {
     return new BridgeCodeLists(
-        repository.constructionTypeOptions(),
-        repository.superstructureTypeOptions(),
-        repository.deckTypeOptions(),
-        repository.abutmentTypeOptions(),
-        repository.loadRatingOptions());
+        repository.constructionTypeOptions(year),
+        repository.superstructureTypeOptions(year),
+        repository.deckTypeOptions(year),
+        repository.abutmentTypeOptions(year),
+        repository.loadRatingOptions(year));
   }
 
   // ===============================================================================================
@@ -129,7 +136,7 @@ public class Schedule7aService {
       long millId, int year, BridgeRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
     LocalDate builtDate = parseBuiltDate(request.builtDate());
-    validateCodes(request);
+    validateCodes(year, request);
     try {
       long bridgeId = repository.nextBridgeReportId();
       repository.insertBridge(toEntity(bridgeId, request, builtDate), millId, year, user);
@@ -152,8 +159,45 @@ public class Schedule7aService {
       long millId, int year, long bridgeId, BridgeRequest request, boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
+    applyBridgeUpdate(millId, year, bridgeId, request, user);
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Save EVERY bridge of the schedule in one transaction — the page-level Save (legacy
+   * {@code Schedule7aMB.save()} → {@code saveSchedule7a}, which persisted the whole schedule from a
+   * single button). Each entry goes through the same per-row path as {@link #updateBridge}, so the
+   * validation, optimistic lock and cost upsert/clear rules are identical.
+   *
+   * <p>Atomic by construction: one entry failing its Draft gate, revision check, code check or date
+   * parse rolls the WHOLE batch back. That is the legacy guarantee — a partial save would leave the
+   * reporter unable to tell which rows persisted.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request the bridges to save, each with its id and {@code revisionCount}
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param user the audit user
+   * @return the recomputed document with refreshed totals
+   */
+  @Transactional
+  public Schedule7aResponse saveAllBridges(
+      long millId, int year, BridgeSaveAllRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    for (BridgeSaveAllRequest.Item item : request.bridges()) {
+      applyBridgeUpdate(millId, year, item.bridgeReportId(), item.bridge(), user);
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Correct one bridge row and its costs. Shared by the per-row PUT and the save-all so a bridge is
+   * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
+   */
+  private void applyBridgeUpdate(
+      long millId, int year, long bridgeId, BridgeRequest request, String user) {
     LocalDate builtDate = parseBuiltDate(request.builtDate());
-    validateCodes(request);
+    validateCodes(year, request);
     try {
       int updated = repository.updateBridge(
           toEntity(bridgeId, request, builtDate), millId, year, request.revisionCount(), user);
@@ -170,7 +214,6 @@ public class Schedule7aService {
           millId, year, ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
   }
 
   /**
@@ -209,7 +252,20 @@ public class Schedule7aService {
         r.deckTypeCode(), r.abutmentTypeCode(), r.loadRatingCode(), r.comments(), 0);
   }
 
-  /** Write (or clear) the ten cost children of a bridge — present cost upserts, null cost clears. */
+  /**
+   * Write ALL TEN cost children of a bridge, a cleared cost included as a row with {@code COST}
+   * NULL — never as a missing row.
+   *
+   * <p>This is storage-shape parity that MATTERS, because the legacy app runs against the same
+   * delivery database. Legacy's add branch inserts all ten detail rows even when a cost is null
+   * ({@code Schedule7aDAO.saveItemCostDetail}), and its update branch then iterates only the rows
+   * that already exist — it has no insert path. So a bridge this service wrote with a row MISSING
+   * would have that cost permanently uneditable from the legacy screen: a reporter could type a
+   * value there and legacy would silently discard it, having no row to update.
+   *
+   * <p>Reads are unaffected either way — an absent key and a key mapped to null both resolve to
+   * "no cost" in {@code toBridge} and in Check Status.
+   */
   private void writeCosts(long bridgeId, BridgeRequest r, String user) {
     writeCost(bridgeId, ITEM_SITE_PLAN, r.sitePlanCost(), user);
     writeCost(bridgeId, ITEM_APPROACH, r.approachCost(), user);
@@ -223,12 +279,9 @@ public class Schedule7aService {
     writeCost(bridgeId, ITEM_SS_INSTALL, r.superstructureInstallCost(), user);
   }
 
+  /** Upsert one cost row; a null {@code cost} stores NULL in place rather than removing the row. */
   private void writeCost(long bridgeId, int costItemId, Integer cost, String user) {
-    if (cost == null) {
-      repository.deleteCost(bridgeId, costItemId);
-    } else {
-      repository.upsertCost(bridgeId, costItemId, cost, user);
-    }
+    repository.upsertCost(bridgeId, costItemId, cost, user);
   }
 
   /** The Draft gate for every write: the 1–10 track must be {@code D} (else 409, BR-01/AD-9). */
@@ -239,13 +292,19 @@ public class Schedule7aService {
     }
   }
 
-  /** Reject a code value that resolves to no {@code *_CODE} row (force-selection enforcement, S15). */
-  private void validateCodes(BridgeRequest r) {
-    if (!codeSet(repository.constructionTypeOptions()).contains(r.constructionTypeCode())
-        || !codeSet(repository.superstructureTypeOptions()).contains(r.superstructureTypeCode())
-        || !codeSet(repository.deckTypeOptions()).contains(r.deckTypeCode())
-        || !codeSet(repository.abutmentTypeOptions()).contains(r.abutmentTypeCode())
-        || !codeSet(repository.loadRatingOptions()).contains(r.loadRatingCode())) {
+  /**
+   * Reject a code value that resolves to no {@code *_CODE} row EFFECTIVE for the reporting year
+   * (force-selection enforcement, S15). Year-scoped for the same reason the served lists are: legacy
+   * only ever offered the year's effective codes, so accepting one outside that window here would
+   * let a write store a value the form could never have produced.
+   */
+  private void validateCodes(int year, BridgeRequest r) {
+    if (!codeSet(repository.constructionTypeOptions(year)).contains(r.constructionTypeCode())
+        || !codeSet(repository.superstructureTypeOptions(year))
+            .contains(r.superstructureTypeCode())
+        || !codeSet(repository.deckTypeOptions(year)).contains(r.deckTypeCode())
+        || !codeSet(repository.abutmentTypeOptions(year)).contains(r.abutmentTypeCode())
+        || !codeSet(repository.loadRatingOptions(year)).contains(r.loadRatingCode())) {
       throw new InvalidBridgeCodeException();
     }
   }

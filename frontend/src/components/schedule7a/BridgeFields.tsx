@@ -75,6 +75,9 @@ type Props = {
   // Absent in the Add panel: a bridge that does not exist yet has no server-computed totals.
   readonly totals?: Bridge | null
   readonly onChange: <K extends keyof BridgeFormValues>(key: K, value: string) => void
+  // Re-group a money field once the user leaves it (schedule 3's `groupField` idiom). On blur rather
+  // than on change so inserting a separator mid-word cannot move the caret while typing.
+  readonly onGroup: (key: CostField) => void
 }
 
 const BridgeFields: FC<Props> = ({
@@ -85,6 +88,7 @@ const BridgeFields: FC<Props> = ({
   disabled,
   totals,
   onChange,
+  onGroup,
 }) => {
   const text = (
     field: keyof BridgeFormValues,
@@ -94,20 +98,31 @@ const BridgeFields: FC<Props> = ({
       maxLength?: number
       placeholder?: string
       helperText?: string
+      hideLabel?: boolean
+      onBlur?: () => void
+      // Money only. Legacy right-aligns the cost boxes so a column of amounts lines up on its digits
+      // and meets the total below it, but leaves the measurements (life span, height, length, width,
+      // distance) left-aligned — so this cannot be inferred from `inputMode`, which both groups set.
+      rightAlign?: boolean
     } = {},
-  ) => (
-    <TextInput
-      id={`${idPrefix}-${field}`}
-      labelText={label}
-      size="sm"
-      disabled={disabled}
-      value={form[field]}
-      invalid={Boolean(errors[field])}
-      invalidText={errors[field]}
-      onChange={(event) => onChange(field, event.target.value)}
-      {...extra}
-    />
-  )
+  ) => {
+    // Split off: `rightAlign` is ours, not a TextInput prop, and would reach the DOM via the spread.
+    const { rightAlign, ...inputProps } = extra
+    return (
+      <TextInput
+        id={`${idPrefix}-${field}`}
+        labelText={label}
+        size="sm"
+        className={rightAlign ? 'schedule-7a__num' : undefined}
+        disabled={disabled}
+        value={form[field]}
+        invalid={Boolean(errors[field])}
+        invalidText={errors[field]}
+        onChange={(event) => onChange(field, event.target.value)}
+        {...inputProps}
+      />
+    )
+  }
 
   const code = (field: CodeField) => {
     const spec = codeSpec(field)
@@ -129,57 +144,59 @@ const BridgeFields: FC<Props> = ({
     )
   }
 
-  const cost = (field: CostField, label: string) => text(field, label, { inputMode: 'numeric' })
+  // Inside the Material/Deliver/Install matrix the row label and the column heading already name the
+  // cell, and legacy prints no third caption — `hideLabel` drops the visible text while Carbon keeps
+  // the accessible name, so a screen reader still hears "Superstructure Material ($)".
+  // Money displays with thousands separators, as the legacy costConverter formatted it. Every parse
+  // of a form string already strips grouping (`parseDecimalInput`), so the grouped text is display
+  // only and never reaches the wire.
+  const cost = (field: CostField, label: string, hideLabel = false) =>
+    text(field, label, {
+      inputMode: 'numeric',
+      hideLabel,
+      rightAlign: true,
+      onBlur: () => onGroup(field),
+    })
 
-  // A read-only server total. Rendered as text rather than a disabled input so screen readers
-  // announce a value instead of an unusable control.
-  const total = (label: string, value: number | null | undefined) => (
+  // A server-computed total. Rendered the way every other schedule renders a derived value (see
+  // schedule-3__num / schedule-4__num): plain right-aligned text at normal weight, never a control.
+  // The label stays in the accessible tree even when hidden, so the figure is announced with a name —
+  // the visual cue that these are not editable is the absence of a field, which a screen reader
+  // cannot see.
+  const total = (label: string, value: number | null | undefined, hideLabel = false) => (
     <div className="schedule-7a__total">
-      <span className="schedule-7a__total-label">{label}</span>
+      <span className={hideLabel ? 'cds--visually-hidden' : 'schedule-7a__total-label'}>
+        {label}
+      </span>
       <span className="schedule-7a__total-value">{money(value)}</span>
     </div>
   )
 
   return (
     <Grid fullWidth condensed className="schedule-7a__fields">
-      <Column sm={4} md={4} lg={5}>
-        {text('locationName', 'Name/Location of Bridge', { maxLength: LOCATION_MAX_LENGTH })}
-      </Column>
-      <Column sm={4} md={2} lg={3}>
-        {/* The required yyyy-MM shape is otherwise only discoverable by failing a save. */}
-        {text('builtDate', 'Date', { placeholder: 'YYYY-MM', maxLength: 7 })}
-      </Column>
-      <Column sm={4} md={2} lg={4}>
-        {code('constructionTypeCode')}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {text('lifeSpan', 'Expected Life Span', { inputMode: 'numeric' })}
-      </Column>
+      {/* Legacy lays the twelve attribute fields out three-across, reading left-to-right then down
+          (schedule7A.xhtml:243-411). The sequence is load-bearing — reporters transcribe from a
+          paper form in this order — so it stays a plain CSS grid of equal thirds rather than Carbon
+          columns, which cannot split sixteen into three even parts. */}
+      <Column sm={4} md={8} lg={16}>
+        <div className="schedule-7a__field-grid">
+          {text('locationName', 'Name/Location of Bridge', { maxLength: LOCATION_MAX_LENGTH })}
+          {/* The required yyyy-MM shape is otherwise only discoverable by failing a save. */}
+          {text('builtDate', 'Date', { placeholder: 'YYYY-MM', maxLength: 7 })}
+          {code('constructionTypeCode')}
 
-      <Column sm={4} md={4} lg={4}>
-        {code('superstructureTypeCode')}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {code('deckTypeCode')}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {code('abutmentTypeCode')}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {text('abutmentHeight', 'Abutments Ht.(m)', { inputMode: 'decimal' })}
-      </Column>
+          {text('lifeSpan', 'Expected Life Span', { inputMode: 'numeric' })}
+          {code('superstructureTypeCode')}
+          {code('deckTypeCode')}
 
-      <Column sm={4} md={4} lg={4}>
-        {code('loadRatingCode')}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {text('length', 'Length (m)', { inputMode: 'decimal' })}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {text('width', 'Width (m)', { inputMode: 'decimal' })}
-      </Column>
-      <Column sm={4} md={4} lg={4}>
-        {text('distance', 'Distance (km)', { inputMode: 'numeric' })}
+          {code('abutmentTypeCode')}
+          {text('abutmentHeight', 'Abutments Ht.(m)', { inputMode: 'decimal' })}
+          {code('loadRatingCode')}
+
+          {text('length', 'Length (m)', { inputMode: 'decimal' })}
+          {text('width', 'Width (m)', { inputMode: 'decimal' })}
+          {text('distance', 'Distance (km)', { inputMode: 'numeric' })}
+        </div>
       </Column>
 
       {COST_ROWS.map((row) => (
@@ -189,9 +206,9 @@ const BridgeFields: FC<Props> = ({
             <div className="schedule-7a__cost-triple">
               {row.triple ? (
                 <>
-                  {cost(row.triple[0].field, row.triple[0].label)}
-                  {cost(row.triple[1].field, row.triple[1].label)}
-                  {cost(row.triple[2].field, row.triple[2].label)}
+                  {cost(row.triple[0].field, row.triple[0].label, true)}
+                  {cost(row.triple[1].field, row.triple[1].label, true)}
+                  {cost(row.triple[2].field, row.triple[2].label, true)}
                 </>
               ) : (
                 <>
@@ -216,14 +233,16 @@ const BridgeFields: FC<Props> = ({
         <div className="schedule-7a__cost-row">
           <span className="schedule-7a__cost-label">Total ($)</span>
           <div className="schedule-7a__cost-triple">
-            {total('Material', totals?.totalMaterial)}
-            {total('Deliver', totals?.totalDeliver)}
-            {total('Install', totals?.totalInstall)}
+            {total('Material', totals?.totalMaterial, true)}
+            {total('Deliver', totals?.totalDeliver, true)}
+            {total('Install', totals?.totalInstall, true)}
           </div>
           <div className="schedule-7a__cost-secondary" />
         </div>
       </Column>
 
+      {/* Grand Total closes the right-hand standalone-cost column directly under Other Costs, as in
+          legacy — not as a full-width row of its own. */}
       <Column sm={4} md={8} lg={16}>
         <div className="schedule-7a__cost-row">
           <span className="schedule-7a__cost-label">Comments</span>
@@ -240,11 +259,11 @@ const BridgeFields: FC<Props> = ({
             invalidText={errors.comments}
             onChange={(event) => onChange('comments', event.target.value)}
           />
-          <div className="schedule-7a__cost-secondary">{cost('otherCost', 'Other Costs ($)')}</div>
+          <div className="schedule-7a__cost-secondary">
+            {cost('otherCost', 'Other Costs ($)')}
+            {total('Grand Total ($)', totals?.grandTotal)}
+          </div>
         </div>
-      </Column>
-      <Column sm={4} md={8} lg={16}>
-        {total('Grand Total ($)', totals?.grandTotal)}
       </Column>
     </Grid>
   )

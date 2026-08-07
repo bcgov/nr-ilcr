@@ -69,7 +69,9 @@ class Schedule7aDocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.bridges[2].otherCost").doesNotExist())
         .andExpect(jsonPath("$.bridges[2].totalMaterial", is(3800)))
         .andExpect(jsonPath("$.bridges[2].grandTotal", is(5400)))
-        // Code lists (ordered by code): dropdown options served with the document (AC4).
+        // Code lists (ordered by code): dropdown options served with the document (AC4). The counts
+        // are also the year-scoping assertion — V27 seeds an EXPIRED construction type ('X') and
+        // load rating ('LX'), so an unfiltered query would serve 3 of each here, not 2.
         .andExpect(jsonPath("$.codeLists.constructionTypes", hasSize(2)))
         .andExpect(jsonPath("$.codeLists.constructionTypes[0].code", is("N")))
         .andExpect(jsonPath("$.codeLists.constructionTypes[0].description", is("New")))
@@ -92,5 +94,24 @@ class Schedule7aDocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.bridges", hasSize(1)))
         .andExpect(jsonPath("$.bridges[0].locationName", is("Harbour Overpass")))
         .andExpect(jsonPath("$.bridges[0].grandTotal", is(6125)));
+  }
+
+  @Test
+  @DisplayName("code lists exclude a code that expired before the reporting year (legacy year scope)")
+  void codeLists_excludeCodesExpiredBeforeTheReportingYear() throws Exception {
+    // Legacy filtered every list through LookupCache.getCacheList(year) — effective_date <= Jan 1 of
+    // the year <= expiry_date — so a code retired in 2015 was never offered on a 2021 form. Asserting
+    // the specific codes (not just a count) is what pins WHICH rows the filter removed.
+    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.codeLists.constructionTypes[*].code",
+            org.hamcrest.Matchers.containsInAnyOrder("N", "U")))
+        .andExpect(jsonPath("$.codeLists.constructionTypes[*].code",
+            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("X"))))
+        .andExpect(jsonPath("$.codeLists.loadRatings[*].code",
+            org.hamcrest.Matchers.containsInAnyOrder("L100", "L75")))
+        .andExpect(jsonPath("$.codeLists.loadRatings[*].code",
+            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("LX"))));
   }
 }

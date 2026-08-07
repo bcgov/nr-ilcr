@@ -1,15 +1,16 @@
 import type { FC } from 'react'
 import { useCallback, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid, Modal, Pagination } from '@carbon/react'
+import { TrashCan } from '@carbon/icons-react'
 import type Schedule7aResponse from '@/interfaces/Schedule7aResponse'
 import type { Bridge, Schedule7aCheckStatusResponse } from '@/interfaces/Schedule7aResponse'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
-import type { BridgeErrors, BridgeFormValues } from './validation'
+import type { BridgeErrors, BridgeFormValues, CostField } from './validation'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { numStr } from '@/utils/number'
+import { groupInput, numStr, numStrGroup } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -62,16 +63,16 @@ const formFromBridge = (bridge: Bridge): BridgeFormValues => ({
   length: numStr(bridge.length),
   width: numStr(bridge.width),
   distance: numStr(bridge.distance),
-  sitePlanCost: numStr(bridge.sitePlanCost),
-  superstructureMaterialCost: numStr(bridge.superstructureMaterialCost),
-  superstructureDeliverCost: numStr(bridge.superstructureDeliverCost),
-  superstructureInstallCost: numStr(bridge.superstructureInstallCost),
-  abutmentMaterialCost: numStr(bridge.abutmentMaterialCost),
-  abutmentDeliverCost: numStr(bridge.abutmentDeliverCost),
-  abutmentInstallCost: numStr(bridge.abutmentInstallCost),
-  approachCost: numStr(bridge.approachCost),
-  afterInstallCost: numStr(bridge.afterInstallCost),
-  otherCost: numStr(bridge.otherCost),
+  sitePlanCost: numStrGroup(bridge.sitePlanCost),
+  superstructureMaterialCost: numStrGroup(bridge.superstructureMaterialCost),
+  superstructureDeliverCost: numStrGroup(bridge.superstructureDeliverCost),
+  superstructureInstallCost: numStrGroup(bridge.superstructureInstallCost),
+  abutmentMaterialCost: numStrGroup(bridge.abutmentMaterialCost),
+  abutmentDeliverCost: numStrGroup(bridge.abutmentDeliverCost),
+  abutmentInstallCost: numStrGroup(bridge.abutmentInstallCost),
+  approachCost: numStrGroup(bridge.approachCost),
+  afterInstallCost: numStrGroup(bridge.afterInstallCost),
+  otherCost: numStrGroup(bridge.otherCost),
   comments: bridge.comments ?? '',
 })
 
@@ -196,6 +197,26 @@ const Schedule7a: FC = () => {
     return next
   }
 
+  // Re-group a money field after the user leaves it ("12000" → "12,000"). A no-op when already
+  // grouped, so it cannot loop through a re-render.
+  const groupAddField = (key: CostField) => {
+    setAddForm((prev) => {
+      const grouped = groupInput(prev[key])
+      return grouped === prev[key] ? prev : { ...prev, [key]: grouped }
+    })
+  }
+
+  const groupRowField = (bridge: Bridge, key: CostField) => {
+    setRowForms((prev) => {
+      const current = prev[bridge.bridgeReportId] ?? formFromBridge(bridge)
+      const grouped = groupInput(current[key])
+      if (grouped === current[key]) {
+        return prev
+      }
+      return { ...prev, [bridge.bridgeReportId]: { ...current, [key]: grouped } }
+    })
+  }
+
   const setAddField = (key: keyof BridgeFormValues, value: string) => {
     setAddForm((prev) => ({ ...prev, [key]: value }))
     setAddErrors((prev) => clearFieldError(prev, key))
@@ -252,32 +273,61 @@ const Schedule7a: FC = () => {
       .finally(release)
   }
 
-  const handleSaveRow = (bridge: Bridge) => {
-    if (saving) {
+  /**
+   * The page-level Save (legacy parity): persist EVERY bridge in one request, edited or not, exactly
+   * as legacy's Save button did. It is the ONLY save on the page — legacy gave a bridge row no Save
+   * of its own, and the per-row `PUT /bridges/{id}` stays available on the API for callers that want
+   * one.
+   *
+   * Every row is validated FIRST and the request is only sent when all of them pass — the server
+   * saves the batch atomically, so dispatching a body with a known-invalid row could only produce a
+   * whole-batch rejection while the reporter had to guess which row caused it.
+   */
+  const handleSaveAll = () => {
+    if (!data || saving || data.bridges.length === 0) {
       return
     }
-    // An untouched row still saves — legacy's Save persisted every row, edited or not.
-    const form = rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge)
     clearBanners()
-    const errors = validateBridge(form)
-    if (Object.keys(errors).length > 0) {
-      setRowErrors((prev) => ({ ...prev, [bridge.bridgeReportId]: errors }))
+    // Read from `data` rather than the `bridges` binding destructured further down, which is not in
+    // scope here.
+    const forms = data.bridges.map((bridge) => ({
+      bridge,
+      form: rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge),
+    }))
+
+    const errorsByRow: Record<number, BridgeErrors> = {}
+    let invalid = false
+    for (const { bridge, form } of forms) {
+      const errors = validateBridge(form)
+      errorsByRow[bridge.bridgeReportId] = errors
+      if (Object.keys(errors).length > 0) {
+        invalid = true
+      }
+    }
+    // Replace wholesale rather than merging: a row that now passes must lose its old red text.
+    setRowErrors(errorsByRow)
+    if (invalid) {
       return
     }
-    setRowErrors((prev) => ({ ...prev, [bridge.bridgeReportId]: {} }))
+
     setSaving(true)
     apiService
       .getAxiosInstance()
-      // revisionCount is read from the loaded row — never hardcoded or coerced, so an unseeded token
-      // cannot silently bypass the stale-edit check.
-      .put<Schedule7aResponse>(
-        `${BRIDGES_PATH}/${String(bridge.bridgeReportId)}${query}`,
-        buildBody(form, bridge.revisionCount),
-      )
+      .put<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, {
+        bridges: forms.map(({ bridge, form }) => ({
+          bridgeReportId: bridge.bridgeReportId,
+          bridge: buildBody(form, bridge.revisionCount),
+        })),
+      })
       .then((response) => {
-        if (isCurrent()) {
-          applyDocument(response.data, bridge.bridgeReportId)
+        if (!isCurrent()) {
+          return
         }
+        applyDocument(response.data)
+        // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
+        // them all to "untouched" and re-derives them from the echoed document.
+        setRowForms({})
+        setRowErrors({})
       })
       .catch((error: unknown) => {
         if (isCurrent()) {
@@ -285,12 +335,6 @@ const Schedule7a: FC = () => {
         }
       })
       .finally(release)
-  }
-
-  // Discarding the row's edits returns it to "untouched", so it re-derives from the served bridge.
-  const handleCancelRow = (bridge: Bridge) => {
-    setRowForms(({ [bridge.bridgeReportId]: _discarded, ...rest }) => rest)
-    setRowErrors((prev) => ({ ...prev, [bridge.bridgeReportId]: {} }))
   }
 
   const handleDelete = () => {
@@ -391,8 +435,19 @@ const Schedule7a: FC = () => {
   const currentPage = Math.min(page, totalPages)
   const visible = bridges.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
-  const checkStatusButton = (key: string) => (
+  // Legacy renders Save AND Check Status as a pair, both above and below the bridge list
+  // (schedule7A.xhtml:538-548, :1274-1284). Save persists every bridge in one call, as legacy's did.
+  // It is additionally disabled with no bridges: legacy answered that click with its "nothing to
+  // save" notice, and the batch endpoint rejects an empty body, so there is no action to offer.
+  const actionButtons = (key: string) => (
     <Column key={key} sm={4} md={8} lg={16} className="schedule-7a__actions">
+      <Button
+        kind="primary"
+        disabled={controlsDisabled || bridges.length === 0}
+        onClick={handleSaveAll}
+      >
+        Save
+      </Button>
       <Button kind="tertiary" disabled={controlsDisabled} onClick={handleCheckStatus}>
         Check Status
       </Button>
@@ -486,6 +541,7 @@ const Schedule7a: FC = () => {
               codeLists={codeLists}
               disabled={controlsDisabled}
               onChange={setAddField}
+              onGroup={groupAddField}
             />
             <div className="schedule-7a__panel-actions">
               <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
@@ -495,7 +551,7 @@ const Schedule7a: FC = () => {
           </Column>
         )}
 
-        {checkStatusButton('check-status-top')}
+        {actionButtons('page-actions-top')}
 
         <Column sm={4} md={8} lg={16} className="schedule-7a__section">
           {bridges.length === 0 ? (
@@ -516,32 +572,25 @@ const Schedule7a: FC = () => {
                       disabled={controlsDisabled}
                       totals={bridge}
                       onChange={(key, value) => setRowField(bridge, key, value)}
+                      onGroup={(key) => groupRowField(bridge, key)}
                     />
+                    {/* Delete is the ONLY per-row control in legacy (schedule7A.xhtml:1237).
+                        Saving is a page-level action covering every bridge at once, so a per-row
+                        Save/Cancel pair would offer a granularity the schedule does not have. */}
                     <div className="schedule-7a__panel-actions">
-                      <Button
-                        kind="primary"
-                        size="sm"
-                        disabled={controlsDisabled}
-                        onClick={() => handleSaveRow(bridge)}
-                      >
-                        Save
-                      </Button>
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        disabled={controlsDisabled}
-                        onClick={() => handleCancelRow(bridge)}
-                      >
-                        Cancel
-                      </Button>
+                      {/* Icon-only. `iconDescription` is what names the control for assistive tech
+                          and drives the hover tooltip, so the action is still "Delete" to anyone
+                          who cannot read the glyph. */}
                       <Button
                         kind="danger--ghost"
                         size="sm"
+                        hasIconOnly
+                        renderIcon={TrashCan}
+                        iconDescription="Delete"
+                        tooltipPosition="bottom"
                         disabled={controlsDisabled}
                         onClick={() => setConfirmDeleteId(bridge.bridgeReportId)}
-                      >
-                        Delete
-                      </Button>
+                      />
                     </div>
                   </AccordionItem>
                 ))}
@@ -559,7 +608,7 @@ const Schedule7a: FC = () => {
           )}
         </Column>
 
-        {checkStatusButton('check-status-bottom')}
+        {actionButtons('page-actions-bottom')}
       </Grid>
 
       {/* Mounted only while a delete is pending, so its Delete/Cancel do not sit in the
@@ -568,9 +617,11 @@ const Schedule7a: FC = () => {
         <Modal
           open
           danger
-          modalHeading="Delete bridge report"
-          primaryButtonText="Delete"
-          secondaryButtonText="Cancel"
+          // Legacy's confirm dialog answered with Yes/No (schedule7A.xhtml:1250-1255), not
+          // Delete/Cancel.
+          modalHeading="Confirmation"
+          primaryButtonText="Yes"
+          secondaryButtonText="No"
           onRequestClose={() => setConfirmDeleteId(null)}
           onRequestSubmit={handleDelete}
         >

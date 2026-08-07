@@ -103,8 +103,8 @@ async function openBridge(user: ReturnType<typeof userEvent.setup>, rowCounter: 
 
 const field = (label: RegExp | string) => screen.getByLabelText(label)
 
-// Scope to one bridge's accordion panel. The delete-confirm Modal is always mounted (Carbon renders
-// it closed) and carries its own Delete/Cancel buttons, so an unscoped query matches both surfaces.
+// Scope to one bridge's accordion panel. Every row renders its own editor at once, so an unscoped
+// field query matches as many elements as there are bridges.
 const bridgePanel = (bridgeReportId: number) =>
   within(
     document
@@ -114,6 +114,18 @@ const bridgePanel = (bridgeReportId: number) =>
 
 // The Carbon Modal root, so its confirm button is distinguishable from the row action that opened it.
 const deleteModal = async () => within(await screen.findByRole('presentation'))
+
+// Save is a PAGE-level action covering every bridge at once (legacy parity) — a bridge row carries
+// only Delete — so it drives every write test. It renders above and below the list; either serves.
+const savePage = (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+type SaveAllBody = { bridges: { bridgeReportId: number; bridge: BridgeRequest }[] }
+
+// The page-level Save sends the whole schedule, so a test asserting on "the request for bridge N"
+// pulls that bridge's entry out of the batch.
+const entryFor = (body: SaveAllBody | null, bridgeReportId: number): BridgeRequest | undefined =>
+  body?.bridges.find((entry) => entry.bridgeReportId === bridgeReportId)?.bridge
 
 // Drives a mill/year change mid-flight so the stale-response guard can be exercised. Module-level so
 // it is not re-created per render (an @eslint-react rule forbids nested component definitions).
@@ -163,10 +175,15 @@ describe('Schedule 7A page', () => {
     expect(field('Date')).toHaveValue('2020-06')
     expect(field('Expected Life Span')).toHaveValue('50')
     expect(field('Distance (km)')).toHaveValue('12')
-    expect(field('Site Plan / Gen. Arr. ($)')).toHaveValue('1000')
+    // Money displays grouped, as the legacy costConverter formatted it. The measurements above do
+    // not — legacy grouped costs only.
+    expect(field('Site Plan / Gen. Arr. ($)')).toHaveValue('1,000')
+    expect(field('Superstructure Material ($)')).toHaveValue('5,000')
     expect(field('Certification After install ($)')).toHaveValue('200')
 
-    // Server-computed totals render as read-only text, never as inputs.
+    // Server-computed totals render as plain text (the schedule-3/4 derived-value style), never as
+    // a field. Asserting the absence of a control matters as much as the value: a page that let a
+    // reporter type over a server total would still pass a value-only check.
     expect(screen.getByText('12,000')).toBeInTheDocument()
     expect(screen.getByText('8,000')).toBeInTheDocument()
     expect(screen.queryByLabelText('Grand Total ($)')).not.toBeInTheDocument()
@@ -292,12 +309,12 @@ describe('Schedule 7A page', () => {
   })
 
   test('an inline correction PUTs with the row revisionCount read from the document (AC4)', async () => {
-    let captured: BridgeRequest | null = null
+    let captured: SaveAllBody | null = null
     let putUrl = ''
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${BRIDGES_URL}/7001`, async ({ request }) => {
-        captured = (await request.json()) as BridgeRequest
+      http.put(BRIDGES_URL, async ({ request }) => {
+        captured = (await request.json()) as SaveAllBody
         putUrl = request.url
         return HttpResponse.json(
           doc({
@@ -312,21 +329,21 @@ describe('Schedule 7A page', () => {
 
     await user.clear(field('Site Plan / Gen. Arr. ($)'))
     await user.type(field('Site Plan / Gen. Arr. ($)'), '2000')
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(captured).toMatchObject({ sitePlanCost: 2000, revisionCount: 3 })
+    expect(entryFor(captured, 7001)).toMatchObject({ sitePlanCost: 2000, revisionCount: 3 })
     // The write is scoped to the working context, not to whatever the document body echoed.
     expect(putUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
     expect(putUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
   })
 
   test('editing one field on an untouched row preserves the other served values (AC4)', async () => {
-    let captured: BridgeRequest | null = null
+    let captured: SaveAllBody | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${BRIDGES_URL}/7001`, async ({ request }) => {
-        captured = (await request.json()) as BridgeRequest
+      http.put(BRIDGES_URL, async ({ request }) => {
+        captured = (await request.json()) as SaveAllBody
         return HttpResponse.json(doc())
       }),
     )
@@ -336,13 +353,13 @@ describe('Schedule 7A page', () => {
 
     await user.clear(field('Width (m)'))
     await user.type(field('Width (m)'), '6.5')
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
 
     await waitFor(() => {
       expect(captured).not.toBeNull()
     })
     // The edited field changes; every other field still carries what the document served.
-    expect(captured).toMatchObject({
+    expect(entryFor(captured, 7001)).toMatchObject({
       width: 6.5,
       locationName: 'North Fork Bridge',
       builtDate: '2020-06',
@@ -356,31 +373,31 @@ describe('Schedule 7A page', () => {
     })
   })
 
-  test('Cancel reverts an edited row to the served values (AC4)', async () => {
+  test('a bridge row carries ONLY Delete — saving is page-level, as in legacy', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
     await openBridge(user, 1)
 
-    await user.clear(field('Name/Location of Bridge'))
-    await user.type(field('Name/Location of Bridge'), 'Renamed')
-    expect(field('Name/Location of Bridge')).toHaveValue('Renamed')
-
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Cancel' }))
-    expect(field('Name/Location of Bridge')).toHaveValue('North Fork Bridge')
+    // Legacy gave a row no Save and no Cancel (schedule7A.xhtml:1237 is the whole row action set).
+    expect(bridgePanel(7001).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(bridgePanel(7001).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(bridgePanel(7001).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    // Save appears twice at page level — above and below the list, as legacy rendered it.
+    expect(screen.getAllByRole('button', { name: 'Save' })).toHaveLength(2)
   })
 
   test('a stale PUT surfaces the verbatim 409 conflict message (AC4)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${BRIDGES_URL}/7001`, () =>
+      http.put(BRIDGES_URL, () =>
         problemBody(409, 'This schedule was changed by another user. Please reload and try again.'),
       ),
     )
     const user = userEvent.setup()
     render(<Schedule7a />)
     await openBridge(user, 1)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await savePage(user)
 
     expect(
       await screen.findByText(
@@ -412,7 +429,7 @@ describe('Schedule 7A page', () => {
       await screen.findByText('This will delete the current record. Do you want to continue?'),
     ).toBeInTheDocument()
 
-    await user.click((await deleteModal()).getByRole('button', { name: 'Delete' }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
     await waitFor(() => {
       expect(deleted).toBe(true)
     })
@@ -439,11 +456,126 @@ describe('Schedule 7A page', () => {
     await openBridge(user, 1)
 
     await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
-    await user.click((await deleteModal()).getByRole('button', { name: 'Delete' }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
 
     expect(
       await screen.findByText('Any data was saved. The Schedule is empty.'),
     ).toBeInTheDocument()
+  })
+
+  test('the page-level Save PUTs every bridge in ONE request, edited or not (legacy Save)', async () => {
+    let captured: { bridges: { bridgeReportId: number; bridge: BridgeRequest }[] } | null = null
+    let calls = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges: [northFork, bridgeAt(7002, 2)] }))),
+      http.put(BRIDGES_URL, async ({ request }) => {
+        calls += 1
+        captured = (await request.json()) as typeof captured
+        return HttpResponse.json(
+          doc({
+            bridges: [northFork, bridgeAt(7002, 2)],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    const rowOneName = bridgePanel(7001).getByLabelText('Name/Location of Bridge')
+    await user.clear(rowOneName)
+    await user.type(rowOneName, 'Edited Fork')
+
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // ONE request for the whole schedule — the point of the page-level Save. N per-row PUTs would
+    // still show the success banner, so the call count is the assertion that matters.
+    expect(calls).toBe(1)
+    const body = captured as unknown as {
+      bridges: { bridgeReportId: number; bridge: BridgeRequest }[]
+    }
+    expect(body.bridges).toHaveLength(2)
+    expect(body.bridges[0].bridgeReportId).toBe(7001)
+    expect(body.bridges[0].bridge.locationName).toBe('Edited Fork')
+    // The untouched row rides along with its served values and its OWN revision token.
+    expect(body.bridges[1].bridgeReportId).toBe(7002)
+    expect(body.bridges[1].bridge.locationName).toBe('Bridge 2')
+    expect(body.bridges[1].bridge.revisionCount).toBe(3)
+  })
+
+  test('the page-level Save validates every row and sends nothing when one is invalid', async () => {
+    let called = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges: [northFork, bridgeAt(7002, 2)] }))),
+      http.put(BRIDGES_URL, () => {
+        called = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+    await user.clear(bridgePanel(7001).getByLabelText('Name/Location of Bridge'))
+
+    await savePage(user)
+
+    expect(await screen.findByText('Value Required')).toBeInTheDocument()
+    // The server saves the batch atomically, so a body with a known-bad row could only be rejected
+    // whole — the reporter would then have to guess which row was at fault.
+    expect(called).toBe(false)
+  })
+
+  test('the page-level Save is disabled when the schedule holds no bridges', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ bridges: [] }))))
+    render(<Schedule7a />)
+
+    expect(await screen.findByText(/no bridge reports have been added/i)).toBeInTheDocument()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeDisabled()
+    }
+    // Check Status stays enabled — it is a read-only readiness query, not a write.
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeEnabled()
+    }
+  })
+
+  test('a typed cost regroups on blur and still crosses the wire ungrouped', async () => {
+    let captured: SaveAllBody | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(BRIDGES_URL, async ({ request }) => {
+        captured = (await request.json()) as SaveAllBody
+        return HttpResponse.json(doc())
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    await user.clear(field('Other Costs ($)'))
+    await user.type(field('Other Costs ($)'), '1234567')
+    await user.tab()
+    expect(field('Other Costs ($)')).toHaveValue('1,234,567')
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(captured).not.toBeNull()
+    })
+    // The separators are display only — a grouped string on the wire would be rejected as non-numeric.
+    expect(entryFor(captured, 7001)?.otherCost).toBe(1234567)
+  })
+
+  test('the comments counter counts UP toward the 3500 limit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    await openBridge(user, 1)
+
+    // Carbon's counter is used-of-limit. 'Spans the north fork' is 20 characters.
+    expect(screen.getByText('20/3500')).toBeInTheDocument()
+    await user.type(field('Comments'), '!')
+    expect(screen.getByText('21/3500')).toBeInTheDocument()
   })
 
   test('Check Status renders per-bridge failures and no schedule banner on mixed results (AC6)', async () => {
@@ -564,8 +696,9 @@ describe('Schedule 7A page', () => {
     expect(field('Site Plan / Gen. Arr. ($)')).toBeDisabled()
     expect(screen.getByRole('combobox', { name: /New\/Used/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
-    for (const name of ['Save', 'Cancel', 'Delete'] as const) {
-      expect(bridgePanel(7001).getByRole('button', { name })).toBeDisabled()
+    expect(bridgePanel(7001).getByRole('button', { name: 'Delete' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: 'Save' })) {
+      expect(button).toBeDisabled()
     }
     // Legacy disabled Check Status outside Draft too, even though the endpoint permits it.
     for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
@@ -577,7 +710,7 @@ describe('Schedule 7A page', () => {
     let wrote = false
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))),
-      http.put(`${BRIDGES_URL}/7001`, () => {
+      http.put(BRIDGES_URL, () => {
         wrote = true
         return HttpResponse.json(doc())
       }),
@@ -586,7 +719,7 @@ describe('Schedule 7A page', () => {
     render(<Schedule7a />)
     await openBridge(user, 1)
 
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
     expect(wrote).toBe(false)
   })
 
@@ -625,7 +758,7 @@ describe('Schedule 7A page', () => {
     let posted = false
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ bridges: [bare] }))),
-      http.put(`${BRIDGES_URL}/7009`, () => {
+      http.put(BRIDGES_URL, () => {
         posted = true
         return HttpResponse.json(doc())
       }),
@@ -638,15 +771,15 @@ describe('Schedule 7A page', () => {
     expect(field('Distance (km)')).toHaveValue('')
 
     // Advisory validation must reject rather than crash on the absent values.
-    await user.click(bridgePanel(7009).getByRole('button', { name: 'Save' }))
+    await savePage(user)
     expect(await screen.findAllByText('Value Required')).not.toHaveLength(0)
     expect(posted).toBe(false)
   })
 
-  test('saving one row preserves unsaved edits on the other open rows (AC4)', async () => {
+  test('every open row re-derives from the echo once the page Save persists them all (AC4)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ bridges: [northFork, bridgeAt(7002, 2)] }))),
-      http.put(`${BRIDGES_URL}/7002`, () =>
+      http.put(BRIDGES_URL, () =>
         HttpResponse.json(
           doc({
             bridges: [northFork, bridgeAt(7002, 2)],
@@ -662,13 +795,18 @@ describe('Schedule 7A page', () => {
 
     const rowOneName = document.getElementById('bridge-7001-locationName') as HTMLInputElement
     await user.clear(rowOneName)
-    await user.type(rowOneName, 'UNSAVED WORK')
+    await user.type(rowOneName, 'EDITED')
 
-    await user.click(bridgePanel(7002).getByRole('button', { name: 'Save' }))
+    await savePage(user)
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
-    // Row 1 was never sent, so its typing must survive the echo that refreshed row 2.
-    expect(document.getElementById('bridge-7001-locationName')).toHaveValue('UNSAVED WORK')
+    // The page Save sends EVERY row, so afterwards no editor holds work the server has not seen —
+    // each re-derives from the echoed document. A row still showing local text would mean an edit
+    // was silently kept outside the persisted state.
+    await waitFor(() => {
+      expect(document.getElementById('bridge-7001-locationName')).toHaveValue('North Fork Bridge')
+    })
+    expect(document.getElementById('bridge-7002-locationName')).toHaveValue('Bridge 2')
   })
 
   test('a dropdown shows the served code description, not a blank placeholder (AC2)', async () => {
@@ -719,7 +857,7 @@ describe('Schedule 7A page', () => {
     let put = false
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${BRIDGES_URL}/7001`, () => {
+      http.put(BRIDGES_URL, () => {
         put = true
         return HttpResponse.json(doc())
       }),
@@ -730,7 +868,7 @@ describe('Schedule 7A page', () => {
 
     await user.clear(field('Length (m)'))
     await user.type(field('Length (m)'), '99999')
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
 
     expect(
       await screen.findByText('Entered bridge length must be between 0.0 and 9,999.9'),
@@ -745,7 +883,7 @@ describe('Schedule 7A page', () => {
     await openBridge(user, 1)
 
     await user.clear(field('Length (m)'))
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
     expect(await screen.findByText('Value Required')).toBeInTheDocument()
 
     await user.type(field('Length (m)'), '15.0')
@@ -779,7 +917,7 @@ describe('Schedule 7A page', () => {
             : doc({ bridges: [bridgeAt(8001, 1, { locationName: 'Other Mill Bridge' })] }),
         ),
       ),
-      http.put(`${BRIDGES_URL}/7001`, async () => {
+      http.put(BRIDGES_URL, async () => {
         // Land after the context has already moved on.
         await delay(60)
         return HttpResponse.json(
@@ -793,7 +931,7 @@ describe('Schedule 7A page', () => {
     render(<ContextSwitchHarness />)
     await openBridge(user, 1)
 
-    await user.click(bridgePanel(7001).getByRole('button', { name: 'Save' }))
+    await savePage(user)
     await user.click(screen.getByRole('button', { name: 'switch context' }))
 
     // The stale echo must not repaint the new context's document or its banner.
