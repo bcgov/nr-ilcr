@@ -26,11 +26,11 @@ import apiService from '@/service/api-service'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
 import useMillYear from '@/context/millYear/useMillYear'
 import { extractDetail } from '@/utils/error'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule3 } from './validation'
 import './index.scss'
@@ -75,13 +75,13 @@ function seedForm(doc: Schedule3Response): FieldValues {
   const values: FieldValues = {}
   for (const code of ALL_LINE_CODES) {
     const line = doc.lineItems.find((li) => li.costItemCode === code)
-    values[`harvest-${code}`] = numStr(line?.harvest)
+    values[`harvest-${code}`] = numStrGroup(line?.harvest)
     if (HARVEST_POP.has(code)) {
-      values[`pop-${code}`] = numStr(line?.pop)
+      values[`pop-${code}`] = numStrGroup(line?.pop)
     }
   }
-  values['popTimberVolume'] = numStr(doc.popTimber?.volume)
-  values['crownTimberVolume'] = numStr(doc.crownTimber?.volume)
+  values['popTimberVolume'] = numStrGroup(doc.popTimber?.volume)
+  values['crownTimberVolume'] = numStrGroup(doc.crownTimber?.volume)
   values['overrideHarvestTotalPop'] = doc.overrideHarvestTotalPop ?? 'N'
   values['comments'] = doc.comments ?? ''
   return values
@@ -168,6 +168,16 @@ const Schedule3: FC = () => {
       const { value } = event.target
       setForm((prev) => ({ ...prev, [key]: value }))
     }
+
+  // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
+  // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
+  // (groupInput passes it through) so the inline error still points at what the user actually wrote.
+  const groupField = (key: string) => {
+    setForm((prev) => {
+      const grouped = groupInput(prev[key] ?? '')
+      return grouped === prev[key] ? prev : { ...prev, [key]: grouped }
+    })
+  }
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -298,13 +308,7 @@ const Schedule3: FC = () => {
   }
 
   const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 3"
-        subtitle="Forest Management Administration Costs."
-      />
-    </Grid>
+    <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
   )
 
   if (contextMissing) {
@@ -357,7 +361,9 @@ const Schedule3: FC = () => {
     onBlur?: () => void,
   ) =>
     editable && writable ? (
-      <TableCell className="schedule-3__num">
+      // --input: the value lives inside a TextInput, which supplies its own inline padding. The
+      // plain-text cells are indented to match it (see index.scss) so the column shares one left edge.
+      <TableCell className="schedule-3__num schedule-3__num--input">
         <TextInput
           id={fieldKey}
           labelText={label}
@@ -365,13 +371,17 @@ const Schedule3: FC = () => {
           size="sm"
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
-          onBlur={onBlur}
+          // Re-group the value AND run the caller's own blur hook (the Annual Rents S111 alert).
+          onBlur={() => {
+            groupField(fieldKey)
+            onBlur?.()
+          }}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
       </TableCell>
     ) : (
-      <TableCell className="schedule-3__num">{fmt(current)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(current)}</TableCell>
     )
 
   const lineRow = (line: CostLine) => {
@@ -392,7 +402,7 @@ const Schedule3: FC = () => {
         <TableCell>{label}</TableCell>
         {numberCell(`harvest-${code}`, `${label} Harvest`, true, line.harvest, harvestBlur)}
         {popCell}
-        <TableCell className="schedule-3__num">{fmt(line.crown)}</TableCell>
+        <TableCell className="schedule-3__num">{fmtNumber(line.crown)}</TableCell>
       </TableRow>
     )
   }
@@ -401,9 +411,9 @@ const Schedule3: FC = () => {
   const totalRow = (key: string, label: string, total: ThreeColumnTotal) => (
     <TableRow key={key}>
       <TableCell>{label}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.harvest)}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.pop)}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.crown)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(total.harvest)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(total.pop)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(total.crown)}</TableCell>
     </TableRow>
   )
 
@@ -430,9 +440,9 @@ const Schedule3: FC = () => {
           {`${label} (${count}):`}
         </Button>
       </TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.harvest)}</TableCell>
-      <TableCell className="schedule-3__num">{popHidden ? '—' : fmt(total.pop)}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(total.crown)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(total.harvest)}</TableCell>
+      <TableCell className="schedule-3__num">{popHidden ? '—' : fmtNumber(total.pop)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(total.crown)}</TableCell>
     </TableRow>
   )
 
@@ -446,10 +456,10 @@ const Schedule3: FC = () => {
       {fieldKey !== null ? (
         numberCell(fieldKey, `${label} Harvest Volume`, true, block.volume)
       ) : (
-        <TableCell className="schedule-3__num">{fmt(block.volume)}</TableCell>
+        <TableCell className="schedule-3__num">{fmtNumber(block.volume)}</TableCell>
       )}
-      <TableCell className="schedule-3__num">{fmt(block.cost)}</TableCell>
-      <TableCell className="schedule-3__num">{fmt(block.perUnit)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtNumber(block.cost)}</TableCell>
+      <TableCell className="schedule-3__num">{fmtCurrency(block.perUnit)}</TableCell>
     </TableRow>
   )
 
@@ -593,7 +603,7 @@ const Schedule3: FC = () => {
           {editable ? (
             <TextArea
               id="comments"
-              labelText="Comments"
+              labelText="If you have any additional comments, please enter them here:"
               enableCounter
               maxCount={COMMENTS_MAX}
               value={form['comments'] ?? ''}
