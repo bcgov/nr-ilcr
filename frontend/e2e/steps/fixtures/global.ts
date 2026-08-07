@@ -29,6 +29,9 @@ export type World = {
   revisionAtOpen?: number | null;
   /** Itemized Other-Costs count read on the main page before a round-trip, re-checked after (S09). */
   otherCostsCountBefore?: number;
+  /** Other-Costs mutating-PUT tally captured mid-scenario, so a later reject can prove NO FURTHER write
+   * was sent even when an earlier step in the same scenario legitimately saved (SG-1 inline edit). */
+  otherCostsMutationsBefore?: number;
   // --- sec ---
   /** The URL of the Schedule 1 GET fired on nav — proves the SAVED Home context drove the request (UC-SEC-001). */
   schedule1RequestUrl?: string;

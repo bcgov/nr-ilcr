@@ -49,10 +49,10 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **What's wrong:** The legacy-derived Gherkin (S03–S07) says an out-of-range or non-numeric cost/volume is rejected *at entry* — "the invalid amount is not accepted into the field." In the new app the field **accepts** the typed value, an inline error appears immediately, and the **Save is blocked** (nothing is sent). The protection those slices exist for — invalid data can never be saved — still holds; only the moment/mechanism of the block differs.
   - **Expected vs actual:** Expected the field to refuse the value on entry (legacy FLD-001/002/003/004/005). Actual — the value stays in the field with a red inline message (e.g. "Entered cost must be between -99,999,999 and 99,999,999."), and clicking Save shows "Please correct the highlighted fields before saving." and sends nothing to the server.
   - **How we caught it (verified 2026-07-29, re-verified 2026-08-07):** Re-grounding S03–S07 against 24050/2017. For each field we typed an invalid value, saw the inline error, clicked Save, and a `page.route` spy confirmed **zero** `PUT /api/v1/schedule1` calls. Still accurate today: `Schedule1.handleSave` (index.tsx:165) aborts on `validateSchedule1(form)` before the PUT.
-  - **Is it a defect?** Looks like a deliberate client design that preserves the guarantee — BA/QA to confirm the mechanism change is acceptable parity.
-  - **Action:** BA/QA to confirm parity is acceptable. Kept as a **GREEN** re-grounded test asserting the preserved guarantee (inline error + proven zero-write), **not** a `@discovered-divergence` red — the guarantee holds, so there is no failing behaviour to track.
+  - **Is it a defect? NO — confirmed DELIBERATE by BA/QA (2026-08-07).** The inline-error + blocked-Save design is the intended behaviour; the legacy reject-at-keystroke mechanism is not required, because the guarantee those slices exist for (invalid data can never be saved) is fully preserved.
+  - **Action:** none. Adjudicated and closed. The re-grounded tests stay **GREEN**, asserting the preserved guarantee (inline error + proven zero-write) — never a `@discovered-divergence` red.
   - **Priority / env:** p1 · local seeded DB (security off, datasource on).
-  - **Status:** OPEN. Found 2026-07-29; re-verified 2026-08-07.
+  - **Status:** CLOSED — accepted as designed (BA/QA, 2026-08-07). Found 2026-07-29.
   - **Test:** `validation.feature` (S03–S07) — GREEN.
 
 - **#2 — RETIRED (obsolete): the 8-digit volume fields are editable again.**
@@ -72,15 +72,59 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** OPEN. Found 2026-08 (bcgov sync); re-verified 2026-08-07.
   - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
 
-- **#4 — Editing an existing Other Cost row gets no inline validation; only the server catches it.** _(NEW 2026-08-07)_
-  - **What's wrong:** On the Other Costs sub-page, the **Add** form checks your entry as you submit it and refuses to send a bad row (blank description, out-of-range cost) with a red message under the box. Editing a row that is **already in the list** behaves differently: nothing is checked in the browser, Save sends the whole list, and the error only comes back from the server as a page-level message. The row-level red-highlight machinery exists in the code but never activates.
-  - **Expected vs actual:** Expected the same inline field error on an inline edit as on Add (the UC sidecar applies the same Description and Cost rules to "per-row inline edit of an existing item"). Actual — no field-level feedback; a server round-trip returns "Description: Value is required." as a page notification.
-  - **How we caught it (verified on real data 2026-08-07):** Authoring the inline-edit coverage. `useEditableCostRows.handleSave` calls `persist(rows, 'save')` with no `validate(...)` call (only `handleAdd` validates), and `setRowErrors` is never populated with errors — so the `invalid`/`invalidText` props on the row inputs are dead code. Confirmed at the API on 12050/2017: a batch `PUT …/other-costs?intent=save` with a blanked description → HTTP 400 "Description: Value is required."; with cost 150000000 → HTTP 400 "Entered cost must be between -99,999,999 and 99,999,999." In both cases a read-back showed **all rows unchanged**.
-  - **Is it a defect?** The guarantee — an invalid row cannot be persisted — **holds**, because `OtherCostSaveRequest` validates every row server-side (`@NotBlank` description, `@Min`/`@Max` cost) and rejects the whole batch. What differs is where the feedback comes from, and that the user pays a round-trip. BA/QA to confirm whether inline parity with the Add form is wanted.
-  - **Action:** BA/QA to confirm. Kept **GREEN** asserting the preserved guarantee (error surfaced + record provably unchanged), **not** a `@discovered-divergence` red.
-  - **Priority / env:** p2 · local seeded DB.
+- **#4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
+  - **What it claimed:** that editing a row already in the list skipped browser-side validation, so an
+    invalid inline edit was only caught by the server after a round-trip.
+  - **Why it was wrong (corrected 2026-08-07):** the claim came from reading
+    `useEditableCostRows.handleSave`, which looks bare — but it delegates to `persist`, and **`persist`
+    validates every row**, populates `rowErrors`, and **returns before sending** if any row is invalid.
+    An invalid inline edit therefore behaves exactly like an invalid Add: inline error, no request.
+  - **Checked against LEGACY, not just against our own internal consistency (the correct test for a
+    divergence):** legacy `schedule1OtherCosts.xhtml` put the per-row inputs in form `otherCostsForm`
+    with `required="true"` on the row description and `validator="costValidator"` on the row cost
+    (technical.md:96,99). JSF runs those in Process Validations on **form submit** — i.e. on clicking
+    Save — displaying the errors and persisting nothing. That is the same point in the interaction as
+    ours. **No mechanism divergence on this sub-page.** (Note this differs from the MAIN page, where
+    legacy validated at keystroke — that is Divergence #1, and it is confined to `schedule1.xhtml`.)
+  - **Open question answered, also from legacy:** should the sub-page show BOTH an Add and a Save
+    button? **Yes — legacy had both**, as two independent forms: `addCostForm` (Description / disabled
+    shared Volume / Cost / `$/m³` + **Add** → `addOtherCost()`) and `otherCostsForm` (the row table +
+    **Save** → `save()` + Back) — technical.md:43,90-94,104-105. Our sub-page mirrors that, including
+    the disabled shared volume and `$/m³` in the add form (`#add-description` / `#add-volume` /
+    `#add-cost` / `#add-perunit`). So having both buttons is parity, not an accident.
+  - **Status:** RETRACTED 2026-08-07. Nothing to adjudicate — but see Divergence #5, which the legacy
+    re-check surfaced.
+
+- **#5 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
+  _(NEW 2026-08-07 — found by re-checking #4 against legacy instead of against our own implementation.)_
+  - **What's missing:** in legacy, once a report had been **submitted** (left Draft), every editable
+    Cost/Volume field that differed from its previously-saved value displayed a small icon button beside
+    it, with a tooltip showing the earlier value — so a reviewer could see at a glance what had been
+    changed since the last save, and what it used to be. The new app has nothing equivalent.
+  - **Legacy evidence:** technical.md:44 — "every editable Cost/Volume field on `schedule1.xhtml` is
+    paired with an 'original value' indicator — a `type="button"` icon button `{id}OB` (rendered only
+    when `{lineItem}.is{Volume|Cost}OriginalVal(schedule1MB.isSubmit())` is true) plus a `p:tooltip`
+    `{id}O` bound to it, showing the previously-saved value via `{lineItem}.{volume|cost}Original`.
+    **This indicator only appears once the report has left Draft** and the entered value differs from
+    the original." Named instances: `commentsOB`/`commentsTT` on the main page (technical.md:84) and
+    `descriptionOB` / `costOB` per row on the Other Costs sub-page (technical.md:97,100).
+  - **How we caught it (2026-08-07):** re-checking Divergence #4 against the legacy sidecars rather than
+    assuming our implementation was right. Grepped the new app for any equivalent: none in
+    `components/schedule1/index.tsx`, `components/schedule1OtherCosts/index.tsx`,
+    `hooks/useEditableCostRows.ts` or `core/EditableSubPageLayout`.
+  - **Why (technical):** it is missing **end to end, not just in the UI** — the API exposes no prior
+    value at all (`schedule1/dto/*.java` has no `original`/`previous` field), so the frontend could not
+    render the indicator today even if someone added the markup. Restoring it needs a backend change.
+  - **Is it a defect?** BA/QA to decide. It is a genuine legacy capability that has not been carried
+    over, in the **post-submission review** path — which is why no Draft-focused scenario would ever
+    have caught it. If reviewers/auditors relied on it to spot what a licensee changed after submitting,
+    this is a real functional gap; if the audit tables now serve that need, dropping it is fine.
+  - **Priority / env:** p2 pending triage · local seeded delivery DB.
   - **Status:** OPEN. Found 2026-08-07.
-  - **Test:** `other-costs-inline-edit.feature` `@SG-1 @p1` — GREEN.
+  - **Test:** none — out of reach for this UC's scenarios, which all run against Draft schedules (the
+    indicator only renders once a report has left Draft). S22 covers the non-Draft render but asserts
+    only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in
+    coverage.md; revisit with the submission/review UC.
 
 **Coverage gaps (not tested yet — no app problem):**
 
@@ -146,9 +190,13 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 - **#1 — Per-row inline edit of an existing Other Cost row has no derived `.feature` scenario.** _(NEW 2026-08-07)_
   - **What's missing:** `UC-SCH1-001-slices.md` documents inline editing of an existing Other Cost row in two places — the Description rule reads "Description (new line item; **same rule applies to per-row inline edit of an existing item's description**)", and the invalid-Cost trigger reads "…when adding a new Other Cost line item **or editing an existing row's Cost inline**". The derived `UC-SCH1-001-S09..S12.feature` files cover only the **Add** form and the per-row **Remove** — there is no slice for editing a row that is already in the list, even though the app implements it (`#row-description-<key>` / `#row-cost-<key>` plus a batch Save).
   - **How we caught it (2026-08-07):** reconciling the `.feature` set against the slice matrix rather than treating it as the complete inventory — the classic lossy-projection case.
-  - **Action:** covered here rather than by editing the legacy `.feature` files (those are the source projection and stay as authored). BA/QA may want the slice added upstream for traceability.
-  - **Status:** OPEN (covered by test; upstream slice still missing).
-  - **Test:** `other-costs-inline-edit.feature` `@SG-1 @p1` — GREEN. See also Divergence #4 for the validation-mechanism difference it exposed.
+  - **Action / RESOLVED 2026-08-07:** the missing slice has now been derived upstream in `ilcr-bmad` as
+    **UC-SCH1-001-S25 "Edit an Existing Other Cost Line Item Inline"** (branch
+    `spec/uc-sch1-001-inline-edit-slice`) — feature file, gherkin README inventory (24 -> 25 slices), and
+    a full detail section in `UC-SCH1-001-slices.md`. The projection and the matrix now agree, so this
+    gap is closed at the source rather than only compensated for here.
+  - **Status:** RESOLVED — slice derived upstream 2026-08-07; E2E coverage already in place.
+  - **Test:** `other-costs-inline-edit.feature` `@S25 @p1` — GREEN. (An earlier Divergence #4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
 
 **Verified — not a defect:**
 

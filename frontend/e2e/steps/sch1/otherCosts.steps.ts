@@ -96,6 +96,19 @@ When('I save the Other Costs', async ({ otherCostsPage }) => {
   await otherCostsPage.save();
 });
 
+When('I note the Other Costs mutation count', async ({ otherCostsSpy, world }) => {
+  // Baseline for a mid-scenario prove-the-negative: a scenario that legitimately saves BEFORE testing a
+  // rejected save cannot assert an absolute zero, so it asserts no FURTHER mutation from here.
+  world.otherCostsMutationsBefore = otherCostsSpy.mutations;
+});
+
+Then('no further Other Costs mutation should have been sent', async ({ otherCostsSpy, world }) => {
+  expect(
+    otherCostsSpy.mutations,
+    'a client-rejected Other Costs save must fire no additional mutating PUT',
+  ).toBe(world.otherCostsMutationsBefore);
+});
+
 When('I note the Subtotal Other Costs count', async ({ schedule1Page, world }) => {
   world.otherCostsCountBefore = await schedule1Page.otherCostsCount();
 });
