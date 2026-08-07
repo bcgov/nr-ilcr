@@ -20,7 +20,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, fmtNumber, numStr, toNum, withCommas } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { getRouteApi } from '@tanstack/react-router'
@@ -115,7 +115,7 @@ const CategoryCell: FC<{
 }> = ({ inputId, label, value, readOnly, invalidText, onValueChange }) => {
   if (readOnly) {
     return (
-      <TableCell className="schedule-4__num">{value === '' ? '—' : withCommas(value)}</TableCell>
+      <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
     )
   }
   return (
