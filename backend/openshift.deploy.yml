@@ -32,6 +32,12 @@ parameters:
     value: "30m"
   - name: MEMORY_REQUEST
     value: "256Mi"
+  - name: MEMORY_LIMIT
+    description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile)
+    value: "512Mi"
+  - name: ILCR_SECURITY_ENABLED
+    description: Enforce Cognito (FAM) JWT auth. "false" installs MockPrincipalFilter, treating every request as an authenticated ILCR_SUBMITTER — flip to "true" for test/prod when FAM login lands in the frontend.
+    value: "false"
   - name: LOG_LEVEL
     description: Application log level (debug|info|warn|error)
     value: "info"
@@ -127,10 +133,8 @@ objects:
                   value: openshift,oracle
                 - name: APP_VERSION
                   value: ${IMAGE_TAG}
-                # Interim: mock-auth frontend can't produce Cognito JWTs yet.
-                # Flip to "true" when FAM login lands in the frontend.
                 - name: ILCR_SECURITY_ENABLED
-                  value: "false"
+                  value: ${ILCR_SECURITY_ENABLED}
                 - name: ILCR_DATASOURCE_ENABLED
                   value: "true"
                 - name: ORACLEDB_HOST
@@ -168,6 +172,8 @@ objects:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
                   ephemeral-storage: "200Mi"
+                limits:
+                  memory: ${MEMORY_LIMIT}
               securityContext:
                 allowPrivilegeEscalation: false
                 runAsNonRoot: true

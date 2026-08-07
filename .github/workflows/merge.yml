@@ -29,17 +29,15 @@ jobs:
       # Get PR number for squash merges to main
       - id: pr
         uses: bcgov/action-get-pr@28b0adf8e4d40720d41f9c87356ce24b0a4bd6af # v0.3.1
+  # TEST/PROD deploys are held behind ENABLE_OPENSHIFT_DEPLOY until the code
+  # is ready for those environments; set the repo variable to "true" to open
+  # the pipeline. PR sandbox deploys (pr-open.yml) are not gated.
   deploy-test:
     name: TEST Deploys (${{ needs.init.outputs.pr }})
     if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
-    secrets:
-      oc_namespace: ${{ secrets.oc_namespace }}
-      oc_token: ${{ secrets.oc_token }}
-      oracledb_username: ${{ secrets.oracledb_username }}
-      oracledb_password: ${{ secrets.oracledb_password }}
-      user_pools_id: ${{ secrets.USER_POOLS_ID }}
+    secrets: inherit
     with:
       environment: test
       target: test
@@ -58,12 +56,7 @@ jobs:
     if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [tests, init]
     uses: ./.github/workflows/reusable-deploy.yml
-    secrets:
-      oc_namespace: ${{ secrets.oc_namespace }}
-      oc_token: ${{ secrets.oc_token }}
-      oracledb_username: ${{ secrets.oracledb_username }}
-      oracledb_password: ${{ secrets.oracledb_password }}
-      user_pools_id: ${{ secrets.USER_POOLS_ID }}
+    secrets: inherit
     with:
       environment: prod
       target: prod

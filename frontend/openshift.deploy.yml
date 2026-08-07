@@ -32,6 +32,8 @@ parameters:
     value: "20m"
   - name: MEMORY_REQUEST
     value: "64Mi"
+  - name: MEMORY_LIMIT
+    value: "128Mi"
   - name: LOG_LEVEL
     description: Caddy log level (debug|info|warn|error)
     value: "info"
@@ -124,6 +126,8 @@ objects:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
                   ephemeral-storage: "100Mi"
+                limits:
+                  memory: ${MEMORY_LIMIT}
               securityContext:
                 allowPrivilegeEscalation: false
                 runAsNonRoot: true
