@@ -30,6 +30,11 @@
   gap: $spacing-02;
 }
 
+// Highlight the page row currently open in the editor panel (the list stays visible below the panel).
+.schedule-8__row--editing td {
+  background-color: var(--cds-highlight);
+}
+
 .schedule-8__panel {
   border: 1px solid var(--cds-border-subtle);
   padding: $spacing-05;
@@ -61,10 +66,13 @@
   font-size: 0.75rem;
 }
 
+// Match the Carbon input/comments label (.cds--label): 14px, primary text, normal weight — so the
+// computed-field + read-only labels read the same as the editable-field labels beside them.
 .schedule-8__field-label {
   display: block;
-  color: var(--cds-text-secondary);
-  font-size: 0.75rem;
+  color: var(--cds-text-primary);
+  font-size: 14px;
+  font-weight: 400;
 }
 
 // A field label carrying an info tooltip (the legacy "Note:" entry hints) — label + icon inline.
@@ -109,6 +117,23 @@
   align-items: center;
   min-block-size: 2rem;
   margin-block-start: $spacing-03;
+  // A Carbon text input insets its text by its padding + border (1rem + 1px), so a bare value would
+  // sit ~1rem left of the input numbers beside it. Indent by that inset so the last column's figure
+  // lines up horizontally with its editable row-mates (mirrors the Schedule 2 read-only-cell fix).
+  padding-inline-start: calc(1rem + 1px);
+}
+
+// The "TtT Samples" ghost button sits in the selector row with no label of its own, so with the row's
+// top-alignment it floats up level with the field labels. Bottom-align it so it lines up with the
+// input boxes (its row-mates) instead.
+.schedule-8__samples-action {
+  align-self: flex-end;
+}
+
+// The TSA-or-TFL selector carries the longest option descriptions (TSA / TFL names), so give it a
+// wider min-width than the default field so the text isn't truncated to an ellipsis.
+.schedule-8__tsa-tfl {
+  min-inline-size: 18rem;
 }
 
 .schedule-8__grid {

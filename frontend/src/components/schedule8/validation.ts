@@ -44,6 +44,7 @@ export const MESSAGES = {
   originalRate: 'Entered rate must be between 0 and 999,999.99.',
   costingRate: 'Entered rate must be between 0 and 9,999,999.99.',
   descriptionMax: 'Description can not exceed 30 characters.',
+  phone: 'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
 } as const
 
 const PERCENT = { min: 0, max: 100 }
@@ -116,6 +117,11 @@ export function validatePageForm(form: PageForm): Record<string, string> {
   if (isBlank(form.becZone)) errors.becZone = MESSAGES.required
   // TSA-or-TFL context: the TSA-or-TFL field must be chosen (BR-03).
   if (isBlank(form.tsaNumber)) errors.tsaNumber = MESSAGES.required
+  // Phone is optional at Save (required only at Check Status), but a partial entry is rejected — it
+  // must be a complete 10-digit number. Count digits (format-agnostic) rather than matching the dashed
+  // shape, so a stored value seeded without dashes (e.g. 4564564566) still validates as it displays.
+  const phoneDigits = form.phone.replace(/\D/g, '')
+  if (phoneDigits.length > 0 && phoneDigits.length !== 10) errors.phone = MESSAGES.phone
   return errors
 }
 

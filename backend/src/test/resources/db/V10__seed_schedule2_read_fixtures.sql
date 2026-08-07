@@ -53,20 +53,22 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT
 -- Sch3 cat-3 summary 1203 (CROWN_VOLUME 12345): PO&P volume + PO&P cost.
 -- item 118 PO&P Timber volume = 10000  -> purchasedLogCost.perUnit = 500000/10000 = 50.0
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (6032, 1203, 118, 10000, NULL, NULL, 'SEED');
--- item 135 PO&P actual cost = 20000 -> purchasedWoodOverhead.perUnit = 20000/10000 = 2.0
+-- item 135 (legacy inert): PO&P actual cost is now the Sch3 Subtotal Actual Costs PO&P column, seeded
+-- as real actual-cost lines (items 27/125/37) in V33 — NOT this row. Kept to prove 135 is ignored.
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (6033, 1203, 135, NULL, 20000, NULL, 'SEED');
--- Sch1 cat-1 summary 1201: item 144 Subtotal Company Logging cost = 617250
---   -> totalCompanyLogging.perUnit = 617250 / 12345 (Crown vol) = 50.0
+-- Sch1 cat-1 summary 1201: item 144 Subtotal Company Logging cost = 617250 (silv items 1/2 in V33).
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (6034, 1201, 144, NULL, 617250, NULL, 'SEED');
 
--- Expected derived figures for 621/2021 (asserted by Schedule2DocumentIT):
+-- Expected derived figures for 621/2021 (asserted by Schedule2DocumentIT; Sch3 actual-cost + Sch1
+-- silviculture rows added in V33 — PO&P actual cost 20000, actual-costs crown 100000, silvAdmin
+-- crown 5000, Sch1 silvActual 20000 / silvAccrued 8450):
 --   purchasedLogCost:      volume 10000, cost 500000, perUnit 50.0
---   purchasedWoodOverhead: volume 10000, cost 20000,  perUnit 2.0
+--   purchasedWoodOverhead: volume 10000, cost 20000,  perUnit 2.0    (Sch3 Subtotal Actual Costs PO&P)
 --   subtotal:              volume 10000, cost 520000,  perUnit 52.0
 --   lessLogSales:          volume 2000,  cost 100000,  perUnit 50.0
 --   netPurchased:          volume 8000,  cost 420000,  perUnit 52.5   (10000-2000 ; 520000-100000)
---   totalCompanyLogging:   volume 12345, cost 617250,  perUnit 50.0
---   totalAverage:          volume 20345, cost 1037250            (8000+12345 ; 420000+617250)
+--   totalCompanyLogging:   volume 12345, cost 740700,  perUnit 60.0   (617250+100000+((20000-5000)+8450))
+--   totalAverage:          volume 20345, cost 1160700           (8000+12345 ; 420000+740700)
 
 -- ================================================================================================
 -- Mill 517 / 2021 — non-Draft (track "S") fixture (AC5) AND missing-Sch3-data fixture (AC "absent

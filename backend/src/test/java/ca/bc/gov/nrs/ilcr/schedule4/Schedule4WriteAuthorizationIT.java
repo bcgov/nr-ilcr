@@ -113,4 +113,27 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
+
+  @Test
+  @DisplayName("no EDIT_SCHEDULE -> PUT row 403 problem+json")
+  void putRow_noPermission_returns403() throws Exception {
+    mockMvc.perform(put("/api/v1/schedule4/locations/8020/rows/999999")
+            .param("millId", "543").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> PUT row passes authz (not 403)")
+  void putRow_submitter_passesAuthorization() throws Exception {
+    // Submitter clears the EDIT_SCHEDULE gate; row 999999 is not a sub-page row of 8020, so the
+    // request proceeds past authz to a 404 (never 403) — the authz contract this IT asserts.
+    mockMvc.perform(put("/api/v1/schedule4/locations/8020/rows/999999")
+            .param("millId", "543").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
+            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().isNotFound());
+  }
 }
