@@ -49,6 +49,16 @@ export const countSchedule1Volumes = (millId: number, year: number): number =>
   Number(run('count-volumes', String(millId), String(year)).trim());
 
 /**
+ * NULL the volume-only fields (143/144/139/140) a scenario wrote but the blank-fields PUT cannot undo,
+ * because `Schedule1Service` treats a null there as "field omitted" (defects.md Bug/Regression #2).
+ * Called by the `schedule1Restore` cleanup after its restore PUT — without it, S01's writes to those
+ * fields survive teardown and the happy-path target drifts from its pinned empty baseline every run.
+ */
+export const blankGuardedSchedule1Volumes = (millId: number, year: number): void => {
+  run('blank-guarded', String(millId), String(year));
+};
+
+/**
  * Put a schedule into the genuine first-entry state the S02 crown pre-fill needs: NULL every stored
  * detail volume AND remove its item-19 Other-Costs rows. The app cannot reach this state itself (a
  * blanking PUT is a no-op for the five `!= null`-guarded volume fields — defects.md Bug/Regression #2),

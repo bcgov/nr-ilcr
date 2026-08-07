@@ -8,7 +8,7 @@ import {
   emptyScheduleRequest,
   scheduleUrl,
 } from '../fixtures/sch1/schedule1-test-data';
-import { restoreSchedule1 } from './sch1/schedule1DbRestore';
+import { blankGuardedSchedule1Volumes, restoreSchedule1 } from './sch1/schedule1DbRestore';
 import { deleteOtherCostsByMarker } from './sch1/otherCostsApi';
 
 /**
@@ -128,6 +128,10 @@ export const test = base.extend<Fixtures>({
         if (!putRes.ok()) {
           residue.push(`${millId}/${year} restore PUT -> HTTP ${putRes.status()}`);
         }
+        // The blanking PUT cannot clear 143/144/139/140 — the server reads a null there as "field
+        // omitted" (Bug/Regression #2), so S01's writes to them would survive teardown and the pinned
+        // empty baseline would drift a little further every run. Finish the job at the DB.
+        blankGuardedSchedule1Volumes(millId, year);
       } catch (err) {
         residue.push(`${millId}/${year} threw: ${(err as Error).message}`);
       }

@@ -23,6 +23,7 @@ Usage (called by the S02/S13/S24 fixtures; also runnable by hand):
     python sch1_db_restore.py snapshot      <millId> <year>
     python sch1_db_restore.py restore       <millId> <year>
     python sch1_db_restore.py first-entry   <millId> <year>
+    python sch1_db_restore.py blank-guarded <millId> <year>
 
 Connection: ORACLE_DSN (default THE/default@localhost:1525/DBDOCK_01), thin-mode `oracledb` (no client).
 This host has no local sqlplus and the seeded Oracle is reached directly on :1525, so the suite's DB
@@ -161,6 +162,38 @@ def first_entry(mill_id: int, year: int) -> None:
     print(f"first-entry ok: {mill_id}/{year} summaryId={sid} blanked={blanked} otherCostsRemoved={removed}")
 
 
+GUARDED_VOLUME_CODES = (143, 144, 139, 140)
+
+
+def blank_guarded(mill_id: int, year: int) -> None:
+    """NULL the volume-only fields S01 writes but CANNOT clean up through the API.
+
+    `emptyScheduleRequest` blanks every writable field by PUTting nulls, which works for line items
+    12–18 and silviculture 1/2. It does NOT work for 143/144/139/140: `Schedule1Service` guards those
+    scalars with `!= null`, so a null is a silent no-op and the value written by S01 survives teardown
+    (defects.md Bug/Regression #2). Without this the happy-path target drifts a little further from its
+    pinned empty baseline on every run.
+
+    Item 19 (the shared Other-Costs volume) carries the same guard but is deliberately NOT reset here —
+    S01 never writes it, the seeded target legitimately holds one, and nulling it would trip the
+    `toOtherCosts` NPE (Bug/Regression #3).
+    """
+    con = connect()
+    cur = con.cursor()
+    sid = find_summary_id(cur, SUMMARY, mill_id, year)
+    if sid is None:
+        raise SystemExit(f"blank-guarded: no Schedule 1 summary for {mill_id}/{year}")
+    codes = ", ".join(str(c) for c in GUARDED_VOLUME_CODES)
+    cur.execute(
+        f"UPDATE {DETAIL} SET VOLUME = NULL "
+        f"WHERE ILCR_REPORT_SUMMARY_ID = :s AND ILCR_REPORT_COST_ITEM_ID IN ({codes})",
+        [sid],
+    )
+    blanked = cur.rowcount
+    con.commit()
+    print(f"blank-guarded ok: {mill_id}/{year} summaryId={sid} rows={blanked}")
+
+
 def count_volumes(mill_id: int, year: int) -> None:
     """Print how many detail rows hold a non-null VOLUME — lets S02 prove the pre-fill is SERVED ONLY.
 
@@ -181,15 +214,16 @@ def count_volumes(mill_id: int, year: int) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    if len(args) != 3 or args[0] not in ("snapshot", "restore", "first-entry", "count-volumes"):
+    if len(args) != 3 or args[0] not in ("snapshot", "restore", "first-entry", "blank-guarded", "count-volumes"):
         raise SystemExit(
-            "usage: sch1_db_restore.py {snapshot|restore|first-entry|count-volumes} <millId> <year>"
+            "usage: sch1_db_restore.py {snapshot|restore|first-entry|blank-guarded|count-volumes} <millId> <year>"
         )
     action, mill_id, year = args[0], int(args[1]), int(args[2])
     {
         "snapshot": snapshot,
         "restore": restore,
         "first-entry": first_entry,
+        "blank-guarded": blank_guarded,
         "count-volumes": count_volumes,
     }[action](mill_id, year)
 
