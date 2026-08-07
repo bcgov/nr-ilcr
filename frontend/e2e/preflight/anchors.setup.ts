@@ -38,13 +38,19 @@ type TargetFindings = { destructible: string[]; advisory: string[] };
  *    12–18 (volume + cost), silviculture actualSpent(1) / accruedLessActual(2) (volume + cost) — plus
  *    itemized Other-Costs rows (S01 asserts `count === 0` and never touches them, so a stale row breaks
  *    its precondition). A value here is a genuine data-loss / precondition risk.
- *  - ADVISORY (→ WARN, don't fail): the volume-only, server-null-guarded fields S01 neither writes nor
- *    restores — line items 143/144, silviculture lessAdmin(139) / total(140), and the shared
- *    Other-Costs(19) volume. The backend null-guards these on write (`if (request.forestMgmtAdminVolume()
- *    != null)` …, Schedule1Service:324-373) and `emptyScheduleRequest` sends them null / omits them, so
- *    S01 CANNOT overwrite them. A value here means the anchor drifted from its pinned empty baseline, but
- *    the run itself is safe — flagging it as a hard "S01 will overwrite" failure would send a maintainer
- *    chasing the wrong fix (and needlessly cascade-fail all 41 tests on a safe target).
+ *  - ADVISORY (→ WARN, don't fail): the volume-only, server-null-guarded fields — line items 143/144,
+ *    silviculture lessAdmin(139) / total(140), and the shared Other-Costs(19) volume. A value here means
+ *    the anchor drifted from its pinned empty baseline, but the run itself is safe — flagging it as a
+ *    hard "S01 will overwrite" failure would send a maintainer chasing the wrong fix (and needlessly
+ *    cascade-fail the whole suite on a safe target).
+ *
+ *    UPDATED 2026-08-07 — this used to read "fields S01 neither writes nor restores … S01 CANNOT
+ *    overwrite them". That is no longer true for 143/144/139/140: backend commit 0b58057 made those
+ *    volumes user-editable, and S01 now writes and reads them back. They stay ADVISORY rather than
+ *    DESTRUCTIBLE because S01 DOES clean them up — but at the DB, not through the API: the backend's
+ *    `!= null` guard means a blanking PUT is a silent no-op there (defects.md Bug/Regression #2), so the
+ *    cleanup finishes the job via `sch1_db_restore.py blank-guarded`. The shared Other-Costs(19) volume
+ *    is the one field the original claim still holds for — S01 never writes it.
  *
  * Cost on 143/144/139/140 is intentionally NOT inspected: it is pulled from Schedule 3 / derived
  * server-side, so a non-null cost is normal on an empty Draft.
