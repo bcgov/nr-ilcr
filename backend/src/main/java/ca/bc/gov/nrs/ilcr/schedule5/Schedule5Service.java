@@ -1,9 +1,18 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryAmount;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -14,18 +23,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Assembles the Schedule 5 (Camp and Access Expenses) read document from the stored
- * {@code CAMP_REPORT} camps and their keyed {@code ILCR_COST_REPORT_DETAIL} category amounts,
- * computing every derived value server-side (AD-5, AD-6): the four totals, every $/m&sup3;, the two
- * sub-page row counts, and the item-62/68 cost sums. The mill/year context is validated by
- * {@code MillContextService} in the controller before this runs (AD-4).
+ * Assembles the Schedule 5 (Camp and Access Expenses) read document from the stored {@code
+ * CAMP_REPORT} camps and their keyed {@code ILCR_COST_REPORT_DETAIL} category amounts, computing
+ * every derived value server-side (AD-5, AD-6): the four totals, every $/m&sup3;, the two sub-page
+ * row counts, and the item-62/68 cost sums. The mill/year context is validated by {@code
+ * MillContextService} in the controller before this runs (AD-4).
  *
- * <p>A valid, ACTIVE mill/year with NO camps is not a 404 — it is the legitimate no-camps state
- * and yields a 200 {@code camps: []} (deviation (a); the 404 is reserved for a missing mill/year
+ * <p>A valid, ACTIVE mill/year with NO camps is not a 404 — it is the legitimate no-camps state and
+ * yields a 200 {@code camps: []} (deviation (a); the 404 is reserved for a missing mill/year
  * context row). That is the norm rather than the exception: the delivery image carries 61 camps and
  * zero camp-linked detail rows (Story 7.1 Task 1 gate (v)), so a real camp today derives entirely
  * from nulls — which is exactly why a null total must stay null and never collapse to {@code 0}.
@@ -45,6 +56,33 @@ public class Schedule5Service {
 
   private static final String STATUS_DRAFT = "D";
   private static final String INDICATOR_YES = "Y";
+  private static final String INDICATOR_NO = "N";
+
+  private static final String OUTCOME_MET = "MET";
+  private static final String OUTCOME_ISSUES = "ISSUES";
+  private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
+  private static final String MSG_CAMP_MET = "campRequirementsMetMsg";
+  private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
+
+  // The eight Check Status field names, which are also the CampRequest property names the licensee
+  // must fill in. Schedule5Controller maps each to its verbatim legacy label segment; these two
+  // places are the ONLY ones the names live in, so a mismatch is a programming error and the
+  // controller throws rather than rendering "null" into a line.
+  static final String FIELD_CAMP_NAME = "campName";
+  static final String FIELD_ROAD_DISTANCE = "roadDistanceToOperatingArea";
+  static final String FIELD_SIZE_OF_CAMP = "sizeOfCamp";
+  static final String FIELD_ASSOCIATED_CAMP_VOLUME = "associatedCampVolume";
+  static final String FIELD_OTHER_CAMP_DESCRIPTION = "otherCampExpenseDescription";
+  static final String FIELD_OTHER_CAMP_COST = "otherCampExpenseCost";
+  static final String FIELD_OTHER_ACCESS_DESCRIPTION = "otherAccessExpenseDescription";
+  static final String FIELD_OTHER_ACCESS_COST = "otherAccessExpenseCost";
+
+  // The two cost ranges CategoryEntry cannot express declaratively (see
+  // CampCostOutOfRangeException). Both come straight from ILCRCostValidator +
+  // Constants.ScheduleValues:102-109.
+  private static final int COST_STANDARD_LIMIT = 9_999_999;
+  private static final String COST_KEY_STANDARD = "costSize7ValidatorErrorMsg";
+  private static final String COST_KEY_RECOVERIES = "costValidatorSchedule9ErrorMsg";
 
   // Cost item ids — legacy Constant.REPORT_COST_ITEMS (:336-342), all delivery-registered under
   // ILCR_CATEGORY_ID='5' (Task 1 gate (iv)). Item 57 ("Food") is registered but has NO legacy
@@ -103,11 +141,11 @@ public class Schedule5Service {
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
     // Camps FIRST, then their details. The two reads are separate statements and Oracle READ
-    // COMMITTED gives each its own snapshot, so a camp committed between them is visible to one
-    // and not the other. In this order the newcomer is simply not in the camp list yet — a
-    // consistent older view. Reversed, it would appear in the list with no details found and be
-    // served with every category empty and every total absent, indistinguishable from a genuine
-    // zero-detail camp: wrong money, silently. 7.2's write path makes that reachable in normal use.
+    // COMMITTED gives each its own snapshot, so a camp committed between them is visible to one and
+    // not the other. In this order the newcomer is simply not in the camp list yet — a consistent
+    // older view. Reversed, it would appear in the list with no details found and be served with
+    // every category empty and every total absent, indistinguishable from a genuine zero-detail
+    // camp: wrong money, silently. 7.2's write path makes that reachable in normal use.
     List<CampRow> campRows = repository.findCamps(millId, year);
     Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
     List<Camp> camps = campRows.stream()
@@ -122,15 +160,15 @@ public class Schedule5Service {
    * The per-camp detail rows, split into the single-row fixed grid and the two sub-page row lists.
    *
    * <p>Duplicate rows for a single-row item resolve FIRST-BY-DETAIL-ID-WINS with a warning
-   * (deviation (f)). Legacy simply overwrote the same {@code CostVolumeType}
-   * ({@code Schedule5DAO.java:211-234}), so the survivor was whichever row an identity-hashed
-   * {@code HashSet} yielded last — not stable between JVM runs. The repository's detail-id ordering
-   * plus {@code putIfAbsent} replaces that chance with determinism, so no derived total depends on
-   * row order.
+   * (deviation (f)). Legacy simply overwrote the same {@code CostVolumeType} ({@code
+   * Schedule5DAO.java:211-234}), so the survivor was whichever row an identity-hashed {@code
+   * HashSet} yielded last — not stable between JVM runs. The repository's detail-id ordering plus
+   * {@code putIfAbsent} replaces that chance with determinism, so no derived total depends on row
+   * order.
    *
    * <p>An unregistered item id is dropped with a warning, which is legacy-verbatim: the dispatch
-   * chain's else-branch logs {@code Cost Item ID Not Found} and discards the row
-   * ({@code Schedule5DAO.java:283-285}).
+   * chain's else-branch logs {@code Cost Item ID Not Found} and discards the row ({@code
+   * Schedule5DAO.java:283-285}).
    */
   private Map<Integer, CampDetails> groupDetails(long millId, int year) {
     Map<Integer, CampDetails> byCamp = new HashMap<>();
@@ -153,13 +191,22 @@ public class Schedule5Service {
       } else if (SINGLE_ROW_ITEMS.contains(itemId)) {
         DetailRow kept = camp.fixed().putIfAbsent(itemId, row);
         if (kept != null) {
-          log.warn(
+          // DEBUG, not WARN — deviation (O). These two lines fire once per offending ROW on EVERY
+          // read, and what they report is a property of stored data, not an event: a camp either
+          // has a duplicate/unknown row or it does not, and logging it again on the next GET tells
+          // an operator nothing new. Story 7.1 could log them at WARN harmlessly because no
+          // camp-linked detail row existed anywhere in delivery (gate (vii)); 7.2's writes create
+          // the first ones, which makes both branches reachable and would turn a single malformed
+          // camp into permanent per-request WARN noise (deferred-work.md:246). Demoted rather than
+          // deduped: dedupe needs cross-request state, and the diagnostic value is in the detail
+          // ids, which a per-row line preserves.
+          log.debug(
               "Schedule 5 mill {} year {} camp {} has more than one row for cost item {}; keeping"
                   + " detail id {} and ignoring detail id {}",
               millId, year, row.campId(), itemId, kept.detailId(), row.detailId());
         }
       } else {
-        log.warn(
+        log.debug(
             "Schedule 5 mill {} year {} camp {} references unrecognized cost item {} (detail id"
                 + " {}); row dropped, matching legacy Schedule5DAO",
             millId, year, row.campId(), itemId, row.detailId());
@@ -173,11 +220,11 @@ public class Schedule5Service {
    * four derived totals.
    *
    * <p><strong>Sub-Total is computed FIRST and unconditionally</strong> — the §T1 trap. Legacy's
-   * {@code getCampTotal()} ({@code CampReportType.java:357-361}) reads the FIELD
-   * {@code campSubTotal}, which only a prior {@code getCampSubTotal()} call populates (:343). Every
-   * legacy consumer happens to call Sub-Total first, masking it; a port that derives only
-   * {@code campTotal} would get {@code null - recoveries} and silently collapse
-   * {@code campAndAccessTotal} to the Access total alone.
+   * {@code getCampTotal()} ({@code CampReportType.java:357-361}) reads the FIELD {@code
+   * campSubTotal}, which only a prior {@code getCampSubTotal()} call populates (:343). Every legacy
+   * consumer happens to call Sub-Total first, masking it; a port that derives only {@code
+   * campTotal} would get {@code null - recoveries} and silently collapse {@code campAndAccessTotal}
+   * to the Access total alone.
    */
   private Camp toCamp(long millId, int year, CampRow row, CampDetails details) {
     BigDecimal campVolume = row.associatedCampVolume();
@@ -267,13 +314,13 @@ public class Schedule5Service {
 
   /**
    * The {@code Y}/{@code N} indicator as a Boolean; anything that is not {@code Y} is false,
-   * exactly as legacy's {@code .equals(POSITIVE_IND) ? true : false} decides
-   * ({@code Schedule5DAO.java:87}).
+   * exactly as legacy's {@code .equals(POSITIVE_IND) ? true : false} decides ({@code
+   * Schedule5DAO.java:87}).
    *
    * <p>A NULL indicator serves null rather than failing the request — deviation (e). Legacy calls
    * {@code .equals()} unguarded and {@code Schedule5MB.init()} catches only {@code ILCSException}
-   * (:73-77), so a NULL there NPEs the whole page. The delivery column is NOT NULL DEFAULT
-   * {@code 'N'} (Task 1 gate (i)) and no stored row is null (gate (v)), so this branch is defensive
+   * (:73-77), so a NULL there NPEs the whole page. The delivery column is NOT NULL DEFAULT {@code
+   * 'N'} (Task 1 gate (i)) and no stored row is null (gate (v)), so this branch is defensive
    * hardening against future data, not a live case — hence the warning if it ever fires.
    */
   private Boolean isolatedCamp(long millId, int year, CampRow row) {
@@ -291,9 +338,9 @@ public class Schedule5Service {
   private CategoryAmount amount(CampDetails details, int itemId) {
     DetailRow row = details.fixed().get(itemId);
     if (row == null) {
-      // The category still exists in the response as an empty object — legacy pre-initializes
-      // every CostVolumeType field, so an absent row reads as null cost/volume, not as a
-      // missing category.
+      // The category still exists in the response as an empty object — legacy pre-initializes every
+      // CostVolumeType field, so an absent row reads as null cost/volume, not as a missing
+      // category.
       return new CategoryAmount(null, null, null);
     }
     Long cost = row.cost() == null ? null : row.cost().longValue();
@@ -417,8 +464,8 @@ public class Schedule5Service {
    * The sub-page $/m&sup3; — {@code CampReportType.calculateCostVolume} (:541-557). This is NOT
    * {@code totalCost / volume}: legacy divides EACH row by its volume, rounds each quotient to
    * scale 2, sums those, then rounds again. Because every row's volume was overwritten with the
-   * same camp-level volume, the result equals {@code sum / volume} only up to per-term rounding,
-   * so the per-term rounding is reproduced rather than short-cut.
+   * same camp-level volume, the result equals {@code sum / volume} only up to per-term rounding, so
+   * the per-term rounding is reproduced rather than short-cut.
    *
    * <p>Rows with a null cost are skipped, and a zero volume makes every quotient null, which yields
    * null overall rather than {@code 0.00}.
@@ -441,6 +488,437 @@ public class Schedule5Service {
       }
     }
     return any ? total.setScale(2, RoundingMode.HALF_UP) : null;
+  }
+
+  // ===============================================================================================
+  // Writes (Story 7.2). Each is ONE transaction whose FIRST statement is the Draft gate, and each
+  // ends by returning the recomputed document built from the "D" that gate just proved rather than
+  // re-querying the track (the Schedule 6/11 idiom). The success message is attached by the
+  // controller via Schedule5Response.withMessage (AD-8), so the service stays message-free. Legacy
+  // had NO concurrency control, NO server-side edit gate, and swallowed every failure:
+  // saveCampReport sets REVISION_COUNT = 0 and never increments it (Schedule5DAO.java:363, 649),
+  // save()/deleteExistingCamp() are protected only by the buttons' disabled= attribute, and the DAO
+  // returns -1/false on any exception (:410-427, :557-569). The optimistic lock (deviation (K)),
+  // the Draft gate, and ScheduleNotSavedException (deviation (P)) are all ADDED here per the house
+  // pattern — there is no legacy code to port for them. Costs and volumes are NEVER logged (AD-11)
+  // — only mill/year/camp/item identifiers.
+  // ===============================================================================================
+
+  /**
+   * Create one camp and return the recomputed document (S01). Persists one {@code CAMP_REPORT} row
+   * plus exactly twelve keyed {@code ILCR_COST_REPORT_DETAIL} rows (§ ITEM WRITE MAP).
+   *
+   * <p>A renamed copy (BR-10) arrives here as an ordinary create — legacy's {@code copyCamp()}
+   * makes NO database call at all ({@code Schedule5MB.java:270-275}: it clones in memory, blanks
+   * the name and PK, and warns), so there is no server copy endpoint to build (deviation (B)). The
+   * copied camp also starts with zero sub-page rows, because the copy constructor skips them
+   * ({@code CampReportType.java:150-153}) — which falls out naturally from this path writing only
+   * the twelve fixed rows.
+   *
+   * @param millId the mill id (context already validated by the controller, AD-4)
+   * @param year the reporting year
+   * @param request the entered camp fields
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
+   *     editable})
+   * @param user the acting user id (audit columns)
+   * @return the recomputed document, the new camp included
+   */
+  @Transactional
+  public Schedule5Response addCamp(
+      long millId, int year, CampRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    String campName = trimmedCampName(request);
+    validateCostRanges(request);
+    // BR-02 as a PRE-CHECK, not a caught constraint violation: nothing in delivery enforces
+    // camp-name uniqueness (Task 1 gates (i)/(vi) — CAMP_REPORT has only its PK, the category FK
+    // and eleven NOT NULL checks), so a duplicate would simply persist if this were left to the
+    // database.
+    if (repository.countCampsNamed(millId, year, campName) > 0) {
+      throw new CampNameConflictException();
+    }
+    try {
+      int campId = repository.nextCampReportId();
+      repository.insertCamp(campId, millId, year, campName,
+          request.roadDistanceToOperatingArea(), request.sizeOfCamp(),
+          request.associatedCampVolume(), indicator(request.isolatedCamp()), request.comments(),
+          user);
+      // The camp MUST be inserted before its details: the delivery trigger ILCR_CRDA_B_I_U resolves
+      // the parent's mill/year/category with its own SELECT against CAMP_REPORT for
+      // :NEW.camp_report_id (Task 1 gate (iv-bis)), so a detail row written first would find no
+      // parent.
+      writeCategoryRows(campId, request, user);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 5 add failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Edit one camp in place and return the recomputed document (S02). Optimistic-locked on the
+   * camp's own {@code REVISION_COUNT} (AR11 per-camp keying, 7.1 deviation (b)): a stale token →
+   * 409, an unknown or foreign id → 404.
+   *
+   * <p>Detail rows are UPSERTED per item id, never deleted and reinserted (deviation (N)), and a
+   * cleared value writes {@code NULL} into the surviving row. Because delivery holds no camp-linked
+   * detail rows at all, the first edit of a real camp takes the upsert's INSERT branch twelve
+   * times.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param campId the camp to edit
+   * @param request the entered fields plus the required {@code revisionCount} token
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param user the acting user id (audit columns)
+   * @return the recomputed document
+   */
+  @Transactional
+  public Schedule5Response updateCamp(
+      long millId, int year, int campId, CampRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    // Defence in depth for the AR11 token: the API's @Validated OnUpdate group already rejects a
+    // null revisionCount as a clean 400, but this method unboxes it, so a direct caller that
+    // bypassed the group would otherwise NPE into a 500. Never a coerced 409 (the Story 2.1
+    // lesson).
+    if (request.revisionCount() == null) {
+      throw new RevisionCountRequiredException();
+    }
+    String campName = trimmedCampName(request);
+    validateCostRanges(request);
+    // Excluding THIS camp by id — never by its old name, which a rename would have invalidated.
+    // Legacy disarmed the check entirely after a new camp's first save (:315 guards on
+    // !isCampSaved, set true at :296), so a rename-then-save bypassed BR-02 outright; that is a
+    // defect, not ported (deviation (I)).
+    if (repository.countCampsNamedExcluding(millId, year, campName, campId) > 0) {
+      throw new CampNameConflictException();
+    }
+    try {
+      int updated = repository.updateCamp(campId, millId, year, request.revisionCount(), campName,
+          request.roadDistanceToOperatingArea(), request.sizeOfCamp(),
+          request.associatedCampVolume(), indicator(request.isolatedCamp()), request.comments(),
+          user);
+      if (updated == 0) {
+        // Zero rows means the id is absent/foreign OR the token is stale, and the guarded UPDATE
+        // cannot tell which. Only the scoped probe can.
+        if (repository.countCamp(campId, millId, year) == 0) {
+          throw new CampNotFoundException();
+        }
+        throw new StaleRevisionException();
+      }
+      writeCategoryRows(campId, request, user);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 5 update failed for mill {} year {} camp {} [{}]",
+          millId, year, campId, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Delete one camp and its whole expense family, then return the recomputed document (S07, BR-09).
+   *
+   * <p>Children go FIRST and that is mandatory: {@code ILCR_LCRD_CMP_RPT_FK} is {@code ON DELETE NO
+   * ACTION} in delivery (Task 1 gate (ii)), so deleting the camp first raises ORA-02292. Legacy
+   * only appeared to cascade because {@code CampReport.java:93} declares Hibernate's {@code
+   * CascadeType.ALL}; no DDL cascade exists. The delete takes the item-62/68 sub-page rows with it
+   * — the camp family goes together.
+   *
+   * <p>Carries no revision token (deviation (L), shared with Schedules 4/7A/11), so a delete cannot
+   * be rejected as stale. The scoped existence probe runs first so a foreign or unknown id is a 404
+   * before anything is removed (deviation (M) — legacy deleted by primary key alone).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param campId the camp to delete
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the recomputed document without the deleted camp
+   */
+  @Transactional
+  public Schedule5Response deleteCamp(
+      long millId, int year, int campId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    try {
+      if (repository.countCamp(campId, millId, year) == 0) {
+        throw new CampNotFoundException();
+      }
+      repository.deleteCostDetailsForCamp(campId);
+      if (repository.deleteCamp(campId, millId, year) == 0) {
+        // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
+        // the count rather than assuming success is the 8.2 lesson: a void delete reported "Data
+        // deleted successfully" while the row survived.
+        throw new CampNotFoundException();
+      }
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 5 delete failed for mill {} year {} camp {} [{}]",
+          millId, year, campId, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Check Status for Schedule 5 (S06, S20, BR-08) — read-only, mutates nothing, and NOT Draft-gated
+   * ({@code VIEW_SCHEDULE} only; the 2.6 precedent, {@code deferred-work.md:23}), so a Submitted
+   * mill can still be checked.
+   *
+   * <p>Camps are evaluated in {@code CAMP_REPORT_ID} order (7.1 deviation (c) — legacy iterates a
+   * {@code HashMap} with no ORDER BY, {@code Schedule5DAO.java:58, 111-113}). A schedule passes iff
+   * every camp passes, and an EMPTY camp list passes vacuously ({@code
+   * Schedule5CheckStatus.java:89-97} returns true before its loop runs). On a pass the schedule
+   * banner is emitted ALONE with no per-camp results — the legacy pass branch never enters the
+   * per-camp loop ({@code Schedule5MB.java:324-333}) — which is deviation (C), contradicting both
+   * the epics AC and {@code UC-SCH5-001-detailed.md:151}.
+   *
+   * <p>The service emits bundle KEYS with null text; the controller resolves and composes (AD-8).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the MET/ISSUES result with key-only messages for the controller to resolve
+   */
+  @Transactional(readOnly = true)
+  public Schedule5CheckStatusResponse checkStatus(long millId, int year) {
+    List<CampRow> campRows = repository.findCamps(millId, year);
+    Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+
+    List<CampCheckResult> camps = new ArrayList<>();
+    boolean schedulePasses = true;
+    for (CampRow row : campRows) {
+      CampDetails details = detailsByCamp.getOrDefault(row.campId(), CampDetails.empty());
+      List<CampCheckMessage> issues =
+          evaluateCamp(row, details.otherCampRows(), details.otherAccessRows());
+      boolean met = issues.isEmpty();
+      schedulePasses = schedulePasses && met;
+      camps.add(new CampCheckResult(row.campId(), row.campName(), met,
+          met ? List.of(new CampCheckMessage(MSG_CAMP_MET, null, null)) : issues));
+    }
+
+    if (schedulePasses) {
+      return new Schedule5CheckStatusResponse(
+          OUTCOME_MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
+    }
+    return new Schedule5CheckStatusResponse(OUTCOME_ISSUES, List.of(), camps);
+  }
+
+  /**
+   * One camp's missing-field findings in the verbatim legacy EMISSION order — camp name, road
+   * distance, size of camp, associated camp volume, then the four sub-list conditions ({@code
+   * Schedule5MB.checkValidatedCurrentCamp():348-359, 425-436}).
+   *
+   * <p>The emission order deliberately differs from the order the flags are COMPUTED in ({@code
+   * Schedule5CheckStatus.java:17-20} does name, volume, distance, size); only emission order is
+   * observable, so that is the one reproduced.
+   *
+   * <p>Three parity details that a tidier implementation would get wrong:
+   * <ul>
+   * <li>the camp-name test is TRIMMED ({@code CoreUtil.isNullOrEmptyString(name, true)} at :17), so
+   * a whitespace-only name FAILS;
+   * <li>the three numeric descriptors are PURE null tests (:18-20), so a stored {@code 0} PASSES —
+   * the D2 precedent ({@code deferred-work.md:135}); <li>the sub-list description test is NOT
+   * trimmed ({@code CheckStatusUtil.java:134} is {@code == null || "".equals(…)}), so a
+   * whitespace-only description PASSES. Using {@code isBlank} here would silently tighten legacy.
+   * </ul>
+   *
+   * <p>The twelve category cost/volume fields are NOT tested (deviation (D) — legacy's conditions
+   * and its ~65 lines of emission are commented out at {@code Schedule5CheckStatus.java:21-34,
+   * 60-82} and {@code Schedule5MB.java:360-424}), and neither is {@code isolatedCamp} (deviation
+   * (E)), even though Save requires it.
+   */
+  static List<CampCheckMessage> evaluateCamp(
+      CampRow row, List<DetailRow> otherCampRows, List<DetailRow> otherAccessRows) {
+    List<CampCheckMessage> issues = new ArrayList<>();
+    if (StringUtils.isBlank(row.campName())) {
+      issues.add(valueRequired(FIELD_CAMP_NAME));
+    }
+    if (row.distanceToOperatingArea() == null) {
+      issues.add(valueRequired(FIELD_ROAD_DISTANCE));
+    }
+    if (row.sizeOfCamp() == null) {
+      issues.add(valueRequired(FIELD_SIZE_OF_CAMP));
+    }
+    if (row.associatedCampVolume() == null) {
+      issues.add(valueRequired(FIELD_ASSOCIATED_CAMP_VOLUME));
+    }
+    if (anyDescriptionMissing(otherCampRows)) {
+      issues.add(valueRequired(FIELD_OTHER_CAMP_DESCRIPTION));
+    }
+    if (anyCostMissing(otherCampRows)) {
+      issues.add(valueRequired(FIELD_OTHER_CAMP_COST));
+    }
+    if (anyDescriptionMissing(otherAccessRows)) {
+      issues.add(valueRequired(FIELD_OTHER_ACCESS_DESCRIPTION));
+    }
+    if (anyCostMissing(otherAccessRows)) {
+      issues.add(valueRequired(FIELD_OTHER_ACCESS_COST));
+    }
+    return issues;
+  }
+
+  /**
+   * {@code CheckStatusUtil.isCostVolumeDescriptionMissing} (:132-139): true if ANY row's
+   * description is null or the empty string. Deliberately NOT {@code isBlank} — legacy compares
+   * {@code "".equals(…)}, so a single space satisfies it.
+   *
+   * <p>False for an empty list: a camp with no sub-page rows has nothing missing.
+   */
+  private static boolean anyDescriptionMissing(List<DetailRow> rows) {
+    return rows.stream()
+        .anyMatch(row -> row.itemDescription() == null || row.itemDescription().isEmpty());
+  }
+
+  /**
+   * {@code CheckStatusUtil.isCostVolumeTypeCostMissing} (:113-120): true if ANY row's cost is null.
+   */
+  private static boolean anyCostMissing(List<DetailRow> rows) {
+    return rows.stream().anyMatch(row -> row.cost() == null);
+  }
+
+  private static CampCheckMessage valueRequired(String field) {
+    return new CampCheckMessage(MSG_VALUE_REQUIRED, field, null);
+  }
+
+  /**
+   * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
+   * AD-9). Reuses 7.1's {@code findTrackStatus} rather than adding a tenth copy of the same query
+   * ({@code deferred-work.md:243}) and never reads the silviculture track. The mill/year context
+   * (400/404/409) is already validated by the controller before this runs (AD-4).
+   *
+   * <p>Recorded hardening: legacy has no server-side gate at all — {@code save()} and {@code
+   * deleteExistingCamp()} are guarded only by the {@code disabled=} attribute on the buttons
+   * ({@code schedule5.xhtml:69, 92, 115, 159, 182, 211, 234}), which a crafted post ignores.
+   */
+  private void requireDraft(long millId, int year) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!STATUS_DRAFT.equals(trackStatus)) {
+      throw new ScheduleNotEditableException();
+    }
+  }
+
+  /**
+   * The camp name as it will be BOTH compared and stored — trimmed on both paths (deviation (I)).
+   * Legacy trimmed only before the insert-path check ({@code Schedule5MB.java:289}), compared the
+   * stored value untrimmed on edit (:309), and persisted untrimmed either way ({@code
+   * Schedule5DAO.java:373}), so {@code " Cedar "} and {@code "Cedar"} could coexist and only one of
+   * them would ever match. Bean Validation's {@code @NotBlank} has already rejected a
+   * whitespace-only name, so the trim here cannot produce an empty string.
+   */
+  private static String trimmedCampName(CampRequest request) {
+    return request.campName().trim();
+  }
+
+  /**
+   * The {@code Y}/{@code N} indicator for a validated non-null {@code isolatedCamp} ({@code
+   * Schedule5DAO.java:377}, which dereferences the Boolean unguarded and would NPE on null — {@code
+   * @NotNull} on the request makes that unreachable here).
+   */
+  private static String indicator(Boolean isolatedCamp) {
+    return Boolean.TRUE.equals(isolatedCamp) ? INDICATOR_YES : INDICATOR_NO;
+  }
+
+  /**
+   * The two cost ranges {@link CategoryEntry} cannot express (see {@link
+   * CampCostOutOfRangeException} for why one record type cannot vary a constraint per property):
+   * &plusmn;9,999,999 for the eight ordinary categories that carry {@code costSize="7"}, and a 0
+   * FLOOR for {@code recoveries}, whose input carries {@code costSize="0"} ({@code
+   * schedule5ExistingCamp.xhtml:252}).
+   *
+   * <p>{@code wagesAndBenefits} is deliberately absent: its input is missing the {@code costSize}
+   * attribute in BOTH pages, so legacy validates it at the default &plusmn;99,999,999 — which
+   * {@code CategoryEntry} already enforces declaratively (deviation (F), an Open Question for the
+   * Ministry, preserved verbatim rather than "fixed").
+   *
+   * <p>{@code otherCampExpenses}/{@code otherAccessExpenses} are absent too: this path writes
+   * {@code null} for their cost regardless of what was sent (§ ITEM WRITE MAP), because those costs
+   * are the item-62/68 row sums.
+   *
+   * <p>Deviation (G): Recoveries is capped at 9,999,999 — the legacy MESSAGE's range — even though
+   * {@code COST NUMBER(8,0)} would hold 99,999,999. No stored Schedule 5 row exceeds it today (Task
+   * 1 gate (vii): all 16 over-range costs in delivery are summary-parented rows of other
+   * schedules), so this blocks no existing edit.
+   */
+  private static void validateCostRanges(CampRequest request) {
+    requireStandardCostRange(request.cateringAndFood());
+    requireStandardCostRange(request.depreciationLease());
+    requireStandardCostRange(request.generalCampExpenses());
+    requireStandardCostRange(request.crewTransportation());
+    requireStandardCostRange(request.equipAndSuppliesLand());
+    requireStandardCostRange(request.equipAndSuppliesRail());
+    requireStandardCostRange(request.equipAndSuppliesAir());
+    requireStandardCostRange(request.equipAndSuppliesWater());
+
+    Integer recoveries = entryCost(request.recoveries());
+    if (recoveries != null && (recoveries < 0 || recoveries > COST_STANDARD_LIMIT)) {
+      throw new CampCostOutOfRangeException(COST_KEY_RECOVERIES);
+    }
+  }
+
+  private static void requireStandardCostRange(CategoryEntry entry) {
+    Integer cost = entryCost(entry);
+    if (cost != null && (cost < -COST_STANDARD_LIMIT || cost > COST_STANDARD_LIMIT)) {
+      throw new CampCostOutOfRangeException(COST_KEY_STANDARD);
+    }
+  }
+
+  /**
+   * The twelve keyed category rows, upserted in the exact order legacy issues them ({@code
+   * Schedule5DAO.java:387-398}). The order itself is not observable, but keeping it makes the diff
+   * against legacy readable.
+   *
+   * <p><strong>The volume/cost asymmetry is legacy's, not a simplification.</strong> Item 141 is
+   * written volume-only with a hard-coded null cost (:391), item 61 (Recoveries) cost-only with a
+   * hard-coded null volume (:392), and item 142 volume-only (:398) — so whatever a client sends in
+   * the excluded half is discarded rather than rejected, exactly as legacy's {@code
+   * disabled}/hidden inputs post and are ignored.
+   *
+   * <p>Items <strong>57, 62 and 68 are never written here</strong>: 57 is registered in delivery
+   * but dead (no legacy dispatch branch, zero rows anywhere), and 62/68 are the sub-page rows Story
+   * 7.4 owns. A camp created by this path therefore has zero sub-page rows, which is also what a
+   * legacy copy produces ({@code CampReportType.java:150-153}).
+   *
+   * <p>An omitted (null) {@link CategoryEntry} clears both halves rather than leaving them alone.
+   * Legacy's form always posted all twelve rows, so a partial grid is not a legacy-reachable state,
+   * and treating absent as cleared keeps "null means cleared" true for the whole request.
+   */
+  private void writeCategoryRows(int campId, CampRequest request, String user) {
+    upsertPair(campId, ITEM_CATERING_AND_FOOD, request.cateringAndFood(), user);
+    upsertPair(campId, ITEM_WAGES_AND_BENEFITS, request.wagesAndBenefits(), user);
+    upsertPair(campId, ITEM_DEPRECIATION_LEASE, request.depreciationLease(), user);
+    upsertPair(campId, ITEM_GENERAL_CAMP_EXPENSES, request.generalCampExpenses(), user);
+    upsertVolumeOnly(campId, ITEM_OTHER_CAMP_EXPENSES_VOLUME, request.otherCampExpenses(), user);
+    upsertCostOnly(campId, ITEM_RECOVERIES, request.recoveries(), user);
+    upsertPair(campId, ITEM_CREW_TRANSPORTATION, request.crewTransportation(), user);
+    upsertPair(campId, ITEM_EQUIP_LAND, request.equipAndSuppliesLand(), user);
+    upsertPair(campId, ITEM_EQUIP_RAIL, request.equipAndSuppliesRail(), user);
+    upsertPair(campId, ITEM_EQUIP_AIR, request.equipAndSuppliesAir(), user);
+    upsertPair(campId, ITEM_EQUIP_WATER, request.equipAndSuppliesWater(), user);
+    upsertVolumeOnly(
+        campId, ITEM_OTHER_ACCESS_EXPENSES_VOLUME, request.otherAccessExpenses(), user);
+  }
+
+  private void upsertPair(int campId, int itemId, CategoryEntry entry, String user) {
+    repository.upsertCostDetail(campId, itemId, entryVolume(entry), entryCost(entry), user);
+  }
+
+  private void upsertVolumeOnly(int campId, int itemId, CategoryEntry entry, String user) {
+    repository.upsertCostDetail(campId, itemId, entryVolume(entry), null, user);
+  }
+
+  private void upsertCostOnly(int campId, int itemId, CategoryEntry entry, String user) {
+    repository.upsertCostDetail(campId, itemId, null, entryCost(entry), user);
+  }
+
+  /**
+   * The entry's volume, or null when the whole category was omitted. Named distinctly from the read
+   * path's {@code volumeOf(CampDetails, int)} rather than overloading it: the two take unrelated
+   * arguments and answer unrelated questions, and google_checks requires overloads to sit adjacent.
+   */
+  private static BigDecimal entryVolume(CategoryEntry entry) {
+    return entry == null ? null : entry.volume();
+  }
+
+  /** The entry's cost, or null when the whole category was omitted. */
+  private static Integer entryCost(CategoryEntry entry) {
+    return entry == null ? null : entry.cost();
   }
 
   /**

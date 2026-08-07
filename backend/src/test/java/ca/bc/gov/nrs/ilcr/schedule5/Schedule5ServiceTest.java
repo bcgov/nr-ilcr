@@ -63,7 +63,18 @@ class Schedule5ServiceTest {
   }
 
   private static DetailRow detail(int detailId, int itemId, BigDecimal volume, Integer cost) {
-    return new DetailRow(detailId, CAMP, itemId, volume, cost);
+    return detail(detailId, itemId, volume, cost, null);
+  }
+
+  /**
+   * A detail row carrying an {@code ITEM_DESCRIPTION}. Story 7.2 added the column to the read query
+   * because Check Status's fifth and seventh conditions flag any item-62/68 row whose description is
+   * null or empty; the served document still does not expose it (itemizing those rows is 7.4's), so
+   * every derivation test above is unaffected and passes null.
+   */
+  private static DetailRow detail(
+      int detailId, int itemId, BigDecimal volume, Integer cost, String itemDescription) {
+    return new DetailRow(detailId, CAMP, itemId, volume, cost, itemDescription);
   }
 
   /** Drives the service with one camp and the given detail rows, returning the served camp. */
@@ -421,7 +432,7 @@ class Schedule5ServiceTest {
       // unrecognized id that crashed instead of degrading.
       Camp served = serveCamp(camp(VOL_120K), List.of(
           detail(1, 56, VOL_120K, 480000),
-          new DetailRow(2, CAMP, null, VOL_120K, 999999)));
+          new DetailRow(2, CAMP, null, VOL_120K, 999999, null)));
 
       assertThat(served.campSubTotal().cost()).isEqualTo(480_000L);
       assertThat(served.campAndAccessTotal().cost()).isEqualTo(480_000L);
@@ -459,14 +470,23 @@ class Schedule5ServiceTest {
   }
 
   @Nested
-  @DisplayName("Operator warnings on dropped and duplicate rows (AC7)")
+  @DisplayName("Operator diagnostics on dropped and duplicate rows (AC7)")
   class DroppedRowWarnings {
 
-    // AC7 requires the first-wins rule to carry "a log.warn on duplicates", and the unknown-item
-    // drop is the operator's only signal that stored data is being discarded. Both were previously
+    // AC7 requires the first-wins rule to carry a log line on duplicates, and the unknown-item drop
+    // is the operator's only signal that stored data is being discarded. Both were previously
     // evidenced only by a manual log inspection recorded in the story's Debug Log References —
-    // deleting either log.warn call left the whole suite green, so the operability half of AC7 and
-    // deviation (f) was unverified. These capture the appender and assert the message content.
+    // deleting either call left the whole suite green, so the operability half of AC7 and
+    // deviation (f) was unverified.
+    //
+    // Story 7.2 DEMOTED two of the three to DEBUG (deviation (O)): the duplicate and unknown-item
+    // lines report properties of stored DATA, not events, and 7.2's writes make them reachable for
+    // the first time — at WARN they would turn one malformed camp into permanent per-request noise
+    // (deferred-work.md:246). The NULL-item-id line stays at WARN because the delivery column is NOT
+    // NULL, so it signals a genuine schema anomaly rather than ordinary bad data.
+    //
+    // The assertions therefore pin the LEVEL as well as the text: a silent re-promotion to WARN, or a
+    // demotion of the NULL-id line, now fails here instead of being discovered in production logs.
 
     private CapturingAppender appender;
     private Logger serviceLogger;
@@ -476,14 +496,14 @@ class Schedule5ServiceTest {
     void attachAppender() {
       // The app logs through Lombok @Slf4j -> SLF4J -> log4j2 (spring-boot-starter-log4j2; the
       // logback starter is excluded). There is no log4j2 config on the test classpath, so the
-      // DefaultConfiguration's root level is ERROR — the level has to be lowered explicitly or a
-      // WARN never reaches an appender at all.
+      // DefaultConfiguration's root level is ERROR — the level has to be lowered explicitly or
+      // nothing reaches an appender at all. DEBUG now, so both levels under test are captured.
       serviceLogger = (Logger) LogManager.getLogger(Schedule5Service.class);
       originalLevel = serviceLogger.getLevel();
       appender = new CapturingAppender();
       appender.start();
       serviceLogger.addAppender(appender);
-      serviceLogger.setLevel(Level.WARN);
+      serviceLogger.setLevel(Level.DEBUG);
     }
 
     @AfterEach
@@ -493,19 +513,30 @@ class Schedule5ServiceTest {
       appender.stop();
     }
 
+    private List<String> messagesAt(Level level) {
+      return appender.events.stream()
+          .filter(event -> event.level() == level)
+          .map(CapturedEvent::message)
+          .toList();
+    }
+
+    private List<String> debugMessages() {
+      return messagesAt(Level.DEBUG);
+    }
+
     private List<String> warnings() {
-      return List.copyOf(appender.messages);
+      return messagesAt(Level.WARN);
     }
 
     @Test
-    @DisplayName("a duplicate single-row item warns, naming the kept and the ignored detail id")
+    @DisplayName("a duplicate single-row item logs at DEBUG, naming the kept and ignored detail id")
     void duplicateItemWarns() {
       serveCamp(camp(VOL_120K), List.of(
           detail(10, 56, VOL_120K, 480000),
           detail(20, 56, VOL_120K, 777777)));
 
-      assertThat(warnings()).hasSize(1);
-      assertThat(warnings().getFirst())
+      assertThat(debugMessages()).hasSize(1);
+      assertThat(debugMessages().getFirst())
           .contains("more than one row for cost item 56")
           .contains("keeping detail id 10")
           .contains("ignoring detail id 20")
@@ -513,46 +544,55 @@ class Schedule5ServiceTest {
           // AD-11: identifiers only. Neither cost may appear in the log.
           .doesNotContain("480000")
           .doesNotContain("777777");
+      // Deviation (O): stored-data properties must not shout on every read.
+      assertThat(warnings()).isEmpty();
     }
 
     @Test
-    @DisplayName("an unrecognized item id warns and names the dropped row, never its cost")
+    @DisplayName("an unrecognized item id logs at DEBUG and names the dropped row, never its cost")
     void unknownItemWarns() {
       serveCamp(camp(VOL_120K), List.of(detail(7, 57, VOL_120K, 999999)));
 
-      assertThat(warnings()).hasSize(1);
-      assertThat(warnings().getFirst())
+      assertThat(debugMessages()).hasSize(1);
+      assertThat(debugMessages().getFirst())
           .contains("unrecognized cost item 57")
           .contains("detail id 7")
           .doesNotContain("999999");
+      assertThat(warnings()).isEmpty();
     }
 
     @Test
-    @DisplayName("a NULL item id warns rather than crashing the document")
+    @DisplayName("a NULL item id stays at WARN — the column is NOT NULL, so it is a real anomaly")
     void nullItemIdWarns() {
-      serveCamp(camp(VOL_120K), List.of(new DetailRow(9, CAMP, null, VOL_120K, 4200)));
+      serveCamp(camp(VOL_120K), List.of(new DetailRow(9, CAMP, null, VOL_120K, 4200, null)));
 
       assertThat(warnings()).hasSize(1);
       assertThat(warnings().getFirst())
           .contains("NULL cost item id")
           .contains("detail id 9")
           .doesNotContain("4200");
+      assertThat(debugMessages()).isEmpty();
     }
 
     @Test
-    @DisplayName("a clean camp logs nothing — the warnings are signal, not noise")
+    @DisplayName("a clean camp logs nothing at either level — this is signal, not noise")
     void cleanCampIsSilent() {
       serveCamp(camp(VOL_120K), List.of(
           detail(1, 56, VOL_120K, 480000),
           detail(2, 58, VOL_120K, 960000)));
 
       assertThat(warnings()).isEmpty();
+      assertThat(debugMessages()).isEmpty();
     }
 
-    /** Collects WARN messages so the assertions above can read them back. */
+    /** One captured log event, so the assertions can pin the level as well as the text. */
+    private record CapturedEvent(Level level, String message) {
+    }
+
+    /** Collects DEBUG and WARN events so the assertions above can read them back. */
     private static final class CapturingAppender extends AbstractAppender {
 
-      private final List<String> messages = new ArrayList<>();
+      private final List<CapturedEvent> events = new ArrayList<>();
 
       private CapturingAppender() {
         super("schedule5-capture", null, null, true, Property.EMPTY_ARRAY);
@@ -560,8 +600,8 @@ class Schedule5ServiceTest {
 
       @Override
       public void append(LogEvent event) {
-        if (event.getLevel() == Level.WARN) {
-          messages.add(event.getMessage().getFormattedMessage());
+        if (event.getLevel() == Level.WARN || event.getLevel() == Level.DEBUG) {
+          events.add(new CapturedEvent(event.getLevel(), event.getMessage().getFormattedMessage()));
         }
       }
     }

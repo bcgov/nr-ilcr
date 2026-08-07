@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.MessageSource;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -57,11 +58,15 @@ class Schedule5ControllerTest {
   @Mock
   private Authentication authentication;
 
+  @Mock
+  private MessageSource messageSource;
+
   private Schedule5Controller controller;
 
   @BeforeEach
   void setUp() {
-    controller = new Schedule5Controller(millContextService, schedule5Service, permissions);
+    controller =
+        new Schedule5Controller(millContextService, schedule5Service, permissions, messageSource);
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
         .thenReturn(new MillYearContext(MILL, YEAR));
   }
