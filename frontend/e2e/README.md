@@ -28,8 +28,12 @@ e2e/
   coverage-guide.md      # plain-language legend for the coverage.md files (columns, status flags) — BA/QA
   defects-guide.md       # plain-language legend for the defects.md files (registers, tags, how-to-read) — BA/QA
   steps/
-    fixtures.ts          # single composition root: createBdd(test) -> Given/When/Then; page objects +
-                         #   cleanup registry + create spy + world
+    fixtures/            # composition root, SPLIT PER DOMAIN so parallel work doesn't collide
+      index.ts           #   mergeTests(...) -> createBdd(test) -> Given/When/Then/expect (import from '../fixtures')
+      global.ts          #   cross-domain only: `world` (its `World` type is the union of domain fields),
+                         #   homePage, appShell
+      <domain>.ts        #   that domain's page objects + cleanup registries + route spies
+                         #   Adding a domain = new <domain>.ts + one line in index.ts's mergeTests
     common/*.steps.ts    # cross-domain REUSABLE steps (generic asserts) — no domain vocabulary
     <domain>/*.steps.ts  # domain steps, split by concern (navigation/form/verify); NO DOM selectors
   pages/<domain>/*.ts    # Page Objects (selectors + interactions) — called BY steps
