@@ -126,7 +126,7 @@ FAM authentication is tracked separately. The dashboard currently displays the s
 
 ## OpenShift Status
 
-OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Deployments run automatically: pull requests deploy a sandbox environment (zone = PR number mod 50), and merges to `main` deploy to TEST and then, if tests pass, to PROD in the same workflow run.
+OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Pull requests always deploy a sandbox environment (zone = PR number mod 50). Merges to `main` deploy to TEST and then, if tests pass, to PROD in the same workflow run — but only while the `ENABLE_OPENSHIFT_DEPLOY` repository variable is `true`; it is left unset until the code is ready for those environments.
 
 ## Verification
 
