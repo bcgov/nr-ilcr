@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule7a.api;
 
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
@@ -82,6 +83,25 @@ public interface Schedule7aApi {
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       @Validated({Default.class, OnUpdate.class}) @RequestBody BridgeRequest request,
+      Authentication authentication);
+
+  /**
+   * Save EVERY bridge of the schedule in ONE transaction — the page-level Save (legacy
+   * {@code Schedule7aMB.save()}, which persisted the whole schedule from a single button). Same
+   * validation and gates as the per-row PUT, applied to each entry; any entry failing rolls the
+   * whole batch back, so the reporter never has to work out which rows landed. An empty list → 400.
+   *
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param request every bridge to save, each with its id and {@code revisionCount}
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PutMapping("/bridges")
+  ResponseEntity<Schedule7aResponse> saveAllBridges(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Validated({Default.class, OnUpdate.class}) @RequestBody BridgeSaveAllRequest request,
       Authentication authentication);
 
   /**

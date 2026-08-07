@@ -1,0 +1,205 @@
+// Self-contained layout for the Schedule 7A page (global scss, like the sibling schedule pages). The
+// .schedule-7a__* class names mirror the schedule11 layout for visual consistency.
+.schedule-7a__section {
+  margin-block: 1rem;
+}
+
+.schedule-7a__heading {
+  margin-block-end: 0.5rem;
+}
+
+.schedule-7a__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+.schedule-7a__check {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+.schedule-7a__empty {
+  padding-block: 1rem;
+}
+
+.schedule-7a__fields {
+  // The gap BETWEEN the attribute block, each cost row, the totals and the comments row.
+  row-gap: 1.75rem;
+  padding-inline: 0;
+
+  // Every label on the bridge editor reads at 14px — Carbon's own field labels default to 12px,
+  // which left them a step smaller than the row labels and column headings around them.
+  .cds--label {
+    font-size: 0.875rem;
+  }
+}
+
+// Legacy puts each label to the LEFT of its control rather than above it. Carbon stacks by default,
+// so the control's own wrapper becomes a two-column grid: label in column 1, field in column 2.
+// Scoped to the two places legacy shows a left label — the Material/Deliver/Install triple hides its
+// labels entirely, and a fixed label column there would reserve dead space in every cost cell.
+// Each context sets its own label width, since "Certification After install ($)" needs more room
+// than "Width (m)".
+.schedule-7a__field-grid,
+.schedule-7a__cost-secondary {
+  .cds--text-input-wrapper,
+  .cds--list-box__wrapper {
+    display: grid;
+    grid-template-columns: var(--s7a-label-col) 1fr;
+    column-gap: 0.5rem;
+    align-items: center;
+  }
+
+  // Carbon spaces the label for the stacked layout; beside the field that margin would push the row
+  // taller than the control it labels.
+  .cds--text-input__label-wrapper,
+  .cds--list-box__wrapper > .cds--label {
+    margin: 0;
+  }
+
+  // A dropdown's inline error is a third child of the wrapper, so it would otherwise wrap under the
+  // label. (A text input's error already lives inside the field wrapper, which is column 2.)
+  .cds--list-box__wrapper > .cds--form-requirement {
+    grid-column: 2;
+  }
+
+  .cds--label::after {
+    content: ' :';
+  }
+}
+
+// Legacy suffixes every label with " :". Generated content rather than text baked into `labelText`,
+// so the ACCESSIBLE NAME stays the bare field name: a screen reader announcing "Date colon" is
+// noise, and the name is what validation messages and tests refer to. The Material/Deliver/Install
+// column headings take no colon in legacy and are excluded.
+.schedule-7a__cost-label::after,
+.schedule-7a__total-label::after {
+  content: ' :';
+}
+
+// The twelve attribute fields, three-across as in legacy. Carbon's 16-column grid cannot express
+// even thirds, so the row is one full-width Column holding its own equal-fraction grid. Steps down
+// to two columns, then one, at the same breakpoints the cost matrix uses.
+.schedule-7a__field-grid {
+  --s7a-label-col: 8rem;
+
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  // Generous gaps: with the label beside its field, a tight gutter reads as one run-on row and the
+  // next field's label crowds the previous field's box. The column gap is the wider of the two
+  // because that is the boundary between two separate label/field pairs.
+  row-gap: 1.75rem;
+  column-gap: 3rem;
+  // Labels wrap to two lines on some fields; aligning to the top keeps the inputs in a row from
+  // drifting apart vertically.
+  align-items: start;
+
+  @media (max-width: 66rem) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 42rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.schedule-7a__panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-block-start: 1rem;
+}
+
+// The legacy cost matrix: a row label, the Material/Deliver/Install triple, and one standalone cost
+// on the right. Collapses to a single column on narrow viewports.
+.schedule-7a__cost-row {
+  display: grid;
+  // The standalone-cost column carries a left label AND its field, so it is wider than it was when
+  // the label sat above.
+  grid-template-columns: 10rem 1fr 21rem;
+  gap: 3rem;
+  align-items: end;
+
+  @media (max-width: 66rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.schedule-7a__cost-label {
+  font-size: 0.875rem;
+  padding-block-end: 0.5rem;
+}
+
+.schedule-7a__cost-triple {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3rem;
+
+  // Three cost inputs across a 320px phone leave ~90px each, too narrow for an 8-digit amount.
+  // Every Column on this page declares sm={4}, so mobile is a supported width.
+  @media (max-width: 42rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+// The right-hand standalone-cost cell. Stacks because the Comments row carries both Other Costs and
+// the Grand Total beneath it.
+.schedule-7a__cost-secondary {
+  --s7a-label-col: 9.5rem;
+
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+
+  // Grand Total is a plain-text value, not a field, but it sits in this column and must line up on
+  // the same label/value split as the costs above it.
+  .schedule-7a__total {
+    display: grid;
+    grid-template-columns: var(--s7a-label-col) 1fr;
+    column-gap: 0.5rem;
+    align-items: center;
+  }
+}
+
+.schedule-7a__cost-heading {
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+// Numeric fields right-align, so a column of amounts lines up on its digits and each cost column
+// meets the total below it. Named for the schedule-3__num / schedule-4__num equivalents. Carbon lands
+// `className` on the field WRAPPER (not the input, despite its propType comment), so the input is
+// reached from there.
+.schedule-7a__num .cds--text-input {
+  text-align: right;
+}
+
+// Server-computed totals, matching how schedule-3__num / schedule-4__num render a derived value:
+// right-aligned plain text at normal weight, no field.
+.schedule-7a__total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.schedule-7a__total-label {
+  font-size: 0.875rem;
+}
+
+.schedule-7a__total-value {
+  font-weight: 400;
+  // Match Carbon's size="sm" input text (body-compact-01). Left at the page default these figures
+  // rendered a step LARGER than the amounts in the fields above them, which read as emphasis on a
+  // value that is merely derived.
+  font-size: 0.875rem;
+  line-height: 1.29;
+  text-align: right;
+  // Holds the row open when the value is blank, so an empty total does not collapse the line.
+  min-height: 1.5rem;
+  // Carbon's field text is inset by its own inline padding; matching it keeps a total in the
+  // Material/Deliver/Install column aligned with the cost inputs stacked above it (schedule 3
+  // indents its plain-text cells for the same reason).
+  padding-inline-end: 1rem;
+}
