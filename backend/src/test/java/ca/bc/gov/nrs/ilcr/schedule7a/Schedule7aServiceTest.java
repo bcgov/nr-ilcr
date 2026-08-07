@@ -474,8 +474,9 @@ class Schedule7aServiceTest {
   @DisplayName("save-all is rejected outside Draft before any bridge is written")
   void saveAll_rejectedOutsideDraft() {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(517, 2021, saveAll(7601L), true, "user"))
+    assertThatThrownBy(() -> service.saveAllBridges(517, 2021, request, true, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
   }
@@ -490,9 +491,9 @@ class Schedule7aServiceTest {
     when(repository.updateBridge(any(), eq(514L), eq(2021), anyInt(), any()))
         .thenReturn(1).thenReturn(0);
     when(repository.countBridge(7602, 514, 2021)).thenReturn(1);
+    BridgeSaveAllRequest request = saveAll(7601L, 7602L);
 
-    assertThatThrownBy(
-        () -> service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), true, "user"))
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
         .isInstanceOf(StaleRevisionException.class);
     verify(repository, never()).findBridges(anyLong(), anyInt());
   }
@@ -504,8 +505,9 @@ class Schedule7aServiceTest {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
+    BridgeSaveAllRequest request = saveAll(9999L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, saveAll(9999L), true, "user"))
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -516,8 +518,9 @@ class Schedule7aServiceTest {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     doThrow(new DataIntegrityViolationException("update failed"))
         .when(repository).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+    BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, saveAll(7601L), true, "user"))
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 

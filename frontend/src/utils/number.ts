@@ -96,7 +96,7 @@ export const parseDecimalInput = (raw: string): number | null => {
   if (trimmed === '' || !DECIMAL_INPUT.test(trimmed)) {
     return null
   }
-  return Number(trimmed.replace(/,/g, ''))
+  return Number(stripGroup(trimmed))
 }
 
 /**
