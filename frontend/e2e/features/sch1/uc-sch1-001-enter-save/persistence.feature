@@ -20,12 +20,16 @@ Feature: Report Average Cost of Logging (Schedule 1) — save persistence errors
     And the next 3 Schedule 1 save attempts will fail
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1
+    # FOUR-digit amounts on purpose. The restyle (#237) groups an amount on BLUR, and clicking Save
+    # blurs the field — so 7654 is re-rendered as "7,654". Three-digit values would never reach that
+    # path, leaving the retained-value assertion passing for the wrong reason.
     And I enter the following Schedule 1 amounts:
       | line item                     | volume | cost |
-      | Standing Tree to Loaded Truck | 321    | 654  |
+      | Standing Tree to Loaded Truck | 4321   | 7654 |
     When I save Schedule 1
     Then I should see the error "Schedule could not be saved."
-    And the Schedule 1 "Standing Tree to Loaded Truck cost" field still shows "654"
+    And the Schedule 1 "Standing Tree to Loaded Truck cost" field still shows "7654"
+    And the Schedule 1 "Standing Tree to Loaded Truck volume" field still shows "4321"
     And the Schedule 1 data should be unchanged
 
   @S24 @p1
