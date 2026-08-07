@@ -29,10 +29,21 @@ export const fmtCurrency = (value: number | null | undefined): string =>
  * accepted grouped typing too, so every parse of a form string must go through this first —
  * `Number('1,000')` is NaN.
  */
-export const stripGroup = (raw: string): string => raw.replace(/,/g, '')
+export const stripGroup = (raw: string): string => raw.replaceAll(',', '')
 
 /** Insert thousands separators into a run of digits ("1234567" → "1,234,567"). */
-const groupDigits = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+const groupDigits = (digits: string): string => {
+  if (digits.length <= 3) {
+    return digits
+  }
+  // Split from the right in threes: the leading group holds the 1-3 digit remainder.
+  const lead = digits.length % 3 || 3
+  const groups = [digits.slice(0, lead)]
+  for (let i = lead; i < digits.length; i += 3) {
+    groups.push(digits.slice(i, i + 3))
+  }
+  return groups.join(',')
+}
 
 /**
  * Re-group a form input string for display, preserving exactly what the user typed apart from the
