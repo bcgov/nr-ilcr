@@ -4,6 +4,8 @@
 // two in sync (a range change on the server must be reflected here). Blank is always allowed (legacy
 // accepts blank amounts at Save; Check Status catches missing required fields — Story 2.7).
 
+import { stripGroup } from '@/utils/number'
+
 const COST = { min: -99_999_999, max: 99_999_999 } // FLD-001 (default cost range)
 const VOLUME_7_DIGIT = { min: -9_999_999, max: 9_999_999 } // FLD-002 (fixed line items + silviculture)
 const VOLUME_8_DIGIT = { min: -99_999_999, max: 99_999_999 } // FLD-003 (shared Other-Costs volume)
@@ -40,7 +42,9 @@ function validateValue(raw: string, kind: FieldKind): string | null {
   if (raw.trim() === '') {
     return null
   }
-  const value = Number(raw)
+  // The field displays (and legacy accepted) grouped input, so strip the separators before parsing —
+  // Number('1,000') is NaN and would report a valid entry as invalid.
+  const value = Number(stripGroup(raw))
   if (Number.isNaN(value)) {
     return kind === 'cost' ? VALIDATION_MESSAGES.costInvalid : VALIDATION_MESSAGES.volumeInvalid
   }

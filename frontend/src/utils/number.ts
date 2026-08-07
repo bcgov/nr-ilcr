@@ -23,9 +23,50 @@ export const fmtCurrency = (value: number | null | undefined): string =>
     ? '—'
     : value.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** Parse a form input string to a number, or null when blank / not a number. */
+/**
+ * Drop the thousands separators a grouped form string carries (e.g. "1,234.5" → "1234.5"), so it can
+ * be parsed. The editable numeric fields DISPLAY grouped values (see {@link groupInput}), and legacy
+ * accepted grouped typing too, so every parse of a form string must go through this first —
+ * `Number('1,000')` is NaN.
+ */
+export const stripGroup = (raw: string): string => raw.replaceAll(',', '')
+
+/** Insert thousands separators into a run of digits ("1234567" → "1,234,567"). */
+const groupDigits = (digits: string): string => {
+  if (digits.length <= 3) {
+    return digits
+  }
+  // Split from the right in threes: the leading group holds the 1-3 digit remainder.
+  const lead = digits.length % 3 || 3
+  const groups = [digits.slice(0, lead)]
+  for (let i = lead; i < digits.length; i += 3) {
+    groups.push(digits.slice(i, i + 3))
+  }
+  return groups.join(',')
+}
+
+/**
+ * Re-group a form input string for display, preserving exactly what the user typed apart from the
+ * separators: the sign, the fractional digits (including trailing zeros and a lone trailing '.'), and
+ * anything that is not a plain decimal at all — invalid text is returned UNCHANGED so a typo stays on
+ * screen for the user to correct rather than being silently rewritten or blanked.
+ */
+export const groupInput = (raw: string): string => {
+  const stripped = stripGroup(raw).trim()
+  if (stripped === '') {
+    return ''
+  }
+  const match = /^(-?)(\d*)(\.\d*)?$/.exec(stripped)
+  if (!match) {
+    return raw
+  }
+  const [, sign, digits, fraction = ''] = match
+  return `${sign}${groupDigits(digits)}${fraction}`
+}
+
+/** Parse a form input string (grouped or plain) to a number, or null when blank / not a number. */
 export const toNum = (raw: string): number | null => {
-  const trimmed = raw.trim()
+  const trimmed = stripGroup(raw).trim()
   if (trimmed === '') {
     return null
   }
@@ -36,3 +77,10 @@ export const toNum = (raw: string): number | null => {
 /** Render a numeric value as a form input string, blank when null/undefined. */
 export const numStr = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : String(value)
+
+/**
+ * Render a numeric value as a GROUPED form input string ("50000" → "50,000"), blank when
+ * null/undefined. Use to seed editable numeric fields and to fill read-only preview inputs, so a
+ * field reads the same as the plain-text cells beside it.
+ */
+export const numStrGroup = (value: number | null | undefined): string => groupInput(numStr(value))

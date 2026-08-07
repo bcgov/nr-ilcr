@@ -78,16 +78,19 @@ describe('Schedule3 editable page (AC1/AC2)', () => {
 
     // Both-columns line (27) has Harvest AND PO&P inputs seeded from the doc.
     const harvest = await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
-    expect(harvest).toHaveValue('1000')
+    // Editable numeric fields display grouped values, like the read-only cells beside them.
+    expect(harvest).toHaveValue('1,000')
     expect(screen.getByLabelText('Licenses, Fees, Insurance PO&P')).toHaveValue('400')
     // Crown is server-derived, read-only text (not an input) — scoped to the line's row.
     const row = screen.getByText('Licenses, Fees, Insurance').closest('tr')
     expect(within(row as HTMLElement).getByText('600')).toBeInTheDocument()
     // Timber volume entry + read-only derived cost/perUnit.
-    expect(screen.getByLabelText('Crown Timber Harvest Volume')).toHaveValue('7000')
+    expect(screen.getByLabelText('Crown Timber Harvest Volume')).toHaveValue('7,000')
     // Override menu defaults to No; Comments editable; Save enabled (top + bottom).
     expect(screen.getByLabelText('Override Harvest ⁄ Total PO&P $')).toHaveValue('N')
-    expect(screen.getByLabelText('Comments')).toHaveValue('Seed comment for 514/2021')
+    expect(
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
+    ).toHaveValue('Seed comment for 514/2021')
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
     // Sub-page links show their counts.
     expect(screen.getByRole('button', { name: /Subtotal Other Costs \(2\):/ })).toBeInTheDocument()
@@ -215,7 +218,9 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
       await screen.findByText('Entered cost must be between -99,999,999 and 99,999,999.'),
     ).toBeInTheDocument()
     expect(putCalled).toBe(false)
-    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toHaveValue('100000000')
+    // Clicking Save blurred the field, which re-grouped it — and the advisory range check above
+    // still fired, proving validation parses the grouped string rather than choking on the commas.
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toHaveValue('100,000,000')
   })
 
   test('500 save failure shows ERR-001 and a retry re-submits (S17)', async () => {

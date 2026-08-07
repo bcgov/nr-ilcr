@@ -51,9 +51,24 @@
   }
 }
 
-// Right-align numeric columns (Carbon DataTable defaults to left).
 .schedule-3__num {
   text-align: right;
+}
+
+// Numeric values line up on their left edge. A read-only cell's text starts at the cell's own
+// inline-start padding, but an editable cell's value sits inside a TextInput that indents it by a
+// further $spacing-05 (`.cds--text-input` uses layout density 'normal', so size="sm" does NOT shrink
+// that padding) — leaving read-only figures 16px to the left of the ones in fields. Indent the
+// plain-text cells to match. Qualified with the table class and the element so this outranks Carbon's
+// own `.cds--data-table td { padding-inline }` rule at (0,1,1).
+.cds--data-table td.schedule-3__num {
+  padding-inline-start: $spacing-05 * 2;
+}
+
+// ...except the cells that hold the field, where the input itself supplies the indent. Same
+// specificity as the rule above, so this must stay after it to win.
+.cds--data-table td.schedule-3__num--input {
+  padding-inline-start: $spacing-05;
 }
 
 .schedule-3__actions {

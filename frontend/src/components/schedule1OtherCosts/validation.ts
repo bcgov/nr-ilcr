@@ -2,6 +2,8 @@
 // these checks give immediate inline feedback and gate the call to avoid a doomed round-trip. Ranges
 // + messages MIRROR the backend OtherCostRequest DTO / message bundle — keep them in sync.
 
+import { stripGroup } from '@/utils/number'
+
 const COST = { min: -99_999_999, max: 99_999_999 } // FLD-001 (default cost range)
 const DESCRIPTION_MAX = 30
 
@@ -33,7 +35,8 @@ export function validateOtherCost(description: string, costRaw: string): OtherCo
 
   const cost = costRaw.trim()
   if (cost !== '') {
-    const n = Number(cost)
+    // Grouped input is displayed and accepted — strip separators before parsing (Number('1,000') is NaN).
+    const n = Number(stripGroup(cost))
     if (Number.isNaN(n)) {
       errors.cost = OTHER_COST_MESSAGES.costInvalid
     } else if (n < COST.min || n > COST.max) {

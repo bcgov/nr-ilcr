@@ -16,3 +16,24 @@
     background-color: #f4f4f4;
   }
 }
+
+// Keep the TextArea's label and its character counter (both `.cds--label`, inside the label wrapper)
+// at normal weight and 14px, wherever a page-level rule would otherwise bold them.
+// The `.cds--form-item` ancestor is here for SPECIFICITY, not scoping: this sheet is bundled into the
+// app stylesheet, while a page's SCSS ships in that route's lazily-loaded chunk and is appended after
+// it. A page rule like `.some__section .cds--label` ties this on specificity and then wins purely on
+// source order — but only once its chunk has loaded, so the label renders bold after navigating from
+// that page and silently "fixes itself" on a hard refresh. Three classes outrank that.
+.cds--form-item .cds--text-area__label-wrapper .cds--label {
+  font-weight: 400;
+  font-size: 0.875rem; // 14px
+}
+
+// Read-only (disabled) field values render in Carbon's very light disabled grey, which is hard to
+// read for prefilled numbers (Volume, $/m³, Crown $). Darken to the secondary text token. Carbon
+// paints disabled inputs with -webkit-text-fill-color, so both properties are needed to take effect.
+.cds--text-input:disabled,
+.cds--text-area:disabled {
+  color: var(--cds-text-secondary);
+  -webkit-text-fill-color: var(--cds-text-secondary);
+}

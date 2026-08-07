@@ -1,15 +1,43 @@
+@use '@carbon/react/scss/spacing' as *;
+
 // Self-contained layout for the Schedule 3 list sub-pages (global scss, like the Schedule 3 page).
 // The .schedule-3__* class names are reused for visual consistency with the parent page.
 .schedule-3__num {
   text-align: right;
 }
 
-// Field labels (Annual Rents, Add form) at 14px bold, and bold table column headers — matches the
-// legacy bold labels/headers on the sub-page panels.
-.schedule-3__section .cds--label {
-  font-size: 0.875rem;
-  font-weight: 700;
+// Restated here (not inherited from schedule3/index.scss — that sheet ships in the Schedule 3 chunk
+// and is not loaded on this page): indent read-only numeric cells by the inline padding a Carbon
+// TextInput adds to its own value, so the figures in fields and the plain-text ones share a left
+// edge. See schedule3/index.scss for the full reasoning.
+.cds--data-table td.schedule-3__num {
+  padding-inline-start: $spacing-05 * 2;
 }
+
+.cds--data-table td.schedule-3__num--input {
+  padding-inline-start: $spacing-05;
+}
+
+// Description carries the only variable-length content, but sized from content it loses out to the
+// numeric columns (an editable cell holds a TextInput, whose intrinsic width is the input default of
+// ~20 characters). Give it the largest share and let the numeric columns keep their content-derived
+// widths — pinning those too made them far too narrow. The column count varies by config (3 columns
+// on Unacceptable Costs, 5 on Other Acceptable), which a percentage handles either way.
+.schedule-3-sub__table.cds--data-table {
+  th:first-child,
+  td:first-child {
+    inline-size: 40%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+// NB: `.schedule-3__section` is shared with the MAIN Schedule 3 page, so anything scoped to it from
+// this sheet leaks there the moment this sub-page chunk loads — and the chunk's CSS is appended after
+// the app stylesheet, so at equal specificity it wins on source order alone. A section-wide
+// `.cds--label { font-weight: 700 }` used to live here and did exactly that: it re-bolded the main
+// page's Comments label + counter after any visit to a sub-page, until a hard refresh dropped the
+// chunk again. Bold only the label that actually wants it (see .schedule-3-sub__meta-field below).
 
 .schedule-3__section .cds--data-table thead th {
   font-weight: 700;
@@ -26,6 +54,7 @@
 .schedule-3__intro {
   margin-block-start: 0;
   margin-block-end: 1rem;
+  font-size: 14px;
 }
 
 .schedule-3__actions {
@@ -63,8 +92,22 @@
   column-gap: 1rem;
 }
 
+// The panel paints --cds-layer-01, and a Carbon field defaults to the field token at that SAME layer
+// step — which in the dark theme is the identical value (#262626 on #262626), so the input vanished
+// apart from its underline. The list table never had the problem because Carbon's data table bumps
+// the layer for its own contents. Lift just these fields onto the same step the table's fields land
+// on, so the two read alike. Dark only: in light the panel is #ffffff and the field #f4f4f4, which
+// already matches the table exactly.
+:root[data-carbon-theme='g100'] .schedule-3-sub__field .cds--text-input {
+  background-color: var(--cds-layer-accent-01);
+}
+
 .schedule-3-sub__field .cds--label {
   margin: 0;
+  // 14px was inherited from the removed section-wide rule; set it here so the Add-form labels keep
+  // their size. Weight is Carbon's own 400 — stated explicitly so the intent survives another edit.
+  font-size: 0.875rem;
+  font-weight: 400;
 }
 
 // Legacy labels read "Description:", "Total $:", etc. The colon is decorative (::after is not part of
@@ -87,6 +130,13 @@
   padding-inline-start: 9rem;
 }
 
+// Match the Add button width to the narrow numeric fields (12rem), label centred.
+.schedule-3-sub__actions .cds--btn {
+  inline-size: 12rem;
+  max-inline-size: 12rem;
+  justify-content: center;
+}
+
 // The read-only Annual Rents (S111) field sits above the list table with its label INLINE to the left
 // of a narrow box (legacy "Annual Rents (Forest Act, S111): [box]"), not stacked above it.
 .schedule-3-sub__meta-field.cds--form-item {
@@ -97,8 +147,11 @@
   margin-block-end: 1rem;
 }
 
+// The Annual Rents (S111) label — the one label the removed section-wide rule was actually for.
 .schedule-3-sub__meta-field .cds--label {
   margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
 
 // Colon is decorative (::after is not part of the accessible name), so getByLabelText still resolves.

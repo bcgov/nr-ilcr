@@ -27,13 +27,18 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
   onDelete,
 }) => (
   <Column sm={4} md={8} lg={16} className={className}>
-    <Button kind="primary" disabled={!editable || saving} onClick={onSave}>
+    <Button kind="primary" size="md" disabled={!editable || saving} onClick={onSave}>
       Save
     </Button>
-    <Button kind="tertiary" disabled={!editable || saving || checking} onClick={onCheckStatus}>
+    <Button
+      kind="tertiary"
+      size="md"
+      disabled={!editable || saving || checking}
+      onClick={onCheckStatus}
+    >
       Check Status
     </Button>
-    <Button kind="danger--tertiary" disabled={!editable || saving} onClick={onDelete}>
+    <Button kind="danger--tertiary" size="md" disabled={!editable || saving} onClick={onDelete}>
       Delete
     </Button>
   </Column>

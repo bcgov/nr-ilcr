@@ -145,7 +145,18 @@ npm ci
 npm run lint
 npm run test:cov
 npm run build
-npm run test:e2e
 ```
 
-Run Playwright against the local Vite app by default. Set `E2E_BASE_URL` only when intentionally testing a deployed route.
+End-to-end tests live in the self-contained `frontend/e2e` package, so they have their own
+`node_modules` and are not installed by the `frontend` `npm ci` above. Install them once, then run:
+
+```powershell
+cd frontend/e2e
+npm ci
+npm test          # equivalently, from frontend/: npm run test:e2e
+```
+
+`npm run test:e2e` (which shells out to the `e2e` package) requires the full running stack —
+frontend `:3000`, backend `:8080`, and the seeded Oracle DB — plus a browser channel. See
+[`frontend/e2e/README.md`](frontend/e2e/README.md) for the bring-up. Playwright runs against the local
+Vite app by default; set `E2E_BASE_URL` only when intentionally testing a deployed route.
