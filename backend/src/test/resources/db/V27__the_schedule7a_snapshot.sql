@@ -70,6 +70,10 @@ INSERT INTO THE.ILCR_DECK_CODE VALUES ('STL', 'Steel', DATE '1900-01-01', DATE '
 
 INSERT INTO THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE VALUES ('CONC', 'Concrete', DATE '1900-01-01', DATE '2999-12-31');
 INSERT INTO THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE VALUES ('TIMB', 'Timber', DATE '1900-01-01', DATE '2999-12-31');
+-- NULL dates encode "no bound" and MUST still be offered: a bare comparison against NULL is false in
+-- SQL, so an unguarded filter would drop this row from the dropdown AND make validateCodes reject a
+-- value already stored on an existing bridge. The queries NVL both bounds; this row pins that.
+INSERT INTO THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE VALUES ('OPEN', 'Never-expiring abutment', NULL, NULL);
 
 INSERT INTO THE.ILCR_BRIDGE_LOAD_RATING_CODE VALUES ('L100', 'L-100', DATE '1900-01-01', DATE '2999-12-31');
 INSERT INTO THE.ILCR_BRIDGE_LOAD_RATING_CODE VALUES ('L75', 'L-75', DATE '1900-01-01', DATE '2999-12-31');

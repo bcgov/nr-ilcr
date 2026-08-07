@@ -471,6 +471,35 @@ class Schedule7aServiceTest {
   }
 
   @Test
+  @DisplayName("save-all rejects a duplicate bridge id with 400, not a misleading 409")
+  void saveAll_duplicateIdIsBadRequest() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    BridgeSaveAllRequest request = saveAll(7601L, 7601L);
+
+    // Left to run, the second pass would meet the revision its own first pass bumped and 409 —
+    // telling the caller another user changed the row when the request was simply malformed.
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+        .isInstanceOf(DuplicateBridgeException.class);
+    verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("save-all reads each code table ONCE for the batch, not once per bridge")
+  void saveAll_readsCodeTablesOncePerBatch() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    when(repository.findBridges(514, 2021)).thenReturn(List.of());
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), true, "user");
+
+    // Three bridges: once for the batch's validation + once for the echoed document. Per-bridge
+    // lookups would make this 4 for three rows, and 5N inside one transaction at scale.
+    verify(repository, times(2)).constructionTypeOptions(2021);
+  }
+
+  @Test
   @DisplayName("save-all is rejected outside Draft before any bridge is written")
   void saveAll_rejectedOutsideDraft() {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));

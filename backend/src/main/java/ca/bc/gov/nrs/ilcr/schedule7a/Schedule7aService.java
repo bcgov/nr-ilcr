@@ -128,15 +128,16 @@ public class Schedule7aService {
 
   /**
    * Add one bridge and return the recomputed document + the recalculated totals (S01/S02). Costs are
-   * optional; a present cost writes its detail row, an absent cost writes none (legacy null-cost →
-   * no row). Draft-gated; unknown code → 400; malformed date → 400.
+   * optional, but every one of the ten detail rows is written either way — an absent cost stores a
+   * NULL row, never no row (see {@link #writeCosts}). Draft-gated; unknown code → 400; malformed
+   * date → 400.
    */
   @Transactional
   public Schedule7aResponse addBridge(
       long millId, int year, BridgeRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
     LocalDate builtDate = parseBuiltDate(request.builtDate());
-    validateCodes(year, request);
+    validateCodes(codeSets(year), request);
     try {
       long bridgeId = repository.nextBridgeReportId();
       repository.insertBridge(toEntity(bridgeId, request, builtDate), millId, year, user);
@@ -152,14 +153,14 @@ public class Schedule7aService {
   /**
    * Correct one existing bridge and return the recomputed document (S03). Optimistic-lock on the
    * row's {@code REVISION_COUNT}: a stale token → 409, an unknown id → 404. Cost edits upsert their
-   * row, or remove it when a cost is cleared to null.
+   * row; clearing a cost stores NULL in place rather than removing the row (see {@link #writeCosts}).
    */
   @Transactional
   public Schedule7aResponse updateBridge(
       long millId, int year, long bridgeId, BridgeRequest request, boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
-    applyBridgeUpdate(millId, year, bridgeId, request, user);
+    applyBridgeUpdate(millId, year, bridgeId, request, user, codeSets(year));
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
   }
 
@@ -184,10 +185,29 @@ public class Schedule7aService {
   public Schedule7aResponse saveAllBridges(
       long millId, int year, BridgeSaveAllRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
+    rejectDuplicateIds(request);
+    // Read the five code tables ONCE for the batch rather than once per bridge: the lists are
+    // year-scoped, not row-scoped, so N bridges would otherwise issue 5N identical queries inside
+    // this transaction.
+    CodeSets codes = codeSets(year);
     for (BridgeSaveAllRequest.Item item : request.bridges()) {
-      applyBridgeUpdate(millId, year, item.bridgeReportId(), item.bridge(), user);
+      applyBridgeUpdate(millId, year, item.bridgeReportId(), item.bridge(), user, codes);
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Reject a batch naming the same bridge twice. Left to run, the second pass would meet the
+   * revision its own first pass had just bumped and surface as a 409 stale-edit — telling the caller
+   * someone else changed the row when the request was simply malformed.
+   */
+  private static void rejectDuplicateIds(BridgeSaveAllRequest request) {
+    Set<Long> seen = new java.util.HashSet<>();
+    for (BridgeSaveAllRequest.Item item : request.bridges()) {
+      if (!seen.add(item.bridgeReportId())) {
+        throw new DuplicateBridgeException();
+      }
+    }
   }
 
   /**
@@ -195,9 +215,9 @@ public class Schedule7aService {
    * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
    */
   private void applyBridgeUpdate(
-      long millId, int year, long bridgeId, BridgeRequest request, String user) {
+      long millId, int year, long bridgeId, BridgeRequest request, String user, CodeSets codes) {
     LocalDate builtDate = parseBuiltDate(request.builtDate());
-    validateCodes(year, request);
+    validateCodes(codes, request);
     try {
       int updated = repository.updateBridge(
           toEntity(bridgeId, request, builtDate), millId, year, request.revisionCount(), user);
@@ -292,19 +312,32 @@ public class Schedule7aService {
     }
   }
 
+  /** The five code-value sets a write is validated against, read once for a reporting year. */
+  private record CodeSets(Set<String> construction, Set<String> superstructure, Set<String> deck,
+      Set<String> abutment, Set<String> loadRating) {
+  }
+
+  private CodeSets codeSets(int year) {
+    return new CodeSets(
+        codeSet(repository.constructionTypeOptions(year)),
+        codeSet(repository.superstructureTypeOptions(year)),
+        codeSet(repository.deckTypeOptions(year)),
+        codeSet(repository.abutmentTypeOptions(year)),
+        codeSet(repository.loadRatingOptions(year)));
+  }
+
   /**
    * Reject a code value that resolves to no {@code *_CODE} row EFFECTIVE for the reporting year
    * (force-selection enforcement, S15). Year-scoped for the same reason the served lists are: legacy
    * only ever offered the year's effective codes, so accepting one outside that window here would
    * let a write store a value the form could never have produced.
    */
-  private void validateCodes(int year, BridgeRequest r) {
-    if (!codeSet(repository.constructionTypeOptions(year)).contains(r.constructionTypeCode())
-        || !codeSet(repository.superstructureTypeOptions(year))
-            .contains(r.superstructureTypeCode())
-        || !codeSet(repository.deckTypeOptions(year)).contains(r.deckTypeCode())
-        || !codeSet(repository.abutmentTypeOptions(year)).contains(r.abutmentTypeCode())
-        || !codeSet(repository.loadRatingOptions(year)).contains(r.loadRatingCode())) {
+  private static void validateCodes(CodeSets codes, BridgeRequest r) {
+    if (!codes.construction().contains(r.constructionTypeCode())
+        || !codes.superstructure().contains(r.superstructureTypeCode())
+        || !codes.deck().contains(r.deckTypeCode())
+        || !codes.abutment().contains(r.abutmentTypeCode())
+        || !codes.loadRating().contains(r.loadRatingCode())) {
       throw new InvalidBridgeCodeException();
     }
   }

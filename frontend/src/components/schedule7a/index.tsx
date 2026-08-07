@@ -33,6 +33,10 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const ADD_PANEL_HEADING = 'Add a Bridge report'
 const EMPTY_LIST = 'No bridge reports have been added.'
+// Client-side gate text. The per-field messages under each input are the API's verbatim wording;
+// this only says WHICH rows are blocking, which legacy conveyed by listing every failure at the top
+// of the page.
+const SAVE_BLOCKED = 'Cannot save. Correct the required values on Bridge report Id:'
 
 const SCHEDULE7A_PATH = '/v1/schedule7a'
 const BRIDGES_PATH = `${SCHEDULE7A_PATH}/bridges`
@@ -122,6 +126,9 @@ const Schedule7a: FC = () => {
   const [rowErrors, setRowErrors] = useState<Record<number, BridgeErrors>>({})
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  // Set only when Save needs to reveal a failing row; Carbon re-syncs an AccordionItem when its
+  // `open` prop CHANGES, so this expands that row without taking over the user's own toggling.
+  const [expandedId, setExpandedId] = useState<number | null>(null)
   const [page, setPage] = useState(1)
 
   // Clear all transient state whenever a fresh document loads (mill/year change), so a context change
@@ -137,6 +144,7 @@ const Schedule7a: FC = () => {
     setRowForms({})
     setRowErrors({})
     setConfirmDeleteId(null)
+    setExpandedId(null)
     setPage(1)
   }, [])
 
@@ -296,17 +304,28 @@ const Schedule7a: FC = () => {
     }))
 
     const errorsByRow: Record<number, BridgeErrors> = {}
-    let invalid = false
+    const failedRows: Bridge[] = []
     for (const { bridge, form } of forms) {
       const errors = validateBridge(form)
       errorsByRow[bridge.bridgeReportId] = errors
       if (Object.keys(errors).length > 0) {
-        invalid = true
+        failedRows.push(bridge)
       }
     }
     // Replace wholesale rather than merging: a row that now passes must lose its old red text.
     setRowErrors(errorsByRow)
-    if (invalid) {
+    if (failedRows.length > 0) {
+      // Save validates EVERY bridge, but only five are on screen and each editor is collapsed, so a
+      // failing row can be invisible — on another page, or simply unopened. Without this the button
+      // would appear dead: no request, no banner, no way to find the offending row. Legacy listed
+      // every failure in its page-level <p:messages>, so naming them here is the faithful behaviour.
+      setActionError(
+        `${SAVE_BLOCKED} ${failedRows.map((bridge) => String(bridge.rowCounter)).join(', ')}`,
+      )
+      // Bring the first offender into view and open it, so the inline errors are actually reachable.
+      const first = failedRows[0]
+      setPage(Math.floor((data.bridges.indexOf(first) ?? 0) / PAGE_SIZE) + 1)
+      setExpandedId(first.bridgeReportId)
       return
     }
 
@@ -562,6 +581,7 @@ const Schedule7a: FC = () => {
                 {visible.map((bridge) => (
                   <AccordionItem
                     key={bridge.bridgeReportId}
+                    open={expandedId === bridge.bridgeReportId || undefined}
                     title={`Bridge report Id: ${String(bridge.rowCounter)}`}
                   >
                     <BridgeFields

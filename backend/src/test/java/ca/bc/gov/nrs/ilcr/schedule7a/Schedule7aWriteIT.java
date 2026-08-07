@@ -432,6 +432,31 @@ class Schedule7aWriteIT extends AbstractOracleIT {
   // ===============================================================================================
 
   @Test
+  @DisplayName("a code with NULL effective/expiry dates is ACCEPTED on write (no bound = always)")
+  void write_acceptsCodeWithNullDateBounds() throws Exception {
+    // 'OPEN' carries NULL EFFECTIVE_DATE and EXPIRY_DATE. If the filter did not NVL them the row
+    // would vanish from the code set and this save would 400 — which is exactly how an existing
+    // bridge holding such a code would become unsaveable.
+    String body = validBody("Null Bounded Code", 0)
+        .replace("\"abutmentTypeCode\": \"CONC\"", "\"abutmentTypeCode\": \"OPEN\"");
+    postBridge(body).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("save-all rejects a duplicate bridge id -> 400 (not a misleading 409)")
+  void saveAll_duplicateId() throws Exception {
+    long id = addBridge("Duplicated");
+    String body = """
+        {"bridges": [
+          {"bridgeReportId": %d, "bridge": %s},
+          {"bridgeReportId": %d, "bridge": %s}
+        ]}
+        """.formatted(id, validBody("Duplicated", 0), id, validBody("Duplicated Again", 0));
+
+    saveAll(body).andExpect(status().isBadRequest());
+  }
+
+  @Test
   @DisplayName("a code that expired before the reporting year is REJECTED on write (400)")
   void write_rejectsCodeExpiredBeforeReportingYear() throws Exception {
     String body = validBody("Expired Code", 0)

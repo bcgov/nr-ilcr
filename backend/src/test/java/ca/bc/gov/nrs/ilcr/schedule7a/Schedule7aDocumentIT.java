@@ -77,7 +77,7 @@ class Schedule7aDocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.codeLists.constructionTypes[0].description", is("New")))
         .andExpect(jsonPath("$.codeLists.superstructureTypes", hasSize(3)))
         .andExpect(jsonPath("$.codeLists.deckTypes", hasSize(2)))
-        .andExpect(jsonPath("$.codeLists.abutmentTypes", hasSize(2)))
+        .andExpect(jsonPath("$.codeLists.abutmentTypes", hasSize(3)))
         .andExpect(jsonPath("$.codeLists.loadRatings", hasSize(2)))
         // GET never carries a success message (Jackson non_null omits it).
         .andExpect(jsonPath("$.message").doesNotExist());
@@ -112,6 +112,10 @@ class Schedule7aDocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.codeLists.loadRatings[*].code",
             org.hamcrest.Matchers.containsInAnyOrder("L100", "L75")))
         .andExpect(jsonPath("$.codeLists.loadRatings[*].code",
-            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("LX"))));
+            org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("LX"))))
+        // A row with NULL bounds means "no bound" and must SURVIVE the filter. An unguarded
+        // comparison against NULL is false in SQL, which would silently drop it.
+        .andExpect(jsonPath("$.codeLists.abutmentTypes[*].code",
+            org.hamcrest.Matchers.hasItem("OPEN")));
   }
 }

@@ -17,7 +17,9 @@ export default interface BridgeRequest {
   readonly length: number
   readonly width: number
   readonly distance: number
-  // Optional at save (legacy); null clears that cost row. Only Check Status flags a missing cost.
+  // Optional at save (legacy). A null stores NULL in the cost's detail row — the row itself is
+  // always written, so the legacy app (same delivery database) can still edit that cost. Only Check
+  // Status flags a missing cost.
   readonly sitePlanCost?: number | null
   readonly superstructureMaterialCost?: number | null
   readonly superstructureDeliverCost?: number | null

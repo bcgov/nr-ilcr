@@ -258,6 +258,14 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
    * legacy {@code CoreUtil.getDate(year)} feeding {@code LookupCache.getCacheList(year)}, which kept
    * a code only when {@code effective_date <= that date <= expiry_date}. A code retired before the
    * reporting year, or not yet in force at its start, was not offered — and is not offered here.
+   *
+   * <p>The queries NVL both bounds because a bare comparison against NULL is false in SQL, which
+   * would drop a row encoding "never expires" as a NULL {@code EXPIRY_DATE} — and dropping it would
+   * not merely hide the option, it would make {@code validateCodes} reject a value already stored on
+   * an existing bridge. Legacy could not encode that case at all: {@code LookupCache} calls
+   * {@code date.before(c.getEffective_date())} with no null check, so a NULL there would have thrown
+   * an NPE building the list. The guard therefore cannot change behaviour for any data legacy could
+   * serve; it only stops an unrepresentable row from silently breaking saves.
    */
   private static java.time.LocalDate effectiveOn(int year) {
     return java.time.LocalDate.of(year, 1, 1);
@@ -283,8 +291,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Query("""
       SELECT ILCR_BRIDGE_CNSTRCTN_TYPE_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_CNSTRCTN_TYPE_CODE
-       WHERE EFFECTIVE_DATE <= :asOf
-         AND EXPIRY_DATE >= :asOf
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
        ORDER BY ILCR_BRIDGE_CNSTRCTN_TYPE_CODE
       """)
   List<ConstructionTypeCode> findConstructionTypeCodes(@Param("asOf") java.time.LocalDate asOf);
@@ -306,8 +314,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Query("""
       SELECT ILCR_BRIDGE_SUPERSTRUCTR_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_SUPERSTRUCTR_CODE
-       WHERE EFFECTIVE_DATE <= :asOf
-         AND EXPIRY_DATE >= :asOf
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
        ORDER BY ILCR_BRIDGE_SUPERSTRUCTR_CODE
       """)
   List<SuperstructureTypeCode> findSuperstructureTypeCodes(@Param("asOf") java.time.LocalDate asOf);
@@ -327,8 +335,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Query("""
       SELECT ILCR_DECK_CODE, DESCRIPTION
         FROM THE.ILCR_DECK_CODE
-       WHERE EFFECTIVE_DATE <= :asOf
-         AND EXPIRY_DATE >= :asOf
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
        ORDER BY ILCR_DECK_CODE
       """)
   List<DeckTypeCode> findDeckTypeCodes(@Param("asOf") java.time.LocalDate asOf);
@@ -350,8 +358,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Query("""
       SELECT ILCR_BRIDGE_ABUTMENT_TYPE_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE
-       WHERE EFFECTIVE_DATE <= :asOf
-         AND EXPIRY_DATE >= :asOf
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
        ORDER BY ILCR_BRIDGE_ABUTMENT_TYPE_CODE
       """)
   List<AbutmentTypeCode> findAbutmentTypeCodes(@Param("asOf") java.time.LocalDate asOf);
@@ -373,8 +381,8 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
   @Query("""
       SELECT ILCR_BRIDGE_LOAD_RATING_CODE, DESCRIPTION
         FROM THE.ILCR_BRIDGE_LOAD_RATING_CODE
-       WHERE EFFECTIVE_DATE <= :asOf
-         AND EXPIRY_DATE >= :asOf
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
        ORDER BY ILCR_BRIDGE_LOAD_RATING_CODE
       """)
   List<LoadRatingCode> findLoadRatingCodes(@Param("asOf") java.time.LocalDate asOf);

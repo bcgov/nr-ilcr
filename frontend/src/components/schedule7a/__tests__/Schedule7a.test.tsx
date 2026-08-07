@@ -526,6 +526,36 @@ describe('Schedule 7A page', () => {
     expect(called).toBe(false)
   })
 
+  test('Save names the blocking rows and reveals the first, even on another page', async () => {
+    // Seven bridges (two pages). Row 6 — page 2, and collapsed — is the only invalid one, exactly
+    // the legacy-data case: a stored bridge with NULL required attributes.
+    const bridges = Array.from({ length: 7 }, (_, index) =>
+      bridgeAt(7001 + index, index + 1, index === 5 ? { locationName: null, distance: null } : {}),
+    )
+    let called = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges }))),
+      http.put(BRIDGES_URL, () => {
+        called = true
+        return HttpResponse.json(doc({ bridges }))
+      }),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+    expect(await screen.findByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
+
+    await savePage(user)
+
+    // Without the banner the button reads as dead: no request, no error, no way to find the row.
+    expect(await screen.findByText(/Cannot save.*Bridge report Id: 6/)).toBeInTheDocument()
+    expect(called).toBe(false)
+    // And the offending row is actually reachable — paged to and expanded, not merely named.
+    expect(await screen.findByRole('button', { name: 'Bridge report Id: 6' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(document.getElementById('bridge-7006-locationName')).toBeVisible()
+    })
+  })
+
   test('the page-level Save is disabled when the schedule holds no bridges', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ bridges: [] }))))
     render(<Schedule7a />)
