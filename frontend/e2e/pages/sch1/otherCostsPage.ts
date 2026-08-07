@@ -28,8 +28,14 @@ export class OtherCostsPage {
     return this.page.getByRole('button', { name: 'Add', exact: true });
   }
 
+  /**
+   * The sub-page Back action. `EditableSubPageLayout` renders `backLabel` TWICE (a top action row and a
+   * bottom one), so this is scoped with `.first()`. Re-grounded 2026-08-07: the restyle (#237) shortened
+   * the label from "Back to Schedule 1" to "Back" (`schedule1OtherCosts/index.tsx` `backLabel="Back"`),
+   * so it is matched exactly to avoid colliding with any other button whose name merely contains "Back".
+   */
   get backButton(): Locator {
-    return this.page.getByRole('button', { name: 'Back to Schedule 1' });
+    return this.page.getByRole('button', { name: 'Back', exact: true }).first();
   }
 
   /** Readiness anchor after navigating in from Schedule 1. */

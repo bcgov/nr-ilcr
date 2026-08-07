@@ -103,6 +103,18 @@ export class Schedule1Page {
     return this.page.locator(id);
   }
 
+  /**
+   * An amount input's value with thousands separators removed, so assertions compare the NUMBER the
+   * field carries rather than how it is punctuated. The restyle (#237) made the inputs display grouped
+   * values — `seedForm` seeds them via `numStrGroup()`, so 325411 renders as "325,411" — which is
+   * deliberate legacy parity, not a defect. Asserting the ungrouped form keeps these tests indifferent
+   * to future formatting changes; the grouping itself is the app's own unit-tested concern
+   * (`utils/__tests__/number.test.ts`).
+   */
+  async amountValue(id: string): Promise<string> {
+    return (await this.field(id).inputValue()).replaceAll(',', '');
+  }
+
   /** Enter the volume and/or cost for a labelled line item (blank cells are skipped). */
   async enterAmount(label: string, volume?: string, cost?: string): Promise<void> {
     const ids = FIELD_IDS[label];

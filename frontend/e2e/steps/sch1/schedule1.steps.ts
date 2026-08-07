@@ -274,17 +274,21 @@ Then(
     // BR-03 copies the crown volume into the full legacy 13-field volume set: line items 12–18 + the
     // volume-only rows 143/144, and silviculture 1, 2, 139, 140. The shared Other-Costs volume is
     // deliberately NOT pre-filled — asserting that too keeps the "13-field set" claim honest.
+    // Values are compared UNGROUPED: the inputs render "325,411" since the restyle (#237) seeds them
+    // via `numStrGroup()`. That is deliberate legacy parity, so assert the number, not its punctuation.
     const expected = String(CROWN_PREFILL_VOLUME);
     for (const code of [12, 13, 14, 15, 16, 17, 18, 143, 144, 1, 2, 139, 140]) {
-      await expect(
-        schedule1Page.field(`#vol-${code}`),
-        `volume field #vol-${code} should carry the pre-filled crown volume`,
-      ).toHaveValue(expected);
+      await expect
+        .poll(
+          () => schedule1Page.amountValue(`#vol-${code}`),
+          { message: `volume field #vol-${code} should carry the pre-filled crown volume` },
+        )
+        .toBe(expected);
     }
-    await expect(
-      schedule1Page.field('#otherCostsVolume'),
+    expect(
+      await schedule1Page.amountValue('#otherCostsVolume'),
       'the shared Other-Costs volume is outside the pre-filled set',
-    ).not.toHaveValue(expected);
+    ).not.toBe(expected);
   },
 );
 
@@ -410,7 +414,14 @@ Then(
   'the Schedule 1 {string} field still shows {string}',
   async ({ schedule1Page }, label, value) => {
     // A failed save must keep the entered values in the form (S23) — nothing is cleared or reloaded.
-    await expect(schedule1Page.fieldByLabel(label)).toHaveValue(value);
+    // Compared UNGROUPED: the restyle (#237) groups an amount on BLUR (`onBlur={groupField(...)}`), so
+    // clicking Save re-punctuates anything four digits or longer. Asserting the raw number keeps this
+    // step honest for any value, not just the short one S23 happens to use.
+    await expect
+      .poll(() => schedule1Page.amountValue(schedule1Page.fieldIdFor(label)), {
+        message: `Schedule 1 "${label}" should still hold the entered value`,
+      })
+      .toBe(value);
   },
 );
 
