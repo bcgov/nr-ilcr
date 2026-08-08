@@ -22,6 +22,7 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
   // avoids showing −PO&P for a PO&P-only row and keeps the live value consistent with post-save.
   readonlyColumns: [
     {
+      key: 'crown',
       header: 'Crown $',
       derive: (v) => (v.total === null ? null : v.total - (v.pop ?? 0)),
     },

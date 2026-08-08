@@ -33,7 +33,7 @@ import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   validateLocation,
   parseDecimalInput,
@@ -96,6 +96,9 @@ type EnhancedDropdownProps = {
   readonly value: boolean | null
   readonly disabled?: boolean
   readonly invalidText?: string
+  // Set inside table rows, where the column header already names the field and a per-cell label
+  // would print as stray text above every control. Carbon keeps it in the a11y tree.
+  readonly hideLabel?: boolean
   readonly onChange: (value: boolean | null) => void
 }
 
@@ -105,11 +108,13 @@ const EnhancedDropdown: FC<EnhancedDropdownProps> = ({
   value,
   disabled,
   invalidText,
+  hideLabel,
   onChange,
 }) => (
   <Dropdown<EnhancedItem>
     id={id}
     titleText={label}
+    hideLabel={hideLabel}
     label="Select"
     items={ENHANCED_ITEMS as unknown as EnhancedItem[]}
     itemToString={(item) => item?.label ?? ''}
@@ -131,6 +136,7 @@ type BiogeoComboBoxProps = {
   readonly selected: BiogeoclimaticOption | null
   readonly disabled?: boolean
   readonly invalidText?: string
+  readonly hideLabel?: boolean
   readonly onSelect: (option: BiogeoclimaticOption | null) => void
 }
 
@@ -140,6 +146,7 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   selected,
   disabled,
   invalidText,
+  hideLabel,
   onSelect,
 }) => {
   const [items, setItems] = useState<BiogeoclimaticOption[]>([])
@@ -195,7 +202,12 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   return (
     <ComboBox
       id={id}
-      titleText={label}
+      // Unlike Dropdown, ComboBox has no hideLabel prop — but it falls back to aria-label for the
+      // input whenever titleText is absent (ComboBox.js:486), so dropping the visible label still
+      // leaves the control with an accessible name. Passing both is safe: Carbon ignores the
+      // aria-label while titleText is set.
+      titleText={hideLabel ? undefined : label}
+      aria-label={label}
       placeholder="Type to search"
       disabled={disabled}
       items={items}
@@ -221,10 +233,85 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
   )
 }
 
+// Column order, header text and which columns sort are all legacy-verbatim: every legacy
+// p:column carries sortBy EXCEPT Comments (xhtml:353) and Delete (xhtml:364), so those two
+// alone stay unsorted. Keeping the definitions in one list means the header row cannot drift
+// out of step with the sortable set.
+type SortKey =
+  | 'location'
+  | 'becLabel'
+  | 'enhancedIndicator'
+  | 'netArea'
+  | 'actualCost'
+  | 'plannedCost'
+  | 'totalCost'
+  | 'costPerNetArea'
+
+type SortDirection = 'NONE' | 'ASC' | 'DESC'
+
+type SilvicultureColumn = {
+  readonly label: string
+  readonly sortKey: SortKey | null
+  readonly numeric?: boolean
+}
+
+const COLUMNS: readonly SilvicultureColumn[] = [
+  { label: 'Location', sortKey: 'location' }, // xhtml:208
+  { label: 'Biogeo/Subzone/Variant', sortKey: 'becLabel' }, // xhtml:228
+  { label: 'ES', sortKey: 'enhancedIndicator' }, // xhtml:255
+  { label: 'NAR(ha)', sortKey: 'netArea', numeric: true }, // xhtml:274
+  { label: 'Actual Cost ($)', sortKey: 'actualCost', numeric: true }, // xhtml:296
+  { label: 'Planned Cost ($)', sortKey: 'plannedCost', numeric: true }, // xhtml:313
+  { label: 'Total Act Plus Plan Cost ($)', sortKey: 'totalCost', numeric: true }, // xhtml:334
+  { label: 'Total/NAR(ha)', sortKey: 'costPerNetArea', numeric: true }, // xhtml:344
+  { label: 'Comments', sortKey: null }, // xhtml:353 — no sortBy
+]
+
+// ASC -> DESC -> NONE, where NONE restores the server's order. Carbon's own DataTable cycles
+// through the same three states; legacy PrimeFaces only toggled asc/desc, which left no way
+// back to the document order the API returned.
+const NEXT_DIRECTION: Record<SortDirection, SortDirection> = {
+  NONE: 'ASC',
+  ASC: 'DESC',
+  DESC: 'NONE',
+}
+
+// Blank cells rank last in BOTH directions: a null carries no position of its own, so letting
+// the direction flip it would push empty rows above real data on the descending pass. Booleans
+// compare false < true (legacy sorted the raw enhancedIndicator, xhtml:255).
+const compareRows = (
+  a: SilvicultureLocation,
+  b: SilvicultureLocation,
+  key: SortKey,
+  direction: SortDirection,
+): number => {
+  const left = a[key]
+  const right = b[key]
+  if (left === null || left === undefined) {
+    return right === null || right === undefined ? 0 : 1
+  }
+  if (right === null || right === undefined) {
+    return -1
+  }
+  const base =
+    typeof left === 'string' && typeof right === 'string'
+      ? left.localeCompare(right)
+      : Number(left) - Number(right)
+  return direction === 'DESC' ? -base : base
+}
+
+// Copy before sorting — sorting `data.locations` in place would mutate React state.
+const sortLocations = (
+  rows: readonly SilvicultureLocation[],
+  key: SortKey | null,
+  direction: SortDirection,
+): readonly SilvicultureLocation[] =>
+  key === null || direction === 'NONE'
+    ? rows
+    : [...rows].sort((a, b) => compareRows(a, b, key, direction))
+
 const PAGE_HEADER = (
-  <Grid fullWidth className="app-page__header">
-    <PageTitle title="Schedule 11" subtitle="Report Basic Silviculture Costs." />
-  </Grid>
+  <ScheduleTombstone title="Schedule 11" subtitle="Report Basic Silviculture Costs" />
 )
 
 // Schedule 11's load never 404s specially at the UI level: any ProblemDetail detail (ERR-001/002/003)
@@ -272,23 +359,27 @@ const EditRow: FC<EditRowProps> = ({
       />
     </TableCell>
     <TableCell>
-      <EnhancedDropdown
-        id={`edit-enhanced-${row.locationId}`}
-        label="Edit Enhanced"
-        value={form.enhanced}
-        disabled={saving}
-        invalidText={errors.enhanced}
-        onChange={(v) => onFieldChange('enhanced', v)}
-      />
-    </TableCell>
-    <TableCell>
       <BiogeoComboBox
         id={`edit-bec-${row.locationId}`}
         label="Edit Biogeo/Subzone/Variant"
+        hideLabel
         selected={form.bec}
         disabled={saving}
         invalidText={errors.bec}
         onSelect={(o) => onFieldChange('bec', o)}
+      />
+    </TableCell>
+    <TableCell>
+      {/* Hidden label stays "Enhanced", not the "ES" header abbreviation — the accessible name is
+          what a screen reader announces for the control, and legacy names the field "Enhanced". */}
+      <EnhancedDropdown
+        id={`edit-enhanced-${row.locationId}`}
+        label="Edit Enhanced"
+        hideLabel
+        value={form.enhanced}
+        disabled={saving}
+        invalidText={errors.enhanced}
+        onChange={(v) => onFieldChange('enhanced', v)}
       />
     </TableCell>
     <TableCell className="schedule-11__num">
@@ -374,8 +465,8 @@ type DisplayRowProps = {
 const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdit, onDelete }) => (
   <>
     <TableCell>{row.location}</TableCell>
-    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
     <TableCell>{row.becLabel ?? ''}</TableCell>
+    <TableCell>{row.enhancedIndicator ? 'Yes' : 'No'}</TableCell>
     <TableCell className="schedule-11__num">{area(row.netArea)}</TableCell>
     <TableCell className="schedule-11__num">{money(row.actualCost)}</TableCell>
     <TableCell className="schedule-11__num">{money(row.plannedCost)}</TableCell>
@@ -424,6 +515,19 @@ const Schedule11: FC = () => {
   const [editErrors, setEditErrors] = useState<SilvicultureErrors>({})
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+
+  // Presentation-only, so it deliberately survives saves: a re-sort after every add/edit would
+  // yank the row the user is working on back to document order.
+  const [sortColumn, setSortColumn] = useState<SortKey | null>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>('NONE')
+
+  const handleSort = (key: SortKey) => {
+    // A different column always starts fresh at ascending rather than inheriting the previous
+    // column's direction.
+    const next = key === sortColumn ? NEXT_DIRECTION[sortDirection] : 'ASC'
+    setSortDirection(next)
+    setSortColumn(next === 'NONE' ? null : key)
+  }
 
   // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
   // so a context change can't strand an open editor or a stale banner (Story 2.5 carryover patch).
@@ -714,29 +818,19 @@ const Schedule11: FC = () => {
       />
     )
 
+  // Only the data rows are sorted; the Totals row is rendered after this list, so it stays
+  // pinned to the bottom exactly as legacy's footer column group did (xhtml:377-412).
+  const sortedLocations = sortLocations(data.locations, sortColumn, sortDirection)
+
   const totals = data.totals
 
   return (
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-11__meta">
-          <dl className="schedule-11__summary">
-            <div className="schedule-11__summary-item">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-11__summary-item">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-11__summary-item">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
+        {/* No per-page mill/year/status summary: legacy's equivalent panel is commented out in
+            schedule11.xhtml:40-54, and the app-wide ContextBanner (the modern #subMenu strip)
+            already carries the working context on every page. */}
         {message && (
           <Column sm={4} md={8} lg={16}>
             <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
@@ -789,20 +883,124 @@ const Schedule11: FC = () => {
           </Button>
         </Column>
 
+        {editable && (
+          <Column sm={4} md={8} lg={16} className="schedule-11__section">
+            <h3 className="schedule-11__heading">Add New Location</h3>
+            <div className="schedule-11__add">
+              <div className="schedule-11__add-fields">
+                <TextInput
+                  id="add-location"
+                  labelText="Location"
+                  size="sm"
+                  maxLength={LOCATION_MAX_LENGTH}
+                  disabled={saving}
+                  value={addForm.location}
+                  onChange={(e) => setAddField('location', e.target.value)}
+                  invalid={Boolean(addErrors.location)}
+                  invalidText={addErrors.location}
+                />
+                <EnhancedDropdown
+                  id="add-enhanced"
+                  label="Enhanced"
+                  value={addForm.enhanced}
+                  disabled={saving}
+                  invalidText={addErrors.enhanced}
+                  onChange={(v) => setAddField('enhanced', v)}
+                />
+                <BiogeoComboBox
+                  id="add-bec"
+                  label="Biogeo/Subzone/Variant"
+                  selected={addForm.bec}
+                  disabled={saving}
+                  invalidText={addErrors.bec}
+                  onSelect={(o) => setAddField('bec', o)}
+                />
+                <TextInput
+                  id="add-net-area"
+                  labelText="NAR(ha)"
+                  size="sm"
+                  inputMode="decimal"
+                  disabled={saving}
+                  value={addForm.netArea}
+                  onChange={(e) => setAddField('netArea', e.target.value)}
+                  invalid={Boolean(addErrors.netArea)}
+                  invalidText={addErrors.netArea}
+                />
+                <TextInput
+                  id="add-actual-cost"
+                  labelText="Actual Cost ($)"
+                  size="sm"
+                  inputMode="numeric"
+                  disabled={saving}
+                  value={addForm.actualCost}
+                  onChange={(e) => setAddField('actualCost', e.target.value)}
+                  invalid={Boolean(addErrors.actualCost)}
+                  invalidText={addErrors.actualCost}
+                />
+                <TextInput
+                  id="add-planned-cost"
+                  labelText="Planned Cost ($)"
+                  size="sm"
+                  inputMode="numeric"
+                  disabled={saving}
+                  value={addForm.plannedCost}
+                  onChange={(e) => setAddField('plannedCost', e.target.value)}
+                  invalid={Boolean(addErrors.plannedCost)}
+                  invalidText={addErrors.plannedCost}
+                />
+              </div>
+              {/* Comments sits on its own row beneath the field row so the box gets the width
+                  legacy gave it (cols="75", xhtml:140-141) instead of being squeezed into the
+                  wrap flow beside the short numeric inputs. */}
+              <div className="schedule-11__add-comments">
+                <TextArea
+                  id="add-comments"
+                  labelText="Comments"
+                  enableCounter
+                  maxCount={COMMENTS_MAX_LENGTH}
+                  disabled={saving}
+                  value={addForm.comments}
+                  onChange={(e) => setAddField('comments', e.target.value)}
+                />
+              </div>
+              <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
+                Add
+              </Button>
+            </div>
+          </Column>
+        )}
+
         <Column sm={4} md={8} lg={16} className="schedule-11__section">
-          <TableContainer title="Silviculture Locations">
+          {/* Titled with the same h3 + class as "Add New Location" rather than TableContainer's
+              `title` prop: Carbon renders that prop through its Section/Heading pair, which both
+              sizes it at heading-03 AND picks its own level (h2), so the two section headings on
+              this page disagreed on size and skipped a level. Same element + class = same size by
+              construction. The table keeps its own accessible name via aria-label. */}
+          <h3 className="schedule-11__heading">Silviculture Locations</h3>
+          <TableContainer>
             <Table aria-label="Silviculture Locations">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Location</TableHeader>
-                  <TableHeader>Enhanced</TableHeader>
-                  <TableHeader>Biogeo/Subzone/Variant</TableHeader>
-                  <TableHeader className="schedule-11__num">NAR(ha)</TableHeader>
-                  <TableHeader className="schedule-11__num">Actual Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Planned Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">Total Cost ($)</TableHeader>
-                  <TableHeader className="schedule-11__num">$/NAR(ha)</TableHeader>
-                  <TableHeader>Comments</TableHeader>
+                  {/* Order, header text and sortability all come from COLUMNS (legacy-verbatim).
+                      The table says "ES" while the Add panel below says "Enhanced" — that
+                      asymmetry is legacy's too (xhtml:71 labels the form field "Enhanced"). */}
+                  {COLUMNS.map(({ label, sortKey, numeric }) => {
+                    const isSortHeader = sortKey !== null && sortKey === sortColumn
+                    return (
+                      <TableHeader
+                        key={label}
+                        className={numeric ? 'schedule-11__num' : undefined}
+                        isSortable={sortKey !== null}
+                        isSortHeader={isSortHeader}
+                        // Carbon reads aria-sort off this, so an inactive column must report
+                        // NONE rather than the active column's direction.
+                        sortDirection={isSortHeader ? sortDirection : 'NONE'}
+                        onClick={sortKey === null ? undefined : () => handleSort(sortKey)}
+                      >
+                        {label}
+                      </TableHeader>
+                    )
+                  })}
                   {editable && <TableHeader>Actions</TableHeader>}
                 </TableRow>
               </TableHead>
@@ -814,12 +1012,12 @@ const Schedule11: FC = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.locations.map((row) => (
+                  sortedLocations.map((row) => (
                     <TableRow key={row.locationId}>{rowCells(row)}</TableRow>
                   ))
                 )}
                 {/* Footer Totals (BR-08/CNT-001) — server-computed, null renders blank not 0. */}
-                <TableRow>
+                <TableRow className="schedule-11__totals">
                   <TableCell>Totals</TableCell>
                   <TableCell />
                   <TableCell />
@@ -835,86 +1033,6 @@ const Schedule11: FC = () => {
             </Table>
           </TableContainer>
         </Column>
-
-        {editable && (
-          <Column sm={4} md={8} lg={16} className="schedule-11__section">
-            <h3 className="schedule-11__heading">Add New Location</h3>
-            <div className="schedule-11__add">
-              <TextInput
-                id="add-location"
-                labelText="Location"
-                size="sm"
-                maxLength={LOCATION_MAX_LENGTH}
-                disabled={saving}
-                value={addForm.location}
-                onChange={(e) => setAddField('location', e.target.value)}
-                invalid={Boolean(addErrors.location)}
-                invalidText={addErrors.location}
-              />
-              <EnhancedDropdown
-                id="add-enhanced"
-                label="Enhanced"
-                value={addForm.enhanced}
-                disabled={saving}
-                invalidText={addErrors.enhanced}
-                onChange={(v) => setAddField('enhanced', v)}
-              />
-              <BiogeoComboBox
-                id="add-bec"
-                label="Biogeo/Subzone/Variant"
-                selected={addForm.bec}
-                disabled={saving}
-                invalidText={addErrors.bec}
-                onSelect={(o) => setAddField('bec', o)}
-              />
-              <TextInput
-                id="add-net-area"
-                labelText="NAR(ha)"
-                size="sm"
-                inputMode="decimal"
-                disabled={saving}
-                value={addForm.netArea}
-                onChange={(e) => setAddField('netArea', e.target.value)}
-                invalid={Boolean(addErrors.netArea)}
-                invalidText={addErrors.netArea}
-              />
-              <TextInput
-                id="add-actual-cost"
-                labelText="Actual Cost ($)"
-                size="sm"
-                inputMode="numeric"
-                disabled={saving}
-                value={addForm.actualCost}
-                onChange={(e) => setAddField('actualCost', e.target.value)}
-                invalid={Boolean(addErrors.actualCost)}
-                invalidText={addErrors.actualCost}
-              />
-              <TextInput
-                id="add-planned-cost"
-                labelText="Planned Cost ($)"
-                size="sm"
-                inputMode="numeric"
-                disabled={saving}
-                value={addForm.plannedCost}
-                onChange={(e) => setAddField('plannedCost', e.target.value)}
-                invalid={Boolean(addErrors.plannedCost)}
-                invalidText={addErrors.plannedCost}
-              />
-              <TextArea
-                id="add-comments"
-                labelText="Comments"
-                enableCounter
-                maxCount={COMMENTS_MAX_LENGTH}
-                disabled={saving}
-                value={addForm.comments}
-                onChange={(e) => setAddField('comments', e.target.value)}
-              />
-              <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
-                Add
-              </Button>
-            </div>
-          </Column>
-        )}
       </Grid>
 
       {editable && (

@@ -13,10 +13,11 @@ import {
   TextInput,
 } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
+import { useRowSort } from '@/hooks/useRowSort'
 import './index.scss'
 
 /** Map of form/request keys (e.g. `total`, `pop`) to their raw string values. */
@@ -50,6 +51,8 @@ export interface Schedule3SubPageField<TRow extends Schedule3SubPageRow> {
  * it tracks edits before Save, mirroring the legacy disabled/derived cell.
  */
 export interface Schedule3SubPageColumn {
+  /** Stable sort/React key (e.g. {@code 'crown'}) — decoupled from the display label. */
+  key: string
   header: string
   derive: (values: Record<string, number | null>) => number | null
 }
@@ -107,7 +110,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
       config.rows(doc).map((r) => ({
         id: r.id,
         description: r.description,
-        values: Object.fromEntries(config.fields.map((f) => [f.key, numStr(f.get(r))])),
+        values: Object.fromEntries(config.fields.map((f) => [f.key, numStrGroup(f.get(r))])),
       })),
     validate: config.validate,
     onBack: () => navigate({ to: '/schedule-3' }),
@@ -134,6 +137,19 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   const numeric = (values: SubPageValues): Record<string, number | null> =>
     Object.fromEntries(config.fields.map((f) => [f.key, toNum(values[f.key])]))
 
+  // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
+  // editable field, AND each derived read-only column (e.g. Crown $) are sortable. See useRowSort for
+  // the snapshot-on-click semantics.
+  const sort = useRowSort(rows, {
+    description: (row) => row.description,
+    ...Object.fromEntries(
+      config.fields.map((f) => [f.key, (row: EditRow) => toNum(row.values[f.key])]),
+    ),
+    ...Object.fromEntries(
+      readonlyColumns.map((col) => [col.key, (row: EditRow) => col.derive(numeric(row.values))]),
+    ),
+  })
+
   const rowCells = (row: EditRow, editable: boolean) => {
     const nums = numeric(row.values)
     const errs = rowErrors[row.key] ?? {}
@@ -154,7 +170,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
             />
           </TableCell>
           {config.fields.map((field) => (
-            <TableCell key={field.key} className="schedule-3__num">
+            <TableCell key={field.key} className="schedule-3__num schedule-3__num--input">
               <TextInput
                 id={`row-${field.key}-${row.key}`}
                 labelText={`Edit ${field.label}`}
@@ -162,14 +178,18 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 size="sm"
                 value={row.values[field.key] ?? ''}
                 onChange={(e) => setRowValue(row.key, field.key, e.target.value)}
+                // Re-group on blur only — regrouping mid-keystroke would fight the caret.
+                onBlur={() =>
+                  setRowValue(row.key, field.key, groupInput(row.values[field.key] ?? ''))
+                }
                 invalid={Boolean(errs[field.key])}
                 invalidText={errs[field.key]}
               />
             </TableCell>
           ))}
           {readonlyColumns.map((col) => (
-            <TableCell key={col.header} className="schedule-3__num">
-              {fmt(col.derive(nums))}
+            <TableCell key={col.key} className="schedule-3__num">
+              {fmtNumber(col.derive(nums))}
             </TableCell>
           ))}
           <TableCell>
@@ -191,12 +211,12 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
         <TableCell>{row.description}</TableCell>
         {config.fields.map((field) => (
           <TableCell key={field.key} className="schedule-3__num">
-            {fmt(nums[field.key])}
+            {fmtNumber(nums[field.key])}
           </TableCell>
         ))}
         {readonlyColumns.map((col) => (
-          <TableCell key={col.header} className="schedule-3__num">
-            {fmt(col.derive(nums))}
+          <TableCell key={col.key} className="schedule-3__num">
+            {fmtNumber(col.derive(nums))}
           </TableCell>
         ))}
       </>
@@ -206,12 +226,9 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   return (
     <EditableSubPageLayout
       editor={editor}
-      breadCrumbs={[
-        { name: 'ILCR', path: '/' },
-        { name: 'Schedule 3', path: '/schedule-3' },
-      ]}
+      scheduleName="Schedule 3"
       title={config.title}
-      backLabel="Back to Schedule 3"
+      backLabel="Back"
       loadingLabel={`Loading ${config.title}`}
       errorTitle={`Unable to load ${config.title}`}
     >
@@ -247,12 +264,15 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         size="sm"
                         value={addValues[field.key] ?? ''}
                         onChange={(e) => setAddValue(field.key, e.target.value)}
+                        onBlur={() =>
+                          setAddValue(field.key, groupInput(addValues[field.key] ?? ''))
+                        }
                         invalid={Boolean(addErrors[field.key])}
                         invalidText={addErrors[field.key]}
                       />
                     ))}
                     <div className="schedule-3-sub__actions">
-                      <Button kind="primary" disabled={saving} onClick={handleAdd}>
+                      <Button kind="primary" size="md" disabled={saving} onClick={handleAdd}>
                         Add
                       </Button>
                     </div>
@@ -271,23 +291,44 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                     className="schedule-3-sub__meta-field"
                     labelText={config.metaField.label}
                     size="sm"
-                    value={numStr(config.metaField.value(data))}
+                    value={numStrGroup(config.metaField.value(data))}
                     onChange={() => undefined}
                     disabled
                   />
                 )}
                 <TableContainer>
-                  <Table aria-label={config.tableTitle}>
+                  <Table aria-label={config.tableTitle} className="schedule-3-sub__table">
                     <TableHead>
                       <TableRow>
-                        <TableHeader>Description</TableHeader>
+                        <TableHeader
+                          isSortable
+                          isSortHeader={sort.activeKey === 'description'}
+                          sortDirection={sort.directionFor('description')}
+                          onClick={() => sort.toggleSort('description')}
+                        >
+                          Description
+                        </TableHeader>
                         {config.fields.map((field) => (
-                          <TableHeader key={field.key} className="schedule-3__num">
+                          <TableHeader
+                            key={field.key}
+                            className="schedule-3__num"
+                            isSortable
+                            isSortHeader={sort.activeKey === field.key}
+                            sortDirection={sort.directionFor(field.key)}
+                            onClick={() => sort.toggleSort(field.key)}
+                          >
                             {field.header}
                           </TableHeader>
                         ))}
                         {readonlyColumns.map((col) => (
-                          <TableHeader key={col.header} className="schedule-3__num">
+                          <TableHeader
+                            key={col.key}
+                            className="schedule-3__num"
+                            isSortable
+                            isSortHeader={sort.activeKey === col.key}
+                            sortDirection={sort.directionFor(col.key)}
+                            onClick={() => sort.toggleSort(col.key)}
+                          >
                             {col.header}
                           </TableHeader>
                         ))}
@@ -300,7 +341,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                           <TableCell colSpan={totalColumns}>No records found.</TableCell>
                         </TableRow>
                       ) : (
-                        rows.map((row) => (
+                        sort.sortedRows.map((row) => (
                           <TableRow key={row.key}>{rowCells(row, editable)}</TableRow>
                         ))
                       )}
@@ -310,7 +351,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         <TableCell>Totals</TableCell>
                         {config.summaryItems.map((item) => (
                           <TableCell key={item.label} className="schedule-3__num">
-                            {fmt(item.value(data))}
+                            {fmtNumber(item.value(data))}
                           </TableCell>
                         ))}
                         {editable && <TableCell />}

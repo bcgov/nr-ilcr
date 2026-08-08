@@ -47,9 +47,9 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
 
     await screen.findByDisplayValue('Existing Row A')
     const rowA = rowOf('Existing Row A')
-    expect(within(rowA).getByLabelText('Edit cost')).toHaveValue('3000')
-    expect(within(rowA).getByText('5000')).toBeInTheDocument() // shared volume
-    expect(within(rowA).getByText('0.6')).toBeInTheDocument() // 3000 / 5000, derived live
+    expect(within(rowA).getByLabelText('Edit cost')).toHaveValue('3,000')
+    expect(within(rowA).getByText('5,000')).toBeInTheDocument() // shared volume
+    expect(within(rowA).getByText('0.60')).toBeInTheDocument() // 3000 / 5000, derived live
     // Row B has no cost → $/m³ blank (em dash).
     expect(screen.getByDisplayValue('Existing Row B')).toBeInTheDocument()
     // Add form present; shared volume is read-only.
@@ -66,7 +66,7 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     const cost = within(rowOf('Existing Row A')).getByLabelText('Edit cost')
     await user.clear(cost)
     await user.type(cost, '5000')
-    expect(within(rowOf('Existing Row A')).getByText('1')).toBeInTheDocument() // 5000 / 5000
+    expect(within(rowOf('Existing Row A')).getByText('1.00')).toBeInTheDocument() // 5000 / 5000
   })
 
   test('Add persists the whole set immediately (legacy), sending the new row with a null id', async () => {
@@ -115,7 +115,9 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    // Volume / $-per-m³ are server-derived and excluded; a blank cost sends null.
+    // Volume / $-per-m³ are server-derived and excluded; a blank cost sends null. Row A's cost is
+    // also the grouping guard: the field DISPLAYS it as "3,000" (seeded, never retyped), so a
+    // separator leaking into the payload would show up here as a string instead of the number 3000.
     expect(captured).toEqual({
       rows: [
         { id: 5051, description: 'Existing Row A', cost: 3000 },
@@ -238,7 +240,7 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<OtherCostsPage />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /back to schedule 1/i }))
+    await user.click(await screen.findByRole('button', { name: /^back$/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1' })
   })
 
@@ -252,7 +254,7 @@ describe('Other Costs sub-page (Story 2.5) — edit-in-place + batch Save', () =
     const cost = within(rowOf('Existing Row A')).getByLabelText('Edit cost')
     await user.clear(cost)
     await user.type(cost, '9')
-    await user.click(screen.getByRole('button', { name: /back to schedule 1/i }))
+    await user.click(screen.getByRole('button', { name: /^back$/i }))
 
     const dialog = await screen.findByRole('dialog')
     expect(mockNavigate).not.toHaveBeenCalled()

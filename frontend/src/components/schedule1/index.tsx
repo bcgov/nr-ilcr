@@ -26,10 +26,10 @@ import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { fmt, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import { validateSchedule1 } from './validation'
 import './index.scss'
@@ -84,19 +84,19 @@ function seedForm(doc: Schedule1Response): FieldValues {
   const values: FieldValues = {}
   for (const code of WRITABLE_LINE_ITEM_CODES) {
     const item = doc.lineItems.find((li) => li.costItemCode === code)
-    values[`vol-${code}`] = numStr(item?.volume)
-    values[`cost-${code}`] = numStr(item?.cost)
+    values[`vol-${code}`] = numStrGroup(item?.volume)
+    values[`cost-${code}`] = numStrGroup(item?.cost)
   }
-  values['vol-1'] = numStr(doc.silviculture.actualSpent?.volume)
-  values['cost-1'] = numStr(doc.silviculture.actualSpent?.cost)
-  values['vol-2'] = numStr(doc.silviculture.accruedLessActual?.volume)
-  values['cost-2'] = numStr(doc.silviculture.accruedLessActual?.cost)
+  values['vol-1'] = numStrGroup(doc.silviculture.actualSpent?.volume)
+  values['cost-1'] = numStrGroup(doc.silviculture.actualSpent?.cost)
+  values['vol-2'] = numStrGroup(doc.silviculture.accruedLessActual?.volume)
+  values['cost-2'] = numStrGroup(doc.silviculture.accruedLessActual?.cost)
   // Volume-only editable fields: 143/144 (line items) and 139/140 (silviculture).
-  values['vol-143'] = numStr(doc.lineItems.find((li) => li.costItemCode === 143)?.volume)
-  values['vol-144'] = numStr(doc.lineItems.find((li) => li.costItemCode === 144)?.volume)
-  values['vol-139'] = numStr(doc.silviculture.lessAdmin?.volume)
-  values['vol-140'] = numStr(doc.silviculture.total?.volume)
-  values['otherCostsVolume'] = numStr(doc.otherCosts.volume)
+  values['vol-143'] = numStrGroup(doc.lineItems.find((li) => li.costItemCode === 143)?.volume)
+  values['vol-144'] = numStrGroup(doc.lineItems.find((li) => li.costItemCode === 144)?.volume)
+  values['vol-139'] = numStrGroup(doc.silviculture.lessAdmin?.volume)
+  values['vol-140'] = numStrGroup(doc.silviculture.total?.volume)
+  values['otherCostsVolume'] = numStrGroup(doc.otherCosts.volume)
   values['comments'] = doc.comments ?? ''
   return values
 }
@@ -153,6 +153,16 @@ const Schedule1: FC = () => {
       mapLoadError: mapLoadErrorDetail,
       onReset: resetMessages,
     })
+
+  // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
+  // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
+  // (groupInput passes it through) so the inline error still points at what the user actually wrote.
+  const groupField = (fieldKey: string) => () => {
+    setForm((prev) => {
+      const grouped = groupInput(prev[fieldKey] ?? '')
+      return grouped === prev[fieldKey] ? prev : { ...prev, [fieldKey]: grouped }
+    })
+  }
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -277,15 +287,7 @@ const Schedule1: FC = () => {
     navigate({ to: '/schedule-1/other-costs' })
   }
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle
-        breadCrumbs={[{ name: 'ILCR', path: '/' }]}
-        title="Schedule 1"
-        subtitle="Average Cost of Logging."
-      />
-    </Grid>
-  )
+  const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
 
   if (contextMissing) {
     return (
@@ -355,7 +357,10 @@ const Schedule1: FC = () => {
     current: number | null | undefined,
   ) =>
     editable && writable ? (
-      <TableCell className="schedule-1__num">
+      // --input marks the cells whose value sits inside a TextInput: the field supplies its own
+      // inline padding, so these keep Carbon's stock cell padding while the plain-text cells are
+      // inset to match (see index.scss).
+      <TableCell className="schedule-1__num schedule-1__num--input">
         <TextInput
           id={fieldKey}
           labelText={label}
@@ -363,12 +368,13 @@ const Schedule1: FC = () => {
           size="sm"
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
+          onBlur={groupField(fieldKey)}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmt(current)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtNumber(current)}</TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -382,7 +388,7 @@ const Schedule1: FC = () => {
         <TableCell>{label}</TableCell>
         {numberCell(`vol-${code}`, `${label} volume`, writableVolume, item.volume)}
         {numberCell(`cost-${code}`, `${label} cost`, writableCost, item.cost)}
-        <TableCell className="schedule-1__num">{fmt(item.perUnit)}</TableCell>
+        <TableCell className="schedule-1__num">{fmtCurrency(item.perUnit)}</TableCell>
       </TableRow>
     )
   }
@@ -411,7 +417,7 @@ const Schedule1: FC = () => {
         <TableCell>{row.label}</TableCell>
         {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
         {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
-        <TableCell className="schedule-1__num">{fmt(perUnitValue)}</TableCell>
+        <TableCell className="schedule-1__num">{fmtCurrency(perUnitValue)}</TableCell>
       </TableRow>
     )
   }
@@ -428,8 +434,8 @@ const Schedule1: FC = () => {
         true,
         data.lineItems.find((li) => li.costItemCode === 143)?.volume,
       )}
-      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminCost)}</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.forestMgmtAdminPerUnit)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtNumber(data.forestMgmtAdminCost)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtCurrency(data.forestMgmtAdminPerUnit)}</TableCell>
     </TableRow>
   )
 
@@ -442,8 +448,12 @@ const Schedule1: FC = () => {
         true,
         data.lineItems.find((li) => li.costItemCode === 144)?.volume,
       )}
-      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingCost)}</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.subtotalCompanyLoggingPerUnit)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtNumber(data.subtotalCompanyLoggingCost)}
+      </TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(data.subtotalCompanyLoggingPerUnit)}
+      </TableCell>
     </TableRow>
   )
 
@@ -463,7 +473,10 @@ const Schedule1: FC = () => {
         </Button>
       </TableCell>
       {editable ? (
-        <TableCell className="schedule-1__num">
+        // This row builds its own field rather than going through numberCell, so it has to carry the
+        // --input modifier itself — without it the cell takes the read-only indent and the field is
+        // pushed out of line with every other input in the column.
+        <TableCell className="schedule-1__num schedule-1__num--input">
           <TextInput
             id="otherCostsVolume"
             labelText="Subtotal Other Costs volume"
@@ -476,21 +489,24 @@ const Schedule1: FC = () => {
           />
         </TableCell>
       ) : (
-        <TableCell className="schedule-1__num">{fmt(data.otherCosts.volume)}</TableCell>
+        <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.volume)}</TableCell>
       )}
-      <TableCell className="schedule-1__num">{fmt(data.otherCosts.costSubtotal)}</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.otherCosts.perUnit)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.costSubtotal)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtCurrency(data.otherCosts.perUnit)}</TableCell>
     </TableRow>
   )
 
   // Grand-total row (legacy "Total Company Logging Costs (Including total Silviculture Cost)"): the
   // Total Harvested Crown Timber volume (Sch 3), the total logging cost, and its $/m³ average.
+  // Legacy closes the Silviculture panel before this row, so it carries a rule above it (index.scss).
   const totalCompanyLoggingRow = (
-    <TableRow key="total-company-logging">
+    <TableRow key="total-company-logging" className="schedule-1__grand-total-row">
       <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.schedule3CrownVolume)}</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingCost)}</TableCell>
-      <TableCell className="schedule-1__num">{fmt(data.totalCompanyLoggingPerUnit)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtNumber(data.schedule3CrownVolume)}</TableCell>
+      <TableCell className="schedule-1__num">{fmtNumber(data.totalCompanyLoggingCost)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(data.totalCompanyLoggingPerUnit)}
+      </TableCell>
     </TableRow>
   )
 
@@ -508,7 +524,7 @@ const Schedule1: FC = () => {
           labelText="Crown Timber Volume for all fields (Sch 3)"
           hideLabel
           size="sm"
-          value={numStr(data.schedule3CrownVolume)}
+          value={numStrGroup(data.schedule3CrownVolume)}
           onChange={() => undefined}
           disabled
         />
@@ -642,7 +658,7 @@ const Schedule1: FC = () => {
           {editable ? (
             <TextArea
               id="comments"
-              labelText="Comments"
+              labelText="If you have any additional comments, please enter them here:"
               enableCounter
               maxCount={COMMENTS_MAX}
               value={form['comments'] ?? ''}

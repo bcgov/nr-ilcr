@@ -15,7 +15,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "test:unit": "vitest --mode test",
     "test:cov": "vitest run --mode test --coverage",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm --prefix e2e test",
     "build": "vite build"
   },
   "dependencies": {
@@ -37,9 +37,7 @@
     "node": ">=22.0.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
     "@eslint-react/eslint-plugin": "^5.0.0",
-    "@playwright/test": "^1.51.0",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.4.3",
