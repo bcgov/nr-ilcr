@@ -2,6 +2,8 @@
 // authoritative; these checks give immediate inline feedback and gate the call. Ranges + messages
 // MIRROR the backend UnacceptableRequest DTO / message bundle.
 
+import { stripGroup } from '@/utils/number'
+
 const COST = { min: -99_999_999, max: 99_999_999 } // FLD-001 (default cost range)
 const DESCRIPTION_MAX = 30
 
@@ -28,7 +30,8 @@ export function validateUnacceptable(description: string, totalRaw: string): Una
   }
   const value = totalRaw.trim()
   if (value !== '') {
-    const n = Number(value)
+    // Grouped input is displayed and accepted — strip separators before parsing (Number('1,000') is NaN).
+    const n = Number(stripGroup(value))
     if (Number.isNaN(n)) {
       errors.total = UNACCEPTABLE_MESSAGES.costInvalid
     } else if (n < COST.min || n > COST.max) {

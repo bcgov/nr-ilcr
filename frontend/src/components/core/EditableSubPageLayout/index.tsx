@@ -3,7 +3,7 @@ import { Button, Column, Grid, Modal } from '@carbon/react'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle, { type BreadCrumb } from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import type { EditableCostRows, EditableRowsDoc } from '@/hooks/useEditableCostRows'
 import './index.scss'
 
@@ -13,11 +13,14 @@ const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you woul
 
 interface Props<TDoc extends EditableRowsDoc> {
   readonly editor: EditableCostRows<TDoc>
-  /** Ancestor trail shown above the title (e.g. ILCR → Schedule 3). */
-  readonly breadCrumbs?: BreadCrumb[]
+  /**
+   * The parent schedule's name (e.g. "Schedule 3"), rendered as the tombstone title. Plain text, not
+   * a link — up-navigation is the Back button.
+   */
+  readonly scheduleName: string
   readonly title: string
   readonly subtitle?: string
-  /** "Back to Schedule N" — also the error-state back button. */
+  /** The back button label (e.g. "Back") — also used for the error-state back button. */
   readonly backLabel: string
   readonly loadingLabel: string
   readonly errorTitle: string
@@ -34,7 +37,7 @@ interface Props<TDoc extends EditableRowsDoc> {
  */
 export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
   editor,
-  breadCrumbs,
+  scheduleName,
   title,
   subtitle,
   backLabel,
@@ -59,11 +62,10 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
     onBack,
   } = editor
 
-  const header = (
-    <Grid fullWidth className="app-page__header">
-      <PageTitle breadCrumbs={breadCrumbs} title={title} subtitle={subtitle} />
-    </Grid>
-  )
+  // Match the schedule pages' tombstone header: the parent schedule is the title, and the sub-page
+  // name (plus any extra subtitle) forms the crumb trail beneath it.
+  const subPageTrail = subtitle ? [title, subtitle] : title
+  const header = <ScheduleTombstone title={scheduleName} subtitle={subPageTrail} />
 
   if (contextMissing) {
     return (
@@ -95,7 +97,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
         notification={{ kind: 'error', title: errorTitle, subtitle: errorDetail }}
       >
         <Column sm={4} md={8} lg={16}>
-          <Button kind="secondary" onClick={onBack}>
+          <Button kind="secondary" size="md" onClick={onBack}>
             {backLabel}
           </Button>
         </Column>
@@ -124,6 +126,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
           {editable && (
             <Button
               kind="primary"
+              size="md"
               // Greyed out until there is data to save (and while saving) — legacy parity.
               disabled={saving || rows.length === 0}
               onClick={handleSave}
@@ -131,7 +134,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
               Save
             </Button>
           )}
-          <Button kind="secondary" onClick={handleBack}>
+          <Button kind="secondary" size="md" onClick={handleBack}>
             {backLabel}
           </Button>
         </Column>

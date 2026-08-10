@@ -208,7 +208,7 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<UnacceptableCostsPage />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /back to schedule 3/i }))
+    await user.click(await screen.findByRole('button', { name: /^back$/i }))
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-3' })
   })
 
@@ -223,7 +223,7 @@ describe('Included Unacceptable Costs sub-page (Story 4.4) — edit-in-place + b
     const total = within(rowOf('Penalty')).getByLabelText('Edit total')
     await user.clear(total)
     await user.type(total, '9')
-    await user.click(screen.getByRole('button', { name: /back to schedule 3/i }))
+    await user.click(screen.getByRole('button', { name: /^back$/i }))
 
     // A confirm dialog appears; navigation only happens on Continue.
     const dialog = await screen.findByRole('dialog')

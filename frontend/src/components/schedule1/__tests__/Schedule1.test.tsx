@@ -90,12 +90,16 @@ describe('Schedule1 editable page', () => {
 
     // Writable fields are inputs seeded from the document.
     const volume = await screen.findByLabelText('Standing Tree to Loaded Truck volume')
-    expect(volume).toHaveValue('1000')
-    expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toHaveValue('50000')
-    // perUnit is server-computed, read-only text (not an input).
-    expect(screen.getByText('50')).toBeInTheDocument()
+    // Editable numeric fields display grouped values, like the read-only cells beside them.
+    expect(volume).toHaveValue('1,000')
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toHaveValue('50,000')
+    // perUnit is server-computed, read-only text (not an input); rendered in the shared currency
+    // style (thousands-separated, two decimals).
+    expect(screen.getByText('50.00')).toBeInTheDocument()
     // Comments is editable.
-    expect(screen.getByLabelText('Comments')).toHaveValue('Seed comment for 514/2021')
+    expect(
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
+    ).toHaveValue('Seed comment for 514/2021')
     // Save renders (top + bottom) and is enabled.
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
     expect(screen.getByText(/Subtotal Other Costs\(2\)/)).toBeInTheDocument()
@@ -141,11 +145,22 @@ describe('Schedule1 editable page', () => {
     // SUC-001 comes from the API message.text (AD-8), not a hardcoded string.
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     // Request carried the optimistic-lock token + entered-fields-only contract.
-    const body = captured as { revisionCount: number; lineItems: { costItemCode: number }[] }
+    const body = captured as {
+      revisionCount: number
+      lineItems: { costItemCode: number; volume: number | null; cost: number | null }[]
+      otherCostsVolume: number | null
+    }
     expect(body.revisionCount).toBe(3)
     expect(body.lineItems.map((li) => li.costItemCode)).toEqual([12, 13, 14, 15, 16, 17, 18])
+    // The fields DISPLAY grouped values ("60,000"), so the wire must still carry clean numbers —
+    // a separator leaking through would reach the server as a string or parse to null and blank the
+    // column. Item 12's cost was typed here; otherCostsVolume was only ever seeded and blurred.
+    const item12 = body.lineItems.find((li) => li.costItemCode === 12)
+    expect(item12?.cost).toBe(60000)
+    expect(item12?.volume).toBe(1000)
+    expect(body.otherCostsVolume).toBe(8000)
     // Recomputed perUnit from the echo is displayed (server-computed, 60000/2000 = 30).
-    expect(screen.getByText('30')).toBeInTheDocument()
+    expect(screen.getByText('30.00')).toBeInTheDocument()
   })
 
   test('load/save/delete carry selected millId/year in query params (regression guard)', async () => {
@@ -231,7 +246,9 @@ describe('Schedule1 editable page', () => {
       await screen.findByText('Entered cost must be between -99,999,999 and 99,999,999.'),
     ).toBeInTheDocument()
     expect(putCalled).toBe(false)
-    expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toHaveValue('100000000')
+    // Clicking Save blurred the field, which re-grouped it — and the advisory range check above
+    // still fired, proving validation parses the grouped string rather than choking on the commas.
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck cost')).toHaveValue('100,000,000')
   })
 
   test('500 save failure shows ERR-004 and retry re-submits (AC3 / S23-S24)', async () => {
@@ -345,16 +362,16 @@ describe('Schedule1 crown pre-fill & Schedule 3 pulls (Story 2.3)', () => {
     // WRN-001 renders verbatim from the API warnings channel (AD-8).
     expect(await screen.findByText(WRN_001)).toBeInTheDocument()
     // Every savable volume input carries the copied crown value — the full legacy 13-field set.
-    expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Depletion and Amortization volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Actual $ Spent volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Accrued less Actual $ Spent volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Forest Management Administration volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Subtotal Company Logging volume')).toHaveValue('7777')
-    expect(screen.getByLabelText('Less Silviculture Admin Costs volume')).toHaveValue('7777')
+    expect(screen.getByLabelText('Standing Tree to Loaded Truck volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Depletion and Amortization volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Actual $ Spent volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Accrued less Actual $ Spent volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Forest Management Administration volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Subtotal Company Logging volume')).toHaveValue('7,777')
+    expect(screen.getByLabelText('Less Silviculture Admin Costs volume')).toHaveValue('7,777')
     expect(
       screen.getByLabelText('Total Silviculture (As per Financial Statements) volume'),
-    ).toHaveValue('7777')
+    ).toHaveValue('7,777')
   })
 
   test('no warning banner when warnings are empty (AC2)', async () => {
@@ -371,13 +388,13 @@ describe('Schedule1 crown pre-fill & Schedule 3 pulls (Story 2.3)', () => {
 
     // Forest Management Admin (143) row shows the pulled cost as read-only text (no input).
     expect(screen.getByText('Forest Management Administration Costs (Sch 3)')).toBeInTheDocument()
-    expect(screen.getByText('600000')).toBeInTheDocument()
+    expect(screen.getByText('600,000')).toBeInTheDocument()
     expect(
       screen.queryByLabelText('Forest Management Administration Costs (Sch 3) cost'),
     ).not.toBeInTheDocument()
     // Less Silviculture Admin (139) shows the PULLED cost (150000), not Schedule 1's own 9999.
-    expect(screen.getByText('150000')).toBeInTheDocument()
-    expect(screen.queryByText('9999')).not.toBeInTheDocument()
+    expect(screen.getByText('150,000')).toBeInTheDocument()
+    expect(screen.queryByText('9,999')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Less Silviculture Admin Costs cost')).not.toBeInTheDocument()
   })
 
@@ -386,7 +403,7 @@ describe('Schedule1 crown pre-fill & Schedule 3 pulls (Story 2.3)', () => {
     render(<Schedule1 />)
     const crown = await screen.findByLabelText('Crown Timber Volume for all fields (Sch 3)')
     expect(crown).toBeDisabled()
-    expect(crown).toHaveValue('54321')
+    expect(crown).toHaveValue('54,321')
   })
 })
 
