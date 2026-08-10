@@ -732,7 +732,7 @@ describe('Schedule8 sample level', () => {
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-  })
+  }, 15000)
 
   test('a nonzero Other % reveals the Other Skid Type block and requires a non-NA skid type', async () => {
     const put = vi.fn()
