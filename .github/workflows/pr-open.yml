@@ -48,12 +48,7 @@ jobs:
     name: Deploys (${{ github.event.number }})
     needs: [builds, init]
     uses: ./.github/workflows/reusable-deploy.yml
-    secrets:
-      oc_namespace: ${{ secrets.oc_namespace }}
-      oc_token: ${{ secrets.oc_token }}
-      oracledb_username: ${{ secrets.oracledb_username }}
-      oracledb_password: ${{ secrets.oracledb_password }}
-      user_pools_id: ${{ secrets.USER_POOLS_ID }}
+    secrets: inherit
     with:
       target: ${{ needs.init.outputs.zone }}
       triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
