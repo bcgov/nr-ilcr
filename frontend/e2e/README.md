@@ -113,14 +113,14 @@ The process:
 1. **Extract** real data from a dev/test source DB with your app's extract tooling. The extract is
    typically **one FK hop**, so some referential gaps are expected (a child row whose parent wasn't
    pulled) — a live `INSERT` still enforces FKs, so a create can fail on a *data gap*, not a bug.
-   *(SCS extracts via `scs-data-extract` / `toad_extract`.)*
+   *(ILCR extracts via `ilcr-data-extract` / `extract.sql`.)*
 2. **Load** the extract into a base Oracle Free container running locally (the SCS image publishes service
    `DBDOCK_01`, user/password `THE`/`default`).
 3. **Snapshot** the loaded container into a tagged image and **push** it to the team packages registry
    **(run the `docker` commands one at a time)**:
    ```bash
    SEEDED_NAME=<your-seeded-local-container-name>
-   DEST_IMAGE=ghcr.io/cgi-bc/nr-mof-oracle-<APP-NAME>-real-test-data-seeded
+   DEST_IMAGE=ghcr.io/cgi-bc/nr-mof-oracle-ilcr-real-test-data-seeded
 
    docker stop -t 120 "$SEEDED_NAME"                          # clean checkpoint BEFORE commit (avoids a fuzzy snapshot)
    docker commit "$SEEDED_NAME" "$DEST_IMAGE:latest"          # may take a few minutes
@@ -129,7 +129,7 @@ The process:
    docker push "$DEST_IMAGE:$(date +%F)"
    ```
    Restart the local container afterward (`docker start "$SEEDED_NAME"`) if you still need it running.
-   *(SCS image: `ghcr.io/cgi-bc/nr-mof-oracle-scs-real-test-data-seeded`.)*
+   *(ilcr image: `ghcr.io/cgi-bc/nr-mof-oracle-ilcr-real-test-data-seeded`.)*
 4. **Consume**: developers `docker run -p 1525:1521 <image>` (step 1) and apply the seed patches
    per-container (step 2). Patches are **not** baked into the image — re-apply them on each fresh
    container, or re-snapshot *with* them to bake them in.
