@@ -172,6 +172,13 @@ const Schedule7a: FC = () => {
   // where nothing the user typed into an existing row is at stake.
   const applyDocument = (doc: Schedule7aResponse, savedId?: number) => {
     setData(doc)
+    // Deleting the last bridge of a page leaves `page` past the end of the new list. Clamp it as the
+    // document arrives — every mutation response funnels through here — rather than during render,
+    // where setting state is a re-entrant update React can warn about, or in an effect, which costs
+    // a second render pass. The clamp is STORED, not merely derived at the slice below: a stale page
+    // would otherwise resurrect — paginate to 2, delete back to one page, add a bridge, and the list
+    // would silently jump to page 2 again.
+    setPage((current) => Math.min(current, Math.max(1, Math.ceil(doc.bridges.length / PAGE_SIZE))))
     if (savedId !== undefined) {
       setRowForms(({ [savedId]: _saved, ...rest }) => rest)
       setRowErrors(({ [savedId]: _clearedErrors, ...rest }) => rest)
@@ -446,11 +453,9 @@ const Schedule7a: FC = () => {
   const controlsDisabled = !editable || saving
 
   const totalPages = Math.max(1, Math.ceil(bridges.length / PAGE_SIZE))
-  // Clamping only the derived value would let a stale `page` resurrect: paginate to 2, delete back
-  // to one page, add a bridge, and the list would silently jump to page 2 again.
-  if (page > totalPages) {
-    setPage(totalPages)
-  }
+  // `applyDocument` already clamps `page` for every mutation response, and a mill/year change resets
+  // it to 1; this min is the belt-and-braces that keeps the slice in range for any other path that
+  // shortens the list.
   const currentPage = Math.min(page, totalPages)
   const visible = bridges.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 

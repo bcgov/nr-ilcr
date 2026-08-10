@@ -141,15 +141,23 @@ const ContextSwitchHarness = () => {
   )
 }
 
+// The Add panel's own fields (it renders BridgeFields with idPrefix="add"). Scoped like
+// `bridgePanel` because the bridge rows carry the SAME labels — collapsed, but still in the DOM — so
+// an unscoped query is ambiguous the moment the schedule holds a bridge.
+const addPanel = () =>
+  within(
+    document.getElementById('add-locationName')?.closest('.schedule-7a__section') as HTMLElement,
+  )
+
 // Fill the Add panel with a complete, valid bridge.
 async function fillAddForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(field('Name/Location of Bridge'), 'South Creek Bridge')
-  await user.type(field('Date'), '2021-03')
-  await user.type(field('Expected Life Span'), '40')
-  await user.type(field('Abutments Ht.(m)'), '3.5')
-  await user.type(field('Length (m)'), '15.0')
-  await user.type(field('Width (m)'), '4.0')
-  await user.type(field('Distance (km)'), '8')
+  await user.type(addPanel().getByLabelText('Name/Location of Bridge'), 'South Creek Bridge')
+  await user.type(addPanel().getByLabelText('Date'), '2021-03')
+  await user.type(addPanel().getByLabelText('Expected Life Span'), '40')
+  await user.type(addPanel().getByLabelText('Abutments Ht.(m)'), '3.5')
+  await user.type(addPanel().getByLabelText('Length (m)'), '15.0')
+  await user.type(addPanel().getByLabelText('Width (m)'), '4.0')
+  await user.type(addPanel().getByLabelText('Distance (km)'), '8')
   for (const [name, option] of [
     ['New/Used', 'New'],
     ['Superstructure Type', 'Steel'],
@@ -157,8 +165,8 @@ async function fillAddForm(user: ReturnType<typeof userEvent.setup>) {
     ['Abutments Type', 'Concrete'],
     ['Load Rating', 'L-100'],
   ] as const) {
-    await user.click(screen.getByRole('combobox', { name: new RegExp(name, 'i') }))
-    await user.click(await screen.findByRole('option', { name: option }))
+    await user.click(addPanel().getByRole('combobox', { name: new RegExp(name, 'i') }))
+    await user.click(await addPanel().findByRole('option', { name: option }))
   }
 }
 
@@ -775,6 +783,39 @@ describe('Schedule 7A page', () => {
     render(<Schedule7a />)
     await screen.findByRole('button', { name: 'Bridge report Id: 1' })
     expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+  })
+
+  test('deleting the last row of a page falls back, and a later add does not resurrect it (AC1)', async () => {
+    const six = Array.from({ length: 6 }, (_, index) => bridgeAt(7001 + index, index + 1))
+    const five = six.slice(0, 5)
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ bridges: six }))),
+      http.delete(`${BRIDGES_URL}/7006`, () => HttpResponse.json(doc({ bridges: five }))),
+      // The add re-grows the schedule to two pages — the state that used to strand the reporter.
+      http.post(BRIDGES_URL, () => HttpResponse.json(doc({ bridges: six }))),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+
+    await screen.findByRole('button', { name: 'Bridge report Id: 1' })
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await screen.findByRole('button', { name: 'Bridge report Id: 6' })
+
+    await user.click(bridgePanel(7006).getByRole('button', { name: 'Delete' }))
+    await user.click((await deleteModal()).getByRole('button', { name: 'Yes' }))
+
+    // Page 2 no longer exists: the reporter must land on page 1, not on an empty slice.
+    expect(await screen.findByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /next page/i })).not.toBeInTheDocument()
+
+    // A page number merely clamped at the point of slicing would still hold 2 here, so re-growing
+    // the list would silently jump away from the row just added.
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await fillAddForm(user)
+    await user.click(screen.getByRole('button', { name: 'Add Report' }))
+
+    expect(await screen.findByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Bridge report Id: 6' })).not.toBeInTheDocument()
   })
 
   test('a bridge stored with null attributes renders blanks and saves without throwing (AC2, AC4)', async () => {
