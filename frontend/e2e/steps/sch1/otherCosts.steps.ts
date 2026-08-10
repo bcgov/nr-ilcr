@@ -92,6 +92,25 @@ When('I clear the Other Cost {string} description', async ({ otherCostsPage }, d
   await otherCostsPage.editRowDescription(description, '');
 });
 
+When(
+  'I edit the Other Cost {string} description to {string}',
+  async ({ otherCostsPage }, description, next) => {
+    await otherCostsPage.editRowDescription(description, next);
+  },
+);
+
+Then(
+  'the Other Cost {string} is persisted',
+  async ({ request, world }, description) => {
+    const { millId, year } = world.scheduleKey!;
+    await expect
+      .poll(async () =>
+        (await listOtherCosts(request, millId, year)).some((r) => r.description === description),
+      )
+      .toBe(true);
+  },
+);
+
 When('I save the Other Costs', async ({ otherCostsPage }) => {
   await otherCostsPage.save();
 });

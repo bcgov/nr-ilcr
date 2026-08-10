@@ -44,6 +44,16 @@ Feature: Report Average Cost of Logging (Schedule 1) — edit an Other Cost line
     And I save the Other Costs
     Then I should see the message "Data saved successfully"
     And the Other Cost "E2E inline edit" is persisted with cost 6789
+    # The other half of the inline edit: the DESCRIPTION. Renamed and then renamed back, because the
+    # cleanup registry finds this row by matching its description EXACTLY — leaving it renamed would
+    # orphan it in the seed.
+    When I edit the Other Cost "E2E inline edit" description to "E2E inline edit v2"
+    And I save the Other Costs
+    Then I should see the message "Data saved successfully"
+    And the Other Cost "E2E inline edit v2" is persisted with cost 6789
+    When I edit the Other Cost "E2E inline edit v2" description to "E2E inline edit"
+    And I save the Other Costs
+    Then the Other Cost "E2E inline edit" is persisted with cost 6789
 
   # Mirrors S10 (the Add-form description reject) on the inline-edit path.
   @S26 @FLD-006 @p1
