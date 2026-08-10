@@ -537,9 +537,12 @@ public class Schedule5Service {
     // BR-02 as a PRE-CHECK, not a caught constraint violation: nothing in delivery enforces
     // camp-name uniqueness (Task 1 gates (i)/(vi) — CAMP_REPORT has only its PK, the category FK
     // and eleven NOT NULL checks), so a duplicate would simply persist if this were left to the
-    // database. That also means the check races: two concurrent creates of the same name can both
-    // count zero and both commit. Accepted residual risk (deviation (I) note) — legacy's in-memory
-    // equalsIgnoreCase had the identical window and no backstop is possible without new DDL.
+    // database. The pre-check is therefore check-then-act — but NOT a race: requireDraft above holds
+    // a FOR UPDATE lock on this mill/year's report-status row for the rest of this transaction, so a
+    // second create for the same mill/year cannot reach this count until the first has committed and
+    // become visible to it. That lock is the substitute for the unique index this project cannot add
+    // (no DDL on THE); see findTrackStatusForUpdate. Ordering matters: the count MUST stay below the
+    // gate.
     if (repository.countCampsNamed(millId, year, campName) > 0) {
       throw new CampNameConflictException();
     }
@@ -800,16 +803,36 @@ public class Schedule5Service {
 
   /**
    * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
-   * AD-9). Reuses 7.1's {@code findTrackStatus} rather than adding a tenth copy of the same query
-   * ({@code deferred-work.md:243}) and never reads the silviculture track. The mill/year context
-   * (400/404/409) is already validated by the controller before this runs (AD-4).
+   * AD-9). Never reads the silviculture track. The mill/year context (400/404/409) is already
+   * validated by the controller before this runs (AD-4).
+   *
+   * <p><strong>The read is {@code FOR UPDATE}, and that is load-bearing rather than defensive.</strong>
+   * An unlocked {@code SELECT} makes this gate advisory: under Oracle READ COMMITTED nothing pins the
+   * status for the rest of the transaction, so a transition committing between the gate and the write
+   * lets the write land on a schedule that is no longer Draft. Holding the row for the whole
+   * transaction also serializes concurrent Schedule 5 writes per mill/year, which is the only
+   * available backstop for BR-02's count-then-insert and for {@code upsertCostDetail}'s
+   * update-then-insert — this project owns no DDL on {@code THE}, so neither race can be closed by a
+   * unique constraint. {@link Schedule5Repository#findTrackStatusForUpdate} carries the full
+   * reasoning; Schedule 2 established the pattern ({@code Schedule2Service.java:193-198}).
+   *
+   * <p>Called only from the three {@code @Transactional} write methods, so the lock is always held to
+   * commit. {@code checkStatus} is read-only and ungated, and the 7.1 read path keeps the unlocked
+   * {@code findTrackStatus} — a reader must never take a row lock.
+   *
+   * <p>Acknowledged cost: this adds a SECOND track-status query to this repository, so the duplication
+   * {@code deferred-work.md} already records against the status read (nine repositories carrying a
+   * near-identical copy, contradicting AD-9's stated millcontext ownership) gets marginally worse
+   * rather than better. Taken deliberately — the two variants differ in locking, which is exactly the
+   * distinction that must not be lost, and the alternative is leaving a known race open until the
+   * hoist happens. Both variants go when that read moves into {@code MillYearContext}.
    *
    * <p>Recorded hardening: legacy has no server-side gate at all — {@code save()} and {@code
    * deleteExistingCamp()} are guarded only by the {@code disabled=} attribute on the buttons
    * ({@code schedule5.xhtml:69, 92, 115, 159, 182, 211, 234}), which a crafted post ignores.
    */
   private void requireDraft(long millId, int year) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
     if (!STATUS_DRAFT.equals(trackStatus)) {
       throw new ScheduleNotEditableException();
     }

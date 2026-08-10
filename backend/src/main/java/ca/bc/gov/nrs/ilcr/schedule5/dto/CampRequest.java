@@ -55,19 +55,28 @@ import java.math.BigDecimal;
  * <p>{@code comments} is capped at 3500 — the legacy textarea's own {@code maxlength} ({@code
  * schedule5ExistingCamp.xhtml:458}) — against {@code COMMENTS VARCHAR2(4000 BYTE)}. Unlike Schedule
  * 6's per-record comment there is NO over-cap defect to inherit here: the column is WIDER than the
- * screen cap, and the longest real stored comment is exactly 3500 (Task 1 gate (vii)). Byte
- * semantics still apply — multibyte text within the character cap can overflow the byte column,
- * known repo-wide ({@code deferred-work.md:233}) and deliberately neither solved nor widened here.
+ * screen cap, and the longest real stored comment is exactly 3500 (Task 1 gate (vii)).
  *
- * @param campName the camp name — required, non-blank after trim, &le; 30 chars, unique per (mill,
- *     year) case-insensitively (BR-02)
+ * <p><strong>Two units, both enforced.</strong> {@code campName} and {@code comments} each carry a
+ * {@code @Size} CHARACTER cap and a {@link MaxByteLength} BYTE cap, because the legacy bound and the
+ * column bound are measured differently and neither implies the other. The character caps are the
+ * legacy screen's (30 / 3500); the byte caps are the columns' own widths (30 / 4000), confirmed
+ * {@code CHAR_USED = 'B'} on an {@code AL32UTF8} database. {@code campName} is the sharp case — the
+ * two limits are both 30, so a SINGLE multibyte character overflows a name the character cap
+ * accepts; without the byte cap that is ORA-12899 → {@code ScheduleNotSavedException} → an opaque
+ * 500 on an ordinary save. {@code comments} has 500 bytes of headroom, so it only bites above roughly
+ * 1.15 bytes per character. The gap was previously recorded as unguarded ({@code
+ * deferred-work.md}, Schedule 6/11 comments share it); Schedule 5 now closes its own half.
+ *
+ * @param campName the camp name — required, non-blank after trim, &le; 30 chars AND &le; 30 UTF-8
+ *     bytes, unique per (mill, year) case-insensitively (BR-02)
  * @param roadDistanceToOperatingArea the road distance (optional, 0.0–999999.9, &le; 2 decimals)
  * @param sizeOfCamp the camp capacity in persons (optional, 1–999)
  * @param associatedCampVolume the camp volume in m&sup3; (optional, 0–9,999,999, whole numbers
  *     only)
  * @param isolatedCamp whether the camp is isolated — required (BR-05); stored as {@code Y}/{@code
  *     N}
- * @param comments the per-camp comment (optional, &le; 3500)
+ * @param comments the per-camp comment (optional, &le; 3500 chars AND &le; 4000 UTF-8 bytes)
  * @param cateringAndFood item 56 — volume + cost
  * @param wagesAndBenefits item 58 — volume + cost; cost range is the &plusmn;99,999,999 outlier
  *     (deviation (F))
@@ -88,6 +97,7 @@ public record CampRequest(
 
     @NotBlank(message = "{campNameRequiredErrorMsg}")
     @Size(max = 30, message = "{campNameMaxLengthErrorMsg}")
+    @MaxByteLength(value = 30, charMax = 30, message = "{campNameMaxLengthErrorMsg}")
     String campName,
 
     @DecimalMin(value = "0.0", message = "{distanceValidatorErrorMsg}")
@@ -108,6 +118,7 @@ public record CampRequest(
     Boolean isolatedCamp,
 
     @Size(max = 3500, message = "{campCommentsMaxLengthErrorMsg}")
+    @MaxByteLength(value = 4000, charMax = 3500, message = "{campCommentsMaxLengthErrorMsg}")
     String comments,
 
     @Valid CategoryEntry cateringAndFood,

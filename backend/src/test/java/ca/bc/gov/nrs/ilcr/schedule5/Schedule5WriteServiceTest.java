@@ -78,7 +78,10 @@ class Schedule5WriteServiceTest {
     // four are lenient() INDIVIDUALLY — the rejection tests never reach the rebuild, so class-wide
     // LENIENT would be the alternative, and that would also disable unnecessary-stubbing detection
     // for every stub a test declares itself.
-    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // findTrackStatusForUpdate, NOT findTrackStatus: the write gate takes a FOR UPDATE row lock so the
+    // status cannot change under the transaction and the BR-02 count-then-insert is serialized. Stubbing
+    // the unlocked read here instead would let a future revert to it pass this whole class silently.
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
     lenient().when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
     lenient().when(repository.nextCampReportId()).thenReturn(9501);
@@ -126,7 +129,7 @@ class Schedule5WriteServiceTest {
     @Test
     @DisplayName("a non-Draft track rejects every mutation before anything is read or written")
     void nonDraftRejectsAllThree() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
       assertThatThrownBy(() -> service.addCamp(MILL, YEAR, request("New Camp", null), true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
@@ -146,7 +149,7 @@ class Schedule5WriteServiceTest {
     @Test
     @DisplayName("a MISSING status row is not Draft either — no report status means not editable")
     void absentTrackStatusRejects() {
-      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
+      when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.empty());
 
       assertThatThrownBy(() -> service.addCamp(MILL, YEAR, request("New Camp", null), true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
@@ -541,8 +544,10 @@ class Schedule5WriteServiceTest {
   void echoDoesNotRequeryTrackStatus() {
     service.addCamp(MILL, YEAR, request("New Camp", null), true, USER);
 
-    // Exactly ONE findTrackStatus call: the gate's. Re-reading it for the echo would open a second
-    // window in which a concurrent submit could flip the status the response reports.
-    verify(repository, org.mockito.Mockito.times(1)).findTrackStatus(MILL, YEAR);
+    // Exactly ONE status read, and it is the LOCKING one: the gate's. Re-reading for the echo would
+    // open a second window in which a concurrent submit could flip the status the response reports.
+    verify(repository, org.mockito.Mockito.times(1)).findTrackStatusForUpdate(MILL, YEAR);
+    // And never the unlocked variant on a write path — that read belongs to Story 7.1's GET only.
+    verify(repository, never()).findTrackStatus(anyLong(), anyInt());
   }
 }

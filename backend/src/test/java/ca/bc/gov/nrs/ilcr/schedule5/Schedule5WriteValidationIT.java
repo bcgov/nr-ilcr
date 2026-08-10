@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -69,6 +70,14 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     assertEquals(before, fingerprint(), "a rejected write must not touch a single column");
   }
 
+  /**
+   * The body as explicit UTF-8 bytes. {@code content(String)} encodes with the platform default
+   * charset, which silently corrupts the multibyte input the byte-length tests exist to send.
+   */
+  private static byte[] utf8(String json) {
+    return json.getBytes(StandardCharsets.UTF_8);
+  }
+
   /** A body whose named field is replaced by the given raw JSON fragment. */
   private static String bodyWith(String fieldJson) {
     return """
@@ -124,6 +133,45 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
             .content("{\"campName\":\"" + "C".repeat(31) + "\",\"isolatedCamp\":false}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
+  }
+
+  @Test
+  @DisplayName("a camp name within 30 CHARS but over 30 UTF-8 BYTES -> 400, not a 500")
+  void campNameMaxByteLength() throws Exception {
+    // The column is VARCHAR2(30 BYTE) on an AL32UTF8 database (ALL_TAB_COLUMNS CHAR_USED = 'B',
+    // re-verified against the seeded image 2026-08-10), so @Size's CHARACTER count is the wrong unit
+    // and the two limits being equal makes the gap maximal: any multibyte character at all pushes a
+    // 30-character name past 30 bytes. Each of these passes @Size and would previously have reached
+    // Oracle, raised ORA-12899, and surfaced as ScheduleNotSavedException -> 500. The request body is
+    // sent as explicit UTF-8 bytes: the string would otherwise be encoded with the platform default
+    // charset, which on a Windows dev box mangles the very characters under test.
+    for (String name : List.of(
+        "é".repeat(16),              // 16 chars, 32 bytes -- accented Latin, 2 bytes each
+        "Camp " + "ü".repeat(13),    // 18 chars, 31 bytes -- the realistic mixed case
+        "営".repeat(11),              // 11 chars, 33 bytes -- CJK, 3 bytes each
+        "Camp " + "🌲".repeat(7))) { // 12 chars, 33 bytes -- emoji, 4 bytes each (surrogate pairs)
+      mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(utf8("{\"campName\":\"" + name + "\",\"isolatedCamp\":false}")))
+          .andExpect(status().isBadRequest())
+          .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+          .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
+    }
+  }
+
+  @Test
+  @DisplayName("comments within 3500 CHARS but over the 4000-BYTE column -> 400, not a 500")
+  void commentsMaxByteLength() throws Exception {
+    // Unlike campName the two caps differ (3500 chars vs 4000 bytes), so this needs sustained
+    // multibyte text rather than a single character: 2001 two-byte characters is 4002 bytes while
+    // comfortably inside the 3500-character screen cap legacy enforced.
+    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(utf8("{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
+                + "\"comments\":\"" + "é".repeat(2001) + "\"}")))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is("Comments must be 3500 characters or fewer.")));
   }
 
   @Test

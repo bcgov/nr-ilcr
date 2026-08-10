@@ -349,4 +349,70 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
         "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL WHERE CAMP_REPORT_ID = ?",
         Integer.class, campId);
   }
+
+  // ----- Added 2026-08-10 by the PR #242 review -------------------------------------------------
+
+  @Test
+  @DisplayName("updateCostDetail touches ONLY the canonical row when a camp/item holds duplicates")
+  void updateCostDetailWritesOnlyTheSurvivingRow() {
+    // Nothing in delivery makes (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID) unique, so this state is
+    // permitted by the schema even though gate (vii) found no camp-parented rows at all today. The read
+    // path resolves the pair FIRST-BY-DETAIL-ID-WINS (Schedule5Service's putIfAbsent) and IGNORES the
+    // rest; an unqualified "WHERE camp AND item" UPDATE wrote all of them, rotating UPDATE_* on rows the
+    // API presents as untouched and making "first row wins" meaningless after any edit.
+    int survivingId = repository.nextCostDetailId();
+    int ignoredId = survivingId + 1;
+    jdbc().update(
+        "INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, "
+            + "ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID, "
+            + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+            + "VALUES (?, ?, 60, 100, 111, 0, 'SEED', SYSTIMESTAMP, 'SEED', SYSTIMESTAMP)",
+        survivingId, BARE_CAMP);
+    jdbc().update(
+        "INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, "
+            + "ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID, "
+            + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+            + "VALUES (?, ?, 60, 200, 222, 0, 'SEED', SYSTIMESTAMP, 'SEED', SYSTIMESTAMP)",
+        ignoredId, BARE_CAMP);
+    assertThat(rowCountFor(BARE_CAMP, 60)).isEqualTo(2);
+
+    int updated = repository.updateCostDetail(BARE_CAMP, 60, new BigDecimal("999"), 888, USER);
+
+    // One row, not two: the guard is the affected-row COUNT, so an unscoped statement fails here even
+    // if every column value it wrote happened to be right.
+    assertThat(updated).isEqualTo(1);
+
+    Map<String, Object> surviving = jdbc().queryForMap(
+        "SELECT COST, UPDATE_USERID FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE ILCR_COST_REPORT_DETAIL_ID = ?", survivingId);
+    assertThat(((Number) surviving.get("COST")).intValue()).isEqualTo(888);
+    assertThat(surviving.get("UPDATE_USERID")).isEqualTo(USER);
+
+    // The ignored row is untouched down to its audit user — the claim the API makes about it.
+    Map<String, Object> ignored = jdbc().queryForMap(
+        "SELECT COST, UPDATE_USERID FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE ILCR_COST_REPORT_DETAIL_ID = ?", ignoredId);
+    assertThat(((Number) ignored.get("COST")).intValue()).isEqualTo(222);
+    assertThat(ignored.get("UPDATE_USERID")).isEqualTo("SEED");
+  }
+
+  @Test
+  @DisplayName("findTrackStatusForUpdate reads the same code as the unlocked variant, and locks the row")
+  void findTrackStatusForUpdateMatchesTheUnlockedRead() {
+    // The write gate's read. Worth its own case because FOR UPDATE is the kind of clause that parses
+    // everywhere and misbehaves in exactly one place: Spring Data JDBC has to return the projection
+    // unchanged, and Oracle has to accept the clause on this single-row query. A write IT would surface
+    // a break too, but as a confusing 409 rather than as "the status read is broken".
+    assertThat(repository.findTrackStatusForUpdate(MILL, EDIT_YEAR))
+        .isEqualTo(repository.findTrackStatus(MILL, EDIT_YEAR))
+        .contains("D");
+  }
+
+  @Test
+  @DisplayName("findTrackStatusForUpdate is empty for a mill/year with no status row — locks nothing")
+  void findTrackStatusForUpdateIsEmptyWhenAbsent() {
+    // FOR UPDATE on a query matching no rows is a no-op, not an error. This is the path that makes a
+    // never-enrolled mill/year a clean 409 from the gate rather than an exception inside it.
+    assertThat(repository.findTrackStatusForUpdate(MILL, 1999)).isEmpty();
+  }
 }

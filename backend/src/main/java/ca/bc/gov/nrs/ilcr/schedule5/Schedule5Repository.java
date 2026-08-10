@@ -151,6 +151,48 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
+  /**
+   * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
+   * per-mill/year report-status row. Every WRITE path's Draft gate uses this one; the read path keeps
+   * the unlocked variant. Copied from Schedule 2, which introduced it for the same reason
+   * ({@code Schedule2Repository.java:90-106}).
+   *
+   * <p><strong>It is the concurrency backstop that Schedule 5's schema cannot provide.</strong> This
+   * project owns no DDL on {@code THE} — there are no {@code src/main/resources/db/migration}
+   * migrations at all, because the schema is shared with the legacy JSF application still in
+   * production — so neither of the two unique constraints the write paths would otherwise want can be
+   * added here: none on {@code (ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID, UPPER(CAMP_NAME))} for
+   * BR-02, and none on {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} for the keyed detail rows.
+   * Locking this row instead serializes all Schedule 5 writes for one mill/year, which closes three
+   * check-then-act races at once:
+   *
+   * <ul>
+   * <li>BR-02's count-then-insert ({@code Schedule5Service.addCamp}) — two concurrent creates of the
+   * same name can no longer both count zero and both commit;
+   * <li>the Draft gate itself — the status this returns cannot transition between the gate and the
+   * INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than binding;
+   * <li>{@link #upsertCostDetail}'s update-then-insert — two concurrent first-edits of one camp can
+   * no longer both find zero rows and both insert a row for the same item id, which is the only way
+   * this story could have MANUFACTURED the duplicate keyed rows the read path merely tolerates.
+   * </ul>
+   *
+   * <p>Contention is bounded by the lock's granularity: one row per (mill, year), held for the
+   * duration of one camp write by one licensee editing one reporting year.
+   *
+   * <p>Must run inside the write {@code @Transactional} so the lock is held until commit. A
+   * mill/year with NO status row locks nothing and returns empty — which the gate already answers as
+   * 409, so the absent-row case needs no separate handling.
+   */
+  @Query("""
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(
+      @Param("millId") long millId, @Param("year") int year);
+
   // ===============================================================================================
   // Writes (Story 7.2) — explicit @Modifying SQL only. This interface is a bare
   // Repository<CampReportEntity, Integer>, so save()/delete() do not exist and are deliberately not
@@ -287,12 +329,29 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
 
   /**
    * Update-in-place half of {@link #upsertCostDetail}; {@code 0} rows when the item has no row yet.
-   * Scoped by camp AND item id, so one category can never overwrite another's row.
+   * Scoped by camp AND item id — retained in the outer predicate alongside the {@code MIN} subquery
+   * that already implies them, so the statement is self-evidently safe read in isolation and one
+   * category can never overwrite another's row.
    *
    * <p>A null {@code volume}/{@code cost} writes {@code NULL} — a cleared field is cleared, not
    * zeroed, and its row SURVIVES (deviation (N)). Detail {@code REVISION_COUNT} is deliberately NOT
    * bumped: legacy only moves {@code UPDATE_*} here ({@code Schedule5DAO.java:641-642}), the same
    * parity Schedule 6 keeps.
+   *
+   * <p><strong>Narrowed to the CANONICAL row, not every row for the camp/item.</strong> Nothing in
+   * delivery makes {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} unique, so a camp/item pair can
+   * in principle hold more than one row. The read path resolves such a pair FIRST-BY-DETAIL-ID-WINS
+   * ({@code Schedule5Service.groupDetails}, the {@code putIfAbsent} at {@code :197}) and deliberately
+   * ignores the rest. An unqualified {@code WHERE camp AND item} would have written all of them,
+   * including the rows the read path never serves — rotating {@code UPDATE_*} on data the API
+   * presents as untouched, and making "first row wins" meaningless the moment anyone edited. The
+   * {@code MIN} subquery makes the surviving row the ONLY row written, so read and write agree on
+   * which one is canonical.
+   *
+   * <p>Unreachable on delivery data today (Task 1 gate (vii): zero camp-parented detail rows exist),
+   * and this story can no longer create such a pair either — see {@link
+   * #findTrackStatusForUpdate} for why the update-then-insert below is serialized. Kept because
+   * correctness here must not rest on the absence of legacy rows that the schema still permits.
    */
   @Modifying
   @Query("""
@@ -303,6 +362,10 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE CAMP_REPORT_ID = :campId
          AND ILCR_REPORT_COST_ITEM_ID = :itemId
+         AND ILCR_COST_REPORT_DETAIL_ID = (SELECT MIN(d.ILCR_COST_REPORT_DETAIL_ID)
+                                             FROM THE.ILCR_COST_REPORT_DETAIL d
+                                            WHERE d.CAMP_REPORT_ID = :campId
+                                              AND d.ILCR_REPORT_COST_ITEM_ID = :itemId)
       """)
   int updateCostDetail(
       @Param("campId") int campId, @Param("itemId") int itemId,
