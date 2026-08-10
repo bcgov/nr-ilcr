@@ -96,6 +96,26 @@ When('I save the Other Costs', async ({ otherCostsPage }) => {
   await otherCostsPage.save();
 });
 
+Then(
+  'the Other Cost {string} row has no editable volume field',
+  async ({ otherCostsPage }, description) => {
+    // BR-06: the Other-Costs volume is shared and held on Schedule 1, so a row cannot carry its own.
+    // Asserted by listing the row's editable fields rather than by a volume locator finding nothing —
+    // an absence assertion would also pass if the row had failed to render at all.
+    expect(
+      await otherCostsPage.rowEditableFieldKinds(description),
+      'a row must expose only its description and cost as editable (BR-06)',
+    ).toEqual(['row-description', 'row-cost']);
+  },
+);
+
+Then(
+  'the Other Cost {string} row shows the shared volume {string}',
+  async ({ otherCostsPage }, description, expected) => {
+    expect(await otherCostsPage.rowVolumeText(description)).toBe(expected);
+  },
+);
+
 When('I note the Other Costs mutation count', async ({ otherCostsSpy, world }) => {
   // Baseline for a mid-scenario prove-the-negative: a scenario that legitimately saves BEFORE testing a
   // rejected save cannot assert an absolute zero, so it asserts no FURTHER mutation from here.

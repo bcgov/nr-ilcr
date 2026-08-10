@@ -256,13 +256,20 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 - **#1 — Per-row inline edit of an existing Other Cost row has no derived `.feature` scenario.** _(NEW 2026-08-07)_
   - **What's missing:** `UC-SCH1-001-slices.md` documents inline editing of an existing Other Cost row in two places — the Description rule reads "Description (new line item; **same rule applies to per-row inline edit of an existing item's description**)", and the invalid-Cost trigger reads "…when adding a new Other Cost line item **or editing an existing row's Cost inline**". The derived `UC-SCH1-001-S09..S12.feature` files cover only the **Add** form and the per-row **Remove** — there is no slice for editing a row that is already in the list, even though the app implements it (`#row-description-<key>` / `#row-cost-<key>` plus a batch Save).
   - **How we caught it (2026-08-07):** reconciling the `.feature` set against the slice matrix rather than treating it as the complete inventory — the classic lossy-projection case.
-  - **Action / RESOLVED 2026-08-07:** the missing slice has now been derived upstream in `ilcr-bmad` as
-    **UC-SCH1-001-S25 "Edit an Existing Other Cost Line Item Inline"** (branch
-    `spec/uc-sch1-001-inline-edit-slice`) — feature file, gherkin README inventory (24 -> 25 slices), and
+  - **Correction on review (2026-08-07):** "never derived" overstated it. The slice matrix HAD analysed
+    this behaviour — it folded the per-row Description/Cost into S09/S10/S11 and dispositioned the
+    Other-Costs Save button as "S09 (implicit auto-save on Add)". What was missing is a slice of its
+    own, so no scenario ever exercised the inline-edit path. A real gap, but a weaker one than claimed.
+  - **Action / RESOLVED 2026-08-07:** the missing slices are now derived upstream in `ilcr-bmad` as
+    **UC-SCH1-001-S25** (valid inline edit, Alternative — split out of S09) and **UC-SCH1-001-S26**
+    (the rejection paths, Exception — split out of S10/S11), matching the catalog's own
+    S09-Alternative / S10-S11-Exception shape (branch `spec/uc-sch1-001-inline-edit-slice`) — feature file, gherkin README inventory (24 -> 25 slices), and
     a full detail section in `UC-SCH1-001-slices.md`. The projection and the matrix now agree, so this
     gap is closed at the source rather than only compensated for here.
   - **Status:** RESOLVED — slice derived upstream 2026-08-07; E2E coverage already in place.
-  - **Test:** `other-costs-inline-edit.feature` `@S25 @p1` — GREEN. (An earlier Divergence #4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
+  - **Test:** `other-costs-inline-edit.feature` — `@S25 @p1` (valid edit + the BR-06 shared-volume
+    assertion) and `@S26` (blank description `@FLD-006`; invalid cost Outline `@FLD-001`/`@FLD-004`) —
+    all GREEN. The rejects run on the validate anchor and each proves a zero-write with the spy. (An earlier Divergence #4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
 
 **Verified — not a defect:**
 

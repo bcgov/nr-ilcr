@@ -1,11 +1,12 @@
-# Per-row INLINE EDIT of an existing Other Cost row, plus the batch "Save" that persists the row set.
+# Re-grounded from _bmad-output/implementation-artifacts/tests/UC-SCH1-001/gherkin/UC-SCH1-001-S25.feature
+# (valid inline edit, Alternative) and UC-SCH1-001-S26.feature (the rejection paths, Exception).
 #
-# SPEC GAP (defects.md Spec gap #1): the UC sidecars describe this capability — UC-SCH1-001-slices.md
-# names "per-row inline edit of an existing item's description" under the Description rule, and the
-# FLD cost rule is triggered by "adding a new Other Cost line item OR editing an existing row's Cost
-# inline" — but the derived UC-SCH1-001-S09..S12 `.feature` files only ever cover the ADD form and the
-# per-row Remove. The scenario below closes that gap; the `.feature` set stays as authored (it is the
-# lossy projection, not the source).
+# Those two slices were derived upstream 2026-08-07 (BCNRS/ilcr-bmad#39). They were NOT newly discovered:
+# the slice matrix had folded the per-row Description/Cost into S09/S10/S11 and dispositioned the
+# Other-Costs Save button only as "S09 (implicit auto-save on Add)", so the inline-edit path had no
+# scenario anywhere. This file mirrors that split — @S25 for the valid edit, @S26 for the rejects — and
+# mirrors their SHAPE too: S10 (description) is a plain scenario and S11 (cost) is an Outline, so the
+# rejects below are split the same way rather than crammed into one Outline.
 #
 # VALIDATION IS UNIFORM ACROSS ADD AND EDIT — no divergence. Every mutation funnels through
 # `useEditableCostRows.persist`, which validates EVERY row (`validate(row.description, row.values)`),
@@ -17,11 +18,12 @@
 #
 # An earlier revision of defects.md logged this as "Divergence #4 — inline edits get no client-side
 # validation". That was a misreading (`handleSave` looks bare because it delegates to `persist`) and has
-# been retracted; the reject arm below now proves the zero-write with the spy rather than inferring it.
+# been retracted; the reject arms below prove the zero-write with the spy rather than inferring it.
 #
-# Both arms run in ONE scenario on ONE dedicated key by design: the batch PUT reconciles the WHOLE row
-# set (rows absent from the request are DELETED), so two scenarios editing the same schedule in parallel
-# would clobber each other's rows, and 12050/2017 is the last free editable Draft in the seed.
+# ANCHOR SPLIT follows the suite's existing S09-vs-S10/S11 pattern: the VALID edit mutates, so it owns the
+# dedicated 12050/2017 target and self-cleans by marker. The REJECTS never write (proven with the spy), so
+# they share the read-only validate anchor 17052/2016 and leave it exactly as found — which is also what
+# makes them parallel-safe despite the batch PUT reconciling the whole row set.
 
 @sch1 @UC-SCH1-001 @other-costs @inline-edit
 Feature: Report Average Cost of Logging (Schedule 1) — edit an Other Cost line item in place
@@ -30,24 +32,53 @@ Feature: Report Average Cost of Logging (Schedule 1) — edit an Other Cost line
   So that the itemized cost is right without deleting and re-adding the row
 
   @S25 @p1
-  Scenario: An inline edit persists, and an invalid inline edit is rejected without changing the row
+  Scenario: An inline edit is persisted by Save, and the row's volume stays shared
     Given an itemized Other Cost line item exists to edit
+    And I have selected that mill and reporting year on the Home page
+    And I open Schedule 1
+    When I open the Other Costs sub-page
+    # BR-06 — the Other-Costs volume is held once on Schedule 1, so a row must not carry its own.
+    Then the Other Cost "E2E inline edit" row has no editable volume field
+    And the Other Cost "E2E inline edit" row shows the shared volume "50,000"
+    When I edit the Other Cost "E2E inline edit" cost to "6789"
+    And I save the Other Costs
+    Then I should see the message "Data saved successfully"
+    And the Other Cost "E2E inline edit" is persisted with cost 6789
+
+  # Mirrors S10 (the Add-form description reject) on the inline-edit path.
+  @S26 @FLD-006 @p1
+  Scenario: An inline edit that blanks the description is rejected before saving
+    Given the Other Costs "validate" target is an editable Draft
     And a spy is watching the Other Costs add request
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1
     When I open the Other Costs sub-page
-    And I edit the Other Cost "E2E inline edit" cost to "6789"
-    And I save the Other Costs
-    Then I should see the message "Data saved successfully"
-    And the Other Cost "E2E inline edit" is persisted with cost 6789
-    # Reject arm — proves the negative the way S10/S11 do. `useEditableCostRows.persist` validates EVERY
-    # row before sending and returns early, so an invalid inline edit is blocked in the browser: the
-    # error renders and NO mutating request is fired. The spy is what makes that a proof rather than an
-    # inference; asserting only the unchanged read-back would pass even if a request had been sent and
-    # rejected server-side.
-    When I note the Other Costs mutation count
-    And I clear the Other Cost "E2E inline edit" description
+    And I clear the Other Cost "1" description
     And I save the Other Costs
     Then I should see the error "Description: Value is required."
-    And no further Other Costs mutation should have been sent
-    And the Other Cost "E2E inline edit" is persisted with cost 6789
+    And the Other Cost add request should not have been sent
+    And the Other Cost "1" is persisted with cost 1000
+
+  # Mirrors S11 (the Add-form cost reject Outline) on the inline-edit path.
+  @S26 @p1
+  Scenario Outline: An inline edit with an invalid cost is rejected before saving — <case>
+    Given the Other Costs "validate" target is an editable Draft
+    And a spy is watching the Other Costs add request
+    And I have selected that mill and reporting year on the Home page
+    And I open Schedule 1
+    When I open the Other Costs sub-page
+    And I edit the Other Cost "2" cost to "<value>"
+    And I save the Other Costs
+    Then I should see the error "<message>"
+    And the Other Cost add request should not have been sent
+    And the Other Cost "2" is persisted with cost 2000
+
+    @FLD-001
+    Examples: cost out of range
+      | case              | value     | message                                                  |
+      | cost out of range | 150000000 | Entered cost must be between -99,999,999 and 99,999,999. |
+
+    @FLD-004
+    Examples: non-numeric cost
+      | case             | value | message                  |
+      | non-numeric cost | abc   | Entered cost is invalid. |

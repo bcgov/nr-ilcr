@@ -105,6 +105,38 @@ export class OtherCostsPage {
     await this.saveButton.click();
   }
 
+  /** A listed row, addressed by its current description (rows share order across all their cells). */
+  private async row(description: string): Promise<Locator> {
+    return this.table.locator('tbody tr').nth(await this.rowIndex(description));
+  }
+
+  /**
+   * Which editable fields a listed row exposes, as their id KIND with the row-key suffix stripped
+   * (`row-description-3` -> `row-description`). BR-06 says the Other-Costs volume is shared and NOT
+   * editable per row, so this must be exactly description + cost — proving the absence by listing what
+   * IS there, rather than asserting a volume locator finds nothing (which would also "pass" if the row
+   * had failed to render at all).
+   *
+   * Identified by id, not accessible name: Carbon's `hideLabel` renders a visually-hidden `<label>`
+   * associated by `for`/`id` rather than setting `aria-label`, and the ids are the same stable contract
+   * the rest of this page object already addresses rows by.
+   */
+  async rowEditableFieldKinds(description: string): Promise<string[]> {
+    const cells = (await this.row(description)).getByRole('textbox');
+    const ids = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('id') ?? ''));
+    return ids.map((id) => id.replace(/-\d+$/, ''));
+  }
+
+  /**
+   * The per-row Volume cell's rendered text. Legacy showed the shared volume in a DISABLED input here;
+   * the React app renders it as plain text (`fmtNumber(volume)`), so it is read as text, not a value.
+   * Either way the BR-06 guarantee — the row cannot carry its own volume — holds.
+   */
+  async rowVolumeText(description: string): Promise<string> {
+    const cell = (await this.row(description)).locator('td').nth(1);
+    return ((await cell.textContent()) ?? '').trim();
+  }
+
   async backToSchedule1(): Promise<void> {
     await this.backButton.click();
   }

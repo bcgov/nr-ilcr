@@ -13,8 +13,8 @@ Test data (real, 2026-07-29; Check Status anchors 2026-07-30; crown / clear-amou
 Scope: S01 happy path (`happy-path.feature`); **S02 crown pre-fill (`crown-prefill.feature`)**; S03–S07
 entry validation (`validation.feature`); Check Status S14–S18 (`check-status.feature`); context-guard
 render states S19–S22 (`render-states.feature`); delete S13 (`delete.feature`); Other Costs maintain
-S09–S12 (`other-costs.feature`); **Other Costs inline edit (`other-costs-inline-edit.feature`, slice
-S25)**; **clearing a saved amount (`clear-amounts.feature`)**; persistence + retry S23–S24
+S09–S12 (`other-costs.feature`); **Other Costs inline edit (`other-costs-inline-edit.feature`, slices
+S25/S26)**; **clearing a saved amount (`clear-amounts.feature`)**; persistence + retry S23–S24
 (`persistence.feature`); and WCAG 2.1 AA accessibility on the Schedule 1 page + Other Costs sub-page
 (`accessibility.feature`, AC4/NFR1 — zero violations). **Every slice is now dispositioned**: the last
 outstanding one, **S08** (open-Other-Costs-before-save), was reclassified 2026-08-07 from `deferred` to
@@ -32,7 +32,8 @@ against the current write path, the slice matrix, and the message catalog. What 
   pairs carry an item-119 volume), closing a `deferred` row whose stated reason was no longer true.
 - Reconciling the `.feature` set against the slice matrix surfaced a **spec gap** (per-row inline
   edit, documented in the sidecars but never projected into a `.feature`). Now covered here AND closed at
-  the source: the slice was derived upstream as **UC-SCH1-001-S25**.
+  the source: derived upstream as **UC-SCH1-001-S25** (valid edit) and **S26** (the rejects), split to
+  match the catalog's own S09-Alternative / S10-S11-Exception shape after review.
 - Two new bugs found: **Bug/Regression #2** (five volume fields cannot be cleared — a genuine
   `@discovered-bug` RED) and **Bug/Regression #3** (a latent NPE 500, deliberately not automated).
 
@@ -69,7 +70,8 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S10 Other cost line without description | S10.feature (Exc) | `validateOtherCost` `descriptionRequired` → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S10 @p1` | covered | Re-grounded FLD-006 message to the new bundle |
 | S11 Other cost line invalid cost | S11.feature (Exc) | `validateOtherCost` cost range / non-numeric → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S11 @p1` (Outline: out-of-range; non-numeric) | covered | — |
 | S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" deletes immediately (no confirm modal) + persists the set | `other-costs.feature` `@S12 @p1` (remove target 9050/2017) | covered (+ parity) | Precondition row added via the API; removed through the UI. Delete-confirm modal removed upstream (2026-08 sync); legacy DID confirm (technical.md:102,154) so this is a CONFIRMED parity regression awaiting a BA/QA ruling — defects.md Divergence #3 |
-| S25 Per-row inline edit of an existing Other Cost (description + cost) | **UC-SCH1-001-S25.feature** (derived 2026-08-07 from the slices.md Description rule + FLD cost trigger, which described it all along) | `useEditableCostRows.setRowDescription`/`setRowValue` + `handleSave` → whole-set `PUT …?intent=save`; `OtherCostSaveRequest` row validation | `other-costs-inline-edit.feature` `@S25 @p1` (target 12050/2017) | covered (+ spec-gap) | Spec gap #1 — the slice matrix documents it, the `.feature` set dropped it. Validation is uniform with Add — both funnel through `useEditableCostRows.persist`, which validates every row and returns before sending; the reject arm proves a zero-write with the spy. (An earlier "Divergence #4" claiming otherwise was retracted — see defects.md) |
+| S25 Per-row inline edit of an existing Other Cost — valid edit + BR-06 shared volume | **UC-SCH1-001-S25.feature** (derived 2026-08-07; split out of S09) | `useEditableCostRows.setRowDescription`/`setRowValue` + `handleSave` → whole-set `PUT …?intent=save` | `other-costs-inline-edit.feature` `@S25 @p1` (target 12050/2017) | covered | Also asserts BR-06: the row exposes only description + cost as editable, and the volume cell shows the shared value. Legacy rendered that volume as a DISABLED input, ours as text — guarantee preserved, mechanism differs |
+| S26 Per-row inline edit rejected — blank description / invalid cost | **UC-SCH1-001-S26.feature** (derived 2026-08-07; split out of S10/S11) | `useEditableCostRows.persist` validates every row and returns before sending; `OtherCostSaveRequest` re-validates server-side | `other-costs-inline-edit.feature` `@S26 @FLD-006 @p1` + Outline `@S26 @FLD-001`/`@FLD-004` (validate anchor 17052/2016) | covered | Mirrors S10/S11's shape (description = scenario, cost = Outline). Validate-only: each proves a zero-write with `otherCostsSpy`, so the shared anchor is never modified |
 | Shared Other-Costs row with a null volume (GET robustness) | Found while building the S02 precondition; legacy rendered this state fine and flagged it at Check Status (FLD-010) | `Schedule1Service.toOtherCosts` `findFirst()` NPE → HTTP 500 | — | not-applicable (E2E) | Bug/Regression #3 — latent; the state is unreachable through the UI or the seeded data, so an E2E red would assert a state no user can reach. Must ship with the Bug #2 fix |
 | S13 Delete the whole Schedule 1 | S13.feature (Alt) | `Schedule1Service.deleteSchedule1` (DELETE) → SUC-002; confirm Modal → empty read-only redisplay; summary+details removed | `delete.feature` `@S13 @p1` (dedicated target 25052/2016) | covered | Destructive — snapshot/restore via `scripts/sch1_db_restore.py`; non-flaky proven SERIAL (single-owner) |
 | S14 Check Status — requirements met | S14.feature (Alt); slices.md | `Schedule1Service.checkSchedule1Status` (POST /check-status) → SUC-003; `Schedule1.handleCheckStatus` success NotificationColumn | `check-status.feature` `@S14 @p0` | covered | Anchor 24050/2017 (met); asserts read-only (revisionCount stable) |
@@ -102,7 +104,7 @@ Three mirrors were **completed** by this re-review, each of which had one arm si
   `clear-amounts.feature` adds that arm — and its broken half is Bug/Regression #2.
 - **Add ↔ edit.** Other Costs covered add (S09), reject-on-add (S10/S11) and remove (S12), but not
   editing a row already in the list, although the sidecars describe it. `other-costs-inline-edit.feature`
-  adds it (now slice S25) with both its own arms: a valid edit persists, an invalid one is refused and
+  adds it (now slices S25/S26) with both its own arms: a valid edit persists, an invalid one is refused and
   changes nothing.
 - **Pre-fill served ↔ stored.** S02 asserts the pre-filled values render *and* that the database is
   untouched — the second arm is what makes WRN-001's "please check and save" meaningful.
