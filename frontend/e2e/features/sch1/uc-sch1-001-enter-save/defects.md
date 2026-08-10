@@ -127,14 +127,22 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     with no prompt. A user can now destroy an itemized cost with one mis-click and no undo.
   - **It is also now internally inconsistent:** the whole-schedule delete (S13) KEPT its "Delete
     schedule" confirm Modal, so the same app confirms the large destructive action and not the small one.
-  - **Action — BA/QA decision needed (this is the one genuinely open call in this file):** confirm
-    whether the per-row confirmation should be restored. It is owned upstream (bcgov's shared
-    `EditableSubPageLayout` / `useEditableCostRows` rewrite), so restoring it is an upstream change, not
-    a fork-local one. **If you rule it a defect, S12 should flip from its current GREEN
-    (re-grounded to the no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red** that
-    tracks the missing prompt until it is restored — say the word and I will make that change.
+  - **Action — with the Schedule 1 developer (2026-08-07).** Walked through with him as part of the QA
+    review of this UC; he is investigating and will raise a ticket if it is confirmed. Restoring the
+    prompt is an upstream change either way — it lives in bcgov's shared `EditableSubPageLayout` /
+    `useEditableCostRows` rewrite, not in this fork.
+  - **Next step — verify against the REAL legacy app.** The sidecar evidence is strong
+    (`technical.md:102,154`, `detailed.md:66`), but that is captured source, not the running system. Once
+    we have full access to legacy as a BCeID user, the dev will confirm whether it actually prompts. If
+    it does, this is a parity regression to fix upstream; if it does not, the sidecars need correcting —
+    which is worth knowing on its own.
+  - **If it is confirmed a defect:** S12 should flip from its current GREEN (re-grounded to the
+    no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red tracking the missing
+    prompt until it is restored. Not done yet — the behaviour under test is real, so an honest red waits
+    on the ruling rather than pre-empting it.
   - **Priority / env:** p1 · local seeded DB.
-  - **Status:** OPEN — awaiting BA/QA ruling. Found 2026-08 (bcgov sync); legacy-confirmed 2026-08-07.
+  - **Status:** OPEN — with the Schedule 1 dev; pending BCeID access to verify against real legacy.
+    Found 2026-08 (bcgov sync); legacy-source-confirmed 2026-08-07.
   - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
 
 - **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
@@ -185,12 +193,16 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Why (technical):** it is missing **end to end, not just in the UI** — the API exposes no prior
     value at all (`schedule1/dto/*.java` has no `original`/`previous` field), so the frontend could not
     render the indicator today even if someone added the markup. Restoring it needs a backend change.
-  - **Is it a defect?** BA/QA to decide. It is a genuine legacy capability that has not been carried
+  - **Is it a defect?** A genuine legacy capability that has not been carried
     over, in the **post-submission review** path — which is why no Draft-focused scenario would ever
     have caught it. If reviewers/auditors relied on it to spot what a licensee changed after submitting,
     this is a real functional gap; if the audit tables now serve that need, dropping it is fine.
+  - **Action — with the Schedule 1 developer (2026-08-07).** Raised with him alongside DIV-3 in the QA
+    review; he is investigating and will raise a ticket if it is confirmed. Scope is his call: this
+    cannot be fixed in the frontend alone, because the API exposes no previous value to render — so
+    restoring it means a backend change, not just markup.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN. Found 2026-08-07.
+  - **Status:** OPEN — with the Schedule 1 dev. Found 2026-08-07.
   - **Test:** none — out of reach for this UC's scenarios, which all run against Draft schedules (the
     indicator only renders once a report has left Draft). S22 covers the non-Draft render but asserts
     only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in
