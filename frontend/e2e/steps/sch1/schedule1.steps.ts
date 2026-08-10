@@ -240,7 +240,7 @@ Given(
   async ({ request, world, schedule1DeleteRestore }) => {
     // S02 needs a genuine FIRST ENTRY — every stored detail volume null (Schedule1Service.allVolumesEmpty)
     // — which no seeded schedule is in and the app cannot produce (a blanking PUT is a no-op, see
-    // Bug/Regression #2). So: snapshot the dedicated target, NULL its volumes at the DB, and register the
+    // BUG-2). So: snapshot the dedicated target, NULL its volumes at the DB, and register the
     // exact delete-then-reinsert restore. Nothing here writes through the app.
     world.scheduleKey = CROWN_PREFILL_ANCHOR;
     world.millOption = millOptionText(CROWN_PREFILL_ANCHOR_MILL);
@@ -285,10 +285,13 @@ Then(
         )
         .toBe(expected);
     }
+    // The shared Other-Costs volume is deliberately OUTSIDE the pre-filled 13-field set. `first-entry`
+    // removed this schedule's item-19 rows, so it renders empty — assert that directly rather than
+    // merely "not the crown value", which would also pass on any other stray number.
     expect(
       await schedule1Page.amountValue('#otherCostsVolume'),
       'the shared Other-Costs volume is outside the pre-filled set',
-    ).not.toBe(expected);
+    ).toBe('');
   },
 );
 
@@ -306,7 +309,7 @@ Given(
   'the clear-amounts target is an editable Draft',
   async ({ request, world, schedule1DeleteRestore }) => {
     // clear-amounts writes values and then clears them. The five guarded volume fields cannot be
-    // cleared through the API (Bug/Regression #2), so the blank-fields PUT restore cannot undo this
+    // cleared through the API (BUG-2), so the blank-fields PUT restore cannot undo this
     // scenario — snapshot and re-insert the exact rows instead.
     world.scheduleKey = CLEAR_AMOUNTS_ANCHOR;
     world.millOption = millOptionText(CLEAR_AMOUNTS_ANCHOR_MILL);

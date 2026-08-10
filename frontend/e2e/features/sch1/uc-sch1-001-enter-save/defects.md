@@ -1,6 +1,10 @@
 # Defects — UC-SCH1-001 Report Average Cost of Logging (Schedule 1)
 > How this log works (registers, tags, per-register templates): [defects-guide.md](../../../defects-guide.md)
 
+> **Entry ids:** each register numbers independently, so ids carry their register as a prefix —
+> `BUG-n` (Bug / Regression), `DIV-n` (Divergence), `GAP-n` (Coverage gap), `SPEC-n` (Spec gap).
+> Cite the prefixed id when raising a ticket; a bare "#3" is ambiguous across three registers.
+
 **Last re-verified: 2026-08-07** (branch `e2e/schedule1-recheck-and-defect-restale`). Every entry below was
 re-checked against the app as it stands today, not carried forward on trust. The app moved underneath this
 log — backend commit `0b58057` "restore legacy parity for derived costs, audit columns" and the bcgov
@@ -9,7 +13,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 **Bug / Regression:**
 
-- **#1 — Adding a Subtotal Other Costs line item fails with a 500 on the delivery database.**
+- **BUG-1 — Adding a Subtotal Other Costs line item fails with a 500 on the delivery database.**
   - **What's wrong:** On the delivery Oracle DB, clicking **Add** on the Other Costs sub-page (or `POST /api/v1/schedule1/other-costs`) fails — the page shows "Other cost could not be saved." and no row is added. The same defect blocks any *first-time* Schedule 1 detail insert; the main Save (S01) escapes it only because it *updates* rows that already exist in the seed.
   - **Expected vs actual:** Expected the row to be added and the API to return "Data saved successfully" with the row persisted. Actual — HTTP 500 `"Schedule could not be saved."`, nothing persisted.
   - **How we caught it (verified on real data 2026-07-30):** `POST /api/v1/schedule1/other-costs?millId=25050&year=2017` and `…millId=9050&year=2017` both → HTTP 500. Reproduced at the DB: the app's `INSERT` into `THE.ILCR_COST_REPORT_DETAIL` raises `ORA-01400: cannot insert NULL into (…"REVISION_COUNT")` (then `UPDATE_USERID`, `UPDATE_TIMESTAMP`).
@@ -22,7 +26,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Test:** `other-costs.feature` `@S09 @p1` — GREEN (was the `@discovered-bug` red that tracked this).
   - **Note (2026-08 bcgov sync):** the per-row `POST` add path described above is superseded — the sub-page now persists the whole row set via `PUT …?intent=save`. Retained as the historical record of the bug and its fix.
 
-- **#2 — A cleared volume is silently discarded: five Schedule 1 volume fields cannot be blanked.** _(NEW 2026-08-07)_
+- **BUG-2 — A cleared volume is silently discarded: five Schedule 1 volume fields cannot be blanked.** _(NEW 2026-08-07)_
   - **What's wrong:** If you clear one of five volume boxes on Schedule 1 and press Save, the app says "Data saved successfully" — but the old number is still there. Reload the page and it comes back. There is no way to remove a volume you entered by mistake in these five boxes. Every *other* amount box on the screen clears normally, which is what makes this so easy to miss.
   - **Which fields:** Forest Management Administration Costs (Sch 3) volume, Subtotal Company Logging Cost (no Silviculture) volume, Less Silviculture Admin Costs volume, Total Silviculture (As per Financial Statements) volume, and Subtotal Other Costs volume.
   - **Expected vs actual:** Expected a cleared box to save as empty, exactly as clearing "Standing Tree to Loaded Truck volume" does. Actual — the save reports success and the previous value is retained.
@@ -51,7 +55,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** OPEN. Found 2026-08-07.
   - **Test:** `clear-amounts.feature` — the `@discovered-bug @p1` scenario is a genuine RED tracking this and will go green when it is fixed. Its mirror arm (`@p1`, clearing an ordinary line-item volume) is GREEN, which is the proof that clearing is supposed to work.
 
-- **#3 — Schedule 1 returns a 500 when the shared Other-Costs row has no volume (latent).** _(NEW 2026-08-07)_
+- **BUG-3 — Schedule 1 returns a 500 when the shared Other-Costs row has no volume (latent).** _(NEW 2026-08-07)_
   - **What's wrong:** If a Schedule 1 holds a "shared Subtotal Other Costs" row whose volume is empty, opening that Schedule 1 fails outright — the page shows "Unable to load Schedule 1 / An unexpected error occurred" and the API returns HTTP 500. The schedule becomes unopenable rather than showing a blank box.
   - **Expected vs actual:** Expected the shared Other-Costs volume to render blank. Actual — HTTP 500 and no page.
   - **How we caught it (verified on real data 2026-08-07):** Building the S02 first-entry precondition. Nulling every detail volume on 22051/2017 made `GET /api/v1/schedule1?millId=22051&year=2017` return 500; backend log: `java.lang.NullPointerException at Schedule1Service.toOtherCosts(Schedule1Service.java:773)`.
@@ -65,7 +69,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     VOLUME. A schedule with *no* item-19 row at all is fine — `findFirst()` on an empty stream returns
     an empty Optional and `.orElse(null)` works; it is a null *element* that throws. (13050/2016 has no
     shared row, which is why it opens normally despite reporting a null shared volume.)
-  - **Is it a defect?** Yes, but **latent** — please read the reachability note before prioritising. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and Bug/Regression #2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state — and that is not hypothetical:
+  - **Is it a defect?** Yes, but **latent** — please read the reachability note before prioritising. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and BUG-2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state — and that is not hypothetical:
     the seed already carries 9 detail rows with a NULL volume on the sibling guarded fields, so nulls of
     this class are demonstrably present in real extracted data.
   - **Priority / env:** p2 today, but **must ship with the fix for #2** · local seeded delivery DB.
@@ -74,7 +78,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 **Divergences:**
 
-- **#1 — Invalid amounts are flagged inline and Save is blocked, rather than rejected at the keystroke.**
+- **DIV-1 — Invalid amounts are flagged inline and Save is blocked, rather than rejected at the keystroke.**
   - **What's wrong:** The legacy-derived Gherkin (S03–S07) says an out-of-range or non-numeric cost/volume is rejected *at entry* — "the invalid amount is not accepted into the field." In the new app the field **accepts** the typed value, an inline error appears immediately, and the **Save is blocked** (nothing is sent). The protection those slices exist for — invalid data can never be saved — still holds; only the moment/mechanism of the block differs.
   - **Expected vs actual:** Expected the field to refuse the value on entry (legacy FLD-001/002/003/004/005). Actual — the value stays in the field with a red inline message (e.g. "Entered cost must be between -99,999,999 and 99,999,999."), and clicking Save shows "Please correct the highlighted fields before saving." and sends nothing to the server.
   - **How we caught it (verified 2026-07-29, re-verified 2026-08-07):** Re-grounding S03–S07 against 24050/2017. For each field we typed an invalid value, saw the inline error, clicked Save, and a `page.route` spy confirmed **zero** `PUT /api/v1/schedule1` calls. Still accurate today: `Schedule1.handleSave` (index.tsx:165) aborts on `validateSchedule1(form)` before the PUT.
@@ -84,7 +88,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED — accepted as designed (BA/QA, 2026-08-07). Found 2026-07-29.
   - **Test:** `validation.feature` (S03–S07) — GREEN.
 
-- **#2 — RETIRED (obsolete): the 8-digit volume fields are editable again.**
+- **DIV-2 — RETIRED (obsolete): the 8-digit volume fields are editable again.**
   - **What this used to say:** that legacy FLD-003's three editable 8-digit volumes were reduced to one here — Forest Mgmt Admin (143) and Subtotal Company Logging (144) rendering read-only/derived and impossible to type into — so S06 was re-grounded onto Subtotal Other Costs volume as the only editable 8-digit field.
   - **Why it is retired (verified 2026-08-07):** backend commit `0b58057` "restore legacy parity for derived costs" reversed this. `components/schedule1/index.tsx` now renders `#vol-143` and `#vol-144` as editable TextInputs (`numberCell(…, true, …)`), `validation.ts` `fieldKind()` routes both to the 8-digit rule, and `Schedule1Request` carries `forestMgmtAdminVolume` / `subtotalCompanyLoggingVolume`. Only their COSTS remain read-only, which matches legacy BR-04 ("their cost comes from Sch 3 / is derived"), not a divergence. The same commit also made silviculture 139/140 volume-editable. `UC-SCH1-001-slices.md` confirms the legacy inventory this now matches: 3 editable 8-digit volumes (`forestManagementAdminCostsVol`, `subTotalOtherCostsVol`, `subtotalCompanyLoggingCostsVol`) and 11 editable 7-digit volumes (including `lessSilvAdminCostsVol`, `totalSilvVol`).
   - **Re-verified against LEGACY (2026-08-07), not just against our current source.** The technical
@@ -105,7 +109,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED 2026-08-07 (superseded by the app; no defect).
   - **Test:** `validation.feature` `@S05`/`@S06`, `happy-path.feature` `@S01` — GREEN.
 
-- **#3 — The per-row Other Costs delete-confirmation modal was removed (bcgov EditableSubPage rewrite).**
+- **DIV-3 — The per-row Other Costs delete-confirmation modal was removed (bcgov EditableSubPage rewrite).**
   - **What's wrong:** Legacy-derived S12 removes an itemized Other Cost "after confirming the prompt" — the fork's app popped a Carbon danger Modal ("Delete other cost") to confirm before deleting. After the 2026-08 sync to bcgov's shared `EditableSubPageLayout` / `useEditableCostRows` rewrite, the per-row delete is an icon-only **"Remove"** button that deletes the row **immediately** (optimistic) and persists the whole set via one `PUT …?intent=delete` — there is no confirmation step.
   - **Expected vs actual:** Expected a confirm-before-delete prompt (legacy S12). Actual — Remove deletes immediately; SUC-002 "Data deleted successfully" is echoed from the API after the whole-set PUT.
   - **How we caught it (verified 2026-08, re-verified 2026-08-07):** Re-grounding S12. Still accurate: `components/schedule1OtherCosts/index.tsx` renders a `hasIconOnly iconDescription="Remove"` button whose `onClick` → `useEditableCostRows.removeRow` → immediate `persist(next, 'delete')`; no dialog is rendered.
@@ -133,7 +137,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** OPEN — awaiting BA/QA ruling. Found 2026-08 (bcgov sync); legacy-confirmed 2026-08-07.
   - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
 
-- **#4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
+- **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
   - **What it claimed:** that editing a row already in the list skipped browser-side validation, so an
     invalid inline edit was only caught by the server after a round-trip.
   - **Why it was wrong (corrected 2026-08-07):** the claim came from reading
@@ -146,17 +150,17 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     (technical.md:96,99). JSF runs those in Process Validations on **form submit** — i.e. on clicking
     Save — displaying the errors and persisting nothing. That is the same point in the interaction as
     ours. **No mechanism divergence on this sub-page.** (Note this differs from the MAIN page, where
-    legacy validated at keystroke — that is Divergence #1, and it is confined to `schedule1.xhtml`.)
+    legacy validated at keystroke — that is DIV-1, and it is confined to `schedule1.xhtml`.)
   - **Open question answered, also from legacy:** should the sub-page show BOTH an Add and a Save
     button? **Yes — legacy had both**, as two independent forms: `addCostForm` (Description / disabled
     shared Volume / Cost / `$/m³` + **Add** → `addOtherCost()`) and `otherCostsForm` (the row table +
     **Save** → `save()` + Back) — technical.md:43,90-94,104-105. Our sub-page mirrors that, including
     the disabled shared volume and `$/m³` in the add form (`#add-description` / `#add-volume` /
     `#add-cost` / `#add-perunit`). So having both buttons is parity, not an accident.
-  - **Status:** RETRACTED 2026-08-07. Nothing to adjudicate — but see Divergence #5, which the legacy
+  - **Status:** RETRACTED 2026-08-07. Nothing to adjudicate — but see DIV-5, which the legacy
     re-check surfaced.
 
-- **#5 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
+- **DIV-5 — The per-field "original value" indicators from legacy do not exist anywhere in the new app.**
   _(NEW 2026-08-07 — found by re-checking #4 against legacy instead of against our own implementation.)_
   - **What's missing:** in legacy, once a report had been **submitted** (left Draft), every editable
     Cost/Volume field that differed from its previously-saved value displayed a small icon button beside
@@ -169,12 +173,12 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     **This indicator only appears once the report has left Draft** and the entered value differs from
     the original." Named instances: `commentsOB`/`commentsTT` on the main page (technical.md:84) and
     `descriptionOB` / `costOB` per row on the Other Costs sub-page (technical.md:97,100).
-  - **Corroborated while re-checking Divergence #2:** the indicator is named individually on each of the
+  - **Corroborated while re-checking DIV-2:** the indicator is named individually on each of the
     four volume-only fields whose editability was just restored — `forestManagementAdminCostsVolOB`,
     `subtotalCompanyLoggingCostsVolOB`, `lessSilvAdminCostsVolOB`, `totalSilvVolOB` (technical.md:60,70,
-    74,77). So restoring the volumes to parity (Divergence #2) restored only half of what legacy showed
+    74,77). So restoring the volumes to parity (DIV-2) restored only half of what legacy showed
     for those fields; the change-tracking half is still missing.
-  - **How we caught it (2026-08-07):** re-checking Divergence #4 against the legacy sidecars rather than
+  - **How we caught it (2026-08-07):** re-checking DIV-4 against the legacy sidecars rather than
     assuming our implementation was right. Grepped the new app for any equivalent: none in
     `components/schedule1/index.tsx`, `components/schedule1OtherCosts/index.tsx`,
     `hooks/useEditableCostRows.ts` or `core/EditableSubPageLayout`.
@@ -194,7 +198,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 **Coverage gaps (not tested yet — no app problem):**
 
-- **#1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
+- **GAP-1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
   earlier wording said role branches were "blocked by mock auth", which implied we were failing to cover
   behaviour that exists. Re-checked against the code: that behaviour does not exist yet.)_
   - **Why not:** `ILCR_ADMIN` and `ILCR_SUBMITTER` are granted **exactly the same actions**. From
@@ -220,13 +224,13 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** OPEN (informational). Re-verified 2026-08-07.
   - **Test:** none needed today — `not-applicable (no role-dependent behaviour)` in coverage.md.
 
-- **#2 — CLOSED: S02 (crown pre-fill) is now automated.**
+- **GAP-2 — CLOSED: S02 (crown pre-fill) is now automated.**
   - **What this used to say:** that S02 needed a mill/year whose Schedule 3 carries a Crown Timber volume while the Schedule 1 volumes are all still empty, that no such anchor existed, and that manufacturing one meant seeding Schedule 3 — out of scope.
   - **Why it is closed (2026-08-07):** Schedule 3 has since shipped with crown data. A DB sweep of all 30 Schedule-1/Schedule-3 pairs found **28** carrying an item-119 Crown Timber volume, so the Schedule 3 half of the precondition is now real seeded data, not something to manufacture. The remaining half (every Schedule 1 volume null) is produced by snapshotting the dedicated target 22051/2017, nulling its volumes at the DB, and restoring it verbatim on teardown — the same snapshot/restore machinery S13 and S24 already use.
   - **Status:** CLOSED 2026-08-07.
   - **Test:** `crown-prefill.feature` `@S02 @p1 @WRN-001` — GREEN. Asserts the WRN-001 advisory, all 13 pre-filled volume fields, that the shared Other-Costs volume is excluded from the pre-filled set, and that nothing is persisted until the user saves.
 
-- **#3 — S08 (open Other Costs before first save) is unreachable in the current backend model.**
+- **GAP-3 — S08 (open Other Costs before first save) is unreachable in the current backend model.**
   - **Why not:** The legacy guard blocked opening Other Costs before Schedule 1 was saved. In the new app an openable schedule is always already saved (the GET 404s when no summary exists), so `Schedule1.handleOtherCosts`'s `!data` branch (the ALT-001 "save first" Modal) cannot be produced through the UI against real data.
   - **It is unreachable by construction, not for want of data (proved 2026-08-07).** No seed patch or
     probe can produce it, because the requirement is self-contradictory within one render:
@@ -234,7 +238,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     `handleOtherCosts` is rendered *below* that guard. So triggering the `if (!data)` branch at
     `index.tsx:261` needs `data` to be null, while clicking the button that reaches it needs `data` to be
     non-null. Dead code — the component's own comment already says "effectively unreachable".
-  - **Not related to Bug/Regression #3**, despite the shared number (different registers). When the GET
+  - **Not related to BUG-3** (a different register — see the id legend at the top). When the GET
     500s, `data` is null, so the component renders the error state and the button never exists — Bug #3
     stops the page rendering rather than exposing this branch.
   - **No unit test covers it either (searched 2026-08-07).** `ALT_SAVE_BEFORE_OTHER_COSTS` appears
@@ -253,7 +257,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 
-- **#1 — Per-row inline edit of an existing Other Cost row has no derived `.feature` scenario.** _(NEW 2026-08-07)_
+- **SPEC-1 — Per-row inline edit of an existing Other Cost row has no derived `.feature` scenario.** _(NEW 2026-08-07)_
   - **What's missing:** `UC-SCH1-001-slices.md` documents inline editing of an existing Other Cost row in two places — the Description rule reads "Description (new line item; **same rule applies to per-row inline edit of an existing item's description**)", and the invalid-Cost trigger reads "…when adding a new Other Cost line item **or editing an existing row's Cost inline**". The derived `UC-SCH1-001-S09..S12.feature` files cover only the **Add** form and the per-row **Remove** — there is no slice for editing a row that is already in the list, even though the app implements it (`#row-description-<key>` / `#row-cost-<key>` plus a batch Save).
   - **How we caught it (2026-08-07):** reconciling the `.feature` set against the slice matrix rather than treating it as the complete inventory — the classic lossy-projection case.
   - **Correction on review (2026-08-07):** "never derived" overstated it. The slice matrix HAD analysed
@@ -269,7 +273,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** RESOLVED — slice derived upstream 2026-08-07; E2E coverage already in place.
   - **Test:** `other-costs-inline-edit.feature` — `@S25 @p1` (valid edit + the BR-06 shared-volume
     assertion) and `@S26` (blank description `@FLD-006`; invalid cost Outline `@FLD-001`/`@FLD-004`) —
-    all GREEN. The rejects run on the validate anchor and each proves a zero-write with the spy. (An earlier Divergence #4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
+    all GREEN. The rejects run on the validate anchor and each proves a zero-write with the spy. (An earlier DIV-4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
 
 **Verified — not a defect:**
 

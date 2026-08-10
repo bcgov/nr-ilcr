@@ -194,8 +194,14 @@ Every scenario carries two kinds of tag:
   **Never force green:** a suspected-defect divergence / confirmed bug is a genuinely-failing tagged test, never masked with `@skip`, xfail, or a weakened assertion. A failing test does not stop the others (Playwright isolates them). Run a **clean "fresh failures only" pass** — everything except the known reds — with:
 
   ```bash
+  npm run test:gate     # the same thing, as a script — see note below
+  # or, explicitly:
   npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
   ```
+
+  > `npm test` runs EVERYTHING and therefore **exits 1 by design** whenever a `@discovered-*` red is
+  > tracking an open defect. That is the suite working as intended, not a broken build. `npm run
+  > test:gate` is the pass/fail gate: it excludes the known reds and exits 0 when nothing new has broken.
 
 Filter with Playwright's `--grep` (args after `--` pass through; `pretest` still regenerates first):
 

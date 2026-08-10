@@ -16,7 +16,7 @@
 # errors (it adds and saves in one action). The backend validates the same rules again
 # (`OtherCostSaveRequest`: @NotBlank description, cost ±99,999,999) as defence in depth.
 #
-# An earlier revision of defects.md logged this as "Divergence #4 — inline edits get no client-side
+# An earlier revision of defects.md logged this as "DIV-4 — inline edits get no client-side
 # validation". That was a misreading (`handleSave` looks bare because it delegates to `persist`) and has
 # been retracted; the reject arms below prove the zero-write with the spy rather than inferring it.
 #

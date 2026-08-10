@@ -96,8 +96,18 @@ export const sch1Test = base.extend<Sch1Fixtures>({
           residue.push(`${millId}/${year} restore PUT -> HTTP ${putRes.status()}`);
         }
         // The blanking PUT cannot clear 143/144/139/140 — the server reads a null there as "field
-        // omitted" (Bug/Regression #2), so S01's writes to them would survive teardown and the pinned
+        // omitted" (BUG-2), so S01's writes to them would survive teardown and the pinned
         // empty baseline would drift a little further every run. Finish the job at the DB.
+        //
+        // TWO CONSEQUENCES, both deliberate (raised in review of PR #6):
+        //  1. This puts a python-oracledb call in the MAIN mutating sch1 teardown, not just the
+        //     destructive S13/S24 path. In practice any full run already required it — S13 snapshots on
+        //     every run — so the delta is that a `--grep @S01`-only run now needs it too. Accepted:
+        //     the alternative (snapshot/restore for S01) needs the same dependency and is heavier.
+        //  2. It normalises exactly the drift `preflight/anchors.setup.ts` classifies as ADVISORY. That
+        //     is intended: the advisory exists to surface drift the suite did NOT cause, so removing our
+        //     own contribution makes it a sharper signal, not a blunter one. If S01 ever stops writing
+        //     these fields, drop this call rather than leaving it to mask someone else's residue.
         blankGuardedSchedule1Volumes(millId, year);
       } catch (err) {
         residue.push(`${millId}/${year} threw: ${(err as Error).message}`);

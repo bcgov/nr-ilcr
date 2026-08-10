@@ -7,7 +7,7 @@
 # This slice was `deferred` while Schedule 3 was unimplemented. Schedule 3 shipped with crown data, so
 # the precondition is now reachable: 28 of the 30 seeded Schedule-1/Schedule-3 pairs carry a crown
 # volume. None is in the all-volumes-empty first-entry state and the app cannot produce it (a blanking
-# PUT is a silent no-op — defects.md Bug/Regression #2), so the dedicated target is snapshotted, nulled
+# PUT is a silent no-op — defects.md BUG-2), so the dedicated target is snapshotted, nulled
 # at the DB, and restored verbatim on teardown.
 
 @sch1 @UC-SCH1-001 @crown-prefill

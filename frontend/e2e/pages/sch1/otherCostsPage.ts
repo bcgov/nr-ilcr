@@ -29,10 +29,14 @@ export class OtherCostsPage {
   }
 
   /**
-   * The sub-page Back action. `EditableSubPageLayout` renders `backLabel` TWICE (a top action row and a
-   * bottom one), so this is scoped with `.first()`. Re-grounded 2026-08-07: the restyle (#237) shortened
-   * the label from "Back to Schedule 1" to "Back" (`schedule1OtherCosts/index.tsx` `backLabel="Back"`),
-   * so it is matched exactly to avoid colliding with any other button whose name merely contains "Back".
+   * The sub-page Back action. Re-grounded 2026-08-07: the restyle (#237) shortened the label from
+   * "Back to Schedule 1" to "Back" (`schedule1OtherCosts/index.tsx` `backLabel="Back"`), so it is
+   * matched exactly rather than by substring.
+   *
+   * `.first()` is belt-and-braces, not a disambiguator: `EditableSubPageLayout` renders `backLabel` in
+   * two places — the error-state branch (`index.tsx:101`, inside `if (errorDetail)`) and the normal
+   * action row (`:138`) — but those are MUTUALLY EXCLUSIVE returns, so only ever one is in the DOM.
+   * (An earlier version of this comment claimed a top and a bottom row; that was wrong.)
    */
   get backButton(): Locator {
     return this.page.getByRole('button', { name: 'Back', exact: true }).first();

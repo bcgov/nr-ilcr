@@ -50,7 +50,7 @@ export const countSchedule1Volumes = (millId: number, year: number): number =>
 
 /**
  * NULL the volume-only fields (143/144/139/140) a scenario wrote but the blank-fields PUT cannot undo,
- * because `Schedule1Service` treats a null there as "field omitted" (defects.md Bug/Regression #2).
+ * because `Schedule1Service` treats a null there as "field omitted" (defects.md BUG-2).
  * Called by the `schedule1Restore` cleanup after its restore PUT — without it, S01's writes to those
  * fields survive teardown and the happy-path target drifts from its pinned empty baseline every run.
  */
@@ -61,9 +61,9 @@ export const blankGuardedSchedule1Volumes = (millId: number, year: number): void
 /**
  * Put a schedule into the genuine first-entry state the S02 crown pre-fill needs: NULL every stored
  * detail volume AND remove its item-19 Other-Costs rows. The app cannot reach this state itself (a
- * blanking PUT is a no-op for the five `!= null`-guarded volume fields — defects.md Bug/Regression #2),
+ * blanking PUT is a no-op for the five `!= null`-guarded volume fields — defects.md BUG-2),
  * and nulling volumes WITHOUT removing the Other-Costs rows produces a 500 rather than a pre-fill
- * (Bug/Regression #3). Always call `snapshotSchedule1` first and register the key for teardown.
+ * (BUG-3). Always call `snapshotSchedule1` first and register the key for teardown.
  */
 export const makeSchedule1FirstEntry = (millId: number, year: number): void => {
   run('first-entry', String(millId), String(year));

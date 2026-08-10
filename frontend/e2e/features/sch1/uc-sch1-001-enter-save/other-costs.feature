@@ -9,7 +9,7 @@
 # removing a row — technical.md:102,154 and detailed.md:66. The bcgov EditableSubPage rewrite dropped it,
 # so Remove now deletes immediately. This scenario is re-grounded to the app's ACTUAL behaviour and is
 # GREEN, but the missing prompt is a CONFIRMED parity regression awaiting a BA/QA ruling
-# (defects.md Divergence #3). If it is ruled a defect, this scenario flips to a @discovered-divergence red.
+# (defects.md DIV-3). If it is ruled a defect, this scenario flips to a @discovered-divergence red.
 #
 # Each mutating scenario owns a DEDICATED editable Draft (S09 add → 25050/2017; S12 remove → 9050/2017) and
 # self-cleans its rows via the API cleanup registry (marker-keyed). S12 seeds its row through the real API

@@ -32,7 +32,7 @@ Feature: The saved working context displays on the schedule tombstone
     Then I should see the message "Data saved successfully"
     When I open "Schedule 2" from the side-nav
     Then the working-context tombstone shows the "open with status" context
-    When I am on the Home page
+    Given I am on the Home page
     And I select the working context "open alternate"
     And I save the working context
     Then I should see the message "Data saved successfully"

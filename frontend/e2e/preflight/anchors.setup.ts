@@ -48,7 +48,7 @@ type TargetFindings = { destructible: string[]; advisory: string[] };
  *    overwrite them". That is no longer true for 143/144/139/140: backend commit 0b58057 made those
  *    volumes user-editable, and S01 now writes and reads them back. They stay ADVISORY rather than
  *    DESTRUCTIBLE because S01 DOES clean them up — but at the DB, not through the API: the backend's
- *    `!= null` guard means a blanking PUT is a silent no-op there (defects.md Bug/Regression #2), so the
+ *    `!= null` guard means a blanking PUT is a silent no-op there (defects.md BUG-2), so the
  *    cleanup finishes the job via `sch1_db_restore.py blank-guarded`. The shared Other-Costs(19) volume
  *    is the one field the original claim still holds for — S01 never writes it.
  *

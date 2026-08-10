@@ -15,7 +15,7 @@ Draft and reassigns no PK, and the detail check trigger re-accepts rows that wer
 `first-entry` exists for the S02 crown pre-fill precondition. The BR-03 pre-fill only fires when
 EVERY stored Schedule 1 detail volume is NULL (Schedule1Service.allVolumesEmpty), and the app cannot
 produce that state through the API: the five volume-only fields are guarded by `!= null` on the write
-path, so a blanking PUT is a silent no-op (defects.md Bug/Regression #2). Nulling the VOLUME column
+path, so a blanking PUT is a silent no-op (defects.md BUG-2). Nulling the VOLUME column
 directly is therefore the only way to reach the first-entry state on real seeded data — always paired
 with `snapshot` before and `restore` after, so the schedule is left exactly as found.
 
@@ -139,7 +139,7 @@ def first_entry(mill_id: int, year: int) -> None:
     2. The schedule carries NO item-19 Other-Costs rows. `toOtherCosts` reads the shared row's volume
        with `.map(DetailRow::volume).findFirst()`, and `Stream.findFirst()` throws NPE on a null
        element — so a shared item-19 row with a null volume makes the GET 500 instead of pre-filling
-       (defects.md Bug/Regression #3). Nulling volumes without removing those rows would therefore
+       (defects.md BUG-3). Nulling volumes without removing those rows would therefore
        manufacture a 500, not a first entry.
 
     A real first entry has no Other-Costs rows anyway (they are created later through the sub-page), so
@@ -171,12 +171,12 @@ def blank_guarded(mill_id: int, year: int) -> None:
     `emptyScheduleRequest` blanks every writable field by PUTting nulls, which works for line items
     12–18 and silviculture 1/2. It does NOT work for 143/144/139/140: `Schedule1Service` guards those
     scalars with `!= null`, so a null is a silent no-op and the value written by S01 survives teardown
-    (defects.md Bug/Regression #2). Without this the happy-path target drifts a little further from its
+    (defects.md BUG-2). Without this the happy-path target drifts a little further from its
     pinned empty baseline on every run.
 
     Item 19 (the shared Other-Costs volume) carries the same guard but is deliberately NOT reset here —
     S01 never writes it, the seeded target legitimately holds one, and nulling it would trip the
-    `toOtherCosts` NPE (Bug/Regression #3).
+    `toOtherCosts` NPE (BUG-3).
     """
     con = connect()
     cur = con.cursor()

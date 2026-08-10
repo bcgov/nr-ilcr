@@ -5,7 +5,7 @@
 # SENDS them, with null meaning "the user cleared this field" — so a cleared field is silently discarded.
 #
 # The first scenario is the mirror arm and passes: an ordinary line-item volume clears normally. The
-# second is the broken arm and is a genuine RED (@discovered-bug), tracking defects.md Bug/Regression #2
+# second is the broken arm and is a genuine RED (@discovered-bug), tracking defects.md BUG-2
 # until the app is fixed. It is NOT skipped, weakened, or xfailed — the red IS the tracking signal.
 # Filter it out of a clean CI run with `--grep-invert @discovered-bug`.
 #
@@ -35,7 +35,7 @@ Feature: Report Average Cost of Logging (Schedule 1) — clearing a saved amount
     Then I should see the message "Data saved successfully"
     And the saved Schedule 1 volume for row 12 should be empty
 
-  # The broken arm — expected to FAIL until Bug/Regression #2 is fixed. All five guarded fields are
+  # The broken arm — expected to FAIL until BUG-2 is fixed. All five guarded fields are
   # exercised in ONE scenario: they share a single root cause, so one honest red tracks the defect
   # without five separate browser runs, and the assertion names whichever field is still holding a value.
   @discovered-bug @p1

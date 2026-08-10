@@ -82,7 +82,7 @@ export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
 
 /**
  * Check Status anchors that need an itemized Other-Costs row seeded first (S17/S18). The row is seeded
- * at the DB (the app's own add is broken — Bug/Regression #1) and cleaned up via the app's DELETE.
+ * at the DB (the app's own add is broken — BUG-1) and cleaned up via the app's DELETE.
  * `cost: null` seeds an empty-cost row (S18 warning); a number seeds a costed row (S17). Both anchors
  * carry a shared Other-Costs volume of exactly 0 (discovered 2026-07-30), which is what makes S17's
  * "cost > 0 with volume 0" mismatch fire.
@@ -181,7 +181,7 @@ export const OTHER_COSTS_ANCHORS = {
  * Timber (item 119) volume. BR-03 pre-fills only on a genuine FIRST ENTRY (`allVolumesEmpty` — every
  * stored Schedule 1 detail volume null), and no seeded schedule is in that state: the DB hunt across
  * all 30 Schedule-1/Schedule-3 pairs found 28 with a crown volume but none with empty volumes.
- * The app cannot produce the state either (a blanking PUT is a no-op — Bug/Regression #2), so the
+ * The app cannot produce the state either (a blanking PUT is a no-op — BUG-2), so the
  * scenario snapshots this schedule, NULLs its volumes at the DB, and restores it verbatim on teardown.
  * Never share this (mill,year). Found (2026-08-07):
  * GET .../schedule1?millId=22051&year=2017 → {trackStatus:"D", editable:true, schedule3CrownVolume:325411}.
@@ -218,7 +218,7 @@ export const MSG_CROWN_PREFILL =
 /**
  * Clear-a-saved-amount target — a dedicated, populated, editable Draft owned solely by
  * `clear-amounts.feature`. That feature writes values and then clears them, and the five `!= null`
- * guarded volume fields cannot be cleared through the API (Bug/Regression #2), so the schedule is
+ * guarded volume fields cannot be cleared through the API (BUG-2), so the schedule is
  * snapshotted and restored verbatim on teardown rather than blanked with a PUT.
  * Found (2026-08-07): GET .../schedule1?millId=25052&year=2017 → {trackStatus:"D", editable:true}.
  * (Mill 25052 year 2017 — a DIFFERENT key from the S13 delete anchor 25052/2016.)
@@ -315,9 +315,14 @@ export function emptyScheduleRequest(revisionCount: number): Record<string, unkn
     silviculture: {
       actualSpent: { volume: null, cost: null },
       accruedLessActual: { volume: null, cost: null },
-      // 139/140 are VOLUME-only writable fields (their costs are pulled/derived). They must be blanked
-      // here or a scenario that writes them leaves the seeded DB mutated — the restore PUT only nulls
-      // what it sends. Mirrors Schedule1Request.SilvicultureBlock (lessAdminVolume / totalVolume).
+      // 139/140 are VOLUME-only writable fields (their costs are pulled/derived). Sent for CONTRACT
+      // COMPLETENESS — this payload mirrors Schedule1Request.SilvicultureBlock exactly, and once
+      // BUG-2 is fixed these nulls will be what clears the fields.
+      //
+      // They do NOT clear the fields today: `Schedule1Service` guards `lessAdminVolume` (:437) and
+      // `totalVolume` (:440) with `!= null`, so a null is a silent no-op — the same defect this suite
+      // tracks with a @discovered-bug red. What actually blanks them on teardown is
+      // `sch1_db_restore.py blank-guarded`, called from the `schedule1Restore` cleanup fixture.
       lessAdminVolume: null,
       totalVolume: null,
     },
