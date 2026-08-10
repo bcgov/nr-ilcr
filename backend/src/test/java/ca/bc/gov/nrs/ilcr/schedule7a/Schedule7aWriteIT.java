@@ -251,21 +251,51 @@ class Schedule7aWriteIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("correcting a cost to null clears its detail row and drops the total (S03)")
+  @DisplayName("correcting a cost to null NULLS its row in place and drops the total (S03)")
   void update_clearsCostToNull_dropsTotal() throws Exception {
     long id = addBridge("Clear Cost");
-    // Null out otherCost (item 73, 100): a full-body PUT removes the detail row, grandTotal 12000 -> 11900.
+    // Null out otherCost (item 73, 100): grandTotal 12000 -> 11900.
     String edit = validBody("Cleared", 0).replace("\"otherCost\": 100", "\"otherCost\": null");
     mockMvc.perform(put(BRIDGES + "/" + id).param("millId", MILL).param("year", YEAR)
             .contentType(MediaType.APPLICATION_JSON).content(edit))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + id + ")].grandTotal",
             hasItem(11900)));
-    // The cost child for item 73 is actually gone from the table, not merely omitted from the echo.
-    Integer remaining = jdbc.queryForObject(
+    // The row SURVIVES with COST NULL — it is not deleted. The legacy app shares this database and
+    // can only update cost rows that already exist (Schedule7aDAO's update branch has no insert), so
+    // removing the row would make that cost permanently uneditable from the legacy screen.
+    Integer rows = jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL "
             + "WHERE BRIDGE_REPORT_ID = ? AND ILCR_REPORT_COST_ITEM_ID = 73", Integer.class, id);
-    org.junit.jupiter.api.Assertions.assertEquals(0, remaining.intValue());
+    org.junit.jupiter.api.Assertions.assertEquals(1, rows.intValue());
+    Integer cost = jdbc.queryForObject(
+        "SELECT COST FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE BRIDGE_REPORT_ID = ? AND ILCR_REPORT_COST_ITEM_ID = 73", Integer.class, id);
+    org.assertj.core.api.Assertions.assertThat(cost).isNull();
+  }
+
+  @Test
+  @DisplayName("a bridge added with costs omitted still gets all ten rows (legacy-editable shape)")
+  void add_writesAllTenRowsEvenWhenCostsAreOmitted() throws Exception {
+    String body = validBody("Sparse Costs", 0)
+        .replace("\"sitePlanCost\": 1000", "\"sitePlanCost\": null")
+        .replace("\"otherCost\": 100", "\"otherCost\": null")
+        .replace("\"approachCost\": 700", "\"approachCost\": null");
+    String content = postBridge(body).andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    List<Integer> ids = JsonPath.read(content, "$.bridges[*].bridgeReportId");
+    long id = ids.stream().mapToLong(Integer::longValue).max().orElseThrow();
+
+    // Ten rows regardless of how many costs were entered — the shape legacy's add path produces and
+    // its update path depends on.
+    Integer rows = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL WHERE BRIDGE_REPORT_ID = ?",
+        Integer.class, id);
+    org.junit.jupiter.api.Assertions.assertEquals(10, rows.intValue());
+    Integer nulls = jdbc.queryForObject(
+        "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE BRIDGE_REPORT_ID = ? AND COST IS NULL", Integer.class, id);
+    org.junit.jupiter.api.Assertions.assertEquals(3, nulls.intValue());
   }
 
   @Test
@@ -305,5 +335,136 @@ class Schedule7aWriteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + keep + ")].locationName",
             hasItem("Keep")))
         .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")));
+  }
+
+  // ===============================================================================================
+  // Page-level Save — the legacy Schedule7aMB.save(), which persisted the WHOLE schedule at once.
+  // ===============================================================================================
+
+  private ResultActions saveAll(String body) throws Exception {
+    return mockMvc.perform(put(BRIDGES).param("millId", MILL).param("year", YEAR)
+        .contentType(MediaType.APPLICATION_JSON).content(body));
+  }
+
+  /** A save-all body pairing each id with a renamed copy of the valid body at revision 0. */
+  private static String saveAllBody(long firstId, String firstName, long secondId,
+      String secondName) {
+    return """
+        {"bridges": [
+          {"bridgeReportId": %d, "bridge": %s},
+          {"bridgeReportId": %d, "bridge": %s}
+        ]}
+        """.formatted(firstId, validBody(firstName, 0), secondId, validBody(secondName, 0));
+  }
+
+  @Test
+  @DisplayName("save-all persists EVERY bridge in one request and echoes SUC-001")
+  void saveAll_persistsEveryBridge() throws Exception {
+    long first = addBridge("Batch One");
+    long second = addBridge("Batch Two");
+
+    saveAll(saveAllBody(first, "Batch One Renamed", second, "Batch Two Renamed"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
+        .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + first + ")].locationName",
+            hasItem("Batch One Renamed")))
+        .andExpect(jsonPath("$.bridges[?(@.bridgeReportId == " + second + ")].locationName",
+            hasItem("Batch Two Renamed")));
+  }
+
+  @Test
+  @DisplayName("save-all is ATOMIC: a stale entry rolls back the rows that had already applied")
+  void saveAll_staleEntryRollsBackTheWholeBatch() throws Exception {
+    long first = addBridge("Atomic One");
+    long second = addBridge("Atomic Two");
+
+    // Entry 1 is valid; entry 2 carries a stale revision (rows are at 0 after the add).
+    String body = """
+        {"bridges": [
+          {"bridgeReportId": %d, "bridge": %s},
+          {"bridgeReportId": %d, "bridge": %s}
+        ]}
+        """.formatted(first, validBody("Atomic One Renamed", 0),
+            second, validBody("Atomic Two Renamed", 99));
+
+    saveAll(body).andExpect(status().isConflict());
+
+    // The first row must NOT have been renamed — a partial save would leave the reporter unable to
+    // tell which rows landed, which is exactly what the single transaction prevents.
+    String name = jdbc.queryForObject(
+        "SELECT LOCATION_NAME FROM THE.BRIDGE_REPORT WHERE BRIDGE_REPORT_ID = ?",
+        String.class, first);
+    org.assertj.core.api.Assertions.assertThat(name).isEqualTo("Atomic One");
+  }
+
+  @Test
+  @DisplayName("save-all rejects an unknown bridge id -> 404")
+  void saveAll_unknownId() throws Exception {
+    long real = addBridge("Real");
+    String body = """
+        {"bridges": [
+          {"bridgeReportId": %d, "bridge": %s},
+          {"bridgeReportId": 999999, "bridge": %s}
+        ]}
+        """.formatted(real, validBody("Real", 0), validBody("Ghost", 0));
+
+    saveAll(body).andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("save-all rejects an empty bridge list -> 400")
+  void saveAll_emptyList() throws Exception {
+    saveAll("{\"bridges\": []}").andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("save-all is Draft-gated like every other write -> 409 on a submitted track")
+  void saveAll_rejectedOutsideDraft() throws Exception {
+    mockMvc.perform(put(BRIDGES).param("millId", "517").param("year", YEAR)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{\"bridges\": [{\"bridgeReportId\": 1, \"bridge\": " + validBody("X", 0) + "}]}"))
+        .andExpect(status().isConflict());
+  }
+
+  // ===============================================================================================
+  // Year-scoped code lists — legacy LookupCache.getCacheList(year) kept only the codes effective on
+  // January 1 of the reporting year. 'X' and 'LX' are seeded expired (2015) in V27.
+  // ===============================================================================================
+
+  @Test
+  @DisplayName("a code with NULL effective/expiry dates is ACCEPTED on write (no bound = always)")
+  void write_acceptsCodeWithNullDateBounds() throws Exception {
+    // 'OPEN' carries NULL EFFECTIVE_DATE and EXPIRY_DATE. If the filter did not NVL them the row
+    // would vanish from the code set and this save would 400 — which is exactly how an existing
+    // bridge holding such a code would become unsaveable.
+    String body = validBody("Null Bounded Code", 0)
+        .replace("\"abutmentTypeCode\": \"CONC\"", "\"abutmentTypeCode\": \"OPEN\"");
+    postBridge(body).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("save-all rejects a duplicate bridge id -> 400 (not a misleading 409)")
+  void saveAll_duplicateId() throws Exception {
+    long id = addBridge("Duplicated");
+    String body = """
+        {"bridges": [
+          {"bridgeReportId": %d, "bridge": %s},
+          {"bridgeReportId": %d, "bridge": %s}
+        ]}
+        """.formatted(id, validBody("Duplicated", 0), id, validBody("Duplicated Again", 0));
+
+    saveAll(body).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("a code that expired before the reporting year is REJECTED on write (400)")
+  void write_rejectsCodeExpiredBeforeReportingYear() throws Exception {
+    String body = validBody("Expired Code", 0)
+        .replace("\"constructionTypeCode\": \"N\"", "\"constructionTypeCode\": \"X\"");
+    postBridge(body).andExpect(status().isBadRequest());
+
+    String loadBody = validBody("Expired Rating", 0)
+        .replace("\"loadRatingCode\": \"L100\"", "\"loadRatingCode\": \"LX\"");
+    postBridge(loadBody).andExpect(status().isBadRequest());
   }
 }

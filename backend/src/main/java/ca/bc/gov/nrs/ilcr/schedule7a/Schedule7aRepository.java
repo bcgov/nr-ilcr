@@ -244,15 +244,6 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       @Param("id") long id, @Param("bridgeReportId") long bridgeReportId,
       @Param("costItemId") int costItemId, @Param("cost") Integer cost, @Param("user") String user);
 
-  /** Delete one cost child (used to CLEAR a cost the edit set to null — clear semantics). */
-  @Modifying
-  @Query("""
-      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
-       WHERE BRIDGE_REPORT_ID = :bridgeReportId
-         AND ILCR_REPORT_COST_ITEM_ID = :costItemId
-      """)
-  void deleteCost(@Param("bridgeReportId") long bridgeReportId, @Param("costItemId") int costItemId);
-
   // ===============================================================================================
   // Code tables (schedule8 idiom): nested @Table records + @Query, mapped to CodeDescriptionDto
   // option lists for the served document and to a membership check for write validation.
@@ -260,6 +251,24 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   private static List<CodeDescriptionDto> asOptions(List<? extends CodeLabel> rows) {
     return rows.stream().map(r -> new CodeDescriptionDto(r.code(), r.description())).toList();
+  }
+
+  /**
+   * The instant a reporting year's code lists are evaluated at: JANUARY 1 of that year, matching
+   * legacy {@code CoreUtil.getDate(year)} feeding {@code LookupCache.getCacheList(year)}, which kept
+   * a code only when {@code effective_date <= that date <= expiry_date}. A code retired before the
+   * reporting year, or not yet in force at its start, was not offered — and is not offered here.
+   *
+   * <p>The queries NVL both bounds because a bare comparison against NULL is false in SQL, which
+   * would drop a row encoding "never expires" as a NULL {@code EXPIRY_DATE} — and dropping it would
+   * not merely hide the option, it would make {@code validateCodes} reject a value already stored on
+   * an existing bridge. Legacy could not encode that case at all: {@code LookupCache} calls
+   * {@code date.before(c.getEffective_date())} with no null check, so a NULL there would have thrown
+   * an NPE building the list. The guard therefore cannot change behaviour for any data legacy could
+   * serve; it only stops an unrepresentable row from silently breaking saves.
+   */
+  private static java.time.LocalDate effectiveOn(int year) {
+    return java.time.LocalDate.of(year, 1, 1);
   }
 
   /** Marker for a {@code (code, description)} code-table row. */
@@ -279,12 +288,17 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       implements CodeLabel {
   }
 
-  @Query("SELECT ILCR_BRIDGE_CNSTRCTN_TYPE_CODE, DESCRIPTION FROM THE.ILCR_BRIDGE_CNSTRCTN_TYPE_CODE"
-      + " ORDER BY ILCR_BRIDGE_CNSTRCTN_TYPE_CODE")
-  List<ConstructionTypeCode> findConstructionTypeCodes();
+  @Query("""
+      SELECT ILCR_BRIDGE_CNSTRCTN_TYPE_CODE, DESCRIPTION
+        FROM THE.ILCR_BRIDGE_CNSTRCTN_TYPE_CODE
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
+       ORDER BY ILCR_BRIDGE_CNSTRCTN_TYPE_CODE
+      """)
+  List<ConstructionTypeCode> findConstructionTypeCodes(@Param("asOf") java.time.LocalDate asOf);
 
-  default List<CodeDescriptionDto> constructionTypeOptions() {
-    return asOptions(findConstructionTypeCodes());
+  default List<CodeDescriptionDto> constructionTypeOptions(int year) {
+    return asOptions(findConstructionTypeCodes(effectiveOn(year)));
   }
 
   @org.springframework.data.relational.core.mapping.Table(
@@ -297,12 +311,17 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       implements CodeLabel {
   }
 
-  @Query("SELECT ILCR_BRIDGE_SUPERSTRUCTR_CODE, DESCRIPTION FROM THE.ILCR_BRIDGE_SUPERSTRUCTR_CODE"
-      + " ORDER BY ILCR_BRIDGE_SUPERSTRUCTR_CODE")
-  List<SuperstructureTypeCode> findSuperstructureTypeCodes();
+  @Query("""
+      SELECT ILCR_BRIDGE_SUPERSTRUCTR_CODE, DESCRIPTION
+        FROM THE.ILCR_BRIDGE_SUPERSTRUCTR_CODE
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
+       ORDER BY ILCR_BRIDGE_SUPERSTRUCTR_CODE
+      """)
+  List<SuperstructureTypeCode> findSuperstructureTypeCodes(@Param("asOf") java.time.LocalDate asOf);
 
-  default List<CodeDescriptionDto> superstructureTypeOptions() {
-    return asOptions(findSuperstructureTypeCodes());
+  default List<CodeDescriptionDto> superstructureTypeOptions(int year) {
+    return asOptions(findSuperstructureTypeCodes(effectiveOn(year)));
   }
 
   @org.springframework.data.relational.core.mapping.Table(name = "ILCR_DECK_CODE", schema = "THE")
@@ -313,11 +332,17 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       implements CodeLabel {
   }
 
-  @Query("SELECT ILCR_DECK_CODE, DESCRIPTION FROM THE.ILCR_DECK_CODE ORDER BY ILCR_DECK_CODE")
-  List<DeckTypeCode> findDeckTypeCodes();
+  @Query("""
+      SELECT ILCR_DECK_CODE, DESCRIPTION
+        FROM THE.ILCR_DECK_CODE
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
+       ORDER BY ILCR_DECK_CODE
+      """)
+  List<DeckTypeCode> findDeckTypeCodes(@Param("asOf") java.time.LocalDate asOf);
 
-  default List<CodeDescriptionDto> deckTypeOptions() {
-    return asOptions(findDeckTypeCodes());
+  default List<CodeDescriptionDto> deckTypeOptions(int year) {
+    return asOptions(findDeckTypeCodes(effectiveOn(year)));
   }
 
   @org.springframework.data.relational.core.mapping.Table(
@@ -330,12 +355,17 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       implements CodeLabel {
   }
 
-  @Query("SELECT ILCR_BRIDGE_ABUTMENT_TYPE_CODE, DESCRIPTION FROM THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE"
-      + " ORDER BY ILCR_BRIDGE_ABUTMENT_TYPE_CODE")
-  List<AbutmentTypeCode> findAbutmentTypeCodes();
+  @Query("""
+      SELECT ILCR_BRIDGE_ABUTMENT_TYPE_CODE, DESCRIPTION
+        FROM THE.ILCR_BRIDGE_ABUTMENT_TYPE_CODE
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
+       ORDER BY ILCR_BRIDGE_ABUTMENT_TYPE_CODE
+      """)
+  List<AbutmentTypeCode> findAbutmentTypeCodes(@Param("asOf") java.time.LocalDate asOf);
 
-  default List<CodeDescriptionDto> abutmentTypeOptions() {
-    return asOptions(findAbutmentTypeCodes());
+  default List<CodeDescriptionDto> abutmentTypeOptions(int year) {
+    return asOptions(findAbutmentTypeCodes(effectiveOn(year)));
   }
 
   @org.springframework.data.relational.core.mapping.Table(
@@ -348,11 +378,16 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       implements CodeLabel {
   }
 
-  @Query("SELECT ILCR_BRIDGE_LOAD_RATING_CODE, DESCRIPTION FROM THE.ILCR_BRIDGE_LOAD_RATING_CODE"
-      + " ORDER BY ILCR_BRIDGE_LOAD_RATING_CODE")
-  List<LoadRatingCode> findLoadRatingCodes();
+  @Query("""
+      SELECT ILCR_BRIDGE_LOAD_RATING_CODE, DESCRIPTION
+        FROM THE.ILCR_BRIDGE_LOAD_RATING_CODE
+       WHERE NVL(EFFECTIVE_DATE, DATE '0001-01-01') <= :asOf
+         AND NVL(EXPIRY_DATE, DATE '9999-12-31') >= :asOf
+       ORDER BY ILCR_BRIDGE_LOAD_RATING_CODE
+      """)
+  List<LoadRatingCode> findLoadRatingCodes(@Param("asOf") java.time.LocalDate asOf);
 
-  default List<CodeDescriptionDto> loadRatingOptions() {
-    return asOptions(findLoadRatingCodes());
+  default List<CodeDescriptionDto> loadRatingOptions(int year) {
+    return asOptions(findLoadRatingCodes(effectiveOn(year)));
   }
 }

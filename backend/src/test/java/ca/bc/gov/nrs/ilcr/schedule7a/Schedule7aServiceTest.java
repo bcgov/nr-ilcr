@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import java.math.BigDecimal;
@@ -68,11 +69,11 @@ class Schedule7aServiceTest {
   }
 
   private void stubCodeOptions() {
-    lenient().when(repository.constructionTypeOptions()).thenReturn(CNSTRCTN);
-    lenient().when(repository.superstructureTypeOptions()).thenReturn(SS);
-    lenient().when(repository.deckTypeOptions()).thenReturn(DECK);
-    lenient().when(repository.abutmentTypeOptions()).thenReturn(ABUT);
-    lenient().when(repository.loadRatingOptions()).thenReturn(LOAD);
+    lenient().when(repository.constructionTypeOptions(anyInt())).thenReturn(CNSTRCTN);
+    lenient().when(repository.superstructureTypeOptions(anyInt())).thenReturn(SS);
+    lenient().when(repository.deckTypeOptions(anyInt())).thenReturn(DECK);
+    lenient().when(repository.abutmentTypeOptions(anyInt())).thenReturn(ABUT);
+    lenient().when(repository.loadRatingOptions(anyInt())).thenReturn(LOAD);
   }
 
   private static BridgeReportEntity bridge(long id, String location, LocalDate date) {
@@ -297,15 +298,15 @@ class Schedule7aServiceTest {
   }
 
   @Test
-  @DisplayName("add persists the bridge, upserts present costs, clears null costs, and recomputes")
-  void add_persistsUpsertsAndClears() {
+  @DisplayName("add writes ALL TEN cost rows, a null cost as a NULL row (legacy storage shape)")
+  void add_writesAllTenCostRowsIncludingNulls() {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.nextBridgeReportId()).thenReturn(7601L);
     when(repository.findBridges(514, 2021))
         .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
-    // Only site plan present — its row upserts; the other nine null costs each clear.
+    // Only site plan is entered; the other nine are null.
     BridgeRequest request = new BridgeRequest(
         "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
         new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
@@ -315,8 +316,11 @@ class Schedule7aServiceTest {
 
     assertThat(doc.bridges()).hasSize(1);
     verify(repository).insertBridge(any(BridgeReportEntity.class), eq(514L), eq(2021), eq("user"));
-    verify(repository, times(1)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
-    verify(repository, times(9)).deleteCost(eq(7601L), anyInt());
+    // TEN rows, not one. The legacy app shares this database and its update path can only modify
+    // rows that already exist, so a missing row is a cost it could never edit again.
+    verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), any(), eq("user"));
+    verify(repository).upsertCost(7601L, 70, 1000, "user");
+    verify(repository).upsertCost(7601L, 73, null, "user");
   }
 
   @Test
@@ -408,6 +412,153 @@ class Schedule7aServiceTest {
     assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, true))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("code lists are scoped to the REPORTING YEAR, not served unfiltered")
+  void codeLists_scopedToReportingYear() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2019)).thenReturn(List.of());
+    when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
+
+    service.getSchedule7a(514, 2019, true);
+
+    // Legacy filtered every list through LookupCache.getCacheList(year), so a code retired before
+    // the reporting year was never offered. Passing the year is what carries that filter.
+    verify(repository).constructionTypeOptions(2019);
+    verify(repository).superstructureTypeOptions(2019);
+    verify(repository).deckTypeOptions(2019);
+    verify(repository).abutmentTypeOptions(2019);
+    verify(repository).loadRatingOptions(2019);
+  }
+
+  @Test
+  @DisplayName("a write validates its codes against the reporting year's effective list")
+  void writeValidatesCodesForTheReportingYear() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2019)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    when(repository.findBridges(514, 2019)).thenReturn(List.of());
+    when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
+
+    service.updateBridge(514, 2019, 7601, validRequest(0), true, "user");
+
+    verify(repository, times(2)).constructionTypeOptions(2019); // validation + served document
+  }
+
+  @Test
+  @DisplayName("save-all writes every bridge in one call and recomputes once (legacy page Save)")
+  void saveAll_persistsEveryBridge() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    when(repository.findBridges(514, 2021)).thenReturn(List.of(
+        bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
+        bridge(7602, "South Creek", LocalDate.of(2021, 3, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    Schedule7aResponse doc = service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), true, "user");
+
+    assertThat(doc.bridges()).hasSize(2);
+    // Two bridge writes, and each bridge carries its OWN ten cost upserts — not one row written
+    // twice, which the per-id upsert counts below are what actually distinguish.
+    verify(repository, times(2)).updateBridge(any(), eq(514L), eq(2021), eq(0), eq("user"));
+    verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
+    verify(repository, times(10)).upsertCost(eq(7602L), anyInt(), anyInt(), eq("user"));
+    // The Draft gate is read once for the batch, not once per bridge.
+    verify(repository).findTrackStatus(514, 2021);
+  }
+
+  @Test
+  @DisplayName("save-all rejects a duplicate bridge id with 400, not a misleading 409")
+  void saveAll_duplicateIdIsBadRequest() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    BridgeSaveAllRequest request = saveAll(7601L, 7601L);
+
+    // Left to run, the second pass would meet the revision its own first pass bumped and 409 —
+    // telling the caller another user changed the row when the request was simply malformed.
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+        .isInstanceOf(DuplicateBridgeException.class);
+    verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("save-all reads each code table ONCE for the batch, not once per bridge")
+  void saveAll_readsCodeTablesOncePerBatch() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(1);
+    when(repository.findBridges(514, 2021)).thenReturn(List.of());
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
+
+    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), true, "user");
+
+    // Three bridges: once for the batch's validation + once for the echoed document. Per-bridge
+    // lookups would make this 4 for three rows, and 5N inside one transaction at scale.
+    verify(repository, times(2)).constructionTypeOptions(2021);
+  }
+
+  @Test
+  @DisplayName("save-all is rejected outside Draft before any bridge is written")
+  void saveAll_rejectedOutsideDraft() {
+    when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
+    BridgeSaveAllRequest request = saveAll(7601L);
+
+    assertThatThrownBy(() -> service.saveAllBridges(517, 2021, request, true, "user"))
+        .isInstanceOf(ScheduleNotEditableException.class);
+    verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("save-all propagates a stale revision on ANY entry, so the batch rolls back whole")
+  void saveAll_staleEntryAbortsTheBatch() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // First bridge writes, second is stale — the exception must escape so @Transactional rolls the
+    // first one back too. A partial save would leave the reporter unable to tell what persisted.
+    when(repository.updateBridge(any(), eq(514L), eq(2021), anyInt(), any()))
+        .thenReturn(1).thenReturn(0);
+    when(repository.countBridge(7602, 514, 2021)).thenReturn(1);
+    BridgeSaveAllRequest request = saveAll(7601L, 7602L);
+
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+        .isInstanceOf(StaleRevisionException.class);
+    verify(repository, never()).findBridges(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("save-all rejects an unknown bridge id with 404")
+  void saveAll_unknownIdIsNotFound() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.updateBridge(any(), anyLong(), anyInt(), anyInt(), any())).thenReturn(0);
+    when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
+    BridgeSaveAllRequest request = saveAll(9999L);
+
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+        .isInstanceOf(BridgeNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("save-all surfaces ERR-004 when the persistence layer fails")
+  void saveAll_persistenceFailure() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    doThrow(new DataIntegrityViolationException("update failed"))
+        .when(repository).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
+    BridgeSaveAllRequest request = saveAll(7601L);
+
+    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+        .isInstanceOf(ScheduleNotSavedException.class);
+  }
+
+  /** A save-all body carrying one valid entry per supplied bridge id, each at revision 0. */
+  private static BridgeSaveAllRequest saveAll(Long... bridgeIds) {
+    return new BridgeSaveAllRequest(
+        java.util.Arrays.stream(bridgeIds)
+            .map(id -> new BridgeSaveAllRequest.Item(id, validRequest(0)))
+            .toList());
   }
 
   private static BridgeRequest validRequest(Integer revisionCount) {
