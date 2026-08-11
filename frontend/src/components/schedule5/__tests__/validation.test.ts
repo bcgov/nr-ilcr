@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   CAMP_MESSAGES,
@@ -314,4 +316,64 @@ describe('roundCost', () => {
   it('passes null through — null is cleared, not zero', () => {
     expect(roundCost(null)).toBeNull()
   })
+})
+
+describe('camp name length is judged on the trimmed value (review fix)', () => {
+  it('accepts a 30-char name padded past 30 by whitespace — the trimmed form is what is sent', () => {
+    const name = `  ${'x'.repeat(30)}  `
+    expect(validateCamp(baseForm({ campName: name })).campName).toBeUndefined()
+  })
+
+  it('still rejects a name whose TRIMMED length exceeds 30', () => {
+    expect(validateCamp(baseForm({ campName: 'x'.repeat(31) })).campName).toBe(
+      CAMP_MESSAGES.campNameMaxLength,
+    )
+  })
+})
+
+describe('CAMP_MESSAGES drift guard (review fix)', () => {
+  // The twelve mirrored strings claim to be "verbatim from the backend bundle"; this is the check
+  // that keeps the claim true. A backend wording change must fail HERE, not silently split the
+  // advisory text from the server's 400 detail for the same field.
+  const bundle = (() => {
+    // Vitest runs with cwd = frontend/, and the backend lives beside it in the monorepo.
+    const path = resolve(process.cwd(), '../backend/src/main/resources/messages.properties')
+    const entries: Record<string, string> = {}
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      const trimmed = line.trim()
+      if (trimmed === '' || trimmed.startsWith('#')) {
+        continue
+      }
+      const eq = trimmed.indexOf('=')
+      if (eq > 0) {
+        entries[trimmed.slice(0, eq)] = trimmed.slice(eq + 1)
+      }
+    }
+    return entries
+  })()
+
+  // Which bundle key each client literal mirrors (story § Validation mirror).
+  const BUNDLE_KEYS: Record<keyof typeof CAMP_MESSAGES, string> = {
+    campNameRequired: 'campNameRequiredErrorMsg',
+    campNameMaxLength: 'campNameMaxLengthErrorMsg',
+    isolatedCampRequired: 'isolatedCampRequiredErrorMsg',
+    commentsMaxLength: 'campCommentsMaxLengthErrorMsg',
+    distanceRange: 'distanceValidatorErrorMsg',
+    sizeRange: 'numberOfPersonsValidatorErrorMsg',
+    volumeRange: 'volumeValidatorErrorMsg',
+    volumeInvalid: 'volumeConverterErrorMsg',
+    costRange: 'costSize7ValidatorErrorMsg',
+    costRangeWide: 'costValidatorErrorMsg',
+    costRangeNonNegative: 'costValidatorSchedule9ErrorMsg',
+    costInvalid: 'costConverterErrorMsg',
+  }
+
+  it.each(Object.keys(BUNDLE_KEYS) as (keyof typeof CAMP_MESSAGES)[])(
+    '%s is byte-identical to its bundle entry',
+    (local) => {
+      const bundleKey = BUNDLE_KEYS[local]
+      expect(bundle[bundleKey], `bundle key ${bundleKey} is missing`).toBeDefined()
+      expect(CAMP_MESSAGES[local]).toBe(bundle[bundleKey])
+    },
+  )
 })

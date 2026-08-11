@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.messages;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import java.util.List;
 import java.util.Set;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
@@ -9,6 +8,7 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.WebRequest;
 
 /**
  * Resolves the handful of bundle strings a client renders on its own (AD-8).
@@ -51,14 +51,16 @@ public class MessageController implements MessageApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<MessageInfo> resolve(String key, List<String> args) {
+  public ResponseEntity<MessageInfo> resolve(String key, WebRequest request) {
     if (!CLIENT_RENDERABLE_KEYS.contains(key)) {
       throw new MessageNotResolvableException();
     }
-    // Null args (not an empty array) leaves MessageFormat placeholders unfilled rather than
-    // substituting blanks — a caller that omits the argument gets the raw template, never a
-    // sentence with a hole silently closed up.
-    Object[] formatArgs = args == null || args.isEmpty() ? null : args.toArray();
+    // Read verbatim off the request — a bound List<String> would comma-split a single free-text
+    // value (see MessageApi). Null args (not an empty array) leaves MessageFormat placeholders
+    // unfilled rather than substituting blanks — a caller that omits the argument gets the raw
+    // template, never a sentence with a hole silently closed up.
+    String[] args = request.getParameterValues("arg");
+    Object[] formatArgs = args == null || args.length == 0 ? null : args;
     try {
       String text = messageSource.getMessage(key, formatArgs, LocaleContextHolder.getLocale());
       return ResponseEntity.ok(new MessageInfo(key, text));

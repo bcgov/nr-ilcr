@@ -76,13 +76,31 @@ class MessageControllerTest {
   }
 
   @Test
+  @DisplayName("keeps a comma inside a single argument intact — no collection-split truncation")
+  void keepsCommaInsideSingleArgument() throws Exception {
+    // Camp names are free text: bound to a List<String>, Spring would split the single value on
+    // its comma and resolve {0} to "Cedar" alone. The args are read off the request verbatim.
+    mockMvc
+        .perform(get("/api/v1/messages").param("key", COPY_KEY).param("arg", "Cedar, North Camp"))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.text")
+                .value(
+                    "To complete copy of Camp: Cedar, North Camp, "
+                        + "provide a new Camp Name and invoke save."));
+  }
+
+  @Test
   @DisplayName("404s a real bundle key that is NOT allowlisted — the bundle is not a public surface")
   void rejectsKeyOutsideTheAllowlist() throws Exception {
     // A genuine key (messages.properties:207) that the server composes and owns. It resolves fine
     // through MessageSource; the allowlist is the only thing standing between it and a caller.
+    // The detail TEXT is pinned too: the handler falls back to echoing the key itself if the
+    // bundle entry is renamed away — byte-for-byte the Schedule 6 defect this controller cites.
     mockMvc
         .perform(get("/api/v1/messages").param("key", "campAlreadyExists"))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("Message not found."));
   }
 
   @Test
@@ -90,6 +108,7 @@ class MessageControllerTest {
   void rejectsUnknownKey() throws Exception {
     mockMvc
         .perform(get("/api/v1/messages").param("key", "noSuchKeyAnywhere"))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("Message not found."));
   }
 }

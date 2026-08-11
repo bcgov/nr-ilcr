@@ -281,20 +281,19 @@ const CategoryGrid: FC<{
 }> = ({ values, served, readOnly, errors, onChange }) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
-      <TableHead>
-        <TableRow>
-          <TableHeader aria-label="Expense category" />
-          <TableHeader className="schedule-5__num">Volume (m³)</TableHeader>
-          <TableHeader className="schedule-5__num">Cost $</TableHeader>
-          <TableHeader className="schedule-5__num">$/m³</TableHeader>
-        </TableRow>
-      </TableHead>
       <TableBody>
         {GRID_ROWS.map((row) => {
           if (row.kind === 'section') {
+            // Legacy repeats the four column headers on EVERY section row rather than heading the
+            // table once (`schedule5ExistingCamp.xhtml:122-125`, `:275-278`, `:442-445`) — restored
+            // per the review decision 2026-08-11. The editable cells stay screen-reader-addressable
+            // through their own per-input labels.
             return (
               <TableRow key={`section-${row.label}`} className="schedule-5__section-row">
-                <TableCell colSpan={4}>{row.label}</TableCell>
+                <TableCell>{row.label}</TableCell>
+                <TableCell className="schedule-5__num">Volume (m³)</TableCell>
+                <TableCell className="schedule-5__num">Cost $</TableCell>
+                <TableCell className="schedule-5__num">$/m³</TableCell>
               </TableRow>
             )
           }
@@ -435,6 +434,10 @@ const Schedule5: FC = () => {
     setConfirmDelete(null)
     setConfirmClose(false)
     setPendingSwitch(null)
+    // Release the mutation lock: a request still in flight was dispatched under the OLD context and
+    // its own guarded `finally` will deliberately skip the unlock, so without this every control
+    // gated on `saving` stays dead in the new context until a remount.
+    setSaving(false)
   }, [])
 
   const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule5Response>({
@@ -458,7 +461,7 @@ const Schedule5: FC = () => {
   const runMutation = <T,>(
     request: Promise<{ data: T }>,
     onSuccess: (payload: T) => void,
-    fallbackError: string,
+    fallbackError: string | null,
   ) => {
     setSaving(true)
     request
@@ -472,8 +475,12 @@ const Schedule5: FC = () => {
         if (!isCurrent()) {
           return
         }
-        // Keep the panel open with every entered value in place so a corrected save can retry.
-        setActionError(extractDetail(error) || fallbackError)
+        // A null fallback fails SILENTLY (the copy resolve: a failed lookup leaves the banner
+        // absent, never an invented sentence). Otherwise keep the panel open with every entered
+        // value in place so a corrected save can retry.
+        if (fallbackError !== null) {
+          setActionError(extractDetail(error) || fallbackError)
+        }
       })
       .finally(() => {
         if (isCurrent()) {
@@ -509,23 +516,18 @@ const Schedule5: FC = () => {
     setPanelCampId(null)
     setPanelRevision(null)
     // WRN-001 is bundle text with no write behind it, so it is resolved over HTTP rather than
-    // hardcoded (AD-8). A failed resolve leaves the banner absent rather than substituting an
-    // invented sentence — the blank name in an obviously-new panel already carries the instruction.
-    apiService
-      .getAxiosInstance()
-      .get<MessageInfo>(MESSAGES_PATH, {
+    // hardcoded (AD-8) — and under the same `saving` lock as every other action (AC14), so a second
+    // Copy or a Save cannot race the resolve and land a banner naming the wrong camp over a newer
+    // panel. The null fallback means a failed resolve leaves the banner absent rather than
+    // substituting an invented sentence — the blank name in an obviously-new panel already carries
+    // the instruction.
+    runMutation(
+      apiService.getAxiosInstance().get<MessageInfo>(MESSAGES_PATH, {
         params: { key: COPY_MESSAGE_KEY, arg: camp.campName ?? '' },
-      })
-      .then((response) => {
-        if (isCurrent()) {
-          setCopyWarning(response.data.text)
-        }
-      })
-      .catch(() => {
-        if (isCurrent()) {
-          setCopyWarning(null)
-        }
-      })
+      }),
+      (message) => setCopyWarning(message.text),
+      null,
+    )
   }
 
   const closePanel = () => {
@@ -534,6 +536,10 @@ const Schedule5: FC = () => {
     setErrors({})
     setPanelCampId(null)
     setPanelRevision(null)
+    // The copy instruction belongs to the panel it opened with — closing must not leave "provide a
+    // new Camp Name and invoke save" standing over a discarded draft. Other banners survive Close
+    // on purpose (a delete echo outlives the panel it emptied).
+    setCopyWarning(null)
   }
 
   const setField = (field: keyof CampFormValues, value: string) => {
@@ -547,9 +553,17 @@ const Schedule5: FC = () => {
    *
    * It deliberately does NOT re-run at save, so a category volume edited AFTER the last camp-volume
    * change is submitted as edited. The server stores what it is sent and never re-derives.
+   *
+   * The propagation is gated on a successful parse (review decision 2026-08-11): legacy's listener
+   * ran only after BigDecimal CONVERSION succeeded, so an unparseable entry never reached the
+   * categories — it stayed confined to this field with a single converter error, not twelve. A
+   * blank DOES propagate: legacy converts an empty submit to null and clears all eleven.
    */
   const handleCampVolumeChange = (value: string) => {
     setForm((prev) => {
+      if (value.trim() !== '' && parseDecimalInput(value) === null) {
+        return { ...prev, associatedCampVolume: value }
+      }
       const categories = { ...prev.categories }
       for (const key of VOLUME_CATEGORY_KEYS) {
         categories[key] = { ...categories[key], volume: value }
@@ -574,10 +588,14 @@ const Schedule5: FC = () => {
    * showing the camp, now with its freshly derived totals and a current revision token, and the next
    * Save is a PUT rather than a duplicate POST.
    */
-  const applySaved = (document: Schedule5Response, savedName: string) => {
+  const applySaved = (document: Schedule5Response, savedName: string, savedId: number | null) => {
     setData(document)
     setActionMessage(document.message?.text ?? null)
-    const saved = document.camps.find((camp) => camp.campName === savedName)
+    // An update re-seats by the id the PUT was sent to; only a create falls back to the (unique,
+    // BR-02) name, because the echo carries no created-id marker to find the new row by.
+    const saved = document.camps.find((camp) =>
+      savedId !== null ? camp.campId === savedId : camp.campName === savedName,
+    )
     if (saved) {
       setPanelMode('edit')
       setForm(seedForm(saved, true))
@@ -608,7 +626,7 @@ const Schedule5: FC = () => {
       isUpdate
         ? axios.put<Schedule5Response>(`${CAMPS_PATH}/${String(panelCampId)}?${query}`, body)
         : axios.post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
-      (document) => applySaved(document, savedName),
+      (document) => applySaved(document, savedName, isUpdate ? panelCampId : null),
       'Camp could not be saved.',
     )
   }
@@ -825,11 +843,12 @@ const Schedule5: FC = () => {
       </div>
 
       <div className="schedule-5__panel-actions">
-        {!readOnlyPanel && (
-          <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-            Save
-          </Button>
-        )}
+        {/* Legacy renders Save DISABLED in the read-only state rather than removing it (AC11,
+            review decision 2026-08-11); Close stays enabled — it is the only way out of a View
+            panel, the one place the AC's "everything disabled" cannot be taken literally. */}
+        <Button kind="primary" disabled={!editable || readOnlyPanel || saving} onClick={handleSave}>
+          Save
+        </Button>
         <Button
           kind="secondary"
           disabled={saving}
@@ -858,12 +877,18 @@ const Schedule5: FC = () => {
           <>
             {/* On MET the schedule banner is emitted ALONE and camps is empty — no per-camp lines
                 are synthesised. Severity follows the outcome, carried by both the kind and a title
-                word, never colour alone. */}
+                word, never colour alone — keyed off `outcome` rather than hardcoded, so a future
+                schedule-level advisory arriving alongside ISSUES could never render under a green
+                "requirements met" banner. */}
             {checkResult.messages.map((message) => (
               <NotificationColumn
                 key={`schedule-${message.key}`}
-                kind="success"
-                title="Check Status — requirements met"
+                kind={checkResult.outcome === 'MET' ? 'success' : 'warning'}
+                title={
+                  checkResult.outcome === 'MET'
+                    ? 'Check Status — requirements met'
+                    : 'Check Status — value required'
+                }
                 subtitle={message.text}
               />
             ))}

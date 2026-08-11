@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
-import { delay, http, HttpResponse } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { render, screen, waitFor, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
@@ -72,6 +72,19 @@ const problemBody = (status: number, detail: string) =>
     status,
     headers: { 'Content-Type': 'application/problem+json' },
   })
+
+/**
+ * Deterministically drain the event loop so any already-settled request finishes its whole
+ * then/catch/finally chain before a negative assertion runs. Turn-based, never wall-clock: a
+ * `delay(50)` proves only "nothing happened within 50ms on this machine" and inverts under CI load.
+ */
+const flushAsync = async () => {
+  for (let i = 0; i < 4; i += 1) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+  }
+}
 
 /** The Carbon modal carrying this verbatim confirm text (all three are always in the DOM). */
 const confirmDialog = (text: string): HTMLElement =>
@@ -210,7 +223,6 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
     const grid = screen.getByRole('table', { name: 'Camp and access expenses' })
     const labels = within(grid)
       .getAllByRole('row')
-      .slice(1)
       .map((row) => row.querySelector('td')?.textContent ?? '')
 
     expect(labels).toEqual([
@@ -235,6 +247,16 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
       'Total Expense',
       'Camp and Access: ',
     ])
+
+    // Every section row repeats legacy's four-column header (`schedule5ExistingCamp.xhtml:122-125`,
+    // `:275-278`, `:442-445`) — there is no single table head (review decision 2026-08-11).
+    for (const section of ['Camp Expenses', 'Access Expenses', 'Total Expense']) {
+      const sectionRow = within(grid).getByText(section).closest('tr') as HTMLElement
+      expect(within(sectionRow).getByText('Volume (m³)')).toBeInTheDocument()
+      expect(within(sectionRow).getByText('Cost $')).toBeInTheDocument()
+      expect(within(sectionRow).getByText('$/m³')).toBeInTheDocument()
+    }
+    expect(within(grid).queryByRole('columnheader')).not.toBeInTheDocument()
   })
 
   test('derived rows and $/m³ render server values with the legacy masks, never recomputed', async () => {
@@ -309,7 +331,7 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Isolated Camp is required.')).toBeInTheDocument()
-    await delay(50)
+    await flushAsync()
     expect(posted).toBe(false)
   })
 })
@@ -429,6 +451,69 @@ describe('Schedule 5 writes (AC6, AC8)', () => {
     expect(body.cateringAndFood.volume).toBe(77000)
     // Its siblings still carry the propagated value.
     expect(body.wagesAndBenefits.volume).toBe(55000)
+  })
+
+  test('BR-03 is gated on a valid entry: junk never reaches the categories (review fix)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '12x')
+
+    // The junk stays confined to the camp-volume field for the user to correct; the categories
+    // hold the last VALID keystroke — legacy's listener ran only after conversion succeeded
+    // (`Schedule5MB.java:248-261`), so an unparseable entry never propagated.
+    expect(campVolume).toHaveValue('12x')
+    expect(screen.getByLabelText('Catering and Food volume')).toHaveValue('12')
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // ONE converter error, on the camp volume alone — legacy raised one, never twelve.
+    expect(await screen.findAllByText('Entered volume entry is invalid.')).toHaveLength(1)
+  })
+
+  test('saving a new camp re-seats the panel: the second Save is a PUT with the echoed token', async () => {
+    const echoed: Camp = {
+      ...cedarFlats,
+      campId: 8402,
+      revisionCount: 7,
+      campName: 'Bare Ridge Camp',
+    }
+    let putUrl = ''
+    let putBody: CampRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ camps: [] }))),
+      http.post(CAMPS_URL, () =>
+        HttpResponse.json(
+          doc({
+            camps: [echoed],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+      http.put(CAMP_URL, async ({ request }) => {
+        putUrl = request.url
+        putBody = (await request.json()) as CampRequest
+        return HttpResponse.json(doc({ camps: [echoed] }))
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(screen.getByLabelText('Camp Name'), 'Bare Ridge Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    // The panel re-seats on the created camp (legacy's savedCampId behaviour)...
+    expect(await screen.findByRole('heading', { name: 'Bare Ridge Camp' })).toBeInTheDocument()
+    // ...so a second Save UPDATES with the echoed optimistic-lock token — never a duplicate POST.
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(putBody).not.toBeNull())
+    expect(putUrl).toContain('/camps/8402')
+    expect((putBody as unknown as CampRequest).revisionCount).toBe(7)
   })
 
   test('a new camp POSTs without a revisionCount', async () => {
@@ -552,7 +637,7 @@ describe('Schedule 5 copy (AC9)', () => {
     ).toBeInTheDocument()
 
     // Copy itself never writes.
-    await delay(50)
+    await flushAsync()
     expect(wrote).toBe(false)
   })
 
@@ -567,8 +652,36 @@ describe('Schedule 5 copy (AC9)', () => {
     await user.click(await screen.findByRole('button', { name: /^copy$/i }))
 
     expect(await screen.findByRole('heading', { name: 'New Camp Details' })).toBeInTheDocument()
-    await delay(50)
+    await flushAsync()
     expect(screen.queryByText(/to complete copy of camp/i)).not.toBeInTheDocument()
+  })
+
+  test('closing the copy panel clears the copy instruction banner (review fix)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(MESSAGES_URL, () =>
+        HttpResponse.json({
+          key: 'sch5.copy.msg',
+          text: 'To complete copy of Camp: Cedar Flats Camp, provide a new Camp Name and invoke save.',
+        }),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+    expect(await screen.findByText(/to complete copy of camp/i)).toBeInTheDocument()
+
+    await user.click(panelButton(/^close$/i))
+    const dialog = confirmDialog(
+      'Any unsaved data will be lost. Are you sure you would like to continue?',
+    )
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    // A standing "provide a new Camp Name and invoke save" over a discarded draft misinstructs.
+    await waitFor(() =>
+      expect(screen.queryByText(/to complete copy of camp/i)).not.toBeInTheDocument(),
+    )
   })
 
   test('an unrenamed copy is an ordinary POST and its 409 renders verbatim', async () => {
@@ -610,7 +723,7 @@ describe('Schedule 5 advisory validation (AC13)', () => {
     expect(
       await screen.findByText('Entered cost must be between -9,999,999 and 9,999,999.'),
     ).toBeInTheDocument()
-    await delay(50)
+    await flushAsync()
     expect(posted).toBe(false)
 
     // The SAME value on wages is accepted and the write goes out.
@@ -658,7 +771,7 @@ describe('Schedule 5 guards (AC10, AC11)', () => {
     expect(
       await screen.findByText('Please Select Mill and Reporting Year in the Home Page.'),
     ).toBeInTheDocument()
-    await delay(50)
+    await flushAsync()
     expect(requested).toBe(false)
     expect(screen.queryByRole('button', { name: /add new camp/i })).not.toBeInTheDocument()
   })
@@ -694,12 +807,13 @@ describe('Schedule 5 guards (AC10, AC11)', () => {
     expect(screen.getByRole('button', { name: /add new camp/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
 
-    // The View panel shows the grid values but no inputs and no Save.
+    // The View panel shows the grid values but no inputs; Save renders DISABLED — legacy disables
+    // rather than removes it (AC11, review decision 2026-08-11).
     await user.click(screen.getByRole('button', { name: /^view$/i }))
     const grid = await screen.findByRole('table', { name: 'Camp and access expenses' })
     expect(within(grid).getByText('480,000')).toBeInTheDocument()
     expect(within(grid).queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
   })
 })
 
@@ -800,17 +914,27 @@ describe('Schedule 5 Check Status (AC12)', () => {
 })
 
 describe('Schedule 5 stale-context safety (AC14)', () => {
-  test('a mill/year change mid-save does not apply the stale response', async () => {
-    server.use(
-      http.get(URL, ({ request }) =>
-        HttpResponse.json(
-          request.url.includes('millId=999')
-            ? doc({ camps: [{ ...cedarFlats, campId: 9001, campName: 'Bare Ridge Camp' }] })
-            : doc(),
-        ),
+  /** The GET pair every race test shares: the old context's document vs the new context's. */
+  const contextualGet = () =>
+    http.get(URL, ({ request }) =>
+      HttpResponse.json(
+        request.url.includes('millId=999')
+          ? doc({ camps: [{ ...cedarFlats, campId: 9001, campName: 'Bare Ridge Camp' }] })
+          : doc(),
       ),
+    )
+
+  test('a mill/year change mid-save does not apply the stale response', async () => {
+    // The PUT is gated on an explicit release, not a wall-clock delay, so the "stale response
+    // settles after the context change" ordering holds under any CI load.
+    let releasePut = () => {}
+    const putGate = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+    server.use(
+      contextualGet(),
       http.put(CAMP_URL, async () => {
-        await delay(300)
+        await putGate
         return HttpResponse.json(
           doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
         )
@@ -828,9 +952,70 @@ describe('Schedule 5 stale-context safety (AC14)', () => {
     await user.click(screen.getByRole('button', { name: /change/i }))
 
     expect(await screen.findByText('Bare Ridge Camp')).toBeInTheDocument()
-    // Let the stale PUT resolve, then confirm nothing from it landed.
-    await delay(400)
+    // Release the stale PUT, let its chain settle, then confirm nothing from it landed.
+    releasePut()
+    await flushAsync()
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     expect(screen.queryByText('Cedar Flats Camp')).not.toBeInTheDocument()
+  })
+
+  test('a mill/year change mid-save releases the saving lock — the new context stays operable (review fix)', async () => {
+    server.use(
+      contextualGet(),
+      // The stale PUT NEVER resolves: the new context's operability must not depend on it settling
+      // (its guarded `finally` deliberately skips the unlock — the context reset owns the release).
+      http.put(CAMP_URL, () => new Promise<never>(() => {})),
+    )
+    render(
+      <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await openEditor(user)
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    // The lock is engaged for the in-flight save…
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    // …and released by the context reset: every control is live again under the new context.
+    expect(await screen.findByText('Bare Ridge Camp')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeEnabled()
+  })
+
+  test('a mill/year change mid-copy-resolve applies neither the stale banner nor a stale lock (review fix)', async () => {
+    let releaseResolve = () => {}
+    const resolveGate = new Promise<void>((resolve) => {
+      releaseResolve = resolve
+    })
+    server.use(
+      contextualGet(),
+      http.get(MESSAGES_URL, async () => {
+        await resolveGate
+        return HttpResponse.json({
+          key: 'sch5.copy.msg',
+          text: 'To complete copy of Camp: Cedar Flats Camp, provide a new Camp Name and invoke save.',
+        })
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Bare Ridge Camp')).toBeInTheDocument()
+    releaseResolve()
+    await flushAsync()
+    // The OLD mill's copy instruction must not surface over the new context…
+    expect(screen.queryByText(/to complete copy of camp/i)).not.toBeInTheDocument()
+    // …and the resolve's share of the saving lock is gone with the context that dispatched it.
+    expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
   })
 })

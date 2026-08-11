@@ -272,10 +272,13 @@ const validateOptionalNumber = (
 }
 
 const validateCampName = (raw: string): string | undefined => {
-  if (raw.trim() === '') {
+  const trimmed = raw.trim()
+  if (trimmed === '') {
     return CAMP_MESSAGES.campNameRequired
   }
-  return raw.length > CAMP_NAME_MAX_LENGTH ? CAMP_MESSAGES.campNameMaxLength : undefined
+  // Judge the TRIMMED length — buildRequest trims before sending, so the rule must measure the
+  // value that actually travels, never reject one whose sent form is legal.
+  return trimmed.length > CAMP_NAME_MAX_LENGTH ? CAMP_MESSAGES.campNameMaxLength : undefined
 }
 
 const validateCategoryCost = (raw: string, band: CostBand): string | undefined => {
