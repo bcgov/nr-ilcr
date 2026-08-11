@@ -2,4 +2,4 @@
 # Thin-mode python-oracledb — this host has no local sqlplus and reaches Oracle directly on :1525.
 # Install into a local venv with `npm run setup:python` (see scripts/setup-python.sh) so a fresh
 # checkout runs the S13/S24 coverage reproducibly instead of relying on global interpreter state.
-oracledb==2.5.1
+oracledb==4.0.2

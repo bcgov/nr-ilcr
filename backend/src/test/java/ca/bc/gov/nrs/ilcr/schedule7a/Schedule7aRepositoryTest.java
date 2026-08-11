@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,28 +37,28 @@ class Schedule7aRepositoryTest {
   @Test
   @DisplayName("each option list maps its code-table rows to {code, description}")
   void optionLists_mapCodeRowsToDto() {
-    doCallRealMethod().when(repository).constructionTypeOptions();
-    doCallRealMethod().when(repository).superstructureTypeOptions();
-    doCallRealMethod().when(repository).deckTypeOptions();
-    doCallRealMethod().when(repository).abutmentTypeOptions();
-    doCallRealMethod().when(repository).loadRatingOptions();
-    when(repository.findConstructionTypeCodes()).thenReturn(List.of(
+    doCallRealMethod().when(repository).constructionTypeOptions(anyInt());
+    doCallRealMethod().when(repository).superstructureTypeOptions(anyInt());
+    doCallRealMethod().when(repository).deckTypeOptions(anyInt());
+    doCallRealMethod().when(repository).abutmentTypeOptions(anyInt());
+    doCallRealMethod().when(repository).loadRatingOptions(anyInt());
+    when(repository.findConstructionTypeCodes(any())).thenReturn(List.of(
         new ConstructionTypeCode("N", "New"), new ConstructionTypeCode("U", "Used")));
-    when(repository.findSuperstructureTypeCodes())
+    when(repository.findSuperstructureTypeCodes(any()))
         .thenReturn(List.of(new SuperstructureTypeCode("STL", "Steel")));
-    when(repository.findDeckTypeCodes()).thenReturn(List.of(new DeckTypeCode("WD", "Wood")));
-    when(repository.findAbutmentTypeCodes())
+    when(repository.findDeckTypeCodes(any())).thenReturn(List.of(new DeckTypeCode("WD", "Wood")));
+    when(repository.findAbutmentTypeCodes(any()))
         .thenReturn(List.of(new AbutmentTypeCode("CONC", "Concrete")));
-    when(repository.findLoadRatingCodes()).thenReturn(List.of(new LoadRatingCode("L100", "L-100")));
+    when(repository.findLoadRatingCodes(any())).thenReturn(List.of(new LoadRatingCode("L100", "L-100")));
 
-    assertThat(repository.constructionTypeOptions())
+    assertThat(repository.constructionTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("N", "New"), new CodeDescriptionDto("U", "Used"));
-    assertThat(repository.superstructureTypeOptions())
+    assertThat(repository.superstructureTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("STL", "Steel"));
-    assertThat(repository.deckTypeOptions()).containsExactly(new CodeDescriptionDto("WD", "Wood"));
-    assertThat(repository.abutmentTypeOptions())
+    assertThat(repository.deckTypeOptions(2021)).containsExactly(new CodeDescriptionDto("WD", "Wood"));
+    assertThat(repository.abutmentTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("CONC", "Concrete"));
-    assertThat(repository.loadRatingOptions())
+    assertThat(repository.loadRatingOptions(2021))
         .containsExactly(new CodeDescriptionDto("L100", "L-100"));
   }
 

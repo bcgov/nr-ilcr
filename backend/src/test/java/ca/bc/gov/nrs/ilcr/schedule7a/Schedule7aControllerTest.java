@@ -9,6 +9,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -101,6 +102,24 @@ class Schedule7aControllerTest {
 
     ResponseEntity<Schedule7aResponse> result =
         controller.updateBridge(7601L, "514", "2021", request, authentication);
+
+    assertThat(result.getBody().message().key()).isEqualTo("dataSavedSuccesfullyInfoMsg");
+  }
+
+  @Test
+  @DisplayName("PUT /bridges saves every bridge in one call and echoes SUC-001")
+  void saveAll_echoesSaveMessageAndAuditUser() {
+    when(millContextService.validateMillYearActive("514", "2021"))
+        .thenReturn(new MillYearContext(514L, 2021));
+    when(authentication.getName()).thenReturn("submitter");
+    BridgeSaveAllRequest request = new BridgeSaveAllRequest(
+        List.of(new BridgeSaveAllRequest.Item(7601L, anyRequest()),
+            new BridgeSaveAllRequest.Item(7602L, anyRequest())));
+    when(schedule7aService.saveAllBridges(514L, 2021, request, true, "submitter"))
+        .thenReturn(doc(List.of(oneBridge())));
+
+    ResponseEntity<Schedule7aResponse> result =
+        controller.saveAllBridges("514", "2021", request, authentication);
 
     assertThat(result.getBody().message().key()).isEqualTo("dataSavedSuccesfullyInfoMsg");
   }
