@@ -1,0 +1,79 @@
+@use '@carbon/react/scss/spacing' as *;
+
+.schedule-5__section {
+  margin-block-end: $spacing-06;
+
+  // Carbon tables default to table-layout: fixed; let the label column size to content.
+  .cds--data-table {
+    table-layout: auto;
+  }
+
+  .cds--data-table td,
+  .cds--data-table th {
+    width: auto;
+    max-width: none;
+  }
+}
+
+.schedule-5__num {
+  text-align: right;
+}
+
+.schedule-5__actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-5__row-actions {
+  display: flex;
+  gap: $spacing-02;
+}
+
+.schedule-5__panel {
+  border: 1px solid var(--cds-border-subtle);
+  padding: $spacing-05;
+}
+
+.schedule-5__heading {
+  margin-block-end: $spacing-05;
+}
+
+// The five descriptors stack in legacy order; they are short fields, so cap the width rather than
+// letting them run the full page.
+.schedule-5__descriptors {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-05;
+  max-width: 30rem;
+}
+
+.schedule-5__grid {
+  margin-block: $spacing-05;
+}
+
+// The three section header rows (Camp Expenses / Access Expenses / Total Expense) carry the weight
+// legacy gave them with its `header` style class.
+.schedule-5__section-row td {
+  font-weight: 600;
+}
+
+// Legacy pads the four Equipment and Supplies rows with non-breaking spaces to sit them under their
+// group label; an indent expresses the same nesting without smuggling whitespace into the label.
+.schedule-5__label--indented {
+  padding-inline-start: $spacing-07;
+}
+
+.schedule-5__comments {
+  margin-block: $spacing-05;
+}
+
+.schedule-5__comments-heading {
+  margin-block-end: $spacing-03;
+}
+
+.schedule-5__panel-actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-start: $spacing-06;
+}
