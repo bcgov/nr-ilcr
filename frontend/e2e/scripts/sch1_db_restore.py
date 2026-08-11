@@ -23,11 +23,18 @@ after, so the schedule is left exactly as found.
 the write path, so a blanking PUT was a silent no-op — defects.md BUG-2 / issue #260. That is fixed in
 backend commit `3ee9ff2`; a null now clears. The first reason above stands on its own.)
 
-Usage (called by the S02/S13/S24 fixtures; also runnable by hand):
-    python sch1_db_restore.py snapshot      <millId> <year>
-    python sch1_db_restore.py restore       <millId> <year>
-    python sch1_db_restore.py first-entry   <millId> <year>
-    python sch1_db_restore.py blank-guarded <millId> <year>
+Usage (called by the S02/S13/S24 fixtures; also runnable by hand). Every action takes <millId> <year>
+and the list below is the complete set the dispatcher accepts:
+    python sch1_db_restore.py snapshot      <millId> <year>   # copy summary + details to the backup tables
+    python sch1_db_restore.py restore       <millId> <year>   # re-insert them verbatim, then drop the backup
+    python sch1_db_restore.py first-entry   <millId> <year>   # null every detail volume + drop item-19 rows
+    python sch1_db_restore.py blank-guarded <millId> <year>   # null volumes 143/144/139/140 only
+    python sch1_db_restore.py count-volumes <millId> <year>   # PRINTS the count of non-null detail volumes
+
+`count-volumes` is the only READ-ONLY action: it writes nothing and prints a single number on stdout,
+which is what S02 reads to prove the crown pre-fill is SERVED and never stored (the GET renders the
+pre-filled volumes, so only the stored column can tell the two apart). The others all mutate and must be
+paired with `snapshot` before / `restore` after.
 
 Connection: ORACLE_DSN (default THE/default@localhost:1525/DBDOCK_01), thin-mode `oracledb` (no client).
 This host has no local sqlplus and the seeded Oracle is reached directly on :1525, so the suite's DB
