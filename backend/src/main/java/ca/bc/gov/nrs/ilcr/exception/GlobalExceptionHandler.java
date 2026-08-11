@@ -24,8 +24,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * Global exception handler that converts exceptions into RFC 7807 ProblemDetail
- * responses (application/problem+json).
+ * Global exception handler that converts exceptions into RFC 7807 ProblemDetail responses
+ * (application/problem+json).
  */
 @RestControllerAdvice
 @Slf4j
@@ -170,15 +170,26 @@ public class GlobalExceptionHandler {
 
     // A non-numeric value on a typed numeric field surfaces as a Jackson mismatch whose message
     // names the target Java type. Map to the verbatim legacy converter text (AD-8) without a
-    // compile-time dependency on jackson-databind's exception classes (runtime-only on this module).
+    // compile-time dependency on jackson-databind's exception classes (runtime-only on this
+    // module).
     String causeMessage = cause == null ? "" : String.valueOf(cause.getMessage());
     String detail = "The request body is invalid.";
-    String key = null;
-    if (causeMessage.contains("java.math.BigDecimal")) {
-      key = "volumeConverterErrorMsg";
-    } else if (causeMessage.contains("java.lang.Integer")
-        || causeMessage.contains("java.lang.Long")) {
-      key = "costConverterErrorMsg";
+    // Field-name overrides come FIRST, because the type-based fallback below can only guess from
+    // the target Java type and so answers "Entered cost is invalid." for ANY Integer field. That
+    // was right while every Integer on the wire was a cost, and wrong the moment Schedule 7B put
+    // three non-cost Integer fields (span, rise, piece count) on one form: a mistyped span told the
+    // reporter their COST was invalid and sent them hunting the wrong input. Legacy named the field
+    // the reporter actually typed in. Deliberately keyed on names unique across the app — `length`
+    // is NOT listed, because Schedule 7A's BridgeRequest also has one and changing a shipped
+    // schedule's message is not this change's business (recorded in deferred-work.md).
+    String key = converterKeyForField(causeMessage);
+    if (key == null) {
+      if (causeMessage.contains("java.math.BigDecimal")) {
+        key = "volumeConverterErrorMsg";
+      } else if (causeMessage.contains("java.lang.Integer")
+          || causeMessage.contains("java.lang.Long")) {
+        key = "costConverterErrorMsg";
+      }
     }
     if (key != null) {
       detail = messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
@@ -195,10 +206,35 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * The converter message key for a field the type-based fallback would mis-describe, or {@code
+   * null} when no override applies.
+   *
+   * <p>Jackson names the offending property in its exception message (…{@code ["spanSize"]}…),
+   * which is matched here rather than taking a compile-time dependency on {@code
+   * jackson-databind}'s exception types — the same constraint the type matching above works around.
+   * Only field names that are UNAMBIGUOUS across the whole app belong here.
+   *
+   * @param causeMessage the most-specific cause's message
+   * @return a bundle key, or {@code null} to fall back to the type-based mapping
+   */
+  private static String converterKeyForField(String causeMessage) {
+    if (causeMessage.contains("\"spanSize\"")) {
+      return "culvertSpanConverterErrorMsg";
+    }
+    if (causeMessage.contains("\"riseSize\"")) {
+      return "culvertRiseConverterErrorMsg";
+    }
+    if (causeMessage.contains("\"culvertPieceCount\"")) {
+      return "culvertPieceCountConverterErrorMsg";
+    }
+    return null;
+  }
+
+  /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this
    * explicit handler an {@link AccessDeniedException} raised at the method layer would fall through
-   * to the generic 500 handler instead of returning 403 (AD-7). {@code AuthorizationDeniedException}
-   * extends {@link AccessDeniedException}, so this covers both.
+   * to the generic 500 handler instead of returning 403 (AD-7). {@code
+   * AuthorizationDeniedException} extends {@link AccessDeniedException}, so this covers both.
    *
    * @param ex the access-denied exception
    * @param request the current HTTP request
@@ -221,11 +257,11 @@ public class GlobalExceptionHandler {
 
   /**
    * Handles missing/blank/invalid required selection fields (UC-SEC-001 S04/S05/S08, Story 1.2).
-   * Resolves the verbatim legacy required-field template
-   * ({@code javax.faces.component.UIInput.REQUIRED = "{0}: Value is required."}) once per field —
-   * passing the field label as the {@code {0}} argument (parameterized keys MUST get an args array)
-   * — and returns ALL field messages together on one 400: {@code detail} joins the texts and the
-   * {@code messages} extension property carries each {@code {key, text}} pair (the pinned shape the
+   * Resolves the verbatim legacy required-field template ({@code
+   * javax.faces.component.UIInput.REQUIRED = "{0}: Value is required."}) once per field — passing
+   * the field label as the {@code {0}} argument (parameterized keys MUST get an args array) — and
+   * returns ALL field messages together on one 400: {@code detail} joins the texts and the {@code
+   * messages} extension property carries each {@code {key, text}} pair (the pinned shape the
    * frontend renders per field, mirroring {@code MessageInfo}).
    *
    * @param ex the exception carrying the ordered missing-field labels
@@ -339,10 +375,10 @@ public class GlobalExceptionHandler {
   }
 
   /**
-   * Handles a request to an unmapped path / missing static resource. Returns a clean 404
-   * {@link ProblemDetail} and logs a single WARN line (no stack trace) — without this, an unmapped
-   * request (e.g. a stale client calling a removed endpoint) falls through to the generic handler and
-   * spews a full ERROR stack trace on every hit.
+   * Handles a request to an unmapped path / missing static resource. Returns a clean 404 {@link
+   * ProblemDetail} and logs a single WARN line (no stack trace) — without this, an unmapped request
+   * (e.g. a stale client calling a removed endpoint) falls through to the generic handler and spews
+   * a full ERROR stack trace on every hit.
    *
    * @param ex the no-resource-found exception
    * @param request the current HTTP request
@@ -394,9 +430,7 @@ public class GlobalExceptionHandler {
    */
   public record FieldMessage(String key, String text) {}
 
-  /**
-   * Attempts to extract the most useful message from a DataIntegrityViolationException.
-   */
+  /** Attempts to extract the most useful message from a DataIntegrityViolationException. */
   private String extractConstraintMessage(DataIntegrityViolationException ex) {
     Throwable mostSpecific = ex.getMostSpecificCause();
     if (mostSpecific != null && mostSpecific.getMessage() != null) {

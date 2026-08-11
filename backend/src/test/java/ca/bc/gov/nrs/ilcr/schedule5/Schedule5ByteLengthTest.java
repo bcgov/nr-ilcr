@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

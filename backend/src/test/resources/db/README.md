@@ -36,6 +36,7 @@ two such branches merge:
    | Home                      | (see `V8`/`V9`) |                                              |
    | Schedule 2                | **622–625**     | summaries in the `12xx` block                |
    | Schedule 5                | **670–676**     | reserved by `V34`, seeded by `V20260807`      |
+   | Schedule 7B               | **680–681**     | `V20260811`                                  |
 
    **Schedule 5 write (`V20260807`, Story 7.2)** — a **timestamp version, deliberately**. The next
    free integer was `V35`; it was not taken because this convention has now collided four times
@@ -62,6 +63,21 @@ two such branches merge:
    `ILCR_COST_REPORT_DETAIL` to add the `CAMP_REPORT_ID` FK column, and registers fourteen
    category-`'5'` cost items — **not** item `68`, which `V31:79` already defines as Schedule 6's
    non-69 decoy (the shared-master-data rule above, in practice).
+
+   **Schedule 7B (`V20260811`, Stories 13.1/13.2)** — the second **timestamp version**, for the reason
+   the Schedule 5 note gives: the next free integer was `V35`, which the Schedule 5 entry above had
+   already declined to take. Flyway orders `20260811` after both `34` and `20260807`. It `ALTER`s the
+   shared `ILCR_COST_REPORT_DETAIL` to add the `CULVERT_REPORT_ID` per-report column (the
+   `BRIDGE_REPORT_ID`/`CAMP_REPORT_ID` pattern), creates `THE.CULVERT_REPORT` and
+   `THE.ILCR_CULVERT_TYPE_CODE`, and registers **only** cost items `77`/`78` — items `70–76`/`79–81`
+   are Schedule 7A's, already defined by `V27` (the shared-master-data rule). PK ranges:
+   `CULVERT_REPORT_ID` **`7801–7899`** and `ILCR_COST_REPORT_DETAIL_ID` **`7901–7999`**, both below the
+   sequence starts and clear of Schedule 7A's `7601–7699`/`7701–7799`. Read fixtures reuse the shared
+   `514`/`515`/`516`/`517` context from `V2`; it additionally owns mills **`680`** (two opened Draft
+   reporting years, 2020 + 2021 — the only multi-year fixture in the snapshot, so the `REPORT_YEAR`
+   predicate is falsifiable) and **`681`** (one culvert stored with a since-retired type code, for the
+   unchanged-type exemption on save). Its culvert-type rows deliberately include a mid-year-effective
+   and a mid-year-expiring code so the January-1 evaluation instant is falsifiable too.
 
    Cost-item IDs (`ILCR_REPORT_COST_ITEM_ID`) are a **shared** master-data space across schedules.
    Define each item **once**; if another track already seeds it (identical row), reference it, don't
