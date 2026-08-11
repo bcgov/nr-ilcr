@@ -3,6 +3,14 @@ spring:
     name: nr-ilcr-backend
   jackson:
     default-property-inclusion: non_null
+    deserialization:
+      # Money must never be silently truncated. Jackson enables ACCEPT_FLOAT_AS_INT by default, so a
+      # cost of 1234.99 posted into an Integer field binds as 1234 and the licensee is told the save
+      # succeeded -- with a different number than they typed. Story 7.2 AC6 requires such input to be
+      # REJECTED, and the same latent truncation was already recorded repo-wide at
+      # deferred-work.md:180; turning the feature off closes it for every schedule at once rather
+      # than leaving Schedule 5 the only safe one.
+      accept-float-as-int: false
   datasource:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
