@@ -195,9 +195,14 @@ Every scenario carries two kinds of tag:
 
   ```bash
   npm run test:gate     # the same thing, as a script — see note below
-  # or, explicitly:
-  npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
+  # or, explicitly (NOTE: prefix with `npx bddgen test &&` — see caution):
+  npx bddgen test && npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
   ```
+
+  > ⚠️ **A bare `npx playwright test` runs the LAST-GENERATED tests, not your current `.feature` files.**
+  > Only the `npm run …` scripts regenerate first (via their `pretest*` → `bddgen` hooks). Skip `bddgen`
+  > after editing a feature and you will watch stale scenarios pass under their old names and tags —
+  > which reads exactly like a successful run. Prefer the npm scripts.
 
   > `npm test` runs EVERYTHING and therefore **exits 1 by design** whenever a `@discovered-*` red is
   > tracking an open defect. That is the suite working as intended, not a broken build. `npm run
@@ -268,7 +273,7 @@ env-guarded/opt-in job; keep it off the default path so it never runs without li
   set `E2E_BROWSER_CHANNEL=chromium` in `.env` (see *Install & run*).
 - **python-oracledb** for the S13/S24 DB snapshot-restore and the S12/S17/S18 row seeding
   (`scripts/sch1_db_restore.py`). Reproducible setup (needs Python 3.9+ on PATH): `npm run setup:python`
-  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==2.4.1`). The
+  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==4.0.2`). The
   DB runner (`steps/sch1/schedule1DbRestore.ts`) **auto-detects** that venv, so no `PYTHON` export is
   needed (override with `PYTHON=/path/to/python` to point at an oracledb kept elsewhere). This host has
   **no local sqlplus** and reaches the Oracle directly on `:1525`, so the suite's DB work goes through
@@ -278,13 +283,28 @@ env-guarded/opt-in job; keep it off the default path so it never runs without li
 **Run the gate:**
 ```bash
 cd e2e
-npm test                              # the whole UC-SCH1-001 suite — all green
-npm test -- --grep "@accessibility"   # accessibility only (AC4/NFR1)
+npm run test:gate                          # THE PASS/FAIL GATE — excludes any @discovered-* reds
+npm test                                   # everything, including intentional reds (see note)
+npm run test:gate -- --grep "@accessibility"   # accessibility only (AC4/NFR1)
 ```
-The suite runs **all green** (no `@discovered-*` reds remain — the one delivery-DB defect it surfaced,
-the Other-Costs insert 500, was fixed during the story; see `features/sch1/uc-sch1-001-enter-save/defects.md`
-Bug/Regression #1). If a future change reintroduces a suspected defect, keep it as a genuinely-failing
-`@discovered-divergence` / `@discovered-bug` test and run the green gate with
-`--grep-invert "@discovered-bug|@discovered-divergence"`. Record the run + the HTML report
-(`playwright-report/`) as the TEST-review evidence. Re-verify the pinned anchors after any DB re-extract
-(`preflight/` fails fast if one drifted).
+**Use `npm run test:gate` as the gate, not `npm test`** — that is the whole point of the two scripts.
+`npm test` runs EVERY scenario and therefore **exits 1 by design** whenever a `@discovered-divergence` /
+`@discovered-bug` red is tracking an open defect, which is the suite working as intended rather than a
+broken build. `test:gate` excludes those known reds and exits 0 when nothing new has broken, so it is the
+command that is safe to copy-paste and safe to wire into CI. Keeping this block on `test:gate` means it
+stays correct the next time a suspected defect is parked as an honest red.
+
+**As of 2026-08-11 the two commands are equivalent: the suite is all green, 57 passed, and no
+`@discovered-*` reds remain.** The three defects it surfaced have all been fixed and verified — the
+delivery-DB Other-Costs insert 500 (`defects.md` BUG-1, fixed during the story) and the two found by the
+2026-08-07 re-review: BUG-2 (five volume fields could not be cleared, issue #260) and BUG-3 (a null shared
+Other-Costs volume returned a 500, issue #261), both fixed in backend commit `3ee9ff2` and re-verified at
+the API, the DB column, and through the browser.
+
+Record the run + the HTML report (`playwright-report/`) as the TEST-review evidence. Re-verify the pinned
+anchors after any DB re-extract (`preflight/` fails fast if one drifted).
+
+> **Stressing a snapshot/restore scenario?** Pass `--workers=1`. `--repeat-each=N` in parallel does not
+> merely go red on the single-owner keys (S02/S13/S24/clear-amounts) — it can overwrite one repeat's
+> backup with another's already-mutated state and restore that as the "baseline", silently drifting the
+> seeded anchor. See the ⚠️ note in `features/sch1/uc-sch1-001-enter-save/coverage.md`.

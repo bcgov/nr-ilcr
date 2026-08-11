@@ -37,8 +37,19 @@ against the current write path, the slice matrix, and the message catalog. What 
 - Two new bugs found: **BUG-2** (five volume fields cannot be cleared — a genuine
   `@discovered-bug` RED) and **BUG-3** (a latent NPE 500, deliberately not automated).
 
-Suite state: **green except for the one intentional `@discovered-bug` red** tracking BUG-2.
-A clean CI run is `npx playwright test --grep-invert @discovered-bug`.
+**2026-08-11 — BUG-2 and BUG-3 fixed; the suite is fully green.** Backend commit `3ee9ff2` fixed both
+(issues [#260](https://github.com/bcgov/nr-ilcr/issues/260) / [#261](https://github.com/bcgov/nr-ilcr/issues/261)),
+verified against the running app at the API, the DB column, and through the browser. Two consequences for
+this matrix:
+- The `@discovered-bug` RED **flipped GREEN and the tag was removed** — the scenario is now an ordinary
+  regression guard, renamed to state the correct behaviour rather than the defect.
+- **BUG-3 stopped being unautomatable.** Its state needed direct DB manipulation only *because* BUG-2
+  blocked the clear; with BUG-2 fixed, an ordinary user action reaches it, so its row moves from
+  `not-applicable (E2E)` to `covered` — guarded by a reopen at the end of the clear-amounts scenario.
+
+Suite state: **green — 57 passed, 0 failed, no `@discovered-*` reds remain** (two consecutive full runs
+2026-08-11). `--grep-invert @discovered-bug` is no longer needed for a clean CI run, since there is no
+longer an intentional red to filter out.
 
 Note on snapshot/restore cleanup: four scenarios now leave changes the app's own blank-fields PUT cannot
 undo, so each snapshots its dedicated target to the `E2E_BAK_SCH1_*` tables and re-inserts the rows
@@ -47,19 +58,34 @@ the shared `schedule1DeleteRestore` registry:
 - **S13 delete** — removes the summary + every detail row, and there is no create-on-open.
 - **S24 retry-save** — the successful retry persists.
 - **S02 crown pre-fill** — its precondition nulls volumes and drops item-19 rows at the DB.
-- **clear-amounts** — the guarded fields it writes cannot be cleared back (BUG-2).
+- **clear-amounts** — snapshot/restore is retained for its two targets. Since the BUG-2 fix a blanking
+  PUT *would* now clear the five volume-only fields, so the verbatim re-insert is no longer strictly
+  required here — but it is exact and cheap, and it restores the schedule's original values rather than
+  merely blanking them, which the other snapshot users need anyway. Left as-is deliberately.
 
-Every one of these is a SINGLE-OWNER key: their non-flaky proof is a SERIAL repeat run, not
-`--repeat-each` parallel, because concurrent copies of one destructive scenario self-collide on the one
+Every one of these is a SINGLE-OWNER key: their non-flaky proof is **`--repeat-each=N --workers=1`**, NOT
+`--repeat-each` in parallel, because concurrent copies of one destructive scenario self-collide on the one
 snapshot row (observed 2026-08-07 when two clear-amounts scenarios briefly shared a key — value bleed
 plus "no backup … snapshot was never taken" restore failures). A real run only ever has one of each.
+
+> ⚠️ **The parallel-repeat failure mode CORRUPTS the pinned baseline — it does not just go red.**
+> Learned the hard way 2026-08-11: `--repeat-each=5` on `@clear-amounts` without `--workers=1` failed 6
+> of 16 (optimistic-lock 409s, so no success message), and worse, it silently drifted the 25052/2015
+> anchor. `snapshot` overwrites any existing backup for that schedule, so a later repeat snapshotted a
+> state an earlier repeat had **already cleared** — and the final restore then wrote those NULLs back as
+> if they were the baseline. The four volume-only fields (139/140/143/144) were left NULL where the seed
+> had 936564; repaired by hand from the pre-run read, and the same run serialized then passed 16/16.
+> If you must stress these scenarios, pass `--workers=1`, and check the anchor afterwards.
+>
+> Note this hazard got *sharper* with the BUG-2 fix, not milder: a blanking PUT can now clear those four
+> fields, so a mis-restore actually persists. Before the fix the same mistake was partly masked.
 
 | Source item (slice) | Source citation | App enforcement point | Scenario (tags) | Status | Gap/defect |
 |---|---|---|---|---|---|
 | S01 Enter and save line items (happy path) | S01.feature; slices.md | `Schedule1Api.saveSchedule1` (PUT); `Schedule1.handleSave` | `happy-path.feature` `@S01 @p0` | covered | Now writes + reads back the FULL request incl. the four restored volume-only fields (143/144/139/140). Role re-grounded — see defects.md |
 | S02 Crown Timber volume pre-filled on first entry | S02.feature (Alt); BR-03 | `Schedule1Service.getSchedule1` prefill (`allVolumesEmpty` + `sch3.crownTimberVolume`) → 13 pre-filled volumes + WRN-001 `crownVolumeSetForSchedule1` | `crown-prefill.feature` `@S02 @WRN-001 @p1` (target 22051/2017) | covered | Was `deferred` — closed 2026-08-07. Precondition built by snapshot → `first-entry` (null volumes + drop item-19 rows) → exact restore. Asserts served-not-stored via a DB volume count |
 | Writable volume-only fields 143/144/139/140 (restored parity) | slices.md control matrix (11×7-digit, 3×8-digit); commit `0b58057` | `Schedule1Request.forestMgmtAdminVolume` / `subtotalCompanyLoggingVolume` / `silviculture.lessAdminVolume` / `totalVolume`; `numberCell(…, writable)` | `happy-path.feature` `@S01`; `validation.feature` `@S05`/`@S06` | covered | Added 2026-08-07 — these became editable and had zero coverage |
-| Clearing a saved amount (blank → persisted empty) | Derived from the S01 write path (no legacy slice) | `Schedule1Service.writeWritableDetails` null handling | `clear-amounts.feature` `@p1` (works) + `@discovered-bug @p1` (broken) | covered (+ bug) | The five `!= null`-guarded fields cannot be cleared — defects.md BUG-2 (legacy-confirmed regression: legacy left these fields non-required and had Check Status rules FLD-007/FLD-010 specifically to detect them being null). RED is intentional |
+| Clearing a saved amount (blank → persisted empty) | Derived from the S01 write path (no legacy slice) | `Schedule1Service.writeWritableDetails` / `writeSilviculture` null handling | `clear-amounts.feature` `@p1` (line-item arm) + `@p1` (all five volume-only fields) | covered | Was `covered (+ bug)` with an intentional `@discovered-bug` RED for defects.md BUG-2. **Fixed 2026-08-11** (commit `3ee9ff2`, issue #260): the five scalars are written unconditionally, so a null clears. Both arms GREEN; the ex-RED is now the regression guard |
 | S03 Cost amount out of range rejected | S03.feature (Exc); FLD-001 | `validation.ts` `COST` ±99,999,999 → inline `invalidText`; `handleSave` gate (Save blocked, no PUT) | `validation.feature` `@S03 @FLD-001 @p1` | covered | Entry-mechanism divergence — see defects.md |
 | S04 Non-numeric cost rejected | S04.feature (Exc); FLD-004 | `validation.ts` `costInvalid` (`Number(raw)` NaN) → inline error; `handleSave` gate | `validation.feature` `@S04 @FLD-004 @p1` | covered | Entry-mechanism divergence — see defects.md |
 | S05 Volume out of 7-digit range rejected | S05.feature (Exc); FLD-002 | `validation.ts` `VOLUME_7_DIGIT` ±9,999,999 (vol-12..18, sil 1/2/139/140) → inline error; `handleSave` gate | `validation.feature` `@S05 @FLD-002 @p1` (Outline ×4: line item, silv 1, silv 139, silv 140) | covered | Widened 2026-08-07 to the restored 139/140 volumes. Entry-mechanism divergence — see defects.md |
@@ -72,7 +98,7 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" deletes immediately (no confirm modal) + persists the set | `other-costs.feature` `@S12 @p1` (remove target 9050/2017) | covered (+ parity) | Precondition row added via the API; removed through the UI. Delete-confirm modal removed upstream (2026-08 sync); legacy DID confirm (technical.md:102,154) so this is a parity regression — with the Schedule 1 dev, pending a check against the real legacy app once BCeID access lands. See defects.md DIV-3 |
 | S25 Per-row inline edit of an existing Other Cost — valid edit + BR-06 shared volume | **UC-SCH1-001-S25.feature** (derived 2026-08-07; split out of S09) | `useEditableCostRows.setRowDescription`/`setRowValue` + `handleSave` → whole-set `PUT …?intent=save` | `other-costs-inline-edit.feature` `@S25 @p1` (target 12050/2017) | covered | Covers both halves of the edit (cost and description) plus BR-06: the row exposes only description + cost as editable, and the volume cell shows the shared value |
 | S26 Per-row inline edit rejected — blank description / invalid cost | **UC-SCH1-001-S26.feature** (derived 2026-08-07; split out of S10/S11) | `useEditableCostRows.persist` validates every row and returns before sending; `OtherCostSaveRequest` re-validates server-side | `other-costs-inline-edit.feature` `@S26 @FLD-006 @p1` + Outline `@S26 @FLD-001`/`@FLD-004` (validate anchor 17052/2016) | covered | Mirrors S10/S11's shape (description = scenario, cost = Outline). Validate-only: each proves a zero-write with `otherCostsSpy`, so the shared anchor is never modified |
-| Shared Other-Costs row with a null volume (GET robustness) | Found while building the S02 precondition; legacy rendered this state fine and flagged it at Check Status (FLD-010) | `Schedule1Service.toOtherCosts` `findFirst()` NPE → HTTP 500 | — | not-applicable (E2E) | BUG-3 — latent; the state is unreachable through the UI or the seeded data, so an E2E red would assert a state no user can reach. Must ship with the Bug #2 fix |
+| Shared Other-Costs row with a null volume (GET robustness) | Found while building the S02 precondition; legacy rendered this state fine and flagged it at Check Status (FLD-010) | `Schedule1Service.toOtherCosts` — row selected before mapping to its nullable volume | `clear-amounts.feature` `@p1` (the closing reopen of the five-field scenario) | covered | Was `not-applicable (E2E)` while BUG-2 made the state unreachable. **Fixed 2026-08-11** in the same commit as BUG-2, as this entry required (issue #261). Fixing BUG-2 made the state reachable by ordinary user action, so it is now guarded E2E: clear the shared volume, reopen, and the page must render instead of 500 |
 | S13 Delete the whole Schedule 1 | S13.feature (Alt) | `Schedule1Service.deleteSchedule1` (DELETE) → SUC-002; confirm Modal → empty read-only redisplay; summary+details removed | `delete.feature` `@S13 @p1` (dedicated target 25052/2016) | covered | Destructive — snapshot/restore via `scripts/sch1_db_restore.py`; non-flaky proven SERIAL (single-owner) |
 | S14 Check Status — requirements met | S14.feature (Alt); slices.md | `Schedule1Service.checkSchedule1Status` (POST /check-status) → SUC-003; `Schedule1.handleCheckStatus` success NotificationColumn | `check-status.feature` `@S14 @p0` | covered | Anchor 24050/2017 (met); asserts read-only (revisionCount stable) |
 | S15 Check Status — missing required field(s) | S15.feature (Exc) | `collectRequiredFieldErrors` → `missingRequiredFieldMsg` ("Value Required") error columns | `check-status.feature` `@S15 @p1` (Outline: missing line-item volume 24051/2016; missing Other-Costs volume 13050/2016) | covered | Messages re-grounded to the new bundle (hyphen, not em-dash) — verbatim |
@@ -101,7 +127,8 @@ arms of the save-failure mirror.
 
 Three mirrors were **completed** by this re-review, each of which had one arm silently missing:
 - **Enter ↔ clear.** S01 proved a value can be written; nothing proved it can be un-written.
-  `clear-amounts.feature` adds that arm — and its broken half is BUG-2.
+  `clear-amounts.feature` adds that arm — and its broken half was BUG-2, found precisely because the
+  mirror was completed. Both halves are GREEN since the 2026-08-11 fix.
 - **Add ↔ edit.** Other Costs covered add (S09), reject-on-add (S10/S11) and remove (S12), but not
   editing a row already in the list, although the sidecars describe it. `other-costs-inline-edit.feature`
   adds it (now slices S25/S26) with both its own arms: a valid edit persists, an invalid one is refused and
@@ -109,9 +136,10 @@ Three mirrors were **completed** by this re-review, each of which had one arm si
 - **Pre-fill served ↔ stored.** S02 asserts the pre-filled values render *and* that the database is
   untouched — the second arm is what makes WRN-001's "please check and save" meaningful.
 
-Two rows are `not-applicable (E2E)` with their reasons recorded rather than left open: S08 (unreachable
-by construction — defects.md GAP-3) and the `toOtherCosts` NPE (state no user can reach —
-BUG-3). Nothing is `deferred` any more. No asymmetric silent omission.
+One row is `not-applicable (E2E)` with its reason recorded rather than left open: S08 (unreachable by
+construction — defects.md GAP-3). The `toOtherCosts` NPE row was the second such row until 2026-08-11 —
+it is now `covered`, because fixing BUG-2 made that state reachable by ordinary user action (BUG-3).
+Nothing is `deferred` any more. No asymmetric silent omission.
 
 **Role / permission coverage:** complete for what exists. `SchedulePermissions` grants `ILCR_ADMIN` and
 `ILCR_SUBMITTER` the identical action set (`VIEW_SCHEDULE` + `EDIT_SCHEDULE`), so Schedule 1 has **no

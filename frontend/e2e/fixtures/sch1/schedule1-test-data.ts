@@ -181,7 +181,9 @@ export const OTHER_COSTS_ANCHORS = {
  * Timber (item 119) volume. BR-03 pre-fills only on a genuine FIRST ENTRY (`allVolumesEmpty` — every
  * stored Schedule 1 detail volume null), and no seeded schedule is in that state: the DB hunt across
  * all 30 Schedule-1/Schedule-3 pairs found 28 with a crown volume but none with empty volumes.
- * The app cannot produce the state either (a blanking PUT is a no-op — BUG-2), so the
+ * The app still cannot produce the state through the API: a blanking PUT now clears the fields it
+ * carries (BUG-2 was fixed 2026-08-11, commit `3ee9ff2`), but `allVolumesEmpty` tests EVERY stored
+ * detail volume, and the PUT contract does not reach them all. So the
  * scenario snapshots this schedule, NULLs its volumes at the DB, and restores it verbatim on teardown.
  * Never share this (mill,year). Found (2026-08-07):
  * GET .../schedule1?millId=22051&year=2017 → {trackStatus:"D", editable:true, schedule3CrownVolume:325411}.
@@ -217,9 +219,11 @@ export const MSG_CROWN_PREFILL =
 
 /**
  * Clear-a-saved-amount target — a dedicated, populated, editable Draft owned solely by
- * `clear-amounts.feature`. That feature writes values and then clears them, and the five `!= null`
- * guarded volume fields cannot be cleared through the API (BUG-2), so the schedule is
- * snapshotted and restored verbatim on teardown rather than blanked with a PUT.
+ * `clear-amounts.feature`. That feature writes values and then clears them, and this target is
+ * POPULATED, so it is snapshotted and restored verbatim on teardown rather than blanked with a PUT —
+ * a blanking restore would leave it empty rather than as found. (Until BUG-2 was fixed on 2026-08-11 the
+ * PUT could not even blank the five volume-only fields; a verbatim restore is what this anchor needs
+ * either way.)
  * Found (2026-08-07): GET .../schedule1?millId=25052&year=2017 → {trackStatus:"D", editable:true}.
  * (Mill 25052 year 2017 — a DIFFERENT key from the S13 delete anchor 25052/2016.)
  */
@@ -315,14 +319,14 @@ export function emptyScheduleRequest(revisionCount: number): Record<string, unkn
     silviculture: {
       actualSpent: { volume: null, cost: null },
       accruedLessActual: { volume: null, cost: null },
-      // 139/140 are VOLUME-only writable fields (their costs are pulled/derived). Sent for CONTRACT
-      // COMPLETENESS — this payload mirrors Schedule1Request.SilvicultureBlock exactly, and once
-      // BUG-2 is fixed these nulls will be what clears the fields.
+      // 139/140 are VOLUME-only writable fields (their costs are pulled/derived). This payload mirrors
+      // Schedule1Request.SilvicultureBlock exactly, and as of 2026-08-11 these nulls are what actually
+      // CLEARS the fields: BUG-2 is fixed (commit `3ee9ff2`), so `Schedule1Service` writes the five
+      // volume-only scalars unconditionally instead of guarding them with `!= null`. Sending them is no
+      // longer merely contract completeness — it is the restore mechanism.
       //
-      // They do NOT clear the fields today: `Schedule1Service` guards `lessAdminVolume` (:437) and
-      // `totalVolume` (:440) with `!= null`, so a null is a silent no-op — the same defect this suite
-      // tracks with a @discovered-bug red. What actually blanks them on teardown is
-      // `sch1_db_restore.py blank-guarded`, called from the `schedule1Restore` cleanup fixture.
+      // `sch1_db_restore.py blank-guarded` still runs from the `schedule1Restore` cleanup fixture, but
+      // it is now a redundant safety net rather than the thing that does the work.
       lessAdminVolume: null,
       totalVolume: null,
     },

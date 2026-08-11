@@ -95,9 +95,13 @@ export const sch1Test = base.extend<Sch1Fixtures>({
         if (!putRes.ok()) {
           residue.push(`${millId}/${year} restore PUT -> HTTP ${putRes.status()}`);
         }
-        // The blanking PUT cannot clear 143/144/139/140 — the server reads a null there as "field
-        // omitted" (BUG-2), so S01's writes to them would survive teardown and the pinned
-        // empty baseline would drift a little further every run. Finish the job at the DB.
+        // Finish the job at the DB. This was once REQUIRED: the server read a null on 143/144/139/140
+        // as "field omitted" (BUG-2), so the blanking PUT above could not clear them and S01's writes
+        // survived teardown. BUG-2 was fixed 2026-08-11 (commit `3ee9ff2`, issue #260), so the PUT now
+        // clears them and this call is a redundant safety net rather than the mechanism. The two
+        // consequences below therefore no longer HAVE to be accepted — dropping this line would remove
+        // the python-oracledb dependency from the main mutating teardown. Left in place for now:
+        // deleting it is a deliberate cleanup with its own re-verification, not a drive-by.
         //
         // TWO CONSEQUENCES, both deliberate (raised in review of PR #6):
         //  1. This puts a python-oracledb call in the MAIN mutating sch1 teardown, not just the

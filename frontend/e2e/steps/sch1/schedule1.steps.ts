@@ -239,9 +239,11 @@ Given(
   'the crown pre-fill target is an editable Draft with no volumes entered',
   async ({ request, world, schedule1DeleteRestore }) => {
     // S02 needs a genuine FIRST ENTRY — every stored detail volume null (Schedule1Service.allVolumesEmpty)
-    // — which no seeded schedule is in and the app cannot produce (a blanking PUT is a no-op, see
-    // BUG-2). So: snapshot the dedicated target, NULL its volumes at the DB, and register the
-    // exact delete-then-reinsert restore. Nothing here writes through the app.
+    // — which no seeded schedule is in and the app still cannot produce through the API: a blanking PUT
+    // does now clear the fields it carries (BUG-2 fixed 2026-08-11), but allVolumesEmpty tests EVERY
+    // stored detail volume and the PUT contract does not reach them all. So: snapshot the dedicated
+    // target, NULL its volumes at the DB, and register the exact delete-then-reinsert restore. Nothing
+    // here writes through the app.
     world.scheduleKey = CROWN_PREFILL_ANCHOR;
     world.millOption = millOptionText(CROWN_PREFILL_ANCHOR_MILL);
 
@@ -308,9 +310,10 @@ Then('the pre-filled Schedule 1 volumes are not yet persisted', async ({ world }
 Given(
   'the clear-amounts target is an editable Draft',
   async ({ request, world, schedule1DeleteRestore }) => {
-    // clear-amounts writes values and then clears them. The five guarded volume fields cannot be
-    // cleared through the API (BUG-2), so the blank-fields PUT restore cannot undo this
-    // scenario — snapshot and re-insert the exact rows instead.
+    // clear-amounts writes values and then clears them. Snapshot and re-insert the exact rows rather
+    // than relying on the blank-fields PUT restore: this target is POPULATED, so it must come back with
+    // its original values, not merely blanked. (Before BUG-2 was fixed the PUT could not even blank the
+    // five volume-only fields; now it can, but a verbatim restore is still what this anchor needs.)
     world.scheduleKey = CLEAR_AMOUNTS_ANCHOR;
     world.millOption = millOptionText(CLEAR_AMOUNTS_ANCHOR_MILL);
 
@@ -425,6 +428,21 @@ Then(
         message: `Schedule 1 "${label}" should still hold the entered value`,
       })
       .toBe(value);
+  },
+);
+
+Then(
+  'the Schedule 1 {string} field should be empty',
+  async ({ schedule1Page }, label) => {
+    // Asserts what a freshly-RENDERED form holds, so it reads the value the GET served rather than the
+    // stored column (the API read-back steps cover the column). Used after a reopen to prove a cleared
+    // field comes back blank instead of the old number — and, on the shared Other Costs volume, that
+    // the page renders at all when that row's volume is null (defects.md BUG-3).
+    await expect
+      .poll(() => schedule1Page.amountValue(schedule1Page.fieldIdFor(label)), {
+        message: `Schedule 1 "${label}" should render empty`,
+      })
+      .toBe('');
   },
 );
 

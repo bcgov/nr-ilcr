@@ -1,17 +1,26 @@
 # Clearing a previously-saved amount. Not a legacy slice of its own — this concern surfaced while
 # re-grounding S01 after backend commit 0b58057 ("restore legacy parity for derived costs") made the
-# four volume-only rows user-editable. Schedule1Service.writeWritableDetails guards FIVE volume fields
-# with `!= null` so a request that OMITS them leaves the stored value alone; but the React client always
-# SENDS them, with null meaning "the user cleared this field" — so a cleared field is silently discarded.
+# four volume-only rows user-editable.
 #
-# The first scenario is the mirror arm and passes: an ordinary line-item volume clears normally. The
-# second is the broken arm and is a genuine RED (@discovered-bug), tracking defects.md BUG-2
-# until the app is fixed. It is NOT skipped, weakened, or xfailed — the red IS the tracking signal.
-# Filter it out of a clean CI run with `--grep-invert @discovered-bug`.
+# Both scenarios are now ordinary GREEN regression guards. The second one was a genuine
+# `@discovered-bug` RED from 2026-08-07 to 2026-08-11: `Schedule1Service.writeWritableDetails` guarded
+# five volume fields with `!= null`, so a cleared field (the React client sends null for "the user
+# emptied this box") was indistinguishable from an omitted one and was silently discarded. Fixed in
+# backend commit 3ee9ff2 — those five scalars are now written unconditionally, so a null CLEARS the
+# stored value (defects.md BUG-2 / issue #260). The tag is gone because the red is no longer the
+# tracking signal; the scenario now guards the fix against regression.
+#
+# The second scenario also guards defects.md BUG-3 / issue #261 (fixed in the same commit): clearing
+# the Subtotal Other Costs volume leaves the shared item-19 row present with a NULL volume, which used
+# to make the next GET throw an NPE in `toOtherCosts` and return HTTP 500 — so the schedule became
+# unopenable. That state was unreachable through the UI while BUG-2 was live; fixing BUG-2 made it
+# reachable, which is why the reopen step at the end of that scenario matters.
 #
 # The two scenarios own SEPARATE (mill,year) keys on purpose. Both snapshot and restore their target,
 # and the suite runs fullyParallel — a shared key makes concurrent snapshot/restore race (observed:
 # value bleed between scenarios plus "no backup … snapshot was never taken" restore failures).
+# For the same reason `--repeat-each=N` must be run with `--workers=1`: concurrent repeats of one
+# scenario collide on its own key (observed 2026-08-11 — 409s, so no success message).
 
 @sch1 @UC-SCH1-001 @clear-amounts
 Feature: Report Average Cost of Logging (Schedule 1) — clearing a saved amount
@@ -35,11 +44,11 @@ Feature: Report Average Cost of Logging (Schedule 1) — clearing a saved amount
     Then I should see the message "Data saved successfully"
     And the saved Schedule 1 volume for row 12 should be empty
 
-  # The broken arm — expected to FAIL until BUG-2 is fixed. All five guarded fields are
-  # exercised in ONE scenario: they share a single root cause, so one honest red tracks the defect
-  # without five separate browser runs, and the assertion names whichever field is still holding a value.
-  @discovered-bug @p1
-  Scenario: Clearing the guarded volume fields is silently discarded
+  # The five formerly-guarded fields are exercised in ONE scenario: they shared a single root cause
+  # (BUG-2), so one scenario guards the whole class, and the assertion names whichever field is still
+  # holding a value. The closing reopen is the BUG-3 guard — see the header.
+  @p1
+  Scenario: Clearing the five volume-only fields blanks them and the schedule still reopens
     Given the guarded-fields clear target is an editable Draft
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1
@@ -68,3 +77,9 @@ Feature: Report Average Cost of Logging (Schedule 1) — clearing a saved amount
       | 139 |
       | 140 |
       | 19  |
+    # BUG-3 guard: the shared item-19 row is now present with a NULL volume — the state that used to
+    # make this GET return HTTP 500. Reopening from Home issues a fresh GET; "I open Schedule 1" only
+    # succeeds once the Company Logging Costs table renders, so a 500 fails here rather than silently.
+    When I have selected that mill and reporting year on the Home page
+    And I open Schedule 1
+    Then the Schedule 1 "Subtotal Other Costs volume" field should be empty

@@ -5,7 +5,15 @@
 > `BUG-n` (Bug / Regression), `DIV-n` (Divergence), `GAP-n` (Coverage gap), `SPEC-n` (Spec gap).
 > Cite the prefixed id when raising a ticket; a bare "#3" is ambiguous across three registers.
 
-**Last re-verified: 2026-08-07** (branch `e2e/schedule1-recheck-and-defect-restale`). Every entry below was
+**Last re-verified: 2026-08-11** (branch `fix/schedule-1-e2e-fix`). **BUG-2 and BUG-3 are both now FIXED
+and verified against the running app** — backend commit `3ee9ff2` "write cleared volumes as null and guard
+null shared volume in toOtherCosts", raised as issues
+[#260](https://github.com/bcgov/nr-ilcr/issues/260) (BUG-2) and
+[#261](https://github.com/bcgov/nr-ilcr/issues/261) (BUG-3). The suite's one intentional
+`@discovered-bug` RED has flipped GREEN and the tag is removed; the whole suite is green with **no
+`@discovered-*` reds remaining**. See each entry for the evidence.
+
+**Previously re-verified: 2026-08-07** (branch `e2e/schedule1-recheck-and-defect-restale`). Every entry below was
 re-checked against the app as it stands today, not carried forward on trust. The app moved underneath this
 log — backend commit `0b58057` "restore legacy parity for derived costs, audit columns" and the bcgov
 `EditableSubPageLayout` sync both changed behaviour this file described — so one Divergence was retired as
@@ -26,7 +34,8 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Test:** `other-costs.feature` `@S09 @p1` — GREEN (was the `@discovered-bug` red that tracked this).
   - **Note (2026-08 bcgov sync):** the per-row `POST` add path described above is superseded — the sub-page now persists the whole row set via `PUT …?intent=save`. Retained as the historical record of the bug and its fix.
 
-- **BUG-2 — A cleared volume is silently discarded: five Schedule 1 volume fields cannot be blanked.** _(NEW 2026-08-07)_
+- **BUG-2 — A cleared volume is silently discarded: five Schedule 1 volume fields cannot be blanked.**
+  _(found 2026-08-07 · ticket [#260](https://github.com/bcgov/nr-ilcr/issues/260) · **FIXED & VERIFIED 2026-08-11**)_
   - **What's wrong:** If you clear one of five volume boxes on Schedule 1 and press Save, the app says "Data saved successfully" — but the old number is still there. Reload the page and it comes back. There is no way to remove a volume you entered by mistake in these five boxes. Every *other* amount box on the screen clears normally, which is what makes this so easy to miss.
   - **Which fields:** Forest Management Administration Costs (Sch 3) volume, Subtotal Company Logging Cost (no Silviculture) volume, Less Silviculture Admin Costs volume, Total Silviculture (As per Financial Statements) volume, and Subtotal Other Costs volume.
   - **Expected vs actual:** Expected a cleared box to save as empty, exactly as clearing "Standing Tree to Loaded Truck volume" does. Actual — the save reports success and the previous value is retained.
@@ -51,11 +60,38 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     anchor (13050/2016) has a null shared Other-Costs volume. **Our `@S15` scenario passes only because
     the seed contains a null the application itself can no longer create.** Nothing in the new app could
     set up that scenario from scratch.
-  - **Priority / env:** p1 · branch `e2e/schedule1-recheck-and-defect-restale` · local seeded delivery DB.
-  - **Status:** OPEN. Found 2026-08-07.
-  - **Test:** `clear-amounts.feature` — the `@discovered-bug @p1` scenario is a genuine RED tracking this and will go green when it is fixed. Its mirror arm (`@p1`, clearing an ordinary line-item volume) is GREEN, which is the proof that clearing is supposed to work.
+  - **Fix (dev, commit `3ee9ff2`, verified by QA 2026-08-11):** the five volume-only scalars are now
+    written **unconditionally** in `Schedule1Service.writeWritableDetails` / `writeSilviculture`, so a
+    null reaches `upsertFixedDetail` and clears the stored volume. The `!= null` guards that made
+    "cleared" indistinguishable from "omitted" are gone, and `Schedule1Request`'s javadoc now states the
+    contract explicitly — *a null scalar CLEARS the stored value; only an absent enclosing BLOCK
+    (`lineItems`, `silviculture`, or one of its `EntryAmount` entries) means "not submitted"*. The
+    block-level null checks were deliberately kept, which is what preserves that distinction. Two new
+    unit tests pin it (`Schedule1WriteServiceTest.save_clearedVolumeFields_overwriteStoredValuesWithNull`
+    and `save_nonWritableCode_isSkipped_butNullVolumesClear`).
+  - **How the fix was verified (2026-08-11, running app + local seeded delivery DB):**
+    1. **API round-trip** on the dedicated anchor 25052/2015 (snapshotted first, restored after): a
+       `PUT /api/v1/schedule1` writing 4321 into all five, then a second PUT sending `null` for all five
+       → HTTP 200, and the read-back GET returned **all five null** (143, 144, 139, 140, and the shared
+       item-19 volume). Pre-fix the same PUT returned 200 and read back the old number unchanged.
+    2. **At the column level**, not just through the API: the four detail rows (139/140/143/144) are
+       still **present** with `VOLUME = NULL` — the clear blanks the volume, it does not delete the row.
+    3. **The 4 itemized Other-Costs rows were untouched** (`count: 4`, `costSubtotal` unchanged), so the
+       unconditional write does not over-reach into the itemized rows (AC2 still holds).
+    4. **Through the browser:** the `clear-amounts.feature` scenario that was the `@discovered-bug` RED
+       now passes end-to-end, and the full suite is **57 passed / 0 failed** on two consecutive runs.
+       Non-flaky: 5 serialized repeats of both `@clear-amounts` scenarios, 16/16 green.
+  - **Priority / env:** p1 · fixed on branch `fix/schedule-1-e2e-fix` · local seeded delivery DB.
+  - **Status:** RESOLVED — found 2026-08-07, fixed and verified 2026-08-11 (ticket #260 still OPEN on
+    GitHub; BA/QA to close it, and to confirm no *other* client is relying on the old
+    omit-means-leave-alone behaviour, since the contract change is now PUT-of-the-whole-set).
+  - **Test:** `clear-amounts.feature` `@p1` "Clearing the five volume-only fields blanks them and the
+    schedule still reopens" — **GREEN**; this was the `@discovered-bug` red and the tag is now removed,
+    so it stands as the regression guard. Its mirror arm (`@p1`, clearing an ordinary line-item volume)
+    stays GREEN.
 
-- **BUG-3 — Schedule 1 returns a 500 when the shared Other-Costs row has no volume (latent).** _(NEW 2026-08-07)_
+- **BUG-3 — Schedule 1 returns a 500 when the shared Other-Costs row has no volume.**
+  _(found 2026-08-07 · ticket [#261](https://github.com/bcgov/nr-ilcr/issues/261) · **FIXED & VERIFIED 2026-08-11**)_
   - **What's wrong:** If a Schedule 1 holds a "shared Subtotal Other Costs" row whose volume is empty, opening that Schedule 1 fails outright — the page shows "Unable to load Schedule 1 / An unexpected error occurred" and the API returns HTTP 500. The schedule becomes unopenable rather than showing a blank box.
   - **Expected vs actual:** Expected the shared Other-Costs volume to render blank. Actual — HTTP 500 and no page.
   - **How we caught it (verified on real data 2026-08-07):** Building the S02 first-entry precondition. Nulling every detail volume on 22051/2017 made `GET /api/v1/schedule1?millId=22051&year=2017` return 500; backend log: `java.lang.NullPointerException at Schedule1Service.toOtherCosts(Schedule1Service.java:773)`.
@@ -69,12 +105,44 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     VOLUME. A schedule with *no* item-19 row at all is fine — `findFirst()` on an empty stream returns
     an empty Optional and `.orElse(null)` works; it is a null *element* that throws. (13050/2016 has no
     shared row, which is why it opens normally despite reporting a null shared volume.)
-  - **Is it a defect?** Yes, but **latent** — please read the reachability note before prioritising. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and BUG-2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state — and that is not hypothetical:
+  - **Is it a defect? (assessment as of 2026-08-07, when it was found — superseded by the fix below.)**
+    Yes, but **latent** at that time. **No seeded schedule is in this state** (a query over all 17 shared item-19 rows in the delivery DB found zero with a null volume), and the app cannot create the state itself: the write path only ever inserts that row *with* a value, and BUG-2 above means a user cannot clear it either. So #2 is currently masking #3 — **fixing #2 without also fixing #3 would make this reachable from the UI**, because clearing the Subtotal Other Costs volume would then persist as null and the schedule would 500 on next open. Legacy-migrated data could also arrive in this state — and that is not hypothetical:
     the seed already carries 9 detail rows with a NULL volume on the sibling guarded fields, so nulls of
     this class are demonstrably present in real extracted data.
-  - **Priority / env:** p2 today, but **must ship with the fix for #2** · local seeded delivery DB.
-  - **Status:** OPEN. Found 2026-08-07.
-  - **Test:** none — deliberately not automated. Producing the state needs direct DB manipulation, so an E2E red here would assert a state no user can reach; it is covered instead by the note above and by `scripts/sch1_db_restore.py first-entry`, which documents and works around it. `not-applicable (E2E)` in coverage.md.
+  - **Fix (dev, commit `3ee9ff2` — the SAME commit as BUG-2, which is what the entry above asked for;
+    verified by QA 2026-08-11):** `toOtherCosts` now selects the **row** first and maps to its nullable
+    volume afterwards — `.filter(descriptionIsEmpty).findFirst().map(DetailRow::volume).orElse(null)`
+    instead of `.map(DetailRow::volume).findFirst().orElse(null)`. `findFirst()` now only ever sees a
+    non-null row, so the NPE cannot arise and `.orElse(null)` finally gets to run. A unit test pins it
+    (`Schedule1ServiceTest.otherCosts_sharedRowWithNullVolume_readsAsNullVolume_notAnNpe`), and it also
+    asserts the itemized rows still aggregate with `perUnit` null — there is no volume to divide by.
+  - **The reachability inversion this entry predicted actually happened — and it is why the fix landing
+    together mattered.** The 2026-08-07 note said "#2 is currently masking #3 — fixing #2 without also
+    fixing #3 would make this reachable from the UI." That is exactly right: with BUG-2 fixed, clearing
+    the Subtotal Other Costs box now persists a null on the shared item-19 row, so **an ordinary user
+    action reaches the old 500 state**. Both were fixed in one commit, so the window never opened.
+  - **How the fix was verified (2026-08-11, running app + local seeded delivery DB):** on 25052/2015 the
+    BUG-3 precondition was produced **through the app's own write path** (not by hand-editing the DB) —
+    clearing the shared volume — and confirmed at the column level to be the real trap and not the benign
+    empty-stream case: **exactly one shared row (null `ITEM_DESCRIPTION`) EXISTS with `VOLUME = NULL`**,
+    alongside 4 itemized rows. `GET /api/v1/schedule1?millId=25052&year=2015` then returned **HTTP 200**
+    with `otherCosts.volume` null and the itemized subtotal intact, and the backend log carried **no
+    `NullPointerException`**. Pre-fix this precise state produced
+    `java.lang.NullPointerException at Schedule1Service.toOtherCosts` and HTTP 500.
+  - **Priority / env:** was p2-latent; shipped with BUG-2 as required · branch `fix/schedule-1-e2e-fix`
+    · local seeded delivery DB.
+  - **Status:** RESOLVED — found 2026-08-07, fixed and verified 2026-08-11 (ticket #261 still OPEN on
+    GitHub; BA/QA to close). Worth noting for the migration/extract owners: legacy-migrated data can
+    arrive with nulls of this class (the seed already carries 9 such detail rows), and those schedules
+    would have been unopenable before this fix.
+  - **Test:** **now automated, and no longer `not-applicable`.** The state stopped needing direct DB
+    manipulation the moment BUG-2 was fixed, so the E2E guard no longer asserts an unreachable state:
+    `clear-amounts.feature` `@p1` ends by reopening the schedule from Home after clearing the shared
+    volume, and `I open Schedule 1` only succeeds once the Company Logging Costs table renders — a 500
+    fails the scenario instead of passing silently. The guard is non-vacuous: the shared row's continued
+    **existence** with a null volume was confirmed at the column level for this exact write path (a
+    deleted row would also read back null, which is why that was checked separately). `covered` in
+    coverage.md.
 
 **Divergences:**
 
@@ -250,9 +318,10 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     `handleOtherCosts` is rendered *below* that guard. So triggering the `if (!data)` branch at
     `index.tsx:261` needs `data` to be null, while clicking the button that reaches it needs `data` to be
     non-null. Dead code — the component's own comment already says "effectively unreachable".
-  - **Not related to BUG-3** (a different register — see the id legend at the top). When the GET
-    500s, `data` is null, so the component renders the error state and the button never exists — Bug #3
-    stops the page rendering rather than exposing this branch.
+  - **Not related to BUG-3** (a different register — see the id legend at the top). While that 500 still
+    existed, it did not expose this branch either: `data` was null, so the component rendered the error
+    state and the button never existed — BUG-3 stopped the page rendering rather than reaching this guard.
+    Moot since BUG-3 was fixed 2026-08-11; the branch stays unreachable for the reason above.
   - **No unit test covers it either (searched 2026-08-07).** `ALT_SAVE_BEFORE_OTHER_COSTS` appears
     exactly twice in the whole repo — its definition (`index.tsx:42`) and its render (`index.tsx:698`) —
     and never in a test. `Schedule1.test.tsx`'s `describe('Schedule1 Other Costs navigation (Story 2.5)')`
