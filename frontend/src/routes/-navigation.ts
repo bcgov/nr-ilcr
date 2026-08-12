@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Document, Home, Table, UserMultiple } from '@carbon/icons-react'
+import { Home, Printer, Report, Settings, Table, TaskView, UserMultiple } from '@carbon/icons-react'
 
 export const ROUTES = {
   dashboard: '/',
@@ -11,7 +11,11 @@ export const ROUTES = {
   scheduleSevenA: '/schedule-7a',
   scheduleEight: '/schedule-8',
   scheduleEleven: '/schedule-11',
+  checkStatus: '/check-status',
+  codeTables: '/code-tables',
   millAssociations: '/mill-associations',
+  generateReports: '/generate-reports',
+  printSchedules: '/print-schedules',
   submissions: '/submissions',
 } as const
 
@@ -19,11 +23,12 @@ type RoutePath = (typeof ROUTES)[keyof typeof ROUTES]
 
 type NavIcon = ComponentType<{ size?: number | string }>
 
-/** A single top-level navigation link. */
+/** A single top-level navigation link. `adminOnly` hides it from non-administrators. */
 export type NavigationLink = {
   icon: NavIcon
   name: string
   path: RoutePath
+  adminOnly?: boolean
 }
 
 /** An expandable top-level menu with one or more sub-items (e.g. Schedules → Schedule 1). */
@@ -31,6 +36,7 @@ export type NavigationMenu = {
   icon: NavIcon
   name: string
   items: { name: string; path: RoutePath }[]
+  adminOnly?: boolean
 }
 
 export type NavigationItem = NavigationLink | NavigationMenu
@@ -38,6 +44,11 @@ export type NavigationItem = NavigationLink | NavigationMenu
 /** True when the item is an expandable menu (has sub-items) rather than a direct link. */
 export const isNavigationMenu = (item: NavigationItem): item is NavigationMenu => 'items' in item
 
+// Top-level information architecture, aligned to the legacy menu (menu.xhtml): Home, Schedules,
+// Check Status, Administration, Generate Reports, Print Schedules — plus Submissions (the modern
+// file-upload area, not in legacy). Administration is admin-gated (LayoutSideNav filters on the
+// ILCR_ADMIN role); Check Status / Generate Reports / Print Schedules are scaffolded placeholders
+// until their modernization slices land.
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     // Story 1.3: '/' renders the Home (Mill and Reporting Year) page — legacy has no Dashboard
@@ -47,7 +58,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     path: ROUTES.dashboard,
   },
   {
-    // Schedules is a parent menu; each schedule is a sub-item (Schedule 2–11 will be added here).
+    // Schedules is a parent menu; each schedule is a sub-item.
     icon: Table,
     name: 'Schedules',
     items: [
@@ -62,13 +73,41 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     ],
   },
   {
-    icon: Document,
-    name: 'Submissions',
-    path: ROUTES.submissions,
+    icon: TaskView,
+    name: 'Check Status',
+    path: ROUTES.checkStatus,
+  },
+  {
+    // Administration (UC-CODE-001, and the mill/user admin surfaces): visible only to ILCR_ADMIN.
+    icon: Settings,
+    name: 'Administration',
+    adminOnly: true,
+    items: [
+      { name: 'Table Maintenance', path: ROUTES.codeTables },
+      { name: 'Mill Associations', path: ROUTES.millAssociations },
+    ],
+  },
+  {
+    icon: Report,
+    name: 'Generate Reports',
+    path: ROUTES.generateReports,
+  },
+  {
+    icon: Printer,
+    name: 'Print Schedules',
+    path: ROUTES.printSchedules,
   },
   {
     icon: UserMultiple,
-    name: 'Mill Associations',
-    path: ROUTES.millAssociations,
+    name: 'Submissions',
+    path: ROUTES.submissions,
   },
 ]
+
+/**
+ * The navigation items a user may see. Admin-only items (Administration) are dropped for non-admins.
+ * This is a UX affordance only — the backend independently enforces the 403 (MAINTAIN_CODE_TABLES),
+ * so hiding the menu never stands in for the real authorization boundary.
+ */
+export const visibleNavigationItems = (isAdmin: boolean): NavigationItem[] =>
+  NAVIGATION_ITEMS.filter((item) => !item.adminOnly || isAdmin)
