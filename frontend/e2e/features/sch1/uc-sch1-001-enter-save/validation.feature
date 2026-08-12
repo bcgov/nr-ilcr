@@ -6,10 +6,13 @@
 # the legacy slices protect — invalid cost/volume cannot be carried into a save — is preserved, so each
 # scenario asserts that guarantee: the inline error PLUS a proven zero-write (a page.route spy on PUT).
 #
-# Also re-grounded: legacy S06's 8-digit exemplar (Forest Mgmt Admin volume) is READ-ONLY here (codes
-# 143/144 are not writable), so the 8-digit-range check is exercised on the only editable 8-digit volume,
-# Subtotal Other Costs volume. Runs against the read-only anchor (24050/2017) — never the mutable pair —
-# because no write ever lands.
+# Field parity note (re-verified 2026-08-07): legacy FLD-003 applies to THREE editable 8-digit volumes —
+# Forest Mgmt Admin, Subtotal Other Costs, and Subtotal Company Logging. Those first and third fields
+# were read-only in an earlier build of this app (the old note here said so), but backend commit 0b58057
+# "restore legacy parity for derived costs" made their VOLUMES user-entered again, so all three are
+# covered below. The same commit made silviculture 139/140 volume-editable under the 7-digit FLD-002
+# rule (`fieldKind` in components/schedule1/validation.ts), so those are covered too.
+# Runs against the read-only anchor (24050/2017) — never the mutable pair — because no write ever lands.
 
 @sch1 @UC-SCH1-001
 Feature: Report Average Cost of Logging (Schedule 1) — invalid amounts rejected before save
@@ -42,14 +45,19 @@ Feature: Report Average Cost of Logging (Schedule 1) — invalid amounts rejecte
       | Standing Tree to Loaded Truck cost | abc   | Entered cost is invalid. |
 
     @S05 @FLD-002
-    Examples: volume amount out of 7-digit range
-      | field                                | value    | message                                                 |
-      | Standing Tree to Loaded Truck volume | 15000000 | Entered volume must be between -9,999,999 and 9,999,999. |
+    Examples: volume amount out of 7-digit range (every editable 7-digit volume group)
+      | field                                                   | value    | message                                                 |
+      | Standing Tree to Loaded Truck volume                    | 15000000 | Entered volume must be between -9,999,999 and 9,999,999. |
+      | Actual $ Spent volume                                   | 15000000 | Entered volume must be between -9,999,999 and 9,999,999. |
+      | Less Silviculture Admin Costs volume                    | 15000000 | Entered volume must be between -9,999,999 and 9,999,999. |
+      | Total Silviculture (As per Financial Statements) volume | 15000000 | Entered volume must be between -9,999,999 and 9,999,999. |
 
     @S06 @FLD-003
-    Examples: volume amount out of 8-digit range (Subtotal Other Costs — re-grounded from Forest Mgmt Admin)
-      | field                       | value     | message                                                   |
-      | Subtotal Other Costs volume | 150000000 | Entered volume must be between -99,999,999 and 99,999,999. |
+    Examples: volume amount out of 8-digit range (all three editable 8-digit volumes — legacy parity)
+      | field                                                  | value     | message                                                   |
+      | Subtotal Other Costs volume                            | 150000000 | Entered volume must be between -99,999,999 and 99,999,999. |
+      | Forest Management Administration Costs (Sch 3) volume  | 150000000 | Entered volume must be between -99,999,999 and 99,999,999. |
+      | Subtotal Company Logging Cost (no Silviculture) volume | 150000000 | Entered volume must be between -99,999,999 and 99,999,999. |
 
     @S07 @FLD-005
     Examples: non-numeric volume value

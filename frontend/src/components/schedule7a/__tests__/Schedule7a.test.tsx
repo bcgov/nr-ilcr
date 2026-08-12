@@ -149,15 +149,32 @@ const addPanel = () =>
     document.getElementById('add-locationName')?.closest('.schedule-7a__section') as HTMLElement,
   )
 
+// Enter a value into one Add-panel text field. Uses click+paste rather than `user.type` because
+// every bridge row renders its own editor at once (see `bridgePanel`), so each character typed into
+// the Add panel re-renders all of them. With the six bridges the pagination test below sets up, the
+// 38 characters of this form cost ~5.6s — a third of the budget of the suite's slowest test, which
+// was failing CI on the 20s timeout. Paste is a real user interaction that fires one input event per
+// field, so the fields still go through the component's own onChange/validation path; it drops that
+// to one re-render per field and cuts the test from ~11.6s to ~7.9s under coverage, with identical
+// line/branch coverage of index.tsx and BridgeFields.tsx.
+const enterField = async (
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  value: string,
+) => {
+  await user.click(addPanel().getByLabelText(label))
+  await user.paste(value)
+}
+
 // Fill the Add panel with a complete, valid bridge.
 async function fillAddForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(addPanel().getByLabelText('Name/Location of Bridge'), 'South Creek Bridge')
-  await user.type(addPanel().getByLabelText('Date'), '2021-03')
-  await user.type(addPanel().getByLabelText('Expected Life Span'), '40')
-  await user.type(addPanel().getByLabelText('Abutments Ht.(m)'), '3.5')
-  await user.type(addPanel().getByLabelText('Length (m)'), '15.0')
-  await user.type(addPanel().getByLabelText('Width (m)'), '4.0')
-  await user.type(addPanel().getByLabelText('Distance (km)'), '8')
+  await enterField(user, 'Name/Location of Bridge', 'South Creek Bridge')
+  await enterField(user, 'Date', '2021-03')
+  await enterField(user, 'Expected Life Span', '40')
+  await enterField(user, 'Abutments Ht.(m)', '3.5')
+  await enterField(user, 'Length (m)', '15.0')
+  await enterField(user, 'Width (m)', '4.0')
+  await enterField(user, 'Distance (km)', '8')
   for (const [name, option] of [
     ['New/Used', 'New'],
     ['Superstructure Type', 'Steel'],
@@ -816,7 +833,12 @@ describe('Schedule 7A page', () => {
 
     expect(await screen.findByRole('button', { name: 'Bridge report Id: 1' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Bridge report Id: 6' })).not.toBeInTheDocument()
-  })
+    // The suite's heaviest scenario by a wide margin: six bridges (every row renders its own full
+    // editor, so ~800ms per Add-panel field interaction under coverage) plus a complete add flow.
+    // It runs ~8s locally under coverage and ~2x that on the shared runner, so the suite-wide 20s in
+    // vitest.config.ts left no headroom and it failed on wall-clock alone. Scoped here rather than
+    // raising the global timeout, which would blunt hang detection for the other 485 tests.
+  }, 60_000)
 
   test('a bridge stored with null attributes renders blanks and saves without throwing (AC2, AC4)', async () => {
     // Legacy rows predate the required-field validation, so Check Status exists to flag them. Jackson

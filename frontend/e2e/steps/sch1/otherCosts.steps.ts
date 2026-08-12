@@ -62,8 +62,90 @@ Given('an itemized Other Cost line item exists to remove', async ({ request, wor
   await addOtherCost(request, anchor.key.millId, anchor.key.year, anchor.marker, 4200);
 });
 
+Given('an itemized Other Cost line item exists to edit', async ({ request, world, otherCostsCleanup }) => {
+  // Inline-edit precondition (spec gap SG-1): seed a row via the real API on the dedicated edit target
+  // and register its marker cleanup, then the scenario edits it through the sub-page.
+  const anchor = OTHER_COSTS_ANCHORS['inline-edit'];
+  world.scheduleKey = anchor.key;
+  world.millOption = millOptionText(anchor.mill);
+  await assertEditableDraft(request, anchor.key.millId, anchor.key.year);
+  otherCostsCleanup.push({
+    millId: anchor.key.millId,
+    year: anchor.key.year,
+    marker: anchor.marker,
+  });
+  await addOtherCost(request, anchor.key.millId, anchor.key.year, anchor.marker, 4200);
+});
+
 Given('a spy is watching the Other Costs add request', async ({ otherCostsSpy }) => {
   expect(otherCostsSpy.mutations, 'spy must start at zero mutating requests').toBe(0);
+});
+
+When(
+  'I edit the Other Cost {string} cost to {string}',
+  async ({ otherCostsPage }, description, cost) => {
+    await otherCostsPage.editRowCost(description, cost);
+  },
+);
+
+When('I clear the Other Cost {string} description', async ({ otherCostsPage }, description) => {
+  await otherCostsPage.editRowDescription(description, '');
+});
+
+When(
+  'I edit the Other Cost {string} description to {string}',
+  async ({ otherCostsPage }, description, next) => {
+    await otherCostsPage.editRowDescription(description, next);
+  },
+);
+
+Then(
+  'the Other Cost {string} is persisted',
+  async ({ request, world }, description) => {
+    const { millId, year } = world.scheduleKey!;
+    await expect
+      .poll(async () =>
+        (await listOtherCosts(request, millId, year)).some((r) => r.description === description),
+      )
+      .toBe(true);
+  },
+);
+
+When('I save the Other Costs', async ({ otherCostsPage }) => {
+  await otherCostsPage.save();
+});
+
+Then(
+  'the Other Cost {string} row has no editable volume field',
+  async ({ otherCostsPage }, description) => {
+    // BR-06: the Other-Costs volume is shared and held on Schedule 1, so a row cannot carry its own.
+    // Asserted by listing the row's editable fields rather than by a volume locator finding nothing —
+    // an absence assertion would also pass if the row had failed to render at all.
+    expect(
+      await otherCostsPage.rowEditableFieldKinds(description),
+      'a row must expose only its description and cost as editable (BR-06)',
+    ).toEqual(['row-description', 'row-cost']);
+  },
+);
+
+Then(
+  'the Other Cost {string} row shows the shared volume {string}',
+  async ({ otherCostsPage }, description, expected) => {
+    expect(await otherCostsPage.rowVolumeText(description)).toBe(expected);
+  },
+);
+
+When('I note the Other Costs mutation count', async ({ otherCostsSpy, world }) => {
+  // Baseline for a mid-scenario prove-the-negative: a scenario that legitimately saves BEFORE testing a
+  // rejected save cannot assert an absolute zero, so it asserts no FURTHER mutation from here.
+  world.otherCostsMutationsBefore = otherCostsSpy.mutations;
+});
+
+Then('no further Other Costs mutation should have been sent', async ({ otherCostsSpy, world }) => {
+  expect(
+    otherCostsSpy.mutations,
+    'a client-rejected Other Costs save must fire no additional mutating PUT',
+  ).toBe(world.otherCostsMutationsBefore);
 });
 
 When('I note the Subtotal Other Costs count', async ({ schedule1Page, world }) => {

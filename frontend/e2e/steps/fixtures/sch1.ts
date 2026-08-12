@@ -1,50 +1,25 @@
-import { test as base, createBdd } from 'playwright-bdd';
-import { HomePage } from '../pages/common/homePage';
-import { AppShellPage } from '../pages/common/appShell';
-import { Schedule1Page } from '../pages/sch1/schedule1Page';
-import { OtherCostsPage } from '../pages/sch1/otherCostsPage';
+import { test as base } from 'playwright-bdd';
+
+import { Schedule1Page } from '../../pages/sch1/schedule1Page';
+import { OtherCostsPage } from '../../pages/sch1/otherCostsPage';
 import {
   type ScheduleKey,
   emptyScheduleRequest,
   scheduleUrl,
-} from '../fixtures/sch1/schedule1-test-data';
-import { restoreSchedule1 } from './sch1/schedule1DbRestore';
-import { deleteOtherCostsByMarker } from './sch1/otherCostsApi';
+} from '../../fixtures/sch1/schedule1-test-data';
+import { blankGuardedSchedule1Volumes, restoreSchedule1 } from '../sch1/schedule1DbRestore';
+import { deleteOtherCostsByMarker } from '../sch1/otherCostsApi';
 
 /**
- * ============================================================================
- * SINGLE COMPOSITION ROOT for the whole BDD suite.
- * ============================================================================
- *
- * `createBdd(test)` binds Given/When/Then to THIS test, so every step (steps/**) receives the fixtures
- * declared here. Step files import Given/When/Then/expect FROM HERE, never from 'playwright-bdd' or
- * '@playwright/test' directly. Every fixture is LAZY (only instantiated when a scenario touches it) and
- * per-scenario (no shared mutable module state) so scenarios stay order-independent and parallel-safe.
- *
- * HOW TO ADD A DOMAIN: add its page-object fixture(s), a per-scenario cleanup registry that undoes what
- * the scenario created/mutated (failing loud on residue), and any World fields for cross-step state.
+ * Schedule 1 (sch1) fixtures — page objects, cleanup registries, and route spies owned by UC-SCH1-001.
+ * Nothing here is referenced by another domain, so this file can be edited without touching anyone
+ * else's coverage. Cross-domain things (`world`, `homePage`, `appShell`) live in `./global`.
  */
-
-/** Per-scenario scratch for state passed between steps. */
-export type World = {
-  /** The (mill, year) the scenario operates on — set by the precondition step, read by read-back/cleanup. */
-  scheduleKey?: ScheduleKey;
-  /** The Home Mill-dropdown option text for `scheduleKey`'s mill. */
-  millOption?: string;
-  /** Optimistic-lock token captured when a read-only anchor opens, re-checked to prove no write. */
-  revisionAtOpen?: number | null;
-  /** Itemized Other-Costs count read on the main page before a round-trip, re-checked after (S09). */
-  otherCostsCountBefore?: number;
-  /** The URL of the Schedule 1 GET fired on nav — proves the SAVED Home context drove the request (UC-SEC-001). */
-  schedule1RequestUrl?: string;
-};
 
 /** A registered Other-Costs cleanup: delete every row carrying `marker` under (millId, year). */
 export type OtherCostsCleanup = { millId: number; year: number; marker: string };
 
-type Fixtures = {
-  homePage: HomePage;
-  appShell: AppShellPage;
+export type Sch1Fixtures = {
   schedule1Page: Schedule1Page;
   otherCostsPage: OtherCostsPage;
   /**
@@ -55,11 +30,12 @@ type Fixtures = {
    */
   schedule1Restore: ScheduleKey[];
   /**
-   * Cleanup registry for the DESTRUCTIVE delete scenario (S13). A scenario snapshots a (mill,year)'s
-   * Schedule 1 to the E2E_BAK_SCH1_* tables before deleting it, then pushes the key here; on teardown
-   * each is re-inserted verbatim from its snapshot (scripts/sch1_db_restore.py). Separate from
-   * `schedule1Restore` because delete removes the summary itself, which the blank-fields PUT cannot
-   * recreate — only a row-level re-insert restores it. Fails loud on residue.
+   * Cleanup registry for scenarios whose changes the blank-fields PUT cannot undo (S13 delete, S24
+   * retry-save, S02 crown pre-fill, clear-amounts). Each snapshots its (mill,year) to the
+   * E2E_BAK_SCH1_* tables first, then pushes the key here; on teardown each is re-inserted verbatim
+   * from its snapshot (scripts/sch1_db_restore.py). Separate from `schedule1Restore` because delete
+   * removes the summary itself, which the blank-fields PUT cannot recreate — only a row-level
+   * re-insert restores it. Fails loud on residue.
    */
   schedule1DeleteRestore: ScheduleKey[];
   /**
@@ -88,18 +64,9 @@ type Fixtures = {
    * endpoint (a 404 = already removed by the UI). Fails loud on residue.
    */
   otherCostsCleanup: OtherCostsCleanup[];
-  world: World;
 };
 
-export const test = base.extend<Fixtures>({
-  homePage: async ({ page }, use) => {
-    await use(new HomePage(page));
-  },
-
-  appShell: async ({ page }, use) => {
-    await use(new AppShellPage(page));
-  },
-
+export const sch1Test = base.extend<Sch1Fixtures>({
   schedule1Page: async ({ page }, use) => {
     await use(new Schedule1Page(page));
   },
@@ -128,6 +95,24 @@ export const test = base.extend<Fixtures>({
         if (!putRes.ok()) {
           residue.push(`${millId}/${year} restore PUT -> HTTP ${putRes.status()}`);
         }
+        // Finish the job at the DB. This was once REQUIRED: the server read a null on 143/144/139/140
+        // as "field omitted" (BUG-2), so the blanking PUT above could not clear them and S01's writes
+        // survived teardown. BUG-2 was fixed 2026-08-11 (commit `3ee9ff2`, issue #260), so the PUT now
+        // clears them and this call is a redundant safety net rather than the mechanism. The two
+        // consequences below therefore no longer HAVE to be accepted — dropping this line would remove
+        // the python-oracledb dependency from the main mutating teardown. Left in place for now:
+        // deleting it is a deliberate cleanup with its own re-verification, not a drive-by.
+        //
+        // TWO CONSEQUENCES, both deliberate (raised in review of PR #6):
+        //  1. This puts a python-oracledb call in the MAIN mutating sch1 teardown, not just the
+        //     destructive S13/S24 path. In practice any full run already required it — S13 snapshots on
+        //     every run — so the delta is that a `--grep @S01`-only run now needs it too. Accepted:
+        //     the alternative (snapshot/restore for S01) needs the same dependency and is heavier.
+        //  2. It normalises exactly the drift `preflight/anchors.setup.ts` classifies as ADVISORY. That
+        //     is intended: the advisory exists to surface drift the suite did NOT cause, so removing our
+        //     own contribution makes it a sharper signal, not a blunter one. If S01 ever stops writing
+        //     these fields, drop this call rather than leaving it to mask someone else's residue.
+        blankGuardedSchedule1Volumes(millId, year);
       } catch (err) {
         residue.push(`${millId}/${year} threw: ${(err as Error).message}`);
       }
@@ -240,11 +225,4 @@ export const test = base.extend<Fixtures>({
     });
     await use(spy);
   },
-
-  world: async ({}, use) => {
-    await use({});
-  },
 });
-
-export const { Given, When, Then } = createBdd(test);
-export { expect } from '@playwright/test';

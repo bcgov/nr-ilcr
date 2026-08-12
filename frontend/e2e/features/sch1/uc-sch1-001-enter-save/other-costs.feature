@@ -5,6 +5,13 @@
 # /api/v1/schedule1/other-costs; success text is the API's verbatim SUC-002 (AD-8). Add validation is
 # advisory client-side (components/schedule1OtherCosts/validation.ts) mirroring the backend DTO.
 #
+# S12 PARITY NOTE (2026-08-07): legacy required a PrimeFaces confirm dialog (`confirmDeleteMsg`) before
+# removing a row — technical.md:102,154 and detailed.md:66. The bcgov EditableSubPage rewrite dropped it,
+# so Remove now deletes immediately. This scenario is re-grounded to the app's ACTUAL behaviour and is
+# GREEN, but the missing prompt is a parity regression confirmed against the legacy SOURCE and now with
+# the Schedule 1 developer (defects.md DIV-3), pending a check against the real legacy app once BCeID
+# access lands. If it is confirmed, this scenario flips to a @discovered-divergence red.
+#
 # Each mutating scenario owns a DEDICATED editable Draft (S09 add → 25050/2017; S12 remove → 9050/2017) and
 # self-cleans its rows via the API cleanup registry (marker-keyed). S12 seeds its row through the real API
 # add, then removes it through the UI. S10/S11 reject client-side and never write, so they share a

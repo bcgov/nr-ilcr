@@ -388,22 +388,20 @@ public class Schedule1Service {
     // 12–18: volume + cost.
     writeLineItems(summaryId, request.lineItems(), user);
     // 143 / 144: VOLUME only — their cost is pulled from Sch 3 (143) or derived (144), never client-set.
-    // Guarded by != null (like otherCostsVolume) so a request that omits the field leaves the stored
-    // volume untouched rather than null-clobbering it.
-    if (request.forestMgmtAdminVolume() != null) {
-      repository.upsertFixedDetail(
-          summaryId, CODE_FOREST_MGMT_ADMIN, request.forestMgmtAdminVolume(), null, user);
-    }
-    if (request.subtotalCompanyLoggingVolume() != null) {
-      repository.upsertFixedDetail(
-          summaryId, CODE_SUBTOTAL_COMPANY_LOGGING, request.subtotalCompanyLoggingVolume(), null, user);
-    }
+    // Written unconditionally: this is a PUT of the whole entered-field set (AD-12), so a null
+    // volume is the user having emptied the box and MUST clear the stored value. Guarding on
+    // != null here made "cleared" indistinguishable from "omitted", so Save reported success
+    // and the old number came back on reload. Same for the silviculture volume-only fields and
+    // otherCostsVolume below — the 12–18 line items and silviculture 1 & 2 already write their
+    // nulls straight through.
+    repository.upsertFixedDetail(
+        summaryId, CODE_FOREST_MGMT_ADMIN, request.forestMgmtAdminVolume(), null, user);
+    repository.upsertFixedDetail(
+        summaryId, CODE_SUBTOTAL_COMPANY_LOGGING, request.subtotalCompanyLoggingVolume(), null, user);
     // Silviculture: 1 & 2 are volume + cost; 139 (pulled cost) and 140 (derived cost) are VOLUME only.
     writeSilviculture(summaryId, request.silviculture(), user);
-    if (request.otherCostsVolume() != null) {
-      // Shared item-19 volume row (null description) only — never the itemized rows (AC2).
-      repository.upsertFixedDetail(summaryId, CODE_OTHER, request.otherCostsVolume(), null, user);
-    }
+    // Shared item-19 volume row (null description) only — never the itemized rows (AC2).
+    repository.upsertFixedDetail(summaryId, CODE_OTHER, request.otherCostsVolume(), null, user);
   }
 
   /** Write the writable 12–18 line items (volume + cost); null or non-writable codes are ignored. */
@@ -434,12 +432,11 @@ public class Schedule1Service {
           summaryId, CODE_SILV_ACCRUED,
           silv.accruedLessActual().volume(), silv.accruedLessActual().cost(), user);
     }
-    if (silv.lessAdminVolume() != null) {
-      repository.upsertFixedDetail(summaryId, CODE_SILV_LESS_ADMIN, silv.lessAdminVolume(), null, user);
-    }
-    if (silv.totalVolume() != null) {
-      repository.upsertFixedDetail(summaryId, CODE_SILV_TOTAL, silv.totalVolume(), null, user);
-    }
+    // 139 / 140 volumes: written unconditionally so an emptied box clears the stored value (see
+    // writeWritableDetails). The enclosing block-level null checks stay — an absent silviculture
+    // block or an absent 1 / 2 entry is genuinely "not submitted", not "cleared".
+    repository.upsertFixedDetail(summaryId, CODE_SILV_LESS_ADMIN, silv.lessAdminVolume(), null, user);
+    repository.upsertFixedDetail(summaryId, CODE_SILV_TOTAL, silv.totalVolume(), null, user);
   }
 
   /**
@@ -767,10 +764,14 @@ public class Schedule1Service {
     // isNullOrEmptyString (null or ""), NOT a whitespace-trimmed blank, so a whitespace-only
     // description is an itemized row — use isEmpty/isNotEmpty to match legacy and the SQL IS NULL /
     // IS NOT NULL read paths (on Oracle "" is stored as NULL, so this only differs on whitespace).
+    // Select the ROW first (never null) and map to its nullable volume afterward — the same trap as
+    // Schedule3Service.firstCost: Stream.findFirst() throws NPE when the selected element is itself
+    // null, so mapping to the volume before findFirst() 500'd on a shared row with no volume
+    // entered (which is exactly the state an emptied Subtotal Other Costs box leaves behind).
     BigDecimal sharedVolume = otherCostRows.stream()
         .filter(r -> StringUtils.isEmpty(r.itemDescription()))
-        .map(DetailRow::volume)
         .findFirst()
+        .map(DetailRow::volume)
         .orElse(null);
 
     List<DetailRow> itemized = otherCostRows.stream()

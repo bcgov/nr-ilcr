@@ -28,8 +28,12 @@ e2e/
   coverage-guide.md      # plain-language legend for the coverage.md files (columns, status flags) — BA/QA
   defects-guide.md       # plain-language legend for the defects.md files (registers, tags, how-to-read) — BA/QA
   steps/
-    fixtures.ts          # single composition root: createBdd(test) -> Given/When/Then; page objects +
-                         #   cleanup registry + create spy + world
+    fixtures/            # composition root, SPLIT PER DOMAIN so parallel work doesn't collide
+      index.ts           #   mergeTests(...) -> createBdd(test) -> Given/When/Then/expect (import from '../fixtures')
+      global.ts          #   cross-domain only: `world` (its `World` type is the union of domain fields),
+                         #   homePage, appShell
+      <domain>.ts        #   that domain's page objects + cleanup registries + route spies
+                         #   Adding a domain = new <domain>.ts + one line in index.ts's mergeTests
     common/*.steps.ts    # cross-domain REUSABLE steps (generic asserts) — no domain vocabulary
     <domain>/*.steps.ts  # domain steps, split by concern (navigation/form/verify); NO DOM selectors
   pages/<domain>/*.ts    # Page Objects (selectors + interactions) — called BY steps
@@ -109,14 +113,14 @@ The process:
 1. **Extract** real data from a dev/test source DB with your app's extract tooling. The extract is
    typically **one FK hop**, so some referential gaps are expected (a child row whose parent wasn't
    pulled) — a live `INSERT` still enforces FKs, so a create can fail on a *data gap*, not a bug.
-   *(SCS extracts via `scs-data-extract` / `toad_extract`.)*
+   *(ILCR extracts via `ilcr-data-extract` / `extract.sql`.)*
 2. **Load** the extract into a base Oracle Free container running locally (the SCS image publishes service
    `DBDOCK_01`, user/password `THE`/`default`).
 3. **Snapshot** the loaded container into a tagged image and **push** it to the team packages registry
    **(run the `docker` commands one at a time)**:
    ```bash
    SEEDED_NAME=<your-seeded-local-container-name>
-   DEST_IMAGE=ghcr.io/cgi-bc/nr-mof-oracle-<APP-NAME>-real-test-data-seeded
+   DEST_IMAGE=ghcr.io/cgi-bc/nr-mof-oracle-ilcr-real-test-data-seeded
 
    docker stop -t 120 "$SEEDED_NAME"                          # clean checkpoint BEFORE commit (avoids a fuzzy snapshot)
    docker commit "$SEEDED_NAME" "$DEST_IMAGE:latest"          # may take a few minutes
@@ -125,7 +129,7 @@ The process:
    docker push "$DEST_IMAGE:$(date +%F)"
    ```
    Restart the local container afterward (`docker start "$SEEDED_NAME"`) if you still need it running.
-   *(SCS image: `ghcr.io/cgi-bc/nr-mof-oracle-scs-real-test-data-seeded`.)*
+   *(ilcr image: `ghcr.io/cgi-bc/nr-mof-oracle-ilcr-real-test-data-seeded`.)*
 4. **Consume**: developers `docker run -p 1525:1521 <image>` (step 1) and apply the seed patches
    per-container (step 2). Patches are **not** baked into the image — re-apply them on each fresh
    container, or re-snapshot *with* them to bake them in.
@@ -190,8 +194,19 @@ Every scenario carries two kinds of tag:
   **Never force green:** a suspected-defect divergence / confirmed bug is a genuinely-failing tagged test, never masked with `@skip`, xfail, or a weakened assertion. A failing test does not stop the others (Playwright isolates them). Run a **clean "fresh failures only" pass** — everything except the known reds — with:
 
   ```bash
-  npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
+  npm run test:gate     # the same thing, as a script — see note below
+  # or, explicitly (NOTE: prefix with `npx bddgen test &&` — see caution):
+  npx bddgen test && npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
   ```
+
+  > ⚠️ **A bare `npx playwright test` runs the LAST-GENERATED tests, not your current `.feature` files.**
+  > Only the `npm run …` scripts regenerate first (via their `pretest*` → `bddgen` hooks). Skip `bddgen`
+  > after editing a feature and you will watch stale scenarios pass under their old names and tags —
+  > which reads exactly like a successful run. Prefer the npm scripts.
+
+  > `npm test` runs EVERYTHING and therefore **exits 1 by design** whenever a `@discovered-*` red is
+  > tracking an open defect. That is the suite working as intended, not a broken build. `npm run
+  > test:gate` is the pass/fail gate: it excludes the known reds and exits 0 when nothing new has broken.
 
 Filter with Playwright's `--grep` (args after `--` pass through; `pretest` still regenerates first):
 
@@ -258,7 +273,7 @@ env-guarded/opt-in job; keep it off the default path so it never runs without li
   set `E2E_BROWSER_CHANNEL=chromium` in `.env` (see *Install & run*).
 - **python-oracledb** for the S13/S24 DB snapshot-restore and the S12/S17/S18 row seeding
   (`scripts/sch1_db_restore.py`). Reproducible setup (needs Python 3.9+ on PATH): `npm run setup:python`
-  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==2.4.1`). The
+  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==4.0.2`). The
   DB runner (`steps/sch1/schedule1DbRestore.ts`) **auto-detects** that venv, so no `PYTHON` export is
   needed (override with `PYTHON=/path/to/python` to point at an oracledb kept elsewhere). This host has
   **no local sqlplus** and reaches the Oracle directly on `:1525`, so the suite's DB work goes through
@@ -268,13 +283,28 @@ env-guarded/opt-in job; keep it off the default path so it never runs without li
 **Run the gate:**
 ```bash
 cd e2e
-npm test                              # the whole UC-SCH1-001 suite — all green
-npm test -- --grep "@accessibility"   # accessibility only (AC4/NFR1)
+npm run test:gate                          # THE PASS/FAIL GATE — excludes any @discovered-* reds
+npm test                                   # everything, including intentional reds (see note)
+npm run test:gate -- --grep "@accessibility"   # accessibility only (AC4/NFR1)
 ```
-The suite runs **all green** (no `@discovered-*` reds remain — the one delivery-DB defect it surfaced,
-the Other-Costs insert 500, was fixed during the story; see `features/sch1/uc-sch1-001-enter-save/defects.md`
-Bug/Regression #1). If a future change reintroduces a suspected defect, keep it as a genuinely-failing
-`@discovered-divergence` / `@discovered-bug` test and run the green gate with
-`--grep-invert "@discovered-bug|@discovered-divergence"`. Record the run + the HTML report
-(`playwright-report/`) as the TEST-review evidence. Re-verify the pinned anchors after any DB re-extract
-(`preflight/` fails fast if one drifted).
+**Use `npm run test:gate` as the gate, not `npm test`** — that is the whole point of the two scripts.
+`npm test` runs EVERY scenario and therefore **exits 1 by design** whenever a `@discovered-divergence` /
+`@discovered-bug` red is tracking an open defect, which is the suite working as intended rather than a
+broken build. `test:gate` excludes those known reds and exits 0 when nothing new has broken, so it is the
+command that is safe to copy-paste and safe to wire into CI. Keeping this block on `test:gate` means it
+stays correct the next time a suspected defect is parked as an honest red.
+
+**As of 2026-08-11 the two commands are equivalent: the suite is all green, 57 passed, and no
+`@discovered-*` reds remain.** The three defects it surfaced have all been fixed and verified — the
+delivery-DB Other-Costs insert 500 (`defects.md` BUG-1, fixed during the story) and the two found by the
+2026-08-07 re-review: BUG-2 (five volume fields could not be cleared, issue #260) and BUG-3 (a null shared
+Other-Costs volume returned a 500, issue #261), both fixed in backend commit `3ee9ff2` and re-verified at
+the API, the DB column, and through the browser.
+
+Record the run + the HTML report (`playwright-report/`) as the TEST-review evidence. Re-verify the pinned
+anchors after any DB re-extract (`preflight/` fails fast if one drifted).
+
+> **Stressing a snapshot/restore scenario?** Pass `--workers=1`. `--repeat-each=N` in parallel does not
+> merely go red on the single-owner keys (S02/S13/S24/clear-amounts) — it can overwrite one repeat's
+> backup with another's already-mutated state and restore that as the "baseline", silently drifting the
+> seeded anchor. See the ⚠️ note in `features/sch1/uc-sch1-001-enter-save/coverage.md`.
