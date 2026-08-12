@@ -190,9 +190,14 @@ const CodeTables: FC = () => {
         {saveMessage && <NotificationColumn kind="success" title="Saved" subtitle={saveMessage} />}
         {saveError && <NotificationColumn kind="error" title="Error" subtitle={saveError} />}
         <Column sm={4} md={8} lg={16}>
+          {/* Section heading matches the schedule pages' 1.25rem headings (e.g. Schedule 4's
+              "Existing Locations" / "New Location"); the ComboBox label is hidden so the heading
+              names it once. */}
+          <h3 className="code-tables__heading">Code List</h3>
           <CodeComboBox
             id="code-table-selector"
             titleText="Code List"
+            hideLabel
             items={options}
             selectedCode={selectedKey}
             onSelect={onSelectTable}
