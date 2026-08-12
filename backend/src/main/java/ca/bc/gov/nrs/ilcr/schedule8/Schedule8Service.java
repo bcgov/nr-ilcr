@@ -219,9 +219,7 @@ public class Schedule8Service {
     requireKnownCode(repository.supportCentreLabels(), request.supportCentre() == null ? null : request.supportCentre().trim());
     requireKnownCode(repository.regionLabels(), request.region() == null ? null : request.region().trim());
     requireKnownCode(repository.becZoneLabels(), request.becZone() == null ? null : request.becZone().trim());
-    if (usesTfl) {
-      requireKnownCode(repository.tflNumberLabels(), tflNumber);
-    } else {
+    if (!usesTfl) {
       if (supplyBlock != null) {
         requireKnownCode(repository.supplyBlockLabels(), supplyBlock);
       }
