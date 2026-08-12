@@ -484,6 +484,19 @@ class Schedule7bServiceTest {
       lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     }
 
+    /**
+     * A Draft context in which the given culverts EXIST. The write path resolves existence from the
+     * one {@code findCulverts} read that also feeds the unchanged-type exemption, so a correction test
+     * has to say which ids are there — otherwise the 404 pre-check fires before anything it means to
+     * exercise.
+     */
+    private void draftWith(long... culvertIds) {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      lenient().when(repository.findCulverts(MILL, YEAR)).thenReturn(
+          java.util.Arrays.stream(culvertIds).mapToObj(Schedule7bServiceTest::completeRound).toList());
+      lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
+    }
+
     @Test
     @DisplayName("AC1: add writes the culvert then BOTH cost rows")
     void addWritesCulvertAndBothCostRows() {
@@ -621,7 +634,7 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC2: 0 rows updated with the id present -> stale revision (409), not 404")
     void staleRevisionIsDistinguishedFromNotFound() {
-      draft();
+      draftWith(7801L);
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(0);
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
       CulvertRequest corrected = validRequest(0);
@@ -631,14 +644,55 @@ class Schedule7bServiceTest {
     }
 
     @Test
-    @DisplayName("AC2: 0 rows updated with the id absent -> not found (404), not 409")
+    @DisplayName("AC2: an unknown id is 404 and no UPDATE is attempted")
     void unknownIdIsNotFound() {
       draft();
+      CulvertRequest corrected = validRequest(0);
+
+      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
+          .isInstanceOf(CulvertNotFoundException.class);
+
+      verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("AC2: a culvert deleted concurrently still falls to the countCulvert 404 backstop")
+    void concurrentDeleteIsNotFound() {
+      // The pre-check reads committed state, so a row deleted by another transaction between that read
+      // and the UPDATE gets here with 0 rows updated and 0 rows counted. Without this the backstop
+      // could be deleted and the suite would stay green.
+      draftWith(7801L);
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(0);
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(0);
       CulvertRequest corrected = validRequest(0);
 
       assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
+          .isInstanceOf(CulvertNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("PR #266: an unknown id with an INVALID type is 404, not the type-validation 400")
+    void unknownIdBeatsTypeValidationOnThePut() {
+      // The status must not depend on the body. Validating the submitted type first answered 400 here,
+      // because storedTypes.get(unknownId) is null so the unchanged-type exemption cannot apply.
+      draft();
+      CulvertRequest retiredType = request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500,
+          "ok", 0);
+
+      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, retiredType, true, USER))
+          .isInstanceOf(CulvertNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("PR #266: the same holds for every entry of a page-level Save")
+    void unknownIdBeatsTypeValidationInTheBatch() {
+      draftWith(7801L);
+      CulvertSaveAllRequest batch = new CulvertSaveAllRequest(List.of(
+          new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
+          new CulvertSaveAllRequest.Item(9999L,
+              request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0))));
+
+      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -684,7 +738,7 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC3: the batch reads the year's code table ONCE, not once per culvert")
     void batchReadsCodeTableOnce() {
-      draft();
+      draftWith(7801L, 7802L, 7803L);
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(1);
       CulvertSaveAllRequest batch = new CulvertSaveAllRequest(List.of(
           new CulvertSaveAllRequest.Item(7801L, validRequest(0)),

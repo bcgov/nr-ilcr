@@ -219,10 +219,27 @@ public class Schedule7bService {
    *
    * <p>{@code storedTypes} carries the currently-stored type of every culvert in the mill/year so
    * an UNCHANGED type is exempt from the year-effective check — see {@link #validateCulvertType}.
+   *
+   * <p><strong>Existence is resolved BEFORE any request-specific validation</strong> (PR #266
+   * review). {@code storedTypes} holds an entry for every culvert of the mill/year, so its key set
+   * is an existence oracle that costs no extra query — and {@code get} alone could not serve as
+   * one, because a culvert with a NULL stored type and an absent culvert both answer null.
+   * Validating the
+   * submitted type first made the status depend on the BODY: an unknown id carrying a retired type
+   * answered 400 (invalid type) where the endpoint contract and the write tests both say 404. The
+   * same missing resource must report the same status whatever the body says, on the single PUT and
+   * on every entry of a page-level Save alike.
+   *
+   * <p>The {@code updated == 0} disambiguation further down stays as the concurrency backstop: this
+   * check reads committed state, so a culvert deleted by another transaction between that read and
+   * the UPDATE is still caught there.
    */
   private void applyCulvertUpdate(
       long millId, int year, long culvertId, CulvertRequest request, String user,
       Set<String> codes, Map<Long, String> storedTypes) {
+    if (!storedTypes.containsKey(culvertId)) {
+      throw new CulvertNotFoundException();
+    }
     validateCulvertType(codes, request, storedTypes.get(culvertId));
     try {
       int updated = repository.updateCulvert(

@@ -1,0 +1,164 @@
+package ca.bc.gov.nrs.ilcr.exception;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.lang.reflect.Method;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.support.ResourceBundleMessageSource;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+
+/**
+ * Unit coverage for the two {@link GlobalExceptionHandler} branches the PR #266 review changed: the
+ * ROW IDENTITY a batch validation failure reports, and the TYPE SCOPING of the converter-message
+ * lookup. Both were previously only reachable through the Oracle failsafe ITs, and neither had an
+ * assertion at all — the review's "worth a test either way" applies to both.
+ *
+ * <p>Deliberately a plain unit test: these branches are pure string composition over a
+ * {@code BindingResult} / a Jackson cause message, so a container adds cost without adding evidence.
+ * The message source is the REAL bundle, so a renamed or deleted key fails here rather than silently
+ * degrading to the key name at runtime.
+ */
+class GlobalExceptionHandlerTest {
+
+  private final GlobalExceptionHandler handler = new GlobalExceptionHandler(realBundle());
+
+  private static ResourceBundleMessageSource realBundle() {
+    ResourceBundleMessageSource source = new ResourceBundleMessageSource();
+    source.setBasename("messages");
+    source.setDefaultEncoding("UTF-8");
+    return source;
+  }
+
+  /** Only needed to satisfy {@link MethodParameter}; never invoked. */
+  @SuppressWarnings("unused")
+  private void batchEndpoint(Object body) {
+    // no-op
+  }
+
+  private MethodArgumentNotValidException validationFailure(FieldError... fieldErrors)
+      throws NoSuchMethodException {
+    BindingResult binding = new BeanPropertyBindingResult(new Object(), "request");
+    for (FieldError error : fieldErrors) {
+      binding.addError(error);
+    }
+    Method method = GlobalExceptionHandlerTest.class
+        .getDeclaredMethod("batchEndpoint", Object.class);
+    return new MethodArgumentNotValidException(new MethodParameter(method, 0), binding);
+  }
+
+  private static FieldError at(String path, String message) {
+    return new FieldError("request", path, null, false, null, null, message);
+  }
+
+  private String detailOf(ResponseEntity<ProblemDetail> response) {
+    ProblemDetail problem = response.getBody();
+    assertThat(problem).isNotNull();
+    return problem.getDetail();
+  }
+
+  @Test
+  @DisplayName("a batch entry's failure names its row: 'Id: {n} - ' from the collection index")
+  void batchFailureCarriesTheRowLabel() throws Exception {
+    // culverts[6] is the SEVENTH entry, so the legacy label reads Id: 7 — legacy quoted the 1-based
+    // rowCounter (schedule7B.xhtml:436-437). Without the prefix a 20-culvert Save answered with the
+    // bare sentence and rolled the whole batch back, leaving the reporter to find the row by hand.
+    var response = handler.handleMethodArgumentNotValid(
+        validationFailure(at("culverts[6].culvert.installCost",
+            "Entered cost must be between -99,999,999 and 99,999,999.")),
+        new MockHttpServletRequest("PUT", "/api/v1/schedule7b/culverts"));
+
+    assertThat(detailOf(response))
+        .isEqualTo("Id: 7 - Entered cost must be between -99,999,999 and 99,999,999.");
+  }
+
+  @Test
+  @DisplayName("two rows failing the SAME way stay distinguishable, one line each")
+  void twoRowsFailingAlikeAreNotCollapsed() throws Exception {
+    // The whole point of carrying the index: identical sentences used to join into
+    // "<msg>; <msg>" with nothing to tell the rows apart.
+    var response = handler.handleMethodArgumentNotValid(
+        validationFailure(
+            at("culverts[0].culvert.materialCost", "Entered cost is invalid."),
+            at("culverts[3].culvert.materialCost", "Entered cost is invalid.")),
+        new MockHttpServletRequest("PUT", "/api/v1/schedule7b/culverts"));
+
+    assertThat(detailOf(response))
+        .isEqualTo("Id: 1 - Entered cost is invalid.; Id: 4 - Entered cost is invalid.");
+  }
+
+  @Test
+  @DisplayName("the SAME row and message twice collapses to one line, never a doubled sentence")
+  void identicalPairsCollapse() throws Exception {
+    var response = handler.handleMethodArgumentNotValid(
+        validationFailure(
+            at("culverts[0].culvert.comments", "Comments must be 3500 characters or fewer."),
+            at("culverts[0].culvert.comments", "Comments must be 3500 characters or fewer.")),
+        new MockHttpServletRequest("PUT", "/api/v1/schedule7b/culverts"));
+
+    // Still row-labelled — it is an indexed path — but ONE line, not the sentence twice.
+    assertThat(detailOf(response)).isEqualTo("Id: 1 - Comments must be 3500 characters or fewer.");
+  }
+
+  @Test
+  @DisplayName("a single-record body is UNPREFIXED — the legacy Add form carried no row label")
+  void singleRecordFailureIsUnprefixed() throws Exception {
+    // Guards the blast radius: every non-batch endpoint in the app shares this handler, and legacy put
+    // the prefix on list rows only (schedule7B.xhtml:177-178,187-188 vs :436-437,455-456).
+    var response = handler.handleMethodArgumentNotValid(
+        validationFailure(at("culvertPieceCount", "Value Required")),
+        new MockHttpServletRequest("POST", "/api/v1/schedule7b/culverts"));
+
+    assertThat(detailOf(response)).isEqualTo("Value Required");
+  }
+
+  @Test
+  @DisplayName("the converter lookup is scoped to the OWNING TYPE, not the bare field name")
+  void converterKeyIsTypeScoped() {
+    // Jackson's reference chain names the target type. Matching "spanSize" alone meant the next DTO to
+    // declare one silently inherited culvert wording, with the guard living only in a comment.
+    var culvertSpan = handler.handleNotReadable(
+        notReadable("Cannot deserialize value of type `java.lang.Integer` from String \"abc\""
+            + " (through reference chain:"
+            + " ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest[\"spanSize\"])"),
+        new MockHttpServletRequest("POST", "/api/v1/schedule7b/culverts"));
+    assertThat(detailOf(culvertSpan)).isEqualTo("Entered span is invalid.");
+
+    // A DIFFERENT type's spanSize must NOT get culvert wording — it falls to the Integer default.
+    var foreignSpan = handler.handleNotReadable(
+        notReadable("Cannot deserialize value of type `java.lang.Integer` from String \"abc\""
+            + " (through reference chain:"
+            + " ca.bc.gov.nrs.ilcr.somewhere.dto.OtherRequest[\"spanSize\"])"),
+        new MockHttpServletRequest("POST", "/api/v1/somewhere"));
+    assertThat(detailOf(foreignSpan)).isEqualTo("Entered cost is invalid.");
+  }
+
+  @Test
+  @DisplayName("a batch entry's converter failure still resolves the field-specific message")
+  void converterKeyResolvesThroughTheBatchReferenceChain() {
+    // The batch chain prefixes the collection hops; the match is a substring so it still lands.
+    var response = handler.handleNotReadable(
+        notReadable("Cannot deserialize value of type `java.lang.Integer` from String \"x\""
+            + " (through reference chain:"
+            + " ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest[\"culverts\"]"
+            + "->java.util.ArrayList[0]"
+            + "->ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest$Item[\"culvert\"]"
+            + "->ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest[\"culvertPieceCount\"])"),
+        new MockHttpServletRequest("PUT", "/api/v1/schedule7b/culverts"));
+
+    assertThat(detailOf(response)).isEqualTo("Entered number of pieces is invalid.");
+  }
+
+  private static HttpMessageNotReadableException notReadable(String causeMessage) {
+    return new HttpMessageNotReadableException(
+        "JSON parse error", new IllegalArgumentException(causeMessage), null);
+  }
+}
