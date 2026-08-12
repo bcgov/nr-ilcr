@@ -39,6 +39,24 @@ class SchedulePermissionTest {
   }
 
   @Test
+  void admin_grantsMaintainCodeTables() {
+    // Story 24.3 / S13 — the code-table maintenance action is ADMIN-only.
+    assertTrue(permissions.grants(Role.ADMIN, Action.MAINTAIN_CODE_TABLES));
+  }
+
+  @Test
+  void submitter_deniedMaintainCodeTables() {
+    // A submitter hitting the Table Maintenance APIs must be denied (403), not merely menu-hidden.
+    assertFalse(permissions.grants(Role.SUBMITTER, Action.MAINTAIN_CODE_TABLES));
+    assertFalse(permissions.hasPermission(auth("SUBMITTER"), "MAINTAIN_CODE_TABLES"));
+  }
+
+  @Test
+  void hasPermission_adminAuthority_maintainCodeTables() {
+    assertTrue(permissions.hasPermission(auth("ILCR_ADMIN"), "MAINTAIN_CODE_TABLES"));
+  }
+
+  @Test
   void hasPermission_submitterAuthority_view() {
     assertTrue(permissions.hasPermission(auth("SUBMITTER"), "VIEW_SCHEDULE"));
   }
