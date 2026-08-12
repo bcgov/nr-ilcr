@@ -94,6 +94,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
        WHERE cwr.ILCR_MILL_ID = :millId
          AND cwr.REPORT_YEAR = :year
          AND cwr.ILCR_CATEGORY_ID = '9'
+         AND d.ILCR_REPORT_COST_ITEM_ID BETWEEN 108 AND 114
        ORDER BY d.CONTRACTUAL_WORK_REPORT_ID, d.ILCR_COST_REPORT_DETAIL_ID
       """)
   List<CostRow> findCostLines(@Param("millId") long millId, @Param("year") int year);
