@@ -69,12 +69,14 @@ class Schedule9DocumentIT extends AbstractOracleIT {
         // Unit Type + BEC + Source codes resolved to their reference-table descriptions in SQL.
         .andExpect(jsonPath("$.records[0].unitType.code", is("M3")))
         .andExpect(jsonPath("$.records[0].unitType.description", is("Cubic Metres")))
-        .andExpect(jsonPath("$.records[0].numberOfUnits", is(100.0)))
+        // The fractional value survives the NUMBER(6,1) read (Oracle would canonicalize an integer
+        // like 100.0 to 100 and serialize it as an int — this pins the one-decimal precision).
+        .andExpect(jsonPath("$.records[0].numberOfUnits", is(12.5)))
         .andExpect(jsonPath("$.records[0].biogeoclimaticZone.code", is("BZ1")))
         .andExpect(jsonPath("$.records[0].biogeoclimaticZone.description", is("BEC Zone One")))
         .andExpect(jsonPath("$.records[0].cost", is(5000)))
-        // AD-5 derived server-side: 5000 / 100.0 = 50.00, scale 2.
-        .andExpect(jsonPath("$.records[0].costPerUnit", is(50.00)))
+        // AD-5 derived server-side: 5000 / 12.5 = 400.00, scale 2.
+        .andExpect(jsonPath("$.records[0].costPerUnit", is(400.00)))
         .andExpect(jsonPath("$.records[0].sideSlopePct", is(25)))
         .andExpect(jsonPath("$.records[0].source.code", is("A")))
         .andExpect(jsonPath("$.records[0].source.description", is("Actual Cost")))

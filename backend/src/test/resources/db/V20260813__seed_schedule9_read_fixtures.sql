@@ -92,7 +92,10 @@ INSERT INTO THE.ILCR_REPORT_COST_ITEM (ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR
 -- Mill 514 / 2021 -- ACT, Draft (context in V2). Three records, INSERTED OUT OF ID ORDER (9103,
 -- 9101, 9102) so a missing ORDER BY cannot pass: the document must serve 9101, 9102, 9103.
 --
--- 9101 fully populated  -- units 100.0, cost 5000 -> $/Unit 50.00; every code-list select resolved.
+-- 9101 fully populated  -- units 12.5, cost 5000 -> $/Unit 400.00; every code-list select resolved.
+--                          The fractional PERFORMED_UNIT pins the NUMBER(6,1) one-decimal precision:
+--                          an integer value (e.g. 100.0) is canonicalized by Oracle to 100 and would
+--                          serialize as an int, hiding whether the decimal survives the read.
 -- 9102 zero units       -- PERFORMED_UNIT 0 -> $/Unit NULL (S14), even though a cost is stored.
 -- 9103 "Other" free-text -- Unit 'OT'/UNIT_DESCRIPTION, Source 'O'/SOURCE_DESCRIPTION, and
 --                           Contractual Item 114 with ITEM_DESCRIPTION on the cost line -- the three
@@ -106,7 +109,7 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CONTRACTUAL
 
 -- 9101 (inserted second, served first).
 INSERT INTO THE.CONTRACTUAL_WORK_REPORT (CONTRACTUAL_WORK_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CONTRACTOR_ID, SIDE_SLOPE_PCT, PERFORMED_UNIT, ILCR_UNIT_CODE, UNIT_DESCRIPTION, ILCR_CONTRACTUAL_SOURCE_CODE, SOURCE_DESCRIPTION, BEC_ZONE_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
-  VALUES (9101, 2021, 514, '9', 'CTR-001', 25, 100.0, 'M3', NULL, 'A', NULL, 'BZ1', 'Cattleguard install.', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+  VALUES (9101, 2021, 514, '9', 'CTR-001', 25, 12.5, 'M3', NULL, 'A', NULL, 'BZ1', 'Cattleguard install.', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CONTRACTUAL_WORK_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, COST, REVISION_COUNT, ENTRY_USERID) VALUES (8481, 9101, 108, 5000, 0, 'SEED');
 
 -- 9102 (inserted third, served second). Zero units -> null $/Unit.
