@@ -51,8 +51,10 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
   private static final long MILL = 670L;
   private static final int EDIT_YEAR = 2017;
   private static final int EDIT_CAMP = 8201;
+  // Camp 8202 (the fixtures' empty 2018 camp) is deliberately NOT a constant here: it belongs to
+  // Schedule5WriteIT, which COMMITS rows onto it. Every proof in this class that needs a pristine
+  // camp seeds its own inside its rolled-back transaction.
   private static final int BARE_YEAR = 2018;
-  private static final int BARE_CAMP = 8202;
   private static final String USER = "repo-it";
 
   @Autowired
@@ -101,15 +103,23 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
   void upsertInsertsWhenAbsent() {
     // Delivery holds ZERO detail rows parented by a CAMP_REPORT_ID (Task 1 gate (vii)), so this is the
     // branch a real camp's first edit takes, twelve times over.
-    assertThat(rowCountFor(BARE_CAMP, 56)).isZero();
+    //
+    // The empty camp is seeded HERE, inside this rolled-back transaction, rather than borrowing
+    // fixture camp 8202 — Schedule5WriteIT.zeroDetailEdit COMMITS twelve detail rows onto 8202, so a
+    // fixture-based version of this test passes or fails on class execution order alone (the same
+    // collision the PR #242 review found for camps 8203 and "Duplicate Name Camp").
+    int campId = repository.nextCampReportId();
+    repository.insertCamp(campId, MILL, BARE_YEAR, "Bare Upsert Camp", null, null, null, "N", null,
+        USER);
+    assertThat(rowCountFor(campId, 56)).isZero();
 
-    repository.upsertCostDetail(BARE_CAMP, 56, new BigDecimal("500"), 1000, USER);
+    repository.upsertCostDetail(campId, 56, new BigDecimal("500"), 1000, USER);
 
-    assertThat(rowCountFor(BARE_CAMP, 56)).isEqualTo(1);
+    assertThat(rowCountFor(campId, 56)).isEqualTo(1);
     Map<String, Object> row = jdbc().queryForMap(
         "SELECT VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, "
             + "UPDATE_USERID, UPDATE_TIMESTAMP FROM THE.ILCR_COST_REPORT_DETAIL "
-            + "WHERE CAMP_REPORT_ID = ? AND ILCR_REPORT_COST_ITEM_ID = 56", BARE_CAMP);
+            + "WHERE CAMP_REPORT_ID = ? AND ILCR_REPORT_COST_ITEM_ID = 56", campId);
     assertThat(((Number) row.get("REVISION_COUNT")).intValue()).isZero();
     assertThat(row.get("ITEM_DESCRIPTION")).isNull();
     assertThat(row.get("ENTRY_USERID")).isEqualTo(USER);
@@ -360,6 +370,13 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
     // path resolves the pair FIRST-BY-DETAIL-ID-WINS (Schedule5Service's putIfAbsent) and IGNORES the
     // rest; an unqualified "WHERE camp AND item" UPDATE wrote all of them, rotating UPDATE_* on rows the
     // API presents as untouched and making "first row wins" meaningless after any edit.
+    //
+    // The camp is seeded HERE for the same reason the INSERT-branch proof above seeds its own: camp
+    // 8202 carries Schedule5WriteIT.zeroDetailEdit's twelve COMMITTED rows once that class has run,
+    // and one of them is item 60 — which would make the pair below a triple.
+    int campId = repository.nextCampReportId();
+    repository.insertCamp(campId, MILL, BARE_YEAR, "Duplicate Rows Camp", null, null, null, "N",
+        null, USER);
     int survivingId = repository.nextCostDetailId();
     int ignoredId = survivingId + 1;
     jdbc().update(
@@ -367,16 +384,16 @@ class Schedule5RepositoryWriteIT extends AbstractOracleIT {
             + "ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID, "
             + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
             + "VALUES (?, ?, 60, 100, 111, 0, 'SEED', SYSTIMESTAMP, 'SEED', SYSTIMESTAMP)",
-        survivingId, BARE_CAMP);
+        survivingId, campId);
     jdbc().update(
         "INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, "
             + "ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID, "
             + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
             + "VALUES (?, ?, 60, 200, 222, 0, 'SEED', SYSTIMESTAMP, 'SEED', SYSTIMESTAMP)",
-        ignoredId, BARE_CAMP);
-    assertThat(rowCountFor(BARE_CAMP, 60)).isEqualTo(2);
+        ignoredId, campId);
+    assertThat(rowCountFor(campId, 60)).isEqualTo(2);
 
-    int updated = repository.updateCostDetail(BARE_CAMP, 60, new BigDecimal("999"), 888, USER);
+    int updated = repository.updateCostDetail(campId, 60, new BigDecimal("999"), 888, USER);
 
     // One row, not two: the guard is the affected-row COUNT, so an unscoped statement fails here even
     // if every column value it wrote happened to be right.
