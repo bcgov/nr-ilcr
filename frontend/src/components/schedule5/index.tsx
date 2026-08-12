@@ -8,8 +8,11 @@ import type {
 } from '@/interfaces/Schedule5Response'
 import type CampRequest from '@/interfaces/Schedule5Request'
 import type { CategoryEntry } from '@/interfaces/Schedule5Request'
+import type { SubPageKind } from '@/interfaces/Schedule5SubPage'
 import type { CampErrors, CampFormValues, CategoryKey, DerivedKey, GridRow } from './validation'
 import { useCallback, useState } from 'react'
+import { getRouteApi } from '@tanstack/react-router'
+import Schedule5SubPage from '@/components/schedule5SubPage'
 import {
   Button,
   Column,
@@ -45,6 +48,7 @@ import {
   isCampFormValid,
   validateCamp,
 } from './validation'
+import { fmtCost, fmtCostPerVolume, fmtVolume } from './masks'
 import './index.scss'
 
 // Client-only chrome — every one of these is either confirm-dialog text or is rendered when NO
@@ -57,6 +61,17 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 const EMPTY_LIST = 'No records found.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+// CFM-004. Hardcoded with the other three confirms rather than resolved through GET /v1/messages —
+// Open question 2, settled by Scho on 2026-08-12: it is confirm chrome fired before any request,
+// which § Chrome literals treats as client-owned, and consistency within the page beat consistency
+// with the messages endpoint. The bundle key `confirmNavigationFromNewCamp` is therefore NOT added
+// to CLIENT_RENDERABLE_KEYS, and MessageController is untouched by this story.
+// The sub-page level is URL-driven (search: camp + sub), read through the route API exactly as
+// Schedule 4 does (`schedule4/index.tsx:55`).
+const scheduleRoute = getRouteApi('/schedule-5')
+
+const CONFIRM_SAVE_NEW_CAMP =
+  'The information for the New Camp must be saved before you can add other expenses. Would you like to save the information now?'
 const CONFIRM_CAMP_SWITCH =
   'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?'
 const NEW_CAMP_HEADING = 'New Camp Details'
@@ -73,20 +88,9 @@ const COPY_MESSAGE_KEY = 'sch5.copy.msg'
 // server-computed and this only formats it (AD-5 — no recompute). Those converters return "" for a
 // null value, so NULL RENDERS BLANK, never "0"/"0.00": a camp that never had a Recoveries cost must
 // look different from one whose Recoveries cost is genuinely 0.
-const mask = (value: number | null | undefined, minFrac: number, maxFrac: number): string =>
-  value === null || value === undefined
-    ? ''
-    : value.toLocaleString('en-CA', {
-        minimumFractionDigits: minFrac,
-        maximumFractionDigits: maxFrac,
-      })
-
-/** ILCRVolumeConverter `#,###,###` — grouped, no decimals. */
-const fmtVolume = (value: number | null | undefined): string => mask(value, 0, 0)
-/** ILCRCostConverter `##,###,###` — grouped, no decimals. */
-const fmtCost = (value: number | null | undefined): string => mask(value, 0, 0)
-/** ILCRCostVolumeConverter `###,##0.00` — grouped, always two decimals. */
-const fmtCostPerVolume = (value: number | null | undefined): string => mask(value, 2, 2)
+// Re-exported so the masks remain part of this module's public surface (Story 7.4 Task 7) while
+// their definitions sit in ./masks — see that file for why the indirection exists.
+export { mask, fmtVolume, fmtCost, fmtCostPerVolume } from './masks'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
 
@@ -210,7 +214,9 @@ const CategoryGridRow: FC<{
   readonly readOnly: boolean
   readonly errors: CampErrors
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
-}> = ({ row, values, served, subPageCount, readOnly, errors, onChange }) => {
+  /** Present only on the two Other … rows, and only once the camp can be navigated to. */
+  readonly onOpenSubPage?: () => void
+}> = ({ row, values, served, subPageCount, readOnly, errors, onChange, onOpenSubPage }) => {
   // The two Other … rows carry their live sub-page row count in the label itself.
   const label = row.subPageCount === undefined ? row.label : `${row.label} (${subPageCount}): `
   // The displayed label keeps legacy's trailing ": "; the accessible name drops it so a screen
@@ -219,7 +225,17 @@ const CategoryGridRow: FC<{
   return (
     <TableRow>
       <TableCell className={row.indented ? 'schedule-5__label--indented' : undefined}>
-        {label}
+        {/* The two Other … labels are the sub-page links (AC14). They keep the exact
+            `Other Camp Expenses (n): ` text 7.3 shipped — only the element changes, from static
+            text to a control — so the live count still reads the same. Rendered as a button even in
+            read-only, because legacy's link navigates there too; only the CONFIRM differs. */}
+        {onOpenSubPage === undefined ? (
+          label
+        ) : (
+          <Button kind="ghost" size="sm" onClick={onOpenSubPage}>
+            {label}
+          </Button>
+        )}
       </TableCell>
       {row.hasVolume ? (
         <AmountCell
@@ -278,7 +294,8 @@ const CategoryGrid: FC<{
   readonly readOnly: boolean
   readonly errors: CampErrors
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
-}> = ({ values, served, readOnly, errors, onChange }) => (
+  readonly onOpenSubPage: (kind: SubPageKind) => void
+}> = ({ values, served, readOnly, errors, onChange, onOpenSubPage }) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
       <TableBody>
@@ -323,6 +340,15 @@ const CategoryGrid: FC<{
               readOnly={readOnly}
               errors={errors}
               onChange={onChange}
+              onOpenSubPage={
+                row.subPageCount === undefined
+                  ? undefined
+                  : () => {
+                      onOpenSubPage(
+                        row.subPageCount === 'otherCampExpenseCount' ? 'CAMP' : 'ACCESS',
+                      )
+                    }
+              }
             />
           )
         })}
@@ -396,6 +422,9 @@ const DescriptorFields: FC<{
 
 const Schedule5: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
+  const navigate = scheduleRoute.useNavigate()
+  // The sub-page level is a search param, not a second route (see routes/schedule-5.tsx).
+  const { camp: subPageCampId, sub: subPageKind } = scheduleRoute.useSearch()
 
   const [saving, setSaving] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
@@ -412,6 +441,8 @@ const Schedule5: FC = () => {
   const [confirmDelete, setConfirmDelete] = useState<Camp | null>(null)
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null)
+  /** Which sub-page a link asked for, held behind CFM-004 (new camp) or CFM-002 (existing). */
+  const [pendingSubPage, setPendingSubPage] = useState<SubPageKind | null>(null)
 
   const clearBanners = () => {
     setActionMessage(null)
@@ -434,6 +465,7 @@ const Schedule5: FC = () => {
     setConfirmDelete(null)
     setConfirmClose(false)
     setPendingSwitch(null)
+    setPendingSubPage(null)
     // Release the mutation lock: a request still in flight was dispatched under the OLD context and
     // its own guarded `finally` will deliberately skip the unlock, so without this every control
     // gated on `saving` stays dead in the new context until a remount.
@@ -668,6 +700,88 @@ const Schedule5: FC = () => {
     )
   }
 
+  /**
+   * The sub-page confirm ladder (AC13/S05), `schedule4/index.tsx` as the shape.
+   *
+   * Three distinct behaviours, and the difference is which camp the panel is showing:
+   *
+   * - **New camp** → CFM-004. The camp does not exist yet, so there is nothing to navigate to;
+   *   legacy's `goToOtherCampExpensesForNewCamp()` (`Schedule5MB.java:212-217`) saves first.
+   * - **Existing camp** → CFM-002 and navigate WITHOUT saving. `Schedule5MB.java:195-203` does no
+   *   save at all here, so any unsaved panel edit is genuinely discarded — which is exactly what
+   *   CFM-002 warns about.
+   * - **Read-only** → navigate with no confirm. There is no unsaved data to lose.
+   */
+  const openSubPage = (kind: SubPageKind, campId: number | null) => {
+    if (campId === null) {
+      return
+    }
+    void navigate({ to: '/schedule-5', search: { camp: campId, sub: kind } })
+  }
+
+  const requestSubPage = (kind: SubPageKind) => {
+    if (saving) {
+      return
+    }
+    clearBanners()
+    // Read-only navigates straight through: legacy renders a bare link there and there is no
+    // unsaved data to warn about. `data.editable` is read directly rather than through the
+    // `editable` const, which is not in scope until after the loading guards below.
+    if (panelMode === 'view' || data?.editable !== true) {
+      openSubPage(kind, panelCampId)
+      return
+    }
+    setPendingSubPage(kind)
+  }
+
+  /**
+   * CFM-004 Yes: save the new camp, then navigate ONLY on success.
+   *
+   * Legacy dereferences `savedCampId.toString()` (`Schedule5MB.java:215`) with no null guard, so a
+   * duplicate name or an ILCSException NPEs the page (deviation (J)). Here the error renders on the
+   * camp panel with every entered value still in place, and no navigation happens.
+   */
+  const confirmSubPageSave = () => {
+    const kind = pendingSubPage
+    setPendingSubPage(null)
+    if (kind === null || saving) {
+      return
+    }
+    clearBanners()
+    const found = validateCamp(form)
+    setErrors(found)
+    if (!isCampFormValid(found)) {
+      return
+    }
+    const savedName = form.campName.trim()
+    const isUpdate = panelMode === 'edit' && panelCampId !== null
+    const body = buildRequest(form, isUpdate ? panelRevision : null)
+    const axios = apiService.getAxiosInstance()
+    runMutation(
+      isUpdate
+        ? axios.put<Schedule5Response>(`${CAMPS_PATH}/${String(panelCampId)}?${query}`, body)
+        : axios.post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
+      (document) => {
+        applySaved(document, savedName, isUpdate ? panelCampId : null)
+        // Locate the camp the save just produced by NAME: a create has no id to echo back, and the
+        // document is the only place the server-assigned one appears.
+        const target =
+          document.camps.find((camp) => camp.campName === savedName)?.campId ?? panelCampId
+        openSubPage(kind, target)
+      },
+      'Camp could not be saved.',
+    )
+  }
+
+  /** CFM-002 Yes from an existing camp: navigate, discarding the panel edits. No save (`:195-203`). */
+  const confirmSubPageNavigate = () => {
+    const kind = pendingSubPage
+    setPendingSubPage(null)
+    if (kind !== null) {
+      openSubPage(kind, panelCampId)
+    }
+  }
+
   const confirmSwitch = () => {
     if (!pendingSwitch) {
       return
@@ -682,6 +796,25 @@ const Schedule5: FC = () => {
   }
 
   const header = <ScheduleTombstone title="Schedule 5" subtitle="Camp and Access Expense" />
+
+  // The expense sub-pages render INSTEAD of the camp list, as an early return driven by the search
+  // params. Not a second route file: this keeps browser Back stepping from a sub-page to the list,
+  // needs no nav entry (sub-pages are not in ROUTES), and reuses the already-loaded context.
+  if (subPageCampId !== undefined && subPageKind !== undefined) {
+    return (
+      <Schedule5SubPage
+        // Keyed on everything the sub-page's identity depends on, so switching camp, switching
+        // list, or a mid-flight mill/year change REMOUNTS it with fresh state instead of leaving a
+        // stale draft — or a stranded `saving` lock — behind.
+        key={`${String(subPageCampId)}-${subPageKind}-${String(millId)}-${String(year)}`}
+        campId={subPageCampId}
+        kind={subPageKind}
+        onBack={() => {
+          void navigate({ to: '/schedule-5', search: {} })
+        }}
+      />
+    )
+  }
 
   if (contextMissing) {
     return (
@@ -820,6 +953,7 @@ const Schedule5: FC = () => {
       />
 
       <CategoryGrid
+        onOpenSubPage={requestSubPage}
         values={form}
         served={derivedSource}
         readOnly={readOnlyPanel}
@@ -982,6 +1116,39 @@ const Schedule5: FC = () => {
         onRequestSubmit={confirmSwitch}
       >
         <p>{CONFIRM_CAMP_SWITCH}</p>
+      </Modal>
+
+      {/* CFM-004 — the NEW-camp ladder only. Yes saves and then navigates; a failed save renders on
+          the panel and does NOT navigate (deviation (J), where legacy NPEs). */}
+      <Modal
+        open={pendingSubPage !== null && panelMode === 'new'}
+        modalHeading="Save camp report"
+        primaryButtonText="Yes"
+        secondaryButtonText="No"
+        onRequestClose={() => {
+          setPendingSubPage(null)
+        }}
+        onRequestSubmit={confirmSubPageSave}
+      >
+        {/* Rendered only while pending. Carbon keeps a closed modal's children mounted, and the
+            CFM-002 twin below carries text the close-camp confirm already renders — leaving both in
+            the DOM unconditionally would make "the dialog saying X" ambiguous for any query. */}
+        {pendingSubPage !== null && <p>{CONFIRM_SAVE_NEW_CAMP}</p>}
+      </Modal>
+
+      {/* CFM-002 — from an EXISTING camp. Legacy issues no save here (Schedule5MB.java:195-203), so
+          this genuinely discards the panel's unsaved edits, which is what the message warns about. */}
+      <Modal
+        open={pendingSubPage !== null && panelMode !== 'new'}
+        modalHeading="Leave camp report"
+        primaryButtonText="Yes"
+        secondaryButtonText="No"
+        onRequestClose={() => {
+          setPendingSubPage(null)
+        }}
+        onRequestSubmit={confirmSubPageNavigate}
+      >
+        {pendingSubPage !== null && <p>{CONFIRM_NAVIGATION}</p>}
       </Modal>
     </div>
   )

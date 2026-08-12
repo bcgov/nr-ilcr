@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -147,5 +148,77 @@ class Schedule5ByteLengthTest {
 
     // And the deferral must not swallow the multibyte case it exists to catch.
     assertEquals(1, validator.validate(request("é".repeat(16), null)).size());
+  }
+
+  // ===============================================================================================
+  // Story 7.4 — SubPageRowRequest.description.
+  //
+  // Its byte guard is a DIFFERENT SHAPE from campName's and the difference matters. campName's two
+  // caps are both 30, so a single multibyte character overflows a name the character cap accepts,
+  // and the byte guard is load-bearing. The sub-page description is capped at 30 CHARACTERS against
+  // a 120-BYTE column (delivery ITEM_DESCRIPTION VARCHAR2(120), CHAR_USED = 'B' — Task 1 gate (i)),
+  // and a 30-CHARACTER string can carry at most 90 UTF-8 bytes. So @MaxByteLength(120) is PROVABLY
+  // NON-BINDING behind @Size(max = 30): no input can reach it.
+  //
+  // The 90-byte ceiling is worth spelling out, because the obvious guess (30 × 4 = 120) is wrong.
+  // @Size counts JAVA CHARS. A 4-byte character is a surrogate pair — 2 Java chars for 4 bytes, so
+  // 2 bytes per unit of the 30-char budget. A 3-byte BMP character is 1 Java char for 3 bytes, so 3
+  // bytes per unit. Three-byte characters are therefore the densest possible input, and thirty of
+  // them is 90 bytes — 30 bytes clear of the column.
+  //
+  // The guard is declared anyway to keep the schedule's byte-guard idiom uniform, but the honest
+  // assertion is that the widest possible value is ACCEPTED, not that something is rejected. A test
+  // claiming the byte cap fires would be asserting a falsehood.
+  // ===============================================================================================
+
+  private static SubPageRowRequest rowRequest(String description) {
+    return new SubPageRowRequest(null, description, 100);
+  }
+
+  @Test
+  @DisplayName("sub-page description: the DENSEST possible 30 characters (90 bytes) is accepted")
+  void widestPossibleDescriptionIsAccepted() {
+    // Thirty 3-byte BMP characters — the byte-densest string @Size(max = 30) admits.
+    String densest = "漢".repeat(30);
+    assertEquals(30, densest.length());
+    assertEquals(90, utf8Bytes(densest));
+    assertTrue(validator.validate(rowRequest(densest)).isEmpty(),
+        "the densest 30 characters is 90 bytes, well inside the 120-byte column");
+
+    // And the surrogate-pair case, which is LESS dense despite using 4-byte characters: 15 of them
+    // exhaust the 30-char budget at only 60 bytes.
+    String surrogates = "🚀".repeat(15);
+    assertEquals(30, surrogates.length());
+    assertEquals(60, utf8Bytes(surrogates));
+    assertTrue(validator.validate(rowRequest(surrogates)).isEmpty());
+  }
+
+  @Test
+  @DisplayName("sub-page description: 31 characters trips EXACTLY ONE constraint")
+  void overLongDescriptionReportsOnce() {
+    assertEquals(1, validator.validate(rowRequest("A".repeat(31))).size());
+  }
+
+  @Test
+  @DisplayName("sub-page description: null and blank pass — required-ness is client-side only")
+  void blankDescriptionPasses() {
+    // Deviation (F). A @NotBlank here would make legacy-stored rows un-re-saveable and would make
+    // four already-shipped Check Status conditions unreachable.
+    assertTrue(validator.validate(rowRequest(null)).isEmpty());
+    assertTrue(validator.validate(rowRequest("")).isEmpty());
+    assertTrue(validator.validate(rowRequest("   ")).isEmpty());
+  }
+
+  @Test
+  @DisplayName("sub-page cost: the DTO carries the WIDER band; the camp narrowing is the service's")
+  void dtoCarriesTheWiderCostBand() {
+    // One DTO serves both pages, so its declarative cap is Access's ±99,999,999. A value legal here
+    // but illegal on the camp page (10,000,000) must therefore pass VALIDATION and be rejected by
+    // Schedule5Service.validateSubPageCosts instead — proved end-to-end in
+    // Schedule5SubPageValidationIT. If someone ever tightened this annotation to ±9,999,999, the
+    // Access page would silently lose a decimal order of magnitude and only that IT would notice.
+    assertTrue(validator.validate(new SubPageRowRequest(null, "Wide", 10_000_000)).isEmpty());
+    assertTrue(validator.validate(new SubPageRowRequest(null, "Max", 99_999_999)).isEmpty());
+    assertEquals(1, validator.validate(new SubPageRowRequest(null, "Over", 100_000_000)).size());
   }
 }

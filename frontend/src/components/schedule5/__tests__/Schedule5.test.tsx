@@ -6,8 +6,21 @@ import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
 // PageTitle / TanStack Link throw outside a RouterProvider; mock the router like the sibling suites.
+//
+// `getRouteApi` is mocked alongside them because Story 7.4 drives the expense sub-page level from
+// URL search params (`camp` + `sub`) the way Schedule 4 does. The search value and the navigate spy
+// are held in module-scope mutables so a test can put the page on a sub-page, or assert where a
+// link navigated to, WITHOUT rebuilding this whole suite around a memory router — Schedule 4 needs
+// one only because its tests drive the browser Back button, which none of these do.
+const routerSearch: { current: Record<string, unknown> } = { current: {} }
+const navigateSpy = vi.fn()
+
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateSpy,
+  getRouteApi: () => ({
+    useSearch: () => routerSearch.current,
+    useNavigate: () => navigateSpy,
+  }),
   Link: ({ children }: { children: ReactNode }) => children,
 }))
 
@@ -1017,5 +1030,158 @@ describe('Schedule 5 stale-context safety (AC14)', () => {
     expect(screen.queryByText(/to complete copy of camp/i)).not.toBeInTheDocument()
     // …and the resolve's share of the saving lock is gone with the context that dispatched it.
     expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
+  })
+})
+
+describe('the expense sub-page links and the CFM-004 ladder (Story 7.4, AC13/AC14)', () => {
+  const CONFIRM_SAVE_NEW_CAMP =
+    'The information for the New Camp must be saved before you can add other expenses. Would you like to save the information now?'
+  const CONFIRM_NAVIGATION =
+    'Any unsaved data will be lost. Are you sure you would like to continue?'
+
+  /** The two links keep 7.3's label verbatim — only the element changed, to a button. */
+  const subPageLink = (label: RegExp) => screen.getByRole('button', { name: label })
+
+  test('AC14 — the labels keep their live counts and are now buttons', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    // Camp 8401 serves otherCampExpenseCount 3 and otherAccessExpenseCount 1.
+    expect(subPageLink(/^Other Camp Expenses \(3\):$/)).toBeInTheDocument()
+    expect(subPageLink(/^Other Access Expenses \(1\):$/)).toBeInTheDocument()
+  })
+
+  test('AC13 — an EXISTING camp fires CFM-002, navigates, and issues NO write', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    let wrote = false
+    server.use(
+      http.put(CAMP_URL, () => {
+        wrote = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.click(subPageLink(/^Other Camp Expenses \(3\):$/))
+    // Schedule5MB.java:195-203 does no save at all here, so the warning is real: the panel's
+    // unsaved edits are genuinely discarded.
+    //
+    // Selected by HEADING, not by text: the close-camp confirm carries the same CFM-002 sentence,
+    // so while this dialog is open the sentence appears twice. The headings are what distinguish
+    // them ("Leave camp report" vs "Close camp report").
+    const dialog = screen.getByText('Leave camp report').closest('.cds--modal') as HTMLElement
+    expect(within(dialog).getByText(CONFIRM_NAVIGATION)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    expect(navigateSpy).toHaveBeenCalledWith({
+      to: '/schedule-5',
+      search: { camp: 8401, sub: 'CAMP' },
+    })
+    await flushAsync()
+    expect(wrote).toBe(false)
+  })
+
+  test('AC13 — a NEW camp fires CFM-004, saves, THEN navigates', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const saved: Camp = { ...cedarFlats, campId: 8499, campName: 'Brand New Camp' }
+    let posted = false
+    server.use(
+      http.post(CAMPS_URL, () => {
+        posted = true
+        return HttpResponse.json(doc({ camps: [cedarFlats, saved] }))
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'Brand New Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+
+    await user.click(subPageLink(/^Other Access Expenses \(0\):$/))
+    const dialog = confirmDialog(CONFIRM_SAVE_NEW_CAMP)
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    await waitFor(() => {
+      expect(posted).toBe(true)
+    })
+    // The id comes from the SAVED document — a create has none to echo back beforehand.
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith({
+        to: '/schedule-5',
+        search: { camp: 8499, sub: 'ACCESS' },
+      })
+    })
+  })
+
+  test('AC13 — a FAILED save renders the error and does NOT navigate (deviation (J))', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    server.use(http.post(CAMPS_URL, () => problemBody(409, 'Camp name already exists.')))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'Cedar Flats Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(subPageLink(/^Other Camp Expenses \(0\):$/))
+    await user.click(
+      within(confirmDialog(CONFIRM_SAVE_NEW_CAMP)).getByRole('button', { name: /^yes$/i }),
+    )
+
+    // Legacy dereferences savedCampId.toString() unguarded here and NPEs the page.
+    expect(await screen.findByText('Camp name already exists.')).toBeInTheDocument()
+    await flushAsync()
+    expect(navigateSpy.mock.calls).toHaveLength(before)
+    // The entered name survives so a corrected save can retry.
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp')
+  })
+
+  test('AC13 — CFM-004 No stays put: no save, no navigation', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    let posted = false
+    server.use(
+      http.post(CAMPS_URL, () => {
+        posted = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'Brand New Camp')
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(subPageLink(/^Other Camp Expenses \(0\):$/))
+    await user.click(
+      within(confirmDialog(CONFIRM_SAVE_NEW_CAMP)).getByRole('button', { name: /^no$/i }),
+    )
+    await flushAsync()
+
+    expect(posted).toBe(false)
+    expect(navigateSpy.mock.calls).toHaveLength(before)
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Brand New Camp')
+  })
+
+  test('AC13 — a READ-ONLY schedule navigates with no confirm at all', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ editable: false }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^view$/i }))
+    await screen.findByLabelText('Camp Name')
+    await user.click(subPageLink(/^Other Camp Expenses \(3\):$/))
+
+    expect(navigateSpy).toHaveBeenCalledWith({
+      to: '/schedule-5',
+      search: { camp: 8401, sub: 'CAMP' },
+    })
+    expect(screen.queryByText(CONFIRM_SAVE_NEW_CAMP)).not.toBeInTheDocument()
   })
 })

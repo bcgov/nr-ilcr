@@ -3,12 +3,15 @@ package ca.bc.gov.nrs.ilcr.schedule5;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
 import ca.bc.gov.nrs.ilcr.schedule5.api.Schedule5Api;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult.CampCheckMessage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.List;
 import java.util.Map;
@@ -181,6 +184,83 @@ public class Schedule5Controller implements Schedule5Api {
           "No check-status field segment mapped for '" + raw.field() + "'");
     }
     return "Camp Report Name : " + campName + segment + ": " + resolveText(raw.key());
+  }
+
+  // ===============================================================================================
+  // Sub-pages (Story 7.4). Each method is the same four lines — guard, permission, delegate, echo —
+  // differing only in the SubPage constant, which is where the two pages' cost bounds and item ids
+  // live (Schedule5Service.SubPage).
+  // ===============================================================================================
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> getOtherCampExpenses(
+      int campId, String millId, String year, Authentication authentication) {
+    return ResponseEntity.ok(readSubPage(campId, millId, year, SubPage.CAMP, authentication));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> getOtherAccessExpenses(
+      int campId, String millId, String year, Authentication authentication) {
+    return ResponseEntity.ok(readSubPage(campId, millId, year, SubPage.ACCESS, authentication));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> saveOtherCampExpenses(
+      int campId, String millId, String year, SubPageSaveRequest request,
+      Authentication authentication) {
+    return ResponseEntity.ok(
+        saveSubPage(campId, millId, year, SubPage.CAMP, request, authentication));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> saveOtherAccessExpenses(
+      int campId, String millId, String year, SubPageSaveRequest request,
+      Authentication authentication) {
+    return ResponseEntity.ok(
+        saveSubPage(campId, millId, year, SubPage.ACCESS, request, authentication));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> deleteOtherCampExpense(
+      int campId, int rowId, String millId, String year, Authentication authentication) {
+    return ResponseEntity.ok(
+        deleteSubPageRow(campId, rowId, millId, year, SubPage.CAMP, authentication));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<SubPageDocument> deleteOtherAccessExpense(
+      int campId, int rowId, String millId, String year, Authentication authentication) {
+    return ResponseEntity.ok(
+        deleteSubPageRow(campId, rowId, millId, year, SubPage.ACCESS, authentication));
+  }
+
+  private SubPageDocument readSubPage(
+      int campId, String millId, String year, SubPage page, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    return schedule5Service.getSubPage(context.millId(), context.year(), campId, page,
+        permissions.hasPermission(authentication, EDIT_SCHEDULE));
+  }
+
+  private SubPageDocument saveSubPage(int campId, String millId, String year, SubPage page,
+      SubPageSaveRequest request, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    return schedule5Service.saveSubPage(context.millId(), context.year(), campId, page, request,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE), authentication.getName())
+        .withMessage(message(MSG_SAVED));
+  }
+
+  private SubPageDocument deleteSubPageRow(int campId, int rowId, String millId, String year,
+      SubPage page, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    return schedule5Service.deleteSubPageRow(context.millId(), context.year(), campId, page, rowId,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE))
+        .withMessage(message(MSG_DELETED));
   }
 
   /** Resolve a legacy bundle key (with optional MessageFormat args) to verbatim text (AD-8). */
