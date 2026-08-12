@@ -35,13 +35,8 @@
 // the row is one full-width Column holding its own equal-fraction grid. Steps down to two columns, then
 // one, on narrower viewports.
 .schedule-7b__field-grid {
-  --s7b-label-col: 9rem;
-
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  // Generous gaps: with the label beside its field, a tight gutter reads as one run-on row and the next
-  // field's label crowds the previous field's box. The column gap is the wider of the two because that
-  // is the boundary between two separate label/field pairs.
   row-gap: 1.75rem;
   column-gap: 3rem;
   // Labels wrap to two lines on some fields; aligning to the top keeps the inputs in a row from
@@ -56,28 +51,8 @@
     grid-template-columns: 1fr;
   }
 
-  // Legacy puts each label to the LEFT of its control rather than above it. Carbon stacks by default,
-  // so the control's own wrapper becomes a two-column grid: label in column 1, field in column 2.
-  .cds--text-input-wrapper,
-  .cds--list-box__wrapper {
-    display: grid;
-    grid-template-columns: var(--s7b-label-col) 1fr;
-    column-gap: 0.5rem;
-    align-items: center;
-  }
-
-  // Carbon spaces the label for the stacked layout; beside the field that margin would push the row
-  // taller than the control it labels.
-  .cds--text-input__label-wrapper,
-  .cds--list-box__wrapper > .cds--label {
-    margin: 0;
-  }
-
-  // A dropdown's inline error is a third child of the wrapper, so it would otherwise wrap under the
-  // label. (A text input's error already lives inside the field wrapper, which is column 2.)
-  .cds--list-box__wrapper > .cds--form-requirement {
-    grid-column: 2;
-  }
+  // Each label sits ABOVE its control — Carbon's own stacked layout, which is what the team asked for
+  // over legacy's label-beside-field arrangement.
 
   // Legacy suffixes every one of these labels with " :". Generated content rather than text baked into
   // `labelText`, so the ACCESSIBLE NAME stays the bare field name: a screen reader announcing "Span (mm)
@@ -94,25 +69,20 @@
   margin-block-start: 1rem;
 }
 
-// Numeric fields right-align, so a column of amounts lines up on its digits and each cost meets the
-// total beside it. Named for the schedule-7a__num / schedule-3__num equivalents. Carbon lands
-// `className` on the field WRAPPER (not the input, despite its propType comment), so the input is
-// reached from there.
-.schedule-7b__num .cds--text-input {
-  text-align: right;
-}
-
 // The server-computed Total costs cell. Sits in the same three-column rhythm as the two costs beside it
-// and keeps their label/value split, so the figure lines up with the amounts rather than floating.
+// and stacks label over value like the fields, so the figure lines up with the amounts rather than
+// floating.
 .schedule-7b__total {
-  display: grid;
-  grid-template-columns: var(--s7b-label-col) 1fr;
-  column-gap: 0.5rem;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
 }
 
 .schedule-7b__total-label {
   font-size: 0.875rem;
+  // Carbon's own label metrics (label-01 line-height, then $spacing-03 to the field). Anything else and
+  // the total's figure starts a pixel or two off the row the cost inputs sit on.
+  line-height: 1.33333;
+  margin-block-end: 0.5rem;
 }
 
 .schedule-7b__total-value {
@@ -122,10 +92,14 @@
   // that is merely derived.
   font-size: 0.875rem;
   line-height: 1.29;
-  text-align: right;
-  // Holds the cell open when the value is blank, so an empty total does not collapse the line.
-  min-height: 1.5rem;
-  // Carbon's field text is inset by its own inline padding; matching it keeps the total aligned with
-  // the cost inputs beside it (schedule 3 indents its plain-text cells for the same reason).
-  padding-inline-end: 1rem;
+  // Stand in for the input box the other two costs have: same height as size="sm" (layout size-height
+  // sm = 2rem) with the figure centred in it, so the total sits on the same line as the amounts rather
+  // than riding above them, and the cell keeps its height when the value is blank.
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  // Carbon insets its field text by the density padding ($spacing-05); matching it keeps the total's
+  // first digit aligned with the amounts in the cost inputs beside it (schedule 3 indents its
+  // plain-text cells for the same reason).
+  padding-inline-start: 1rem;
 }

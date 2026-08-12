@@ -39,23 +39,16 @@ const CulvertFields: FC<Props> = ({
   const text = (
     field: keyof CulvertFormValues,
     label: string,
-    extra: {
+    inputProps: {
       inputMode?: 'numeric' | 'decimal'
-      // Money only. Legacy right-aligns the cost boxes so the column of amounts meets the total
-      // beside it, but leaves the measurements (span, rise, length, pieces) left-aligned — so this
-      // cannot be inferred from `inputMode`, which both groups set.
-      rightAlign?: boolean
       onBlur?: () => void
     } = {},
   ) => {
-    // Split off: `rightAlign` is ours, not a TextInput prop, and would reach the DOM via the spread.
-    const { rightAlign, ...inputProps } = extra
     return (
       <TextInput
         id={`${idPrefix}-${field}`}
         labelText={label}
         size="sm"
-        className={rightAlign ? 'schedule-7b__num' : undefined}
         disabled={disabled}
         value={form[field]}
         invalid={Boolean(errors[field])}
@@ -75,15 +68,10 @@ const CulvertFields: FC<Props> = ({
    * them re-format on blur — not just the money. Each parse of a form string strips the grouping
    * (`parseDecimalInput`), so the mask is display only and never reaches the wire.
    */
-  const masked = (
-    field: MaskedField,
-    label: string,
-    inputMode: 'numeric' | 'decimal',
-    rightAlign = false,
-  ) => text(field, label, { inputMode, rightAlign, onBlur: () => onMask(field) })
+  const masked = (field: MaskedField, label: string, inputMode: 'numeric' | 'decimal') =>
+    text(field, label, { inputMode, onBlur: () => onMask(field) })
 
-  // Money additionally right-aligns, so the column of amounts meets the total beside it.
-  const cost = (field: CostField, label: string) => masked(field, label, 'numeric', true)
+  const cost = (field: CostField, label: string) => masked(field, label, 'numeric')
 
   const items = codeLists.culvertTypes as CulvertCodeOption[]
 
@@ -125,8 +113,8 @@ const CulvertFields: FC<Props> = ({
               current as you typed, re-rendering it on every cost change (`:180,190` add form,
               `:440,460` rows). `previewTotalCost` reproduces that from the entered values; it is
               display only and never sent, and the served figure replaces it on the next echo.
-              Rendered the way every other schedule renders a derived value: right-aligned plain text
-              at normal weight, never a control. The label stays in the accessible tree, so the figure
+              Rendered the way every other schedule renders a derived value: plain text at normal
+              weight, never a control. The label stays in the accessible tree, so the figure
               is announced with a name — the visual cue that this is not editable is the absence of a
               field, which a screen reader cannot see. */}
           <div className="schedule-7b__total">

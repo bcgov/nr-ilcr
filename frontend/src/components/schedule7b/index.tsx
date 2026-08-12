@@ -1,19 +1,21 @@
 import type { FC } from 'react'
 import { useCallback, useState } from 'react'
-import { Accordion, AccordionItem, Button, Column, Grid, Modal, Pagination } from '@carbon/react'
+import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
 import type Schedule7bResponse from '@/interfaces/Schedule7bResponse'
 import type { Culvert, Schedule7bCheckStatusResponse } from '@/interfaces/Schedule7bResponse'
 import type CulvertRequest from '@/interfaces/Schedule7bRequest'
 import type { CulvertErrors, CulvertFormValues, MaskedField } from './validation'
 import apiService from '@/service/api-service'
+import { useScheduleBanners } from '@/hooks/useScheduleBanners'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
-import { extractDetail } from '@/utils/error'
+import { clearFieldError } from '@/utils/forms'
 import { groupFixedInput, numStrFixed } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
-import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
+import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
+import SaveCheckActions from '@/components/core/SaveCheckActions'
+import ScheduleBanners from '@/components/core/ScheduleBanners'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CulvertFields from './CulvertFields'
 import {
@@ -28,10 +30,9 @@ import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle where legacy had text.
 // Every success and error is rendered from the API `message.text` / ProblemDetail.detail — never
-// hardcoded (AD-8). The context-missing literal has no trailing space (sibling convention); the
-// SERVER's ERR-003 (with its real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+// hardcoded (AD-8). The context-missing and confirm-delete literals are shared with the sibling
+// pages, so they live with the components that render them; the SERVER's ERR-003 (with its real
+// trailing space) still renders verbatim when a request returns it.
 const ADD_PANEL_HEADING = 'Add a Culvert report'
 const EMPTY_LIST = 'No culvert reports have been added.'
 // Client-side gate text. The per-field messages under each input are the API's verbatim wording; this
@@ -101,10 +102,18 @@ const buildBody = (form: CulvertFormValues, revisionCount?: number): CulvertRequ
 const Schedule7b: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [checkResult, setCheckResult] = useState<Schedule7bCheckStatusResponse | null>(null)
+  const {
+    saving,
+    message,
+    actionError,
+    checkResult,
+    setMessage,
+    setActionError,
+    setCheckResult,
+    clearBanners,
+    resetBanners,
+    run,
+  } = useScheduleBanners<Schedule7bCheckStatusResponse>(isCurrent)
 
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<CulvertFormValues>(emptyCulvertForm)
@@ -128,10 +137,7 @@ const Schedule7b: FC = () => {
   // Clear all transient state whenever a fresh document loads (mill/year change), so a context change
   // cannot strand an open panel, a stale banner, or a page number past the end of the new list.
   const resetTransient = useCallback(() => {
-    setSaving(false)
-    setMessage(null)
-    setActionError(null)
-    setCheckResult(null)
+    resetBanners()
     setShowAddPanel(false)
     setAddForm(emptyCulvertForm())
     setAddErrors({})
@@ -140,7 +146,7 @@ const Schedule7b: FC = () => {
     setConfirmDeleteId(null)
     setOpenIds(new Set())
     setPage(1)
-  }, [])
+  }, [resetBanners])
 
   const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7bResponse>({
     path: SCHEDULE7B_PATH,
@@ -153,12 +159,6 @@ const Schedule7b: FC = () => {
   })
 
   const query = `?millId=${String(millId)}&year=${String(year)}`
-
-  const clearBanners = () => {
-    setMessage(null)
-    setActionError(null)
-    setCheckResult(null)
-  }
 
   // A write echoes the recomputed document. Only the row that was just saved is re-derived from it;
   // every other open editor keeps its unsaved edits, because all rows are live at once and a blanket
@@ -184,33 +184,10 @@ const Schedule7b: FC = () => {
     // server has now replaced. Without this, red `Value Required` text from an earlier blocked Save sat
     // under the fields while the banner read `Data deleted successfully`.
     setRowErrors({})
+    // Banners: the echoed success line replaces whatever was on screen, and any earlier failure or
+    // check result is stale the moment a write lands.
+    clearBanners()
     setMessage(doc.message?.text ?? null)
-    setActionError(null)
-    setCheckResult(null)
-  }
-
-  const failed = (error: unknown, fallback: string) => {
-    // Keep entered values for correction; surface the API's verbatim detail.
-    setActionError(extractDetail(error) || fallback)
-  }
-
-  const release = () => {
-    // On a context change resetTransient already cleared `saving`, and a request dispatched under the
-    // NEW context may be in flight — a stale finally must not release its lock.
-    if (isCurrent()) {
-      setSaving(false)
-    }
-  }
-
-  // Editing a field clears its own error, so a corrected value stops showing a stale rejection. The
-  // rest of the errors stand until the next submit re-evaluates them.
-  const clearFieldError = (errors: CulvertErrors, key: keyof CulvertFormValues): CulvertErrors => {
-    if (!(key in errors)) {
-      return errors
-    }
-    const next = { ...errors }
-    delete next[key]
-    return next
   }
 
   // Re-apply a masked field's legacy format once the user leaves it ("1200" → "1,200", "12" → "12.0"
@@ -273,25 +250,20 @@ const Schedule7b: FC = () => {
       return
     }
     setAddErrors({})
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .post<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, buildBody(addForm))
-      .then((response) => {
-        if (!isCurrent()) {
-          return
-        }
-        applyDocument(response.data)
-        // Inputs clear only on success (add-is-save).
-        setAddForm(emptyCulvertForm())
-        setShowAddPanel(false)
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Schedule could not be saved.')
-        }
-      })
-      .finally(release)
+    run(
+      apiService
+        .getAxiosInstance()
+        .post<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, buildBody(addForm)),
+      {
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          applyDocument(doc)
+          // Inputs clear only on success (add-is-save).
+          setAddForm(emptyCulvertForm())
+          setShowAddPanel(false)
+        },
+      },
+    )
   }
 
   /**
@@ -342,31 +314,22 @@ const Schedule7b: FC = () => {
       return
     }
 
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .put<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, {
-        culverts: forms.map(({ culvert, form }) => ({
-          culvertReportId: culvert.culvertReportId,
-          culvert: buildBody(form, culvert.revisionCount),
-        })),
-      })
-      .then((response) => {
-        if (!isCurrent()) {
-          return
-        }
-        applyDocument(response.data)
-        // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns them
-        // all to "untouched" and re-derives them from the echoed document.
+    const body = {
+      culverts: forms.map(({ culvert, form }) => ({
+        culvertReportId: culvert.culvertReportId,
+        culvert: buildBody(form, culvert.revisionCount),
+      })),
+    }
+    run(apiService.getAxiosInstance().put<Schedule7bResponse>(`${CULVERTS_PATH}${query}`, body), {
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        applyDocument(doc)
+        // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
+        // them all to "untouched" and re-derives them from the echoed document.
         setRowForms({})
         setRowErrors({})
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Schedule could not be saved.')
-        }
-      })
-      .finally(release)
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -376,23 +339,17 @@ const Schedule7b: FC = () => {
     const id = confirmDeleteId
     setConfirmDeleteId(null)
     clearBanners()
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .delete<Schedule7bResponse>(`${CULVERTS_PATH}/${String(id)}${query}`)
-      .then((response) => {
-        if (isCurrent()) {
-          // SUC-002 `Data deleted successfully` arrives unconditionally, including for the last
-          // culvert: legacy 7B has no empty-schedule branch (that message belongs to Schedule 7A).
-          applyDocument(response.data)
-        }
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Unable to delete culvert report.')
-        }
-      })
-      .finally(release)
+    run(
+      apiService
+        .getAxiosInstance()
+        .delete<Schedule7bResponse>(`${CULVERTS_PATH}/${String(id)}${query}`),
+      {
+        fallback: 'Unable to delete culvert report.',
+        // SUC-002 `Data deleted successfully` arrives unconditionally, including for the last
+        // culvert: legacy 7B has no empty-schedule branch (that message belongs to Schedule 7A).
+        onSuccess: applyDocument,
+      },
+    )
   }
 
   const handleCheckStatus = () => {
@@ -402,56 +359,26 @@ const Schedule7b: FC = () => {
     clearBanners()
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-07) — mutates nothing.
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .post<Schedule7bCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`)
-      .then((response) => {
-        if (isCurrent()) {
-          setCheckResult(response.data)
-        }
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Unable to check status.')
-        }
-      })
-      .finally(release)
-  }
-
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
+    run(
+      apiService
+        .getAxiosInstance()
+        .post<Schedule7bCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
+      { fallback: 'Unable to check status.', onSuccess: setCheckResult },
     )
   }
 
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 7B" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  // Covers the three context guards AND the action-key denial: ERR-003 / ERR-004 / ERR-002 and the 403
-  // all arrive as a ProblemDetail, and each renders its verbatim `detail` with the work area suppressed
-  // (S11-S13, S30).
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 7B', subtitle: errorDetail }}
-      />
-    )
+  // The load-error branch covers the three context guards AND the action-key denial: ERR-003 /
+  // ERR-004 / ERR-002 and the 403 all arrive as a ProblemDetail, and each renders its verbatim
+  // `detail` with the work area suppressed (S11-S13, S30).
+  const loadState = renderScheduleLoadState({
+    header: PAGE_HEADER,
+    scheduleName: 'Schedule 7B',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {
@@ -476,67 +403,28 @@ const Schedule7b: FC = () => {
   // is additionally disabled with no culverts: the batch endpoint rejects an empty body, so there is no
   // action to offer.
   const actionButtons = (key: string) => (
-    <Column key={key} sm={4} md={8} lg={16} className="schedule-7b__actions">
-      <Button
-        kind="primary"
-        disabled={controlsDisabled || culverts.length === 0}
-        onClick={handleSaveAll}
-      >
-        Save
-      </Button>
-      <Button kind="tertiary" disabled={controlsDisabled} onClick={handleCheckStatus}>
-        Check Status
-      </Button>
-    </Column>
+    <SaveCheckActions
+      key={key}
+      className="schedule-7b__actions"
+      saveDisabled={controlsDisabled || culverts.length === 0}
+      checkDisabled={controlsDisabled}
+      onSave={handleSaveAll}
+      onCheckStatus={handleCheckStatus}
+    />
   )
 
   return (
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
-        {actionError && (
-          <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
-        )}
-        {/* NotificationColumn IS a Carbon Column, so these are direct grid children like the
-            message/actionError banners above — wrapping them in another Column would strip their span
-            classes of meaning and misalign the two groups. */}
-        {checkResult && (
-          <>
-            {checkResult.errors.map((error, index) => (
-              <NotificationColumn
-                // Missing-value lines repeat verbatim across culverts, so the list index is what keeps
-                // otherwise-identical entries distinct.
-                key={`culvert-check-error-${String(index)}-${error.key}`}
-                kind="error"
-                title="Action required"
-                subtitle={error.text}
-              />
-            ))}
-            {/* Present only when every culvert passes. Unlike Schedule 7A there is no per-culvert
-                all-met line, so a schedule with gaps renders errors alone. */}
-            {checkResult.requirementsMetMessage && (
-              <NotificationColumn
-                kind="success"
-                title="Requirements met"
-                subtitle={checkResult.requirementsMetMessage.text}
-              />
-            )}
-            {/* A result carrying no message at all would otherwise render nothing, leaving the button
-                looking dead. requirementsMet is the one field always populated. */}
-            {checkResult.errors.length === 0 && !checkResult.requirementsMetMessage && (
-              <NotificationColumn
-                kind={checkResult.requirementsMet ? 'success' : 'warning'}
-                title="Status checked"
-                subtitle={
-                  checkResult.requirementsMet
-                    ? 'All requirements for this schedule have been met'
-                    : 'This schedule has outstanding requirements.'
-                }
-              />
-            )}
-          </>
-        )}
+        {/* No `rowMessages`: unlike Schedule 7A there is no per-culvert all-met line, so a schedule
+            with gaps renders errors alone. */}
+        <ScheduleBanners
+          keyPrefix="culvert"
+          message={message}
+          actionError={actionError}
+          checkResult={checkResult}
+        />
 
         {/* Write controls stay rendered and go disabled outside Draft rather than disappearing — legacy
             bound `disabled` on every one of them and never removed a control, so a read-only reporter
@@ -653,23 +541,9 @@ const Schedule7b: FC = () => {
         {actionButtons('page-actions-bottom')}
       </Grid>
 
-      {/* Mounted only while a delete is pending, so its Yes/No do not sit in the accessibility tree
-          competing with the row actions when no dialog is open. Cancelling (S05) sends no request and
-          leaves the record unchanged with no message. */}
+      {/* Cancelling (S05) sends no request and leaves the record unchanged with no message. */}
       {confirmDeleteId !== null && (
-        <Modal
-          open
-          danger
-          // Legacy's confirm dialog answered with Yes/No (schedule7B.xhtml:534-539), not
-          // Delete/Cancel.
-          modalHeading="Confirmation"
-          primaryButtonText="Yes"
-          secondaryButtonText="No"
-          onRequestClose={() => setConfirmDeleteId(null)}
-          onRequestSubmit={handleDelete}
-        >
-          <p>{CONFIRM_DELETE}</p>
-        </Modal>
+        <ConfirmDeleteModal onCancel={() => setConfirmDeleteId(null)} onConfirm={handleDelete} />
       )}
     </div>
   )

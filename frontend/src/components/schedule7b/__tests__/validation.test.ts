@@ -55,15 +55,19 @@ describe('validateCulvert', () => {
   })
 
   test('length is a RANGE check only — extra decimals are the server’s to round', () => {
-    expect(validateCulvert(valid({ length: '999999.9' })).length).toBeUndefined()
+    // Read through a helper rather than asserting on `.length` inline: the field IS named `length`, and
+    // an assertion shaped `expect(x.length).toBe(…)` reads to static analysis as a miscounted array.
+    const lengthError = (value: string) => validateCulvert(valid({ length: value })).length
+
+    expect(lengthError('999999.9')).toBeUndefined()
     // Two decimals must PASS: the backend deliberately carries no @Digits and normalizes the scale on
     // write, because a client formatting to two places could otherwise never save a culvert.
-    expect(validateCulvert(valid({ length: '12.50' })).length).toBeUndefined()
-    expect(validateCulvert(valid({ length: '1000000' })).length).toBe(CULVERT_MESSAGES.lengthRange)
-    expect(validateCulvert(valid({ length: '-0.1' })).length).toBe(CULVERT_MESSAGES.lengthRange)
+    expect(lengthError('12.50')).toBeUndefined()
+    expect(lengthError('1000000')).toBe(CULVERT_MESSAGES.lengthRange)
+    expect(lengthError('-0.1')).toBe(CULVERT_MESSAGES.lengthRange)
     // No length-specific converter key exists on the backend, so unparseable text reports the range
     // line (the Schedule 7A precedent) rather than the volume wording the type fallback would give.
-    expect(validateCulvert(valid({ length: 'abc' })).length).toBe(CULVERT_MESSAGES.lengthRange)
+    expect(lengthError('abc')).toBe(CULVERT_MESSAGES.lengthRange)
   })
 
   test.each([
