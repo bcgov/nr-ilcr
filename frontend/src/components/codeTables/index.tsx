@@ -13,7 +13,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import apiService from '@/service/api-service'
@@ -181,13 +181,10 @@ const CodeTables: FC = () => {
   )
 
   return (
-    <div className="app-page">
-      <Grid fullWidth className="app-page__header">
-        <PageTitle
-          title="Table Maintenance"
-          subtitle="Add and edit entries in the lookup code tables that feed the schedule dropdowns."
-        />
-      </Grid>
+    <div className="app-page schedule-page">
+      {/* Shared schedule tombstone header: page identity left, the mill/status working context
+          right-aligned — same header Schedules 2/4/8 use. */}
+      <ScheduleTombstone title="Table Maintenance" />
       <Grid fullWidth className="app-page__body">
         {loadError && <NotificationColumn kind="error" title="Error" subtitle={loadError} />}
         {saveMessage && <NotificationColumn kind="success" title="Saved" subtitle={saveMessage} />}
