@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule9.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -57,16 +58,19 @@ import java.math.BigDecimal;
  */
 public record ContractualWorkRecordRequest(
 
+    @MaxByteLength(value = 30, charMax = 30, message = "{contractorIdMaxLengthErrorMsg}")
     @Size(max = 30, message = "{contractorIdMaxLengthErrorMsg}")
     String contractorId,
 
     Integer contractualItemCode,
 
+    @MaxByteLength(value = 30, charMax = 30, message = "{itemDescriptionMaxLengthErrorMsg}")
     @Size(max = 30, message = "{itemDescriptionMaxLengthErrorMsg}")
     String itemDescription,
 
     String unitCode,
 
+    @MaxByteLength(value = 120, charMax = 120, message = "{unitDescriptionMaxLengthErrorMsg}")
     @Size(max = 120, message = "{unitDescriptionMaxLengthErrorMsg}")
     String unitDescription,
 
@@ -87,9 +91,11 @@ public record ContractualWorkRecordRequest(
 
     String sourceCode,
 
+    @MaxByteLength(value = 120, charMax = 120, message = "{sourceDescriptionMaxLengthErrorMsg}")
     @Size(max = 120, message = "{sourceDescriptionMaxLengthErrorMsg}")
     String sourceDescription,
 
+    @MaxByteLength(value = 2000, charMax = 2000, message = "{contractualCommentsMaxLengthErrorMsg}")
     @Size(max = 2000, message = "{contractualCommentsMaxLengthErrorMsg}")
     String comments,
 

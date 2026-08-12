@@ -76,15 +76,15 @@ public class Schedule9Service {
 
   // Check Status field-title segments (leading space) — the exact legacy titles
   // Schedule9CheckStatus.validateSchedule builds: "Contractual Work Report Id : {row}" + segment.
-  private static final String CHECK_COMPANY_ID = " Company ID";
-  private static final String CHECK_CONTRACTUAL_ITEM = " Contractual Item";
-  private static final String CHECK_SIDE_SLOPE = " Side Slope %";
-  private static final String CHECK_NUMBER_OF_UNITS = " Number of Units";
-  private static final String CHECK_UNIT_TYPE = " Unit Type";
-  private static final String CHECK_BEC_ZONE = " Biogeoclimatic Zone";
-  private static final String CHECK_COST = " Cost$";
-  private static final String CHECK_SOURCE = " Source";
-  private static final String CHECK_TITLE_PREFIX = "Contractual Work Report Id : ";
+  static final String CHECK_COMPANY_ID = " Company ID";
+  static final String CHECK_CONTRACTUAL_ITEM = " Contractual Item";
+  static final String CHECK_SIDE_SLOPE = " Side Slope %";
+  static final String CHECK_NUMBER_OF_UNITS = " Number of Units";
+  static final String CHECK_UNIT_TYPE = " Unit Type";
+  static final String CHECK_BEC_ZONE = " Biogeoclimatic Zone";
+  static final String CHECK_COST = " Cost$";
+  static final String CHECK_SOURCE = " Source";
+  static final String CHECK_TITLE_PREFIX = "Contractual Work Report Id : ";
 
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
   private static final String MSG_INVALID_RANGE = "invalidRangeErrorMsg";

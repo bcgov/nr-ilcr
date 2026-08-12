@@ -279,7 +279,8 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
        WHERE CONTRACTUAL_WORK_REPORT_ID = :recordId
          AND ILCR_COST_REPORT_DETAIL_ID = (SELECT MIN(d.ILCR_COST_REPORT_DETAIL_ID)
                                              FROM THE.ILCR_COST_REPORT_DETAIL d
-                                            WHERE d.CONTRACTUAL_WORK_REPORT_ID = :recordId)
+                                            WHERE d.CONTRACTUAL_WORK_REPORT_ID = :recordId
+                                              AND d.ILCR_REPORT_COST_ITEM_ID BETWEEN 108 AND 114)
       """)
   int updateCostLine(
       @Param("recordId") int recordId, @Param("itemCode") int itemCode,
