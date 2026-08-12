@@ -1,6 +1,10 @@
 # Defects — UC-SEC-001 Establish Working Context (Home)
 > How this log works (registers, tags, per-register templates): [defects-guide.md](../../../defects-guide.md)
 
+> **Entry ids:** each register numbers independently, so ids carry their register as a prefix —
+> `BUG-n` (Bug / Regression), `DIV-n` (Divergence), `GAP-n` (Coverage gap), `SPEC-n` (Spec gap).
+> Cite the prefixed id when raising a ticket; a bare "#3" is ambiguous across three registers.
+
 Environment for all entries: branch `e2e-test/uc-sec-001-home-context` · frontend `:3000` + backend `:8080`
 (security off, fixed mock authority) · seeded Docker DB `THE/default@localhost:1525/DBDOCK_01`. Data
 fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real data 2026-07-30.
@@ -9,7 +13,7 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 
 **Divergences:**
 
-- **#1 — The Home page no longer shows a role-specific notice.**
+- **DIV-1 — The Home page no longer shows a role-specific notice.**
   - **What's wrong:** Legacy `home.xhtml` rendered a "User Role Specific Message Section" — a per-role
     notice looked up by the user's role (BR-07), and UC-SEC-001 S01 asserts it appears. The new Home
     (`components/home/index.tsx`) renders no such section at all.
@@ -26,7 +30,7 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
   - **Priority / env:** p2. **Status:** OPEN. Found 2026-07-30.
   - **Test:** `working-context.feature` `@S01` (asserts SUC-001 + banner only) — GREEN.
 
-- **#2 — The empty-mill / empty-year states (S04/S05/S08) cannot be produced through the UI.**
+- **DIV-2 — The empty-mill / empty-year states (S04/S05/S08) cannot be produced through the UI.**
   - **What's wrong:** Legacy S04/S05/S08 require clicking Save while a dropdown is still on its
     "Select Mill" / "Select Reporting Year" placeholder, to get the required-field error. In the new app
     the mount default context (`millYearDefaults.ts` → mill 13050 / year 2017) **is present in both list
@@ -49,12 +53,12 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
   - **Is it a defect?** The required-field enforcement is correct (server-side). Whether Home *should* start
     on placeholders (legacy behaviour) instead of pre-selecting a dev default is a parity question.
   - **Action:** BA/QA to confirm: is pre-selecting the default acceptable, or should Home land on empty
-    dropdowns (restoring the S04/S05/S08 UI path)? Tracked as Coverage gap #1. **Not** a `@discovered-*`
+    dropdowns (restoring the S04/S05/S08 UI path)? Tracked as GAP-1. **Not** a `@discovered-*`
     red — the guarantee holds at the contract; there is no failing behaviour to track.
   - **Priority / env:** p1. **Status:** OPEN. Found 2026-07-30.
   - **Test:** none at the UI (unreachable); contract proven via API above.
 
-- **#3 — On landing, the working-context banner is already populated (before any Save).**
+- **DIV-3 — On landing, the working-context banner is already populated (before any Save).**
   - **What's wrong:** Legacy Home held no session working context until the first Save. The new app seeds a
     dev/UAT default context (`millYearDefaults.ts`, explicitly a temporary scaffold), so the banner renders
     the default mill/year immediately on landing and both dropdowns are pre-filled.
@@ -71,36 +75,36 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 
 **Coverage gaps (not tested at the UI — no app problem):**
 
-- **#1 — S04/S05/S08 required-field validation is contract-covered, not browser-covered.**
+- **GAP-1 — S04/S05/S08 required-field validation is contract-covered, not browser-covered.**
   - **Why not:** The default context pre-selects both dropdowns and Carbon has no clear control, so the
-    empty state is unreachable from the browser (Divergence #2). The validation itself is enforced
-    server-side and proven via the three API calls in Divergence #2.
+    empty state is unreachable from the browser (DIV-2). The validation itself is enforced
+    server-side and proven via the three API calls in DIV-2.
   - **Future action:** author the browser path if/when Home lands on empty dropdowns, or a mock user whose
     default context is absent from the lists. Meanwhile the contract evidence stands.
   - **Status:** OPEN — `not-applicable (UI) / covered-by-contract` in coverage.md.
 
-- **#2 — S02 single-mill pre-select is not reproducible on delivery data.**
+- **GAP-2 — S02 single-mill pre-select is not reproducible on delivery data.**
   - **Why not:** The mount single-mill fallback fires only when the list has exactly one mill; the delivery
     extract has 21. Same conclusion the app team recorded (Vitest MSW 1-mill list covers it at unit level).
   - **Status:** OPEN — `not-applicable` in coverage.md.
 
-- **#3 — Accessibility (axe) — NOW COVERED.**
+- **GAP-3 — Accessibility (axe) — NOW COVERED.**
   - **Resolved 2026-07-30:** `@axe-core/playwright` is wired into this suite (`pages/common/axe.ts`,
     tags `wcag2a/2aa/21a/21aa`) and runs on the Home landing state and the populated-banner state
     (`working-context.feature` `@a11y`). Zero WCAG 2.1 AA violations. Note: the truly-empty Home state
-    isn't reachable (default pre-fills — Divergence #2/#3), so both axe runs are on a populated Home; the
+    isn't reachable (default pre-fills — DIV-2/#3), so both axe runs are on a populated Home; the
     HOME-1.5 AC4 intent (Home + banner a11y proven) holds.
   - **Status:** CLOSED (2026-07-30).
 
-- **#4 — Role-gated branches can't be exercised under single-role mock auth.**
+- **GAP-4 — Role-gated branches can't be exercised under single-role mock auth.**
   - **Why not:** Security off → one fixed authority per run, so any role-conditional behaviour on Home can't
-    be varied. Same as UC-SCH1-001 Coverage gap #1.
+    be varied. Same as UC-SCH1-001 GAP-1.
   - **Future action:** revisit with FAM auth + finer roles.
   - **Status:** OPEN — `blocked`.
 
 **Spec gaps (the Gherkin is missing / underspecifies scenarios):**
 
-- **#1 — S07 left the banner outcome as `[UNKNOWN]`.** The legacy Gherkin S07 could not confirm from source
+- **SPEC-1 — S07 left the banner outcome as `[UNKNOWN]`.** The legacy Gherkin S07 could not confirm from source
   how the `#subMenu` banner renders a null status, and wrote `[UNKNOWN]`. Re-grounded to observed behaviour:
   the banner shows the **Mill line only**, both status lines suppressed, no error. Now asserted green
   (`@S07`). Recorded so the Gherkin's open question is closed by evidence, not fabrication.
@@ -114,3 +118,9 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 - **Home "Save" writes nothing.** It is a read/resolve (`GET /v1/mill-context`) that sets the client-side
   MillYearContext and returns SUC-001 — no report rows are created, so no teardown is needed and scenarios
   are parallel-safe. A deliberate design (client-side context, AR11), not a defect.
+- **Banner → tombstone (bcgov #227) — re-grounded GREEN.** The global working-context ContextBanner was
+  removed; the mill/status lines a Home Save establishes now render on each schedule page's
+  `ScheduleTombstone` header (same `region[name="Working context"]` landmark + `WorkingContextLines`, so
+  the exact text is unchanged). bcgov's `tombstone.spec.ts` (S01 display / S03 switch / S06 closed / S07
+  no-status) is ported here as `schedule-tombstone.feature` (on Schedule 2), verified green incl. axe.
+  An app design move, not a defect — recorded so the ported source is traceable.

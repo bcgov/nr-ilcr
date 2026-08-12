@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +35,12 @@ class Schedule2CheckStatusServiceTest {
   @Mock
   private Schedule2Repository repository;
 
+  @Mock
+  private Schedule1Service schedule1Service;
+
+  @Mock
+  private Schedule3Service schedule3Service;
+
   @InjectMocks
   private Schedule2Service service;
 
@@ -40,10 +49,10 @@ class Schedule2CheckStatusServiceTest {
     when(repository.findSummary(MILL, YEAR)).thenReturn(summary);
     summary.ifPresent(s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
-    lenient().when(repository.findSch3PopTimberVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3PopActualCost(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch3CrownVolume(MILL, YEAR)).thenReturn(Optional.empty());
-    lenient().when(repository.findSch1SubtotalLoggingCost(MILL, YEAR)).thenReturn(Optional.empty());
+    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
+    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false))
+        .thenThrow(new ScheduleNotFoundException());
   }
 
   @Test

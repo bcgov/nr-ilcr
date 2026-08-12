@@ -3,6 +3,10 @@ package ca.bc.gov.nrs.ilcr.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -108,10 +112,20 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(
       MethodArgumentNotValidException ex, HttpServletRequest request) {
-    log.warn("Validation failed: {}", ex.getMessage());
+    // Field names and constraint codes only — NEVER ex.getMessage(), which embeds "rejected value
+    // [...]" for every field error (AD-11: no cost or comment data in logs). A rejected 20-culvert
+    // batch used to write 20 rows of costs and comments here (PR #266 review).
+    log.warn("Validation failed on {}: {}", request.getRequestURI(),
+        ex.getBindingResult().getFieldErrors().stream()
+            .map(error -> error.getField() + "/" + error.getCode())
+            .collect(Collectors.joining(", ")));
 
     var errors = ex.getBindingResult().getFieldErrors().stream()
-        .map(FieldError::getDefaultMessage)
+        .map(GlobalExceptionHandler::describeFieldError)
+        // Identical (row, message) pairs collapse rather than handing the reporter the same
+        // sentence twice. Two annotations sharing a key on one field is already prevented at source
+        // (MaxByteLength.charMax); this is the backstop for any other pairing.
+        .distinct()
         .collect(Collectors.joining("; "));
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
@@ -148,6 +162,41 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .body(problem);
+  }
+
+  /**
+   * The first collection index in a bean-validation property path, e.g. {@code 6} for {@code
+   * culverts[6].culvert.installCost}.
+   */
+  private static final Pattern INDEXED_PATH = Pattern.compile("\\[(\\d+)]");
+
+  /**
+   * One field error's message, prefixed with the legacy row label when the failure came from an
+   * INDEXED entry of a batch body — {@code "Id: 7 - Entered cost must be between …"}.
+   *
+   * <p>Without this, a page-level Save of N culverts whose row 7 carried an out-of-range install
+   * cost answered with the bare sentence and no row identity, while the whole batch rolled back —
+   * leaving
+   * the reporter to find the offending row by inspection (PR #266 review). The prefix is the legacy
+   * list-row form: {@code validatorMessage="Id: #{obj.rowCounter} - #{msg.costValidatorErrorMsg}"}
+   * ({@code schedule7B.xhtml:436-437,455-456}). The Add form carried no prefix, and neither does a
+   * non-indexed path here, so the single-record POST/PUT wording is unchanged.
+   *
+   * <p><strong>The number is the 1-based batch index, which equals the legacy {@code rowCounter}
+   * only because the batch endpoints take the WHOLE schedule in list order</strong> (an empty list
+   * is
+   * rejected, and the page sends every row). A client posting a subset would get its own position
+   * back, not the row's ordinal on screen. Resolving the true {@code rowCounter} needs domain state
+   * this handler deliberately has no access to; if a partial-batch caller ever appears, move the
+   * labelling into the schedule service.
+   */
+  private static String describeFieldError(FieldError error) {
+    String message = Objects.requireNonNullElse(error.getDefaultMessage(), "");
+    Matcher indexed = INDEXED_PATH.matcher(error.getField());
+    if (!indexed.find()) {
+      return message;
+    }
+    return "Id: " + (Integer.parseInt(indexed.group(1)) + 1) + " - " + message;
   }
 
   /**
@@ -218,17 +267,39 @@ public class GlobalExceptionHandler {
    * @return a bundle key, or {@code null} to fall back to the type-based mapping
    */
   private static String converterKeyForField(String causeMessage) {
-    if (causeMessage.contains("\"spanSize\"")) {
-      return "culvertSpanConverterErrorMsg";
-    }
-    if (causeMessage.contains("\"riseSize\"")) {
-      return "culvertRiseConverterErrorMsg";
-    }
-    if (causeMessage.contains("\"culvertPieceCount\"")) {
-      return "culvertPieceCountConverterErrorMsg";
-    }
-    return null;
+    return CONVERTER_KEYS_BY_TARGET.entrySet().stream()
+        .filter(entry -> causeMessage.contains(entry.getKey()))
+        .map(Map.Entry::getValue)
+        .findFirst()
+        .orElse(null);
   }
+
+  /**
+   * Converter message keys scoped to {@code DeclaringType["property"]}, matched against the
+   * reference
+   * chain Jackson puts in its exception message (…{@code CulvertRequest["spanSize"]}).
+   *
+   * <p>Scoped by TYPE, not by bare property name (PR #266 review). Matching {@code "spanSize"}
+   * alone worked only while that name was unique across every DTO in the app, and the guard for
+   * that lived
+   * in a comment — so the next request record to declare a {@code spanSize} would have silently
+   * inherited culvert wording with nothing failing. Keying on the owning type costs the same lookup
+   * and makes the constraint structural: a second declarer gets the type-based fallback until
+   * someone
+   * adds its own entry here, and a per-schedule {@code length} becomes expressible (7A's {@code
+   * BridgeRequest} declares one too, which is why the bare-name form had to leave {@code length}
+   * out
+   * entirely — see {@code deferred-work.md}).
+   *
+   * <p>The chain is matched as a substring, so it resolves the same for a single-record body
+   * ({@code CulvertRequest["spanSize"]}) and for a batch entry, where Jackson prefixes the
+   * collection
+   * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
+   */
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.of(
+      "CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg",
+      "CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg",
+      "CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg");
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this

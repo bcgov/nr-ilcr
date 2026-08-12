@@ -82,7 +82,21 @@
             </properties>
         </profile>
         <profile>
+            <!-- Local dev only (mvn spring-boot:run -Pdev). Adds DevTools live-reload/restart and
+                 activates the Spring `dev` profile so the `dev` on-profile document in application.yml
+                 (its DevToolsDataSourceAutoConfiguration exclude) applies. Neither ships to prod. -->
             <id>dev</id>
+            <properties>
+                <spring-boot.run.profiles>dev</spring-boot.run.profiles>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-devtools</artifactId>
+                    <scope>runtime</scope>
+                    <optional>true</optional>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <id>integration-test</id>

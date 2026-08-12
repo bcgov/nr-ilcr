@@ -63,10 +63,13 @@ describe('Schedule2 page', () => {
 
     // The three editable fields are inputs seeded from the document.
     const item25Cost = await screen.findByLabelText('Purchased Log Cost cost')
-    expect(item25Cost).toHaveValue('50000')
+    // Editable numbers display thousands-grouped (commas).
+    expect(item25Cost).toHaveValue('50,000')
     expect(screen.getByLabelText('Less Log Sales volume')).toHaveValue('200')
-    expect(screen.getByLabelText('Less Log Sales cost')).toHaveValue('8000')
-    expect(screen.getByLabelText('Comments')).toHaveValue('Seed comment for 514/2021')
+    expect(screen.getByLabelText('Less Log Sales cost')).toHaveValue('8,000')
+    expect(
+      screen.getByLabelText('If you have any additional comments, please enter them here:'),
+    ).toHaveValue('Seed comment for 514/2021')
 
     // Carried purchasedLogCost.volume is read-only (never an input).
     expect(screen.queryByLabelText('Purchased Log Cost volume')).not.toBeInTheDocument()
@@ -213,7 +216,7 @@ describe('Schedule2 page', () => {
       await screen.findByText('Entered cost must be between -99,999,999 and 99,999,999.'),
     ).toBeInTheDocument()
     expect(putCalled).toBe(false)
-    expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('100000000')
+    expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('100,000,000')
   })
 
   test('backend 4xx save failure shows verbatim detail (AC3)', async () => {

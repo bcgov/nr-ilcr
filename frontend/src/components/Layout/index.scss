@@ -1,7 +1,10 @@
 @use '@carbon/react/scss/spacing' as *;
 
+// Grows to fill the #root flex column so short pages still reach the fixed footer, and reserves bottom
+// space equal to the (single-row) footer height so its content is never hidden behind the fixed bar.
 .app-content {
-  min-height: 100vh;
+  flex: 1 0 auto;
+  padding-block-end: $spacing-09;
 }
 
 // The working-context info (legacy `#subMenu` strip), now rendered inline on the right of the page
@@ -27,6 +30,11 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   padding: $spacing-04 $spacing-05;
+  // Pinned to the bottom of the viewport so it fills the whitespace on short pages and stays visible
+  // while scrolling. The content reserves matching bottom space (.app-content) so it's never covered.
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
 
   &__version {
     justify-self: start;
@@ -41,15 +49,32 @@
     justify-content: center;
   }
 
-  // White + underlined so the links stay legible and distinguishable on the blue (not colour-alone).
+  // White, no underline; underline on hover/focus keeps them distinguishable without relying on colour
+  // alone for keyboard/pointer affordance.
   &__link {
+    align-items: center;
     color: var(--cds-text-on-color);
-    text-decoration: underline;
+    display: inline-flex;
+    gap: $spacing-02;
+    text-decoration: none;
 
     &:hover,
     &:focus {
       color: var(--cds-text-on-color);
+      text-decoration: underline;
     }
+  }
+
+  // The "opens in a new tab" launch icon: its space is reserved (no hover layout shift) and it fades
+  // in on hover/focus of the link.
+  &__launch {
+    fill: currentcolor;
+    opacity: 0;
+  }
+
+  &__link:hover &__launch,
+  &__link:focus &__launch {
+    opacity: 1;
   }
 }
 

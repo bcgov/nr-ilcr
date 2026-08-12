@@ -174,6 +174,23 @@ class Schedule8WriteServiceTest {
   }
 
   @Test
+  void saveSample_blankSkidType_defaultsToNa() {
+    // ILCR_SKID_TYPE_CODE is NOT NULL: a sample with no skid type (the request's skidTypeCode is null)
+    // must persist the "NA" code, not null — otherwise the insert hits ORA-01400 (legacy default).
+    draft();
+    when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
+    when(repository.insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
+        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+        .thenReturn(SAMPLE);
+
+    service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER);
+
+    // skidTypeCode is the 17th insertSample argument (0-based 16): defaulted to "NA".
+    verify(repository).insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
+        any(), any(), any(), any(), any(), any(), any(), eq("NA"), any(), any(), any(), any());
+  }
+
+  @Test
   void saveSample_edit_bumpsThenUpdatesFields() {
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);

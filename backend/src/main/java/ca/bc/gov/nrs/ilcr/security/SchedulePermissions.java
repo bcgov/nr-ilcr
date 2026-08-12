@@ -25,7 +25,11 @@ public class SchedulePermissions {
   static {
     // Both FAM production roles may view and edit schedules; the two tracks / Draft-gate are
     // enforced separately in the domain services (AD-9), not by widening/narrowing this map.
-    ROLE_ACTIONS.put(Role.ADMIN, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
+    // MAINTAIN_CODE_TABLES (Story 24.3) is ADMIN-only — the first admin-restricted action, so a
+    // SUBMITTER is denied 403 on the Table Maintenance APIs, not merely hidden from the menu (S13).
+    ROLE_ACTIONS.put(
+        Role.ADMIN,
+        EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.MAINTAIN_CODE_TABLES));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 

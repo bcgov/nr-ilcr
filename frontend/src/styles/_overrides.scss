@@ -101,7 +101,9 @@
 
 .#{variables.$bcgov-prefix}--content {
   background: var(--cds-background);
-  min-height: 100vh;
+  // Grow to fill the #root flex column (sticky footer) instead of forcing a full 100vh, which pushed
+  // the footer below the viewport.
+  flex: 1 0 auto;
   padding: 0;
 }
 
@@ -175,6 +177,12 @@
 label.#{variables.$bcgov-prefix}--label,
 legend.#{variables.$bcgov-prefix}--label {
   color: var(--cds-text-primary);
+}
+
+// Dropdown / ComboBox / Select menu options wrap instead of truncating with an ellipsis, so a long
+// option string is fully readable when the menu is open (used by the shared CodeComboBox selectors).
+.#{variables.$bcgov-prefix}--list-box__menu-item__option {
+  white-space: normal;
 }
 
 .#{variables.$bcgov-prefix}--date-picker__input,

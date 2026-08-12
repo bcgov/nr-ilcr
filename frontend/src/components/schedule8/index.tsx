@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
-  Dropdown,
   Grid,
   InlineNotification,
   Modal,
@@ -29,6 +28,7 @@ import { blankToNull } from '@/utils/forms'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
+import CodeComboBox from '@/components/core/CodeComboBox'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   emptyPageForm,
@@ -261,13 +261,27 @@ const Schedule8: FC = () => {
     }
     setSaving(true)
     clearMessages()
+    // Page ids present before the save — used to find a freshly created page (new/copy) in the reply.
+    const prevIds = new Set(data.pages.map((p) => p.id))
     apiService
       .getAxiosInstance()
       .put<Schedule8Response>(`/v1/schedule8/pages?millId=${millId}&year=${year}`, buildRequest())
       .then((response) => {
         setData(response.data)
         setSaveMessage(response.data.message?.text ?? null)
-        setPanelMode('closed')
+        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+        const saved =
+          panelMode === 'edit' && editId !== null
+            ? response.data.pages.find((p) => p.id === editId)
+            : response.data.pages.find((p) => p.id != null && !prevIds.has(p.id))
+        if (saved && saved.id != null) {
+          setPanelMode('edit')
+          setEditId(saved.id)
+          setRevision(saved.revisionCount ?? 0)
+        } else {
+          setPanelMode('closed')
+        }
       })
       .catch((error: unknown) =>
         setSaveError(extractDetail(error) || 'Schedule could not be saved.'),
@@ -327,7 +341,7 @@ const Schedule8: FC = () => {
   const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
@@ -391,7 +405,7 @@ const Schedule8: FC = () => {
     }
     const pageTitle = pageLabel(page, pageIndex)
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, pageTitle, 'Samples'])}
         <Grid fullWidth className="app-page__body">
           {optionsError && (
@@ -431,7 +445,7 @@ const Schedule8: FC = () => {
     const sampleIndex = page.samples.findIndex((s) => s.id === nav.sampleId)
     const sampleTitle = sampleLabel(sample, sampleIndex)
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader([SCH8_BASE, sampleTitle, 'Additions / Deductions'])}
         <Grid fullWidth className="app-page__body">
           {optionsError && (
@@ -522,7 +536,9 @@ const Schedule8: FC = () => {
         labelText={label}
         maxLength={opts.maxLength}
         disabled={opts.disabled}
-        value={form[field]}
+        // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
+        // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
+        value={opts.format ? opts.format(form[field]) : form[field]}
         onChange={onChange}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
@@ -536,35 +552,39 @@ const Schedule8: FC = () => {
     field: keyof PageForm,
     label: string,
     items: CodeOption[],
-    opts: { disabled?: boolean; onChange?: (code: string) => void } = {},
+    opts: { disabled?: boolean; onChange?: (code: string) => void; className?: string } = {},
   ) => {
-    const selected = items.find((option) => option.code === form[field]) ?? null
+    const current = form[field]
     if (readOnly) {
+      const selected = items.find((option) => option.code === current) ?? null
       return (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
-          <span>{selected?.description || form[field] || '—'}</span>
+          <span>{selected?.description || current || '—'}</span>
         </div>
       )
     }
-    const handleChange = opts.onChange
-      ? ({ selectedItem }: { selectedItem: CodeOption | null }) =>
-          opts.onChange!(selectedItem?.code ?? '')
-      : ({ selectedItem }: { selectedItem: CodeOption | null }) =>
-          setForm((prev) => ({ ...prev, [field]: selectedItem?.code ?? '' }))
-
+    // A stored code that the reference/options list doesn't carry (e.g. a legacy TFL/TSA code no longer
+    // in its code table) would otherwise resolve to null and the Dropdown would show the empty "Select"
+    // placeholder, silently dropping the saved value. Surface it as its own (code-labelled) option so
+    // the field still shows what's stored instead of appearing unselected.
+    const itemList =
+      current && !items.some((option) => option.code === current)
+        ? [...items, { code: current, description: current }]
+        : items
     return (
-      <Dropdown<CodeOption>
+      <CodeComboBox
         id={`page-${field}`}
+        className={opts.className}
         titleText={label}
-        label="Select"
-        items={items}
-        itemToString={(item) => item?.description ?? ''}
-        selectedItem={selected ?? undefined}
+        items={itemList}
+        selectedCode={current}
+        onSelect={(code) =>
+          opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
+        }
         disabled={opts.disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
-        onChange={handleChange}
       />
     )
   }
@@ -585,7 +605,14 @@ const Schedule8: FC = () => {
             </TableRow>
           ) : (
             data.pages.map((page, index) => (
-              <TableRow key={page.id}>
+              <TableRow
+                key={page.id}
+                className={
+                  panelOpen && page.id != null && page.id === editId
+                    ? 'schedule-8__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{pageLabel(page, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
@@ -626,7 +653,13 @@ const Schedule8: FC = () => {
     <div className="schedule-8__panel">
       <h3 className="schedule-8__heading">
         {panelMode === 'new' && 'New Page'}
-        {panelMode === 'edit' && 'Edit Page'}
+        {panelMode === 'edit' &&
+          (panelPage
+            ? `Edit Page — ${pageLabel(
+                panelPage,
+                data.pages.findIndex((p) => p.id === editId),
+              )}`
+            : 'Edit Page')}
         {panelMode === 'copy' && 'Copy Page'}
         {panelMode === 'view' && 'View Page'}
       </h3>
@@ -644,6 +677,7 @@ const Schedule8: FC = () => {
         {dropdownField('region', 'Region', options?.regions ?? [])}
         {dropdownField('becZone', 'Biogeoclimatic Zone', options?.becZones ?? [])}
         {dropdownField('tsaNumber', 'TSA or TFL', tsaOrTflItems, {
+          className: 'schedule-8__tsa-tfl',
           onChange: (code) =>
             setForm((prev) => {
               const next = { ...prev, tsaNumber: code }
@@ -655,7 +689,9 @@ const Schedule8: FC = () => {
               return next
             }),
         })}
-        {dropdownField('tflNumber', 'TFL', options?.tflNumbers ?? [], { disabled: !tflActive })}
+        {/* TFL is a free-text 2-char code (legacy ILCRTflNumberValidator, ILCR-161: NOT restricted to
+            the TFL_NUMBER_CODE table), enabled only when the TSA-or-TFL selector holds 'TFL'. */}
+        {textField('tflNumber', 'TFL', { maxLength: 2, disabled: !tflActive })}
         {dropdownField('supplyBlock', 'Supply Block', options?.supplyBlocks ?? [], {
           disabled: tflActive,
         })}
@@ -665,6 +701,7 @@ const Schedule8: FC = () => {
           <Button
             kind="ghost"
             size="sm"
+            className="schedule-8__samples-action"
             disabled={saving}
             onClick={() => requestOpenSamples(editId)}
           >
@@ -675,17 +712,28 @@ const Schedule8: FC = () => {
 
       {readOnly ? (
         <div className="schedule-8__field">
-          <span className="schedule-8__field-label">Comments</span>
+          <span className="schedule-8__field-label">
+            If you have any additional comments, please enter them here:
+          </span>
           <span>{form.comments || '—'}</span>
         </div>
       ) : (
         <TextArea
           id="page-comments"
-          labelText="Comments"
+          labelText="If you have any additional comments, please enter them here:"
           maxLength={3500}
           value={form.comments}
           onChange={setComments}
         />
+      )}
+
+      {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —
+          the panel opens below the table, far from the page-top notifications. */}
+      {saveMessage && (
+        <InlineNotification kind="success" lowContrast title="Success" subtitle={saveMessage} />
+      )}
+      {saveError && (
+        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={saveError} />
       )}
 
       <div className="schedule-8__panel-actions">
@@ -695,14 +743,14 @@ const Schedule8: FC = () => {
           </Button>
         )}
         <Button kind="secondary" disabled={saving} onClick={closePanel}>
-          {readOnly ? 'Close' : 'Cancel'}
+          {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         {optionsError && (
@@ -712,10 +760,11 @@ const Schedule8: FC = () => {
             subtitle={optionsError}
           />
         )}
-        {saveMessage && (
+        {/* When the editor panel is open its own copy (above Save) carries the save feedback. */}
+        {!panelOpen && saveMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={saveMessage} />
         )}
-        {saveError && (
+        {!panelOpen && saveError && (
           <NotificationColumn kind="error" title="Action failed" subtitle={saveError} />
         )}
         {checkResult && (
@@ -725,7 +774,7 @@ const Schedule8: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-8__actions">
-          <Button kind="primary" disabled={!editable || saving || panelOpen} onClick={openNew}>
+          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
             Add New Page
           </Button>
           <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>

@@ -1,15 +1,21 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -33,25 +39,25 @@ import org.springframework.transaction.annotation.Transactional;
  * (the carried Schedule 3 figures are still populated if that data exists).
  *
  * <p>Derivation is transcribed from the legacy {@code Schedule2MB} getters. Its cross-schedule
- * sources are model-computed aggregates in the legacy Schedule 1/3 graph; per the Story 3.1
- * cross-schedule-reads-not-features decision they are sourced from the pinned persisted figures.
- * {@code purchasedWoodOverhead.cost} is Schedule 3 item 135 (PO&amp;P actual cost).
+ * Schedule-3 sources are model-computed aggregates in the legacy Schedule 1/3 graph, so they are read
+ * from Schedule 3's own computed document ({@link Schedule3Service#getSchedule3}) — the single source
+ * of truth — NOT from ad-hoc stored-detail queries. {@code purchasedWoodOverhead.cost} (and the
+ * subtotal PO&amp;P term) is the Schedule 3 <em>Subtotal Actual Costs PO&amp;P column</em>
+ * ({@code getPurchasedWoodCal}/{@code getSubtotalCost}), NOT a persisted "item 135" row.
  * {@code totalCompanyLogging.cost} implements the full legacy {@code Schedule2MB.getTotalLoggingCost}:
  * {@code (sch1 subtotalLoggingCost[144] + sch3 subtotalActualCosts.crownCost)
- * + ((sch1 silvActualSpent[1] − sch3 silvAdmin.crownCost) + sch1 silvAccruedSpent[2])}, computed from
- * the persisted Schedule 1 detail rows (items 144, 1, 2).
+ * + ((sch1 silvActualSpent[1] − sch3 silvAdmin.crownCost) + sch1 silvAccruedSpent[2])}. The
+ * {@code subtotalLoggingCost} term is Schedule 1's COMPUTED {@code getSubtotalLoggingCost} (its
+ * {@code subtotalCompanyLoggingCost} minus Forest Management Admin — NOT the stored item 144); the
+ * silviculture terms are persisted items 1/2; the two Schedule-3 crown operands come from the Schedule
+ * 3 document (Subtotal Actual Costs Crown column; item-37 Silviculture Admin crown).
  *
- * <p><b>AD-12 deviation (open — pending product sign-off):</b> the two Schedule-3 crown-cost operands
- * of that formula ({@code subtotalActualCosts.crownCost} and {@code silvicultureAdminCosts.crownCost})
- * are still treated as null here, so {@code totalCompanyLogging.cost} (and the {@code totalAverage}
- * that folds it in) currently equals the Schedule-1-only terms. NOTE: the Schedule 3 backend has since
- * shipped (Epic 4) and can now supply both figures — this is no longer "unavailable" but a deferred
- * integration awaiting a decision on two semantics (absent-Sch3 → 404 handling, zero-crown → 0 vs
- * omitted); see {@code planning-artifacts/legacy-gap-analysis.md} finding #1. With the
- * {@code CoreUtil} null-propagation below an absent term is a no-op. Null propagation mirrors legacy
- * {@code CoreUtil}: addition returns the non-null operand when one side is null (null only when both
- * null); subtraction returns the minuend when the subtrahend is null (null when the minuend is null);
- * division returns null when either operand is null or the denominator is zero.
+ * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code getSchedule3} raise
+ * {@link ScheduleNotFoundException}; Schedule 2 never 404s, so it is swallowed and every carried
+ * Schedule-3 figure is treated as null. Null propagation mirrors legacy {@code CoreUtil}: addition
+ * returns the non-null operand when one side is null (null only when both null); subtraction returns
+ * the minuend when the subtrahend is null (null when the minuend is null); division returns null when
+ * either operand is null or the denominator is zero.
  */
 @Service
 @Slf4j
@@ -61,6 +67,8 @@ public class Schedule2Service {
 
   private static final int ITEM_PURCHASED_LOG_COST = 25; // cost entered
   private static final int ITEM_LESS_LOG_SALES = 26;     // volume + cost entered
+  // Schedule 3 Silviculture Admin Costs line (category-'3' item 37, Harvest-only → crown = its cost).
+  private static final int ITEM_SILV_ADMIN = 37;
 
   private static final String OUTCOME_MET = "MET";
   private static final String OUTCOME_ISSUES = "ISSUES";
@@ -71,9 +79,14 @@ public class Schedule2Service {
   private static final String LABEL_PURCHASED_LOG_COST = "Purchased/Private Log Costs - Cost";
 
   private final Schedule2Repository repository;
+  private final Schedule1Service schedule1Service;
+  private final Schedule3Service schedule3Service;
 
-  public Schedule2Service(Schedule2Repository repository) {
+  public Schedule2Service(Schedule2Repository repository, Schedule1Service schedule1Service,
+      Schedule3Service schedule3Service) {
     this.repository = repository;
+    this.schedule1Service = schedule1Service;
+    this.schedule3Service = schedule3Service;
   }
 
   /**
@@ -236,14 +249,42 @@ public class Schedule2Service {
       }
     }
 
-    // Carried cross-schedule figures (null when the source data is absent — no fabrication).
-    BigDecimal popTimberVolume = repository.findSch3PopTimberVolume(millId, year).orElse(null);
-    Integer popActualCost = repository.findSch3PopActualCost(millId, year).orElse(null);
-    BigDecimal crownVolume = repository.findSch3CrownVolume(millId, year).orElse(null);
-    Integer sch1SubtotalLoggingCost = repository.findSch1SubtotalLoggingCost(millId, year)
-        .orElse(null);
-    // Schedule 1 silviculture actual/accrued $ spent (items 1/2) — the persisted terms of the legacy
-    // totalCompanyLogging formula (getTotalLoggingCost).
+    // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of truth,
+    // matching the legacy Schedule2MB which reads the Schedule 3 model), NOT ad-hoc stored-detail
+    // queries. Absent Schedule 3 (no category-'3' summary) → getSchedule3 404s; Schedule 2 never 404s,
+    // so swallow it and treat every carried figure as null (legacy CoreUtil null-propagation).
+    //   purchasedWoodOverhead cost / subtotal PO&P term = Sch3 Subtotal Actual Costs PO&P column
+    //     (getPurchasedWoodCal / getSubtotalCost), NOT a persisted "item 135" row.
+    //   PO&P + Crown timber volumes = Sch3 popTimber / crownTimber volumes (items 118 / 119).
+    Schedule3Response sch3;
+    try {
+      sch3 = schedule3Service.getSchedule3(millId, year, false);
+    } catch (ScheduleNotFoundException ex) {
+      // Expected when the mill/year has no category-'3' summary — the carried Sch3 figures drop to null.
+      log.debug("No Schedule 3 for mill {} year {}; carried Sch3 figures null", millId, year);
+      sch3 = null;
+    }
+    BigDecimal popTimberVolume = sch3 == null ? null : sch3.popTimber().volume();
+    Integer popActualCost = sch3 == null ? null : longToInt(sch3.subtotalActualCosts().pop());
+    BigDecimal crownVolume = sch3 == null ? null : sch3.crownTimber().volume();
+
+    // Schedule 1 "Subtotal Company Logging Cost (no silviculture)" — the legacy
+    // Schedule1DO.getSubtotalLoggingCost: the computed sum of the harvest cost blocks + Subtotal Other
+    // Costs, EXCLUDING Forest Management Admin (its javadoc note). NOT the stored item 144. Schedule 1's
+    // computed subtotalCompanyLoggingCost includes FMA (Schedule1Service line: logging + fma + other),
+    // so the legacy no-FMA figure is subtotalCompanyLoggingCost − forestMgmtAdminCost. Absent Schedule 1
+    // (404) → null (term drops).
+    Schedule1Response sch1;
+    try {
+      sch1 = schedule1Service.getSchedule1(millId, year, false);
+    } catch (ScheduleNotFoundException ex) {
+      // Expected when the mill/year has no Schedule 1 summary — the carried Sch1 terms drop.
+      log.debug("No Schedule 1 for mill {} year {}; carried Sch1 terms null", millId, year);
+      sch1 = null;
+    }
+    Integer sch1SubtotalLoggingCost = sch1 == null ? null : subtotalLoggingNoFma(sch1);
+    // Schedule 1 silviculture actual/accrued $ spent (items 1/2) — the stored terms of the legacy
+    // totalCompanyLogging formula (getTotalLoggingCost); these are stored CostVolumeType costs.
     Integer sch1SilvActualSpent = repository.findSch1SilvActualSpentCost(millId, year).orElse(null);
     Integer sch1SilvAccruedSpent = repository.findSch1SilvAccruedSpentCost(millId, year).orElse(null);
 
@@ -288,15 +329,13 @@ public class Schedule2Service {
     //   subtotalLoggingCost = sch1.subtotalLoggingCost(144) + sch3.subtotalActualCosts.crownCost
     //   totalSilvCost       = (sch1.silvActualSpent(1) - sch3.silvAdmin.crownCost) + sch1.silvAccruedSpent(2)
     //   result              = subtotalLoggingCost + totalSilvCost
-    // AD-12 deviation (OPEN — deferred pending product sign-off): the two Schedule-3 crown-cost
-    // operands (subtotalActualCosts.crownCost, silvicultureAdminCosts.crownCost) are still treated as
-    // null, so totalCompanyLogging is the Sch1-only partial. The Schedule 3 backend HAS since shipped
-    // (Epic 4) and can supply both — this is no longer "unavailable" but a deferred integration blocked
-    // on two semantics decisions (absent-Sch3 → 404 handling, zero-crown → 0 vs omitted). See
-    // planning-artifacts/legacy-gap-analysis.md finding #1. CoreUtil null-propagation makes an absent
-    // term a no-op below.
-    BigDecimal sch3SubtotalActualsCrownCost = null; // AD-12: deferred integration (gap-analysis #1)
-    BigDecimal sch3SilvAdminCrownCost = null;        // AD-12: deferred integration (gap-analysis #1)
+    // Both Schedule-3 crown-cost operands are now sourced from the Schedule 3 document (AD-12 resolved):
+    // subtotalActualCosts.crown is the computed Crown column of the Actual Costs subtotal; the
+    // silviculture-admin crown is the Crown of the item-37 line (Harvest-only → crown = its cost).
+    // Null when Schedule 3 is absent — CoreUtil null-propagation then drops the term (Sch1-only partial).
+    BigDecimal sch3SubtotalActualsCrownCost =
+        sch3 == null ? null : longToBd(sch3.subtotalActualCosts().crown());
+    BigDecimal sch3SilvAdminCrownCost = sch3 == null ? null : bd(silvAdminCrown(sch3));
     BigDecimal subtotalLoggingCostTerm =
         add(bd(sch1SubtotalLoggingCost), sch3SubtotalActualsCrownCost);
     BigDecimal silvBd = subtract(bd(sch1SilvActualSpent), sch3SilvAdminCrownCost);
@@ -366,6 +405,60 @@ public class Schedule2Service {
 
   private static BigDecimal bd(Integer value) {
     return value == null ? null : BigDecimal.valueOf(value);
+  }
+
+  /** Null-safe {@code Long}→{@code BigDecimal} for the Schedule 3 crown/PO&P subtotals. */
+  private static BigDecimal longToBd(Long value) {
+    return value == null ? null : BigDecimal.valueOf(value);
+  }
+
+  /**
+   * Null-safe {@code Long}→{@code Integer} (whole-dollar cost). An out-of-int-range value null-
+   * propagates (with a debug log) rather than throwing an {@code ArithmeticException} to the client —
+   * consistent with the rest of this service's null handling. Schedule 3 sums are {@code Long}, but a
+   * per-mill PO&amp;P actual-cost subtotal is well within {@code Integer} range in practice (legacy
+   * stored COST as an int), so the guard is theoretical.
+   */
+  private static Integer longToInt(Long value) {
+    if (value == null) {
+      return null;
+    }
+    if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+      log.debug("Schedule 2 cross-schedule cost {} is out of Integer range — treated as null", value);
+      return null;
+    }
+    return value.intValue();
+  }
+
+  /**
+   * The legacy {@code Schedule1DO.getSubtotalLoggingCost} (Subtotal Company Logging Cost, no
+   * silviculture) — the harvest cost blocks + Subtotal Other Costs, EXCLUDING Forest Management Admin.
+   * Schedule 1's own {@code subtotalCompanyLoggingCost} includes FMA, so subtract it back out.
+   *
+   * <p>Follow-up: this inverse arithmetic couples Schedule 2's totals to Schedule 1's subtotal
+   * composition; {@code Schedule1Service} should expose the no-FMA subtotal directly. Tracked in
+   * bcgov/nr-ilcr#252 (the relationship is pinned by
+   * {@code Schedule2ServiceTest.totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal}).
+   */
+  private static Integer subtotalLoggingNoFma(Schedule1Response sch1) {
+    Long subtotalWithFma = sch1.subtotalCompanyLoggingCost();
+    if (subtotalWithFma == null) {
+      return null;
+    }
+    long fma = sch1.forestMgmtAdminCost() == null ? 0L : sch1.forestMgmtAdminCost();
+    return longToInt(subtotalWithFma - fma); // range-safe (null-propagates on overflow, never 500)
+  }
+
+  /**
+   * The Schedule 3 Silviculture Admin Costs crown cost — the {@code crown} of the item-37 line
+   * ({@code harvest − pop}; Harvest-only so it equals its cost). Null when the line is absent.
+   */
+  private static Integer silvAdminCrown(Schedule3Response sch3) {
+    return sch3.lineItems().stream()
+        .filter(line -> line.costItemCode() != null && line.costItemCode() == ITEM_SILV_ADMIN)
+        .map(CostLine::crown)
+        .findFirst()
+        .orElse(null);
   }
 
   /** {@code CoreUtil.bigDecimalAddition}: null only when both null; else the non-null operand(s). */

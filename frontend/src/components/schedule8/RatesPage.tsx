@@ -5,7 +5,6 @@ import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
-  Dropdown,
   InlineNotification,
   Modal,
   Table,
@@ -20,6 +19,7 @@ import {
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { emptyRateForm, fmt, toNum, validateRateForm, type RateForm } from './validation'
+import CodeComboBox from '@/components/core/CodeComboBox'
 
 // Client-only confirm chrome, verbatim from the legacy bundle (confirmDeleteMsg intent).
 const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to continue?'
@@ -221,17 +221,14 @@ const RatesPage: FC<RatesPageProps> = ({
         <h4 className="schedule-8__rate-heading">{`${label} (${rows.length})`}</h4>
         {editable && (
           <div className="schedule-8__form">
-            <Dropdown<CodeOption>
+            <CodeComboBox
               id={`${kind}-costItemCode`}
               titleText={`${label} — Cost Item`}
-              label="Select"
-              size="sm"
               items={costItems}
-              itemToString={(item) => item?.description ?? ''}
-              selectedItem={costItems.find((o) => o.code === form.costItemCode) ?? null}
+              selectedCode={form.costItemCode}
               invalid={Boolean(errors.costItemCode)}
               invalidText={errors.costItemCode}
-              onChange={({ selectedItem }) => setCode('costItemCode')(selectedItem?.code ?? '')}
+              onSelect={(code) => setCode('costItemCode')(code)}
             />
             <TextInput
               id={`${kind}-costingRate`}
@@ -243,17 +240,14 @@ const RatesPage: FC<RatesPageProps> = ({
               invalid={Boolean(errors.costingRate)}
               invalidText={errors.costingRate}
             />
-            <Dropdown<CodeOption>
+            <CodeComboBox
               id={`${kind}-costTypeCode`}
               titleText={`${label} — Cost Type`}
-              label="Select"
-              size="sm"
               items={costTypes}
-              itemToString={(item) => item?.description ?? ''}
-              selectedItem={costTypes.find((o) => o.code === form.costTypeCode) ?? null}
+              selectedCode={form.costTypeCode}
               invalid={Boolean(errors.costTypeCode)}
               invalidText={errors.costTypeCode}
-              onChange={({ selectedItem }) => setCode('costTypeCode')(selectedItem?.code ?? '')}
+              onSelect={(code) => setCode('costTypeCode')(code)}
             />
             <TextInput
               id={`${kind}-itemDescription`}
@@ -370,7 +364,7 @@ const RatesPage: FC<RatesPageProps> = ({
           </Button>
         )}
         <Button kind="secondary" disabled={busy} onClick={requestBack}>
-          {editable ? 'Cancel' : 'Close'}
+          {editable ? 'Back' : 'Close'}
         </Button>
       </div>
 
