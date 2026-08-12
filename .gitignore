@@ -50,6 +50,12 @@ coverage/
 # excludes it from coverage), but a bare `tsc --noEmit` or a freshly-opened IDE will flag the
 # `./routeTree.gen` import in src/main.tsx until you run the app or build once.
 frontend/src/routeTree.gen.ts
+# Transpiled twins of the Vite config. tsconfig.node.json is `composite`, which implies emit, so a
+# `tsc -b` drops these beside vite.config.ts; both were committed once (8d82b70) before anyone
+# noticed. tsconfig.node.json now sets noEmit, and these are belt-and-braces in case a tool bypasses
+# it — vite always loads the .ts, so a tracked .js twin can only ever be a stale decoy.
+frontend/vite.config.js
+frontend/vite.config.d.ts
 .cache/
 *.tsbuildinfo
 npm-debug.log*

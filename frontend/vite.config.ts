@@ -18,6 +18,11 @@ export default defineConfig({
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
+      // The generator treats every file under src/routes as a route and warns on any that exports no
+      // Route — which the co-located route tests do not. The plugin's own two options are a "-" name
+      // prefix or this pattern; the pattern is chosen so the test files keep conventional names and
+      // so a future co-located test is covered without anyone having to remember the prefix.
+      routeFileIgnorePattern: '(__tests__|\\.test\\.tsx?$)',
     }),
     react(),
   ],
