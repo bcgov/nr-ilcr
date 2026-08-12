@@ -1,17 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import PlaceholderPage from '@/components/PlaceholderPage'
+import CodeTables from '@/components/codeTables'
 
-// Story 24.3 (UC-CODE-001) Table Maintenance. Route scaffolded here so the admin-gated menu item
-// works; the selector + grid + add/inline-edit UI is filled in by the Story 24.3 frontend slices.
+// Story 24.3 (UC-CODE-001) Table Maintenance. Reachable via the admin-gated Administration menu; the
+// API independently enforces the ADMIN-only MAINTAIN_CODE_TABLES action (403), which is the boundary.
 export const Route = createFileRoute('/code-tables')({
   component: CodeTables,
 })
-
-function CodeTables() {
-  return (
-    <PlaceholderPage
-      title="Table Maintenance"
-      description="Add and edit entries in the lookup/reference code tables that feed the schedule dropdowns."
-    />
-  )
-}
