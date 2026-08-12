@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableEntry;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSaveResponse;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSummary;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@link CodeTableService}; never touches the repository directly (AD-1 layering).
  */
 @RestController
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class CodeTableController implements CodeTableApi {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";

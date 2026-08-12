@@ -82,14 +82,33 @@ class CodeTableServiceTest {
   }
 
   @Test
-  void save_missingExpiryDate_is400() {
-    assertEquals("expiryDateRequiredErrorMsg",
-        saveExpectingReject(new CodeTableEntry("M3", "d", JAN_2020, null)).getMessageKey());
+  void save_nullExpiry_isAllowed_neverExpires() {
+    // Expiry is optional (a null = "never expires"), so an entry without one must save, not reject.
+    CodeTableEntry entry = new CodeTableEntry("M3", "Cubic Metres", JAN_2020, null);
+    when(repository.upsert(eq(CodeTableRegistry.UNIT_CODE), eq(entry)))
+        .thenReturn(UpsertResult.UPDATED);
+    assertEquals(UpsertResult.UPDATED, service.save("UNIT_CODE", entry, "alex.admin"));
   }
 
   @Test
   void save_expiryBeforeEffective_is400() {
     assertEquals("expiryBeforeEffectiveErrorMsg",
         saveExpectingReject(new CodeTableEntry("M3", "d", DEC_2030, JAN_2020)).getMessageKey());
+  }
+
+  @Test
+  void save_codeExceedingTableCap_is400() {
+    // UNIT_CODE codeMaxLength = 10.
+    assertEquals("codeTableCodeLengthErrorMsg",
+        saveExpectingReject(new CodeTableEntry("ABCDEFGHIJK", "d", JAN_2020, DEC_2030))
+            .getMessageKey());
+  }
+
+  @Test
+  void save_descriptionExceedingTableCap_is400() {
+    // UNIT_CODE descriptionMaxLength = 120.
+    String tooLong = "x".repeat(121);
+    assertEquals("codeTableDescriptionLengthErrorMsg",
+        saveExpectingReject(new CodeTableEntry("M3", tooLong, JAN_2020, DEC_2030)).getMessageKey());
   }
 }

@@ -5,6 +5,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Repository;
  * here; it is maintained through the Schedule 9 cost-item path instead.
  */
 @Repository
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class CodeTableRepository {
 
   /** Which arm of an {@link #upsert} ran — drives the "silent update" case (S05) and messaging. */
@@ -59,14 +62,23 @@ public class CodeTableRepository {
   /**
    * Insert the code when it does not exist, otherwise update the matching row (BR-03) — the same
    * upsert legacy {@code CodeListDAO.save*} performed. Returns which arm ran.
+   *
+   * <p>Atomic: it tries the UPDATE first (one statement), and only INSERTs when no row matched. If a
+   * concurrent save inserts the same brand-new code in the race window, our INSERT hits the primary
+   * key and we fall back to UPDATE — so two simultaneous saves of a new code both succeed as the
+   * intended silent-update (S05) rather than one 500ing on a constraint violation.
    */
   public UpsertResult upsert(CodeTableRegistry table, CodeTableEntry entry) {
-    if (exists(table, entry.code())) {
+    if (update(table, entry) > 0) {
+      return UpsertResult.UPDATED;
+    }
+    try {
+      insert(table, entry);
+      return UpsertResult.INSERTED;
+    } catch (DataIntegrityViolationException raced) {
       update(table, entry);
       return UpsertResult.UPDATED;
     }
-    insert(table, entry);
-    return UpsertResult.INSERTED;
   }
 
   private void insert(CodeTableRegistry table, CodeTableEntry entry) {

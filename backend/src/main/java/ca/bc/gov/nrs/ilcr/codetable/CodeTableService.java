@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSummary;
 import java.util.Arrays;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,6 +26,7 @@ import org.springframework.util.StringUtils;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class CodeTableService {
 
   private final CodeTableRepository repository;
@@ -59,7 +61,7 @@ public class CodeTableService {
   @Transactional
   public UpsertResult save(String tableKey, CodeTableEntry entry, String user) {
     CodeTableRegistry table = resolve(tableKey);
-    validate(entry);
+    validate(table, entry);
     UpsertResult result = repository.upsert(table, entry);
     log.info("Table Maintenance: {} {} code '{}' in {}", user, result, entry.code(), table.key());
     return result;
@@ -71,21 +73,30 @@ public class CodeTableService {
         .orElseThrow(CodeTableException::unknownTable);
   }
 
-  // FLD-001..005: code, description, both dates required; effective on or before expiry.
-  private static void validate(CodeTableEntry entry) {
+  /**
+   * FLD-001..005 + BR-06: code, description, and effective date are required; the per-table code /
+   * description length caps are enforced; and when BOTH dates are present, effective must be on or
+   * before expiry. Expiry is OPTIONAL — a null expiry is the "never expires" case the read side NVLs
+   * to a far-future date, so an existing open-ended row can be edited without inventing an expiry
+   * (recorded deviation from the legacy always-required-expiry, AD-8).
+   */
+  private static void validate(CodeTableRegistry table, CodeTableEntry entry) {
     if (!StringUtils.hasText(entry.code())) {
       throw CodeTableException.validation("codeRequiredErrorMsg");
+    }
+    if (entry.code().length() > table.codeMaxLength()) {
+      throw CodeTableException.validation("codeTableCodeLengthErrorMsg");
     }
     if (!StringUtils.hasText(entry.description())) {
       throw CodeTableException.validation("descriptionRequiredErrorMsg");
     }
+    if (entry.description().length() > table.descriptionMaxLength()) {
+      throw CodeTableException.validation("codeTableDescriptionLengthErrorMsg");
+    }
     if (entry.effectiveDate() == null) {
       throw CodeTableException.validation("effectiveDateRequiredErrorMsg");
     }
-    if (entry.expiryDate() == null) {
-      throw CodeTableException.validation("expiryDateRequiredErrorMsg");
-    }
-    if (entry.expiryDate().isBefore(entry.effectiveDate())) {
+    if (entry.expiryDate() != null && entry.expiryDate().isBefore(entry.effectiveDate())) {
       throw CodeTableException.validation("expiryBeforeEffectiveErrorMsg");
     }
   }
