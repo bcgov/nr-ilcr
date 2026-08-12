@@ -72,6 +72,37 @@ class MockPrincipalFilterTest {
   }
 
   @Test
+  void headerRole_overridesTheConfiguredDefault() throws Exception {
+    // The SPA sends the selected mock user's roles; an admin header must grant ILCR_ADMIN even when
+    // the configured default is SUBMITTER (so the admin-only actions are reachable in local dev).
+    org.mockito.Mockito.when(request.getHeader("X-Mock-Groups")).thenReturn("ILCR_ADMIN");
+    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    assertEquals("dev-admin", auth.getPrincipal());
+    assertEquals(Set.of("ADMIN"), authorityNames(auth));
+  }
+
+  @Test
+  void headerRoles_supportADualRoleUser() throws Exception {
+    org.mockito.Mockito.when(request.getHeader("X-Mock-Groups"))
+        .thenReturn("ILCR_ADMIN,ILCR_SUBMITTER");
+    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+
+    assertEquals(Set.of("ADMIN", "SUBMITTER"),
+        authorityNames(SecurityContextHolder.getContext().getAuthentication()));
+  }
+
+  @Test
+  void unknownHeaderRole_fallsBackToTheConfiguredDefault() throws Exception {
+    org.mockito.Mockito.when(request.getHeader("X-Mock-Groups")).thenReturn("SOME_OTHER_APP_ADMIN");
+    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+
+    assertEquals(Set.of("SUBMITTER"),
+        authorityNames(SecurityContextHolder.getContext().getAuthentication()));
+  }
+
+  @Test
   void doesNotOverwrite_whenAlreadyAuthenticated() throws Exception {
     Authentication existing = new UsernamePasswordAuthenticationToken(
         "real-user", "N/A", List.of(new SimpleGrantedAuthority("SUBMITTER")));
