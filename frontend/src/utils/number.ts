@@ -114,3 +114,38 @@ export const roundCost = (value: number | null): number | null =>
  * field reads the same as the plain-text cells beside it.
  */
 export const numStrGroup = (value: number | null | undefined): string => groupInput(numStr(value))
+
+/**
+ * Render a numeric value as a GROUPED form input string carrying EXACTLY `fractionDigits` decimals
+ * ("12" → "12.0" at 1; "1234.5" → "1,235" at 0). Blank when null/undefined.
+ *
+ * This is the modern equivalent of a legacy `f:convertNumber pattern="..."` mask, which every ILCR
+ * numeric input carried: the mask is what decided how many decimals a stored value DISPLAYED with,
+ * independently of how the database happened to return it. Seeding a masked field with
+ * {@link numStrGroup} instead drops that decision — a `NUMBER(7,1)` column returning `12.0` renders
+ * as `12` where legacy showed `12.0`, and the reporter reads a different value than the legacy screen
+ * showed them.
+ */
+export const numStrFixed = (value: number | null | undefined, fractionDigits: number): string =>
+  value === null || value === undefined
+    ? ''
+    : value.toLocaleString('en-US', {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      })
+
+/**
+ * Re-apply a fixed-decimal grouped mask to a form input string, the way a legacy `f:convertNumber`
+ * re-rendered its field on every `change` event: parse what was typed, then format it back through
+ * the mask ("1200" → "1,200"; "12.55" → "12.6" at 1 decimal; "1.5" → "2" at 0).
+ *
+ * Text that is not a valid decimal is returned UNCHANGED so a typo stays on screen for the user to
+ * correct rather than being silently rewritten or blanked (the {@link groupInput} contract).
+ */
+export const groupFixedInput = (raw: string, fractionDigits: number): string => {
+  if (raw.trim() === '') {
+    return ''
+  }
+  const value = parseDecimalInput(raw)
+  return value === null ? raw : numStrFixed(value, fractionDigits)
+}
