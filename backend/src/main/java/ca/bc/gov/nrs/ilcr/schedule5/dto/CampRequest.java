@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;

@@ -3,6 +3,10 @@ package ca.bc.gov.nrs.ilcr.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
@@ -24,8 +28,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * Global exception handler that converts exceptions into RFC 7807 ProblemDetail
- * responses (application/problem+json).
+ * Global exception handler that converts exceptions into RFC 7807 ProblemDetail responses
+ * (application/problem+json).
  */
 @RestControllerAdvice
 @Slf4j
@@ -108,10 +112,20 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(MethodArgumentNotValidException.class)
   public ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(
       MethodArgumentNotValidException ex, HttpServletRequest request) {
-    log.warn("Validation failed: {}", ex.getMessage());
+    // Field names and constraint codes only — NEVER ex.getMessage(), which embeds "rejected value
+    // [...]" for every field error (AD-11: no cost or comment data in logs). A rejected 20-culvert
+    // batch used to write 20 rows of costs and comments here (PR #266 review).
+    log.warn("Validation failed on {}: {}", request.getRequestURI(),
+        ex.getBindingResult().getFieldErrors().stream()
+            .map(error -> error.getField() + "/" + error.getCode())
+            .collect(Collectors.joining(", ")));
 
     var errors = ex.getBindingResult().getFieldErrors().stream()
-        .map(FieldError::getDefaultMessage)
+        .map(GlobalExceptionHandler::describeFieldError)
+        // Identical (row, message) pairs collapse rather than handing the reporter the same
+        // sentence twice. Two annotations sharing a key on one field is already prevented at source
+        // (MaxByteLength.charMax); this is the backstop for any other pairing.
+        .distinct()
         .collect(Collectors.joining("; "));
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
@@ -151,6 +165,65 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * The first collection index in a bean-validation property path, e.g. {@code 6} for {@code
+   * culverts[6].culvert.installCost}.
+   */
+  private static final Pattern INDEXED_PATH = Pattern.compile("\\[(\\d+)]");
+
+  /**
+   * The ONE batch list whose rows carry the legacy {@code Id: n - } label: {@code culverts}, the
+   * list field of Schedule 7B's page-level Save ({@code CulvertSaveAllRequest}). Anchored at the path
+   * root, so it matches {@code culverts[6].culvert.installCost} and nothing nested deeper.
+   *
+   * <p><strong>Scoped to one list rather than "any indexed path"</strong> because the label is a
+   * legacy-fidelity detail of 7B's list form, not a house style. Every other batch body in the app is
+   * indexed too — {@code lineItems} (Schedules 1, 3), {@code rows} (Schedules 1, 3, 5),
+   * {@code categories} (Schedule 4) — and their legacy screens carry NO row label, so an unscoped
+   * prefix silently rewrote their 400 wording. Their own acceptance tests pin the bare sentence and
+   * went red the first time CI actually ran the ITs (PR #268: two Schedule 1, three Schedule 4, one
+   * Schedule 5). Nothing caught it on {@code main}, whose Analysis job runs {@code verify} WITHOUT
+   * {@code -Dskip.integration.tests=false} — the ITs are skipped there.
+   *
+   * <p>Matching the path root rather than the binding's object name is deliberate: Spring derives the
+   * object name from the {@code @RequestBody} TYPE at runtime, but a hand-built {@link FieldError} in
+   * a unit test names it whatever it likes, so an object-name test would pass in production and
+   * silently do nothing under {@code GlobalExceptionHandlerTest}.
+   */
+  private static final Pattern ROW_LABELLED_LIST = Pattern.compile("^culverts\\[");
+
+  /**
+   * One field error's message, prefixed with the legacy row label when the failure came from an
+   * INDEXED entry of {@link #ROW_LABELLED_LIST} — {@code "Id: 7 - Entered cost must be between …"}.
+   *
+   * <p>Without this, a page-level Save of N culverts whose row 7 carried an out-of-range install
+   * cost answered with the bare sentence and no row identity, while the whole batch rolled back —
+   * leaving
+   * the reporter to find the offending row by inspection (PR #266 review). The prefix is the legacy
+   * list-row form: {@code validatorMessage="Id: #{obj.rowCounter} - #{msg.costValidatorErrorMsg}"}
+   * ({@code schedule7B.xhtml:436-437,455-456}). The Add form carried no prefix, and neither does a
+   * non-indexed path here, so the single-record POST/PUT wording is unchanged.
+   *
+   * <p><strong>The number is the 1-based batch index, which equals the legacy {@code rowCounter}
+   * only because the batch endpoints take the WHOLE schedule in list order</strong> (an empty list
+   * is
+   * rejected, and the page sends every row). A client posting a subset would get its own position
+   * back, not the row's ordinal on screen. Resolving the true {@code rowCounter} needs domain state
+   * this handler deliberately has no access to; if a partial-batch caller ever appears, move the
+   * labelling into the schedule service.
+   */
+  private static String describeFieldError(FieldError error) {
+    String message = Objects.requireNonNullElse(error.getDefaultMessage(), "");
+    if (!ROW_LABELLED_LIST.matcher(error.getField()).find()) {
+      return message;
+    }
+    Matcher indexed = INDEXED_PATH.matcher(error.getField());
+    if (!indexed.find()) {
+      return message;
+    }
+    return "Id: " + (Integer.parseInt(indexed.group(1)) + 1) + " - " + message;
+  }
+
+  /**
    * Handles an unreadable/malformed request body. A non-numeric value on a typed numeric field
    * (e.g. {@code "cost": "abc"}) surfaces as a Jackson {@link InvalidFormatException}; we map it to
    * the verbatim legacy converter message (FLD-004 {@code costConverterErrorMsg} for a cost/whole
@@ -170,15 +243,26 @@ public class GlobalExceptionHandler {
 
     // A non-numeric value on a typed numeric field surfaces as a Jackson mismatch whose message
     // names the target Java type. Map to the verbatim legacy converter text (AD-8) without a
-    // compile-time dependency on jackson-databind's exception classes (runtime-only on this module).
+    // compile-time dependency on jackson-databind's exception classes (runtime-only on this
+    // module).
     String causeMessage = cause == null ? "" : String.valueOf(cause.getMessage());
     String detail = "The request body is invalid.";
-    String key = null;
-    if (causeMessage.contains("java.math.BigDecimal")) {
-      key = "volumeConverterErrorMsg";
-    } else if (causeMessage.contains("java.lang.Integer")
-        || causeMessage.contains("java.lang.Long")) {
-      key = "costConverterErrorMsg";
+    // Field-name overrides come FIRST, because the type-based fallback below can only guess from
+    // the target Java type and so answers "Entered cost is invalid." for ANY Integer field. That
+    // was right while every Integer on the wire was a cost, and wrong the moment Schedule 7B put
+    // three non-cost Integer fields (span, rise, piece count) on one form: a mistyped span told the
+    // reporter their COST was invalid and sent them hunting the wrong input. Legacy named the field
+    // the reporter actually typed in. Deliberately keyed on names unique across the app — `length`
+    // is NOT listed, because Schedule 7A's BridgeRequest also has one and changing a shipped
+    // schedule's message is not this change's business (recorded in deferred-work.md).
+    String key = converterKeyForField(causeMessage);
+    if (key == null) {
+      if (causeMessage.contains("java.math.BigDecimal")) {
+        key = "volumeConverterErrorMsg";
+      } else if (causeMessage.contains("java.lang.Integer")
+          || causeMessage.contains("java.lang.Long")) {
+        key = "costConverterErrorMsg";
+      }
     }
     if (key != null) {
       detail = messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
@@ -195,10 +279,57 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * The converter message key for a field the type-based fallback would mis-describe, or {@code
+   * null} when no override applies.
+   *
+   * <p>Jackson names the offending property in its exception message (…{@code ["spanSize"]}…),
+   * which is matched here rather than taking a compile-time dependency on {@code
+   * jackson-databind}'s exception types — the same constraint the type matching above works around.
+   * Only field names that are UNAMBIGUOUS across the whole app belong here.
+   *
+   * @param causeMessage the most-specific cause's message
+   * @return a bundle key, or {@code null} to fall back to the type-based mapping
+   */
+  private static String converterKeyForField(String causeMessage) {
+    return CONVERTER_KEYS_BY_TARGET.entrySet().stream()
+        .filter(entry -> causeMessage.contains(entry.getKey()))
+        .map(Map.Entry::getValue)
+        .findFirst()
+        .orElse(null);
+  }
+
+  /**
+   * Converter message keys scoped to {@code DeclaringType["property"]}, matched against the
+   * reference
+   * chain Jackson puts in its exception message (…{@code CulvertRequest["spanSize"]}).
+   *
+   * <p>Scoped by TYPE, not by bare property name (PR #266 review). Matching {@code "spanSize"}
+   * alone worked only while that name was unique across every DTO in the app, and the guard for
+   * that lived
+   * in a comment — so the next request record to declare a {@code spanSize} would have silently
+   * inherited culvert wording with nothing failing. Keying on the owning type costs the same lookup
+   * and makes the constraint structural: a second declarer gets the type-based fallback until
+   * someone
+   * adds its own entry here, and a per-schedule {@code length} becomes expressible (7A's {@code
+   * BridgeRequest} declares one too, which is why the bare-name form had to leave {@code length}
+   * out
+   * entirely — see {@code deferred-work.md}).
+   *
+   * <p>The chain is matched as a substring, so it resolves the same for a single-record body
+   * ({@code CulvertRequest["spanSize"]}) and for a batch entry, where Jackson prefixes the
+   * collection
+   * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
+   */
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.of(
+      "CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg",
+      "CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg",
+      "CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg");
+
+  /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this
    * explicit handler an {@link AccessDeniedException} raised at the method layer would fall through
-   * to the generic 500 handler instead of returning 403 (AD-7). {@code AuthorizationDeniedException}
-   * extends {@link AccessDeniedException}, so this covers both.
+   * to the generic 500 handler instead of returning 403 (AD-7). {@code
+   * AuthorizationDeniedException} extends {@link AccessDeniedException}, so this covers both.
    *
    * @param ex the access-denied exception
    * @param request the current HTTP request
@@ -221,11 +352,11 @@ public class GlobalExceptionHandler {
 
   /**
    * Handles missing/blank/invalid required selection fields (UC-SEC-001 S04/S05/S08, Story 1.2).
-   * Resolves the verbatim legacy required-field template
-   * ({@code javax.faces.component.UIInput.REQUIRED = "{0}: Value is required."}) once per field —
-   * passing the field label as the {@code {0}} argument (parameterized keys MUST get an args array)
-   * — and returns ALL field messages together on one 400: {@code detail} joins the texts and the
-   * {@code messages} extension property carries each {@code {key, text}} pair (the pinned shape the
+   * Resolves the verbatim legacy required-field template ({@code
+   * javax.faces.component.UIInput.REQUIRED = "{0}: Value is required."}) once per field — passing
+   * the field label as the {@code {0}} argument (parameterized keys MUST get an args array) — and
+   * returns ALL field messages together on one 400: {@code detail} joins the texts and the {@code
+   * messages} extension property carries each {@code {key, text}} pair (the pinned shape the
    * frontend renders per field, mirroring {@code MessageInfo}).
    *
    * @param ex the exception carrying the ordered missing-field labels
@@ -339,10 +470,10 @@ public class GlobalExceptionHandler {
   }
 
   /**
-   * Handles a request to an unmapped path / missing static resource. Returns a clean 404
-   * {@link ProblemDetail} and logs a single WARN line (no stack trace) — without this, an unmapped
-   * request (e.g. a stale client calling a removed endpoint) falls through to the generic handler and
-   * spews a full ERROR stack trace on every hit.
+   * Handles a request to an unmapped path / missing static resource. Returns a clean 404 {@link
+   * ProblemDetail} and logs a single WARN line (no stack trace) — without this, an unmapped request
+   * (e.g. a stale client calling a removed endpoint) falls through to the generic handler and spews
+   * a full ERROR stack trace on every hit.
    *
    * @param ex the no-resource-found exception
    * @param request the current HTTP request
@@ -394,9 +525,7 @@ public class GlobalExceptionHandler {
    */
   public record FieldMessage(String key, String text) {}
 
-  /**
-   * Attempts to extract the most useful message from a DataIntegrityViolationException.
-   */
+  /** Attempts to extract the most useful message from a DataIntegrityViolationException. */
   private String extractConstraintMessage(DataIntegrityViolationException ex) {
     Throwable mostSpecific = ex.getMostSpecificCause();
     if (mostSpecific != null && mostSpecific.getMessage() != null) {

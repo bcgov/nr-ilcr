@@ -43,7 +43,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 @DisplayName("Schedule5Service sub-pages — the two footer shapes (AC8) and deviation (L)")
 class Schedule5SubPageServiceTest {
 
-  private static final long MILL = 680L;
+  private static final long MILL = 690L;
   private static final int YEAR = 2016;
   private static final int CAMP = 8700;
   private static final BigDecimal VOL_120K = new BigDecimal("120000");

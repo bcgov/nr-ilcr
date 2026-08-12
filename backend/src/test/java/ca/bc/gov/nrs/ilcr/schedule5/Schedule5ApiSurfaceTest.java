@@ -103,7 +103,7 @@ class Schedule5ApiSurfaceTest {
     // The guard is stubbed so the handler can actually run: an unstubbed mock returns null and the
     // controller NPEs, which would be a 500 and would prove nothing about the MAPPING either way.
     when(millContextService.validateMillYearActive(any(), any()))
-        .thenReturn(new MillYearContext(680L, 2016));
+        .thenReturn(new MillYearContext(690L, 2016));
     // The write handlers chain .withMessage() onto whatever the service returns, so the service has
     // to hand back a real document — a null would NPE into a 500 and say nothing about the mapping.
     SubPageDocument doc =
@@ -118,14 +118,14 @@ class Schedule5ApiSurfaceTest {
     Authentication auth = new UsernamePasswordAuthenticationToken("tester", "n/a", List.of());
     for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
       mockMvc.perform(get("/api/v1/schedule5/camps/8700/" + page)
-              .principal(auth).param("millId", "680").param("year", "2016"))
+              .principal(auth).param("millId", "690").param("year", "2016"))
           .andExpect(status().isOk());
       mockMvc.perform(put("/api/v1/schedule5/camps/8700/" + page)
-              .principal(auth).param("millId", "680").param("year", "2016")
+              .principal(auth).param("millId", "690").param("year", "2016")
               .contentType(MediaType.APPLICATION_JSON).content("{\"rows\":[]}"))
           .andExpect(status().isOk());
       mockMvc.perform(delete("/api/v1/schedule5/camps/8700/" + page + "/8722")
-              .principal(auth).param("millId", "680").param("year", "2016"))
+              .principal(auth).param("millId", "690").param("year", "2016"))
           .andExpect(status().isOk());
     }
   }
@@ -142,11 +142,11 @@ class Schedule5ApiSurfaceTest {
     // itself had gone missing, which is a different failure and is covered by the mapping test
     // above.
     mockMvc.perform(post("/api/v1/schedule5/camps/8700/other-camp-expenses")
-            .param("millId", "680").param("year", "2016")
+            .param("millId", "690").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isMethodNotAllowed());
     mockMvc.perform(patch("/api/v1/schedule5/camps/8700/other-camp-expenses/8722")
-            .param("millId", "680").param("year", "2016")
+            .param("millId", "690").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isMethodNotAllowed());
   }
@@ -158,7 +158,7 @@ class Schedule5ApiSurfaceTest {
     // unpinned (review patch, 2026-08-12).
     for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
       mockMvc.perform(get("/api/v1/schedule5/camps/8700/" + page + "/8722/details")
-              .param("millId", "680").param("year", "2016"))
+              .param("millId", "690").param("year", "2016"))
           .andExpect(status().isNotFound());
     }
   }

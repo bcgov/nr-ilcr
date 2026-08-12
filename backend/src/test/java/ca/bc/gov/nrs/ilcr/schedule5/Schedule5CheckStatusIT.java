@@ -239,13 +239,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // Camp 8710 starts with a blank-description row and a null-cost row; rewrite BOTH through the
     // endpoint so the flagged rows are ones the API produced, not ones the migration planted.
     mockMvc.perform(put("/api/v1/schedule5/camps/8710/other-camp-expenses").with(csrf())
-            .param("millId", "682").param("year", "2016")
+            .param("millId", "692").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":100},"
                 + "{\"rowId\":null,\"description\":\"Has Description\",\"cost\":null}]}"))
         .andExpect(status().isOk());
 
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "682").param("year", "2016"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("ISSUES")))
         .andExpect(jsonPath(
@@ -261,13 +261,13 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
   @DisplayName("7.4 — the two ACCESS sub-list conditions fire from rows written through the API")
   void accessSubListConditionsFireFromWrittenRows() throws Exception {
     mockMvc.perform(put("/api/v1/schedule5/camps/8711/other-access-expenses").with(csrf())
-            .param("millId", "682").param("year", "2016")
+            .param("millId", "692").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":100},"
                 + "{\"rowId\":null,\"description\":\"Has Description\",\"cost\":null}]}"))
         .andExpect(status().isOk());
 
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "682").param("year", "2016"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
         .andExpect(status().isOk())
         .andExpect(jsonPath(
             "$.camps[?(@.campId == 8711)].messages[*].text",
@@ -285,12 +285,12 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // here to prove the server neither trims it away nor rejects it — a @NotBlank, or a trim on the
     // write path, would each break this silently.
     mockMvc.perform(put("/api/v1/schedule5/camps/8712/other-camp-expenses").with(csrf())
-            .param("millId", "682").param("year", "2016")
+            .param("millId", "692").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content("{\"rows\":[{\"rowId\":null,\"description\":\" \",\"cost\":100}]}"))
         .andExpect(status().isOk());
 
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "682").param("year", "2016"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
         .andExpect(status().isOk())
         // Camp 8712 is fully populated apart from this row, so NO description finding may appear
         // against it — the space counts as a description.

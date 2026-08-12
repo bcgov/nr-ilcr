@@ -29,7 +29,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * argument resolution, BEFORE {@code @PreAuthorize} fires, so an invalid body would yield 400 and
  * the test would pass for the wrong reason — proving nothing about authorization.
  *
- * <p><strong>Mill 683 is this class's own fixture and its track is deliberately {@code 'S'}</strong>
+ * <p><strong>Mill 693 is this class's own fixture and its track is deliberately {@code 'S'}</strong>
  * — see the seed migration's block comment. Authorized writes therefore land on 409 from the Draft
  * gate, which proves {@code @PreAuthorize} admitted them without this suite mutating anything.
  *
@@ -43,7 +43,7 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
 
   private static final String CAMP_ROWS = "/api/v1/schedule5/camps/8713/other-camp-expenses";
   private static final String ACCESS_ROWS = "/api/v1/schedule5/camps/8713/other-access-expenses";
-  private static final String MILL = "683";
+  private static final String MILL = "693";
   private static final String YEAR = "2016";
 
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =

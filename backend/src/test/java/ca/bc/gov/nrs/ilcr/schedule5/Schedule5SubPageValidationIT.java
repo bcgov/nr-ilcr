@@ -40,7 +40,7 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
 
   private static final String CAMP_ROWS = "/api/v1/schedule5/camps/8708/other-camp-expenses";
   private static final String ACCESS_ROWS = "/api/v1/schedule5/camps/8708/other-access-expenses";
-  private static final long MILL = 680L;
+  private static final long MILL = 690L;
   private static final int YEAR = 2023;
 
   private static final String CAMP_COST_MSG =

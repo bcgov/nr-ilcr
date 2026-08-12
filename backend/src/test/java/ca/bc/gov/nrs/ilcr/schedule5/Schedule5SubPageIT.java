@@ -31,7 +31,7 @@ import org.springframework.test.context.TestPropertySource;
  * merge-regression guard).
  *
  * <p><strong>Order independence.</strong> A context is (mill, YEAR), so each destructive method
- * claims its own year on mill 680 and nothing here touches Story 7.2's mills 670–676: 2016 the
+ * claims its own year on mill 690 and nothing here touches Story 7.2's mills 670–676: 2016 the
  * reconcile round trip, 2017 the immediate delete, 2018 insert-from-empty and empty-clears, 2019 the
  * deviation-(L) probe, 2020 the foreign-row 404 pair, 2021 the cross-item 404, 2022 the audit-column
  * proof, 2028 the update-to-null proof. 2023 is never mutated — it holds rejection probes whose
@@ -46,7 +46,7 @@ import org.springframework.test.context.TestPropertySource;
 class Schedule5SubPageIT extends AbstractOracleIT {
 
   private static final String BASE = "/api/v1/schedule5/camps";
-  private static final long MILL = 680L;
+  private static final long MILL = 690L;
 
   private final ObjectMapper mapper = new ObjectMapper();
 
@@ -452,17 +452,17 @@ class Schedule5SubPageIT extends AbstractOracleIT {
   @DisplayName("AC15 — every write verb 409s on a non-Draft track, and the read still works")
   void nonDraftBlocksWrites() throws Exception {
     mockMvc.perform(put(campPath(8709)).with(csrf())
-            .param("millId", "681").param("year", "2016")
+            .param("millId", "691").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(rowsBody(newRow("Blocked", 1))))
         .andExpect(status().isConflict());
 
     mockMvc.perform(delete(campPath(8709) + "/8743").with(csrf())
-            .param("millId", "681").param("year", "2016"))
+            .param("millId", "691").param("year", "2016"))
         .andExpect(status().isConflict());
 
     // The READ is not gated, and it reports the camp as read-only.
-    String body = mockMvc.perform(get(campPath(8709)).param("millId", "681").param("year", "2016"))
+    String body = mockMvc.perform(get(campPath(8709)).param("millId", "691").param("year", "2016"))
         .andExpect(status().isOk())
         .andReturn().getResponse().getContentAsString();
     JsonNode doc = mapper.readTree(body);

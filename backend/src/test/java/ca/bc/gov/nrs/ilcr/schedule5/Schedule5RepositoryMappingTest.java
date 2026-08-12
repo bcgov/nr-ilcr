@@ -36,12 +36,12 @@ class Schedule5RepositoryMappingTest {
   @Test
   @DisplayName("maps every component into its own slot, preserving query order")
   void mapsEveryComponent() {
-    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 680L, 2016)).thenReturn(List.of(
+    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 690L, 2016)).thenReturn(List.of(
         new CostReportDetailEntity(8724, CAMP, ITEM_CAMP_ROW, null, 500, "Generator Fuel"),
         new CostReportDetailEntity(8725, CAMP, ITEM_CAMP_ROW, new BigDecimal("120000"), 300,
             "Propane")));
 
-    List<DetailRow> rows = repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 680L, 2016);
+    List<DetailRow> rows = repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 690L, 2016);
 
     assertThat(rows).containsExactly(
         new DetailRow(8724, CAMP, ITEM_CAMP_ROW, null, 500, "Generator Fuel"),
@@ -51,19 +51,19 @@ class Schedule5RepositoryMappingTest {
   @Test
   @DisplayName("no rows is the normal delivery state, not an error")
   void mapsEmptyToEmpty() {
-    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 680L, 2016))
+    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 690L, 2016))
         .thenReturn(List.of());
 
-    assertThat(repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 680L, 2016)).isEmpty();
+    assertThat(repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 690L, 2016)).isEmpty();
   }
 
   @Test
   @DisplayName("a null cost and a null description survive the mapping — cleared, not zeroed")
   void mapsNullsThrough() {
-    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 680L, 2016)).thenReturn(
+    when(repository.findSubPageRowEntities(CAMP, ITEM_CAMP_ROW, 690L, 2016)).thenReturn(
         List.of(new CostReportDetailEntity(8726, CAMP, ITEM_CAMP_ROW, null, null, null)));
 
-    assertThat(repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 680L, 2016))
+    assertThat(repository.findSubPageRows(CAMP, ITEM_CAMP_ROW, 690L, 2016))
         .singleElement()
         .satisfies(row -> {
           assertThat(row.cost()).isNull();
