@@ -190,170 +190,184 @@ const CodeTables: FC = () => {
         {saveMessage && <NotificationColumn kind="success" title="Saved" subtitle={saveMessage} />}
         {saveError && <NotificationColumn kind="error" title="Error" subtitle={saveError} />}
         <Column sm={4} md={8} lg={16}>
-          <CodeComboBox
-            id="code-table-selector"
-            titleText="Code List"
-            items={options}
-            selectedCode={selectedKey}
-            onSelect={onSelectTable}
-          />
+          {/* Both section headers use the schedule pages' 1.25rem heading (e.g. Schedule 4's
+              "Existing Locations" / "New Location"). The ComboBox's own label is visually hidden
+              (kept for screen readers, see .code-tables__selector) so "Code List" is named once by
+              the heading. */}
+          <div className="code-tables__section">
+            <h3 className="code-tables__heading">Code List</h3>
+            <CodeComboBox
+              id="code-table-selector"
+              titleText="Code List"
+              className="code-tables__selector"
+              items={options}
+              selectedCode={selectedKey}
+              onSelect={onSelectTable}
+            />
+          </div>
 
           {selectedKey !== '' && (
-            <TableContainer title="Entries" className="code-tables__grid">
-              <Table aria-label="Code table entries">
-                <TableHead>
-                  <TableRow>
-                    <TableHeader>Code</TableHeader>
-                    <TableHeader>Description</TableHeader>
-                    <TableHeader>Effective Date</TableHeader>
-                    <TableHeader>Expiry Date</TableHeader>
-                    <TableHeader>Actions</TableHeader>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {entries.map((row) =>
-                    editingCode === row.code ? (
-                      <TableRow key={row.code}>
-                        <TableCell>{row.code}</TableCell>
-                        <TableCell>
-                          <TextInput
-                            id={`edit-desc-${row.code}`}
-                            labelText={`Description (${row.code})`}
-                            hideLabel
-                            size="sm"
-                            maxLength={selectedTable?.descriptionMaxLength}
-                            value={editForm.description}
-                            invalid={Boolean(editErrors.description)}
-                            invalidText={editErrors.description}
-                            onChange={(event) =>
-                              setEditForm((prev) => ({ ...prev, description: event.target.value }))
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {dateInput(
-                            `edit-eff-${row.code}`,
-                            'Effective Date',
-                            editForm.effectiveDate,
-                            (next) => setEditForm((prev) => ({ ...prev, effectiveDate: next })),
-                            editErrors.effectiveDate,
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {dateInput(
-                            `edit-exp-${row.code}`,
-                            'Expiry Date',
-                            editForm.expiryDate,
-                            (next) => setEditForm((prev) => ({ ...prev, expiryDate: next })),
-                            editErrors.expiryDate,
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            disabled={saving}
-                            onClick={() => save(editForm, false, () => setEditingCode(null))}
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            disabled={saving}
-                            onClick={() => setEditingCode(null)}
-                          >
-                            Cancel
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      <TableRow key={row.code}>
-                        <TableCell>{row.code}</TableCell>
-                        <TableCell>{row.description}</TableCell>
-                        <TableCell>{dash(row.effectiveDate)}</TableCell>
-                        <TableCell>{dash(row.expiryDate)}</TableCell>
-                        <TableCell>
-                          <Button
-                            kind="ghost"
-                            size="sm"
-                            disabled={editingCode !== null || saving}
-                            onClick={() => startEdit(row)}
-                          >
-                            Edit
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ),
-                  )}
+            <div className="code-tables__section">
+              <h3 className="code-tables__heading">Entries</h3>
+              <TableContainer className="code-tables__grid">
+                <Table aria-label="Code table entries">
+                  <TableHead>
+                    <TableRow>
+                      <TableHeader>Code</TableHeader>
+                      <TableHeader>Description</TableHeader>
+                      <TableHeader>Effective Date</TableHeader>
+                      <TableHeader>Expiry Date</TableHeader>
+                      <TableHeader>Actions</TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {entries.map((row) =>
+                      editingCode === row.code ? (
+                        <TableRow key={row.code}>
+                          <TableCell>{row.code}</TableCell>
+                          <TableCell>
+                            <TextInput
+                              id={`edit-desc-${row.code}`}
+                              labelText={`Description (${row.code})`}
+                              hideLabel
+                              size="sm"
+                              maxLength={selectedTable?.descriptionMaxLength}
+                              value={editForm.description}
+                              invalid={Boolean(editErrors.description)}
+                              invalidText={editErrors.description}
+                              onChange={(event) =>
+                                setEditForm((prev) => ({
+                                  ...prev,
+                                  description: event.target.value,
+                                }))
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {dateInput(
+                              `edit-eff-${row.code}`,
+                              'Effective Date',
+                              editForm.effectiveDate,
+                              (next) => setEditForm((prev) => ({ ...prev, effectiveDate: next })),
+                              editErrors.effectiveDate,
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {dateInput(
+                              `edit-exp-${row.code}`,
+                              'Expiry Date',
+                              editForm.expiryDate,
+                              (next) => setEditForm((prev) => ({ ...prev, expiryDate: next })),
+                              editErrors.expiryDate,
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              disabled={saving}
+                              onClick={() => save(editForm, false, () => setEditingCode(null))}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              disabled={saving}
+                              onClick={() => setEditingCode(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <TableRow key={row.code}>
+                          <TableCell>{row.code}</TableCell>
+                          <TableCell>{row.description}</TableCell>
+                          <TableCell>{dash(row.effectiveDate)}</TableCell>
+                          <TableCell>{dash(row.expiryDate)}</TableCell>
+                          <TableCell>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              disabled={editingCode !== null || saving}
+                              onClick={() => startEdit(row)}
+                            >
+                              Edit
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ),
+                    )}
 
-                  {/* New-entry row (BR-03 add; add-of-existing silently updates server-side). */}
-                  <TableRow>
-                    <TableCell>
-                      <TextInput
-                        id="add-code"
-                        labelText="Code"
-                        hideLabel
-                        size="sm"
-                        maxLength={selectedTable?.codeMaxLength}
-                        value={addForm.code}
-                        invalid={Boolean(addErrors.code)}
-                        invalidText={addErrors.code}
-                        onChange={(event) =>
-                          setAddForm((prev) => ({ ...prev, code: event.target.value }))
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <TextInput
-                        id="add-desc"
-                        labelText="Description"
-                        hideLabel
-                        size="sm"
-                        maxLength={selectedTable?.descriptionMaxLength}
-                        value={addForm.description}
-                        invalid={Boolean(addErrors.description)}
-                        invalidText={addErrors.description}
-                        onChange={(event) =>
-                          setAddForm((prev) => ({ ...prev, description: event.target.value }))
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {dateInput(
-                        'add-eff',
-                        'Effective Date',
-                        addForm.effectiveDate,
-                        (next) => setAddForm((prev) => ({ ...prev, effectiveDate: next })),
-                        addErrors.effectiveDate,
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {dateInput(
-                        'add-exp',
-                        'Expiry Date',
-                        addForm.expiryDate,
-                        (next) => setAddForm((prev) => ({ ...prev, expiryDate: next })),
-                        addErrors.expiryDate,
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        disabled={saving}
-                        onClick={() =>
-                          save(addForm, true, () => {
-                            setAddForm(EMPTY_FORM)
-                            setAddErrors({})
-                          })
-                        }
-                      >
-                        Add
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    {/* New-entry row (BR-03 add; add-of-existing silently updates server-side). */}
+                    <TableRow>
+                      <TableCell>
+                        <TextInput
+                          id="add-code"
+                          labelText="Code"
+                          hideLabel
+                          size="sm"
+                          maxLength={selectedTable?.codeMaxLength}
+                          value={addForm.code}
+                          invalid={Boolean(addErrors.code)}
+                          invalidText={addErrors.code}
+                          onChange={(event) =>
+                            setAddForm((prev) => ({ ...prev, code: event.target.value }))
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TextInput
+                          id="add-desc"
+                          labelText="Description"
+                          hideLabel
+                          size="sm"
+                          maxLength={selectedTable?.descriptionMaxLength}
+                          value={addForm.description}
+                          invalid={Boolean(addErrors.description)}
+                          invalidText={addErrors.description}
+                          onChange={(event) =>
+                            setAddForm((prev) => ({ ...prev, description: event.target.value }))
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {dateInput(
+                          'add-eff',
+                          'Effective Date',
+                          addForm.effectiveDate,
+                          (next) => setAddForm((prev) => ({ ...prev, effectiveDate: next })),
+                          addErrors.effectiveDate,
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {dateInput(
+                          'add-exp',
+                          'Expiry Date',
+                          addForm.expiryDate,
+                          (next) => setAddForm((prev) => ({ ...prev, expiryDate: next })),
+                          addErrors.expiryDate,
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          disabled={saving}
+                          onClick={() =>
+                            save(addForm, true, () => {
+                              setAddForm(EMPTY_FORM)
+                              setAddErrors({})
+                            })
+                          }
+                        >
+                          Add
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </div>
           )}
         </Column>
       </Grid>

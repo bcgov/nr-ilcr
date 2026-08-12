@@ -71,6 +71,7 @@ body {
   .schedule-8__heading,
   .schedule-4__subpage-title,
   .schedule-8__rate-heading,
+  .code-tables__heading,
   .#{$bcgov-prefix}--data-table-header__title {
     font-size: 1.25rem;
   }
@@ -92,6 +93,44 @@ body {
   .#{$bcgov-prefix}--data-table tbody tr:hover td,
   .#{$bcgov-prefix}--data-table tbody tr:hover th {
     background-color: rgba(22, 22, 22, 0.04);
+  }
+
+  // Table Maintenance: the Code List selector and the Entries grid are two stacked sections, each
+  // led by a .code-tables__heading. Space the sections apart and give each heading room above its
+  // control so the two 1.25rem headers read as peers.
+  .code-tables__section + .code-tables__section {
+    margin-top: 2rem;
+  }
+
+  .code-tables__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  // The Code List selector is already named by its .code-tables__heading; hide the ComboBox's own
+  // label so "Code List" is not shown twice. Kept in the accessibility tree (visually-hidden, not
+  // display:none) so the selector retains its accessible name for screen readers.
+  .code-tables__selector .#{$bcgov-prefix}--label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+// The subtle row-hover tint inside .schedule-page is a near-black overlay tuned for the light
+// theme; in dark mode (g100) that same overlay paints the hovered row DARKER, which reads as a
+// stuck dark patch — most visible on Table Maintenance, where the cursor stays over a row while it
+// is being edited. Use a light overlay of the same weight so the hover reads as a subtle lift in
+// dark mode. Scoped to the dark theme so the light-theme tint above is untouched.
+:root[data-carbon-theme='g100'] {
+  .schedule-page .#{$bcgov-prefix}--data-table tbody tr:hover td,
+  .schedule-page .#{$bcgov-prefix}--data-table tbody tr:hover th {
+    background-color: rgba(255, 255, 255, 0.06);
   }
 }
 
