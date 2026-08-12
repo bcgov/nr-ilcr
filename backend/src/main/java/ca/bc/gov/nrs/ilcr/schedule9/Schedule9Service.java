@@ -15,8 +15,10 @@ import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -65,14 +67,13 @@ public class Schedule9Service {
 
   // FLD-001 field labels — the {0} the JSF required template ("{0}: Value is required.") fills, in
   // screen order (schedule9.xhtml). NOT prefixed with the record id: that prefix is Check Status'.
+  // Only the FIVE select-one/Company ID fields legacy marks required="true"; the three "Other"
+  // descriptions are NOT required at Save (see validateRequired).
   private static final String LABEL_COMPANY_ID = "Company ID";
   private static final String LABEL_CONTRACTUAL_ITEM = "Contractual Item";
-  private static final String LABEL_ITEM_DESCRIPTION = "Item Other Description";
   private static final String LABEL_UNIT_TYPE = "Unit Type";
-  private static final String LABEL_UNIT_DESCRIPTION = "Unit Other Description";
   private static final String LABEL_BEC_ZONE = "Biogeoclimatic Zone";
   private static final String LABEL_SOURCE = "Source";
-  private static final String LABEL_SOURCE_DESCRIPTION = "Source Other Description";
 
   // Check Status field-title segments (leading space) — the exact legacy titles
   // Schedule9CheckStatus.validateSchedule builds: "Contractual Work Report Id : {row}" + segment.
@@ -99,6 +100,12 @@ public class Schedule9Service {
   private static final String FORMAT_SIDE_SLOPE = "##";
   private static final String FORMAT_UNITS = "##,###.#";
   private static final String FORMAT_COST = "#,###,###";
+
+  // The bounds are formatted with an EXPLICIT locale (comma grouping / period decimal), not the JVM
+  // default, so the composed range line matches the legacy delivery output regardless of the server's
+  // default locale — legacy's DecimalFormat happened to run on a comma-locale JVM.
+  private static final DecimalFormatSymbols NUMBER_SYMBOLS =
+      DecimalFormatSymbols.getInstance(Locale.CANADA);
 
   private final Schedule9Repository repository;
   private final MessageSource messageSource;
@@ -331,9 +338,18 @@ public class Schedule9Service {
 
   /**
    * The FLD-001 required check: one {@code javax.faces.component.UIInput.REQUIRED} line per missing
-   * field in screen order — the five always-required selects plus the three "Other" descriptions,
-   * each required only when its driving select enables it (BR-04). All missing fields report together
-   * on one 400 (the FieldValuesRequiredException contract).
+   * field in screen order. Only the FIVE fields legacy marks {@code required="true"} in
+   * {@code schedule9.xhtml} are enforced — Company ID, Contractual Item, Unit Type, Biogeoclimatic
+   * Zone, Source. All missing fields report together on one 400 (the FieldValuesRequiredException
+   * contract).
+   *
+   * <p><strong>The three "Other" descriptions are NOT required at Save</strong> — legacy leaves
+   * {@code itemDescription} with no {@code required} attribute ({@code schedule9.xhtml:117}), marks
+   * {@code unitDescription} {@code required="false"} (:183), and guards {@code sourceDescription} with
+   * a MISSPELLED {@code require=} that JSF silently ignores (:253). So a blank "Other" description
+   * SAVES; the field is only conditionally STORED (nulled when its driver is not "Other"), never
+   * required. Dev Note (D) flagged exactly this typo to verify — confirmed at dev, and the epics'
+   * "required only when Other" reading of AC3 is the recorded deviation.
    */
   private static void validateRequired(ContractualWorkRecordRequest request) {
     List<String> missing = new ArrayList<>();
@@ -342,24 +358,15 @@ public class Schedule9Service {
     }
     if (request.contractualItemCode() == null) {
       missing.add(LABEL_CONTRACTUAL_ITEM);
-    } else if (request.contractualItemCode() == ITEM_OTHER
-        && StringUtils.isBlank(request.itemDescription())) {
-      missing.add(LABEL_ITEM_DESCRIPTION);
     }
     if (StringUtils.isBlank(request.unitCode())) {
       missing.add(LABEL_UNIT_TYPE);
-    } else if (UNIT_OTHER.equals(request.unitCode())
-        && StringUtils.isBlank(request.unitDescription())) {
-      missing.add(LABEL_UNIT_DESCRIPTION);
     }
     if (StringUtils.isBlank(request.biogeoclimaticZone())) {
       missing.add(LABEL_BEC_ZONE);
     }
     if (StringUtils.isBlank(request.sourceCode())) {
       missing.add(LABEL_SOURCE);
-    } else if (sourceEnablesDescription(request.sourceCode())
-        && StringUtils.isBlank(request.sourceDescription())) {
-      missing.add(LABEL_SOURCE_DESCRIPTION);
     }
     if (!missing.isEmpty()) {
       throw new FieldValuesRequiredException(missing);
@@ -530,8 +537,8 @@ public class Schedule9Service {
    * base validator passes {@code lowerLimitFormat} for both), so the output matches the running app.
    */
   private MessageInfo rangeError(int rowNumber, String segment, double max, String pattern) {
-    String lower = new DecimalFormat(pattern).format(0.0);
-    String upper = new DecimalFormat(pattern).format(max);
+    String lower = new DecimalFormat(pattern, NUMBER_SYMBOLS).format(0.0);
+    String upper = new DecimalFormat(pattern, NUMBER_SYMBOLS).format(max);
     String range = resolve(MSG_INVALID_RANGE, lower, upper);
     String text = CHECK_TITLE_PREFIX + rowNumber + segment + ": " + range;
     return new MessageInfo(MSG_INVALID_RANGE, text);

@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -173,25 +175,73 @@ class Schedule9WriteIT extends AbstractOracleIT {
   // ---- AC1/AC5: edit in place (S07) ------------------------------------------------------------
 
   @Test
-  @DisplayName("S07: PUT -> 200 saved, values updated, REVISION_COUNT bumped, ENTRY_* preserved")
+  @DisplayName("S07: PUT -> 200, values + cost-line item updated, REVISION_COUNT bumped, audit re-stamped")
   void updateRecord_editsInPlaceAndBumpsRevision() throws Exception {
     JsonNode before = recordByContractor(2017, "CTR-EDIT");
     int recordId = before.path("id").asInt();
     int token = before.path("revisionCount").asInt();
     Object entryUser = masterRow(recordId).get("ENTRY_USERID");
 
+    // Change the Contractual Item 108 -> 109 too, so the cost line's item-code update is exercised.
     mockMvc.perform(put(RECORDS + "/" + recordId).with(csrf())
             .param("millId", "690").param("year", "2017")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(body("CTR-EDIT", 108, 7777, "20.0", null, token)))
+            .content(body("CTR-EDIT", 109, 7777, "20.0", null, token)))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.key", org.hamcrest.Matchers.is("dataSavedSuccesfullyInfoMsg")));
+        .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")));
 
     Map<String, Object> master = masterRow(recordId);
     assertEquals(token + 1, ((Number) master.get("REVISION_COUNT")).intValue());
     assertEquals(entryUser, master.get("ENTRY_USERID"), "ENTRY_USERID survives an edit");
-    assertEquals(7777, costLines(recordId).get(0).get("COST") == null ? null
-        : ((Number) costLines(recordId).get(0).get("COST")).intValue());
+    assertNotEquals("SEED", master.get("UPDATE_USERID"), "master UPDATE_USERID re-stamped by the app");
+
+    List<Map<String, Object>> lines = costLines(recordId);
+    assertEquals(1, lines.size());
+    assertEquals(7777, ((Number) lines.get(0).get("COST")).intValue());
+    assertEquals(109, ((Number) lines.get(0).get("ILCR_REPORT_COST_ITEM_ID")).intValue(),
+        "the cost line's Contractual Item is updated on edit");
+    assertNotEquals("SEED", lines.get(0).get("UPDATE_USERID"), "cost line UPDATE_USERID re-stamped");
+  }
+
+  @Test
+  @DisplayName("BR-04: editing a road item to a non-road item NULLs the stored side slope")
+  void updateRecord_clearsSideSlopeWhenItemBecomesNonRoad() throws Exception {
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body("SS-CLEAR", 111, 1000, "1.0", 50, null)))
+        .andExpect(status().isOk());
+    JsonNode created = recordByContractor(2016, "SS-CLEAR");
+    int recordId = created.path("id").asInt();
+    assertEquals(50, created.path("sideSlopePct").asInt());
+
+    // The body still sends side slope 50, but item 108 does not enable it -> stored NULL.
+    mockMvc.perform(put(RECORDS + "/" + recordId).with(csrf())
+            .param("millId", "690").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body("SS-CLEAR", 108, 1000, "1.0", 50, created.path("revisionCount").asInt())))
+        .andExpect(status().isOk());
+
+    assertNull(jdbc().queryForObject(
+        "SELECT SIDE_SLOPE_PCT FROM THE.CONTRACTUAL_WORK_REPORT WHERE CONTRACTUAL_WORK_REPORT_ID = ?",
+        Integer.class, recordId));
+  }
+
+  @Test
+  @DisplayName("cost and units omitted -> 200 saved with NULL stored (Save side of the asymmetry)")
+  void addRecord_blankCostAndUnits_savesWithNulls() throws Exception {
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body("BLANK-CU", 108, null, "null", null, null)))
+        .andExpect(status().isOk());
+
+    JsonNode served = recordByContractor(2016, "BLANK-CU");
+    int recordId = served.path("id").asInt();
+    assertTrue(served.path("cost").isMissingNode() || served.path("cost").isNull());
+    assertTrue(served.path("costPerUnit").isMissingNode() || served.path("costPerUnit").isNull());
+    assertNull(jdbc().queryForObject(
+        "SELECT PERFORMED_UNIT FROM THE.CONTRACTUAL_WORK_REPORT WHERE CONTRACTUAL_WORK_REPORT_ID = ?",
+        java.math.BigDecimal.class, recordId));
+    assertNull(costLines(recordId).get(0).get("COST"));
   }
 
   // ---- AC5: delete (S10) -----------------------------------------------------------------------
@@ -229,7 +279,10 @@ class Schedule9WriteIT extends AbstractOracleIT {
             .param("millId", "690").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-LOCK-STALE", 108, 9999, "1.0", null, current - 1)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        // The 409 is specifically the stale-token conflict, not the Draft gate.
+        .andExpect(jsonPath("$.detail",
+            is("This schedule was changed by another user. Please reload and try again.")));
 
     // Nothing changed: the contractor id and revision are as seeded.
     assertEquals("CTR-LOCK", masterRow(recordId).get("CONTRACTOR_ID"));
@@ -237,13 +290,28 @@ class Schedule9WriteIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("an unknown record id -> 404")
+  @DisplayName("an unknown record id -> 404 with the not-found message")
   void updateRecord_unknownId_notFound() throws Exception {
     mockMvc.perform(put(RECORDS + "/999999").with(csrf())
             .param("millId", "690").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-GHOST", 108, 1, "1.0", null, 0)))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail", is("Contractual work record not found.")));
+  }
+
+  @Test
+  @DisplayName("a record id belonging to another mill -> 404 (IDOR-scoped), and it is untouched")
+  void updateRecord_foreignId_notFound() throws Exception {
+    // Record 9131 belongs to mill 696; addressing it under mill 690 must 404, never reach across the
+    // tenancy boundary — 404, not 409 (stale) and not 200.
+    mockMvc.perform(put(RECORDS + "/9131").with(csrf())
+            .param("millId", "690").param("year", "2019")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body("CTR-FOREIGN", 108, 1, "1.0", null, 0)))
         .andExpect(status().isNotFound());
+
+    assertEquals("CTR-AUTH", masterRow(9131).get("CONTRACTOR_ID"), "the foreign record is untouched");
   }
 
   // ---- AC1: Draft gate -------------------------------------------------------------------------

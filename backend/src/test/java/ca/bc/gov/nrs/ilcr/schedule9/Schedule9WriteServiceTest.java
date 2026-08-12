@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -104,42 +105,21 @@ class Schedule9WriteServiceTest {
     }
 
     @Test
-    @DisplayName("item 114 without a description reports Item Other Description (BR-04)")
-    void itemDescriptionRequiredForOther() {
+    @DisplayName("the three 'Other' descriptions are NOT required at Save (legacy parity)")
+    void otherDescriptionsNotRequiredAtSave() {
       draft();
+      allCodesValidAndEmptyDocument();
+      when(repository.nextContractualWorkReportId()).thenReturn(9210);
+      when(repository.nextCostDetailId()).thenReturn(8610);
+      // Every "Other" driver selected (item 114, unit O, source S) but every description blank —
+      // legacy's item desc has no required attr, unit desc is required="false", and source desc's
+      // require= is a typo JSF ignores. So this saves rather than throwing FLD-001.
       ContractualWorkRecordRequest request = new ContractualWorkRecordRequest(
-          "CTR-1", 114, "  ", "M3", null, new BigDecimal("1.0"), "BZ1", 1, null, "A", null, null,
+          "CTR-1", 114, null, "O", null, new BigDecimal("1.0"), "BZ1", 1, null, "S", null, null,
           null);
 
-      FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-          () -> service.addRecord(MILL, YEAR, request, true, USER));
-      assertEquals(List.of("Item Other Description"), ex.getFieldLabels());
-    }
-
-    @Test
-    @DisplayName("unit O without a description reports Unit Other Description (BR-04)")
-    void unitDescriptionRequiredForOther() {
-      draft();
-      ContractualWorkRecordRequest request = new ContractualWorkRecordRequest(
-          "CTR-1", 108, null, "O", null, new BigDecimal("1.0"), "BZ1", 1, null, "A", null, null,
-          null);
-
-      FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-          () -> service.addRecord(MILL, YEAR, request, true, USER));
-      assertEquals(List.of("Unit Other Description"), ex.getFieldLabels());
-    }
-
-    @Test
-    @DisplayName("source S (not only O) without a description reports Source Other Description")
-    void sourceDescriptionRequiredForSubcontract() {
-      draft();
-      ContractualWorkRecordRequest request = new ContractualWorkRecordRequest(
-          "CTR-1", 108, null, "M3", null, new BigDecimal("1.0"), "BZ1", 1, null, "S", null, null,
-          null);
-
-      FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-          () -> service.addRecord(MILL, YEAR, request, true, USER));
-      assertEquals(List.of("Source Other Description"), ex.getFieldLabels());
+      assertDoesNotThrow(() -> service.addRecord(MILL, YEAR, request, true, USER));
+      verify(repository).insertCostLine(anyInt(), anyInt(), eq(114), any(), isNull(), eq(USER));
     }
   }
 
@@ -195,6 +175,27 @@ class Schedule9WriteServiceTest {
           isNull(), eq(new BigDecimal("10.0")), eq("M3"), isNull(), eq("A"), isNull(), eq("BZ1"),
           eq("ok"), eq(USER));
       verify(repository).insertCostLine(eq(8600), eq(9200), eq(108), eq(5000), isNull(), eq(USER));
+    }
+
+    @Test
+    @DisplayName("the 'Other' descriptions are KEPT when their driver enables them")
+    void otherDriversKeepDescriptions() {
+      draft();
+      allCodesValidAndEmptyDocument();
+      when(repository.nextContractualWorkReportId()).thenReturn(9202);
+      when(repository.nextCostDetailId()).thenReturn(8602);
+      ContractualWorkRecordRequest request = new ContractualWorkRecordRequest(
+          "CTR-1", 114, "gate", "O", "linear metre", new BigDecimal("1.0"), "BZ1", 1, null, "S",
+          "quote", null, null);
+
+      service.addRecord(MILL, YEAR, request, true, USER);
+
+      // unit O keeps unit desc, source S keeps source desc on the master; item 114 keeps item desc
+      // on the cost line.
+      verify(repository).insertRecord(anyInt(), eq(MILL), eq(YEAR), eq("CTR-1"),
+          isNull(), any(), eq("O"), eq("linear metre"), eq("S"), eq("quote"), eq("BZ1"), isNull(),
+          eq(USER));
+      verify(repository).insertCostLine(anyInt(), anyInt(), eq(114), any(), eq("gate"), eq(USER));
     }
 
     @Test

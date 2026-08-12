@@ -22,10 +22,15 @@ import java.math.BigDecimal;
  * Zone, Source — which a per-property {@code @NotBlank} cannot reproduce (Schedule 7A conflates this
  * with the Check-Status {@code "Value Required"}; Schedule 9's legacy save path does not). {@link
  * ca.bc.gov.nrs.ilcr.schedule9.Schedule9Service} collects the missing labels and throws {@code
- * FieldValuesRequiredException}; the same path enforces the BR-04 conditional descriptions (required
- * only when their driving select enables them) and rejects a code outside its reference list
- * (FLD-005, {@code invalidCodeValueErrorMsg}). The three code fields therefore carry NO {@code @Size}
- * — an over-length code simply matches no list row and is a clean FLD-005 400.
+ * FieldValuesRequiredException}, and rejects a code outside its reference list (FLD-005, {@code
+ * invalidCodeValueErrorMsg}). The three code fields therefore carry NO {@code @Size} — an over-length
+ * code simply matches no list row and is a clean FLD-005 400.
+ *
+ * <p>The three "Other" free-text descriptions are NOT required at Save — legacy leaves them
+ * un-required ({@code itemDescription} has no {@code required} attribute, {@code unitDescription} is
+ * {@code required="false"}, and {@code sourceDescription} carries a misspelled {@code require=} JSF
+ * ignores). They are only conditionally STORED — nulled when their driving select is not "Other" —
+ * which the service applies; a blank "Other" description saves.
  *
  * <p><strong>Only the three numeric RANGES are declarative</strong> (FLD-002/003/004), because they
  * ARE per-property and their boundaries accept (S13): cost {@code 0..9,999,999}

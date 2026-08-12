@@ -87,38 +87,54 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.messages[0].text", is("Company ID: Value is required.")));
   }
 
-  // ---- AC3: conditional descriptions (BR-04, S03–S06) ------------------------------------------
+  // ---- AC3: conditional descriptions are NOT required at Save (legacy parity, BR-04) ------------
+  // Legacy leaves itemDescription un-required, unitDescription required="false", and sourceDescription
+  // with a misspelled require= JSF ignores — so an "Other" description SAVES (and round-trips) rather
+  // than being required.
 
   @Test
-  @DisplayName("item 114 without a description -> Item Other Description required")
-  void conditional_itemOtherDescription() throws Exception {
-    expectRejectedWithNothingPersistedExpectingLabel(
-        body("CTR", 114, "M3", "A", 100, "1.0", null), "Item Other Description: Value is required.");
+  @DisplayName("item 114 'Other' saves WITH its description, round-tripped")
+  void otherItem_savesAndStoresDescription() throws Exception {
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content("""
+                {"contractorId":"OTHER-ITEM","contractualItemCode":114,"itemDescription":"Custom gate",
+                 "unitCode":"M3","numberOfUnits":1.0,"biogeoclimaticZone":"BZ1","cost":100,
+                 "sourceCode":"A"}
+                """))
+        .andExpect(status().isOk());
+    JsonNode served = recordByContractor("OTHER-ITEM");
+    assertEquals("Custom gate", served.path("itemDescription").asText());
+    assertEquals("114", served.path("contractualItem").path("code").asText());
   }
 
   @Test
-  @DisplayName("unit O without a description -> Unit Other Description required")
-  void conditional_unitOtherDescription() throws Exception {
-    expectRejectedWithNothingPersistedExpectingLabel(
-        body("CTR", 108, "O", "A", 100, "1.0", null), "Unit Other Description: Value is required.");
-  }
-
-  @Test
-  @DisplayName("source S without a description -> Source Other Description required (O or S)")
-  void conditional_sourceOtherDescription() throws Exception {
-    expectRejectedWithNothingPersistedExpectingLabel(
-        body("CTR", 108, "M3", "S", 100, "1.0", null),
-        "Source Other Description: Value is required.");
-  }
-
-  private void expectRejectedWithNothingPersistedExpectingLabel(String bodyJson, String text)
-      throws Exception {
+  @DisplayName("item 114 'Other' with NO description still SAVES (descriptions are not required)")
+  void otherItem_savesWithoutDescription() throws Exception {
     long before = recordCount();
     mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(bodyJson))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.messages[0].text", is(text)));
-    assertEquals(before, recordCount());
+            .contentType(MediaType.APPLICATION_JSON).content("""
+                {"contractorId":"OTHER-NODESC","contractualItemCode":114,"unitCode":"M3",
+                 "numberOfUnits":1.0,"biogeoclimaticZone":"BZ1","cost":100,"sourceCode":"A"}
+                """))
+        .andExpect(status().isOk());
+    assertEquals(before + 1, recordCount());
+    assertEquals("114",
+        recordByContractor("OTHER-NODESC").path("contractualItem").path("code").asText());
+  }
+
+  @Test
+  @DisplayName("unit O and source S save WITH their descriptions, round-tripped")
+  void otherUnitAndSource_saveAndStoreDescriptions() throws Exception {
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content("""
+                {"contractorId":"OTHER-US","contractualItemCode":108,"unitCode":"O",
+                 "unitDescription":"linear metre","numberOfUnits":1.0,"biogeoclimaticZone":"BZ1",
+                 "cost":100,"sourceCode":"S","sourceDescription":"Contractor quote"}
+                """))
+        .andExpect(status().isOk());
+    JsonNode served = recordByContractor("OTHER-US");
+    assertEquals("linear metre", served.path("unitDescription").asText());
+    assertEquals("Contractor quote", served.path("sourceDescription").asText());
   }
 
   // ---- AC4: FLD-002/003/004 ranges + boundaries (S13/S22/S23/S24) ------------------------------
