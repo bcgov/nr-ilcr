@@ -10,8 +10,6 @@ export interface ComboOption {
 interface CodeComboBoxProps {
   id: string
   titleText: string
-  /** Visually hide the label (still read by screen readers) — e.g. when a section heading names it. */
-  hideLabel?: boolean
   /** The full option list (code + description). */
   items: ComboOption[]
   /** The currently selected code ('' when none). */
@@ -33,7 +31,6 @@ interface CodeComboBoxProps {
 const CodeComboBox: FC<CodeComboBoxProps> = ({
   id,
   titleText,
-  hideLabel,
   items,
   selectedCode,
   onSelect,
@@ -48,7 +45,6 @@ const CodeComboBox: FC<CodeComboBoxProps> = ({
       id={id}
       className={className}
       titleText={titleText}
-      hideLabel={hideLabel}
       placeholder="Select"
       items={items}
       itemToString={(item) => item?.description ?? ''}
