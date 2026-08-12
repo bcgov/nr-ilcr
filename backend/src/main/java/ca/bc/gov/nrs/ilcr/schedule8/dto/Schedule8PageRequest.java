@@ -38,11 +38,11 @@ public record Schedule8PageRequest(
     @NotBlank(message = "{missingRequiredFieldMsg}")
     @Size(max = 10, message = "BEC zone can not exceed 10 characters.") String becZone,
     @Size(max = 10, message = "TSA number can not exceed 10 characters.") String tsaNumber,
-    @Size(max = 10, message = "TFL number can not exceed 10 characters.") String tflNumber,
+    @Size(max = 2, message = "TFL number can not exceed 2 characters.") String tflNumber,
     @Size(max = 10, message = "Supply block can not exceed 10 characters.") String supplyBlock,
     @Size(max = 30, message = "Division can not exceed 30 characters.") String division,
     @Size(max = 50, message = "Contact can not exceed 50 characters.") String contact,
     @Size(max = 20, message = "Phone can not exceed 20 characters.") String phone,
     @Size(max = 10, message = "Cutting permit can not exceed 10 characters.") String cuttingPermit,
-    @Size(max = 2000, message = "Comments can not exceed 2000 characters.") String comments) {
+    @Size(max = 3500, message = "Comments can not exceed 3500 characters.") String comments) {
 }

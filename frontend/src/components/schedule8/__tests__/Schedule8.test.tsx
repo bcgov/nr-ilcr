@@ -220,6 +220,34 @@ describe('Schedule8 page level', () => {
     expect(screen.getByLabelText('Phone')).toHaveValue('250-555-1212')
   })
 
+  test('a partial phone blocks save with the complete-number message (no PUT)', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(PAGES_URL, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+
+    // Fill the required fields so only the (partial) phone can block the save.
+    await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
+    await userEvent.type(screen.getByLabelText('License'), 'LIC9')
+    await selectOption('Support Centre', 'Support Centre 1')
+    await selectOption('Region', 'Region 1')
+    await selectOption('Biogeoclimatic Zone', 'BEC 1')
+    await selectOption('TSA or TFL', 'TSA 1')
+    await userEvent.type(screen.getByLabelText('Phone'), '250555')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(
+      screen.getByText('Phone must be a complete 10-digit number (e.g. 250-555-1212).'),
+    ).toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+  })
+
   test('blank required fields block save with verbatim Value Required (no PUT)', async () => {
     const put = vi.fn()
     server.use(
@@ -248,8 +276,8 @@ describe('Schedule8 page level', () => {
 
     expect(screen.getByText('Copy Page')).toBeInTheDocument()
     expect(screen.getByLabelText('License')).toHaveValue('LIC1')
-    // The seeded code (SC1) resolves to its option description on the dropdown trigger.
-    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveTextContent(
+    // The seeded code (SC1) resolves to its option description in the combobox input value.
+    expect(await screen.findByRole('combobox', { name: 'Support Centre' })).toHaveValue(
       'Support Centre 1',
     )
   })
@@ -332,11 +360,14 @@ describe('Schedule8 page level', () => {
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
-    expect(screen.getByText('Edit Page')).toBeInTheDocument()
+    // The Edit Page heading now carries the page label ("Edit Page — Page # 1 …").
+    expect(screen.getByRole('heading', { name: /^Edit Page —/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(body).toMatchObject({ id: 8001, revisionCount: 0 })
+    // Save stays on the record — the edit panel remains open.
+    expect(screen.getByRole('heading', { name: /^Edit Page —/ })).toBeInTheDocument()
   })
 
   test('a failed save surfaces the verbatim ProblemDetail.detail', async () => {
@@ -446,12 +477,13 @@ describe('Schedule8 page level', () => {
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
-    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeDisabled()
+    // TFL is a free-text input (legacy ILCR-161), not a dropdown; Supply Block is a dropdown.
+    expect(screen.getByRole('textbox', { name: 'TFL' })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeEnabled()
 
-    // The TSA-or-TFL selector carries the legacy 'TFL' marker; choosing it flips the two selectors.
+    // The TSA-or-TFL selector carries the legacy 'TFL' marker; choosing it flips the TFL/Supply Block pair.
     await selectOption('TSA or TFL', 'TFL')
-    expect(screen.getByRole('combobox', { name: 'TFL' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'TFL' })).toBeEnabled()
     expect(screen.getByRole('combobox', { name: 'Supply Block' })).toBeDisabled()
   })
 
@@ -487,15 +519,15 @@ describe('Schedule8 page level', () => {
     expect(body).toMatchObject({ tsaNumber: 'TSA1', tflNumber: null })
   })
 
-  test('Cancel closes the editor panel', async () => {
+  test('Back closes the editor panel', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     renderSchedule8()
     await screen.findByText(/Page # 1/)
 
     await userEvent.click(screen.getByRole('button', { name: /add new page/i }))
     expect(screen.getByText('New Page')).toBeInTheDocument()
-    // The always-mounted delete modal contributes a hidden Cancel; the panel Cancel is the first.
-    await userEvent.click(screen.getAllByRole('button', { name: /^cancel$/i })[0])
+    // The panel's discard button is now "Back" (the always-mounted modals still carry "Cancel").
+    await userEvent.click(screen.getByRole('button', { name: /^back$/i }))
     expect(screen.queryByText('New Page')).not.toBeInTheDocument()
   })
 
@@ -785,11 +817,14 @@ describe('Schedule8 sample level', () => {
     await openSamples()
 
     await userEvent.click(screen.getByRole('button', { name: /^edit$/i }))
-    expect(screen.getByText('Edit Sample')).toBeInTheDocument()
+    // The Edit Sample heading now carries the sample label ("Edit Sample — Sample # 1 …").
+    expect(screen.getByRole('heading', { name: /^Edit Sample —/ })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(body).toMatchObject({ id: 8101, revisionCount: 0 })
+    // Save stays on the record — the sample edit panel remains open.
+    expect(screen.getByRole('heading', { name: /^Edit Sample —/ })).toBeInTheDocument()
   })
 
   test('Delete a sample DELETEs and shows the success message', async () => {

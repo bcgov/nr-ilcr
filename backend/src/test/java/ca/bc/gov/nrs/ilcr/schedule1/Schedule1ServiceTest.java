@@ -127,6 +127,22 @@ class Schedule1ServiceTest {
   }
 
   @Test
+  void otherCosts_sharedRowWithNullVolume_readsAsNullVolume_notAnNpe() {
+    // Regression: a stored shared row (null description) carrying no volume 500'd the whole GET —
+    // toOtherCosts mapped to the nullable volume BEFORE findFirst(), and Stream.findFirst() throws NPE
+    // when the selected element is itself null. The shared volume must simply read back as null while
+    // the itemized rows still aggregate (perUnit null — no volume to divide by).
+    stub("D", List.of(
+        new DetailRow(19, null, null, null),        // shared row, volume never entered / cleared
+        new DetailRow(19, null, 12000, "Row A")));  // itemized
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    assertNull(doc.otherCosts().volume());
+    assertEquals(12000L, doc.otherCosts().costSubtotal());
+    assertEquals(1, doc.otherCosts().count());
+    assertNull(doc.otherCosts().perUnit());
+  }
+
+  @Test
   void otherCosts_alwaysPresent_whenNoItem19Rows() {
     // A schedule with no Other Costs still carries a zero-summary (present, not null) so the
     // client can tell "zero" from "missing".

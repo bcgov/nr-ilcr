@@ -231,12 +231,13 @@ class Schedule1WriteServiceTest {
   }
 
   @Test
-  void save_nonWritableCodeAndNullSilvFields_persistNothingOptional() {
+  void save_nonWritableCode_isSkipped_butNullVolumesClear() {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    // A non-writable line-item code (99) is skipped; a present silviculture block whose sub-fields
-    // are all null writes none of them; a null otherCostsVolume leaves code 19 untouched.
+    // A non-writable line-item code (99) is skipped. The absent 1 / 2 entries write nothing, but the
+    // five volume-only fields are a PUT of the entered set: null means the user emptied the box, so
+    // each is written through as null to CLEAR the stored volume (never silently left untouched).
     service.saveSchedule1(
         MILL, YEAR,
         new Schedule1Request(0, "c",
@@ -246,6 +247,39 @@ class Schedule1WriteServiceTest {
         true, USER);
 
     verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(99), any(), any(), anyString());
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), any(), anyString());
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(1), any(), any(), anyString());
+    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(2), any(), any(), anyString());
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 19, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 139, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 140, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 143, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 144, null, null, USER);
+  }
+
+  @Test
+  void save_clearedVolumeFields_overwriteStoredValuesWithNull() {
+    stubDraftSummary();
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+
+    // The reported bug: emptying any of the five volume-only boxes reported Save success but the old
+    // number came back on reload, because a null was read as "field omitted, leave it alone". Every one
+    // of them must reach the repository as a null write. The 1 / 2 volumes (sent inside a present entry)
+    // clear the same way, so the whole cleared-row case is covered here.
+    service.saveSchedule1(
+        MILL, YEAR,
+        new Schedule1Request(0, "c",
+            List.of(new LineItemInput(12, null, null)),
+            new SilvicultureInput(new EntryAmount(null, null), new EntryAmount(null, null), null, null),
+            null, null, null),
+        true, USER);
+
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 12, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 1, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 2, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 139, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 140, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 19, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 143, null, null, USER);
+    verify(repository).upsertFixedDetail(SUMMARY_ID, 144, null, null, USER);
   }
 }

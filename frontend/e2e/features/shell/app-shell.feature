@@ -14,4 +14,4 @@ Feature: App shell renders without a backend (data-independent smoke)
   Scenario: The app shell renders with the backend unavailable
     Given I open the app with no backend available
     Then the app header and mock-user selector are visible
-    And the primary navigation shows Home, Schedules, Submissions, and Mill Associations
+    And the primary navigation shows Home, Schedules, Check Status, Generate Reports, Print Schedules, and Submissions

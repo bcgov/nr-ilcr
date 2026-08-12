@@ -12,6 +12,14 @@ body {
   margin: 0;
 }
 
+// Sticky footer: stack header / content / footer in a viewport-tall flex column so the content grows
+// to fill and the footer sits at the bottom of the viewport (not pushed below it by a 100vh content).
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
 .app-page {
   padding-block-end: $spacing-09;
 }
@@ -48,6 +56,43 @@ body {
 .app-page__body .cds--inline-notification {
   margin-block: $spacing-03 $spacing-05;
   max-inline-size: 100%;
+}
+
+// Consistent typography across Schedules 2/4/8 and their sub-pages (scoped to .schedule-page so it
+// does not leak to other routes): main headers — panel/section headings + Carbon table titles — at
+// 1.25rem; row + field labels — Carbon input labels, including Comments — at 0.875rem. So equivalent
+// headers (e.g. "Existing Locations" and "Edit Location") and equivalent labels (e.g. "Location Name"
+// and the edit-grid row labels) match across the schedules. Sizes are in rem (not px) so they scale
+// with the browser's font-size setting (WCAG 1.4.4); only the size is set, leaving Carbon's weight and
+// line-height intact, so a full type-style token is intentionally not used here.
+.schedule-page {
+  .schedule-2__heading,
+  .schedule-4__heading,
+  .schedule-8__heading,
+  .schedule-4__subpage-title,
+  .schedule-8__rate-heading,
+  .#{$bcgov-prefix}--data-table-header__title {
+    font-size: 1.25rem;
+  }
+
+  .schedule-2__comments-label,
+  .#{$bcgov-prefix}--label {
+    font-size: 0.875rem;
+  }
+
+  // Sub-section headers (the Schedule 8 sample-editor blocks: Skidding / Skyline / Helicopter /
+  // Other / Volumes / Rate) sit one level below the 1.25rem panel headings — 1rem so they read as
+  // subordinate group titles rather than competing with the main header.
+  .schedule-8__subheading {
+    font-size: 1rem;
+  }
+
+  // Soften the Carbon row-hover on the schedule tables (2/4/8) — the default hover grey reads too heavy
+  // on the dense data grids; a subtle tint is enough to track the row under the cursor.
+  .#{$bcgov-prefix}--data-table tbody tr:hover td,
+  .#{$bcgov-prefix}--data-table tbody tr:hover th {
+    background-color: rgba(22, 22, 22, 0.04);
+  }
 }
 
 .app-section {

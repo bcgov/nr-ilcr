@@ -27,8 +27,8 @@ import java.util.List;
  * @param id the primary report id to edit; null to create
  * @param revisionCount optimistic-lock token from the last GET (null on create)
  * @param name the location description (required, ≤ 30)
- * @param comments free-text per-location comments (nullable, ≤ 2000 — the
- *     {@code TRANSPORTATION_REPORT.COMMENTS} column width); stored on the primary report
+ * @param comments free-text per-location comments (nullable, ≤ 3500 — within the
+ *     {@code TRANSPORTATION_REPORT.COMMENTS} 4000-char column); stored on the primary report
  * @param categories the entered category amounts (validated per-element + BR-04)
  */
 public record Schedule4LocationRequest(
@@ -37,7 +37,7 @@ public record Schedule4LocationRequest(
     @NotBlank(message = "{locationEmptyOrNull}")
     @Size(max = 30, message = "Location Name can not exceed 30 characters.")
     String name,
-    @Size(max = 2000, message = "{commentsMaxLength2000ErrorMsg}")
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
     String comments,
     @Valid List<CategoryInput> categories) {
 

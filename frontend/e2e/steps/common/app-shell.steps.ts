@@ -16,12 +16,14 @@ Then('the app header and mock-user selector are visible', async ({ appShell }) =
 });
 
 Then(
-  'the primary navigation shows Home, Schedules, Submissions, and Mill Associations',
+  'the primary navigation shows Home, Schedules, Check Status, Generate Reports, Print Schedules, and Submissions',
   async ({ appShell }) => {
     await appShell.ensureNavOpen();
     await expect(appShell.navLink('Home')).toBeVisible();
     await expect(appShell.navGroup('Schedules')).toBeVisible();
+    await expect(appShell.navLink('Check Status')).toBeVisible();
+    await expect(appShell.navLink('Generate Reports')).toBeVisible();
+    await expect(appShell.navLink('Print Schedules')).toBeVisible();
     await expect(appShell.navLink('Submissions')).toBeVisible();
-    await expect(appShell.navLink('Mill Associations')).toBeVisible();
   },
 );

@@ -357,6 +357,51 @@ public class Schedule4Service {
   }
 
   /**
+   * Edit one existing sub-page list row (Towing/Truck Rehaul/Other) and return the recomputed document
+   * (Story 4.3, the edit counterpart of {@link #addSubPageRow}). The row is its OWN
+   * {@code TRANSPORTATION_REPORT} (carrying its distance + cycle) with a single detail (item 43/46/55
+   * with {@code ITEM_DESCRIPTION}); {@code cycle} is written for Truck Rehaul only, null otherwise.
+   * Draft gate (AD-9); an unknown {@code locationId}, or a {@code rowId} that is NOT a sub-page row of
+   * THAT location, → 404 (path-scoped, IDOR guard — never a cross-location/cross-context mutation);
+   * persistence fault → 500 (type-only log). The mill/year context is validated in the controller
+   * (AD-4).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param locationId the parent location's primary report id (its {@link Location#id()})
+   * @param rowId the sub-page row's own report id (the edit target)
+   * @param request the row type, description, and amounts (validated)
+   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param user the acting user id (audit)
+   * @return the recomputed Schedule 4 document
+   */
+  @Transactional
+  public Schedule4Response updateSubPageRow(long millId, int year, int locationId, int rowId,
+      Schedule4SubPageRowRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    // Mill/year-scoped: a foreign locationId resolves to no name here (IDOR guard) → 404.
+    String name = repository.findLocationName(locationId, millId, year).orElse(null);
+    if (name == null) {
+      throw new ScheduleNotFoundException(); // 404 — no such location
+    }
+    // The rowId must be a sub-page row OF THAT location (path semantics) — else 404.
+    if (!repository.isSubPageRowOfLocation(rowId, name, millId, year)) {
+      throw new ScheduleNotFoundException(); // 404 — row not under this location
+    }
+    try {
+      Integer cycle = request.type() == SubPageRowType.TRUCK_REHAUL ? request.cycle() : null;
+      repository.updateSubPageReport(rowId, request.distance(), cycle, user);
+      repository.updateSubPageDetail(rowId, request.type().code(),
+          request.volume(), request.cost(), request.description().trim(), user);
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 4 sub-page update failed for mill {} year {} [{}]",
+          millId, year, ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return getSchedule4(millId, year, callerMayEdit);
+  }
+
+  /**
    * Delete one sub-page list row (its whole {@code TRANSPORTATION_REPORT} + cascaded detail) and
    * return the recomputed document (Story 4.3, S11 / BR-08). Draft gate (AD-9). Idempotent: an
    * unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report) —

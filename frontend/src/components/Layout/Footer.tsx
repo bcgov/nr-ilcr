@@ -1,4 +1,5 @@
 import type { FC } from 'react'
+import { Launch } from '@carbon/icons-react'
 
 // The application footer: the ILCR version on the left, and the standard BC Gov site links centred.
 // The links open the government copyright/disclaimer/privacy/accessibility pages in a new tab.
@@ -26,6 +27,8 @@ const Footer: FC = () => (
           rel="noreferrer"
         >
           {link.label}
+          {/* Cue that the link opens a new tab; shown on hover/focus (decorative — aria-hidden). */}
+          <Launch size={16} className="app-footer__launch" aria-hidden="true" />
         </a>
       ))}
     </nav>

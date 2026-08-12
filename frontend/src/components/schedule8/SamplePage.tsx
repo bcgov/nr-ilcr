@@ -6,7 +6,6 @@ import type { CodeOption } from '@/interfaces/Schedule8Options'
 import { useState } from 'react'
 import {
   Button,
-  Dropdown,
   InlineNotification,
   Modal,
   Select,
@@ -36,6 +35,7 @@ import {
   type SampleForm,
 } from './validation'
 import CheckStatusResult from './CheckStatusResult'
+import CodeComboBox from '@/components/core/CodeComboBox'
 
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const NAV_UNSAVED = 'Unsaved data will be lost. Are you sure to continue?'
@@ -184,6 +184,8 @@ const SamplePage: FC<SamplePageProps> = ({
     }
     setBusy(true)
     clearMessages()
+    // Sample ids present before the save — used to find a freshly created sample (new/copy) in the reply.
+    const prevIds = new Set(samples.map((s) => s.id))
     apiService
       .getAxiosInstance()
       .put<Schedule8Response>(
@@ -193,7 +195,20 @@ const SamplePage: FC<SamplePageProps> = ({
       .then((response) => {
         onDocUpdate(response.data)
         setMessage(response.data.message?.text ?? null)
-        setPanelMode('closed')
+        // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
+        // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
+        const pageSamples = response.data.pages.find((p) => p.id === pageId)?.samples ?? []
+        const saved =
+          panelMode === 'edit' && editId !== null
+            ? pageSamples.find((s) => s.id === editId)
+            : pageSamples.find((s) => s.id != null && !prevIds.has(s.id))
+        if (saved && saved.id != null) {
+          setPanelMode('edit')
+          setEditId(saved.id)
+          setRevision(saved.revisionCount ?? 0)
+        } else {
+          setPanelMode('closed')
+        }
       })
       .catch((err: unknown) => setError(extractDetail(err) || 'Sample could not be saved.'))
       .finally(() => setBusy(false))
@@ -334,7 +349,14 @@ const SamplePage: FC<SamplePageProps> = ({
             </TableRow>
           ) : (
             samples.map((sample, index) => (
-              <TableRow key={sample.id}>
+              <TableRow
+                key={sample.id}
+                className={
+                  panelOpen && sample.id != null && sample.id === editId
+                    ? 'schedule-8__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{sampleLabel(sample, index)}</TableCell>
                 <TableCell>
                   <div className="schedule-8__row-actions">
@@ -376,7 +398,13 @@ const SamplePage: FC<SamplePageProps> = ({
     <div className="schedule-8__panel">
       <h3 className="schedule-8__heading">
         {panelMode === 'new' && 'New Sample'}
-        {panelMode === 'edit' && 'Edit Sample'}
+        {panelMode === 'edit' &&
+          (openSample
+            ? `Edit Sample — ${sampleLabel(
+                openSample,
+                samples.findIndex((s) => s.id === editId),
+              )}`
+            : 'Edit Sample')}
         {panelMode === 'copy' && 'Copy Sample'}
         {panelMode === 'view' && 'View Sample'}
       </h3>
@@ -453,19 +481,14 @@ const SamplePage: FC<SamplePageProps> = ({
             </span>
           </div>
         ) : (
-          <Dropdown<CodeOption>
+          <CodeComboBox
             id="sample-skidTypeCode"
             titleText="Skid Type"
-            label="Select"
-            size="sm"
             items={skidTypes}
-            itemToString={(item) => item?.description ?? ''}
-            selectedItem={skidTypes.find((o) => o.code === form.skidTypeCode) ?? null}
+            selectedCode={form.skidTypeCode}
             invalid={Boolean(errors.skidTypeCode)}
             invalidText={errors.skidTypeCode}
-            onChange={({ selectedItem }) =>
-              setForm((prev) => ({ ...prev, skidTypeCode: selectedItem?.code ?? '' }))
-            }
+            onSelect={(code) => setForm((prev) => ({ ...prev, skidTypeCode: code }))}
           />
         )}
         {numberField('otherSkiddingPct', 'Other %')}
@@ -527,6 +550,15 @@ const SamplePage: FC<SamplePageProps> = ({
         {computedField('Final TtT Rate', openSample?.finalRate)}
       </div>
 
+      {/* Save feedback shown in the panel (next to the Save button) so it's visible where the user is
+          acting — the panel opens below the table, far from the page-top notifications. */}
+      {message && (
+        <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
+      )}
+      {error && (
+        <InlineNotification kind="error" lowContrast title="Action failed" subtitle={error} />
+      )}
+
       <div className="schedule-8__panel-actions">
         {!readOnly && (
           <Button kind="primary" disabled={busy} onClick={handleSave}>
@@ -534,7 +566,7 @@ const SamplePage: FC<SamplePageProps> = ({
           </Button>
         )}
         <Button kind="secondary" disabled={busy} onClick={closePanel}>
-          {readOnly ? 'Close' : 'Cancel'}
+          {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>
@@ -543,16 +575,15 @@ const SamplePage: FC<SamplePageProps> = ({
   return (
     <div className="schedule-8__level">
       <div className="schedule-8__level-header">
-        <Button kind="ghost" size="sm" onClick={requestBack}>
-          ← Back to pages
-        </Button>
         <h3 className="schedule-8__heading">{pageTitle} → Samples</h3>
       </div>
 
-      {message && (
+      {/* Page-level feedback (Check Status / delete) shows here when no editor panel is open; while the
+          panel is open its own copy (above the Save button) carries the save feedback instead. */}
+      {!panelOpen && message && (
         <InlineNotification kind="success" lowContrast title="Success" subtitle={message} />
       )}
-      {error && (
+      {!panelOpen && error && (
         <InlineNotification kind="error" lowContrast title="Action failed" subtitle={error} />
       )}
       {checkResult && (
@@ -562,7 +593,10 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
 
       <div className="schedule-8__actions">
-        <Button kind="primary" disabled={!editable || busy || panelOpen} onClick={openNew}>
+        <Button kind="secondary" onClick={requestBack}>
+          Back to pages
+        </Button>
+        <Button kind="primary" disabled={!editable || busy} onClick={openNew}>
           Add New Sample
         </Button>
         <Button kind="tertiary" disabled={busy} onClick={handleCheckStatus}>

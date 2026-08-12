@@ -16,9 +16,30 @@
   }
 }
 
-// Right-align numeric columns (Carbon DataTable defaults to left).
+// Left-align the numeric columns so the read-only figures line up with the (left-aligned) numbers in
+// the editable input fields.
 .schedule-2__num {
-  text-align: right;
+  text-align: left;
+}
+
+// A Carbon text input insets its text by its own padding + border, so a plain read-only cell's number
+// sits ~1rem to the left of an input's number. Indent the non-input numeric cells (read-only figures
+// and the column headers) by that inset so every column's numbers line up. Input cells are excluded —
+// the input already supplies the inset.
+.schedule-2__num:not(:has(.cds--text-input)) {
+  text-indent: calc(1rem + 1px);
+}
+
+// The Comments label reads as a full sentence at 14px (both the editable field label and the
+// read-only heading).
+.schedule-2__comments-field .cds--label,
+.schedule-2__comments-label {
+  font-size: 14px;
+}
+
+.schedule-2__comments-label {
+  margin: 0 0 $spacing-03;
+  font-weight: 400;
 }
 
 // Visual divider between the 4 cost groups: a heavier top border on the first row of each group
@@ -30,4 +51,6 @@
 .schedule-2__actions {
   display: flex;
   gap: $spacing-03;
+  // Space the action bar off the adjacent table/comments (matches Schedule 4's action bar).
+  margin-block-end: $spacing-05;
 }
