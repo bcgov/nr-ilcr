@@ -36,9 +36,9 @@ two such branches merge:
    | Home                      | (see `V8`/`V9`) |                                              |
    | Schedule 2                | **622–625**     | summaries in the `12xx` block                |
    | Schedule 5                | **670–676**     | reserved by `V34`, seeded by `V20260807`      |
-   | Schedule 5 sub-pages      | **680–683**     | `V20260813`                                   |
+   | Schedule 5 sub-pages      | **680–683**     | `V20260814`                                   |
 
-   **Schedule 5 sub-pages (`V20260813`, Story 7.4)** — a **timestamp version**, per convention 1 and
+   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per convention 1 and
    the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
    own mills so no destructive test can touch Story 7.2's `670–676`: `680` the write playground
    (Draft 2016–2023, one destructive concern per year), `681` Submitted → the write-gate 409, `682`
