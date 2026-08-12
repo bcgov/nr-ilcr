@@ -23,13 +23,19 @@ jobs:
       contents: read
       pull-requests: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Raised from 15 to cover the Testcontainers Oracle pull + start the ITs now add.
+    timeout-minutes: 25
     steps:
       - uses: bcgov/action-test-and-analyse-java@7c7309721cae054b3e837c723afa4efb4b1a256d # v1.1.0
         name: Backend Coverage
         with:
+          # skip.integration.tests: the pom defaults it to true, so `verify` ran surefire only and
+          # every *IT.java suite — authorization, persistence and validation against a real Oracle —
+          # was skipped in CI (AR17). The failsafe suites need only Docker, which the GitHub runner
+          # provides: AbstractOracleIT starts one gvenzl/oracle-free container per JVM and applies
+          # the test snapshot with Flyway's Java API.
           commands: |
-            mvn -B -ntp -Dcheckstyle.skip=false verify checkstyle:checkstyle
+            mvn -B -ntp -Dcheckstyle.skip=false -Dskip.integration.tests=false verify checkstyle:checkstyle
           dir: backend
           java-cache: maven
           java-distribution: temurin
@@ -38,10 +44,14 @@ jobs:
           # (RoadGroupUtil.setRmgByTfaTsbNumberCode/setRmgByTflNumberCode), where ~18 of the
           # TSA cases are token-identical apart from their literals. CPD reads that as 174
           # duplicated lines; the table is the business rule and must not be de-duplicated.
+          # xmlReportPaths: with the ITs running, the pom's jacoco `merge`/`report-merged` executions
+          # produce the union of surefire and failsafe coverage. Sonar would otherwise keep reading
+          # the unit-only report and still count IT-covered lines as uncovered.
           sonar_args: >
             -Dsonar.organization=bcgov-sonarcloud
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_backend
             -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco-merged/jacoco.xml
             -Dsonar.cpd.exclusions=**/schedule6/RoadGroupLookup.java
           sonar_token: ${{ secrets.sonar_token_backend }}
           triggers: ('backend/')
