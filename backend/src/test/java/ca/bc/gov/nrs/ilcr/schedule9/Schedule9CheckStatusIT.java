@@ -40,7 +40,7 @@ class Schedule9CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("all records satisfied -> requirementsMet, the SUC-002 banner, no errors")
   void allMet() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2021"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "702").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(true)))
         .andExpect(jsonPath("$.errors", hasSize(0)))
@@ -52,7 +52,7 @@ class Schedule9CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("zero records -> vacuously met (banner, no errors), not a 404")
   void emptyIsVacuouslyMet() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "694").param("year", "2021"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "704").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(true)))
         .andExpect(jsonPath("$.errors", hasSize(0)))
@@ -62,7 +62,7 @@ class Schedule9CheckStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("mixed record set -> the per-field lines in record then legacy field order, no banner")
   void issuesComposedVerbatim() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "693").param("year", "2021"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "703").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(false)))
         // requirementsMetMessage is omitted (Jackson NON_NULL) when there are issues.
@@ -82,16 +82,16 @@ class Schedule9CheckStatusIT extends AbstractOracleIT {
   @DisplayName("check-status mutates nothing")
   void mutatesNothing() throws Exception {
     long before = jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 693", Long.class);
+        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 703", Long.class);
     Object slopeBefore = jdbc().queryForObject(
         "SELECT SIDE_SLOPE_PCT FROM THE.CONTRACTUAL_WORK_REPORT WHERE CONTRACTUAL_WORK_REPORT_ID = 9143",
         Integer.class);
 
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "693").param("year", "2021"))
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "703").param("year", "2021"))
         .andExpect(status().isOk());
 
     assertEquals(before, jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 693", Long.class));
+        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 703", Long.class));
     assertEquals(slopeBefore, jdbc().queryForObject(
         "SELECT SIDE_SLOPE_PCT FROM THE.CONTRACTUAL_WORK_REPORT WHERE CONTRACTUAL_WORK_REPORT_ID = 9143",
         Integer.class));

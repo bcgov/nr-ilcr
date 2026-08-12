@@ -1,11 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +20,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
@@ -216,6 +221,84 @@ class Schedule5CheckStatusIT extends AbstractOracleIT {
     // fingerprints have passed while real writes slipped through (8-2-…md:112), and a stray
     // UPDATE_TIMESTAMP is exactly the kind of write a row count cannot see.
     assertEquals(before, fingerprint(jdbc));
+  }
+
+  // ===============================================================================================
+  // Story 7.4 — the four sub-list conditions, fired from REAL rows.
+  //
+  // These four conditions shipped with 7.2 and have only ever been proved against SEEDED item-62/68
+  // rows, because until 7.4 nothing could create one: delivery holds zero camp-parented detail rows
+  // and the write path never touched those item ids. The tests above still cover the composition;
+  // what these add is that the SAME lines fire from rows a licensee actually created through the
+  // sub-page endpoints, which is the only path that will ever produce them in production.
+  // ===============================================================================================
+
+  @Test
+  @DisplayName("7.4 — the two CAMP sub-list conditions fire from rows written through the API")
+  void campSubListConditionsFireFromWrittenRows() throws Exception {
+    // Camp 8710 starts with a blank-description row and a null-cost row; rewrite BOTH through the
+    // endpoint so the flagged rows are ones the API produced, not ones the migration planted.
+    mockMvc.perform(put("/api/v1/schedule5/camps/8710/other-camp-expenses").with(csrf())
+            .param("millId", "692").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":100},"
+                + "{\"rowId\":null,\"description\":\"Has Description\",\"cost\":null}]}"))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("ISSUES")))
+        .andExpect(jsonPath(
+            "$.camps[?(@.campId == 8710)].messages[*].text",
+            hasItems(
+                "Camp Report Name : Camp List Issues - Other Camp Expense List (Description): "
+                    + "Value Required",
+                "Camp Report Name : Camp List Issues - Other Camp Expense List (Cost $): "
+                    + "Value Required")));
+  }
+
+  @Test
+  @DisplayName("7.4 — the two ACCESS sub-list conditions fire from rows written through the API")
+  void accessSubListConditionsFireFromWrittenRows() throws Exception {
+    mockMvc.perform(put("/api/v1/schedule5/camps/8711/other-access-expenses").with(csrf())
+            .param("millId", "692").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"rows\":[{\"rowId\":null,\"description\":null,\"cost\":100},"
+                + "{\"rowId\":null,\"description\":\"Has Description\",\"cost\":null}]}"))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath(
+            "$.camps[?(@.campId == 8711)].messages[*].text",
+            hasItems(
+                "Camp Report Name : Access List Issues - Other Access Expense List (Description): "
+                    + "Value Required",
+                "Camp Report Name : Access List Issues - Other Access Expense List (Cost $): "
+                    + "Value Required")));
+  }
+
+  @Test
+  @DisplayName("7.4 — a SINGLE-SPACE description PASSES (isEmpty, not isBlank)")
+  void singleSpaceDescriptionPasses() throws Exception {
+    // Legacy checks isEmpty, not isBlank, so " " satisfies the requirement. Written through the API
+    // here to prove the server neither trims it away nor rejects it — a @NotBlank, or a trim on the
+    // write path, would each break this silently.
+    mockMvc.perform(put("/api/v1/schedule5/camps/8712/other-camp-expenses").with(csrf())
+            .param("millId", "692").param("year", "2016")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"rows\":[{\"rowId\":null,\"description\":\" \",\"cost\":100}]}"))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2016"))
+        .andExpect(status().isOk())
+        // Camp 8712 is fully populated apart from this row, so NO description finding may appear
+        // against it — the space counts as a description.
+        .andExpect(jsonPath(
+            "$.camps[?(@.campId == 8712)].messages[*].text",
+            not(hasItem(
+                "Camp Report Name : Single Space Camp - Other Camp Expense List (Description): "
+                    + "Value Required"))));
   }
 
   private static List<Map<String, Object>> fingerprint(JdbcTemplate jdbc) {

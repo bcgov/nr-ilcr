@@ -121,6 +121,29 @@ class GlobalExceptionHandlerTest {
   }
 
   @Test
+  @DisplayName("ANOTHER schedule's indexed batch is UNPREFIXED — the label is 7B's, not a house style")
+  void foreignBatchFailureIsUnprefixed() throws Exception {
+    // Indexed-ness alone is not the trigger. Every schedule takes an indexed batch body — lineItems
+    // (1, 3), rows (1, 3, 5), categories (4) — and none of their legacy screens carried a row label,
+    // so a prefix keyed on "[n]" alone rewrote four schedules' 400 wording at once. That is exactly
+    // what happened: Schedule1WriteIT, Schedule4WriteIT and Schedule5SubPageValidationIT all pin the
+    // bare sentence and all went red once CI ran the ITs (PR #268). Deleting the scope check here
+    // brings them back, which is the point of this test.
+    var schedule5Row = handler.handleMethodArgumentNotValid(
+        validationFailure(at("rows[0].description", "Description must be 30 characters or fewer.")),
+        new MockHttpServletRequest("PUT",
+            "/api/v1/schedule5/camps/8700/other-camp-expenses"));
+    assertThat(detailOf(schedule5Row)).isEqualTo("Description must be 30 characters or fewer.");
+
+    var schedule1LineItem = handler.handleMethodArgumentNotValid(
+        validationFailure(at("lineItems[0].cost",
+            "Entered cost must be between -99,999,999 and 99,999,999.")),
+        new MockHttpServletRequest("PUT", "/api/v1/schedule1"));
+    assertThat(detailOf(schedule1LineItem))
+        .isEqualTo("Entered cost must be between -99,999,999 and 99,999,999.");
+  }
+
+  @Test
   @DisplayName("the converter lookup is scoped to the OWNING TYPE, not the bare field name")
   void converterKeyIsTypeScoped() {
     // Jackson's reference chain names the target type. Matching "spanSize" alone meant the next DTO to

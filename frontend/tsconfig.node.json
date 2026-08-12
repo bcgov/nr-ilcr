@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "composite": true,
+    // composite implies declaration emit, so a `tsc -b` wrote vite.config.js + vite.config.d.ts next
+    // to the source and both got committed (8d82b70). Nothing consumes them — vite loads the .ts
+    // directly — and a stale transpiled twin of the build config is a trap for the next reader.
+    "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node"],

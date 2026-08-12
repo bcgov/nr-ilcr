@@ -135,7 +135,13 @@ const BridgeFields: FC<Props> = ({
         size="sm"
         items={items as BridgeCodeOption[]}
         itemToString={(item) => item?.description ?? ''}
-        selectedItem={items.find((item) => item.code === form[field]) ?? null}
+        // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
+        // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
+        // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
+        // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
+        selectedItem={
+          (items.find((item) => item.code === form[field]) ?? null) as BridgeCodeOption | undefined
+        }
         disabled={disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}

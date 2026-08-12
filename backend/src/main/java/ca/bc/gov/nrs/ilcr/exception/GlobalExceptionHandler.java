@@ -171,8 +171,29 @@ public class GlobalExceptionHandler {
   private static final Pattern INDEXED_PATH = Pattern.compile("\\[(\\d+)]");
 
   /**
+   * The ONE batch list whose rows carry the legacy {@code Id: n - } label: {@code culverts}, the
+   * list field of Schedule 7B's page-level Save ({@code CulvertSaveAllRequest}). Anchored at the path
+   * root, so it matches {@code culverts[6].culvert.installCost} and nothing nested deeper.
+   *
+   * <p><strong>Scoped to one list rather than "any indexed path"</strong> because the label is a
+   * legacy-fidelity detail of 7B's list form, not a house style. Every other batch body in the app is
+   * indexed too — {@code lineItems} (Schedules 1, 3), {@code rows} (Schedules 1, 3, 5),
+   * {@code categories} (Schedule 4) — and their legacy screens carry NO row label, so an unscoped
+   * prefix silently rewrote their 400 wording. Their own acceptance tests pin the bare sentence and
+   * went red the first time CI actually ran the ITs (PR #268: two Schedule 1, three Schedule 4, one
+   * Schedule 5). Nothing caught it on {@code main}, whose Analysis job runs {@code verify} WITHOUT
+   * {@code -Dskip.integration.tests=false} — the ITs are skipped there.
+   *
+   * <p>Matching the path root rather than the binding's object name is deliberate: Spring derives the
+   * object name from the {@code @RequestBody} TYPE at runtime, but a hand-built {@link FieldError} in
+   * a unit test names it whatever it likes, so an object-name test would pass in production and
+   * silently do nothing under {@code GlobalExceptionHandlerTest}.
+   */
+  private static final Pattern ROW_LABELLED_LIST = Pattern.compile("^culverts\\[");
+
+  /**
    * One field error's message, prefixed with the legacy row label when the failure came from an
-   * INDEXED entry of a batch body — {@code "Id: 7 - Entered cost must be between …"}.
+   * INDEXED entry of {@link #ROW_LABELLED_LIST} — {@code "Id: 7 - Entered cost must be between …"}.
    *
    * <p>Without this, a page-level Save of N culverts whose row 7 carried an out-of-range install
    * cost answered with the bare sentence and no row identity, while the whole batch rolled back —
@@ -192,6 +213,9 @@ public class GlobalExceptionHandler {
    */
   private static String describeFieldError(FieldError error) {
     String message = Objects.requireNonNullElse(error.getDefaultMessage(), "");
+    if (!ROW_LABELLED_LIST.matcher(error.getField()).find()) {
+      return message;
+    }
     Matcher indexed = INDEXED_PATH.matcher(error.getField());
     if (!indexed.find()) {
       return message;

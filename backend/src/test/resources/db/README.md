@@ -37,7 +37,26 @@ two such branches merge:
    | Schedule 2                | **622–625**     | summaries in the `12xx` block                |
    | Schedule 5                | **670–676**     | reserved by `V34`, seeded by `V20260807`      |
    | Schedule 7B               | **680–681**     | `V20260811`                                  |
-   | Schedule 9                | **690–696**     | `V20260815`                                  |
+   | Schedule 5 sub-pages      | **690–693**     | `V20260814`                                   |
+   | Schedule 9                | **700–706**     | `V20260815`                                  |
+
+   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per convention 1 and
+   the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
+   own mills so no destructive test can touch Story 7.2's `670–676`: `690` the write playground
+   (Draft 2016–2023, one destructive concern per year), `691` Submitted → the write-gate 409, `692`
+   check-status against real sub-page rows, `693` owned solely by the authorization IT. The block was
+   `680–683` until Schedule 7B's `V20260811` landed on `main` claiming `680–681`; both migrations
+   `INSERT INTO THE.MILL` those ids, so the merge would have failed Flyway outright on ORA-00001.
+   Per convention 1 the newer (unmerged) claim moved. PK ranges are
+   a **new block**, verified above every value in use (the previous high-water mark was `8438`):
+   `CAMP_REPORT_ID` **`8700–8719`** and `ILCR_COST_REPORT_DETAIL_ID` **`8720–8799`** — both below the
+   sequence starts. It adds NO cost item (62/68/141/142 already exist via `V34`/`V31`).
+
+   It carries **one DDL statement**, and it is a fidelity fix rather than a fixture: it widens
+   `ILCR_COST_REPORT_DETAIL.ITEM_DESCRIPTION` from the `V1` snapshot's `VARCHAR2(30)` to delivery's
+   **`VARCHAR2(120)`** (confirmed `CHAR_USED = 'B'` against the seeded real-data image). A snapshot
+   narrower than delivery makes a green IT prove less than it appears to — a 30-character multi-byte
+   description that production accepts would fail locally with ORA-12899.
 
    **Schedule 5 write (`V20260807`, Story 7.2)** — a **timestamp version, deliberately**. The next
    free integer was `V35`; it was not taken because this convention has now collided four times

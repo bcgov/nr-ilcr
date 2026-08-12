@@ -46,13 +46,13 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
 
   private long recordCount() {
     return jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 695", Long.class);
+        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 705", Long.class);
   }
 
   private void expectRejectedWithNothingPersisted(String bodyJson, int expectedStatus)
       throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(bodyJson))
         .andExpect(status().is(expectedStatus));
     assertEquals(before, recordCount(), "a rejected write must persist nothing");
@@ -64,7 +64,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("all five required selects omitted -> one FLD-001 line each, in screen order")
   void required_allFiveMissing() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.messages[*].text", contains(
@@ -79,7 +79,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("a blank Company ID alone -> exactly one FLD-001 line (S17)")
   void required_companyIdOnly() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("   ", 108, "M3", "A", 100, "1.0", null)))
         .andExpect(status().isBadRequest())
@@ -95,7 +95,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("item 114 'Other' saves WITH its description, round-tripped")
   void otherItem_savesAndStoresDescription() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("""
                 {"contractorId":"OTHER-ITEM","contractualItemCode":114,"itemDescription":"Custom gate",
                  "unitCode":"M3","numberOfUnits":1.0,"biogeoclimaticZone":"BZ1","cost":100,
@@ -111,7 +111,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("item 114 'Other' with NO description still SAVES (descriptions are not required)")
   void otherItem_savesWithoutDescription() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("""
                 {"contractorId":"OTHER-NODESC","contractualItemCode":114,"unitCode":"M3",
                  "numberOfUnits":1.0,"biogeoclimaticZone":"BZ1","cost":100,"sourceCode":"A"}
@@ -125,7 +125,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("unit O and source S save WITH their descriptions, round-tripped")
   void otherUnitAndSource_saveAndStoreDescriptions() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("""
                 {"contractorId":"OTHER-US","contractualItemCode":108,"unitCode":"O",
                  "unitDescription":"linear metre","numberOfUnits":1.0,"biogeoclimaticZone":"BZ1",
@@ -143,7 +143,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("cost above 9,999,999 -> verbatim FLD-002")
   void range_costTooHigh() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR", 108, "M3", "A", 10000000, "1.0", null)))
         .andExpect(status().isBadRequest())
@@ -156,7 +156,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("side slope above 100 -> verbatim FLD-003")
   void range_sideSlopeTooHigh() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR", 111, "M3", "A", 100, "1.0", 101)))
         .andExpect(status().isBadRequest())
@@ -169,7 +169,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("number of units above 99,999.9 -> verbatim FLD-004")
   void range_unitsTooHigh() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR", 108, "M3", "A", 100, "100000.0", null)))
         .andExpect(status().isBadRequest())
@@ -182,7 +182,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("S13: boundary values (cost 9,999,999, side slope 100, units 99,999.9) SAVE")
   void boundary_valuesAccepted() throws Exception {
     // item 111 so the side slope is kept; 100 saves (<=100) even though Check Status flags it (>99).
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("BOUNDARY", 111, "M3", "A", 9999999, "99999.9", 100)))
         .andExpect(status().isOk());
@@ -199,7 +199,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @DisplayName("a Contractual Item outside 108–114 -> FLD-005")
   void code_itemOutOfRange() throws Exception {
     long before = recordCount();
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR", 999, "M3", "A", 100, "1.0", null)))
         .andExpect(status().isBadRequest())
@@ -218,7 +218,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("item 108 with a side slope in the body -> stored side slope is NULL")
   void conditionalNull_sideSlopeClearedForNonRoadItem() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "695").param("year", "2022")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "705").param("year", "2022")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CLEARED", 108, "M3", "A", 100, "1.0", 55)))
         .andExpect(status().isOk());
@@ -253,7 +253,7 @@ class Schedule9WriteValidationIT extends AbstractOracleIT {
 
   private JsonNode recordByContractorYear(int year, String contractor) throws Exception {
     String json = mockMvc.perform(
-            get(DOCUMENT).param("millId", "695").param("year", String.valueOf(year)))
+            get(DOCUMENT).param("millId", "705").param("year", String.valueOf(year)))
         .andExpect(status().isOk())
         .andReturn().getResponse().getContentAsString();
     for (JsonNode record : mapper.readTree(json).path("records")) {

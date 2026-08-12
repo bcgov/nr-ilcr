@@ -1,15 +1,23 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * Acceptance test — Schedule 5 read context guards (AD-4, AD-8). All SIX 400 shapes
@@ -129,5 +137,74 @@ class Schedule5ContextGuardIT extends AbstractOracleIT {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is(ERR_005)));
+  }
+
+  /**
+   * Story 7.4 (AC15) — the SAME three guard outcomes on all six sub-page routes. The guard runs on
+   * the first line of every handler, before authorization scoping and before the camp is resolved,
+   * so the camp id in the path is irrelevant to these probes and nothing is ever written.
+   */
+  @Nested
+  @DisplayName("the six sub-page routes share the guards verbatim (Story 7.4 AC15)")
+  class SubPageRoutes {
+
+    private static final String CAMP_ID = "8700";
+
+    /** GET, PUT and DELETE across both sub-pages — every route the story added. */
+    private List<MockHttpServletRequestBuilder> allSixRoutes() {
+      List<MockHttpServletRequestBuilder> routes = new ArrayList<>();
+      for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
+        String base = "/api/v1/schedule5/camps/" + CAMP_ID + "/" + page;
+        routes.add(get(base));
+        routes.add(put(base).with(csrf())
+            .contentType(MediaType.APPLICATION_JSON).content("{\"rows\":[]}"));
+        routes.add(delete(base + "/8722").with(csrf()));
+      }
+      return routes;
+    }
+
+    @Test
+    @DisplayName("missing millId -> 400 verbatim ERR-003 on every route")
+    void missingMillId_returns400_onEveryRoute() throws Exception {
+      for (MockHttpServletRequestBuilder route : allSixRoutes()) {
+        mockMvc.perform(route.param("year", SEEDED_YEAR))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+            .andExpect(jsonPath("$.detail", is(ERR_003)));
+      }
+    }
+
+    @Test
+    @DisplayName("non-numeric year -> 400 verbatim ERR-003 on every route")
+    void nonNumericYear_returns400_onEveryRoute() throws Exception {
+      for (MockHttpServletRequestBuilder route : allSixRoutes()) {
+        mockMvc.perform(route.param("millId", SEEDED_MILL).param("year", "abc"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+            .andExpect(jsonPath("$.detail", is(ERR_003)));
+      }
+    }
+
+    @Test
+    @DisplayName("closed mill (516, CLS) -> 409 verbatim ERR-004 on every route")
+    void closedMill_returns409_onEveryRoute() throws Exception {
+      for (MockHttpServletRequestBuilder route : allSixRoutes()) {
+        mockMvc.perform(route.param("millId", "516").param("year", SEEDED_YEAR))
+            .andExpect(status().isConflict())
+            .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+            .andExpect(jsonPath("$.detail", is(ERR_004)));
+      }
+    }
+
+    @Test
+    @DisplayName("no mill/year context row -> 404 verbatim ERR-005 on every route")
+    void noContextRow_returns404_onEveryRoute() throws Exception {
+      for (MockHttpServletRequestBuilder route : allSixRoutes()) {
+        mockMvc.perform(route.param("millId", "999").param("year", SEEDED_YEAR))
+            .andExpect(status().isNotFound())
+            .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+            .andExpect(jsonPath("$.detail", is(ERR_005)));
+      }
+    }
   }
 }

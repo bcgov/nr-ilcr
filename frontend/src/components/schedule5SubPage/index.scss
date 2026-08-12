@@ -1,0 +1,41 @@
+// Schedule 5 expense sub-pages (Story 7.4). Mirrors components/schedule5/index.scss so a sub-page
+// reads as the same screen as the camp panel it was reached from.
+
+.schedule-5-sub-page {
+  &__section {
+    margin-block-end: 1.5rem;
+  }
+
+  &__panel {
+    padding: 1rem;
+    border: 1px solid var(--cds-border-subtle);
+  }
+
+  &__panel-heading {
+    margin-block-end: 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  &__add-fields {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    margin-block-end: 1rem;
+  }
+
+  // Numeric cells align right so the columns scan as figures, matching the camp grid.
+  &__num {
+    text-align: right;
+  }
+
+  &__totals {
+    font-weight: 600;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-block-start: 1rem;
+  }
+}

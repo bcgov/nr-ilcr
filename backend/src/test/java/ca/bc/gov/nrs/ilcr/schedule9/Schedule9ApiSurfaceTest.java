@@ -57,10 +57,10 @@ class Schedule9ApiSurfaceTest {
                 millContextService, schedule9Service, permissions, messageSource))
         .build();
     lenient().when(millContextService.validateMillYearActive(any(), any()))
-        .thenReturn(new MillYearContext(690L, 2021));
+        .thenReturn(new MillYearContext(700L, 2021));
     lenient().when(authentication.getName()).thenReturn("SEED");
 
-    Schedule9Response dummyResponse = new Schedule9Response(690L, 2021, "D", true, List.of(), null);
+    Schedule9Response dummyResponse = new Schedule9Response(700L, 2021, "D", true, List.of(), null);
     lenient().when(schedule9Service.addRecord(anyLong(), anyInt(), any(), anyBoolean(), any()))
         .thenReturn(dummyResponse);
     lenient().when(schedule9Service.updateRecord(anyLong(), anyInt(), anyInt(), any(), anyBoolean(), any()))
@@ -71,7 +71,7 @@ class Schedule9ApiSurfaceTest {
   @DisplayName("POST /records/{id}/copy is NOT a route — copy is a client-side prefill, not a server call")
   void copyEndpointDoesNotExist() throws Exception {
     mockMvc.perform(post("/api/v1/schedule9/records/9101/copy")
-            .param("millId", "690").param("year", "2021")
+            .param("millId", "700").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isNotFound());
   }
@@ -81,12 +81,12 @@ class Schedule9ApiSurfaceTest {
   void theRealRoutesAreMapped() throws Exception {
     mockMvc.perform(post("/api/v1/schedule9/records")
             .principal(authentication)
-            .param("millId", "690").param("year", "2021")
+            .param("millId", "700").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("{}"))
         .andExpect(status().isOk());
     mockMvc.perform(put("/api/v1/schedule9/records/9101")
             .principal(authentication)
-            .param("millId", "690").param("year", "2021")
+            .param("millId", "700").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content("{\"revisionCount\": 0}"))
         .andExpect(status().isOk());
   }

@@ -4,6 +4,8 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import org.springframework.http.ResponseEntity;
@@ -155,6 +157,161 @@ public interface Schedule5Api {
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule5CheckStatusResponse> checkStatus(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  // ===============================================================================================
+  // Sub-pages (Story 7.4) — the itemized Other Camp (62) / Other Access (68) expense rows.
+  //
+  // Nested one level under the camp because the rows are FK-parented by CAMP_REPORT_ID — Schedule
+  // 4's URL shape (/locations/{id}/rows[/{rowId}]). Six methods rather than a shared handler taking
+  // the page as a path segment: an explicit route per page keeps the OpenAPI surface readable and
+  // keeps Schedule5ApiSurfaceTest able to assert each one separately.
+  //
+  // There is deliberately NO PATCH and no per-row POST. Legacy's Save persists the whole list
+  // (Schedule5DAO.saveOtherCampExpenses, :438-486) and its Add is "append then save the whole list"
+  // (Schedule5CampExpensesMB.java:147-156), so one batch PUT reproduces both atomically; a per-row
+  // API could not express one Save that cleared a description and edited two costs.
+  // ===============================================================================================
+
+  /**
+   * The Other Camp Expenses sub-page for one camp (S04).
+   *
+   * <p>Serves the rows in {@code ILCR_COST_REPORT_DETAIL_ID} order plus the camp context the page
+   * renders around them and the server-computed footer {@code totals}. Every row's {@code volume} is
+   * the camp's item-141 amount STAMPED AT READ — no per-row volume is stored anywhere.
+   *
+   * <p>Guards: bad mill/year → 400/409/404 (UC-SCH5-001 ERR-003/004/005); an unknown or foreign
+   * camp id → 404; no {@code VIEW_SCHEDULE} → 403. A camp with no rows is a valid 200 with
+   * {@code rows: []}.
+   *
+   * @param campId the parent camp id
+   * @param millId the raw mill id param (validated by millcontext)
+   * @param year the raw reporting year param
+   * @param authentication the caller (drives the read-only {@code editable} flag)
+   * @return 200 with the sub-page document
+   */
+  @GetMapping("/camps/{campId}/other-camp-expenses")
+  ResponseEntity<SubPageDocument> getOtherCampExpenses(
+      @PathVariable int campId,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * The Other Access Expenses sub-page for one camp (S04) — the item-142 twin of {@link
+   * #getOtherCampExpenses}.
+   *
+   * <p>⚠ Its footer {@code totals.volume} is the SINGLE camp volume, not the sum of the row volumes
+   * the camp side reports (deviation (C)). The two pages look identical and their footers are not.
+   *
+   * @param campId the parent camp id
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param authentication the caller
+   * @return 200 with the sub-page document
+   */
+  @GetMapping("/camps/{campId}/other-access-expenses")
+  ResponseEntity<SubPageDocument> getOtherAccessExpenses(
+      @PathVariable int campId,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Reconcile the whole Other Camp Expenses list (S04) — the SOLE writer of item 62 (AD-5).
+   *
+   * <p>{@code rowId: null} inserts, a known {@code rowId} updates in place, and a stored row absent
+   * from the body is deleted. An unknown or foreign {@code rowId} is a 404 with NOTHING persisted:
+   * the whole body is classified before any statement runs, so a stale id cannot half-apply.
+   *
+   * <p>Costs on THIS page are bounded &plusmn;9,999,999 ({@code costSize7ValidatorErrorMsg}) — every
+   * cost input on the Camp sub-page carries {@code costSize="7"}. A blank or null description is
+   * ACCEPTED and persisted (deviation (F)); Check Status is what flags it.
+   *
+   * <p>Guards: a non-Draft 1–10 track → 409; no {@code EDIT_SCHEDULE} → 403; an out-of-range cost or
+   * an over-long description → 400 with the verbatim legacy text.
+   *
+   * @param campId the parent camp id
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param request the complete row set the camp should hold afterwards (an empty list clears it)
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the refreshed document and {@code dataSavedSuccesfullyInfoMsg}
+   */
+  @PutMapping("/camps/{campId}/other-camp-expenses")
+  ResponseEntity<SubPageDocument> saveOtherCampExpenses(
+      @PathVariable int campId,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody SubPageSaveRequest request,
+      Authentication authentication);
+
+  /**
+   * Reconcile the whole Other Access Expenses list (S04) — the SOLE writer of item 68 (AD-5).
+   *
+   * <p>Identical to {@link #saveOtherCampExpenses} except for the cost bound: this page's inputs
+   * carry no {@code costSize}, so legacy validates them at &plusmn;99,999,999 ({@code
+   * costValidatorErrorMsg}).
+   *
+   * @param campId the parent camp id
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param request the complete row set the camp should hold afterwards
+   * @param authentication the caller
+   * @return 200 with the refreshed document and {@code dataSavedSuccesfullyInfoMsg}
+   */
+  @PutMapping("/camps/{campId}/other-access-expenses")
+  ResponseEntity<SubPageDocument> saveOtherAccessExpenses(
+      @PathVariable int campId,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody SubPageSaveRequest request,
+      Authentication authentication);
+
+  /**
+   * Delete one Other Camp Expenses row immediately (S07).
+   *
+   * <p>Legacy's Delete persists on click rather than at Save ({@code
+   * Schedule5CampExpensesMB.deleteCampExpense()}, {@code :158-167}), so this is a real endpoint and
+   * not a client-side list edit. CFM-001 is the CLIENT's confirmation — reaching this endpoint IS
+   * the confirmation.
+   *
+   * <p>Camp- AND item-scoped, so a foreign {@code rowId} is a 404, never a cross-camp or
+   * cross-page delete (deviation (O): legacy matched on detail id alone against the camp's entire
+   * detail collection). Carries no revision token (AR11 house deviation (N)).
+   *
+   * @param campId the parent camp id
+   * @param rowId the row to delete
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param authentication the caller
+   * @return 200 with the refreshed document and {@code dataDeletedSuccesfullyInfoMsg}
+   */
+  @DeleteMapping("/camps/{campId}/other-camp-expenses/{rowId}")
+  ResponseEntity<SubPageDocument> deleteOtherCampExpense(
+      @PathVariable int campId,
+      @PathVariable int rowId,
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Delete one Other Access Expenses row immediately (S07) — the item-68 twin of {@link
+   * #deleteOtherCampExpense}.
+   *
+   * @param campId the parent camp id
+   * @param rowId the row to delete
+   * @param millId the raw mill id param
+   * @param year the raw reporting year param
+   * @param authentication the caller
+   * @return 200 with the refreshed document and {@code dataDeletedSuccesfullyInfoMsg}
+   */
+  @DeleteMapping("/camps/{campId}/other-access-expenses/{rowId}")
+  ResponseEntity<SubPageDocument> deleteOtherAccessExpense(
+      @PathVariable int campId,
+      @PathVariable int rowId,
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);

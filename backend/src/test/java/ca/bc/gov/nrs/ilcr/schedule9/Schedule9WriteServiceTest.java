@@ -39,7 +39,7 @@ import org.springframework.context.MessageSource;
 @DisplayName("Schedule9Service — write validation, conditional fields, and locking")
 class Schedule9WriteServiceTest {
 
-  private static final long MILL = 690L;
+  private static final long MILL = 700L;
   private static final int YEAR = 2017;
   private static final String USER = "tester";
 

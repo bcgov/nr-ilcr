@@ -26,7 +26,7 @@ import org.springframework.security.core.Authentication;
 @DisplayName("Schedule9Controller — byte-exact check-status composition (all eight segments)")
 class Schedule9CheckStatusCompositionTest {
 
-  private static final long MILL = 693L;
+  private static final long MILL = 703L;
   private static final int YEAR = 2021;
 
   private final Schedule9Service service = mock(Schedule9Service.class);
@@ -65,7 +65,7 @@ class Schedule9CheckStatusCompositionTest {
         null));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("693", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
 
     assertEquals(8, body.errors().size());
     assertEquals("Contractual Work Report Id : 1 Company ID: Value Required", body.errors().get(0).text());
@@ -83,7 +83,7 @@ class Schedule9CheckStatusCompositionTest {
         null));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("693", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
 
     assertEquals(3, body.errors().size());
     assertEquals("Contractual Work Report Id : 1 Side Slope %: Entered value must be between 0 and 99", body.errors().get(0).text());
@@ -98,7 +98,7 @@ class Schedule9CheckStatusCompositionTest {
         true, List.of(), new MessageInfo("scheduleRequirementsMetMsg", "All requirements for this schedule have been met")));
 
     Schedule9CheckStatusResponse body =
-        controller.checkStatus("693", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("703", "2021", mock(Authentication.class)).getBody();
 
     assertEquals("All requirements for this schedule have been met", body.requirementsMetMessage().text());
   }

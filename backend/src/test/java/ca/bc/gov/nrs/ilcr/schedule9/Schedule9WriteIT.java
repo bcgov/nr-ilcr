@@ -32,8 +32,8 @@ import org.springframework.test.context.TestPropertySource;
  * (AC1/AC2/AC5/AC6; slices S01/S02/S07/S10). Security-off is pinned explicitly and every mutation
  * carries {@code .with(csrf())} — the recorded merge-regression guard.
  *
- * <p><strong>Order independence.</strong> A context is (mill, YEAR); mill 690 carries one destructive
- * concern per Draft year (2016 add, 2017 edit, 2018 delete, 2019 lock), and mill 691 is the non-Draft
+ * <p><strong>Order independence.</strong> A context is (mill, YEAR); mill 700 carries one destructive
+ * concern per Draft year (2016 add, 2017 edit, 2018 delete, 2019 lock), and mill 701 is the non-Draft
  * 409. Every edit reads the current {@code revisionCount} from a GET first, never a hard-coded token,
  * and each write is followed by a FRESH {@code GET} plus a JDBC probe — the echoed document comes from
  * the same in-transaction builder and could agree with a write that never committed.
@@ -44,7 +44,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
 
   private static final String RECORDS = "/api/v1/schedule9/records";
   private static final String DOCUMENT = "/api/v1/schedule9";
-  private static final long MILL = 690L;
+  private static final long MILL = 700L;
 
   private final ObjectMapper mapper = new ObjectMapper();
 
@@ -82,7 +82,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
   }
 
   private String documentJson(int year) throws Exception {
-    return mockMvc.perform(get(DOCUMENT).param("millId", "690").param("year", String.valueOf(year)))
+    return mockMvc.perform(get(DOCUMENT).param("millId", "700").param("year", String.valueOf(year)))
         .andExpect(status().isOk())
         .andReturn().getResponse().getContentAsString();
   }
@@ -118,7 +118,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("S01: POST -> 200 saved, one master + one cost line, all audit columns stamped")
   void addRecord_persistsMasterAndCostLine() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("ADD-ONE", 108, 5000, "12.5", null, null)))
         .andExpect(status().isOk())
@@ -159,11 +159,11 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("S02: two adds in one session -> both records served")
   void addRecord_multipleInSession() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("ADD-A", 108, 1000, "1.0", null, null)))
         .andExpect(status().isOk());
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("ADD-B", 109, 2000, "2.0", null, null)))
         .andExpect(status().isOk());
@@ -184,7 +184,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
 
     // Change the Contractual Item 108 -> 109 too, so the cost line's item-code update is exercised.
     mockMvc.perform(put(RECORDS + "/" + recordId).with(csrf())
-            .param("millId", "690").param("year", "2017")
+            .param("millId", "700").param("year", "2017")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-EDIT", 109, 7777, "20.0", null, token)))
         .andExpect(status().isOk())
@@ -206,7 +206,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("BR-04: editing a road item to a non-road item NULLs the stored side slope")
   void updateRecord_clearsSideSlopeWhenItemBecomesNonRoad() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("SS-CLEAR", 111, 1000, "1.0", 50, null)))
         .andExpect(status().isOk());
@@ -216,7 +216,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
 
     // The body still sends side slope 50, but item 108 does not enable it -> stored NULL.
     mockMvc.perform(put(RECORDS + "/" + recordId).with(csrf())
-            .param("millId", "690").param("year", "2016")
+            .param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("SS-CLEAR", 108, 1000, "1.0", 50, created.path("revisionCount").asInt())))
         .andExpect(status().isOk());
@@ -229,7 +229,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("cost and units omitted -> 200 saved with NULL stored (Save side of the asymmetry)")
   void addRecord_blankCostAndUnits_savesWithNulls() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "690").param("year", "2016")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "700").param("year", "2016")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("BLANK-CU", 108, null, "null", null, null)))
         .andExpect(status().isOk());
@@ -252,7 +252,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
     int recordId = recordByContractor(2018, "CTR-DEL").path("id").asInt();
 
     mockMvc.perform(delete(RECORDS + "/" + recordId).with(csrf())
-            .param("millId", "690").param("year", "2018"))
+            .param("millId", "700").param("year", "2018"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key",
             org.hamcrest.Matchers.is("dataDeletedSuccesfullyInfoMsg")))
@@ -276,7 +276,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
         : ((Number) masterRow(recordId).get("REVISION_COUNT")).intValue();
 
     mockMvc.perform(put(RECORDS + "/" + recordId).with(csrf())
-            .param("millId", "690").param("year", "2019")
+            .param("millId", "700").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-LOCK-STALE", 108, 9999, "1.0", null, current - 1)))
         .andExpect(status().isConflict())
@@ -293,7 +293,7 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @DisplayName("an unknown record id -> 404 with the not-found message")
   void updateRecord_unknownId_notFound() throws Exception {
     mockMvc.perform(put(RECORDS + "/999999").with(csrf())
-            .param("millId", "690").param("year", "2019")
+            .param("millId", "700").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-GHOST", 108, 1, "1.0", null, 0)))
         .andExpect(status().isNotFound())
@@ -303,10 +303,10 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("a record id belonging to another mill -> 404 (IDOR-scoped), and it is untouched")
   void updateRecord_foreignId_notFound() throws Exception {
-    // Record 9131 belongs to mill 696; addressing it under mill 690 must 404, never reach across the
+    // Record 9131 belongs to mill 706; addressing it under mill 700 must 404, never reach across the
     // tenancy boundary — 404, not 409 (stale) and not 200.
     mockMvc.perform(put(RECORDS + "/9131").with(csrf())
-            .param("millId", "690").param("year", "2019")
+            .param("millId", "700").param("year", "2019")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("CTR-FOREIGN", 108, 1, "1.0", null, 0)))
         .andExpect(status().isNotFound());
@@ -319,24 +319,24 @@ class Schedule9WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("a write against a non-Draft (Submitted) track -> 409, nothing persists")
   void write_nonDraftTrack_conflicts() throws Exception {
-    // Mill 691 / 2021 is track 'S'. All three verbs must 409.
+    // Mill 701 / 2021 is track 'S'. All three verbs must 409.
     long before = jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 691", Long.class);
+        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 701", Long.class);
 
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "691").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "701").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("NOPE", 108, 1, "1.0", null, null)))
         .andExpect(status().isConflict());
-    mockMvc.perform(put(RECORDS + "/9130").with(csrf()).param("millId", "691").param("year", "2021")
+    mockMvc.perform(put(RECORDS + "/9130").with(csrf()).param("millId", "701").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON)
             .content(body("NOPE", 108, 1, "1.0", null, 2)))
         .andExpect(status().isConflict());
     mockMvc.perform(delete(RECORDS + "/9130").with(csrf())
-            .param("millId", "691").param("year", "2021"))
+            .param("millId", "701").param("year", "2021"))
         .andExpect(status().isConflict());
 
     assertEquals(before, jdbc().queryForObject(
-        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 691", Long.class));
+        "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE ILCR_MILL_ID = 701", Long.class));
     assertTrue(jdbc().queryForObject(
         "SELECT COUNT(*) FROM THE.CONTRACTUAL_WORK_REPORT WHERE CONTRACTUAL_WORK_REPORT_ID = 9130",
         Integer.class) == 1);

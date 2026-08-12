@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * PRODUCTION {@link CognitoGroupsJwtAuthenticationConverter}.
  *
  * <p>The 403 bodies are VALID on purpose ({@code @Valid}/{@code @Validated} bind BEFORE
- * {@code @PreAuthorize}, so an invalid body would 400 and prove nothing about authorization). Mill 696
+ * {@code @PreAuthorize}, so an invalid body would 400 and prove nothing about authorization). Mill 706
  * is this class's own fixture, track {@code 'S'}: an authorized caller reaches the Draft gate and gets
  * 409 — proof {@code @PreAuthorize} let it through — while nothing is written either way.
  *
@@ -64,7 +64,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("POST /records with no group -> 403")
   void addRecord_noGroup_returns403() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "696").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "706").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY)
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
@@ -74,7 +74,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT /records/{id} with no group -> 403")
   void updateRecord_noGroup_returns403() throws Exception {
-    mockMvc.perform(put(RECORDS + "/9131").with(csrf()).param("millId", "696").param("year", "2021")
+    mockMvc.perform(put(RECORDS + "/9131").with(csrf()).param("millId", "706").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY)
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
@@ -84,7 +84,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @DisplayName("DELETE /records/{id} with no group -> 403")
   void deleteRecord_noGroup_returns403() throws Exception {
     mockMvc.perform(delete(RECORDS + "/9131").with(csrf())
-            .param("millId", "696").param("year", "2021")
+            .param("millId", "706").param("year", "2021")
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
   }
@@ -92,7 +92,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("POST /check-status with no group -> 403 (VIEW_SCHEDULE required)")
   void checkStatus_noGroup_returns403() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2021")
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "702").param("year", "2021")
             .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
   }
@@ -100,7 +100,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("check-status as ILCR_SUBMITTER -> 200 (VIEW_SCHEDULE, no Draft gate)")
   void checkStatus_submitter_returns200() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "692").param("year", "2021")
+    mockMvc.perform(post(CHECK_STATUS).with(csrf()).param("millId", "702").param("year", "2021")
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(true)));
@@ -109,7 +109,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
   void submitter_passesEditAuthorization() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "696").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "706").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY)
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isConflict());
@@ -118,7 +118,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
   void admin_passesEditAuthorization() throws Exception {
-    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "696").param("year", "2021")
+    mockMvc.perform(post(RECORDS).with(csrf()).param("millId", "706").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY)
             .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isConflict());
@@ -128,7 +128,7 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   @DisplayName("DELETE as an authorized caller also reaches the Draft gate, not a 403")
   void delete_passesEditAuthorization() throws Exception {
     mockMvc.perform(delete(RECORDS + "/9131").with(csrf())
-            .param("millId", "696").param("year", "2021")
+            .param("millId", "706").param("year", "2021")
             .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isConflict());
   }

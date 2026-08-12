@@ -14,11 +14,16 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRow;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -84,6 +89,14 @@ public class Schedule5Service {
   private static final int COST_STANDARD_LIMIT = 9_999_999;
   private static final String COST_KEY_STANDARD = "costSize7ValidatorErrorMsg";
   private static final String COST_KEY_RECOVERIES = "costValidatorSchedule9ErrorMsg";
+
+  // The Other Access sub-page's wider bound: its cost inputs carry NO costSize attribute
+  // (schedule5AccessExpenses.xhtml:36-38, :71-76), so legacy validates them at ILCRCostValidator's
+  // default. The Camp sub-page reuses COST_STANDARD_LIMIT above — every one of ITS cost inputs
+  // does carry costSize="7" (:45, :79), which the committed AC and the UC documents both miss
+  // (deviation (A)).
+  private static final int COST_WIDE_LIMIT = 99_999_999;
+  private static final String COST_KEY_WIDE = "costValidatorErrorMsg";
 
   // Cost item ids — legacy Constant.REPORT_COST_ITEMS (:336-342), all delivery-registered under
   // ILCR_CATEGORY_ID='5' (Task 1 gate (iv)). Item 57 ("Food") is registered but has NO legacy
@@ -976,5 +989,302 @@ public class Schedule5Service {
     static CampDetails empty() {
       return new CampDetails(new LinkedHashMap<>(), new ArrayList<>(), new ArrayList<>());
     }
+  }
+
+  // ===============================================================================================
+  // Sub-pages (Story 7.4) — the itemized Other Camp (62) and Other Access (68) expense rows.
+  //
+  // This is the SOLE writer of those two item ids (AD-5). The camp write path above never touches
+  // them, and nothing here touches the twelve fixed items.
+  // ===============================================================================================
+
+  /**
+   * The two sub-pages, and every way in which they differ, in one place.
+   *
+   * <p>Keeping the differences here rather than in branches is what makes the asymmetries auditable:
+   * they are not arbitrary, but neither are they symmetric, and each one is a separately verified
+   * legacy fact. The cost bound is per PAGE, not per control — every cost input on the Camp
+   * sub-page carries {@code costSize="7"} ({@code schedule5CampExpenses.xhtml:45} add-form and
+   * {@code :79} grid) and neither Access one does ({@code schedule5AccessExpenses.xhtml:36-38},
+   * {@code :71-76}), which the story's committed AC and the UC documents both record incorrectly
+   * (deviation (A)).
+   */
+  enum SubPage {
+
+    /** Other Camp Expenses — item 62, &plusmn;9,999,999, footer volume = SUM of row volumes. */
+    CAMP(ITEM_OTHER_CAMP_EXPENSE_ROW, COST_STANDARD_LIMIT, COST_KEY_STANDARD),
+
+    /** Other Access Expenses — item 68, &plusmn;99,999,999, footer volume = the camp volume. */
+    ACCESS(ITEM_OTHER_ACCESS_EXPENSE_ROW, COST_WIDE_LIMIT, COST_KEY_WIDE);
+
+    private final int itemId;
+    private final int costLimit;
+    private final String costMessageKey;
+
+    SubPage(int itemId, int costLimit, String costMessageKey) {
+      this.itemId = itemId;
+      this.costLimit = costLimit;
+      this.costMessageKey = costMessageKey;
+    }
+
+    int itemId() {
+      return itemId;
+    }
+  }
+
+  /**
+   * One sub-page's rows and totals for a validated mill/year and camp (S04).
+   *
+   * @param millId the validated mill id
+   * @param year the validated reporting year
+   * @param campId the parent camp
+   * @param page which sub-page
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the sub-page document
+   * @throws CampNotFoundException when the camp is unknown or belongs to another mill/year
+   */
+  @Transactional(readOnly = true)
+  public SubPageDocument getSubPage(
+      long millId, int year, int campId, SubPage page, boolean callerMayEdit) {
+    CampRow camp = requireCamp(millId, year, campId);
+    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year,
+        callerMayEdit));
+  }
+
+  /**
+   * The served {@code editable} flag, derived the same way on the read AND on every write echo
+   * (AD-9: server-authoritative). The writes could hardcode {@code callerMayEdit} because
+   * {@code requireDraft} just proved the Draft half under its lock — but that would couple the
+   * echoed flag to the gate staying exactly as strict as it is today; deriving it here keeps the
+   * invariant structural rather than incidental.
+   */
+  private boolean subPageEditable(long millId, int year, boolean callerMayEdit) {
+    return callerMayEdit && STATUS_DRAFT.equals(trackStatus(millId, year));
+  }
+
+  /**
+   * Reconcile one sub-page's whole row list in a single transaction (S04) — the sole writer of this
+   * item id.
+   *
+   * <p>Reconcile semantics are Schedule 3's ({@code Schedule3Service.classifySaveRow}, {@code
+   * :441-449}): a null {@code rowId} INSERTs, a known one UPDATEs in place, a row absent from the body is
+   * DELETEd, and an id this camp does not hold for this item raises 404 with NOTHING persisted. The
+   * 404 is raised BEFORE any statement runs, so a stale id cannot half-apply a batch — the
+   * classification pass is separate from the write pass for exactly that reason.
+   *
+   * <p>{@code requireDraft} runs first and its {@code SELECT … FOR UPDATE} on the mill/year status
+   * row is what serializes concurrent sub-page writers; the schema offers no unique key to lean on
+   * (no DDL on {@code THE}).
+   *
+   * @param millId the validated mill id
+   * @param year the validated reporting year
+   * @param campId the parent camp
+   * @param page which sub-page
+   * @param request the complete row set the camp should hold afterwards
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param user the acting user id (audit columns)
+   * @return the refreshed sub-page document
+   */
+  @Transactional
+  public SubPageDocument saveSubPage(long millId, int year, int campId, SubPage page,
+      SubPageSaveRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    CampRow camp = requireCamp(millId, year, campId);
+    // Non-null by Bean Validation: an omitted rows field is a 400, never a silent delete-all.
+    List<SubPageRowRequest> incoming = request.rows();
+    validateSubPageCosts(page, incoming);
+
+    // Classify EVERYTHING before writing ANYTHING: an unknown id must 404 with nothing persisted.
+    Map<Integer, DetailRow> storedById = new LinkedHashMap<>();
+    for (DetailRow row : repository.findSubPageRows(campId, page.itemId(), millId, year)) {
+      storedById.put(row.detailId(), row);
+    }
+    Set<Integer> kept = new LinkedHashSet<>();
+    for (SubPageRowRequest row : incoming) {
+      if (row.rowId() == null) {
+        continue;
+      }
+      if (!storedById.containsKey(row.rowId()) || !kept.add(row.rowId())) {
+        // Unknown, foreign, belonging to the other sub-page item, or repeated within one body —
+        // all of them mean the client is working from a list this camp does not have.
+        throw new CampNotFoundException();
+      }
+    }
+
+    try {
+      for (SubPageRowRequest row : incoming) {
+        if (row.rowId() == null) {
+          repository.insertSubPageRow(repository.nextCostDetailId(), campId, page.itemId(),
+              row.cost(), row.description(), user);
+        } else if (repository.updateSubPageRow(row.rowId(), campId, page.itemId(), row.cost(),
+            row.description(), user) == 0) {
+          // Classified as present a moment ago, so a zero here means it vanished under the lock.
+          // Checked rather than assumed — the 4.4 lesson, where an edit silently dropped its value.
+          throw new CampNotFoundException();
+        }
+      }
+      for (Integer storedId : storedById.keySet()) {
+        if (!kept.contains(storedId) && repository.deleteSubPageRow(
+            storedId, campId, page.itemId()) == 0) {
+          throw new CampNotFoundException();
+        }
+      }
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 5 sub-page save failed for mill {} year {} camp {} item {} [{}]: {}",
+          millId, year, campId, page.itemId(), ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
+      throw new ScheduleNotSavedException();
+    }
+    return buildSubPageDocument(millId, year, camp, page,
+        subPageEditable(millId, year, callerMayEdit));
+  }
+
+  /**
+   * Delete one sub-page row immediately (S07) — the legacy Delete button, which persists on click
+   * rather than at Save ({@code Schedule5CampExpensesMB.deleteCampExpense()}, {@code :158-167}).
+   *
+   * <p>Camp- and item-scoped, so a foreign or unknown id can never delete another camp's row; it is
+   * a 404 instead. Carries no revision token (AR11 house deviation (N)).
+   *
+   * @param millId the validated mill id
+   * @param year the validated reporting year
+   * @param campId the parent camp
+   * @param page which sub-page
+   * @param rowId the row to delete
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed sub-page document
+   */
+  @Transactional
+  public SubPageDocument deleteSubPageRow(
+      long millId, int year, int campId, SubPage page, int rowId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    CampRow camp = requireCamp(millId, year, campId);
+    try {
+      if (repository.deleteSubPageRow(rowId, campId, page.itemId()) == 0) {
+        throw new CampNotFoundException();
+      }
+    } catch (DataAccessException ex) {
+      log.warn("Schedule 5 sub-page delete failed for mill {} year {} camp {} item {} [{}]: {}",
+          millId, year, campId, page.itemId(), ex.getClass().getSimpleName(),
+          NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
+      throw new ScheduleNotSavedException();
+    }
+    return buildSubPageDocument(millId, year, camp, page,
+        subPageEditable(millId, year, callerMayEdit));
+  }
+
+  /**
+   * The camp, scoped to the mill/year and category {@code '5'} — the IDOR guard every sub-page
+   * entry point shares. Reuses {@link Schedule5Repository#findCamps} rather than adding a
+   * single-camp query: it is already correctly scoped, and a mill/year holds at most a few dozen
+   * camps (61 in all of delivery).
+   */
+  private CampRow requireCamp(long millId, int year, int campId) {
+    return repository.findCamps(millId, year).stream()
+        .filter(camp -> camp.campId() == campId)
+        .findFirst()
+        .orElseThrow(CampNotFoundException::new);
+  }
+
+  /** The 1–10 track status for the mill/year, or null when there is no status row. */
+  private String trackStatus(long millId, int year) {
+    return repository.findTrackStatus(millId, year).orElse(null);
+  }
+
+  /**
+   * The per-page cost bounds, applied HERE and only here — {@link SubPageRowRequest} deliberately
+   * carries no declarative {@code @Min}/{@code @Max}, because a DTO-level bound at the wider Access
+   * limit would fire first and reject an out-of-band Camp cost with the ACCESS message (AD-8).
+   * Each page's own bound pairs with its own message key, exactly as {@link #validateCostRanges}
+   * narrows the eight {@code costSize="7"} camp categories that {@code CategoryEntry} cannot.
+   */
+  private static void validateSubPageCosts(SubPage page, List<SubPageRowRequest> rows) {
+    for (SubPageRowRequest row : rows) {
+      Integer cost = row.cost();
+      if (cost != null && (cost < -page.costLimit || cost > page.costLimit)) {
+        throw new CampCostOutOfRangeException(page.costMessageKey);
+      }
+    }
+  }
+
+  /** Reads the rows back and assembles the document — never hand-patches a total. */
+  private SubPageDocument buildSubPageDocument(
+      long millId, int year, CampRow camp, SubPage page, boolean editable) {
+    BigDecimal stampedVolume = stampedVolume(millId, year, camp.campId(), page);
+    List<DetailRow> stored = repository.findSubPageRows(camp.campId(), page.itemId(), millId, year);
+    List<SubPageRow> rows = stored.stream()
+        .map(row -> new SubPageRow(row.detailId(), row.itemDescription(), stampedVolume,
+            row.cost(), costPerVolume(row.cost() == null ? null : row.cost().longValue(),
+                stampedVolume)))
+        .toList();
+    return new SubPageDocument(camp.campId(), camp.campName(), stampedVolume, editable, rows,
+        subPageTotals(page, stored, stampedVolume), null);
+  }
+
+  /**
+   * The volume every row on this sub-page displays: the camp's item-141 (camp) or item-142 (access)
+   * amount, NOT anything stored on the row itself (deviation (B)).
+   *
+   * <p>Read through the same {@code findCostDetails} projection the camp document uses, so the two
+   * can never disagree about which row is canonical when a camp/item pair holds more than one
+   * (first-by-detail-id wins, 7.1 deviation (f)).
+   */
+  private BigDecimal stampedVolume(long millId, int year, int campId, SubPage page) {
+    int volumeItemId = page == SubPage.CAMP
+        ? ITEM_OTHER_CAMP_EXPENSES_VOLUME : ITEM_OTHER_ACCESS_EXPENSES_VOLUME;
+    return repository.findCostDetails(millId, year).stream()
+        .filter(row -> row.campId() == campId && row.costItemId() != null
+            && row.costItemId() == volumeItemId)
+        .map(DetailRow::volume)
+        .findFirst()
+        .orElse(null);
+  }
+
+  /**
+   * The footer triple — <strong>two genuinely different shapes</strong> (deviation (C)).
+   *
+   * <p>CAMP is {@code CoreUtil.sumDescriptionCostVolumeType} ({@code :610-632}): it sums cost AND
+   * volume, and sets its "something contributed" flag on a non-null cost <em>or</em> a non-null
+   * volume. Because {@code CampReportType.getOtherCampExpensesList()} ({@code :433-438}) stamps
+   * every row's volume with the camp-level amount before the sum runs, the summed volume is
+   * {@code n × campVolume} — and, critically, a list of rows whose costs are ALL null still flags as
+   * contributing whenever the camp volume is non-null, yielding a cost of {@code 0} rather than
+   * null. That zero then propagates into Camp Sub-Total, Camp Total and Camp and Access Total. This
+   * is 7.1 deviation (h)/(L), unreachable until this story writes the first item-62 rows.
+   *
+   * <p>ACCESS is {@code sumDescriptionCostVolumeTypeCostOnly} ({@code :590-608}) — cost only, so an
+   * all-null-cost list correctly yields null whatever the volume is — after which
+   * {@code getOtherAccessExpensesTotal()} ({@code :460-464}) overwrites the total's volume with the
+   * SINGLE camp volume, unconditionally, including on the empty list.
+   *
+   * <p>Do not symmetrize these. They look identical on screen and are not, and each side is pinned
+   * by its own test.
+   */
+  private CategoryAmount subPageTotals(
+      SubPage page, List<DetailRow> rows, BigDecimal stampedVolume) {
+    long cost = 0L;
+    boolean contributed = false;
+    for (DetailRow row : rows) {
+      if (row.cost() != null) {
+        cost += row.cost();
+        contributed = true;
+      } else if (page == SubPage.CAMP && stampedVolume != null) {
+        contributed = true;
+      }
+    }
+    if (page == SubPage.ACCESS) {
+      // Volume is the single camp volume, set even when no cost contributed.
+      return new CategoryAmount(stampedVolume, contributed ? cost : null,
+          contributed ? costPerVolume(cost, stampedVolume) : null);
+    }
+    if (!contributed) {
+      return new CategoryAmount(null, null, null);
+    }
+    // Legacy starts the running volume at ZERO and only adds non-null row volumes, so a camp whose
+    // item-141 volume is null totals 0 here rather than null — matching sumDescriptionCostVolumeType
+    // returning its zero-initialised accumulator once any cost flagged it.
+    BigDecimal summedVolume = stampedVolume == null
+        ? BigDecimal.ZERO : stampedVolume.multiply(BigDecimal.valueOf(rows.size()));
+    return new CategoryAmount(summedVolume, cost, costPerVolume(cost, summedVolume));
   }
 }

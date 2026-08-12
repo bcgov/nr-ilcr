@@ -497,4 +497,158 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          AND ILCR_CATEGORY_ID = '5'
       """)
   int deleteCamp(@Param("id") int id, @Param("millId") long millId, @Param("year") int year);
+
+  // ===============================================================================================
+  // Sub-page rows (Story 7.4) — items 62 (Other Camp) and 68 (Other Access).
+  //
+  // These are SEPARATE primitives from the camp-path upsert above, and the separation is mandatory
+  // rather than stylistic. The camp path is keyed by (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID),
+  // which identifies exactly one row per category; a sub-page holds a LIST under that same pair, so
+  // the key here has to be the row's own ILCR_COST_REPORT_DETAIL_ID. Concretely, reusing the camp
+  // primitives fails three ways, each of which passes a naive test:
+  //   * insertCostDetail hard-codes ITEM_DESCRIPTION to NULL (:392) — descriptions silently vanish;
+  //   * updateCostDetail never mentions ITEM_DESCRIPTION and is narrowed to the MIN(detail_id)
+  //     canonical row (:365-368), so editing row three writes row one;
+  //   * upsertCostDetail is the two composed, so it is structurally single-row.
+  // deleteCostDetailsForCamp is deliberately NOT touched: the camp family delete must keep removing
+  // 62/68 rows along with the twelve fixed ones (BR-09/AC5).
+  //
+  // Every statement is scoped by camp AND item id. Legacy scoped by neither: its update and delete
+  // loops match a detail id against the camp's ENTIRE detail collection (Schedule5DAO.java:585-595,
+  // :606-614), so a Camp-page save carrying an item-68 row's id would overwrite that Access row.
+  // Deviation (O) — a hardening, recorded rather than silently applied.
+  // ===============================================================================================
+
+  /**
+   * One camp's rows for ONE sub-page item, oldest first.
+   *
+   * <p>Ordered by {@code ILCR_COST_REPORT_DETAIL_ID} (deviation (G)). Legacy's order is
+   * {@code HashSet} iteration order ({@code CampReport.java:93-94, 228-231}) — not stable between
+   * JVM runs on identical data — and the correctly-ordered named query
+   * {@code findCostDetailsForCampReport} exists but is never called. A REST contract cannot ship
+   * that, and the batch reconcile below depends on a stable identity per row.
+   *
+   * <p>Joined to {@code CAMP_REPORT} for the mill/year/category-{@code '5'} filter, exactly as
+   * {@link #findCostDetails} does, so a row cannot be read across tenants.
+   */
+  @Query("""
+      SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.CAMP_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
+             d.VOLUME, d.COST, d.ITEM_DESCRIPTION
+        FROM THE.ILCR_COST_REPORT_DETAIL d
+        JOIN THE.CAMP_REPORT c
+          ON c.CAMP_REPORT_ID = d.CAMP_REPORT_ID
+       WHERE d.CAMP_REPORT_ID = :campId
+         AND d.ILCR_REPORT_COST_ITEM_ID = :itemId
+         AND c.ILCR_MILL_ID = :millId
+         AND c.REPORT_YEAR = :year
+         AND c.ILCR_CATEGORY_ID = '5'
+       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
+      """)
+  List<CostReportDetailEntity> findSubPageRowEntities(
+      @Param("campId") int campId, @Param("itemId") int itemId,
+      @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * The sub-page rows mapped to the service-facing {@link DetailRow}.
+   *
+   * @param campId the parent camp id
+   * @param itemId 62 (Other Camp) or 68 (Other Access)
+   * @param millId the validated mill id — the tenancy scope
+   * @param year the validated reporting year
+   * @return the rows in detail-id order; empty is the normal delivery state (Task 1 gate (iv): no
+   *     camp-parented detail row of any item id exists yet)
+   */
+  default List<DetailRow> findSubPageRows(int campId, int itemId, long millId, int year) {
+    return findSubPageRowEntities(campId, itemId, millId, year).stream()
+        .map(d -> new DetailRow(d.detailId(), d.campReportId(), d.costItemId(), d.volume(),
+            d.cost(), d.itemDescription()))
+        .toList();
+  }
+
+  /**
+   * Insert one sub-page row.
+   *
+   * <p>{@code VOLUME} is written {@code NULL} and that is not an omission (deviation (B)): legacy's
+   * {@code getNewCostReportDetail} never calls {@code setVolume} ({@code Schedule5DAO.java:617-633}),
+   * so no stored sub-page row has ever carried one, and the displayed volume is stamped from the
+   * camp's item-141/142 row at read time.
+   *
+   * <p>{@code ITEM_DESCRIPTION} is written verbatim including {@code NULL} — the server does not
+   * police it (deviation (F)). {@code ICRD_CHK_B_I_U} is indifferent: it counts populated parent-FK
+   * columns only and never reads this one (Task 1 gate (ii)), so a camp-only row passes with a
+   * count of 1 whatever the description holds.
+   *
+   * <p>{@code REVISION_COUNT = 0} and ALL FOUR audit columns, because all five are {@code NOT NULL}
+   * with no defaults in delivery and no trigger populates them (Task 1 gates (i) and (iii)) — an
+   * insert that skips one fails here exactly as it would in delivery.
+   */
+  @Modifying
+  @Query("""
+      INSERT INTO THE.ILCR_COST_REPORT_DETAIL
+          (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
+           VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES
+          (:id, :campId, :itemId, NULL, :cost, :description, 0,
+           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+      """)
+  void insertSubPageRow(
+      @Param("id") int id, @Param("campId") int campId, @Param("itemId") int itemId,
+      @Param("cost") Integer cost, @Param("description") String description,
+      @Param("user") String user);
+
+  /**
+   * Update one sub-page row in place, by its own id and scoped to the camp and item.
+   *
+   * <p>Stamps {@code UPDATE_*} ONLY. {@code ENTRY_*} and {@code REVISION_COUNT} are left alone, and
+   * that is LEGACY PARITY rather than a deviation — the story's deviation (H) misreads {@code
+   * Schedule5DAO.java:626-628}. Those lines belong to {@code getNewCostReportDetail}, whose output is
+   * only a CARRIER on the update path; the update branch at {@code :585-595} mutates the already
+   * persistent row and copies just cost, description, volume and {@code UPDATE_*}, discarding the
+   * transient object's {@code ENTRY_*} and its {@code REVISION_COUNT = 0}. So legacy already stamps
+   * {@code ENTRY_*} on insert only. Detail {@code REVISION_COUNT} is not bumped, matching the camp
+   * path and Schedule 6.
+   *
+   * <p>A null {@code cost} or {@code description} writes {@code NULL} — a cleared field is cleared,
+   * not zeroed, and the row survives.
+   *
+   * @return rows affected — {@code 1} on success, {@code 0} when the id is unknown, belongs to
+   *     another camp, or belongs to the OTHER sub-page item. The service treats every zero as 404,
+   *     which is what makes a stale id fail loudly instead of drifting into a re-insert.
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET COST = :cost,
+             ITEM_DESCRIPTION = :description,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ILCR_COST_REPORT_DETAIL_ID = :rowId
+         AND CAMP_REPORT_ID = :campId
+         AND ILCR_REPORT_COST_ITEM_ID = :itemId
+      """)
+  int updateSubPageRow(
+      @Param("rowId") int rowId, @Param("campId") int campId, @Param("itemId") int itemId,
+      @Param("cost") Integer cost, @Param("description") String description,
+      @Param("user") String user);
+
+  /**
+   * Delete one sub-page row, by its own id and scoped to the camp and item.
+   *
+   * <p>Carries no revision token (AR11 house deviation (N), shared with Schedules 4/7A/11), so a
+   * delete is never rejected as stale.
+   *
+   * @return rows deleted — {@code 0} means unknown, foreign, or the other item's row. The service
+   *     acts on this count rather than assuming success (the 4.4 lesson: an edit that silently
+   *     dropped its value because nothing checked rows-affected).
+   */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE ILCR_COST_REPORT_DETAIL_ID = :rowId
+         AND CAMP_REPORT_ID = :campId
+         AND ILCR_REPORT_COST_ITEM_ID = :itemId
+      """)
+  int deleteSubPageRow(
+      @Param("rowId") int rowId, @Param("campId") int campId, @Param("itemId") int itemId);
 }

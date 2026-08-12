@@ -1,19 +1,21 @@
 import type { FC } from 'react'
 import { useCallback, useState } from 'react'
-import { Accordion, AccordionItem, Button, Column, Grid, Modal, Pagination } from '@carbon/react'
+import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
 import type Schedule7aResponse from '@/interfaces/Schedule7aResponse'
 import type { Bridge, Schedule7aCheckStatusResponse } from '@/interfaces/Schedule7aResponse'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
 import type { BridgeErrors, BridgeFormValues, CostField } from './validation'
 import apiService from '@/service/api-service'
+import { useScheduleBanners } from '@/hooks/useScheduleBanners'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
-import { extractDetail } from '@/utils/error'
+import { clearFieldError } from '@/utils/forms'
 import { groupInput, numStr, numStrGroup } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
-import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
+import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
+import SaveCheckActions from '@/components/core/SaveCheckActions'
+import ScheduleBanners from '@/components/core/ScheduleBanners'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import BridgeFields from './BridgeFields'
 import {
@@ -27,10 +29,9 @@ import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success and
 // error is rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
-// context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
-// real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
-const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
+// context-missing and confirm-delete literals are shared with the sibling pages, so they live with
+// the components that render them; the SERVER's ERR-001 (with its real trailing space) still renders
+// verbatim when a request returns it.
 const ADD_PANEL_HEADING = 'Add a Bridge report'
 const EMPTY_LIST = 'No bridge reports have been added.'
 // Client-side gate text. The per-field messages under each input are the API's verbatim wording;
@@ -110,10 +111,18 @@ const buildBody = (form: BridgeFormValues, revisionCount?: number): BridgeReques
 const Schedule7a: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [checkResult, setCheckResult] = useState<Schedule7aCheckStatusResponse | null>(null)
+  const {
+    saving,
+    message,
+    actionError,
+    checkResult,
+    setMessage,
+    setActionError,
+    setCheckResult,
+    clearBanners,
+    resetBanners,
+    run,
+  } = useScheduleBanners<Schedule7aCheckStatusResponse>(isCurrent)
 
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<BridgeFormValues>(emptyBridgeForm)
@@ -134,10 +143,7 @@ const Schedule7a: FC = () => {
   // Clear all transient state whenever a fresh document loads (mill/year change), so a context change
   // cannot strand an open panel, a stale banner, or a page number past the end of the new list.
   const resetTransient = useCallback(() => {
-    setSaving(false)
-    setMessage(null)
-    setActionError(null)
-    setCheckResult(null)
+    resetBanners()
     setShowAddPanel(false)
     setAddForm(emptyBridgeForm())
     setAddErrors({})
@@ -146,7 +152,7 @@ const Schedule7a: FC = () => {
     setConfirmDeleteId(null)
     setExpandedId(null)
     setPage(1)
-  }, [])
+  }, [resetBanners])
 
   const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7aResponse>({
     path: SCHEDULE7A_PATH,
@@ -159,12 +165,6 @@ const Schedule7a: FC = () => {
   })
 
   const query = `?millId=${String(millId)}&year=${String(year)}`
-
-  const clearBanners = () => {
-    setMessage(null)
-    setActionError(null)
-    setCheckResult(null)
-  }
 
   // A write echoes the recomputed document. Only the row that was just saved is re-derived from it;
   // every other open editor keeps its unsaved edits, because all rows are live at once and a blanket
@@ -183,33 +183,10 @@ const Schedule7a: FC = () => {
       setRowForms(({ [savedId]: _saved, ...rest }) => rest)
       setRowErrors(({ [savedId]: _clearedErrors, ...rest }) => rest)
     }
+    // Banners: the echoed success line replaces whatever was on screen, and any earlier failure or
+    // check result is stale the moment a write lands.
+    clearBanners()
     setMessage(doc.message?.text ?? null)
-    setActionError(null)
-    setCheckResult(null)
-  }
-
-  const failed = (error: unknown, fallback: string) => {
-    // Keep entered values for correction; surface the API's verbatim detail.
-    setActionError(extractDetail(error) || fallback)
-  }
-
-  const release = () => {
-    // On a context change resetTransient already cleared `saving`, and a request dispatched under the
-    // NEW context may be in flight — a stale finally must not release its lock.
-    if (isCurrent()) {
-      setSaving(false)
-    }
-  }
-
-  // Editing a field clears its own error, so a corrected value stops showing a stale rejection. The
-  // rest of the errors stand until the next submit re-evaluates them.
-  const clearFieldError = (errors: BridgeErrors, key: keyof BridgeFormValues): BridgeErrors => {
-    if (!(key in errors)) {
-      return errors
-    }
-    const next = { ...errors }
-    delete next[key]
-    return next
   }
 
   // Re-group a money field after the user leaves it ("12000" → "12,000"). A no-op when already
@@ -267,25 +244,20 @@ const Schedule7a: FC = () => {
       return
     }
     setAddErrors({})
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .post<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, buildBody(addForm))
-      .then((response) => {
-        if (!isCurrent()) {
-          return
-        }
-        applyDocument(response.data)
-        // Inputs clear only on success (add-is-save).
-        setAddForm(emptyBridgeForm())
-        setShowAddPanel(false)
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Schedule could not be saved.')
-        }
-      })
-      .finally(release)
+    run(
+      apiService
+        .getAxiosInstance()
+        .post<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, buildBody(addForm)),
+      {
+        fallback: 'Schedule could not be saved.',
+        onSuccess: (doc) => {
+          applyDocument(doc)
+          // Inputs clear only on success (add-is-save).
+          setAddForm(emptyBridgeForm())
+          setShowAddPanel(false)
+        },
+      },
+    )
   }
 
   /**
@@ -336,31 +308,22 @@ const Schedule7a: FC = () => {
       return
     }
 
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .put<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, {
-        bridges: forms.map(({ bridge, form }) => ({
-          bridgeReportId: bridge.bridgeReportId,
-          bridge: buildBody(form, bridge.revisionCount),
-        })),
-      })
-      .then((response) => {
-        if (!isCurrent()) {
-          return
-        }
-        applyDocument(response.data)
+    const body = {
+      bridges: forms.map(({ bridge, form }) => ({
+        bridgeReportId: bridge.bridgeReportId,
+        bridge: buildBody(form, bridge.revisionCount),
+      })),
+    }
+    run(apiService.getAxiosInstance().put<Schedule7aResponse>(`${BRIDGES_PATH}${query}`, body), {
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        applyDocument(doc)
         // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
         // them all to "untouched" and re-derives them from the echoed document.
         setRowForms({})
         setRowErrors({})
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Schedule could not be saved.')
-        }
-      })
-      .finally(release)
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -370,21 +333,12 @@ const Schedule7a: FC = () => {
     const id = confirmDeleteId
     setConfirmDeleteId(null)
     clearBanners()
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .delete<Schedule7aResponse>(`${BRIDGES_PATH}/${String(id)}${query}`)
-      .then((response) => {
-        if (isCurrent()) {
-          applyDocument(response.data)
-        }
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Unable to delete bridge report.')
-        }
-      })
-      .finally(release)
+    run(
+      apiService
+        .getAxiosInstance()
+        .delete<Schedule7aResponse>(`${BRIDGES_PATH}/${String(id)}${query}`),
+      { fallback: 'Unable to delete bridge report.', onSuccess: applyDocument },
+    )
   }
 
   const handleCheckStatus = () => {
@@ -394,53 +348,23 @@ const Schedule7a: FC = () => {
     clearBanners()
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation. Read-only (BR-08) — mutates nothing.
-    setSaving(true)
-    apiService
-      .getAxiosInstance()
-      .post<Schedule7aCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`)
-      .then((response) => {
-        if (isCurrent()) {
-          setCheckResult(response.data)
-        }
-      })
-      .catch((error: unknown) => {
-        if (isCurrent()) {
-          failed(error, 'Unable to check status.')
-        }
-      })
-      .finally(release)
-  }
-
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
+    run(
+      apiService
+        .getAxiosInstance()
+        .post<Schedule7aCheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`),
+      { fallback: 'Unable to check status.', onSuccess: setCheckResult },
     )
   }
 
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 7A" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 7A', subtitle: errorDetail }}
-      />
-    )
+  const loadState = renderScheduleLoadState({
+    header: PAGE_HEADER,
+    scheduleName: 'Schedule 7A',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {
@@ -464,76 +388,27 @@ const Schedule7a: FC = () => {
   // It is additionally disabled with no bridges: legacy answered that click with its "nothing to
   // save" notice, and the batch endpoint rejects an empty body, so there is no action to offer.
   const actionButtons = (key: string) => (
-    <Column key={key} sm={4} md={8} lg={16} className="schedule-7a__actions">
-      <Button
-        kind="primary"
-        disabled={controlsDisabled || bridges.length === 0}
-        onClick={handleSaveAll}
-      >
-        Save
-      </Button>
-      <Button kind="tertiary" disabled={controlsDisabled} onClick={handleCheckStatus}>
-        Check Status
-      </Button>
-    </Column>
+    <SaveCheckActions
+      key={key}
+      className="schedule-7a__actions"
+      saveDisabled={controlsDisabled || bridges.length === 0}
+      checkDisabled={controlsDisabled}
+      onSave={handleSaveAll}
+      onCheckStatus={handleCheckStatus}
+    />
   )
 
   return (
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
-        {actionError && (
-          <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
-        )}
-        {/* NotificationColumn IS a Carbon Column, so these are direct grid children like the
-            message/actionError banners above — wrapping them in another Column would strip their
-            span classes of meaning and misalign the two groups. */}
-        {checkResult && (
-          <>
-            {checkResult.errors.map((error, index) => (
-              <NotificationColumn
-                // Missing-value lines repeat verbatim across bridges, so the list index is what
-                // keeps otherwise-identical entries distinct.
-                key={`bridge-check-error-${String(index)}-${error.key}`}
-                kind="error"
-                title="Action required"
-                subtitle={error.text}
-              />
-            ))}
-            {checkResult.bridgeMessages.map((met, index) => (
-              <NotificationColumn
-                key={`bridge-check-met-${String(index)}-${met.key}`}
-                kind="success"
-                title="Requirements met"
-                subtitle={met.text}
-              />
-            ))}
-            {/* Present only when every bridge passes; mixed results carry no schedule-wide banner. */}
-            {checkResult.requirementsMetMessage && (
-              <NotificationColumn
-                kind="success"
-                title="Requirements met"
-                subtitle={checkResult.requirementsMetMessage.text}
-              />
-            )}
-            {/* A result carrying no message at all would otherwise render nothing, leaving the
-                button looking dead. requirementsMet is the one field always populated. */}
-            {checkResult.errors.length === 0 &&
-              checkResult.bridgeMessages.length === 0 &&
-              !checkResult.requirementsMetMessage && (
-                <NotificationColumn
-                  kind={checkResult.requirementsMet ? 'success' : 'warning'}
-                  title="Status checked"
-                  subtitle={
-                    checkResult.requirementsMet
-                      ? 'All requirements for this schedule have been met'
-                      : 'This schedule has outstanding requirements.'
-                  }
-                />
-              )}
-          </>
-        )}
+        <ScheduleBanners
+          keyPrefix="bridge"
+          message={message}
+          actionError={actionError}
+          checkResult={checkResult}
+          rowMessages={checkResult?.bridgeMessages}
+        />
 
         {/* Write controls stay rendered and go disabled outside Draft rather than disappearing —
             legacy bound `disabled` on all 32 of them and never removed a control, so a read-only
@@ -636,22 +511,8 @@ const Schedule7a: FC = () => {
         {actionButtons('page-actions-bottom')}
       </Grid>
 
-      {/* Mounted only while a delete is pending, so its Delete/Cancel do not sit in the
-          accessibility tree competing with the row actions when no dialog is open. */}
       {confirmDeleteId !== null && (
-        <Modal
-          open
-          danger
-          // Legacy's confirm dialog answered with Yes/No (schedule7A.xhtml:1250-1255), not
-          // Delete/Cancel.
-          modalHeading="Confirmation"
-          primaryButtonText="Yes"
-          secondaryButtonText="No"
-          onRequestClose={() => setConfirmDeleteId(null)}
-          onRequestSubmit={handleDelete}
-        >
-          <p>{CONFIRM_DELETE}</p>
-        </Modal>
+        <ConfirmDeleteModal onCancel={() => setConfirmDeleteId(null)} onConfirm={handleDelete} />
       )}
     </div>
   )
