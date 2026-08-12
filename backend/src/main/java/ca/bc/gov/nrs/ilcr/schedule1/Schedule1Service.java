@@ -388,11 +388,12 @@ public class Schedule1Service {
     // 12–18: volume + cost.
     writeLineItems(summaryId, request.lineItems(), user);
     // 143 / 144: VOLUME only — their cost is pulled from Sch 3 (143) or derived (144), never client-set.
-    // Written unconditionally: this is a PUT of the whole entered-field set (AD-12), so a null volume
-    // is the user having emptied the box and MUST clear the stored value. Guarding on != null here made
-    // "cleared" indistinguishable from "omitted", so Save reported success and the old number came back
-    // on reload. Same for the silviculture volume-only fields and otherCostsVolume below — the
-    // 12–18 line items and silviculture 1 & 2 already write their nulls straight through.
+    // Written unconditionally: this is a PUT of the whole entered-field set (AD-12), so a null
+    // volume is the user having emptied the box and MUST clear the stored value. Guarding on
+    // != null here made "cleared" indistinguishable from "omitted", so Save reported success
+    // and the old number came back on reload. Same for the silviculture volume-only fields and
+    // otherCostsVolume below — the 12–18 line items and silviculture 1 & 2 already write their
+    // nulls straight through.
     repository.upsertFixedDetail(
         summaryId, CODE_FOREST_MGMT_ADMIN, request.forestMgmtAdminVolume(), null, user);
     repository.upsertFixedDetail(
@@ -432,8 +433,8 @@ public class Schedule1Service {
           silv.accruedLessActual().volume(), silv.accruedLessActual().cost(), user);
     }
     // 139 / 140 volumes: written unconditionally so an emptied box clears the stored value (see
-    // writeWritableDetails). The enclosing block-level null checks stay — an absent silviculture block
-    // or an absent 1 / 2 entry is genuinely "not submitted", not "cleared".
+    // writeWritableDetails). The enclosing block-level null checks stay — an absent silviculture
+    // block or an absent 1 / 2 entry is genuinely "not submitted", not "cleared".
     repository.upsertFixedDetail(summaryId, CODE_SILV_LESS_ADMIN, silv.lessAdminVolume(), null, user);
     repository.upsertFixedDetail(summaryId, CODE_SILV_TOTAL, silv.totalVolume(), null, user);
   }
@@ -765,8 +766,8 @@ public class Schedule1Service {
     // IS NOT NULL read paths (on Oracle "" is stored as NULL, so this only differs on whitespace).
     // Select the ROW first (never null) and map to its nullable volume afterward — the same trap as
     // Schedule3Service.firstCost: Stream.findFirst() throws NPE when the selected element is itself
-    // null, so mapping to the volume before findFirst() 500'd on a shared row with no volume entered
-    // (which is exactly the state an emptied Subtotal Other Costs box leaves behind).
+    // null, so mapping to the volume before findFirst() 500'd on a shared row with no volume
+    // entered (which is exactly the state an emptied Subtotal Other Costs box leaves behind).
     BigDecimal sharedVolume = otherCostRows.stream()
         .filter(r -> StringUtils.isEmpty(r.itemDescription()))
         .findFirst()
