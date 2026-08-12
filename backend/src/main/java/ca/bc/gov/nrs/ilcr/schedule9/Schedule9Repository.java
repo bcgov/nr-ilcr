@@ -75,6 +75,10 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
   /**
    * The cost line for each record of the mill/year (Cost + Contractual Item 108–114 + its name),
    * joined to {@code CONTRACTUAL_WORK_REPORT} so the mill/year/category filter applies.
+   *
+   * <p>Ordered by {@code CONTRACTUAL_WORK_REPORT_ID} then {@code ILCR_COST_REPORT_DETAIL_ID} so the
+   * service's lowest-detail-id-wins dedup (a record should own exactly one cost line, but the FK has
+   * no unique constraint) is deterministic — Schedule 5's recorded deviation (c).
    */
   @Query("""
       SELECT d.CONTRACTUAL_WORK_REPORT_ID AS REPORT_ID,
@@ -90,6 +94,7 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
        WHERE cwr.ILCR_MILL_ID = :millId
          AND cwr.REPORT_YEAR = :year
          AND cwr.ILCR_CATEGORY_ID = '9'
+       ORDER BY d.CONTRACTUAL_WORK_REPORT_ID, d.ILCR_COST_REPORT_DETAIL_ID
       """)
   List<CostRow> findCostLines(@Param("millId") long millId, @Param("year") int year);
 

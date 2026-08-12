@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -77,6 +78,9 @@ class Schedule9DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.records[0].cost", is(5000)))
         // AD-5 derived server-side: 5000 / 12.5 = 400.00, scale 2.
         .andExpect(jsonPath("$.records[0].costPerUnit", is(400.00)))
+        // Pin the scale-2 formatting on the RAW wire: jsonPath is(400.00) parses to a Double and
+        // would also pass for a bare 400, so the HALF_UP scale-2 contract needs a string check.
+        .andExpect(content().string(containsString("\"costPerUnit\":400.00")))
         .andExpect(jsonPath("$.records[0].sideSlopePct", is(25)))
         .andExpect(jsonPath("$.records[0].source.code", is("A")))
         .andExpect(jsonPath("$.records[0].source.description", is("Actual Cost")))
@@ -110,6 +114,10 @@ class Schedule9DocumentIT extends AbstractOracleIT {
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.records[2].id", is(9103)))
+        // revisionCount is the per-record optimistic-lock token (Story 9.2). 9103's CONTRACTUAL_WORK
+        // _REPORT row is rev 2 while its cost-detail line is rev 0, so this pins that the token is
+        // read from the record master, not the cost line.
+        .andExpect(jsonPath("$.records[2].revisionCount", is(2)))
         // Contractual Item 114 ("Other") + its free-text ITEM_DESCRIPTION on the cost line.
         .andExpect(jsonPath("$.records[2].contractualItem.code", is("114")))
         .andExpect(jsonPath("$.records[2].contractualItem.description", is("Other")))

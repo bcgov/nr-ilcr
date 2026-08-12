@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Schedule 9 document assembly + server-side derivation (AD-5/AD-6). Reads the contractual work
@@ -42,12 +43,14 @@ public class Schedule9Service {
    * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
    * @return the pinned document
    */
+  @Transactional(readOnly = true)
   public Schedule9Response getSchedule9(long millId, int year, boolean callerMayEdit) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
-    // One cost line per record; first-by-query-order wins if delivery ever holds more (no unique
-    // constraint on the FK), mirroring how Schedule 5 resolves its keyed detail rows.
+    // One cost line per record; lowest ILCR_COST_REPORT_DETAIL_ID wins if delivery ever holds more
+    // (no unique constraint on the FK) — the repository's ORDER BY makes that deterministic, mirroring
+    // how Schedule 5 resolves its keyed detail rows (its recorded deviation (c)).
     Map<Integer, CostRow> costByRecord = repository.findCostLines(millId, year).stream()
         .collect(Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
 
