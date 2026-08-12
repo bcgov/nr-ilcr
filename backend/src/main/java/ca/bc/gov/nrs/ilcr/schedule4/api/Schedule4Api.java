@@ -104,6 +104,30 @@ public interface Schedule4Api {
       Authentication authentication);
 
   /**
+   * Edit one existing sub-page list row (Towing/Truck Rehaul/Other) and return the recomputed document
+   * (Story 4.3, the edit counterpart of {@link #addSubPageRow}). {@code request.type} selects the code
+   * (43/46/55); {@code cycle} applies to Truck Rehaul only. Row range/description violations → 400; a
+   * non-Draft track → 409; an unknown {@code locationId} or a {@code rowId} not under that location →
+   * 404; missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * @param millId the mill id (required)
+   * @param year the reporting year (required)
+   * @param locationId the parent location's id (its {@code Location.id}, primary report id)
+   * @param rowId the sub-page row's own report id (the edit target)
+   * @param request the row type, description, and amounts (validated)
+   * @param authentication the caller (drives EDIT_SCHEDULE + audit user)
+   * @return 200 with the recomputed document carrying the success {@code message} (AD-8)
+   */
+  @PutMapping("/locations/{locationId}/rows/{rowId}")
+  ResponseEntity<Schedule4Response> updateSubPageRow(
+      @RequestParam long millId,
+      @RequestParam int year,
+      @PathVariable int locationId,
+      @PathVariable int rowId,
+      @Valid @RequestBody Schedule4SubPageRowRequest request,
+      Authentication authentication);
+
+  /**
    * Delete one sub-page list row (its whole report + cascaded detail) and return the recomputed
    * document (Story 4.3, S11 / BR-08). Idempotent: an unknown/non-sub-page {@code rowId} is a no-op
    * 200 (never deletes a location). Non-Draft track → 409; missing {@code EDIT_SCHEDULE} → 403.

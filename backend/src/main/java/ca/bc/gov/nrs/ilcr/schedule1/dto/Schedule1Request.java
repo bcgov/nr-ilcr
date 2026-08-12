@@ -21,6 +21,12 @@ import java.util.List;
  * ({@code ValidationConfiguration}). Null values are permitted (legacy accepts blank amounts at
  * Save; Check Status catches missing required fields — Story 2.6).
  *
+ * <p><strong>A null scalar CLEARS the stored value.</strong> This is a PUT of the whole
+ * entered-field set, not a PATCH: the client always sends every field and uses null for "the user
+ * emptied this box", so the server writes that null through. Only an absent enclosing BLOCK
+ * ({@code lineItems}, {@code silviculture}, or one of its {@code EntryAmount} entries) means
+ * "not submitted — leave the stored rows alone".
+ *
  * @param revisionCount optimistic-lock token from the last GET (AR11); mismatch → 409
  * @param comments free-text schedule comments (nullable)
  * @param lineItems the writable fixed line items (codes 12–18); other codes are ignored

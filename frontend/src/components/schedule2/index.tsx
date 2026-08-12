@@ -16,13 +16,13 @@ import {
   TableHeader,
   TableRow,
   TextArea,
-  TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -246,18 +246,19 @@ const Schedule2: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
-  // An editable value cell: a TextInput when the field is entered-by-user and the schedule is
-  // editable, otherwise read-only text. The hidden `labelText` is a terse, stable a11y name (the
+  // An editable value cell: a caret-preserving comma-grouped input when the field is entered-by-user
+  // and the schedule is editable, otherwise read-only text. Right-aligned so the entered numbers line
+  // up with the read-only cells above/below. The hidden `labelText` is a terse, stable a11y name (the
   // visible legacy label lives in the row's first cell).
   const inputCell = (fieldKey: string, label: string) => (
     <TableCell className="schedule-2__num">
-      <TextInput
+      <CommaNumberInput
         id={fieldKey}
         labelText={label}
         hideLabel
         size="sm"
         value={form[fieldKey] ?? ''}
-        onChange={setField(fieldKey)}
+        onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />
@@ -329,7 +330,7 @@ const Schedule2: FC = () => {
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
@@ -351,13 +352,13 @@ const Schedule2: FC = () => {
         {actions}
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
-          <TableContainer title="Purchased / Private Log Costs">
+          <TableContainer>
             <Table aria-label="Purchased / Private Log Costs">
               <TableHead>
                 <TableRow>
-                  <TableHeader>Cost Item</TableHeader>
+                  <TableHeader aria-label="Cost item" />
                   <TableHeader className="schedule-2__num">Volume (m³)</TableHeader>
-                  <TableHeader className="schedule-2__num">Cost</TableHeader>
+                  <TableHeader className="schedule-2__num">Cost ($)</TableHeader>
                   <TableHeader className="schedule-2__num">$/m³</TableHeader>
                 </TableRow>
               </TableHead>
@@ -381,7 +382,8 @@ const Schedule2: FC = () => {
           {editable ? (
             <TextArea
               id="comments"
-              labelText="Comments"
+              className="schedule-2__comments-field"
+              labelText="If you have any additional comments, please enter them here:"
               enableCounter
               maxCount={COMMENTS_MAX}
               value={form[F_COMMENTS] ?? ''}
@@ -389,7 +391,9 @@ const Schedule2: FC = () => {
             />
           ) : (
             <>
-              <h3 className="schedule-2__heading">Comments</h3>
+              <h3 className="schedule-2__comments-label">
+                If you have any additional comments, please enter them here:
+              </h3>
               <p className="schedule-2__comments">{data.comments ?? '—'}</p>
             </>
           )}

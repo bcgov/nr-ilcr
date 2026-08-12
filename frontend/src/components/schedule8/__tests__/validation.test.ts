@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  emptyPageForm,
   emptyRateForm,
   emptySampleForm,
   fmt,
@@ -8,6 +9,7 @@ import {
   numStr,
   skiddingTotal,
   toNum,
+  validatePageForm,
   validateRateForm,
   validateSampleForm,
 } from '../validation'
@@ -156,5 +158,35 @@ describe('validateRateForm branch coverage', () => {
         itemDescription: 'Bridge',
       }),
     ).toEqual({})
+  })
+})
+
+describe('validatePageForm phone validation', () => {
+  // A page with all the required fields filled so only the phone rule can flag.
+  const validBase = () => ({
+    ...emptyPageForm(),
+    license: 'LIC1',
+    supportCentre: 'SC1',
+    region: 'R1',
+    becZone: 'BZ1',
+    tsaNumber: 'TSA1',
+  })
+
+  test('phone is optional — blank produces no phone error', () => {
+    expect(validatePageForm({ ...validBase(), phone: '' }).phone).toBeUndefined()
+  })
+
+  test('a partial phone is rejected', () => {
+    expect(validatePageForm({ ...validBase(), phone: '250-555' }).phone).toBe(
+      'Phone must be a complete 10-digit number (e.g. 250-555-1212).',
+    )
+  })
+
+  test('a complete 10-digit phone passes', () => {
+    expect(validatePageForm({ ...validBase(), phone: '250-555-1212' }).phone).toBeUndefined()
+  })
+
+  test('a 10-digit phone seeded without dashes still passes (matches the formatted display)', () => {
+    expect(validatePageForm({ ...validBase(), phone: '4564564566' }).phone).toBeUndefined()
   })
 })

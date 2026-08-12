@@ -82,7 +82,7 @@ export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
 
 /**
  * Check Status anchors that need an itemized Other-Costs row seeded first (S17/S18). The row is seeded
- * at the DB (the app's own add is broken — Bug/Regression #1) and cleaned up via the app's DELETE.
+ * at the DB (the app's own add is broken — BUG-1) and cleaned up via the app's DELETE.
  * `cost: null` seeds an empty-cost row (S18 warning); a number seeds a costed row (S17). Both anchors
  * carry a shared Other-Costs volume of exactly 0 (discovered 2026-07-30), which is what makes S17's
  * "cost > 0 with volume 0" mismatch fire.
@@ -166,7 +166,83 @@ export const OTHER_COSTS_ANCHORS = {
     mill: { millNumber: '727', millName: 'Updated Mill E2E' },
     marker: '',
   },
+  // Inline per-row edit (spec gap SG-1): a row is added via the API in the precondition, edited through
+  // the sub-page, persisted with Save, and deleted on teardown by its marker. Dedicated key — the edit
+  // mutates, so it must not share with the add/remove targets.
+  'inline-edit': {
+    key: { millId: 12050, year: 2017 } as ScheduleKey,
+    mill: { millNumber: '987', millName: 'TURTLE DOVE' },
+    marker: 'E2E inline edit',
+  },
 } as const;
+
+/**
+ * S02 crown pre-fill target — a dedicated, populated, editable Draft whose Schedule 3 carries a Crown
+ * Timber (item 119) volume. BR-03 pre-fills only on a genuine FIRST ENTRY (`allVolumesEmpty` — every
+ * stored Schedule 1 detail volume null), and no seeded schedule is in that state: the DB hunt across
+ * all 30 Schedule-1/Schedule-3 pairs found 28 with a crown volume but none with empty volumes.
+ * The app still cannot produce the state through the API: a blanking PUT now clears the fields it
+ * carries (BUG-2 was fixed 2026-08-11, commit `3ee9ff2`), but `allVolumesEmpty` tests EVERY stored
+ * detail volume, and the PUT contract does not reach them all. So the
+ * scenario snapshots this schedule, NULLs its volumes at the DB, and restores it verbatim on teardown.
+ * Never share this (mill,year). Found (2026-08-07):
+ * GET .../schedule1?millId=22051&year=2017 → {trackStatus:"D", editable:true, schedule3CrownVolume:325411}.
+ *
+ * Finding query (python-oracledb):
+ *   select s1.ILCR_MILL_ID, s1.REPORT_YEAR,
+ *          (select max(d3.VOLUME) from THE.ILCR_COST_REPORT_DETAIL d3
+ *             where d3.ILCR_REPORT_SUMMARY_ID = s3.ILCR_REPORT_SUMMARY_ID
+ *               and d3.ILCR_REPORT_COST_ITEM_ID = 119) crown
+ *     from THE.ILCR_REPORT_SUMMARY s1
+ *     join THE.ILCR_REPORT_SUMMARY s3 on s3.ILCR_MILL_ID = s1.ILCR_MILL_ID
+ *                                    and s3.REPORT_YEAR = s1.REPORT_YEAR
+ *                                    and s3.ILCR_CATEGORY_ID = '3'
+ *    where s1.ILCR_CATEGORY_ID = '1';
+ */
+export const CROWN_PREFILL_ANCHOR: ScheduleKey = { millId: 22051, year: 2017 };
+
+/** Mill 22051 dropdown fields (GET /api/v1/mills, 2026-08-07). */
+export const CROWN_PREFILL_ANCHOR_MILL = {
+  millNumber: '20172',
+  millName: 'COVEY CUSTOM CUT',
+} as const;
+
+/** The Crown Timber (Sch 3, item 119) volume this anchor's Schedule 3 carries — the pre-filled value. */
+export const CROWN_PREFILL_VOLUME = 325411;
+
+/**
+ * WRN-001, API-owned (AD-8): the crown pre-fill advisory carried on the Schedule 1 GET `warnings`
+ * (bundle key `crownVolumeSetForSchedule1`, backend/src/main/resources/messages.properties:138).
+ */
+export const MSG_CROWN_PREFILL =
+  'The Crown Timber (Sch 3) volume has been set for volume fields. Please check and save schedule.';
+
+/**
+ * Clear-a-saved-amount target — a dedicated, populated, editable Draft owned solely by
+ * `clear-amounts.feature`. That feature writes values and then clears them, and this target is
+ * POPULATED, so it is snapshotted and restored verbatim on teardown rather than blanked with a PUT —
+ * a blanking restore would leave it empty rather than as found. (Until BUG-2 was fixed on 2026-08-11 the
+ * PUT could not even blank the five volume-only fields; a verbatim restore is what this anchor needs
+ * either way.)
+ * Found (2026-08-07): GET .../schedule1?millId=25052&year=2017 → {trackStatus:"D", editable:true}.
+ * (Mill 25052 year 2017 — a DIFFERENT key from the S13 delete anchor 25052/2016.)
+ */
+export const CLEAR_AMOUNTS_ANCHOR: ScheduleKey = { millId: 25052, year: 2017 };
+
+/** Mill 25052 dropdown fields (GET /api/v1/mills, 2026-08-07). */
+export const CLEAR_AMOUNTS_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const;
+
+/**
+ * Second clear-amounts target, owned solely by the `@discovered-bug` arm. The suite runs fullyParallel,
+ * so the two clear-amounts scenarios must NOT share a key: both snapshot and restore the same rows, and
+ * concurrent snapshot/restore of one schedule races (observed 2026-08-07 — a shared anchor produced
+ * cross-scenario value bleed and failed restores). Found: GET .../schedule1?millId=25052&year=2015 →
+ * {trackStatus:"D", editable:true}. (Mill 25052 year 2015 — distinct from 25052/2017 and 25052/2016.)
+ */
+export const CLEAR_GUARDED_ANCHOR: ScheduleKey = { millId: 25052, year: 2015 };
+
+/** Mill 25052 dropdown fields — same mill as the other 25052 anchors, different reporting year. */
+export const CLEAR_GUARDED_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const;
 
 /**
  * SUC-001, API-owned (AD-8): the exact success text the backend returns in `message.text` and the UI
@@ -243,6 +319,16 @@ export function emptyScheduleRequest(revisionCount: number): Record<string, unkn
     silviculture: {
       actualSpent: { volume: null, cost: null },
       accruedLessActual: { volume: null, cost: null },
+      // 139/140 are VOLUME-only writable fields (their costs are pulled/derived). This payload mirrors
+      // Schedule1Request.SilvicultureBlock exactly, and as of 2026-08-11 these nulls are what actually
+      // CLEARS the fields: BUG-2 is fixed (commit `3ee9ff2`), so `Schedule1Service` writes the five
+      // volume-only scalars unconditionally instead of guarding them with `!= null`. Sending them is no
+      // longer merely contract completeness — it is the restore mechanism.
+      //
+      // `sch1_db_restore.py blank-guarded` still runs from the `schedule1Restore` cleanup fixture, but
+      // it is now a redundant safety net rather than the thing that does the work.
+      lessAdminVolume: null,
+      totalVolume: null,
     },
     otherCostsVolume: null,
     forestMgmtAdminVolume: null,

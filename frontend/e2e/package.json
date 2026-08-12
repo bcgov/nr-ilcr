@@ -14,7 +14,9 @@
     "test:ui": "playwright test --ui",
     "report": "playwright show-report",
     "codegen": "playwright codegen http://localhost:3000",
-    "setup:python": "bash scripts/setup-python.sh"
+    "setup:python": "bash scripts/setup-python.sh",
+    "pretest:gate": "npm run bddgen",
+    "test:gate": "playwright test --grep-invert \"@discovered-bug|@discovered-divergence\""
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

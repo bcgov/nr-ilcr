@@ -86,3 +86,22 @@ spring:
 ilcr:
   datasource:
     enabled: true
+
+---
+# Local dev only. Active under the `dev` Spring profile, which the `dev` Maven profile turns on
+# automatically (mvn spring-boot:run -Pdev; see pom.xml, which also adds DevTools only under -Pdev).
+# DevTools ships DevToolsDataSourceAutoConfiguration, which hard-references
+# org.springframework.boot.jdbc.autoconfigure.DataSourceProperties from Boot 4's spring-boot-jdbc
+# module. We build the DataSource ourselves (see DataSourceConfiguration), so that module — and the
+# class — isn't on the classpath and the autoconfig fails to load. Its only job is resetting an
+# embedded/in-memory DB across restarts, meaningless against our external Oracle. Exclude it so the
+# DevTools restart/live-reload features still work. Never active in prod (the `dev` profile isn't on,
+# and DevTools isn't on the packaged-jar classpath there anyway). Kept as an on-profile document in the
+# tracked application.yml because standalone application-dev.yml is gitignored (local-override slot).
+spring:
+  config:
+    activate:
+      on-profile: dev
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.devtools.autoconfigure.DevToolsDataSourceAutoConfiguration

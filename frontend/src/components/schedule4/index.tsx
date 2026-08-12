@@ -20,12 +20,13 @@ import {
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
-import { fmtCurrency, numStr, toNum } from '@/utils/number'
+import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { extractDetail } from '@/utils/error'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { getRouteApi } from '@tanstack/react-router'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
+import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   ALL_CATEGORIES,
@@ -47,8 +48,8 @@ const copyWarning = (name: string): string =>
 
 // NAV-002 (leaving a saved location to a sub-page — unsaved edits discarded) and NAV-003 (leaving an
 // unsaved NEW location — must save first). Client-only confirm chrome, verbatim from the bundle.
-// Per-location comments cap — the TRANSPORTATION_REPORT.COMMENTS column width (backend @Size(2000)).
-const COMMENTS_MAX = 2000
+// Per-location comments cap (backend @Size(3500); the TRANSPORTATION_REPORT.COMMENTS column is 4000).
+const COMMENTS_MAX = 3500
 
 // Typed accessor for this page's route: the sub-page level is URL-driven (search: loc + sub) so the
 // browser Back button returns from a sub-page to the location list.
@@ -87,9 +88,6 @@ function seedCategoryForm(location: Location): {
   return { form, perUnit }
 }
 
-const subPageCount = (location: Location, code: number): number =>
-  location.subPageRows.filter((row) => row.code === code).length
-
 type CategoryDef = (typeof ALL_CATEGORIES)[number]
 type CategoryField = 'volume' | 'cost' | 'distance'
 
@@ -113,21 +111,22 @@ const CategoryCell: FC<{
   value: string
   readOnly: boolean
   invalidText?: string
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange }) => {
+  onValueChange: (raw: string) => void
+}> = ({ inputId, label, value, readOnly, invalidText, onValueChange }) => {
   if (readOnly) {
-    return <TableCell className="schedule-4__num">{value === '' ? '—' : value}</TableCell>
+    return (
+      <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
+    )
   }
   return (
     <TableCell className="schedule-4__num">
-      <TextInput
+      <CommaNumberInput
         id={inputId}
         labelText={label}
         hideLabel
         size="sm"
-        inputMode="numeric"
         value={value}
-        onChange={onChange}
+        onValueChange={onValueChange}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
@@ -144,10 +143,7 @@ const CategoryRow: FC<{
   perUnit: number | null | undefined
   readOnly: boolean
   fieldErrors: Record<string, string>
-  onFieldChange: (
-    code: number,
-    field: CategoryField,
-  ) => (event: React.ChangeEvent<HTMLInputElement>) => void
+  onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
 }> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
@@ -160,7 +156,7 @@ const CategoryRow: FC<{
           value={values.distance}
           readOnly={readOnly}
           invalidText={fieldErrors[`${def.code}-distance`]}
-          onChange={onFieldChange(def.code, 'distance')}
+          onValueChange={onFieldChange(def.code, 'distance')}
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -171,7 +167,7 @@ const CategoryRow: FC<{
         value={values.volume}
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-volume`]}
-        onChange={onFieldChange(def.code, 'volume')}
+        onValueChange={onFieldChange(def.code, 'volume')}
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -179,7 +175,7 @@ const CategoryRow: FC<{
         value={values.cost}
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-cost`]}
-        onChange={onFieldChange(def.code, 'cost')}
+        onValueChange={onFieldChange(def.code, 'cost')}
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
@@ -298,9 +294,8 @@ const Schedule4: FC = () => {
   const closePanel = () => setPanelMode('closed')
 
   const setCategoryField =
-    (code: number, field: 'volume' | 'cost' | 'distance') =>
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const { value } = event.target
+    (code: number, field: 'volume' | 'cost' | 'distance') => (value: string) => {
+      // value is already the raw digit string (CommaNumberInput strips its display grouping).
       setPanelCategories((prev) => ({
         ...prev,
         [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
@@ -367,7 +362,23 @@ const Schedule4: FC = () => {
   const handleSave = () => {
     if (saving || panelMode === 'closed' || panelMode === 'view') return
     void putLocation().then((document) => {
-      if (document) setPanelMode('closed')
+      if (!document) return
+      // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
+      // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
+      // save doesn't 409. The panel form already holds the saved values, so nothing re-seeds.
+      const saved =
+        panelMode === 'edit' && panelEditId !== null
+          ? document.locations.find((l) => l.id === panelEditId)
+          : document.locations.find(
+              (l) => (l.name ?? '').toLowerCase() === panelName.trim().toLowerCase(),
+            )
+      if (saved && saved.id != null) {
+        setPanelMode('edit')
+        setPanelEditId(saved.id)
+        setPanelRevision(saved.revisionCount ?? 0)
+      } else {
+        setPanelMode('closed')
+      }
     })
   }
 
@@ -458,7 +469,7 @@ const Schedule4: FC = () => {
   const header = renderHeader()
 
   const shell = (body: React.ReactNode) => (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
@@ -514,7 +525,7 @@ const Schedule4: FC = () => {
     const rows = (location?.subPageRows ?? []).filter((row) => row.code === subPage.def.code)
     const subPageTrail = [SCH4_BASE, ...(location?.name ? [location.name] : []), subPage.def.label]
     return (
-      <div className="app-page">
+      <div className="app-page schedule-page">
         {renderHeader(subPageTrail)}
         <Grid fullWidth className="app-page__body">
           <Column sm={4} md={8} lg={16}>
@@ -522,7 +533,6 @@ const Schedule4: FC = () => {
               millId={millId as number}
               year={year as number}
               locationId={subPage.locationId}
-              locationName={location?.name ?? ''}
               def={subPage.def}
               rows={rows}
               editable={editable}
@@ -541,8 +551,24 @@ const Schedule4: FC = () => {
   const readOnlyPanel = panelMode === 'view'
   const panelLocation =
     panelEditId !== null ? data.locations.find((l) => l.id === panelEditId) : undefined
-  const panelSubCount = (code: number): number =>
-    panelLocation ? subPageCount(panelLocation, code) : 0
+  // Aggregate the group's sub-page rows for its grid row (legacy Towing/Truck-Rehaul/Other totals):
+  // summed Distance/Volume/Cost/Cycle + derived $/m³ (total cost ÷ total volume). Empty when the group
+  // has no rows.
+  const panelSubTotals = (code: number) => {
+    const rows = (panelLocation?.subPageRows ?? []).filter((row) => row.code === code)
+    const distance = rows.reduce((total, row) => total + (row.distance ?? 0), 0)
+    const volume = rows.reduce((total, row) => total + (row.volume ?? 0), 0)
+    const cost = rows.reduce((total, row) => total + (row.cost ?? 0), 0)
+    const cycle = rows.reduce((total, row) => total + (row.cycle ?? 0), 0)
+    return {
+      count: rows.length,
+      distance,
+      volume,
+      cost,
+      cycle,
+      perUnit: volume !== 0 ? cost / volume : null,
+    }
+  }
 
   // ---- Existing Locations table. -----------------------------------------------------------------
   const locationsTable = (
@@ -561,7 +587,14 @@ const Schedule4: FC = () => {
             </TableRow>
           ) : (
             data.locations.map((location) => (
-              <TableRow key={location.id ?? location.name}>
+              <TableRow
+                key={location.id ?? location.name}
+                className={
+                  panelOpen && location.id != null && location.id === panelEditId
+                    ? 'schedule-4__row--editing'
+                    : undefined
+                }
+              >
                 <TableCell>{location.name}</TableCell>
                 <TableCell>
                   <div className="schedule-4__row-actions">
@@ -612,23 +645,34 @@ const Schedule4: FC = () => {
   )
 
   // A list sub-page appears as a group row inside the grid (legacy code position): its label + current
-  // row count link to the sub-page; the amount columns are blank (its rows live on that page).
-  const renderSubPageRow = (def: SubPageDef) => (
-    <TableRow key={`sub-${def.code}`}>
-      <TableCell>
-        <Button
-          kind="ghost"
-          size="sm"
-          className="schedule-4__subpage-link"
-          disabled={saving}
-          onClick={() => requestOpenSubPage(def)}
-        >
-          {`${def.label} (${panelSubCount(def.code)}):`}
-        </Button>
-      </TableCell>
-      <TableCell colSpan={5} />
-    </TableRow>
-  )
+  // row count link to the sub-page, and the amount columns show the group's read-only totals summed
+  // from its sub-page rows (legacy towing/truck-rehaul/other totals). Cycle Time only for Truck Rehaul.
+  const renderSubPageRow = (def: SubPageDef) => {
+    const totals = panelSubTotals(def.code)
+    const has = totals.count > 0
+    return (
+      <TableRow key={`sub-${def.code}`}>
+        <TableCell>
+          <Button
+            kind="ghost"
+            size="sm"
+            className="schedule-4__subpage-link"
+            disabled={saving}
+            onClick={() => requestOpenSubPage(def)}
+          >
+            {`${def.label} (${totals.count}):`}
+          </Button>
+        </TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.distance) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.volume) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{has ? fmtNumber(totals.cost) : '—'}</TableCell>
+        <TableCell className="schedule-4__num">{fmtCurrency(totals.perUnit)}</TableCell>
+        <TableCell className="schedule-4__num">
+          {def.hasCycle && has ? fmtNumber(totals.cycle) : '—'}
+        </TableCell>
+      </TableRow>
+    )
+  }
 
   const panel = panelOpen && (
     <div className="schedule-4__panel">
@@ -676,13 +720,15 @@ const Schedule4: FC = () => {
 
       {readOnlyPanel ? (
         <div className="schedule-4__field">
-          <span className="schedule-4__field-label">Comments</span>
+          <span className="schedule-4__field-label">
+            If you have any additional comments, please enter them here:
+          </span>
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
         <TextArea
           id="location-comments"
-          labelText="Comments"
+          labelText="If you have any additional comments, please enter them here:"
           enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}
@@ -697,14 +743,14 @@ const Schedule4: FC = () => {
           </Button>
         )}
         <Button kind="secondary" disabled={saving} onClick={closePanel}>
-          {readOnlyPanel ? 'Close' : 'Cancel'}
+          {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
       </div>
     </div>
   )
 
   return (
-    <div className="app-page">
+    <div className="app-page schedule-page">
       {header}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
@@ -769,7 +815,7 @@ const Schedule4: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-4__actions">
-          <Button kind="primary" disabled={!editable || saving || panelOpen} onClick={openNew}>
+          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
             Add New Location
           </Button>
           <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>

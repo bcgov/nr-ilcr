@@ -14,16 +14,20 @@ every scenario is parallel-safe by construction.
 | Source item (slice) | Source citation | App enforcement point | Scenario (tags) | Status | Gap/defect |
 |---|---|---|---|---|---|
 | S01 Establish working context (happy path) | S01.feature; SUC-001 | `Home.handleSave` → `GET /v1/mill-context` 200 `message.text`; `ContextBanner` renders | `working-context.feature` `@S01 @SUC-001` | covered | Role + role-notice re-grounded — see defects.md |
-| S01 Landing: lists populate + pre-select + a11y | S01 land; `millYearDefaults.ts`; NFR1 | `Home` mount fetch/pre-select; `ContextBanner` mount fetch; axe | `working-context.feature` `@S01 @landing @a11y` | covered | Banner populated on landing — defects.md Divergence #3 |
+| S01 Landing: lists populate + pre-select + a11y | S01 land; `millYearDefaults.ts`; NFR1 | `Home` mount fetch/pre-select; `ContextBanner` mount fetch; axe | `working-context.feature` `@S01 @landing @a11y` | covered | Banner populated on landing — defects.md DIV-3 |
 | S01 Saved context drives Schedule 1 (HOME-1.5 AC2) | epics-home-page Story-1.5 AC2 | client-side nav preserves `MillYearContext`; `GET /v1/schedule1?millId&year` carries the selection | `context-drives-schedule.feature` `@S01 @drives-schedule` | covered | — |
-| S02 Single assigned mill pre-selected | S02.feature (Alt) | `Home` single-mill fallback (`mills.length === 1`) | — | not-applicable | 21-mill delivery data; unit-covered (Story 1.3 Vitest). See defects.md Coverage gap #2 |
+| S02 Single assigned mill pre-selected | S02.feature (Alt) | `Home` single-mill fallback (`mills.length === 1`) | — | not-applicable | 21-mill delivery data; unit-covered (Story 1.3 Vitest). See defects.md GAP-2 |
 | S03 Change working context later | S03.feature (Alt) | `Home.setContext` on a second resolve; `ContextBanner` re-fetch | `working-context.feature` `@S03` | covered | — |
-| S04 Missing mill selection | S04.feature (Exc); FLD-001 | Backend `mill-context` 400 `Mill: Value is required.` | — | not-applicable (UI) / covered-by-contract | Not UI-reproducible — defects.md Divergence #2 + Coverage gap #1 |
+| S04 Missing mill selection | S04.feature (Exc); FLD-001 | Backend `mill-context` 400 `Mill: Value is required.` | — | not-applicable (UI) / covered-by-contract | Not UI-reproducible — defects.md DIV-2 + GAP-1 |
 | S05 Missing reporting year selection | S05.feature (Exc); FLD-002 | Backend `mill-context` 400 `Reporting Year: Value is required.` | — | not-applicable (UI) / covered-by-contract | Same as S04 |
 | S06 Selected mill is closed — Home saves + banners | S06.feature (Alt) | `mill-context` 200 for closed mill (`millViewable:false`) | `working-context.feature` `@S06` | covered | Home-screen half |
 | S06 Selected mill is closed — schedule blocked (=SCH1 S20) | S06 consequence; epics Story-1.5 AC1; ERR-002 | `GET /v1/schedule1` closed mill → 409; page shows verbatim block | `context-drives-schedule.feature` `@S06 @UC-SCH1-001 @S20` | covered | Also flips UC-SCH1-001 S20 → covered |
-| S07 No report-status row for mill/year | S07.feature (Alt) | `mill-context` 200 with null statuses; banner mill line only | `working-context.feature` `@S07` | covered | Legacy S07 banner was `[UNKNOWN]`; re-grounded — defects.md Spec gap #1 |
+| S07 No report-status row for mill/year | S07.feature (Alt) | `mill-context` 200 with null statuses; banner mill line only | `working-context.feature` `@S07` | covered | Legacy S07 banner was `[UNKNOWN]`; re-grounded — defects.md SPEC-1 |
 | S08 Both mill and year missing | S08.feature (Exc); FLD-001+002 | Backend `mill-context` 400 with BOTH messages | — | not-applicable (UI) / covered-by-contract | Same root cause as S04/S05 |
+| S01 Saved context DISPLAYS on the schedule tombstone (banner → tombstone) | S01 display arm; bcgov #227 | `ScheduleTombstone` renders the shared `WorkingContextLines` in the `region[name="Working context"]` landmark on schedule pages | `schedule-tombstone.feature` `@S01 @tombstone @a11y` (Schedule 2) | covered | Ports bcgov `tombstone.spec.ts` S01; a11y clean on Schedule 2 |
+| S03 Switching context replaces the tombstone lines | S03 display arm; bcgov #227 | client-side re-nav; `useWorkingContext` re-fetch on the tombstone | `schedule-tombstone.feature` `@S03 @tombstone` | covered | New mill + statuses render; the prior dated line is gone |
+| S06 Closed mill's tombstone renders like an open mill | S06 display arm; bcgov #227 | `ScheduleTombstone` header renders even when the schedule body is blocked (409); no closed-mill wording | `schedule-tombstone.feature` `@S06 @tombstone` | covered | Header parity; the block itself is the S06/S20 body concern above |
+| S07 No-status pair renders the tombstone mill line only | S07 display arm; bcgov #227 | `WorkingContextLines` suppresses both track lines when statuses are null | `schedule-tombstone.feature` `@S07 @tombstone` | covered | Ports `tombstone.spec.ts` S07 |
 
 ## HOME-1.5 acceptance-criteria compliance (this BDD suite)
 
@@ -38,17 +42,18 @@ structure. Behavioral parity against the ACs:
 | AC1 S01 save happy | ✅ | `@S01 @SUC-001` |
 | AC1 S02 single-mill | ➖ not-applicable | 21-mill data; unit-covered (same disposition as the story) |
 | AC1 S03 change + re-save | ✅ | `@S03` (asserts new statuses + old mill gone) |
-| AC1 S04/S05/S08 required blocks | ⚠️ contract-only | Not UI-reproducible on current default (Divergence #2); 400s proven via API |
+| AC1 S04/S05/S08 required blocks | ⚠️ contract-only | Not UI-reproducible on current default (DIV-2); 400s proven via API |
 | AC1 S06 closed saves + schedule blocked | ✅ | `@S06` (Home banner) + `@S06 @S20` (schedule 409 block) |
 | AC1 S07 no-status pair | ✅ | `@S07` |
 | AC2 context drives a schedule page | ✅ | `@drives-schedule` — schedule GET carries the saved mill/year |
+| AC2 context DISPLAYS on the schedule tombstone | ✅ | `@tombstone` — Schedule 2 header shows the saved mill + both track statuses (banner → tombstone, #227) |
 | AC3 AD-10 (verification, not red) | ✅ | Post-implementation assertions of observed behavior |
-| AC4 axe WCAG 2.1 AA, zero/triaged | ✅ | `@a11y` on landing + populated-banner (`wcag2a/2aa/21a/21aa`) → zero violations |
+| AC4 axe WCAG 2.1 AA, zero/triaged | ✅ | `@a11y` on landing + populated-banner + the Schedule 2 tombstone (`wcag2a/2aa/21a/21aa`) → zero violations |
 | AC5 CI wired or manual gate documented | ✅ (manual gate) | See **Manual verification gate** below; no CI (app+DB not containerized for CI here) |
 | AC6 data-reality confirmed, not invented | ✅ | All anchors grounded via live API 2026-07-30; finding queries pinned in `fixtures/sec/` |
 
 Residual vs the app team's suite: **S04/S05/S08 remain contract-only** here (the mount default pre-selects
-both dropdowns, so the empty state is UI-unreachable — Divergence #2). This also makes the app team's
+both dropdowns, so the empty state is UI-unreachable — DIV-2). This also makes the app team's
 browser `S04` **stale** (it assumed the old `514` default was absent). Flagged for BA/PO.
 
 ## Manual verification gate (HOME-1.5 AC5)
@@ -62,15 +67,19 @@ No CI wiring (the app + delivery Oracle are not containerized in this pipeline).
 
 **Symmetry check:** happy save (S01) + its banner variants (S06 closed still-saves, S07 null-status
 mill-line-only) + change/replace (S03) cover the positive/alternative arms; the mirror negative
-(required-field S04/S05/S08) is enforced server-side and proven at the contract (Coverage gap #1),
-UI-unreachable by Divergence #2 — not silently dropped. The context→page arm is covered both ways: it
+(required-field S04/S05/S08) is enforced server-side and proven at the contract (GAP-1),
+UI-unreachable by DIV-2 — not silently dropped. The context→page arm is covered both ways: it
 drives Schedule 1 (AC2) and blocks a closed mill's schedule (S06/S20). No asymmetric silent omission.
 
 **Cross-suite reconciliation (nr-ilcr/frontend/e2e — Story 1.5):** every journey it proved is now either
 ported here or explicitly accounted for — `home.spec.ts` S01/S03/S06/S07 ported; its `S04` browser test
-**superseded + flagged stale** (default changed `514`→`13050`, Divergence #2); S05/S08 same conclusion;
+**superseded + flagged stale** (default changed `514`→`13050`, DIV-2); S05/S08 same conclusion;
 `schedule-context.spec.ts` AC2 + closed-mill block **ported** (`context-drives-schedule.feature`);
 `app-shell.spec.ts` smoke subsumed by `openApp`'s Header assertion in every Background; **axe ported**.
+The bcgov **banner → tombstone** move (#227) added `tombstone.spec.ts` (the working-context *display*
+arm moved off Home onto the schedule pages' `ScheduleTombstone`); its S01/S03/S06/S07 are now **ported**
+(`schedule-tombstone.feature`, on Schedule 2). #227 also gutted `home.spec.ts` (display scenarios moved
+to the tombstone — still covered here on Home) and added a Vitest `Footer.test.tsx` (unit, not E2E).
 
 **Recorded coverage drop — `tombstone.spec.ts` (Story 1.5, schedule-*page* `ScheduleTombstone`):** deleted
 with this migration (it and its only page object `pages/schedule.ts` imported the retired `pages/home.ts`

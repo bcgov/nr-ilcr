@@ -159,8 +159,9 @@ describe('Schedule4 page', () => {
 
     // Re-open the newly created location — its saved amounts must be seeded into the panel.
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[2])
-    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('5000')
-    expect(screen.getByLabelText('Lakeside Dry Dump volume')).toHaveValue('2000')
+    // Editable numbers display thousands-grouped (commas).
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('5,000')
+    expect(screen.getByLabelText('Lakeside Dry Dump volume')).toHaveValue('2,000')
   })
 
   test('Edit seeds the location comments; Save sends the edited comments in the PUT', async () => {
@@ -179,7 +180,9 @@ describe('Schedule4 page', () => {
 
     // Edit the first row (Harbour Dump) — the panel seeds its stored comments.
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
-    const comments = screen.getByLabelText('Comments')
+    const comments = screen.getByLabelText(
+      'If you have any additional comments, please enter them here:',
+    )
     expect(comments).toHaveValue('Harbour dock notes')
 
     await userEvent.clear(comments)
@@ -188,6 +191,31 @@ describe('Schedule4 page', () => {
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect((captured as { comments: string }).comments).toBe('Updated dock notes')
+  })
+
+  test('Save stays on the record — the edit panel stays open and its row is highlighted', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        ),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // Panel stays open on the same record (not closed) …
+    expect(screen.getByText('Edit Location')).toBeInTheDocument()
+    // … and that location's list row is highlighted.
+    expect(screen.getByRole('cell', { name: 'Harbour Dump' }).closest('tr')).toHaveClass(
+      'schedule-4__row--editing',
+    )
   })
 
   test('blank name blocks save with the verbatim ERR-001 (no PUT fired)', async () => {
@@ -226,8 +254,8 @@ describe('Schedule4 page', () => {
         'To complete copy of Location: Harbour Dump, provide a new Location Name and invoke save.',
       ),
     ).toBeInTheDocument()
-    // Amounts cloned from the source.
-    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100000')
+    // Amounts cloned from the source (thousands-grouped).
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
   })
 
   test('Check Status renders the per-location results', async () => {
@@ -301,13 +329,67 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
       screen.getByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
-    await screen.findByText('Towing Total — Harbour Dump')
+    await screen.findByRole('table', { name: /Towing Total/i })
   }
 
   test('open a sub-page from a saved location (NAV-002) shows its rows', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
-    expect(screen.getByText('Deferred towing row')).toBeInTheDocument()
+    // Rows are inline-editable, so the description is an input value (not static text).
+    expect(screen.getByDisplayValue('Deferred towing row')).toBeInTheDocument()
+  })
+
+  test('clicking a sortable column header reorders the data rows', async () => {
+    const twoRows = () => {
+      const clone = doc()
+      clone.locations = [
+        {
+          ...harbour,
+          subPageRows: [
+            {
+              id: 8001,
+              code: 43,
+              description: 'Zebra row',
+              distance: 10,
+              volume: 100,
+              cost: 900,
+              cycle: null,
+              perUnit: null,
+            },
+            {
+              id: 8002,
+              code: 43,
+              description: 'Alpha row',
+              distance: 20,
+              volume: 200,
+              cost: 100,
+              cycle: null,
+              perUnit: null,
+            },
+          ],
+        },
+        emptyLanding,
+      ]
+      return clone
+    }
+    server.use(http.get(URL, () => HttpResponse.json(twoRows())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+    await userEvent.click(screen.getByRole('button', { name: /Towing Total \(2\)/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
+    await screen.findByRole('table', { name: /Towing Total/i })
+
+    // Rows are inline-editable — read the description inputs' values in DOM order to check row order.
+    const descOrder = () =>
+      screen
+        .getAllByRole('textbox', { name: /description \(row/i })
+        .map((el) => (el as HTMLInputElement).value)
+
+    // As-loaded order is Zebra then Alpha; sorting Description ascending flips them.
+    expect(descOrder()).toEqual(['Zebra row', 'Alpha row'])
+    await userEvent.click(screen.getByRole('button', { name: /^description$/i }))
+    expect(descOrder()).toEqual(['Alpha row', 'Zebra row'])
   })
 
   test('add a row PUTs the sub-resource and shows the API success message', async () => {
@@ -346,11 +428,36 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await openTowing()
 
     await userEvent.type(screen.getByLabelText('Description'), 'Added Towing')
-    await userEvent.type(screen.getByLabelText('Volume'), '5')
+    await userEvent.type(screen.getByLabelText('Volume (m³)'), '5')
     await userEvent.click(screen.getByRole('button', { name: /add row/i }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(screen.getByText('Added Towing')).toBeInTheDocument()
+    // The added row renders as an inline-editable input (value), not static text.
+    expect(screen.getByDisplayValue('Added Towing')).toBeInTheDocument()
+  })
+
+  test('editing an existing row and clicking Save PUTs the changed row', async () => {
+    let body: { cost?: unknown; description?: unknown } | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(`${ROWS_7001}/7013`, async ({ request }) => {
+        body = (await request.json()) as typeof body
+        return HttpResponse.json(
+          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    await openTowing()
+
+    // Edit the existing row's Cost cell inline, then Save (row edits persist only on Save).
+    const cost = screen.getByRole('textbox', { name: /cost \$ \(row 7013\)/i })
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '12345')
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() =>
+      expect(body).toMatchObject({ cost: 12345, description: 'Deferred towing row' }),
+    )
   })
 
   test('blank description blocks Add with Value Required (no POST)', async () => {
@@ -395,18 +502,18 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
-  test('Cancel returns from a sub-page to the location list', async () => {
+  test('Back returns from a sub-page to the location list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openTowing()
-    expect(screen.getByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
 
-    // The action-bar Cancel (scoped — the always-rendered delete-confirm modal also has a "Cancel").
-    const [cancel] = screen
-      .getAllByRole('button', { name: /^cancel$/i })
+    // The action-bar Back (scoped — the always-rendered delete-confirm modal has a "Cancel").
+    const [back] = screen
+      .getAllByRole('button', { name: /^back$/i })
       .filter((b) => b.closest('.schedule-4__panel-actions'))
-    await userEvent.click(cancel)
+    await userEvent.click(back)
 
-    expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
     // Back on the list.
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
   })
@@ -422,14 +529,14 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
-    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
     // The level is reflected in the URL search (loc + sub) — refreshable / shareable.
     expect(router.state.location.search).toMatchObject({ loc: 7001, sub: 'TOWING' })
 
     // Browser Back pops the sub-page entry and returns to the location list.
     router.history.back()
     await waitFor(() =>
-      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
+      expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument(),
     )
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
     expect(router.state.location.search).toEqual({})
@@ -446,16 +553,16 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
     await userEvent.click(screen.getByRole('button', { name: /^continue$/i }))
-    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
 
-    // The in-app Cancel/Back navigates with replace: true (index.tsx:529), collapsing the sub-page
-    // entry into the list rather than pushing a new one.
-    const [cancel] = screen
-      .getAllByRole('button', { name: /^cancel$/i })
+    // The in-app Back navigates with replace: true (index.tsx:529), collapsing the sub-page entry
+    // into the list rather than pushing a new one.
+    const [back] = screen
+      .getAllByRole('button', { name: /^back$/i })
       .filter((b) => b.closest('.schedule-4__panel-actions'))
-    await userEvent.click(cancel)
+    await userEvent.click(back)
     await waitFor(() =>
-      expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument(),
+      expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument(),
     )
     expect(router.state.location.search).toEqual({})
 
@@ -463,7 +570,7 @@ describe('Schedule4 sub-pages (Story 10.6)', () => {
     // Back skips past the sub-page rather than re-opening it — the intended replace: true behavior.
     router.history.back()
     await waitFor(() => expect(router.state.location.search).toEqual({}))
-    expect(screen.queryByText('Towing Total — Harbour Dump')).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /Towing Total/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add new location/i })).toBeInTheDocument()
   })
 })
@@ -632,7 +739,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
     // A View sub-page opens directly — no NAV-002/003 confirm.
     await userEvent.click(screen.getByRole('button', { name: /Towing Total \(1\)/i }))
-    expect(await screen.findByText('Towing Total — Harbour Dump')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
     expect(
       screen.queryByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
     ).not.toBeInTheDocument()
@@ -675,6 +782,6 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /save and continue/i }))
 
-    expect(await screen.findByText('Towing Total — New Dump')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
   })
 })

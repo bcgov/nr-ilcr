@@ -105,76 +105,17 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
       """)
   Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
 
-  /**
-   * Schedule 3 PO&amp;P Timber volume (cost-item 118), carried onto {@code purchasedLogCost.volume}
-   * and {@code purchasedWoodOverhead.volume} (BR-03). Empty when the Schedule 3 source is absent.
-   */
-  @Query("""
-      SELECT d.VOLUME
-        FROM THE.ILCR_COST_REPORT_DETAIL d
-        JOIN THE.ILCR_REPORT_SUMMARY s
-          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
-       WHERE s.ILCR_MILL_ID = :millId
-         AND s.REPORT_YEAR = :year
-         AND s.ILCR_CATEGORY_ID = '3'
-         AND d.ILCR_REPORT_COST_ITEM_ID = 118
-       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
-       FETCH FIRST 1 ROW ONLY
-      """)
-  Optional<BigDecimal> findSch3PopTimberVolume(@Param("millId") long millId, @Param("year") int year);
+  // Schedule 3 carried figures (PO&P + Crown timber volumes, Subtotal Actual Costs PO&P/Crown columns,
+  // Silviculture Admin crown) are NOT read here — Schedule2Service sources them from the Schedule 3
+  // computed document (Schedule3Service), matching the legacy Schedule2MB which reads the Schedule 3
+  // model. Stored ad-hoc item reads (e.g. a persisted "item 135") were wrong: PO&P actual cost is a
+  // computed Schedule-3 subtotal, not a persisted detail row.
 
-  /**
-   * Schedule 3 PO&amp;P actual cost (cost-item 135), carried onto {@code purchasedWoodOverhead.cost}
-   * (BR-04). Empty when the Schedule 3 source is absent.
-   */
-  @Query("""
-      SELECT d.COST
-        FROM THE.ILCR_COST_REPORT_DETAIL d
-        JOIN THE.ILCR_REPORT_SUMMARY s
-          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
-       WHERE s.ILCR_MILL_ID = :millId
-         AND s.REPORT_YEAR = :year
-         AND s.ILCR_CATEGORY_ID = '3'
-         AND d.ILCR_REPORT_COST_ITEM_ID = 135
-       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
-       FETCH FIRST 1 ROW ONLY
-      """)
-  Optional<Integer> findSch3PopActualCost(@Param("millId") long millId, @Param("year") int year);
-
-  /**
-   * Schedule 3 Crown Timber volume (item 119), stored as {@code ILCR_REPORT_SUMMARY.CROWN_VOLUME} on
-   * the category-{@code "3"} summary. Empty when the Schedule 3 summary is absent (or Crown null).
-   */
-  @Query("""
-      SELECT CROWN_VOLUME
-        FROM THE.ILCR_REPORT_SUMMARY
-       WHERE ILCR_MILL_ID = :millId
-         AND REPORT_YEAR = :year
-         AND ILCR_CATEGORY_ID = '3'
-       ORDER BY ILCR_REPORT_SUMMARY_ID
-       FETCH FIRST 1 ROW ONLY
-      """)
-  Optional<BigDecimal> findSch3CrownVolume(@Param("millId") long millId, @Param("year") int year);
-
-  /**
-   * Schedule 1 Subtotal Company Logging cost (cost-item 144), a detail row on the category-{@code "1"}
-   * summary. Feeds the {@code totalCompanyLogging.cost} legacy formula. Empty when the Schedule 1
-   * source is absent. First-row-wins ({@code FETCH FIRST 1 ROW ONLY}) so a duplicate detail row in
-   * real data is tolerated rather than throwing {@code IncorrectResultSizeDataAccessException} (500).
-   */
-  @Query("""
-      SELECT d.COST
-        FROM THE.ILCR_COST_REPORT_DETAIL d
-        JOIN THE.ILCR_REPORT_SUMMARY s
-          ON s.ILCR_REPORT_SUMMARY_ID = d.ILCR_REPORT_SUMMARY_ID
-       WHERE s.ILCR_MILL_ID = :millId
-         AND s.REPORT_YEAR = :year
-         AND s.ILCR_CATEGORY_ID = '1'
-         AND d.ILCR_REPORT_COST_ITEM_ID = 144
-       ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
-       FETCH FIRST 1 ROW ONLY
-      """)
-  Optional<Integer> findSch1SubtotalLoggingCost(@Param("millId") long millId, @Param("year") int year);
+  // Schedule 1 Subtotal Company Logging cost is NOT the stored item 144 — the legacy
+  // Schedule1DO.getSubtotalLoggingCost is a COMPUTED sum (harvest cost blocks + Subtotal Other Costs,
+  // excluding Forest Management Admin). Schedule2Service derives it from Schedule 1's computed document
+  // (Schedule1Service: subtotalCompanyLoggingCost − forestMgmtAdminCost). Only the two silviculture $
+  // terms below (items 1/2) are stored CostVolumeType costs read directly.
 
   /**
    * Schedule 1 Silviculture Actual $ Spent cost (cost-item 1) — the fixed detail row (NULL

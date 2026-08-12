@@ -29,12 +29,56 @@ function resolvePython(): string {
 
 const PYTHON = resolvePython();
 
-function run(...args: string[]): void {
-  execFileSync(PYTHON, [SCRIPT, ...args], { stdio: 'pipe' });
+function run(...args: string[]): string {
+  return execFileSync(PYTHON, [SCRIPT, ...args], { stdio: 'pipe' }).toString();
 }
 
-export const snapshotSchedule1 = (millId: number, year: number): void =>
+export const snapshotSchedule1 = (millId: number, year: number): void => {
   run('snapshot', String(millId), String(year));
+};
 
-export const restoreSchedule1 = (millId: number, year: number): void =>
+export const restoreSchedule1 = (millId: number, year: number): void => {
   run('restore', String(millId), String(year));
+};
+
+/**
+ * How many detail rows currently hold a non-null VOLUME. S02 asserts 0 to prove the crown pre-fill is
+ * SERVED ONLY — the GET renders the pre-filled values, so only the stored column can tell the two apart.
+ */
+export const countSchedule1Volumes = (millId: number, year: number): number =>
+  Number(run('count-volumes', String(millId), String(year)).trim());
+
+/**
+ * NULL the volume-only fields (143/144/139/140) at the DB, as a belt-and-braces finish to the
+ * blank-fields restore PUT.
+ *
+ * NO LONGER STRICTLY REQUIRED as of 2026-08-11 — it existed because `Schedule1Service` used to treat a
+ * null on these fields as "field omitted", so the restore PUT could not blank them (defects.md BUG-2,
+ * issue #260). That is fixed (commit `3ee9ff2`): the restore PUT now clears them on its own, which makes
+ * this call idempotent rather than load-bearing. Retained deliberately — it is cheap and it keeps
+ * teardown correct even if the write path regresses — but it is the thing to delete first if the suite
+ * is ever made to run without python-oracledb (see the note in `steps/fixtures/sch1.ts`).
+ */
+export const blankGuardedSchedule1Volumes = (millId: number, year: number): void => {
+  run('blank-guarded', String(millId), String(year));
+};
+
+/**
+ * Put a schedule into the genuine first-entry state the S02 crown pre-fill needs: NULL every stored
+ * detail volume AND remove its item-19 Other-Costs rows.
+ *
+ * Both halves are still required, but for different reasons than when this was written (updated
+ * 2026-08-11, after BUG-2 / BUG-3 were fixed in commit `3ee9ff2`):
+ *  - Nulling at the DB: a blanking PUT can now clear the five volume-only fields, but it only reaches
+ *    the fields in the PUT contract — the pre-fill trigger `allVolumesEmpty` looks at EVERY stored
+ *    detail volume, so the DB is still the only way to guarantee the state.
+ *  - Removing the item-19 rows: this is now about matching what a real first entry looks like (its
+ *    Other-Costs rows are created later, through the sub-page), NOT about dodging a 500. Leaving a
+ *    shared item-19 row with a null volume used to make the GET throw in `toOtherCosts` (BUG-3);
+ *    that is fixed, so it would now pre-fill correctly — but a first entry has no such rows anyway.
+ *
+ * Always call `snapshotSchedule1` first and register the key for teardown.
+ */
+export const makeSchedule1FirstEntry = (millId: number, year: number): void => {
+  run('first-entry', String(millId), String(year));
+};

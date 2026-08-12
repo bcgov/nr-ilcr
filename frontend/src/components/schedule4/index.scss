@@ -17,6 +17,11 @@
 
 .schedule-4__num {
   text-align: right;
+
+  // Right-align the entered numbers too, so editable inputs line up with the read-only cells.
+  .cds--text-input {
+    text-align: right;
+  }
 }
 
 .schedule-4__actions {
@@ -28,6 +33,12 @@
 .schedule-4__row-actions {
   display: flex;
   gap: $spacing-02;
+}
+
+// Highlight the location row currently open in the editor panel so it's clear which record is being
+// edited (the panel sits below the still-visible list).
+.schedule-4__row--editing td {
+  background-color: var(--cds-highlight);
 }
 
 .schedule-4__panel {
@@ -85,11 +96,24 @@
   padding-inline: 0;
 }
 
-.schedule-4__subpage-header {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-03;
-  margin-block-end: $spacing-05;
+// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title both read
+// at 20px (the two sub-page headers).
+.schedule-4__subpage-title {
+  font-size: 20px;
+  margin-block: $spacing-05 $spacing-03;
+  text-align: left;
+}
+
+.schedule-4__subpage-table .cds--data-table-header__title {
+  font-size: 20px;
+  text-align: left;
+}
+
+// The sub-page is an editable data grid (left-aligned inputs), so left-align its numeric column
+// headers + cells too — they otherwise stay right-aligned (the shared .schedule-4__num rule) and don't
+// line up with the input text. Matches the legacy Towing/Rehaul/Other table (text-align: left).
+.schedule-4__subpage-table .schedule-4__num {
+  text-align: left;
 }
 
 .schedule-4__subpage-form {
@@ -98,6 +122,12 @@
   align-items: flex-end;
   gap: $spacing-05;
   margin-block-end: $spacing-06;
+}
+
+// The compact Add-row button: 32px, overriding the global 40px button height (the CSS var drives both
+// the min-height and the centering padding, so the label stays vertically centred).
+.schedule-4__add-row {
+  --cds-layout-size-height-local: 2rem;
 }
 
 // Sub-page summary row (last row of the table): totals of the respective columns, set apart from the

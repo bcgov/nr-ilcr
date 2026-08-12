@@ -16,12 +16,22 @@ Feature: Report Average Cost of Logging (Schedule 1) — enter and save line ite
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 1
     And I enter the following Schedule 1 amounts:
-      | line item                     | volume | cost |
-      | Standing Tree to Loaded Truck | 100    | 5000 |
-      | Actual $ Spent                | 200    | 300  |
+      | line item                                       | volume | cost |
+      | Standing Tree to Loaded Truck                   | 100    | 5000 |
+      | Actual $ Spent                                  | 200    | 300  |
+      | Forest Management Administration Costs (Sch 3)  | 400    |      |
+      | Subtotal Company Logging Cost (no Silviculture) | 500    |      |
+      | Less Silviculture Admin Costs                   | 600    |      |
+      | Total Silviculture (As per Financial Statements) | 700   |      |
     And I enter Schedule 1 comments "E2E S01 happy-path probe"
     And I save Schedule 1
     Then I should see the message "Data saved successfully"
     And the saved Schedule 1 should have line item 12 with volume 100 and cost 5000
     And the saved Schedule 1 should have Actual Spent silviculture with volume 200 and cost 300
+    # The four volume-only rows restored to legacy parity by backend commit 0b58057 — their cost is a
+    # Schedule 3 pull (143/139) or derived (144/140), so only the volume round-trips through the PUT.
+    And the saved Schedule 1 should have line item 143 with volume 400
+    And the saved Schedule 1 should have line item 144 with volume 500
+    And the saved Schedule 1 should have "Less Silviculture Admin" silviculture with volume 600
+    And the saved Schedule 1 should have "Total Silviculture" silviculture with volume 700
     And the saved Schedule 1 comments should be "E2E S01 happy-path probe"
