@@ -122,6 +122,18 @@ body {
   }
 }
 
+// The subtle row-hover tint inside .schedule-page is a near-black overlay tuned for the light
+// theme; in dark mode (g100) that same overlay paints the hovered row DARKER, which reads as a
+// stuck dark patch — most visible on Table Maintenance, where the cursor stays over a row while it
+// is being edited. Use a light overlay of the same weight so the hover reads as a subtle lift in
+// dark mode. Scoped to the dark theme so the light-theme tint above is untouched.
+:root[data-carbon-theme='g100'] {
+  .schedule-page .#{$bcgov-prefix}--data-table tbody tr:hover td,
+  .schedule-page .#{$bcgov-prefix}--data-table tbody tr:hover th {
+    background-color: rgba(255, 255, 255, 0.06);
+  }
+}
+
 .app-section {
   margin-block-start: $spacing-05;
 }
