@@ -47,6 +47,12 @@ export const COST_BANDS = {
  * `<f:ajax event="change">` (`schedule5AccessExpenses.xhtml:63`) and the Camp grid's does not
  * (`schedule5CampExpenses.xhtml:64-67`), so legacy genuinely defers the Camp check to Save.
  * Validating both on change would erase the distinction the two slices exist to describe.
+ *
+ * The scope is per INPUT, not per grid: legacy's `f:ajax` processes only the input that changed, so
+ * a change validates THAT row's description and nothing else. Whole-grid validation on change would
+ * flag untouched rows — including a legally-stored blank description (deviation (F)) the licensee
+ * never touched. And no COST validates on change on either page: neither cost input carries
+ * `f:ajax`, so the bands surface at Add/Save exactly like the Camp description.
  */
 export const VALIDATES_ROW_ON_CHANGE: Record<SubPageKind, boolean> = {
   CAMP: false,
@@ -71,6 +77,13 @@ const validateDescription = (raw: string, required: boolean): string | null => {
   }
   return null
 }
+
+/**
+ * The change-driven check for ONE row's description — the `f:ajax event="change"` analog. Returns
+ * the error for that single field, or null; the caller touches no other row's errors.
+ */
+export const validateDescriptionOnChange = (row: SubPageRowForm): string | null =>
+  validateDescription(row.description, true)
 
 /**
  * Validate a cost entry for one page. Blank is VALID — a null cost is storable and is what Check

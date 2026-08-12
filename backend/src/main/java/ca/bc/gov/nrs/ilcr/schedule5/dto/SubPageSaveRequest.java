@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 /**
@@ -14,15 +15,19 @@ import java.util.List;
  * reproduces both operations atomically. A per-row API cannot express "the user cleared one
  * description and edited two costs, then hit Save" as one write.
  *
- * <p>An <strong>empty or null</strong> list is legal and clears every row for that camp and item —
- * it is the reconcile's delete-all case, not a validation error.
+ * <p>An <strong>empty</strong> list is legal and clears every row for that camp and item — it is the
+ * reconcile's delete-all case, not a validation error. An <strong>omitted or null</strong> list is a
+ * 400: because absence means delete-everything here, a malformed body (a typoed key, a truncated
+ * payload, a serializer bug) must fail loudly rather than silently destroy data. The intentional
+ * clear is always spelled {@code "rows": []} — which is also the only form legacy could produce,
+ * since its Save posted the rendered list every time. Null <em>elements</em> are rejected for the
+ * same reason: {@code {"rows":[null]}} deserializes cleanly and would otherwise NPE inside the
+ * transaction as a 500.
  *
  * @param rows the complete row set the camp should hold after this call
  */
-public record SubPageSaveRequest(@Valid List<SubPageRowRequest> rows) {
-
-  /** The submitted rows, never null — an omitted array is the same as an empty one. */
-  public List<SubPageRowRequest> rowsOrEmpty() {
-    return rows == null ? List.of() : rows;
-  }
+public record SubPageSaveRequest(
+    @NotNull(message = "rows is required")
+    List<@NotNull(message = "rows must not contain null entries") @Valid SubPageRowRequest>
+        rows) {
 }

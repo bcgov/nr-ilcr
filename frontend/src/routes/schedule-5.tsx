@@ -18,7 +18,9 @@ export const Route = createFileRoute('/schedule-5')({
     const sub = search.sub
     const validSub = sub === 'CAMP' || sub === 'ACCESS' ? sub : undefined
     return {
-      camp: camp != null && Number.isFinite(camp) ? camp : undefined,
+      // A camp id is a positive integer; Number.isFinite alone admits 3.5 or -1, which would mount
+      // the sub-page and 400 at the server instead of falling back to the camp list as promised.
+      camp: camp != null && Number.isInteger(camp) && camp > 0 ? camp : undefined,
       sub: validSub,
     }
   },

@@ -703,15 +703,19 @@ const Schedule5: FC = () => {
   /**
    * The sub-page confirm ladder (AC13/S05), `schedule4/index.tsx` as the shape.
    *
-   * Three distinct behaviours, and the difference is which camp the panel is showing:
+   * Three distinct behaviours, and the difference is whether the panel's camp EXISTS server-side:
    *
-   * - **New camp** → CFM-004. The camp does not exist yet, so there is nothing to navigate to;
-   *   legacy's `goToOtherCampExpensesForNewCamp()` (`Schedule5MB.java:212-217`) saves first.
+   * - **Unsaved camp (new OR copy)** → CFM-004. The camp does not exist yet, so there is nothing to
+   *   navigate to; legacy's `goToOtherCampExpensesForNewCamp()` (`Schedule5MB.java:212-217`) saves
+   *   first. A copy is an unsaved camp exactly like a new one (`panelCampId` is null on both) —
+   *   routing it to CFM-002 instead would confirm a navigation `openSubPage` then silently drops.
    * - **Existing camp** → CFM-002 and navigate WITHOUT saving. `Schedule5MB.java:195-203` does no
    *   save at all here, so any unsaved panel edit is genuinely discarded — which is exactly what
    *   CFM-002 warns about.
    * - **Read-only** → navigate with no confirm. There is no unsaved data to lose.
    */
+  const panelIsUnsavedCamp = panelMode === 'new' || panelMode === 'copy'
+
   const openSubPage = (kind: SubPageKind, campId: number | null) => {
     if (campId === null) {
       return
@@ -735,11 +739,14 @@ const Schedule5: FC = () => {
   }
 
   /**
-   * CFM-004 Yes: save the new camp, then navigate ONLY on success.
+   * CFM-004 Yes: save the unsaved (new or copied) camp, then navigate ONLY on success.
    *
    * Legacy dereferences `savedCampId.toString()` (`Schedule5MB.java:215`) with no null guard, so a
    * duplicate name or an ILCSException NPEs the page (deviation (J)). Here the error renders on the
    * camp panel with every entered value still in place, and no navigation happens.
+   *
+   * This fires only from the CFM-004 modal, which opens only for an UNSAVED camp — so the save is
+   * always a POST; an existing camp's link goes through CFM-002 with no save at all.
    */
   const confirmSubPageSave = () => {
     const kind = pendingSubPage
@@ -754,19 +761,22 @@ const Schedule5: FC = () => {
       return
     }
     const savedName = form.campName.trim()
-    const isUpdate = panelMode === 'edit' && panelCampId !== null
-    const body = buildRequest(form, isUpdate ? panelRevision : null)
-    const axios = apiService.getAxiosInstance()
+    const body = buildRequest(form, null)
+    // The ids served BEFORE the save: the created camp is the one the echo carries that this set
+    // does not. Matching by name instead is fragile — any server-side normalization of the name
+    // breaks the lookup, and its miss fell back to a null id, a silent no-navigation after the
+    // user confirmed a save-and-go.
+    const knownIds = new Set((data?.camps ?? []).map((camp) => camp.campId))
     runMutation(
-      isUpdate
-        ? axios.put<Schedule5Response>(`${CAMPS_PATH}/${String(panelCampId)}?${query}`, body)
-        : axios.post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
+      apiService.getAxiosInstance().post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
       (document) => {
-        applySaved(document, savedName, isUpdate ? panelCampId : null)
-        // Locate the camp the save just produced by NAME: a create has no id to echo back, and the
-        // document is the only place the server-assigned one appears.
+        applySaved(document, savedName, null)
+        const created = document.camps.find((camp) => !knownIds.has(camp.campId))
+        // Name-match fallback for the degenerate case of an echo missing a new id entirely.
         const target =
-          document.camps.find((camp) => camp.campName === savedName)?.campId ?? panelCampId
+          created?.campId ??
+          document.camps.find((camp) => camp.campName === savedName)?.campId ??
+          null
         openSubPage(kind, target)
       },
       'Camp could not be saved.',
@@ -810,6 +820,19 @@ const Schedule5: FC = () => {
         campId={subPageCampId}
         kind={subPageKind}
         onBack={() => {
+          // The camp document was loaded BEFORE the sub-page edits: its "(n)" link counts and
+          // roll-up totals are stale the moment a row was added or deleted, and the load hook only
+          // re-fetches on a mill/year change. Refresh alongside the navigation; a failed refresh
+          // keeps the stale document rather than blanking a working page (a reload recovers).
+          apiService
+            .getAxiosInstance()
+            .get<Schedule5Response>(`${SCHEDULE5_PATH}?${query}`)
+            .then((response) => {
+              if (isCurrent()) {
+                setData(response.data)
+              }
+            })
+            .catch(() => undefined)
           void navigate({ to: '/schedule-5', search: {} })
         }}
       />
@@ -1118,10 +1141,11 @@ const Schedule5: FC = () => {
         <p>{CONFIRM_CAMP_SWITCH}</p>
       </Modal>
 
-      {/* CFM-004 — the NEW-camp ladder only. Yes saves and then navigates; a failed save renders on
-          the panel and does NOT navigate (deviation (J), where legacy NPEs). */}
+      {/* CFM-004 — the UNSAVED-camp ladder (new AND copy: both have no server-side camp yet). Yes
+          saves and then navigates; a failed save renders on the panel and does NOT navigate
+          (deviation (J), where legacy NPEs). */}
       <Modal
-        open={pendingSubPage !== null && panelMode === 'new'}
+        open={pendingSubPage !== null && panelIsUnsavedCamp}
         modalHeading="Save camp report"
         primaryButtonText="Yes"
         secondaryButtonText="No"
@@ -1139,7 +1163,7 @@ const Schedule5: FC = () => {
       {/* CFM-002 — from an EXISTING camp. Legacy issues no save here (Schedule5MB.java:195-203), so
           this genuinely discards the panel's unsaved edits, which is what the message warns about. */}
       <Modal
-        open={pendingSubPage !== null && panelMode !== 'new'}
+        open={pendingSubPage !== null && !panelIsUnsavedCamp}
         modalHeading="Leave camp report"
         primaryButtonText="Yes"
         secondaryButtonText="No"

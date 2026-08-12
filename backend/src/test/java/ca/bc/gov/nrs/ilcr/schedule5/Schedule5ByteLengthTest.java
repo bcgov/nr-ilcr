@@ -210,15 +210,17 @@ class Schedule5ByteLengthTest {
   }
 
   @Test
-  @DisplayName("sub-page cost: the DTO carries the WIDER band; the camp narrowing is the service's")
-  void dtoCarriesTheWiderCostBand() {
-    // One DTO serves both pages, so its declarative cap is Access's ±99,999,999. A value legal here
-    // but illegal on the camp page (10,000,000) must therefore pass VALIDATION and be rejected by
-    // Schedule5Service.validateSubPageCosts instead — proved end-to-end in
-    // Schedule5SubPageValidationIT. If someone ever tightened this annotation to ±9,999,999, the
-    // Access page would silently lose a decimal order of magnitude and only that IT would notice.
+  @DisplayName("sub-page cost: the DTO carries NO band — both pages' bounds are the service's")
+  void dtoCarriesNoCostBand() {
+    // Review patch (2026-08-12): a declarative @Min/@Max at Access's wider ±99,999,999 fired BEFORE
+    // Schedule5Service.validateSubPageCosts, so a camp-page cost beyond the wide bound was rejected
+    // with the ACCESS message instead of costSize7ValidatorErrorMsg (AD-8). Both bounds now live in
+    // the service, each with its own key — so EVERY int must pass bean validation here, and
+    // Schedule5SubPageValidationIT proves each page's own bound and message end-to-end. If someone
+    // re-adds an annotation, the wrong-message defect comes back and this fails first.
     assertTrue(validator.validate(new SubPageRowRequest(null, "Wide", 10_000_000)).isEmpty());
     assertTrue(validator.validate(new SubPageRowRequest(null, "Max", 99_999_999)).isEmpty());
-    assertEquals(1, validator.validate(new SubPageRowRequest(null, "Over", 100_000_000)).size());
+    assertTrue(validator.validate(new SubPageRowRequest(null, "Over", 100_000_000)).isEmpty());
+    assertTrue(validator.validate(new SubPageRowRequest(null, "Min", -100_000_000)).isEmpty());
   }
 }

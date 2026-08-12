@@ -39,7 +39,7 @@ ALTER TABLE THE.ILCR_COST_REPORT_DETAIL MODIFY (ITEM_DESCRIPTION VARCHAR2(120));
 -- both clear of Schedule 5 write's 8200-8229/8230-8299, Schedule 6's 8301-8399, Schedule 5 read's
 -- 8401-8410/8411-8438 and Schedule 8's >= 8500, and both BELOW the sequence starts
 -- (ILCR_REPORT_COMMON_SEQ 9500, ILCR_COST_REPORT_DETAIL_SEQ 9000) so ids the app draws at runtime
--- cannot collide with a fixture. Mills 680-686 are likewise new: seeded mill ids stop at 676 and do
+-- cannot collide with a fixture. Mills 680-683 are likewise new: seeded mill ids stop at 676 and do
 -- not resume until 1001. Registered in db/README.md.
 --
 -- Isolation model (the V21/V32 lesson, restated by V20260807): a context is (mill, YEAR), so every
@@ -70,6 +70,8 @@ ALTER TABLE THE.ILCR_COST_REPORT_DETAIL MODIFY (ITEM_DESCRIPTION VARCHAR2(120));
 --                                                             indistinguishable and a same-day
 --                                                             baseline could not falsify a re-stamp.
 --   2023  camp 8708, one item-62 row cost 9999999          -> rejection probes only; mutates nothing
+--   2028  camp 8718, one item-62 row with desc AND cost    -> the UPDATE-to-NULL proof (a cleared
+--                                                             field is cleared, not kept)
 -- ================================================================================================
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (680, 'Sch5 SubPage Milling', 680, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (680, 'ACT', 'SEED');
@@ -85,6 +87,7 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2025, 680, 'D', 'SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2026, 680, 'D', 'SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2027, 680, 'D', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2028, 680, 'D', 'SEED');
 
 -- 2016: the reconcile round trip. Camp volume 120000 is the item-141/142 stamp, so the CAMP footer
 -- volume must be 3 x 120000 = 360000 while the ACCESS footer volume stays 120000 -- deviation (C)
@@ -197,6 +200,15 @@ INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CAT
   VALUES (8717, 2027, 680, '5', 'Validation Camp', NULL, NULL, 45000, 'N', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID) VALUES (8761, 8717, 141, 45000, NULL, 0, 'SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID) VALUES (8762, 8717, 142, 45000, NULL, 0, 'SEED');
+
+-- 2028: the UPDATE-to-NULL target (review patch, 2026-08-12). One row seeded with BOTH a description
+-- and a cost, so an update sending {description: null, cost: null} proves a cleared field is written
+-- NULL rather than silently kept (the NVL regression every other update fixture, all non-null,
+-- could not catch). Its own camp/year: the update MUTATES, so it cannot share the fingerprint camp.
+INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8718, 2028, 680, '5', 'Clear Fields Camp', NULL, NULL, 30000, 'N', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID) VALUES (8763, 8718, 141, 30000, NULL, 0, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID) VALUES (8764, 8718, 62, NULL, 4000, 'Clear Me', 0, 'SEED');
 
 -- ================================================================================================
 -- Mill 681 -- NON-Draft (Submitted). The write-gate 409 target for every sub-page verb.

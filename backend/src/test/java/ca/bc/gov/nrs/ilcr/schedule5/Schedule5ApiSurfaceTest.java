@@ -152,10 +152,14 @@ class Schedule5ApiSurfaceTest {
   }
 
   @Test
-  @DisplayName("the sub-resource nests exactly ONE level — no deeper route exists")
+  @DisplayName("the sub-resource nests exactly ONE level — no deeper route exists on either page")
   void noDeeperNesting() throws Exception {
-    mockMvc.perform(get("/api/v1/schedule5/camps/8700/other-camp-expenses/8722/details")
-            .param("millId", "680").param("year", "2016"))
-        .andExpect(status().isNotFound());
+    // Both twins probed: asserting only the camp page would leave half the negative-space contract
+    // unpinned (review patch, 2026-08-12).
+    for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
+      mockMvc.perform(get("/api/v1/schedule5/camps/8700/" + page + "/8722/details")
+              .param("millId", "680").param("year", "2016"))
+          .andExpect(status().isNotFound());
+    }
   }
 }

@@ -117,6 +117,19 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
     }
 
     @Test
+    @DisplayName("CAMP: 100,000,000 still gets the CAMP message, not the Access one")
+    void campBeyondWideBoundGetsCampMessage() throws Exception {
+      // The review patch that moved the wide bound out of the DTO: a declarative ±99,999,999 on
+      // SubPageRowRequest fired BEFORE the service's per-page narrowing, so a Camp cost past the
+      // WIDE bound was rejected with the ACCESS message. Both bounds now live in the service, each
+      // paired with its own key (AD-8).
+      save(CAMP_ROWS, row("Way Too Big", "100000000"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.detail").value(CAMP_COST_MSG));
+      assertNothingPersisted();
+    }
+
+    @Test
     @DisplayName("ACCESS: 10,000,000 is ACCEPTED — the camp bound does not apply here")
     void accessAcceptsCampOverMax() throws Exception {
       // The sharp case: the same value the camp page rejects is legal on the access page. This is
@@ -192,6 +205,40 @@ class Schedule5SubPageValidationIT extends AbstractOracleIT {
               .content("{\"rows\":[{\"rowId\":null,\"description\":\"" + description
                   + "\",\"cost\":1}]}"))
           .andExpect(status().isOk());
+    }
+  }
+
+  @Nested
+  @DisplayName("malformed bodies are 400s, never silent deletes or 500s")
+  class MalformedBodies {
+
+    @Test
+    @DisplayName("an omitted rows field is 400 — absence must never mean delete-everything")
+    void omittedRowsFieldRejected() throws Exception {
+      // A typoed key, a truncated payload or a serializer bug produces {} — before the review
+      // patch (@NotNull on rows, 2026-08-12) that body validated cleanly and CLEARED the list.
+      // The intentional clear is always spelled "rows": [].
+      save(CAMP_ROWS, "{}")
+          .andExpect(status().isBadRequest());
+      assertNothingPersisted();
+    }
+
+    @Test
+    @DisplayName("a null rows field is 400 for the same reason")
+    void nullRowsFieldRejected() throws Exception {
+      save(CAMP_ROWS, "{\"rows\":null}")
+          .andExpect(status().isBadRequest());
+      assertNothingPersisted();
+    }
+
+    @Test
+    @DisplayName("a null element inside rows is 400, not an NPE-in-transaction 500")
+    void nullRowElementRejected() throws Exception {
+      // Jackson deserializes {"rows":[null]} into a list containing null, and @Valid cascades skip
+      // null elements — without the element-level @NotNull the first dereference NPEs into a 500.
+      save(CAMP_ROWS, "{\"rows\":[null]}")
+          .andExpect(status().isBadRequest());
+      assertNothingPersisted();
     }
   }
 

@@ -34,8 +34,8 @@ import org.springframework.test.context.TestPropertySource;
  * claims its own year on mill 680 and nothing here touches Story 7.2's mills 670–676: 2016 the
  * reconcile round trip, 2017 the immediate delete, 2018 insert-from-empty and empty-clears, 2019 the
  * deviation-(L) probe, 2020 the foreign-row 404 pair, 2021 the cross-item 404, 2022 the audit-column
- * proof. 2023 is never mutated — it holds rejection probes whose fingerprint is the
- * nothing-persisted proof.
+ * proof, 2028 the update-to-null proof. 2023 is never mutated — it holds rejection probes whose
+ * fingerprint is the nothing-persisted proof.
  *
  * <p><strong>Every write branch is followed by a FRESH {@code GET}</strong>, never only the echo:
  * the echoed document comes from the same in-transaction builder, so it can agree with a write that
@@ -153,6 +153,26 @@ class Schedule5SubPageIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("AC7/deviation (L) — the zero-not-null propagates into the camp document's roll-ups")
+  void deviationPropagatesIntoCampDocument() throws Exception {
+    // Camp 8703/2019: one item-62 row with cost NULL plus a non-null item-141 volume, mirrored on
+    // the access side. The sub-page footers are pinned by deviationLiveOnBothSides; THIS pins the
+    // trap-5 propagation — the camp-side 0 flows into Camp Sub-Total, Camp Total and Camp and
+    // Access, while the access side's roll-up stays absent (review patch, 2026-08-12).
+    String body = mockMvc.perform(get("/api/v1/schedule5").param("millId", String.valueOf(MILL))
+            .param("year", "2019"))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    JsonNode camp = findCamp(mapper.readTree(body), 8703);
+
+    assertThat(camp.get("otherCampExpenses").get("cost").asInt()).isZero();
+    assertThat(camp.get("otherAccessExpenses").has("cost")).isFalse();
+    assertThat(camp.get("campSubTotal").get("cost").asInt()).isZero();
+    assertThat(camp.get("campTotal").get("cost").asInt()).isZero();
+    assertThat(camp.get("campAndAccessTotal").get("cost").asInt()).isZero();
+  }
+
+  @Test
   @DisplayName("AC7 — the camp document's counts and roll-up costs agree with the sub-pages")
   void campDocumentAgreesWithSubPages() throws Exception {
     String body = mockMvc.perform(get("/api/v1/schedule5").param("millId", String.valueOf(MILL))
@@ -226,6 +246,17 @@ class Schedule5SubPageIT extends AbstractOracleIT {
 
     // The ACCESS side is untouched — this endpoint writes item 62 only.
     assertThat(getDoc(accessPath(8716), 2026).get("rows")).hasSize(2);
+
+    // AC7 — the camp DOCUMENT reflects the write, in the same test as the write (the guardrail's
+    // "in the same test": the static-fixture agreement check below cannot catch a count derivation
+    // that breaks only after a mutation).
+    String campListBody = mockMvc.perform(get("/api/v1/schedule5")
+            .param("millId", String.valueOf(MILL)).param("year", "2026"))
+        .andExpect(status().isOk())
+        .andReturn().getResponse().getContentAsString();
+    JsonNode campAfter = findCamp(mapper.readTree(campListBody), 8716);
+    assertThat(campAfter.get("otherCampExpenseCount").asInt()).isEqualTo(2);
+    assertThat(campAfter.get("otherCampExpenses").get("cost").asInt()).isEqualTo(11750);
   }
 
   @Test
@@ -300,6 +331,48 @@ class Schedule5SubPageIT extends AbstractOracleIT {
         "SELECT ITEM_DESCRIPTION FROM THE.ILCR_COST_REPORT_DETAIL "
             + "WHERE ILCR_COST_REPORT_DETAIL_ID = 8739", String.class))
         .isEqualTo("Access Side Row");
+  }
+
+  @Test
+  @DisplayName("AC2 — a rowId repeated within one body is 404 and NOTHING persists")
+  void duplicateRowIdRejected() throws Exception {
+    // The classification pass's `!kept.add(rowId)` clause. Without it a duplicated id would apply
+    // last-write-wins silently — this pins the loud rejection (review patch, 2026-08-12).
+    mockMvc.perform(put(campPath(8708)).with(csrf())
+            .param("millId", String.valueOf(MILL)).param("year", "2023")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(rowsBody(existingRow(8742, "First Copy", 1),
+                existingRow(8742, "Second Copy", 2))))
+        .andExpect(status().isNotFound());
+
+    JsonNode unchanged = getDoc(campPath(8708), 2023);
+    assertThat(unchanged.get("rows")).hasSize(1);
+    assertThat(unchanged.get("rows").get(0).get("description").asText()).isEqualTo("Boundary Row");
+  }
+
+  @Test
+  @DisplayName("AC2 — an UPDATE clears a nulled description and cost, never keeps the old values")
+  void updateClearsFieldsToNull() throws Exception {
+    // Row 8764 is seeded with BOTH fields populated ('Clear Me', 4000). Every other update fixture
+    // carries non-null values, so an NVL-style regression (COST = NVL(:cost, COST)) would pass all
+    // of them — this is the one test that catches it (review patch, 2026-08-12).
+    mockMvc.perform(put(campPath(8718)).with(csrf())
+            .param("millId", String.valueOf(MILL)).param("year", "2028")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(rowsBody(existingRow(8764, null, null))))
+        .andExpect(status().isOk());
+
+    JsonNode fresh = getDoc(campPath(8718), 2028);
+    assertThat(fresh.get("rows")).hasSize(1);
+    assertThat(fresh.get("rows").get(0).get("rowId").asInt()).isEqualTo(8764);
+    assertThat(fresh.get("rows").get(0).has("description")).isFalse();
+    assertThat(fresh.get("rows").get(0).has("cost")).isFalse();
+
+    Map<String, Object> stored = jdbc().queryForMap(
+        "SELECT ITEM_DESCRIPTION, COST FROM THE.ILCR_COST_REPORT_DETAIL "
+            + "WHERE ILCR_COST_REPORT_DETAIL_ID = 8764");
+    assertThat(stored.get("ITEM_DESCRIPTION")).isNull();
+    assertThat(stored.get("COST")).isNull();
   }
 
   @Test

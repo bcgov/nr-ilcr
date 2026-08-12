@@ -1047,8 +1047,19 @@ public class Schedule5Service {
   public SubPageDocument getSubPage(
       long millId, int year, int campId, SubPage page, boolean callerMayEdit) {
     CampRow camp = requireCamp(millId, year, campId);
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus(millId, year));
-    return buildSubPageDocument(millId, year, camp, page, editable);
+    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year,
+        callerMayEdit));
+  }
+
+  /**
+   * The served {@code editable} flag, derived the same way on the read AND on every write echo
+   * (AD-9: server-authoritative). The writes could hardcode {@code callerMayEdit} because
+   * {@code requireDraft} just proved the Draft half under its lock — but that would couple the
+   * echoed flag to the gate staying exactly as strict as it is today; deriving it here keeps the
+   * invariant structural rather than incidental.
+   */
+  private boolean subPageEditable(long millId, int year, boolean callerMayEdit) {
+    return callerMayEdit && STATUS_DRAFT.equals(trackStatus(millId, year));
   }
 
   /**
@@ -1079,7 +1090,8 @@ public class Schedule5Service {
       SubPageSaveRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
     CampRow camp = requireCamp(millId, year, campId);
-    List<SubPageRowRequest> incoming = request.rowsOrEmpty();
+    // Non-null by Bean Validation: an omitted rows field is a 400, never a silent delete-all.
+    List<SubPageRowRequest> incoming = request.rows();
     validateSubPageCosts(page, incoming);
 
     // Classify EVERYTHING before writing ANYTHING: an unknown id must 404 with nothing persisted.
@@ -1123,7 +1135,8 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page, callerMayEdit);
+    return buildSubPageDocument(millId, year, camp, page,
+        subPageEditable(millId, year, callerMayEdit));
   }
 
   /**
@@ -1156,7 +1169,8 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page, callerMayEdit);
+    return buildSubPageDocument(millId, year, camp, page,
+        subPageEditable(millId, year, callerMayEdit));
   }
 
   /**
@@ -1178,10 +1192,11 @@ public class Schedule5Service {
   }
 
   /**
-   * The per-page cost narrowing {@link SubPageRowRequest} cannot express declaratively — its
-   * {@code @Min}/{@code @Max} carry the WIDER Access bound so one DTO can serve both pages, exactly
-   * as {@link #validateCostRanges} narrows the eight {@code costSize="7"} camp categories that
-   * {@code CategoryEntry} cannot.
+   * The per-page cost bounds, applied HERE and only here — {@link SubPageRowRequest} deliberately
+   * carries no declarative {@code @Min}/{@code @Max}, because a DTO-level bound at the wider Access
+   * limit would fire first and reject an out-of-band Camp cost with the ACCESS message (AD-8).
+   * Each page's own bound pairs with its own message key, exactly as {@link #validateCostRanges}
+   * narrows the eight {@code costSize="7"} camp categories that {@code CategoryEntry} cannot.
    */
   private static void validateSubPageCosts(SubPage page, List<SubPageRowRequest> rows) {
     for (SubPageRowRequest row : rows) {

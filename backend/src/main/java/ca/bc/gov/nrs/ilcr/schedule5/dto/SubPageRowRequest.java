@@ -1,7 +1,5 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -21,14 +19,17 @@ import jakarta.validation.constraints.Size;
  * <p><strong>There is no {@code volume} field.</strong> A row volume is never accepted, because it
  * is never persisted — see {@link SubPageRow}.
  *
- * <p><strong>The cost bound here is the WIDER of the two pages, narrowed imperatively per page.</strong>
- * One DTO serves both sub-pages, so the declarative cap is Access's &plusmn;99,999,999 ({@code
- * costValidatorErrorMsg}); the Camp page's tighter &plusmn;9,999,999 ({@code
- * costSize7ValidatorErrorMsg}, from {@code costSize="7"} on {@code schedule5CampExpenses.xhtml:45}
- * and {@code :79}) is applied in the service, exactly as {@code Schedule5Service.validateCostRanges}
- * narrows the eight {@code costSize="7"} categories that {@link CategoryEntry} cannot express. A
- * record type cannot vary a constraint per call site, and the alternative — two near-identical DTOs
- * — would duplicate the description rules for one differing number.
+ * <p><strong>There is deliberately no declarative cost bound — BOTH page bounds live in the
+ * service.</strong> One DTO serves both sub-pages (a record cannot vary a constraint per call site,
+ * and two near-identical DTOs would duplicate the description rules for one differing number), and a
+ * declarative {@code @Min}/{@code @Max} at Access's wider &plusmn;99,999,999 would fire BEFORE the
+ * service's per-page narrowing — so a Camp-page cost beyond the wide bound would be rejected with
+ * the ACCESS message instead of the Camp page's {@code costSize7ValidatorErrorMsg}, breaking the
+ * AD-8 verbatim discipline on exactly the inputs a boundary test at the NARROW bound never probes.
+ * {@code Schedule5Service.validateSubPageCosts} applies each page's own bound with its own message —
+ * Camp &plusmn;9,999,999 ({@code costSize="7"} on {@code schedule5CampExpenses.xhtml:45} and {@code
+ * :79}), Access &plusmn;99,999,999 — exactly as {@code Schedule5Service.validateCostRanges} narrows
+ * the eight {@code costSize="7"} categories that {@code CategoryEntry} cannot express.
  *
  * <p>A fractional cost is REJECTED, not truncated: {@code Integer} plus the app-wide {@code
  * accept-float-as-int: false} (shipped by 7.2) turns {@code 12.5} into a clean 400. Legacy is
@@ -58,7 +59,5 @@ public record SubPageRowRequest(
     @MaxByteLength(value = 120, charMax = 30, message = "{descriptionMaxLengthErrorMsg}")
     String description,
 
-    @Min(value = -99999999L, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999L, message = "{costValidatorErrorMsg}")
     Integer cost) {
 }

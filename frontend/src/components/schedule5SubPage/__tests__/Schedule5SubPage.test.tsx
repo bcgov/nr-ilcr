@@ -16,6 +16,7 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn()
 
 import Schedule5SubPage from '@/components/schedule5SubPage'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
+import useMillYear from '@/context/millYear/useMillYear'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
 import type { SubPageDocument } from '@/interfaces/Schedule5SubPage'
 
@@ -103,6 +104,22 @@ const flushAsync = async () => {
       setTimeout(resolve, 0)
     })
   }
+}
+
+// Drives a mid-flight mill/year change so the stale-response guards can be exercised. Module-level
+// so it is not re-created per render (an @eslint-react rule forbids nested component definitions).
+// NOTE: unlike the real app, this harness does NOT remount the sub-page on a context change (the
+// parent's key does that), so what it isolates is the component's OWN `isCurrent()` mutation guards.
+const SubPageRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule5SubPage campId={8700} kind="CAMP" onBack={vi.fn()} />
+    </>
+  )
 }
 
 const renderSubPage = (kind: 'CAMP' | 'ACCESS' = 'CAMP', onBack = vi.fn()) =>
@@ -339,6 +356,69 @@ describe('the required-description timing (AC10)', () => {
     expect(called).toBe(false)
   })
 
+  test('ACCESS on-change validates ONLY the changed row — untouched blank rows stay unflagged', async () => {
+    // Row 8726 is a legally-stored blank description (deviation (F)) the licensee never touched.
+    // Legacy's <f:ajax event="change"> processes only the input that changed, so editing another
+    // row must not flag it — whole-grid change validation was a review finding (2026-08-12).
+    server.use(
+      http.get(ACCESS_URL, () =>
+        HttpResponse.json(
+          accessDoc({
+            rows: [
+              {
+                rowId: 8725,
+                description: 'Bridge Rental',
+                volume: 120000,
+                cost: 7000,
+                costPerVolume: 0.06,
+              },
+              { rowId: 8726, volume: 120000, cost: 3000, costPerVolume: 0.03 },
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderSubPage('ACCESS')
+
+    const costs = await rowInputs(/^Cost \$$/)
+    await user.type(costs[0], '1')
+    await flushAsync()
+
+    expect(screen.queryByText('Value Required')).not.toBeInTheDocument()
+  })
+
+  test('the COST band does not fire on change on either page — it belongs to Add/Save', async () => {
+    // Neither page's cost input carries f:ajax, so legacy surfaces the band only at submit. A
+    // change-time band error on the Camp grid was an unrecorded deviation (review, 2026-08-12).
+    seedCamp(describedCampDoc())
+    const user = userEvent.setup()
+    renderSubPage('CAMP')
+
+    const costs = await rowInputs(/^Cost \$$/)
+    await user.clear(costs[0])
+    await user.type(costs[0], '10000000')
+    await flushAsync()
+    expect(
+      screen.queryByText('Entered cost must be between -9,999,999 and 9,999,999.'),
+    ).not.toBeInTheDocument()
+
+    // …and Save is where it lands, with no request issued.
+    let called = false
+    server.use(
+      http.put(CAMP_URL, () => {
+        called = true
+        return HttpResponse.json(describedCampDoc())
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByText('Entered cost must be between -9,999,999 and 9,999,999.'),
+    ).toBeInTheDocument()
+    await flushAsync()
+    expect(called).toBe(false)
+  })
+
   test('both ADD forms require a description (deviation (A))', async () => {
     seedCamp()
     const user = userEvent.setup()
@@ -433,6 +513,51 @@ describe('row delete and Back (AC12)', () => {
     expect(deletedUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
   })
 
+  test('a delete PRESERVES in-flight edits typed into other rows across the echo reseed', async () => {
+    // Deviation (E)'s principle applied to Delete (review decision, 2026-08-12): the echo reseeds
+    // the grid, and without the draft re-apply an edit typed into a SURVIVING row would be
+    // silently discarded — the exact legacy discard the story refuses to port on Add.
+    seedCamp(describedCampDoc())
+    server.use(
+      http.delete(`${CAMP_URL}/:rowId`, () =>
+        HttpResponse.json(
+          describedCampDoc({
+            rows: [
+              // The echo serves the SURVIVOR with its stored (un-edited) description.
+              {
+                rowId: 8723,
+                description: 'Propane',
+                volume: 120000,
+                cost: 2500,
+                costPerVolume: 0.02,
+              },
+            ],
+            totals: { volume: 120000, cost: 2500, costPerVolume: 0.02 },
+            message: { key: 'k', text: 'Data deleted successfully' },
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderSubPage('CAMP')
+
+    // Edit row 1 (8723), then delete row 0 (8722).
+    const descriptions = await rowInputs(/^Description$/)
+    await user.clear(descriptions[1])
+    await user.type(descriptions[1], 'Propane Deluxe')
+    const deletes = screen.getAllByRole('button', { name: 'Delete' })
+    await user.click(deletes[0])
+    await user.click(
+      within(
+        confirmDialog('This will delete the current record. Do you want to continue?'),
+      ).getByRole('button', { name: 'Yes' }),
+    )
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    // The surviving row still shows the in-flight edit, not the echoed stored value.
+    expect((await rowInputs(/^Description$/))[0]).toHaveValue('Propane Deluxe')
+  })
+
   test('declining the confirm issues NO request', async () => {
     seedCamp()
     let called = false
@@ -525,5 +650,60 @@ describe('load failures', () => {
     renderSubPage('CAMP')
     expect(await screen.findByText('Camp not found.')).toBeInTheDocument()
     expect(screen.queryByText('Totals:')).not.toBeInTheDocument()
+  })
+})
+
+describe('stale-context safety', () => {
+  test('a mill/year change mid-save does not apply the stale response (Task 10)', async () => {
+    // The PUT is gated on an explicit release, never a wall-clock delay (the 7.3 review finding).
+    // In the real app the parent REMOUNTS the sub-page on a context change; this harness does not,
+    // which is exactly what isolates the component's own `isCurrent()` guards on the mutation tail.
+    let releasePut = () => {}
+    const putGate = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+    server.use(
+      http.get(CAMP_URL, ({ request }) =>
+        HttpResponse.json(
+          request.url.includes('millId=999')
+            ? describedCampDoc({
+                rows: [
+                  {
+                    rowId: 9101,
+                    description: 'New Context Row',
+                    volume: 50000,
+                    cost: 100,
+                    costPerVolume: 0,
+                  },
+                ],
+              })
+            : describedCampDoc(),
+        ),
+      ),
+      http.put(CAMP_URL, async () => {
+        await putGate
+        return HttpResponse.json(
+          describedCampDoc({ message: { key: 'k', text: 'Data saved successfully' } }),
+        )
+      }),
+    )
+    render(
+      <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
+        <SubPageRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findByDisplayValue('Generator Fuel')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'change' }))
+
+    // The new context's document loads…
+    expect(await screen.findByDisplayValue('New Context Row')).toBeInTheDocument()
+    // …then the stale PUT settles, and nothing from it may land: no success banner, no old rows.
+    releasePut()
+    await flushAsync()
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Generator Fuel')).not.toBeInTheDocument()
   })
 })

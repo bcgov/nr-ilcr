@@ -36,6 +36,7 @@ import {
   rowFieldKey,
   toRowRequest,
   validateAddForm,
+  validateDescriptionOnChange,
   validateRows,
 } from './validation'
 import './index.scss'
@@ -201,14 +202,18 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
    * `finally` would release the `saving` lock belonging to a request dispatched under the NEW
    * context, letting two writes overlap.
    */
-  const runMutation = (request: Promise<{ data: SubPageDocument }>, fallbackError: string) => {
+  const runMutation = (
+    request: Promise<{ data: SubPageDocument }>,
+    fallbackError: string,
+    onSuccess: (payload: SubPageDocument) => void = applyDocument,
+  ) => {
     setSaving(true)
     request
       .then((response) => {
         if (!isCurrent()) {
           return
         }
-        applyDocument(response.data)
+        onSuccess(response.data)
       })
       .catch((error: unknown) => {
         if (!isCurrent()) {
@@ -276,7 +281,17 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
     save(rows, 'Unable to save the expense list.')
   }
 
-  /** Row delete persists immediately, exactly as legacy's Delete button does (`:158-167`). */
+  /**
+   * Row delete persists immediately, exactly as legacy's Delete button does (`:158-167`).
+   *
+   * Every grid row is server-seeded (Add commits immediately and re-seats from the echo), so
+   * `target.rowId` is always a real stored id here — there is no unsaved-row case to drop locally.
+   *
+   * The echo reseeds the grid, which would silently discard edits typed into OTHER rows — the same
+   * discard deviation (E) refuses to port on Add. So the surviving rows' in-flight values are
+   * re-applied on top of the reseed, keyed by rowId; a row the server no longer serves drops its
+   * draft with it.
+   */
   const handleDeleteRow = () => {
     const target = confirmDeleteRow
     setConfirmDeleteRow(null)
@@ -284,26 +299,49 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
       return
     }
     clearBanners()
-    if (target.rowId === null) {
-      // An unsaved add-in-progress row never existed server-side; drop it locally.
-      setRows((current) => current.filter((row) => row !== target))
-      return
-    }
+    const drafts = new Map(
+      rows
+        .filter((row) => row.rowId !== null && row.rowId !== target.rowId)
+        .map((row) => [row.rowId, row] as const),
+    )
     runMutation(
       apiService
         .getAxiosInstance()
         .delete<SubPageDocument>(`${basePath}/${String(target.rowId)}?${query}`),
       'Unable to delete the expense.',
+      (payload) => {
+        applyDocument(payload)
+        setRows(
+          payload.rows.map(seedRow).map((seeded) => {
+            const draft = drafts.get(seeded.rowId)
+            return draft ? { ...seeded, description: draft.description, cost: draft.cost } : seeded
+          }),
+        )
+      },
     )
   }
 
   const updateRow = (index: number, field: 'description' | 'cost', value: string) => {
     const next = rows.map((row, i) => (i === index ? { ...row, [field]: value } : row))
     setRows(next)
-    // The S21/S22 timing. The Access grid's description carries `<f:ajax event="change">`
-    // (schedule5AccessExpenses.xhtml:63) and the Camp grid's does not (:64-67), so a cleared Camp
-    // description is rejected only at Save. Validating both here would erase the distinction.
-    setRowErrors(validateRows(next, kind, VALIDATES_ROW_ON_CHANGE[kind]))
+    // The S21/S22 timing, scoped per INPUT the way legacy's f:ajax is. Only an ACCESS description
+    // validates on change (`<f:ajax event="change">`, schedule5AccessExpenses.xhtml:63); the Camp
+    // grid carries no f:ajax at all (:64-67) and NEITHER page's cost does, so everything else —
+    // including both cost bands — surfaces at Add/Save. Validating the whole grid here would flag
+    // untouched rows, including a legally-stored blank description (deviation (F)) the licensee
+    // never edited. The changed field's own stale error clears so a corrected value stops shouting.
+    setRowErrors((current) => {
+      const key = rowFieldKey(index, field)
+      const updated: Record<string, string> = { ...current }
+      delete updated[key]
+      if (field === 'description' && VALIDATES_ROW_ON_CHANGE[kind]) {
+        const error = validateDescriptionOnChange(next[index])
+        if (error) {
+          updated[key] = error
+        }
+      }
+      return updated
+    })
   }
 
   const requestBack = () => {

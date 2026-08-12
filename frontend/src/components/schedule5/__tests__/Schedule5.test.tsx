@@ -1169,6 +1169,47 @@ describe('the expense sub-page links and the CFM-004 ladder (Story 7.4, AC13/AC1
     expect(screen.getByLabelText('Camp Name')).toHaveValue('Brand New Camp')
   })
 
+  test('AC13 — a COPY panel is an UNSAVED camp: CFM-004, save, then navigate (review fix)', async () => {
+    // Before the fix the copy panel fell into the CFM-002 existing-camp branch, whose Yes handler
+    // navigated to panelCampId — null on a copy — so the user confirmed a dialog and NOTHING
+    // happened: wrong confirm text, no save, no navigation, no error.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(MESSAGES_URL, () =>
+        HttpResponse.json({ key: 'k', text: 'copy instruction banner' }),
+      ),
+    )
+    const saved: Camp = { ...cedarFlats, campId: 8499, campName: 'Copied Camp' }
+    let posted = false
+    server.use(
+      http.post(CAMPS_URL, () => {
+        posted = true
+        return HttpResponse.json(doc({ camps: [cedarFlats, saved] }))
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+    // The WRN-001 resolve holds the saving lock; wait for it so the link click is not swallowed.
+    await screen.findByText('copy instruction banner')
+    await user.type(screen.getByLabelText('Camp Name'), 'Copied Camp')
+
+    await user.click(subPageLink(/^Other Camp Expenses \(0\):$/))
+    const dialog = confirmDialog(CONFIRM_SAVE_NEW_CAMP)
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    await waitFor(() => {
+      expect(posted).toBe(true)
+    })
+    await waitFor(() => {
+      expect(navigateSpy).toHaveBeenCalledWith({
+        to: '/schedule-5',
+        search: { camp: 8499, sub: 'CAMP' },
+      })
+    })
+  })
+
   test('AC13 — a READ-ONLY schedule navigates with no confirm at all', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ editable: false }))))
     render(<Schedule5 />)
@@ -1183,5 +1224,65 @@ describe('the expense sub-page links and the CFM-004 ladder (Story 7.4, AC13/AC1
       search: { camp: 8401, sub: 'CAMP' },
     })
     expect(screen.queryByText(CONFIRM_SAVE_NEW_CAMP)).not.toBeInTheDocument()
+  })
+})
+
+describe('the sub-page URL wiring (Story 7.4 — the early return and Back)', () => {
+  // The early return, previously never rendered under test: routerSearch.current was defined by the
+  // router mock but no test ever assigned it (the verification-gap review finding, 2026-08-12).
+  const SUB_URL = `${URL}/camps/8401/other-camp-expenses`
+  const subDoc = {
+    campId: 8401,
+    campName: 'Cedar Flats Camp',
+    associatedCampVolume: 120000,
+    editable: true,
+    rows: [],
+    totals: {},
+  }
+
+  test('search params render the sub-page INSTEAD of the camp list; Back navigates home and refetches', async () => {
+    routerSearch.current = { camp: 8401, sub: 'CAMP' }
+    let documentGets = 0
+    server.use(
+      http.get(URL, () => {
+        documentGets += 1
+        return HttpResponse.json(doc())
+      }),
+      http.get(SUB_URL, () => HttpResponse.json(subDoc)),
+    )
+    try {
+      render(<Schedule5 />)
+      const user = userEvent.setup()
+
+      expect(await screen.findByText('Add Other Camp Expense')).toBeInTheDocument()
+      expect(screen.queryByRole('table', { name: 'Existing Camps' })).not.toBeInTheDocument()
+
+      // Back: the sub-page's own CFM-002, then the parent's onBack — which must clear the search
+      // params AND refresh the camp document, whose "(n)" counts and totals predate any sub-page
+      // edits (the stale-counts review finding, 2026-08-12).
+      const before = documentGets
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+      const dialog = screen.getByText('Leave expense list').closest('.cds--modal') as HTMLElement
+      await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+      expect(navigateSpy).toHaveBeenCalledWith({ to: '/schedule-5', search: {} })
+      await waitFor(() => {
+        expect(documentGets).toBeGreaterThan(before)
+      })
+    } finally {
+      routerSearch.current = {}
+    }
+  })
+
+  test('a camp with no sub param renders the ordinary camp list', async () => {
+    routerSearch.current = { camp: 8401 }
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    try {
+      render(<Schedule5 />)
+      expect(await screen.findByRole('table', { name: 'Existing Camps' })).toBeInTheDocument()
+      expect(screen.queryByText('Add Other Camp Expense')).not.toBeInTheDocument()
+    } finally {
+      routerSearch.current = {}
+    }
   })
 })

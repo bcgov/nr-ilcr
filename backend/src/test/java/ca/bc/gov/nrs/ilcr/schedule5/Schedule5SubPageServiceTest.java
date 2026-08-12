@@ -1,14 +1,18 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
+import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 /**
  * Unit tests for the Story 7.4 sub-page derivation (AC7, AC8) — no Spring, no database. Every
@@ -200,6 +205,47 @@ class Schedule5SubPageServiceTest {
       // rather than accidental.
       assertThat(doc.totals().cost()).isNull();
       assertThat(doc.totals().volume()).isNull();
+    }
+  }
+
+  @Nested
+  @DisplayName("failure surfacing — the camp path's deviation (P), owed to the sub-pages too")
+  class FailureSurfacing {
+
+    @Test
+    @DisplayName("a DataAccessException on save becomes ScheduleNotSavedException, not a leaked 500")
+    void saveDataAccessFailureBecomesNotSaved() {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt()))
+          .thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.findSubPageRows(anyInt(), anyInt(), anyLong(), anyInt()))
+          .thenReturn(List.of());
+      when(repository.nextCostDetailId())
+          .thenThrow(new DataAccessResourceFailureException("boom"));
+
+      SubPageSaveRequest request = new SubPageSaveRequest(
+          List.of(new SubPageRowRequest(null, "New Row", 100)));
+
+      // Deleting the try/catch in saveSubPage leaks the raw DataAccessException (with its ORA
+      // message) past the handler — Schedule5WriteServiceTest pins the same contract for the camp
+      // path; this is the sub-page analog (review patch, 2026-08-12).
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request,
+          true, "tester"))
+          .isInstanceOf(ScheduleNotSavedException.class);
+    }
+
+    @Test
+    @DisplayName("a DataAccessException on delete becomes ScheduleNotSavedException")
+    void deleteDataAccessFailureBecomesNotSaved() {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt()))
+          .thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt()))
+          .thenThrow(new DataAccessResourceFailureException("boom"));
+
+      assertThatThrownBy(() -> service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 8722,
+          true))
+          .isInstanceOf(ScheduleNotSavedException.class);
     }
   }
 
