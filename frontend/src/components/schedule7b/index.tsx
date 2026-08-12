@@ -5,7 +5,8 @@ import { TrashCan } from '@carbon/icons-react'
 import type Schedule7bResponse from '@/interfaces/Schedule7bResponse'
 import type { Culvert, Schedule7bCheckStatusResponse } from '@/interfaces/Schedule7bResponse'
 import type CulvertRequest from '@/interfaces/Schedule7bRequest'
-import type { CulvertErrors, CulvertFormValues, MaskedField } from './validation'
+import type { CulvertSaveAllRequest } from '@/interfaces/Schedule7bRequest'
+import type { CostField, CulvertErrors, CulvertFormValues, MaskedField } from './validation'
 import apiService from '@/service/api-service'
 import { useScheduleBanners } from '@/hooks/useScheduleBanners'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -314,7 +315,9 @@ const Schedule7b: FC = () => {
       return
     }
 
-    const body = {
+    // Annotated, not inferred: the batch shape is a backend contract, so a change to it must be a
+    // compile error here rather than a 400 the reporter discovers at Save.
+    const body: CulvertSaveAllRequest = {
       culverts: forms.map(({ culvert, form }) => ({
         culvertReportId: culvert.culvertReportId,
         culvert: buildBody(form, culvert.revisionCount),
@@ -500,6 +503,11 @@ const Schedule7b: FC = () => {
                       errors={rowErrors[culvert.culvertReportId] ?? {}}
                       codeLists={codeLists}
                       disabled={controlsDisabled}
+                      // Untouched rows (no entry in `rowForms`) show the SERVED total; once the
+                      // reporter edits one, the editor previews it live as legacy did.
+                      serverTotal={
+                        culvert.culvertReportId in rowForms ? undefined : culvert.totalCost
+                      }
                       onChange={(key, value) => setRowField(culvert, key, value)}
                       onMask={(key) => maskRowField(culvert, key)}
                     />

@@ -8,12 +8,16 @@
 // Rise, Length, both costs and Comments are OPTIONAL at Save — Check Status is what flags them
 // (BR-07). Do not tighten them.
 
+import { utf8Length } from '@/utils/forms'
 import { parseDecimalInput, roundCost } from '@/utils/number'
 
 // Re-exported so this module stays the single validation surface the page imports from.
 export { parseDecimalInput, roundCost }
 
+// Two units, both enforced by the DTO (`CulvertRequest.comments`): 3,500 CHARACTERS is the legacy
+// screen's own maxlength, 4,000 BYTES is the column's real width in the AL32UTF8 delivery database.
 const COMMENTS_MAX = 3500
+const COMMENTS_MAX_BYTES = 4000
 
 // Span and rise share one numeric bound in legacy (`zero.minValue` / `schedule7b.size.maxValue`) but
 // carry SEPARATE messages, matching the backend's separate keys: the 400 names no field, so one
@@ -219,8 +223,13 @@ export function validateCulvert(form: CulvertFormValues, rowCounter?: number): C
     }
   }
 
-  // Measured on the trimmed value, because that is what the request body sends.
-  if (form.comments.trim().length > COMMENTS_MAX) {
+  // Measured on the trimmed value, because that is what the request body sends. BOTH server bounds
+  // are mirrored: the DTO carries `@Size(max = 3500)` AND `@MaxByteLength(value = 4000, charMax =
+  // 3500)`, because the column is VARCHAR2(4000 BYTE). Checking characters alone let ~3,000
+  // characters of accented or CJK text through this gate and 400 on the byte rule. The two server
+  // constraints share one message key, so a single message covers both here too.
+  const comments = form.comments.trim()
+  if (comments.length > COMMENTS_MAX || utf8Length(comments) > COMMENTS_MAX_BYTES) {
     errors.comments = CULVERT_MESSAGES.commentsMaxLength
   }
 

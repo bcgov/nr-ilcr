@@ -10,8 +10,8 @@ import { COMMENTS_MAX_LENGTH, previewTotalCost } from './validation'
 // the page actually shows — and must not be reworded or resequenced: reporters navigate this form by
 // shape.
 
-// Server-computed values render through a mask, never a recompute. A null total means "no contributing
-// costs" and must render BLANK — showing "0" would assert a figure the data lacks.
+// A total renders through a mask, never a recompute of a served figure. A null total means "no
+// contributing costs" and must render BLANK — showing "0" would assert a figure the data lacks.
 const money = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : value.toLocaleString('en-US')
 
@@ -21,6 +21,13 @@ type Props = {
   readonly errors: CulvertErrors
   readonly codeLists: CulvertCodeLists
   readonly disabled: boolean
+  /**
+   * The SERVED total for this row (BR-05, computed server-side). Passed only while the row is
+   * untouched, which is when it is the authoritative figure (AD-5); an edited row — and the Add
+   * panel, which has no stored row — passes nothing and gets the live preview instead, reproducing
+   * legacy's re-render of the total on every cost change.
+   */
+  readonly serverTotal?: number | null
   readonly onChange: <K extends keyof CulvertFormValues>(key: K, value: string) => void
   // Re-apply a numeric field's legacy display mask once the user leaves it. On blur rather than on
   // change so inserting a separator (or a forced decimal) mid-word cannot move the caret while typing.
@@ -33,6 +40,7 @@ const CulvertFields: FC<Props> = ({
   errors,
   codeLists,
   disabled,
+  serverTotal,
   onChange,
   onMask,
 }) => {
@@ -91,7 +99,14 @@ const CulvertFields: FC<Props> = ({
             size="sm"
             items={items}
             itemToString={(item) => item?.description ?? ''}
-            selectedItem={items.find((item) => item.code === form.culvertTypeCode) ?? null}
+            // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
+            // downshift's internal state, so a cleared code would leave the old label on screen. The
+            // cast is Carbon's own type inconsistency — its `onChange` hands back `ItemType | null`
+            // while the prop is declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
+            selectedItem={
+              (items.find((item) => item.code === form.culvertTypeCode) ?? null) as
+                CulvertCodeOption | undefined
+            }
             disabled={disabled}
             invalid={Boolean(errors.culvertTypeCode)}
             invalidText={errors.culvertTypeCode}
@@ -109,17 +124,21 @@ const CulvertFields: FC<Props> = ({
           {cost('materialCost', 'Material costs ($)')}
           {cost('installCost', 'Install costs($)')}
           {/* Total costs is server-derived (BR-05) and legacy renders it `disabled="true"`
-              (schedule7B.xhtml:197), so it is never a control here either — but legacy DID keep it
-              current as you typed, re-rendering it on every cost change (`:180,190` add form,
-              `:440,460` rows). `previewTotalCost` reproduces that from the entered values; it is
-              display only and never sent, and the served figure replaces it on the next echo.
+              (schedule7B.xhtml:197), so it is never a control here either. An untouched row shows the
+              SERVED figure — the authoritative one (AD-5), never recomputed from the fields beside
+              it. Legacy did, however, keep the total current as you typed, re-rendering it on every
+              cost change (`:180,190` add form, `:440,460` rows), so once a row is edited (and in the
+              Add panel, where nothing is stored yet) `previewTotalCost` takes over; it is display
+              only and never sent, and the served figure replaces it on the next echo.
               Rendered the way every other schedule renders a derived value: plain text at normal
               weight, never a control. The label stays in the accessible tree, so the figure
               is announced with a name — the visual cue that this is not editable is the absence of a
               field, which a screen reader cannot see. */}
           <div className="schedule-7b__total">
             <span className="schedule-7b__total-label">Total costs($)</span>
-            <span className="schedule-7b__total-value">{money(previewTotalCost(form))}</span>
+            <span className="schedule-7b__total-value">
+              {money(serverTotal === undefined ? previewTotalCost(form) : serverTotal)}
+            </span>
           </div>
         </div>
       </Column>

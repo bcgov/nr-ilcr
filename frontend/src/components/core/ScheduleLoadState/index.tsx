@@ -19,7 +19,7 @@ type ScheduleLoadStateOptions = {
    * The load failure's verbatim `detail`. Covers the context guards AND the action-key denial: those
    * ProblemDetails and the 403 all arrive here and each renders with the work area suppressed.
    */
-  readonly errorDetail?: string
+  readonly errorDetail?: string | null
 }
 
 /**

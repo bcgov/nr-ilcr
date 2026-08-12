@@ -514,6 +514,33 @@ describe('Schedule 7B page', () => {
     })
   })
 
+  test('an UNTOUCHED row shows the SERVED total, not a client recompute (AD-5/BR-05)', async () => {
+    // Every other total assertion in this suite uses a fixture whose totalCost equals material +
+    // install, so a recompute and the served figure are indistinguishable. Here they diverge on
+    // purpose: the server is authoritative, so 9,999 is what an untouched row must show even though
+    // the two costs beside it sum to 5,500. (A divergence is not hypothetical — the served total is
+    // whatever Schedule7bService computed at write time, and legacy rows predate today's rules.)
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ culverts: [{ ...mainHaul, totalCost: 9999 }] }))),
+    )
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+    await openCulvert(user, 1)
+
+    expect(screen.getByText('9,999')).toBeInTheDocument()
+    expect(screen.queryByText('5,500')).not.toBeInTheDocument()
+
+    // ...until the reporter edits the row, at which point legacy's live preview takes over and the
+    // stale served figure must go.
+    const material = culvertPanel(7801).getByLabelText('Material costs ($)')
+    await user.clear(material)
+    await user.type(material, '2000')
+    await waitFor(() => {
+      expect(screen.getByText('3,500')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('9,999')).not.toBeInTheDocument()
+  })
+
   test('an edited row total tracks the edit, not the last-saved figure', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()

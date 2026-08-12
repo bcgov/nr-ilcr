@@ -138,6 +138,22 @@ describe('validateCulvert', () => {
     expect(validateCulvert(valid({ comments: ` ${'x'.repeat(3500)} ` })).comments).toBeUndefined()
   })
 
+  test('comments are ALSO capped at 4,000 UTF-8 bytes, as the column is (VARCHAR2(4000 BYTE))', () => {
+    // The DTO carries @Size(max = 3500) AND @MaxByteLength(4000, charMax = 3500). Multibyte text is
+    // where the two part company: 1,400 CJK characters are well under the character cap and 4,200
+    // bytes over the column's. Counting characters alone let this through the gate and 400d on save.
+    const cjk = '柱'.repeat(1400)
+    expect(cjk.length).toBeLessThan(3500)
+    expect(validateCulvert(valid({ comments: cjk })).comments).toBe(
+      CULVERT_MESSAGES.commentsMaxLength,
+    )
+    // 1,333 of the same character is 3,999 bytes — the last length that fits.
+    expect(validateCulvert(valid({ comments: '柱'.repeat(1333) })).comments).toBeUndefined()
+    // Plain ASCII is one byte per character, so the byte rule never fires before the character one:
+    // the two bounds must not interact for the text a reporter usually types.
+    expect(validateCulvert(valid({ comments: 'x'.repeat(3500) })).comments).toBeUndefined()
+  })
+
   test('every failing field is reported in one pass (S25)', () => {
     const errors = validateCulvert(
       valid({
