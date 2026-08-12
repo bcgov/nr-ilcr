@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.MessageSource;
 
 /**
  * Unit test for the Schedule 9 document assembly + server-side derivation (Story 9.1 / T3) with a
@@ -35,6 +36,9 @@ class Schedule9ServiceTest {
 
   @Mock
   private Schedule9Repository repository;
+
+  @Mock
+  private MessageSource messageSource;
 
   @InjectMocks
   private Schedule9Service service;
