@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Repository;
+import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.repository.config.AbstractJdbcConfiguration;
@@ -43,6 +44,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule6Repository.class,
       Schedule7aRepository.class,
       Schedule8Repository.class,
+      Schedule9Repository.class,
       Schedule11Repository.class,
       MillContextRepository.class,
       MillUserProfileXrefRepository.class
