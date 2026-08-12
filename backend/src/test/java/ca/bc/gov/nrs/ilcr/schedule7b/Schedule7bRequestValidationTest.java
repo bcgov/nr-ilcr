@@ -169,8 +169,8 @@ class Schedule7bRequestValidationTest {
     // "Schedule could not be saved." with nothing pointing at the comment.
     String twoByteChars = "é".repeat(3000);
     assertThat(twoByteChars.length()).isLessThan(3500);
-    assertThat(twoByteChars.getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
-        .isGreaterThan(4000);
+    assertThat(twoByteChars.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        .hasSizeGreaterThan(4000);
 
     assertThat(messagesFor(request(1200, 900, null, 3, twoByteChars, 0), Default.class))
         .containsExactly("{commentsMaxLengthErrorMsg}");

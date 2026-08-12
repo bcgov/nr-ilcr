@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -515,20 +516,21 @@ class Schedule7bServiceTest {
     @DisplayName("AC5: every write is Draft-gated on the 1-10 track")
     void writesAreDraftGated() {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      CulvertRequest added = validRequest(null);
+      CulvertRequest corrected = validRequest(0);
+      CulvertSaveAllRequest batch =
+          new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(1L, corrected)));
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, validRequest(null), true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 1L, validRequest(0), true, USER))
+      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 1L, corrected, true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
       assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 1L, true))
           .isInstanceOf(ScheduleNotEditableException.class);
       // The page-level Save must be gated too — it was the one write verb the gate was never
       // asserted on, so deleting requireDraft() from saveAllCulverts left the suite green while a
       // Submitted report could be mutated wholesale.
-      assertThatThrownBy(() -> service.saveAllCulverts(
-          MILL, YEAR,
-          new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(1L, validRequest(0)))),
-          true, USER))
+      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
 
       verify(repository, never()).insertCulvert(any(), anyLong(), anyInt(), anyString());
@@ -540,8 +542,9 @@ class Schedule7bServiceTest {
     @DisplayName("AC5: a missing report-status row is not Draft either")
     void absentTrackStatusIsNotDraft() {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
+      CulvertRequest added = validRequest(null);
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, validRequest(null), true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
     }
 
@@ -549,11 +552,10 @@ class Schedule7bServiceTest {
     @DisplayName("AC8: a type outside the year's effective codes is rejected before any write")
     void unknownTypeIsRejected() {
       draft();
+      CulvertRequest retiredType =
+          request("XOLD", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, null);
 
-      assertThatThrownBy(() -> service.addCulvert(
-          MILL, YEAR,
-          request("XOLD", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, null),
-          true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, retiredType, true, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
 
       verify(repository, never()).insertCulvert(any(), anyLong(), anyInt(), anyString());
@@ -567,13 +569,12 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       CulvertRequest bad =
           request("XOLD", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, 0);
+      CulvertSaveAllRequest batch =
+          new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(7801L, bad)));
 
       assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, bad, true, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
-      assertThatThrownBy(() -> service.saveAllCulverts(
-          MILL, YEAR,
-          new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(7801L, bad))),
-          true, USER))
+      assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
           .isInstanceOf(InvalidCulvertTypeException.class);
 
       verify(repository, never()).updateCulvert(any(), anyLong(), anyInt(), anyInt(), anyString());
@@ -611,7 +612,7 @@ class Schedule7bServiceTest {
           request("R", 1200, 900, new BigDecimal("12.55"), 3, 4000, 1500, null, null), true, USER);
 
       var captor = org.mockito.ArgumentCaptor.forClass(CulvertReportEntity.class);
-      verify(repository, org.mockito.Mockito.times(2))
+      verify(repository, times(2))
           .insertCulvert(captor.capture(), anyLong(), anyInt(), anyString());
       assertThat(captor.getAllValues().get(0).length()).hasToString("12.5");
       assertThat(captor.getAllValues().get(1).length()).hasToString("12.6");
@@ -623,8 +624,9 @@ class Schedule7bServiceTest {
       draft();
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(0);
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
+      CulvertRequest corrected = validRequest(0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, validRequest(0), true, USER))
+      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
           .isInstanceOf(StaleRevisionException.class);
     }
 
@@ -634,8 +636,9 @@ class Schedule7bServiceTest {
       draft();
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(0);
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(0);
+      CulvertRequest corrected = validRequest(0);
 
-      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, validRequest(0), true, USER))
+      assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, corrected, true, USER))
           .isInstanceOf(CulvertNotFoundException.class);
     }
 
@@ -691,7 +694,7 @@ class Schedule7bServiceTest {
       service.saveAllCulverts(MILL, YEAR, batch, true, USER);
 
       // Once for the batch validation + once for the echoed document = 2, not 1-per-culvert.
-      verify(repository, org.mockito.Mockito.times(2)).culvertTypeOptions(YEAR);
+      verify(repository, times(2)).culvertTypeOptions(YEAR);
     }
 
     @Test
@@ -701,8 +704,9 @@ class Schedule7bServiceTest {
       when(repository.nextCulvertReportId()).thenReturn(9501L);
       doThrow(new DataIntegrityViolationException("boom"))
           .when(repository).insertCulvert(any(), anyLong(), anyInt(), anyString());
+      CulvertRequest added = validRequest(null);
 
-      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, validRequest(null), true, USER))
+      assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))
           .isInstanceOf(ScheduleNotSavedException.class);
     }
 
@@ -717,7 +721,7 @@ class Schedule7bServiceTest {
       assertThat(echoed.trackStatus()).isEqualTo("D");
       assertThat(echoed.editable()).isTrue();
       // Exactly one status read: the Draft gate. The echo must not issue a second one.
-      verify(repository, org.mockito.Mockito.times(1)).findTrackStatus(MILL, YEAR);
+      verify(repository, times(1)).findTrackStatus(MILL, YEAR);
     }
   }
 }

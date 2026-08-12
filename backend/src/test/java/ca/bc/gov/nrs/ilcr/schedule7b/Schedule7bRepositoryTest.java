@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -101,7 +100,7 @@ class Schedule7bRepositoryTest {
   @DisplayName("culvertTypeOptions maps code-table rows to the shared option DTO, order preserved")
   void codeListMapsToOptionDto() {
     Schedule7bRepository repository = realDefaults();
-    when(repository.findCulvertTypeCodes(eq(LocalDate.of(2021, 1, 1)))).thenReturn(List.of(
+    when(repository.findCulvertTypeCodes(LocalDate.of(2021, 1, 1))).thenReturn(List.of(
         new Schedule7bRepository.CulvertTypeCode("O", "Others"),
         new Schedule7bRepository.CulvertTypeCode("R", "Round")));
 

@@ -241,9 +241,9 @@ class Schedule7bWriteIT extends AbstractOracleIT {
     var stored = jdbc.queryForMap(
         "SELECT ILCR_CULVERT_TYPE_CODE, CULVERT_PIECE_COUNT, COMMENTS, REVISION_COUNT "
             + "FROM THE.CULVERT_REPORT WHERE CULVERT_REPORT_ID = ?", id);
-    assertThat(stored.get("ILCR_CULVERT_TYPE_CODE")).isEqualTo("R");
+    assertThat(stored).containsEntry("ILCR_CULVERT_TYPE_CODE", "R");
     assertThat(((Number) stored.get("CULVERT_PIECE_COUNT")).intValue()).isEqualTo(3);
-    assertThat(stored.get("COMMENTS")).isEqualTo("Write fixture");
+    assertThat(stored).containsEntry("COMMENTS", "Write fixture");
     assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
   }
 
@@ -919,7 +919,7 @@ class Schedule7bWriteIT extends AbstractOracleIT {
         "SELECT ENTRY_TIMESTAMP, UPDATE_TIMESTAMP FROM THE.CULVERT_REPORT "
             + "WHERE CULVERT_REPORT_ID = ?", id);
     // The correction advances UPDATE_TIMESTAMP and leaves ENTRY_TIMESTAMP alone.
-    assertThat(afterUpdate.get("ENTRY_TIMESTAMP")).isEqualTo(afterInsert.get("ENTRY_TIMESTAMP"));
+    assertThat(afterUpdate).containsEntry("ENTRY_TIMESTAMP", afterInsert.get("ENTRY_TIMESTAMP"));
     assertThat((java.sql.Timestamp) afterUpdate.get("UPDATE_TIMESTAMP"))
         .isAfterOrEqualTo((java.sql.Timestamp) afterInsert.get("UPDATE_TIMESTAMP"));
   }

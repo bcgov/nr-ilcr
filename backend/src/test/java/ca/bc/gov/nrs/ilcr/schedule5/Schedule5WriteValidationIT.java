@@ -1,6 +1,5 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
-import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
