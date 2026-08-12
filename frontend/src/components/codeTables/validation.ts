@@ -13,7 +13,10 @@ export type CodeEntryErrors = Partial<Record<keyof CodeEntryForm, string>>
 
 /**
  * Validate an add/edit form. `requireCode` is false for an inline edit (the code is fixed and not
- * editable) so a blank-code error can't fire on an existing row.
+ * editable) so a blank-code error can't fire on an existing row. Expiry is OPTIONAL — an empty expiry
+ * is the "never expires" case (the read side treats a null expiry as far-future), so an open-ended
+ * row can be saved/edited without inventing an expiry. Per-table length caps are enforced by the
+ * inputs' maxLength (client) and re-checked by the server. Messages are the FLD strings verbatim.
  */
 export function validateCodeEntry(form: CodeEntryForm, requireCode = true): CodeEntryErrors {
   const errors: CodeEntryErrors = {}
@@ -26,15 +29,9 @@ export function validateCodeEntry(form: CodeEntryForm, requireCode = true): Code
   if (form.effectiveDate === '') {
     errors.effectiveDate = 'Effective Date: Value is required.'
   }
-  if (form.expiryDate === '') {
-    errors.expiryDate = 'Expiry Date: Value is required.'
-  }
-  // Only compare when both are present; string ISO dates (yyyy-MM-dd) compare correctly.
+  // Range check only when both are present; string ISO dates (yyyy-MM-dd) compare correctly.
   if (form.effectiveDate !== '' && form.expiryDate !== '' && form.expiryDate < form.effectiveDate) {
     errors.expiryDate = 'Expiry Date must be greater than or equal to Effective Date.'
   }
   return errors
 }
-
-export const isCodeEntryValid = (form: CodeEntryForm, requireCode = true): boolean =>
-  Object.keys(validateCodeEntry(form, requireCode)).length === 0

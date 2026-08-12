@@ -81,6 +81,38 @@ describe('Table Maintenance (Story 24.3)', () => {
     expect(screen.getByText('Board Feet')).toBeInTheDocument() // grid reloaded from response
   })
 
+  test('an entry with no expiry ("never expires") sends a null expiry', async () => {
+    const put = vi.fn()
+    server.use(
+      ...listHandlers(),
+      http.put(UNIT_ENTRIES, async ({ request }) => {
+        put(await request.json())
+        return HttpResponse.json({
+          outcome: 'INSERTED',
+          messageKey: 'dataSavedSuccesfullyInfoMsg',
+          message: 'Data saved successfully',
+          entries: SEED,
+        })
+      }),
+    )
+    render(<CodeTables />)
+    await selectUnitCodes()
+
+    await userEvent.type(screen.getByLabelText('Code'), 'NE')
+    await userEvent.type(screen.getByLabelText('Description'), 'No Expiry')
+    fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+    // Leave Expiry Date empty — optional.
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith({
+      code: 'NE',
+      description: 'No Expiry',
+      effectiveDate: '2020-01-01',
+      expiryDate: null,
+    })
+  })
+
   test('a date range with expiry before effective is blocked client-side (no PUT)', async () => {
     const put = vi.fn()
     server.use(

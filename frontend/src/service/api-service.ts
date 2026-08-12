@@ -26,13 +26,17 @@ class APIService {
         'Content-Type': 'application/json',
       },
     })
-    this.client.interceptors.request.use((config) => {
-      const groups = mockUserGroups()
-      if (groups) {
-        config.headers.set('X-Mock-Groups', groups)
-      }
-      return config
-    })
+    // Only in a dev build — a production bundle must not send the mock-role header (it would be
+    // meaningless to the real security chain and needlessly leak the mock role names).
+    if (import.meta.env.DEV) {
+      this.client.interceptors.request.use((config) => {
+        const groups = mockUserGroups()
+        if (groups) {
+          config.headers.set('X-Mock-Groups', groups)
+        }
+        return config
+      })
+    }
     this.client.interceptors.response.use(
       (response: AxiosResponse) => {
         console.info(`received response status: ${response.status}`)

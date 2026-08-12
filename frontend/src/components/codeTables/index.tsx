@@ -1,10 +1,9 @@
 import type { FC } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Column,
   Grid,
-  InlineNotification,
   Table,
   TableBody,
   TableCell,
@@ -16,8 +15,10 @@ import {
 } from '@carbon/react'
 import PageTitle from '@/components/core/PageTitle'
 import CodeComboBox from '@/components/core/CodeComboBox'
+import NotificationColumn from '@/components/core/NotificationColumn'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
+import { blankToNull } from '@/utils/forms'
 import type {
   CodeTableEntry,
   CodeTableSaveResponse,
@@ -53,6 +54,10 @@ const CodeTables: FC = () => {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Mirrors selectedKey for the async guards below: a GET/PUT that resolves after the user has
+  // switched tables must not write the previous table's rows into the now-current grid.
+  const selectedKeyRef = useRef('')
+
   // The 18 selectable tables load once on mount.
   useEffect(() => {
     let active = true
@@ -74,6 +79,12 @@ const CodeTables: FC = () => {
     [tables],
   )
 
+  // The selected table's per-field length caps (BR-06), used to bound the code / description inputs.
+  const selectedTable = useMemo(
+    () => tables.find((table) => table.key === selectedKey) ?? null,
+    [tables, selectedKey],
+  )
+
   const clearNotifications = () => {
     setSaveMessage(null)
     setSaveError(null)
@@ -82,11 +93,18 @@ const CodeTables: FC = () => {
   const loadEntries = (key: string) => {
     api()
       .get<CodeTableEntry[]>(`/v1/code-tables/${key}/entries`)
-      .then((response) => setEntries(response.data))
-      .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to load entries.'))
+      .then((response) => {
+        if (selectedKeyRef.current === key) setEntries(response.data)
+      })
+      .catch((error: unknown) => {
+        if (selectedKeyRef.current === key) {
+          setSaveError(extractDetail(error) || 'Unable to load entries.')
+        }
+      })
   }
 
   const onSelectTable = (key: string) => {
+    selectedKeyRef.current = key
     setSelectedKey(key)
     setEntries([])
     setAddForm(EMPTY_FORM)
@@ -103,23 +121,30 @@ const CodeTables: FC = () => {
     else setEditErrors(errors)
     if (Object.keys(errors).length > 0 || saving) return
 
+    const key = selectedKey
     setSaving(true)
     clearNotifications()
     api()
-      .put<CodeTableSaveResponse>(`/v1/code-tables/${selectedKey}/entries`, {
+      .put<CodeTableSaveResponse>(`/v1/code-tables/${key}/entries`, {
         code: form.code.trim(),
         description: form.description.trim(),
-        effectiveDate: form.effectiveDate,
-        expiryDate: form.expiryDate,
+        // Blank → null so an omitted expiry serializes as a JSON null ("never expires"), not "" which
+        // the server can't parse to a date. Effective is required, so it is always present.
+        effectiveDate: blankToNull(form.effectiveDate),
+        expiryDate: blankToNull(form.expiryDate),
       })
       .then((response) => {
+        // Ignore the result if the user switched tables while the save was in flight.
+        if (selectedKeyRef.current !== key) return
         setEntries(response.data.entries)
         setSaveMessage(response.data.message)
         onDone()
       })
-      .catch((error: unknown) =>
-        setSaveError(extractDetail(error) || 'The entry could not be saved.'),
-      )
+      .catch((error: unknown) => {
+        if (selectedKeyRef.current === key) {
+          setSaveError(extractDetail(error) || 'The entry could not be saved.')
+        }
+      })
       .finally(() => setSaving(false))
   }
 
@@ -164,29 +189,10 @@ const CodeTables: FC = () => {
         />
       </Grid>
       <Grid fullWidth className="app-page__body">
+        {loadError && <NotificationColumn kind="error" title="Error" subtitle={loadError} />}
+        {saveMessage && <NotificationColumn kind="success" title="Saved" subtitle={saveMessage} />}
+        {saveError && <NotificationColumn kind="error" title="Error" subtitle={saveError} />}
         <Column sm={4} md={8} lg={16}>
-          {loadError && (
-            <InlineNotification kind="error" lowContrast title="Error" subtitle={loadError} />
-          )}
-          {saveMessage && (
-            <InlineNotification
-              kind="success"
-              lowContrast
-              title="Saved"
-              subtitle={saveMessage}
-              onCloseButtonClick={() => setSaveMessage(null)}
-            />
-          )}
-          {saveError && (
-            <InlineNotification
-              kind="error"
-              lowContrast
-              title="Error"
-              subtitle={saveError}
-              onCloseButtonClick={() => setSaveError(null)}
-            />
-          )}
-
           <CodeComboBox
             id="code-table-selector"
             titleText="Code List"
@@ -218,6 +224,7 @@ const CodeTables: FC = () => {
                             labelText={`Description (${row.code})`}
                             hideLabel
                             size="sm"
+                            maxLength={selectedTable?.descriptionMaxLength}
                             value={editForm.description}
                             invalid={Boolean(editErrors.description)}
                             invalidText={editErrors.description}
@@ -290,6 +297,7 @@ const CodeTables: FC = () => {
                         labelText="Code"
                         hideLabel
                         size="sm"
+                        maxLength={selectedTable?.codeMaxLength}
                         value={addForm.code}
                         invalid={Boolean(addErrors.code)}
                         invalidText={addErrors.code}
@@ -304,6 +312,7 @@ const CodeTables: FC = () => {
                         labelText="Description"
                         hideLabel
                         size="sm"
+                        maxLength={selectedTable?.descriptionMaxLength}
                         value={addForm.description}
                         invalid={Boolean(addErrors.description)}
                         invalidText={addErrors.description}
