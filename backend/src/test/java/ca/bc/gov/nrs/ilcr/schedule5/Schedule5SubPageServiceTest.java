@@ -2,11 +2,15 @@ package ca.bc.gov.nrs.ilcr.schedule5;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
@@ -250,6 +254,216 @@ class Schedule5SubPageServiceTest {
   }
 
   @Nested
+  @DisplayName("The write path — classify everything, then write (S06, S07)")
+  class WritePath {
+
+    /** Wire a write: the FOR UPDATE draft gate, the camp, and this page's stored rows. */
+    private void wireWrite(List<DetailRow> stored) {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.findSubPageRows(anyInt(), anyInt(), anyLong(), anyInt())).thenReturn(stored);
+    }
+
+    /** The re-read every write ends with — buildSubPageDocument stamps volumes off item 141. */
+    private void wireReadBack() {
+      when(repository.findCostDetails(anyLong(), anyInt()))
+          .thenReturn(List.of(volumeRow(8720, ITEM_CAMP_VOLUME, VOL_120K)));
+      when(repository.findTrackStatus(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+    }
+
+    @Test
+    @DisplayName("a null rowId inserts on a freshly allocated detail id")
+    void nullRowIdInserts() {
+      wireWrite(List.of());
+      wireReadBack();
+      when(repository.nextCostDetailId()).thenReturn(8790);
+
+      service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP,
+          new SubPageSaveRequest(List.of(new SubPageRowRequest(null, "Generator Fuel", 500))),
+          true, "tester");
+
+      verify(repository).insertSubPageRow(8790, CAMP, ITEM_CAMP_ROW, 500, "Generator Fuel",
+          "tester");
+      verify(repository, never()).updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(),
+          any());
+    }
+
+    @Test
+    @DisplayName("a known rowId updates in place — item- and camp-scoped, stamping the user")
+    void knownRowIdUpdates() {
+      wireWrite(List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+      wireReadBack();
+      when(repository.updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(), any()))
+          .thenReturn(1);
+
+      service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP,
+          new SubPageSaveRequest(List.of(new SubPageRowRequest(8724, "Diesel", 750))),
+          true, "tester");
+
+      verify(repository).updateSubPageRow(8724, CAMP, ITEM_CAMP_ROW, 750, "Diesel", "tester");
+      verify(repository, never()).insertSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(),
+          any());
+      verify(repository, never()).deleteSubPageRow(anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("a stored row the body omits is deleted — the body IS the row set")
+    void omittedStoredRowIsDeleted() {
+      wireWrite(List.of(
+          row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel"),
+          row(8725, ITEM_CAMP_ROW, 300, "Propane")));
+      wireReadBack();
+      when(repository.updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(), any()))
+          .thenReturn(1);
+      when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt())).thenReturn(1);
+
+      service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP,
+          new SubPageSaveRequest(List.of(new SubPageRowRequest(8724, "Generator Fuel", 500))),
+          true, "tester");
+
+      verify(repository).deleteSubPageRow(8725, CAMP, ITEM_CAMP_ROW);
+      verify(repository, never()).deleteSubPageRow(8724, CAMP, ITEM_CAMP_ROW);
+    }
+
+    @Test
+    @DisplayName("an unknown rowId is a 404 and NOTHING is written — classify before writing")
+    void unknownRowIdWritesNothing() {
+      wireWrite(List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+
+      SubPageSaveRequest request = new SubPageSaveRequest(List.of(
+          new SubPageRowRequest(null, "A New Row", 100),
+          new SubPageRowRequest(9999, "Not This Camp's", 200)));
+
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true,
+          "tester"))
+          .isInstanceOf(CampNotFoundException.class);
+      // The valid insert that PRECEDES the bad id in the body must not have landed: the whole
+      // point of the classification pass is that a partial write is impossible.
+      verify(repository, never()).insertSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(),
+          any());
+      verify(repository, never()).deleteSubPageRow(anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("the same rowId twice in one body is a 404 — a list this camp does not have")
+    void repeatedRowIdIsNotFound() {
+      wireWrite(List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+
+      SubPageSaveRequest request = new SubPageSaveRequest(List.of(
+          new SubPageRowRequest(8724, "Generator Fuel", 500),
+          new SubPageRowRequest(8724, "Generator Fuel Again", 600)));
+
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true,
+          "tester"))
+          .isInstanceOf(CampNotFoundException.class);
+      verify(repository, never()).updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(),
+          any());
+    }
+
+    @Test
+    @DisplayName("an update that affects zero rows is a 404 — it vanished under the lock")
+    void updateAffectingZeroRowsIsNotFound() {
+      wireWrite(List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+      when(repository.updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(), any()))
+          .thenReturn(0);
+
+      SubPageSaveRequest request = new SubPageSaveRequest(
+          List.of(new SubPageRowRequest(8724, "Diesel", 750)));
+
+      // Classified as present a moment earlier, so a zero here is a concurrent delete — checked
+      // rather than assumed (the 4.4 lesson).
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true,
+          "tester"))
+          .isInstanceOf(CampNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("a delete that affects zero rows is a 404 too")
+    void deleteAffectingZeroRowsIsNotFound() {
+      wireWrite(List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+      when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt())).thenReturn(0);
+
+      SubPageSaveRequest request = new SubPageSaveRequest(List.of());
+
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true,
+          "tester"))
+          .isInstanceOf(CampNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("a Camp cost past ±9,999,999 is rejected with the CAMP message, before any write")
+    void campCostOutOfRangeIsRejected() {
+      // No stored-row stub: the range check runs before the classification read, so the request
+      // never reaches the repository beyond the draft gate and the camp lookup.
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+
+      SubPageSaveRequest request = new SubPageSaveRequest(
+          List.of(new SubPageRowRequest(null, "Too Much", 10_000_000)));
+
+      // The Access page's wider ±99,999,999 bound would accept this value; the bound is per page
+      // and applied here rather than on the DTO, so each page fails with its own message (AD-8).
+      assertThatThrownBy(() -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true,
+          "tester"))
+          .isInstanceOf(CampCostOutOfRangeException.class);
+      verify(repository, never()).insertSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(),
+          any());
+    }
+
+    @Test
+    @DisplayName("the Access page accepts a cost the Camp page rejects (±99,999,999)")
+    void accessCostRangeIsWider() {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.findSubPageRows(anyInt(), anyInt(), anyLong(), anyInt()))
+          .thenReturn(List.of());
+      when(repository.findCostDetails(anyLong(), anyInt()))
+          .thenReturn(List.of(volumeRow(8721, ITEM_ACCESS_VOLUME, VOL_120K)));
+      when(repository.findTrackStatus(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.nextCostDetailId()).thenReturn(8791);
+
+      service.saveSubPage(MILL, YEAR, CAMP, SubPage.ACCESS,
+          new SubPageSaveRequest(List.of(new SubPageRowRequest(null, "Bridge", 10_000_000))),
+          true, "tester");
+
+      verify(repository).insertSubPageRow(8791, CAMP, ITEM_ACCESS_ROW, 10_000_000, "Bridge",
+          "tester");
+    }
+
+    @Test
+    @DisplayName("the immediate delete (S07) removes the row and serves the refreshed document")
+    void immediateDeleteServesRefreshedDocument() {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt())).thenReturn(1);
+      when(repository.findSubPageRows(anyInt(), anyInt(), anyLong(), anyInt()))
+          .thenReturn(List.of(row(8725, ITEM_CAMP_ROW, 300, "Propane")));
+      wireReadBack();
+
+      SubPageDocument doc =
+          service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 8724, true);
+
+      verify(repository).deleteSubPageRow(8724, CAMP, ITEM_CAMP_ROW);
+      // Re-read, never hand-patched: the surviving row is what comes back.
+      assertThat(doc.rows()).singleElement()
+          .satisfies(r -> assertThat(r.rowId()).isEqualTo(8725));
+      assertThat(doc.editable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an immediate delete of an unknown or foreign row is a 404")
+    void immediateDeleteOfUnknownRowIsNotFound() {
+      when(repository.findTrackStatusForUpdate(anyLong(), anyInt())).thenReturn(Optional.of("D"));
+      when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
+      when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt())).thenReturn(0);
+
+      assertThatThrownBy(
+          () -> service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 9999, true))
+          .isInstanceOf(CampNotFoundException.class);
+    }
+  }
+
+  @Nested
   @DisplayName("Row shape")
   class RowShape {
 
@@ -287,6 +501,27 @@ class Schedule5SubPageServiceTest {
       assertThat(doc.rows()).singleElement()
           .satisfies(r -> assertThat(r.costPerVolume()).isNull());
       assertThat(doc.totals().costPerVolume()).isNull();
+    }
+  }
+
+  @Nested
+  @DisplayName("The AD-8 success echo (SubPageDocument.withMessage)")
+  class SuccessEcho {
+
+    @Test
+    @DisplayName("attaches the message and carries every other component through unchanged")
+    void withMessageCopiesEveryComponent() {
+      SubPageDocument doc = serve(SubPage.CAMP, VOL_120K,
+          List.of(volumeRow(8720, ITEM_CAMP_VOLUME, VOL_120K)),
+          List.of(row(8724, ITEM_CAMP_ROW, 500, "Generator Fuel")));
+      assertThat(doc.message()).isNull(); // absent on a GET
+
+      SubPageDocument echoed = doc.withMessage(new MessageInfo("sch5.save.msg", "Data saved."));
+
+      // A seven-component copy constructor is exactly where two same-typed fields get transposed;
+      // the controller's save/delete responses are built through this one call.
+      assertThat(echoed.message().key()).isEqualTo("sch5.save.msg");
+      assertThat(echoed).usingRecursiveComparison().ignoringFields("message").isEqualTo(doc);
     }
   }
 }

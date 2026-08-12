@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
+import org.springframework.context.support.StaticMessageSource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -108,6 +109,27 @@ class MessageControllerTest {
   void rejectsUnknownKey() throws Exception {
     mockMvc
         .perform(get("/api/v1/messages").param("key", "noSuchKeyAnywhere"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("Message not found."));
+  }
+
+  @Test
+  @DisplayName("404s an allowlisted key the bundle no longer holds — never echoes the key as text")
+  void allowlistedKeyMissingFromBundleFails() throws Exception {
+    // The rename/delete case the catch block exists for. A default message here would ship the
+    // raw key to a licensee as if it were a sentence — exactly the Schedule 6 review finding
+    // ("Road : 1 - TFL Number : missingRequiredFieldMsg"). The allowlist and the bundle drifting
+    // apart has to be a failure.
+    ResourceBundleMessageSource realBundle = new ResourceBundleMessageSource();
+    realBundle.setBasename("messages");
+    realBundle.setDefaultEncoding("UTF-8");
+    MockMvc emptyBundleMvc =
+        MockMvcBuilders.standaloneSetup(new MessageController(new StaticMessageSource()))
+            .setControllerAdvice(new GlobalExceptionHandler(realBundle))
+            .build();
+
+    emptyBundleMvc
+        .perform(get("/api/v1/messages").param("key", COPY_KEY))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail").value("Message not found."));
   }
