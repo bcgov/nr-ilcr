@@ -126,7 +126,9 @@ FAM authentication is tracked separately. The dashboard currently displays the s
 
 ## OpenShift Status
 
-OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. PR and merge deployment workflows are gated behind the `ENABLE_OPENSHIFT_DEPLOY` repository variable. Leave it unset until Gold routes, namespaces, credentials, and validation checks are ready.
+OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Pull requests always deploy a sandbox environment (zone = PR number mod 50). Merges to `main` deploy to TEST and then, if tests pass, to PROD in the same workflow run — but only while the `ENABLE_OPENSHIFT_DEPLOY` repository variable is `true`; it is left unset until the code is ready for those environments.
+
+Deployed pods fail closed on authentication: JWT enforcement (`ILCR_SECURITY_ENABLED`) and the Oracle datasource (`ILCR_DATASOURCE_ENABLED`) both default to `true` and can be overridden per scope with GitHub variables (environment-first, then repository). The backend refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data from a public route; setting both variables to `false` yields a data-less mock-auth smoke deployment.
 
 ## Verification
 

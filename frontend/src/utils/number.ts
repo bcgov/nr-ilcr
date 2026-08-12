@@ -79,6 +79,36 @@ export const numStr = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : String(value)
 
 /**
+ * Parse a form string using the legacy JSF converter's accepted syntax: an optional leading '-',
+ * digits with optional comma grouping, and an optional '.' fractional part — the same format the
+ * pages display. Deliberately STRICTER than legacy, whose `DecimalFormat.parse` had no
+ * consumed-length check and silently mangled junk-suffixed or mis-grouped input ('12,34' -> 1234,
+ * '1000abc' -> 1000). Native {@link toNum} diverges the other way and must not be used where legacy
+ * fidelity matters: it rejects grouped input legacy accepted ('1,000' -> NaN) and accepts JS-only
+ * forms legacy never allowed ('1e2', '0x10', 'Infinity'). Returns null when blank or not a valid
+ * decimal in this strict format.
+ *
+ * Schedules 6 and 11 still carry their own copies; converge them here in the consistency PR.
+ */
+const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
+export const parseDecimalInput = (raw: string): number | null => {
+  const trimmed = raw.trim()
+  if (trimmed === '' || !DECIMAL_INPUT.test(trimmed)) {
+    return null
+  }
+  return Number(stripGroup(trimmed))
+}
+
+/**
+ * Round a whole-dollar cost half-away-from-zero, the way Oracle rounds on insert. Legacy accepted
+ * fractional cost entry and the database rounded it; the modern Integer wire would instead TRUNCATE
+ * at deserialization, so rounding before send keeps the stored value faithful to legacy. The backend
+ * independently rejects any fractional cost.
+ */
+export const roundCost = (value: number | null): number | null =>
+  value === null ? null : Math.sign(value) * Math.round(Math.abs(value))
+
+/**
  * Render a numeric value as a GROUPED form input string ("50000" → "50,000"), blank when
  * null/undefined. Use to seed editable numeric fields and to fill read-only preview inputs, so a
  * field reads the same as the plain-text cells beside it.

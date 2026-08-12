@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule7a.api.Schedule7aApi;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
+import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -74,6 +75,16 @@ public class Schedule7aController implements Schedule7aApi {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule7aResponse doc = schedule7aService.updateBridge(
         context.millId(), context.year(), id, request, true, authentication.getName());
+    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule7aResponse> saveAllBridges(
+      String millId, String year, BridgeSaveAllRequest request, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    Schedule7aResponse doc = schedule7aService.saveAllBridges(
+        context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 

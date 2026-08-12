@@ -122,6 +122,29 @@ class Schedule7aAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("save-all without a group -> 403 (EDIT_SCHEDULE)")
+  void saveAllBridges_noPermission_returns403() throws Exception {
+    mockMvc.perform(put(BRIDGES).param("millId", "514").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(saveAllBody())
+            .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  @DisplayName("save-all with a foreign group -> 403 (EDIT_SCHEDULE)")
+  void saveAllBridges_foreignGroup_returns403() throws Exception {
+    mockMvc.perform(put(BRIDGES).param("millId", "514").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(saveAllBody())
+            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+        .andExpect(status().isForbidden());
+  }
+
+  /** A one-entry save-all body wrapping {@link #VALID_BODY}; never reached on a 403 path. */
+  private static String saveAllBody() {
+    return "{\"bridges\": [{\"bridgeReportId\": 7601, \"bridge\": " + VALID_BODY + "}]}";
+  }
+
+  @Test
   @DisplayName("delete without a group -> 403 (EDIT_SCHEDULE)")
   void deleteBridge_noPermission_returns403() throws Exception {
     mockMvc.perform(delete(BRIDGES + "/7601").param("millId", "514").param("year", "2021")

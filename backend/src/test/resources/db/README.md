@@ -35,6 +35,33 @@ two such branches merge:
    | Other Costs               | 523–527         | `V6`                                         |
    | Home                      | (see `V8`/`V9`) |                                              |
    | Schedule 2                | **622–625**     | summaries in the `12xx` block                |
+   | Schedule 5                | **670–676**     | reserved by `V34`, seeded by `V20260807`      |
+
+   **Schedule 5 write (`V20260807`, Story 7.2)** — a **timestamp version, deliberately**. The next
+   free integer was `V35`; it was not taken because this convention has now collided four times
+   (schedules 2, 11, 6, and `V34`'s near-miss), and `V34`'s own header said the hatch was "worth
+   taking next time". Flyway orders `20260807` after `34`, so it still applies immediately after the
+   `V34` snapshot it seeds into, and no future merge can force a renumber of it or of anyone else's.
+   It seeds Schedule 5's reserved mills **`670–676`**, which `V34` reserved and left empty: `670`
+   write playground (Draft years 2016–2024, one destructive concern per year — 2016 is the
+   cleared-value target added alongside 2017–2024), `671` non-Draft `S` →
+   write-gate 409, `672` check-status all-met, `673` check-status issues/mixed, `674` zero camps →
+   vacuously met, `675` neighbour (per-mill/year name scoping + the untouched-neighbour delete proof),
+   `676` owned solely by the authorization IT. Its PK ranges are a **new block, `82xx`**, verified
+   unused by every other migration: `CAMP_REPORT_ID` **`8200–8229`** and
+   `ILCR_COST_REPORT_DETAIL_ID` **`8230–8299`** — both below the sequence starts and clear of
+   Schedule 6's `8301–8399`, Schedule 5 read's `8401–8438`, and Schedule 8's `≥8500`. It adds NO
+   table and NO cost item: all fifteen category-`'5'` items already exist (`V34` + `V31:79`).
+
+   **Schedule 5 read (`V34`, Story 7.1)** reserves mills `670–676` but seeds **none of them yet** — the
+   read fixtures reuse the shared `514`/`515`/`516`/`517` context from `V2`, which already supplies
+   every guard and track-status case a summary-less schedule needs (`514` Draft, `515` status-row
+   but no summary → the valid 200-with-no-camps case, `516` closed → 409, `517` Submitted → the
+   read-only case). Its own PK ranges are `CAMP_REPORT_ID` `8401–8410` and
+   `ILCR_COST_REPORT_DETAIL_ID` `8411–8480`. `V34` also `ALTER`s the shared
+   `ILCR_COST_REPORT_DETAIL` to add the `CAMP_REPORT_ID` FK column, and registers fourteen
+   category-`'5'` cost items — **not** item `68`, which `V31:79` already defines as Schedule 6's
+   non-69 decoy (the shared-master-data rule above, in practice).
 
    Cost-item IDs (`ILCR_REPORT_COST_ITEM_ID`) are a **shared** master-data space across schedules.
    Define each item **once**; if another track already seeds it (identical row), reference it, don't
