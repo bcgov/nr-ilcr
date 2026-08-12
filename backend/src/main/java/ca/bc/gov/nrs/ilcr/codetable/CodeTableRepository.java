@@ -27,6 +27,11 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
+// java:S2077 — the only interpolated SQL tokens are the table + code-column identifiers, and those
+// come exclusively from the CodeTableRegistry enum (a fixed compile-time whitelist), never from a
+// caller; every value is a bound named parameter. There is no user-controlled input in the query
+// text, so the dynamically formatted SQL is safe.
+@SuppressWarnings("java:S2077")
 public class CodeTableRepository {
 
   /** Which arm of an {@link #upsert} ran — drives the "silent update" case (S05) and messaging. */

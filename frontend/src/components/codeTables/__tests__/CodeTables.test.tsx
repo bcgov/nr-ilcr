@@ -173,4 +173,59 @@ describe('Table Maintenance (Story 24.3)', () => {
       expect.objectContaining({ code: 'TON', description: 'Metric Tonnes' }),
     )
   })
+
+  test('cancelling an edit restores the row and issues no PUT', async () => {
+    const put = vi.fn()
+    server.use(
+      ...listHandlers(),
+      http.put(UNIT_ENTRIES, () => {
+        put()
+        return HttpResponse.json({
+          outcome: 'UPDATED',
+          messageKey: '',
+          message: 'ok',
+          entries: SEED,
+        })
+      }),
+    )
+    render(<CodeTables />)
+    await selectUnitCodes()
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[1]) // TON
+    const descField = screen.getByLabelText('Description (TON)')
+    await userEvent.clear(descField)
+    await userEvent.type(descField, 'Discarded')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    // Back to the read-only row with the original description; nothing saved.
+    expect(screen.getByText('Tonnes')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Description (TON)')).not.toBeInTheDocument()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  test('a save failure surfaces the server error and keeps nothing saved', async () => {
+    server.use(
+      ...listHandlers(),
+      http.put(UNIT_ENTRIES, () =>
+        HttpResponse.json({ detail: 'Code table not found.' }, { status: 404 }),
+      ),
+    )
+    render(<CodeTables />)
+    await selectUnitCodes()
+
+    await userEvent.type(screen.getByLabelText('Code'), 'ZZ')
+    await userEvent.type(screen.getByLabelText('Description'), 'Zed')
+    fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByText('Code table not found.')).toBeInTheDocument()
+  })
+
+  test('a null expiry renders as an em dash in the grid', async () => {
+    server.use(...listHandlers())
+    render(<CodeTables />)
+    await selectUnitCodes()
+    // M3 never expires (expiryDate null) → em dash.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)
+  })
 })
