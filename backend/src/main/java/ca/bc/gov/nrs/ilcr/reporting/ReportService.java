@@ -54,8 +54,8 @@ public class ReportService {
   private final Schedule9Repository schedule9Repository;
   private final Resource schedule9Template;
 
-  /** Compiled lazily on first use (see {@link #schedule9Report()}); never at startup. */
-  private volatile JasperReport schedule9Report;
+  /** Compiled lazily on first use (see {@link #schedule9Report()}); never at startup. Guarded by {@code this}. */
+  private JasperReport schedule9Report;
 
   /**
    * @param dataSource the single {@code @Primary} application datasource the report fills from
@@ -123,23 +123,17 @@ public class ReportService {
   }
 
   /**
-   * The compiled template, built on first use and cached (double-checked locking). Compilation is
+   * The compiled template, built on first use and cached (synchronized lazy init). Compilation is
    * kept OFF the startup path deliberately: if the engine cannot compile in the deployed container,
    * the failure surfaces as a 500 on this endpoint, not a boot-time context failure that would take
-   * the whole backend pod down (the cause of the Epic 20 PR-env deploy failure).
+   * the whole backend pod down (the cause of the Epic 20 PR-env deploy failure). The lock cost is
+   * negligible for a report endpoint, and it sidesteps the visibility pitfalls of a volatile field.
    */
-  private JasperReport schedule9Report() {
-    JasperReport report = schedule9Report;
-    if (report == null) {
-      synchronized (this) {
-        report = schedule9Report;
-        if (report == null) {
-          report = compile(schedule9Template);
-          schedule9Report = report;
-        }
-      }
+  private synchronized JasperReport schedule9Report() {
+    if (schedule9Report == null) {
+      schedule9Report = compile(schedule9Template);
     }
-    return report;
+    return schedule9Report;
   }
 
   /**
