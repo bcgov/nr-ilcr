@@ -404,6 +404,7 @@ class Schedule7aServiceTest {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
+    when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
@@ -412,11 +413,24 @@ class Schedule7aServiceTest {
     assertThat(doc.bridges()).isEmpty();
     // Order is the whole point: delivery's FK on ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID has no ON
     // DELETE CASCADE, so a parent-first delete raises ORA-02292 and the request 500s. Legacy deleted
-    // the children first for the same reason (Schedule7aDAO:566-570). The IT snapshot declares no FK,
-    // so only this ordering assertion catches a regression.
+    // the children first for the same reason (Schedule7aDAO:566-570).
     var order = inOrder(repository);
     order.verify(repository).deleteCostsForBridge(7601);
     order.verify(repository).deleteBridge(7601, 514, 2021);
+  }
+
+  @Test
+  @DisplayName("delete: a parent delete that affects 0 rows is a 404, not a false success (S04)")
+  void delete_parentVanishedMidFlight() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // The probe passes, then the row is gone by the time the delete runs (a concurrent delete won).
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
+    when(repository.deleteBridge(7601, 514, 2021)).thenReturn(0);
+
+    // Acting on the row count is what makes this a 404 rather than a 200 "Data deleted successfully"
+    // over a bridge that is still on screen with its costs stripped (the cost delete having committed).
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+        .isInstanceOf(BridgeNotFoundException.class);
   }
 
   @Test

@@ -5,12 +5,20 @@
 // replaced by anything here.
 
 import { parseDecimalInput, roundCost } from '@/utils/number'
+import { utf8Length } from '@/utils/forms'
 
 // Re-exported so this module stays the single validation surface the page imports from.
 export { parseDecimalInput, roundCost }
 
 const LOCATION_MAX = 30
 const COMMENTS_MAX = 3500
+// Both columns are BYTE-declared in delivery (LOCATION_NAME VARCHAR2(30 BYTE), COMMENTS
+// VARCHAR2(4000 BYTE)), and BridgeRequest carries a @MaxByteLength for each alongside its @Size. The
+// character caps alone let multi-byte text past this gate and into a 400 — and for the location that
+// is the sharper case, because BridgeFields sets maxLength={LOCATION_MAX_LENGTH}: 15 CJK characters
+// sit inside every limit the UI shows and still exceed 30 bytes.
+const LOCATION_MAX_BYTES = 30
+const COMMENTS_MAX_BYTES = 4000
 
 const LIFE_SPAN = { min: 0, max: 999 }
 // Height, length and width share one shape: NUMBER(5,1) in the delivery schema, so one decimal place.
@@ -185,7 +193,7 @@ export function validateBridge(form: BridgeFormValues): BridgeErrors {
   const locationName = form.locationName.trim()
   if (locationName === '') {
     errors.locationName = BRIDGE_MESSAGES.valueRequired
-  } else if (locationName.length > LOCATION_MAX) {
+  } else if (locationName.length > LOCATION_MAX || utf8Length(locationName) > LOCATION_MAX_BYTES) {
     errors.locationName = BRIDGE_MESSAGES.locationMaxLength
   }
 
@@ -229,8 +237,11 @@ export function validateBridge(form: BridgeFormValues): BridgeErrors {
     }
   }
 
-  // Measured on the trimmed value, because that is what buildBody sends.
-  if (form.comments.trim().length > COMMENTS_MAX) {
+  // Measured on the trimmed value, because that is what buildBody sends. Both server bounds are
+  // mirrored — @Size(max = 3500) AND @MaxByteLength(4000, charMax = 3500) — and they share one
+  // message key, so one message covers both here too.
+  const comments = form.comments.trim()
+  if (comments.length > COMMENTS_MAX || utf8Length(comments) > COMMENTS_MAX_BYTES) {
     errors.comments = BRIDGE_MESSAGES.commentsMaxLength
   }
 

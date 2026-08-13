@@ -701,16 +701,28 @@ class Schedule7bServiceTest {
     void deleteCascadesCosts() {
       draft();
       when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
+      when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(1);
 
       service.deleteCulvert(MILL, YEAR, 7801L, true);
 
       // Order is the whole point: THE.ILCR_COST_REPORT_DETAIL carries ILCR_LCRD_CLV_RPT_FK on
       // CULVERT_REPORT_ID with DELETE_RULE = NO ACTION, so a parent-first delete raises ORA-02292
-      // and the request 500s. The IT snapshot declares the FK column but no constraint, so only this
-      // ordering assertion catches a regression.
+      // and the request 500s.
       var order = org.mockito.Mockito.inOrder(repository);
       order.verify(repository).deleteCostsForCulvert(7801L);
       order.verify(repository).deleteCulvert(7801L, MILL, YEAR);
+    }
+
+    @Test
+    @DisplayName("AC4: a parent delete affecting 0 rows is a 404, not a false success")
+    void deleteParentVanishedMidFlight() {
+      draft();
+      // The probe passes, then the row is gone by the time the delete runs (concurrent delete).
+      when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
+      when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(0);
+
+      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, true))
+          .isInstanceOf(CulvertNotFoundException.class);
     }
 
     @Test

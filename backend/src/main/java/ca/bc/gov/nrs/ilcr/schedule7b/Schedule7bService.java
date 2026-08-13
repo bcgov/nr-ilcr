@@ -283,7 +283,13 @@ public class Schedule7bService {
         throw new CulvertNotFoundException();
       }
       repository.deleteCostsForCulvert(culvertId);
-      repository.deleteCulvert(culvertId, millId, year);
+      if (repository.deleteCulvert(culvertId, millId, year) == 0) {
+        // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
+        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result is
+        // discarded reported "Data deleted successfully" while the row survived — and here it would
+        // have committed the cost deletes, so the row would re-render stripped of its costs.
+        throw new CulvertNotFoundException();
+      }
     } catch (DataAccessException ex) {
       log.warn("Schedule 7B delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());

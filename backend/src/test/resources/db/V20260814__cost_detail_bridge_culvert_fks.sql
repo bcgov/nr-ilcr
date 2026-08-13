@@ -17,6 +17,29 @@
 -- a bridge/culvert must insert the parent first and delete the children first. Every current fixture
 -- and IT teardown already does (Schedule7aWriteIT:46-53, Schedule7bWriteIT:66-74).
 --
+-- THE FULL DELIVERY PICTURE, so the next schedule does not have to re-derive it. Of the 20 columns on
+-- THE.ILCR_COST_REPORT_DETAIL, NINE carry an ENABLED FK, all DELETE_RULE = 'NO ACTION':
+--
+--   ILCR_REPORT_SUMMARY_ID          -> ILCR_REPORT_SUMMARY           ILCR_LCRD_ILCR_SMRY_FK
+--   ILCR_REPORT_COST_ITEM_ID        -> ILCR_REPORT_COST_ITEM         ILCR_LCRD_ILCR_RCI_FK
+--   TRANSPORTATION_REPORT_ID        -> TRANSPORTATION_REPORT         ILCR_LCRD_ILCR_TR_FK    (S4)
+--   CAMP_REPORT_ID                  -> CAMP_REPORT                   ILCR_LCRD_CMP_RPT_FK    (S5)
+--   ROAD_MAINTENANCE_REPORT_ID      -> ROAD_MAINTENANCE_REPORT        ILCR_LCRD_RM_RPT_FK     (S6)
+--   BRIDGE_REPORT_ID                -> BRIDGE_REPORT                 ILCR_LCRD_BRG_RPT_FK    (7A) <-- below
+--   CULVERT_REPORT_ID               -> CULVERT_REPORT                ILCR_LCRD_CLV_RPT_FK    (7B) <-- below
+--   CONTRACTUAL_WORK_REPORT_ID      -> CONTRACTUAL_WORK_REPORT        ILCR_LCRD_CW_RPT_FK     (S9)
+--   ROAD_CONSTRUCTION_REPRT_DTL_ID  -> ROAD_CONSTRUCTION_REPRT_DTL    ILCR_LCRD_RCR_DTL_FK    (S10)
+--
+-- BASIC_SILVICULTURE_REPORT_ID (S11) is the ONE per-report column with NO FK — so V20's comment is
+-- correct for that column, and Schedule 11's parent-first delete is safe on schema grounds, not on
+-- ordering grounds. Do not "fix" V20 to match this file.
+--
+-- Only 7A/7B are declared here, because this is a 7A/7B change: declaring the other seven means
+-- re-verifying every fixture insert order and every IT teardown across S1-S11. Today nothing else is
+-- broken — S4 deletes children first (Schedule4Repository.deleteFamily), S5 likewise
+-- (Schedule5Service:668-674), S6 and S9 have no row-delete path, S10 is not built — but nothing stops
+-- the next one repeating the mistake. That audit is the follow-up.
+--
 -- NO ON DELETE CASCADE, deliberately: the delivery constraints have none, and adding one here would
 -- re-hide exactly the bug this migration exists to catch.
 

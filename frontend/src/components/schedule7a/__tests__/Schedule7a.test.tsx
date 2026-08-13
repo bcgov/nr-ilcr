@@ -659,9 +659,12 @@ describe('Schedule 7A page', () => {
 
     // The legacy label carries a double space before "Cost" — it must survive verbatim.
     expect(
-      await screen.findByText('Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost : Value Required', {
-        normalizer: verbatim,
-      }),
+      await screen.findByText(
+        'Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost : Value Required',
+        {
+          normalizer: verbatim,
+        },
+      ),
     ).toBeInTheDocument()
     expect(screen.getByText('All requirements for 1 have been met.')).toBeInTheDocument()
     expect(
