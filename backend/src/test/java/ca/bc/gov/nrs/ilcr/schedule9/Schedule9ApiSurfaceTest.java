@@ -60,7 +60,8 @@ class Schedule9ApiSurfaceTest {
         .thenReturn(new MillYearContext(700L, 2021));
     lenient().when(authentication.getName()).thenReturn("SEED");
 
-    Schedule9Response dummyResponse = new Schedule9Response(700L, 2021, "D", true, List.of(), null);
+    Schedule9Response dummyResponse =
+        new Schedule9Response(700L, 2021, "D", true, List.of(), null, null);
     lenient().when(schedule9Service.addRecord(anyLong(), anyInt(), any(), anyBoolean(), any()))
         .thenReturn(dummyResponse);
     lenient().when(schedule9Service.updateRecord(anyLong(), anyInt(), anyInt(), any(), anyBoolean(), any()))

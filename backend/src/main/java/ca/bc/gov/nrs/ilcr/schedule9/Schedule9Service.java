@@ -152,7 +152,8 @@ public class Schedule9Service {
         .map(row -> toRecord(row, costByRecord.get(row.id())))
         .toList();
 
-    return new Schedule9Response(millId, year, trackStatus, editable, records, null);
+    return new Schedule9Response(
+        millId, year, trackStatus, editable, records, repository.codeLists(), null);
   }
 
   private static ContractualWorkRecord toRecord(RecordRow row, CostRow cost) {

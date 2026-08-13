@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CodeLists;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -360,4 +362,61 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
        WHERE ILCR_CONTRACTUAL_SOURCE_CODE = :code
       """)
   int countSourceCode(@Param("code") String code);
+
+  // ===============================================================================================
+  // Code tables (Story 9.3): the four dropdown option lists carried on the GET document. Each row is
+  // a (code, description) pair mapped to the shared CodeDescriptionDto. NOT year-scoped — matching
+  // the 9.1 read joins (see Schedule9CodeLists). Contractual items are the fixed category-'9'
+  // catalogue; the unit/BEC/source lists are the whole small reference tables.
+  // ===============================================================================================
+
+  /** A generic {@code (code, description)} option row projection for the four code lists. */
+  record OptionRow(String code, String description) {
+  }
+
+  /** The Contractual Item catalogue (108–114, BR-09); the numeric id is the option code. */
+  @Query("""
+      SELECT TO_CHAR(ILCR_REPORT_COST_ITEM_ID) AS CODE, ITEM_NAME AS DESCRIPTION
+        FROM THE.ILCR_REPORT_COST_ITEM
+       WHERE ILCR_CATEGORY_ID = '9'
+       ORDER BY ILCR_REPORT_COST_ITEM_ID
+      """)
+  List<OptionRow> findContractualItemOptions();
+
+  /** The {@code ILCR_UNIT_CODE} options, ordered by code. */
+  @Query("""
+      SELECT ILCR_UNIT_CODE AS CODE, DESCRIPTION AS DESCRIPTION
+        FROM THE.ILCR_UNIT_CODE
+       ORDER BY ILCR_UNIT_CODE
+      """)
+  List<OptionRow> findUnitTypeOptions();
+
+  /** The {@code BEC_ZONE_CODE} options, ordered by code. */
+  @Query("""
+      SELECT BEC_ZONE_CODE AS CODE, DESCRIPTION AS DESCRIPTION
+        FROM THE.BEC_ZONE_CODE
+       ORDER BY BEC_ZONE_CODE
+      """)
+  List<OptionRow> findBiogeoclimaticZoneOptions();
+
+  /** The {@code ILCR_CONTRACTUAL_SOURCE_CODE} options, ordered by code. */
+  @Query("""
+      SELECT ILCR_CONTRACTUAL_SOURCE_CODE AS CODE, DESCRIPTION AS DESCRIPTION
+        FROM THE.ILCR_CONTRACTUAL_SOURCE_CODE
+       ORDER BY ILCR_CONTRACTUAL_SOURCE_CODE
+      """)
+  List<OptionRow> findSourceOptions();
+
+  /** The four option lists assembled into the served {@link Schedule9CodeLists}. */
+  default Schedule9CodeLists codeLists() {
+    return new Schedule9CodeLists(
+        toOptions(findContractualItemOptions()),
+        toOptions(findUnitTypeOptions()),
+        toOptions(findBiogeoclimaticZoneOptions()),
+        toOptions(findSourceOptions()));
+  }
+
+  private static List<CodeDescriptionDto> toOptions(List<OptionRow> rows) {
+    return rows.stream().map(r -> new CodeDescriptionDto(r.code(), r.description())).toList();
+  }
 }
