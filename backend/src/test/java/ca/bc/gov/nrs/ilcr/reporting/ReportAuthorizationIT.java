@@ -42,6 +42,16 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("no token (anonymous) -> 401, the authentication boundary")
+  void anonymous_returns401() throws Exception {
+    mockMvc.perform(get(ENDPOINT)
+            .param("millId", SEEDED_MILL)
+            .param("year", SEEDED_YEAR)
+            .accept(MediaType.APPLICATION_PDF))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
     mockMvc.perform(get(ENDPOINT)
