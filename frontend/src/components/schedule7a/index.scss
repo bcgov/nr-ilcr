@@ -66,18 +66,21 @@
     grid-column: 2;
   }
 
+  // A non-breaking space, not a plain one: the colon must never be able to wrap onto a line of its
+  // own when a long label ("Site Plan / Gen. Arr. ($)") runs out of room.
   .cds--label::after {
-    content: ' :';
+    content: '\00a0:';
   }
 }
 
 // Legacy suffixes every label with " :". Generated content rather than text baked into `labelText`,
 // so the ACCESSIBLE NAME stays the bare field name: a screen reader announcing "Date colon" is
 // noise, and the name is what validation messages and tests refer to. The Material/Deliver/Install
-// column headings take no colon in legacy and are excluded.
-.schedule-7a__cost-label::after,
+// column headings take no colon in legacy and are excluded. `:not(:empty)` excludes the heading row's
+// blank row label, which would otherwise render a stray colon in the leftmost column.
+.schedule-7a__cost-label:not(:empty)::after,
 .schedule-7a__total-label::after {
-  content: ' :';
+  content: '\00a0:';
 }
 
 // The twelve attribute fields, three-across as in legacy. Carbon's 16-column grid cannot express
@@ -118,7 +121,7 @@
   display: grid;
   // The standalone-cost column carries a left label AND its field, so it is wider than it was when
   // the label sat above.
-  grid-template-columns: 10rem 1fr 21rem;
+  grid-template-columns: 10rem 1fr 22.5rem;
   gap: 3rem;
   align-items: end;
 
@@ -147,7 +150,9 @@
 // The right-hand standalone-cost cell. Stacks because the Comments row carries both Other Costs and
 // the Grand Total beneath it.
 .schedule-7a__cost-secondary {
-  --s7a-label-col: 9.5rem;
+  // Wide enough for the longest label in this column to keep its colon on the first line
+  // ("Site Plan / Gen. Arr. ($) :").
+  --s7a-label-col: 12rem;
 
   display: flex;
   flex-direction: column;
@@ -163,9 +168,11 @@
   }
 }
 
+// Left-aligned, not centred over the field: these read as labels for the column below, so they line
+// up with the other labels on the page rather than floating mid-cell above a right-aligned amount.
 .schedule-7a__cost-heading {
   font-size: 0.875rem;
-  text-align: center;
+  text-align: left;
 }
 
 // Numeric fields right-align, so a column of amounts lines up on its digits and each cost column

@@ -30,9 +30,11 @@ class Schedule7aCheckStatusIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.errors", hasSize(2)))
         .andExpect(jsonPath("$.errors[0].key", is("missingRequiredFieldMsg")))
         .andExpect(jsonPath("$.errors[0].text", containsString("Bridge Report Id : 3")))
-        .andExpect(jsonPath("$.errors[0].text", containsString(" - Certification After install Cost ")))
-        .andExpect(jsonPath("$.errors[0].text", containsString("Value Required")))
-        .andExpect(jsonPath("$.errors[1].text", containsString(" - Other Costs ")))
+        // The verbatim legacy line, ": " separator included (util/FacesUtil.java:134).
+        .andExpect(jsonPath("$.errors[0].text",
+            is("Bridge Report Id : 3 - Certification After install Cost : Value Required")))
+        .andExpect(jsonPath("$.errors[1].text",
+            is("Bridge Report Id : 3 - Other Costs : Value Required")))
         // 7601 + 7602 pass -> two per-bridge all-met messages; no schedule-wide all-met.
         .andExpect(jsonPath("$.bridgeMessages", hasSize(2)))
         .andExpect(jsonPath("$.bridgeMessages[0].key", is("bridgeRequirementsMetMsg")))
@@ -46,7 +48,9 @@ class Schedule7aCheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.requirementsMet", is(true)))
         .andExpect(jsonPath("$.errors", hasSize(0)))
-        .andExpect(jsonPath("$.bridgeMessages", hasSize(1)))
+        // No per-bridge lines when the whole schedule passes — legacy showed the one schedule-wide
+        // message and ran its per-bridge loop only in the failed branch (Schedule7aMB.java:197-296).
+        .andExpect(jsonPath("$.bridgeMessages", hasSize(0)))
         .andExpect(jsonPath("$.requirementsMetMessage.key", is("scheduleRequirementsMetMsg")))
         .andExpect(jsonPath("$.requirementsMetMessage.text",
             is("All requirements for this schedule have been met")));

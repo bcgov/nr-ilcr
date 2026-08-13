@@ -6,9 +6,10 @@ import { COMMENTS_MAX_LENGTH, previewTotalCost } from './validation'
 
 // Legacy renders the same nine-field layout in the Add panel and in every list row
 // (schedule7B.xhtml:73-232 vs :286-520), so both callers share this one editor. Labels and their order
-// are transcribed from the legacy page — including the erratic spacing around the units, which is what
-// the page actually shows — and must not be reworded or resequenced: reporters navigate this form by
-// shape.
+// are transcribed from the legacy page and must not be reworded or resequenced: reporters navigate
+// this form by shape. The ONE deliberate departure is spacing before a unit suffix — legacy's spacing
+// is erratic ("Span (mm)" beside "Rise(mm)" and "Length(m)"), and the team asked for the space
+// everywhere, so the wording is legacy's but the gap is ours.
 
 // A total renders through a mask, never a recompute of a served figure. A null total means "no
 // contributing costs" and must render BLANK — showing "0" would assert a figure the data lacks.
@@ -113,16 +114,16 @@ const CulvertFields: FC<Props> = ({
             onChange={({ selectedItem }) => onChange('culvertTypeCode', selectedItem?.code ?? '')}
           />
           {masked('spanSize', 'Span (mm)', 'numeric')}
-          {masked('riseSize', 'Rise(mm)', 'numeric')}
+          {masked('riseSize', 'Rise (mm)', 'numeric')}
 
-          {masked('length', 'Length(m)', 'decimal')}
+          {masked('length', 'Length (m)', 'decimal')}
           {masked('culvertPieceCount', 'No of Pieces', 'numeric')}
           {/* Legacy's second row holds only two fields; the spacer keeps the cost row below it on the
               same three-column rhythm. */}
           <div />
 
           {cost('materialCost', 'Material costs ($)')}
-          {cost('installCost', 'Install costs($)')}
+          {cost('installCost', 'Install costs ($)')}
           {/* Total costs is server-derived (BR-05) and legacy renders it `disabled="true"`
               (schedule7B.xhtml:197), so it is never a control here either. An untouched row shows the
               SERVED figure — the authoritative one (AD-5), never recomputed from the fields beside
@@ -135,7 +136,7 @@ const CulvertFields: FC<Props> = ({
               is announced with a name — the visual cue that this is not editable is the absence of a
               field, which a screen reader cannot see. */}
           <div className="schedule-7b__total">
-            <span className="schedule-7b__total-label">Total costs($)</span>
+            <span className="schedule-7b__total-label">Total costs ($)</span>
             <span className="schedule-7b__total-value">
               {money(serverTotal === undefined ? previewTotalCost(form) : serverTotal)}
             </span>

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule7a.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -29,7 +30,7 @@ import java.math.BigDecimal;
  * <p>{@code revisionCount} is the per-row optimistic-lock token — required only on UPDATE (the
  * {@link OnUpdate} group), ignored on create.
  *
- * @param locationName the bridge name/location (required, ≤ 30)
+ * @param locationName the bridge name/location (required, ≤ 30 characters AND ≤ 30 bytes)
  * @param builtDate the completion date (required; {@code yyyy-MM}, validated in the service)
  * @param constructionTypeCode the New/Used code (required; must resolve to a code-table row)
  * @param superstructureTypeCode the superstructure type code (required)
@@ -51,12 +52,18 @@ import java.math.BigDecimal;
  * @param approachCost approach works (optional)
  * @param afterInstallCost certification after install (optional)
  * @param otherCost other costs (optional)
- * @param comments the row comments (optional, ≤ 3500)
+ * @param comments the row comments (optional, ≤ 3500 characters AND ≤ 4000 UTF-8 bytes)
  * @param revisionCount the optimistic-lock token echoed from the served row (required on UPDATE)
  */
 public record BridgeRequest(
+    // Two units, both enforced, as Schedule 5's campName and Schedule 7B's comments already are:
+    // THE.BRIDGE_REPORT.LOCATION_NAME is VARCHAR2(30 BYTE) (char_used = 'B'), so 30 accented or CJK
+    // characters passed @Size and then overflowed the column — Oracle raised ORA-12899 and the
+    // service's blanket DataAccessException catch could only surface it as an opaque 500 "Schedule
+    // could not be saved." instead of a field-level length message.
     @NotBlank(message = "{missingRequiredFieldMsg}")
     @Size(max = 30, message = "{bridgeLocationMaxLengthErrorMsg}")
+    @MaxByteLength(value = 30, charMax = 30, message = "{bridgeLocationMaxLengthErrorMsg}")
     String locationName,
 
     @NotBlank(message = "{missingRequiredFieldMsg}")
@@ -145,7 +152,10 @@ public record BridgeRequest(
     @Max(value = 99999999, message = "{costValidatorErrorMsg}")
     Integer otherCost,
 
+    // 3,500 CHARACTERS is the legacy textarea's own maxlength (schedule7A.xhtml:455); 4,000 BYTES is
+    // the column's real width (VARCHAR2(4000 BYTE)). Same pairing as Schedule 7B's comments.
     @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
+    @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
     String comments,
 
     @NotNull(groups = OnUpdate.class, message = "{missingRequiredFieldMsg}")

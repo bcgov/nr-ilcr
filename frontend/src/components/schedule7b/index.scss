@@ -52,15 +52,9 @@
   }
 
   // Each label sits ABOVE its control — Carbon's own stacked layout, which is what the team asked for
-  // over legacy's label-beside-field arrangement.
-
-  // Legacy suffixes every one of these labels with " :". Generated content rather than text baked into
-  // `labelText`, so the ACCESSIBLE NAME stays the bare field name: a screen reader announcing "Span (mm)
-  // colon" is noise, and the name is what validation messages and tests refer to.
-  .cds--label::after,
-  .schedule-7b__total-label::after {
-    content: ' :';
-  }
+  // over legacy's label-beside-field arrangement. Legacy's trailing " :" is dropped with it: the colon
+  // only earned its keep when the label sat inline to the LEFT of the field, where it marked where the
+  // label ended and the control began.
 }
 
 .schedule-7b__panel-actions {

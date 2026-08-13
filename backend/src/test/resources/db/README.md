@@ -26,6 +26,19 @@ two such branches merge:
    any in-flight PRs you know about**. When you rebase/merge `main` and hit a duplicate, bump *your*
    (newer) migration to the next free slot — never renumber someone else's merged migration. If we
    keep colliding, switch to timestamp versions (`V20260728__…`), which removes the race entirely.
+
+   **Timestamp versions do NOT remove the race** — proven 2026-08-13, when three branches all reached
+   for the same two days (`V20260814` → schedule 5 subpage fixtures, `V20260815` → schedule 9 write
+   fixtures). Everyone picks today's or tomorrow's date, so a date is just as scarce as an integer.
+
+1a. **Schema changes that must apply LAST: use a repeatable migration (`R__…`).** If your script adds a
+   constraint or index over data that *other* migrations seed — rather than seeding its own fixtures —
+   it does not want a version number at all. It wants to run after everything, which is precisely
+   Flyway's guarantee for repeatable migrations. `R__cost_detail_bridge_culvert_fks.sql` is the worked
+   example: it declares the delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures
+   have populated their per-report column, and it cannot collide with anyone. `FlywayMigrationVersionUniquenessTest`
+   ignores `R__` files by design. This is NOT a general escape hatch — a migration that inserts its own
+   fixtures still takes a version, because re-running it on a reused container would duplicate rows.
 2. **Fixture ID ranges.** Namespace seed entities by track so PKs can't overlap:
 
    | Track                     | `MILL_ID` block | Notes                                        |

@@ -697,28 +697,47 @@ class Schedule7bServiceTest {
     }
 
     @Test
-    @DisplayName("AC4: delete removes the culvert FIRST, then cascades its cost children")
+    @DisplayName("AC4: delete removes the cost children FIRST, then the culvert")
     void deleteCascadesCosts() {
       draft();
+      when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
       when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(1);
 
       service.deleteCulvert(MILL, YEAR, 7801L, true);
 
+      // Order is the whole point: THE.ILCR_COST_REPORT_DETAIL carries ILCR_LCRD_CLV_RPT_FK on
+      // CULVERT_REPORT_ID with DELETE_RULE = NO ACTION, so a parent-first delete raises ORA-02292
+      // and the request 500s.
       var order = org.mockito.Mockito.inOrder(repository);
-      order.verify(repository).deleteCulvert(7801L, MILL, YEAR);
       order.verify(repository).deleteCostsForCulvert(7801L);
+      order.verify(repository).deleteCulvert(7801L, MILL, YEAR);
+    }
+
+    @Test
+    @DisplayName("AC4: a parent delete affecting 0 rows is a 404, not a false success")
+    void deleteParentVanishedMidFlight() {
+      draft();
+      // The probe passes, then the row is gone by the time the delete runs (concurrent delete).
+      when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(1);
+      when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(0);
+
+      assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, true))
+          .isInstanceOf(CulvertNotFoundException.class);
     }
 
     @Test
     @DisplayName("AC4: deleting an id that is not this mill's culvert is a 404, and costs survive")
     void deleteOfForeignIdIsNotFound() {
       draft();
-      when(repository.deleteCulvert(7801L, MILL, YEAR)).thenReturn(0);
+      // countCulvert is mill/year/category-scoped, so it still refuses a foreign id — it has to be,
+      // because the cost delete keys on the culvert id alone.
+      when(repository.countCulvert(7801L, MILL, YEAR)).thenReturn(0);
 
       assertThatThrownBy(() -> service.deleteCulvert(MILL, YEAR, 7801L, true))
           .isInstanceOf(CulvertNotFoundException.class);
 
       verify(repository, never()).deleteCostsForCulvert(anyLong());
+      verify(repository, never()).deleteCulvert(anyLong(), anyLong(), anyInt());
     }
 
     @Test

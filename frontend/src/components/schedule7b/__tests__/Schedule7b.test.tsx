@@ -146,24 +146,25 @@ describe('Schedule 7B page', () => {
     expect(await screen.findByRole('button', { name: 'Culvert report Id: 1' })).toBeInTheDocument()
     await openCulvert(user, 1)
 
-    // Legacy's erratic label spacing is transcribed as-is: "Span (mm)" but "Rise(mm)", "Length(m)",
-    // "Install costs($)". These are what the page actually shows, so they are what the labels say.
+    // Legacy's erratic label spacing is NOT transcribed for the unit suffixes: the team asked for a
+    // space before every one, so "Rise (mm)", "Length (m)" and "Install costs ($)" read consistently
+    // rather than the way the legacy page happened to punctuate them.
     // Every numeric field displays through its legacy `f:convertNumber` mask — grouped, with that
     // field's fixed decimal count. Span/rise carry `#,###,##0`, so 1200 reads `1,200`, not `1200`.
     expect(field('Span (mm)')).toHaveValue('1,200')
-    expect(field('Rise(mm)')).toHaveValue('900')
-    expect(field('Length(m)')).toHaveValue('12.5')
+    expect(field('Rise (mm)')).toHaveValue('900')
+    expect(field('Length (m)')).toHaveValue('12.5')
     expect(field('No of Pieces')).toHaveValue('3')
     // Money through the costConverter's `##,###,###`.
     expect(field('Material costs ($)')).toHaveValue('4,000')
-    expect(field('Install costs($)')).toHaveValue('1,500')
+    expect(field('Install costs ($)')).toHaveValue('1,500')
     expect(screen.getByRole('combobox', { name: /Type/i })).toHaveTextContent('Round')
 
     // The server-computed total renders as plain text, never as a field. Asserting the absence of a
     // control matters as much as the value: a page that let a reporter type over a server total would
     // still pass a value-only check.
     expect(screen.getByText('5,500')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Total costs($)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Total costs ($)')).not.toBeInTheDocument()
   })
 
   test('a null total renders blank, never 0 (AC2, BR-05)', async () => {
@@ -273,7 +274,7 @@ describe('Schedule 7B page', () => {
     await user.click(await screen.findByRole('button', { name: 'Add' }))
     await fillAddForm(user)
     await user.type(addPanel().getByLabelText('Material costs ($)'), '4000')
-    await user.type(addPanel().getByLabelText('Install costs($)'), '1500')
+    await user.type(addPanel().getByLabelText('Install costs ($)'), '1500')
     await user.click(screen.getByRole('button', { name: 'Add Report' }))
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
@@ -281,7 +282,7 @@ describe('Schedule 7B page', () => {
 
     await openCulvert(user, 1)
     expect(field('Material costs ($)')).toHaveValue('4,000')
-    expect(field('Install costs($)')).toHaveValue('1,500')
+    expect(field('Install costs ($)')).toHaveValue('1,500')
     // The derived total is the server's; it renders as text beside the two costs.
     expect(screen.getByText('5,500')).toBeInTheDocument()
   })
@@ -489,7 +490,7 @@ describe('Schedule 7B page', () => {
     })
   })
 
-  test('Total costs($) previews material + install LIVE, as legacy re-rendered it', async () => {
+  test('Total costs ($) previews material + install LIVE, as legacy re-rendered it', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ culverts: [] }))))
     const user = userEvent.setup()
     render(<Schedule7b />)
@@ -497,7 +498,7 @@ describe('Schedule 7B page', () => {
     await user.click(await screen.findByRole('button', { name: 'Add' }))
     const total = () =>
       addPanel()
-        .getByText('Total costs($)')
+        .getByText('Total costs ($)')
         .parentElement?.querySelector('.schedule-7b__total-value')
 
     // Blank until a cost is entered — never "0", which would assert a figure the data lacks.
@@ -507,7 +508,7 @@ describe('Schedule 7B page', () => {
     await waitFor(() => {
       expect(total()).toHaveTextContent('450')
     })
-    await user.type(addPanel().getByLabelText('Install costs($)'), '1500')
+    await user.type(addPanel().getByLabelText('Install costs ($)'), '1500')
     // The figure from the reported legacy screenshot: 450 + 1,500 = 1,950, with no save involved.
     await waitFor(() => {
       expect(total()).toHaveTextContent('1,950')
@@ -969,7 +970,7 @@ describe('Schedule 7B page', () => {
     render(<Schedule7b />)
     await openCulvert(user, 1)
 
-    expect(field('Length(m)')).toHaveValue('12.0')
+    expect(field('Length (m)')).toHaveValue('12.0')
     // A three-digit span has no separator to show, which is why the span in the reported screenshot
     // looked correct while the length did not.
     expect(field('Span (mm)')).toHaveValue('350')
@@ -989,7 +990,7 @@ describe('Schedule 7B page', () => {
     // grouped what you had typed. Before this, only the two cost fields did.
     expect(span).toHaveValue('1,200')
 
-    const length = culvertPanel(7801).getByLabelText('Length(m)')
+    const length = culvertPanel(7801).getByLabelText('Length (m)')
     await user.clear(length)
     await user.type(length, '9')
     await user.tab()
@@ -1029,7 +1030,7 @@ describe('Schedule 7B page', () => {
     render(<Schedule7b />)
     await openCulvert(user, 1)
 
-    const install = culvertPanel(7801).getByLabelText('Install costs($)')
+    const install = culvertPanel(7801).getByLabelText('Install costs ($)')
     await user.clear(install)
     await user.type(install, '1234567')
     await user.tab()
@@ -1068,7 +1069,7 @@ describe('Schedule 7B page', () => {
     // used two — a deliberate per-page difference, not a layout choice to normalize.
     expect(field('Comments')).toHaveAttribute('rows', '10')
     // Every legacy inputText carried `autocomplete="off"`.
-    for (const label of ['Span (mm)', 'Rise(mm)', 'Length(m)', 'No of Pieces'] as const) {
+    for (const label of ['Span (mm)', 'Rise (mm)', 'Length (m)', 'No of Pieces'] as const) {
       expect(field(label)).toHaveAttribute('autocomplete', 'off')
     }
   })

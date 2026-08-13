@@ -262,8 +262,14 @@ public class Schedule7bService {
   /**
    * Delete one culvert and BOTH its cost children (S04 — legacy whole-row removal via Hibernate
    * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). Draft-gated; an unknown id →
-   * 404. The mill/year-scoped culvert delete runs FIRST so its 0-rows result is the ownership
-   * check.
+   * 404.
+   *
+   * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery carries
+   * an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE CASCADE},
+   * so deleting the culvert while its cost rows still reference it raises ORA-02292 ("child record
+   * found") and the whole delete fails. The ownership/404 check therefore cannot be the parent
+   * delete's row count; it is a scoped {@code countCulvert} taken BEFORE either delete, so another
+   * mill's id still removes nothing.
    *
    * <p>The Yes/No confirmation (ALT-001) is an in-page dialog with no backend contract — a
    * cancelled delete (S05) simply never reaches here.
@@ -273,11 +279,17 @@ public class Schedule7bService {
       long millId, int year, long culvertId, boolean callerMayEdit) {
     requireDraft(millId, year);
     try {
-      int deleted = repository.deleteCulvert(culvertId, millId, year);
-      if (deleted == 0) {
+      if (repository.countCulvert(culvertId, millId, year) == 0) {
         throw new CulvertNotFoundException();
       }
       repository.deleteCostsForCulvert(culvertId);
+      if (repository.deleteCulvert(culvertId, millId, year) == 0) {
+        // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
+        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result is
+        // discarded reported "Data deleted successfully" while the row survived — and here it would
+        // have committed the cost deletes, so the row would re-render stripped of its costs.
+        throw new CulvertNotFoundException();
+      }
     } catch (DataAccessException ex) {
       log.warn("Schedule 7B delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
