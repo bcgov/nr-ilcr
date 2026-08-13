@@ -337,3 +337,138 @@ describe('Schedule9 — check status + guards', () => {
     expect(await screen.findByText('Schedule not found.')).toBeInTheDocument()
   })
 })
+
+describe('Schedule9 — code-review coverage additions', () => {
+  test('changing the item off "Other" clears Item Other Description (BR-04 clear-on-change)', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const panel = addPanel()
+    await user.click(panel.getByRole('combobox', { name: /Contractual Item/i }))
+    await user.click(await panel.findByRole('option', { name: 'Other' }))
+    const itemDesc = panel.getByLabelText('Item Other Description')
+    expect(itemDesc).toBeEnabled()
+    await user.type(itemDesc, 'Custom gate')
+    expect(itemDesc).toHaveValue('Custom gate')
+
+    await user.click(panel.getByRole('combobox', { name: /Contractual Item/i }))
+    await user.click(await panel.findByRole('option', { name: 'Cattleguard' }))
+    expect(panel.getByLabelText('Item Other Description')).toHaveValue('')
+    expect(panel.getByLabelText('Item Other Description')).toBeDisabled()
+  })
+
+  test('editing a row Cost updates the live $/Unit preview', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    expect(recordPanel(9101).getByText('400.00')).toBeInTheDocument()
+    await user.clear(recordPanel(9101).getByLabelText('Cost'))
+    await user.type(recordPanel(9101).getByLabelText('Cost'), '10000')
+    // 10000 / 12.5 = 800.00 (units unchanged); the row now previews live, not the served 400.00.
+    expect(recordPanel(9101).getByText('800.00')).toBeInTheDocument()
+    expect(recordPanel(9101).queryByText('400.00')).not.toBeInTheDocument()
+  })
+
+  test('a successful per-record Save applies the re-served row', async () => {
+    server.use(
+      http.put(`${RECORDS_URL}/:id`, () =>
+        HttpResponse.json(
+          doc({
+            records: [{ ...record108, cost: 7777, costPerUnit: 622.16, revisionCount: 1 }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    await user.clear(recordPanel(9101).getByLabelText('Cost'))
+    await user.type(recordPanel(9101).getByLabelText('Cost'), '7777')
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    // The row re-derives from the echo (rowForms dropped), so Cost shows the masked served value.
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('7,777')
+  })
+
+  test('entered values are retained when a per-record Save fails (S12 retry)', async () => {
+    server.use(
+      http.put(`${RECORDS_URL}/:id`, () =>
+        problemBody(409, 'This schedule was changed by another user. Please reload and try again.'),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    await user.clear(recordPanel(9101).getByLabelText('Cost'))
+    await user.type(recordPanel(9101).getByLabelText('Cost'), '7777')
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByText(
+        'This schedule was changed by another user. Please reload and try again.',
+      ),
+    ).toBeInTheDocument()
+    // The edited value survives the failure for retry (masked to "7,777" on the blur that Save
+    // triggered); it is NOT cleared or re-derived, so the reporter can correct and resubmit.
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('7,777')
+  })
+
+  test('cancelling the delete confirm sends no request and keeps the record', async () => {
+    let deleteCalled = false
+    server.use(
+      http.delete(`${RECORDS_URL}/:id`, () => {
+        deleteCalled = true
+        return HttpResponse.json(doc({ records: [] }))
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('presentation')).getByRole('button', { name: 'No' }),
+    )
+    expect(deleteCalled).toBe(false)
+    expect(
+      screen.getByRole('button', { name: 'Contractual Work Report Id: 9101' }),
+    ).toBeInTheDocument()
+  })
+
+  test('check status all-met renders the SUC-002 banner', async () => {
+    server.use(
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await user.click(screen.getAllByRole('button', { name: 'Check Status' })[0])
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+  })
+
+  test('editable:false disables the per-row Save/Delete and fields', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ editable: false, trackStatus: 'S' }))))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+    await openRecord(user, 9101)
+    expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(recordPanel(9101).getByRole('button', { name: 'Delete' })).toBeDisabled()
+    expect(recordPanel(9101).getByLabelText('Company ID')).toBeDisabled()
+  })
+})

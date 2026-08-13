@@ -129,7 +129,15 @@ const validateWholeNumber = (
   return rounded < bounds.min || rounded > bounds.max ? rangeMessage : undefined
 }
 
-/** The optional Number of Units (one decimal); blank passes. Range on the value as parsed. */
+/** Round to one decimal (the PERFORMED_UNIT NUMBER(6,1) scale), or null. */
+const roundUnits = (value: number | null): number | null =>
+  value === null ? null : Math.round(value * 10) / 10
+
+/**
+ * The optional Number of Units (one decimal); blank passes. Range is checked on the value as parsed
+ * AND as rounded to scale 1 (the stored scale), mirroring `validateWholeNumber` for cost — a value
+ * near the boundary must not pass advisory validation only to round out of range on the wire.
+ */
 const validateUnits = (raw: string): string | undefined => {
   if (raw.trim() === '') {
     return undefined
@@ -138,7 +146,8 @@ const validateUnits = (raw: string): string | undefined => {
   if (value === null || value < UNITS.min || value > UNITS.max) {
     return RECORD_MESSAGES.unitsRange
   }
-  return undefined
+  const rounded = roundUnits(value) as number
+  return rounded < UNITS.min || rounded > UNITS.max ? RECORD_MESSAGES.unitsRange : undefined
 }
 
 /**
@@ -234,7 +243,9 @@ export const buildBody = (
     unitDescription: unitDescriptionEnabled(form.unitCode)
       ? trimOrNull(form.unitDescription)
       : null,
-    numberOfUnits: parseDecimalInput(form.numberOfUnits),
+    // Rounded to scale 1 to match the PERFORMED_UNIT NUMBER(6,1) column and the display mask, so a
+    // 2-decimal entry saved without a blur cannot reach the wire (cost rounds the same way).
+    numberOfUnits: roundUnits(parseDecimalInput(form.numberOfUnits)),
     biogeoclimaticZone: form.biogeoclimaticZone,
     cost: roundCost(parseDecimalInput(form.cost)),
     sideSlopePct: sideSlopeEnabled(itemCode)
@@ -257,7 +268,7 @@ export const buildBody = (
 export const previewCostPerUnit = (form: RecordFormValues): number | null => {
   const cost = roundCost(parseDecimalInput(form.cost))
   const units = parseDecimalInput(form.numberOfUnits)
-  if (cost === null || units === null || units === 0) {
+  if (cost === null || units === null || units <= 0) {
     return null
   }
   return Math.round((cost / units) * 100) / 100

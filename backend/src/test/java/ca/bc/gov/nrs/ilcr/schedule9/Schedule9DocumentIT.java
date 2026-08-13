@@ -61,9 +61,14 @@ class Schedule9DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.codeLists.contractualItems[0].code", is("108")))
         .andExpect(jsonPath("$.codeLists.contractualItems[0].description", is("Cattleguard")))
         .andExpect(jsonPath("$.codeLists.contractualItems[6].code", is("114")))
+        // Assert BOTH halves so a code/description swap in the query is caught (the code lands in the
+        // code slot, the label in the description slot) — not just that some code is present.
         .andExpect(jsonPath("$.codeLists.unitTypes[*].code", hasItem("M3")))
+        .andExpect(jsonPath("$.codeLists.unitTypes[*].description", hasItem("Cubic Metres")))
         .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].code", hasItem("BZ1")))
+        .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].description", hasItem("BEC Zone One")))
         .andExpect(jsonPath("$.codeLists.sources[*].code", hasItem("A")))
+        .andExpect(jsonPath("$.codeLists.sources[*].description", hasItem("Actual Cost")))
         .andExpect(jsonPath("$.message").doesNotExist());
   }
 

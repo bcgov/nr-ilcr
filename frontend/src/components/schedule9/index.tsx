@@ -280,7 +280,13 @@ const Schedule9: FC = () => {
     return null
   }
 
-  const { editable, records, codeLists } = data
+  const {
+    editable,
+    records,
+    // Defensive default: the backend always serves codeLists (Story 9.3), but a partial/older payload
+    // omitting it must not crash the page — the dropdowns just render empty.
+    codeLists = { contractualItems: [], unitTypes: [], biogeoclimaticZones: [], sources: [] },
+  } = data
   const controlsDisabled = !editable || saving
 
   const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE))
