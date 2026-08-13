@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 5 (Camp and Access Expenses) — JasperReports 7 template (AD-16, Epic 20.2). Authored in
+  the JR7 Jackson/JAXB model (as schedule9.jrxml). UNLIKE Schedule 9 this template carries NO
+  embedded SQL: it is filled from a bean datasource mapped from Schedule5Service's DTO (the recorded
+  20.2 data-feed decision), so every derived total / $-per-m3 / sub-page aggregate is the tested
+  service arithmetic rather than re-ported template SQL. All values arrive PRE-FORMATTED as Strings
+  (legacy SchedulesPrinter pre-formatted to String and substituted "-" for null), so the template
+  binds String fields and never masks a number itself.
+
+  One section per camp (legacy S17 fan-out): the datasource carries one row per camp.
+  p_do_print_body gates the expense grid; p_do_print_comment gates the Comments block.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule5" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <field name="campName" class="java.lang.String"/>
+  <field name="roadDistance" class="java.lang.String"/>
+  <field name="sizeOfCamp" class="java.lang.String"/>
+  <field name="campVolume" class="java.lang.String"/>
+  <field name="isolatedCamp" class="java.lang.String"/>
+  <field name="cateringAndFood" class="java.lang.String"/>
+  <field name="wagesAndBenefits" class="java.lang.String"/>
+  <field name="depreciationLease" class="java.lang.String"/>
+  <field name="generalCampExpenses" class="java.lang.String"/>
+  <field name="otherCampExpenses" class="java.lang.String"/>
+  <field name="campSubTotal" class="java.lang.String"/>
+  <field name="recoveries" class="java.lang.String"/>
+  <field name="campTotal" class="java.lang.String"/>
+  <field name="crewTransportation" class="java.lang.String"/>
+  <field name="equipLand" class="java.lang.String"/>
+  <field name="equipRail" class="java.lang.String"/>
+  <field name="equipAir" class="java.lang.String"/>
+  <field name="equipWater" class="java.lang.String"/>
+  <field name="otherAccessExpenses" class="java.lang.String"/>
+  <field name="accessExpenseTotal" class="java.lang.String"/>
+  <field name="campAndAccessTotal" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="30">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="30">
+    <element kind="staticText" x="0" y="0" width="600" height="15">
+      <text><![CDATA[Schedule 5:  Camp and Access Expense]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="600" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+    <element kind="staticText" x="600" y="0" width="202" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="600" y="15" width="202" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="240">
+      <element kind="staticText" style="bold" x="5" y="5" width="120" height="15">
+        <text><![CDATA[Camp Name:]]></text>
+      </element>
+      <element kind="textField" x="130" y="5" width="200" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{campName}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="22" width="200" height="15">
+        <text><![CDATA[Road Distance to Operating Area:]]></text>
+      </element>
+      <element kind="textField" x="210" y="22" width="120" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{roadDistance}]]></expression>
+      </element>
+      <element kind="staticText" x="340" y="22" width="90" height="15">
+        <text><![CDATA[Size of Camp:]]></text>
+      </element>
+      <element kind="textField" x="430" y="22" width="90" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{sizeOfCamp}]]></expression>
+      </element>
+      <element kind="staticText" x="530" y="22" width="130" height="15">
+        <text><![CDATA[Associated Camp Volume:]]></text>
+      </element>
+      <element kind="textField" x="660" y="22" width="90" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{campVolume}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="39" width="90" height="15">
+        <text><![CDATA[Isolated Camp:]]></text>
+      </element>
+      <element kind="textField" x="95" y="39" width="60" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{isolatedCamp}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="5" y="60" width="120" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Camp Expenses]]></text>
+      </element>
+      <element kind="staticText" x="5" y="77" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Catering and Food:]]></text>
+      </element>
+      <element kind="textField" x="210" y="77" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{cateringAndFood}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="92" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Wages and Benefits:]]></text>
+      </element>
+      <element kind="textField" x="210" y="92" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{wagesAndBenefits}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="107" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Depreciation/Lease:]]></text>
+      </element>
+      <element kind="textField" x="210" y="107" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{depreciationLease}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="122" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[General Camp Expenses:]]></text>
+      </element>
+      <element kind="textField" x="210" y="122" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{generalCampExpenses}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="137" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Other Camp Expenses:]]></text>
+      </element>
+      <element kind="textField" x="210" y="137" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{otherCampExpenses}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="5" y="152" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Camp Sub-Total:]]></text>
+      </element>
+      <element kind="textField" style="bold" x="210" y="152" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{campSubTotal}]]></expression>
+      </element>
+      <element kind="staticText" x="5" y="167" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Recoveries:]]></text>
+      </element>
+      <element kind="textField" x="210" y="167" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{recoveries}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="5" y="182" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Camp Total:]]></text>
+      </element>
+      <element kind="textField" style="bold" x="210" y="182" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{campTotal}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="400" y="60" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Access Expenses]]></text>
+      </element>
+      <element kind="staticText" x="400" y="77" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Crew Transportation:]]></text>
+      </element>
+      <element kind="textField" x="605" y="77" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{crewTransportation}]]></expression>
+      </element>
+      <element kind="staticText" x="400" y="92" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Equipment and Supplies (Land):]]></text>
+      </element>
+      <element kind="textField" x="605" y="92" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{equipLand}]]></expression>
+      </element>
+      <element kind="staticText" x="400" y="107" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Equipment and Supplies (Rail):]]></text>
+      </element>
+      <element kind="textField" x="605" y="107" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{equipRail}]]></expression>
+      </element>
+      <element kind="staticText" x="400" y="122" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Equipment and Supplies (Air):]]></text>
+      </element>
+      <element kind="textField" x="605" y="122" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{equipAir}]]></expression>
+      </element>
+      <element kind="staticText" x="400" y="137" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Equipment and Supplies (Water):]]></text>
+      </element>
+      <element kind="textField" x="605" y="137" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{equipWater}]]></expression>
+      </element>
+      <element kind="staticText" x="400" y="152" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Other Access Expenses:]]></text>
+      </element>
+      <element kind="textField" x="605" y="152" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{otherAccessExpenses}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="400" y="167" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Access Expense Total:]]></text>
+      </element>
+      <element kind="textField" style="bold" x="605" y="167" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{accessExpenseTotal}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="400" y="182" width="200" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Expenses:]]></text>
+      </element>
+      <element kind="textField" style="bold" x="605" y="182" width="140" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{campAndAccessTotal}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="5" y="202" width="120" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" x="130" y="202" width="615" height="30" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+      <element kind="line" x="5" y="235" width="740" height="1"/>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>
