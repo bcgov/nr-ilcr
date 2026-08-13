@@ -15,8 +15,8 @@ null shared volume in toOtherCosts", raised as issues
 
 **Previously re-verified: 2026-08-07** (branch `e2e/schedule1-recheck-and-defect-restale`). Every entry below was
 re-checked against the app as it stands today, not carried forward on trust. The app moved underneath this
-log — backend commit `0b58057` "restore legacy parity for derived costs, audit columns" and the bcgov
-`EditableSubPageLayout` sync both changed behaviour this file described — so one Divergence was retired as
+log — backend commit `0b58057` "restore legacy parity for derived costs, audit columns" and the shared
+`EditableSubPageLayout` rewrite both changed behaviour this file described — so one Divergence was retired as
 obsolete, one follow-up was confirmed done, one Coverage gap was closed, and three new findings were added.
 
 **Bug / Regression:**
@@ -32,7 +32,7 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Priority / env:** p1 · local seeded delivery DB `THE/…@localhost:1525/DBDOCK_01`.
   - **Status:** RESOLVED — found and fixed 2026-07-30; follow-up verified 2026-08-07. (BA/QA to confirm the real delivery Oracle shares the strict schema.)
   - **Test:** `other-costs.feature` `@S09 @p1` — GREEN (was the `@discovered-bug` red that tracked this).
-  - **Note (2026-08 bcgov sync):** the per-row `POST` add path described above is superseded — the sub-page now persists the whole row set via `PUT …?intent=save`. Retained as the historical record of the bug and its fix.
+  - **Note (2026-08 shared-subpage rewrite):** the per-row `POST` add path described above is superseded — the sub-page now persists the whole row set via `PUT …?intent=save`. Retained as the historical record of the bug and its fix.
 
 - **BUG-2 — A cleared volume is silently discarded: five Schedule 1 volume fields cannot be blanked.**
   _(found 2026-08-07 · ticket [#260](https://github.com/bcgov/nr-ilcr/issues/260) · **FIXED & VERIFIED 2026-08-11**)_
@@ -177,8 +177,8 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED 2026-08-07 (superseded by the app; no defect).
   - **Test:** `validation.feature` `@S05`/`@S06`, `happy-path.feature` `@S01` — GREEN.
 
-- **DIV-3 — The per-row Other Costs delete-confirmation modal was removed (bcgov EditableSubPage rewrite).**
-  - **What's wrong:** Legacy-derived S12 removes an itemized Other Cost "after confirming the prompt" — the fork's app popped a Carbon danger Modal ("Delete other cost") to confirm before deleting. After the 2026-08 sync to bcgov's shared `EditableSubPageLayout` / `useEditableCostRows` rewrite, the per-row delete is an icon-only **"Remove"** button that deletes the row **immediately** (optimistic) and persists the whole set via one `PUT …?intent=delete` — there is no confirmation step.
+- **DIV-3 — The per-row Other Costs delete-confirmation modal was removed (EditableSubPage rewrite).**
+  - **What's wrong:** Legacy-derived S12 removes an itemized Other Cost "after confirming the prompt" — the app used to pop a Carbon danger Modal ("Delete other cost") to confirm before deleting. Since the 2026-08 move to the shared `EditableSubPageLayout` / `useEditableCostRows` rewrite, the per-row delete is an icon-only **"Remove"** button that deletes the row **immediately** (optimistic) and persists the whole set via one `PUT …?intent=delete` — there is no confirmation step.
   - **Expected vs actual:** Expected a confirm-before-delete prompt (legacy S12). Actual — Remove deletes immediately; SUC-002 "Data deleted successfully" is echoed from the API after the whole-set PUT.
   - **How we caught it (verified 2026-08, re-verified 2026-08-07):** Re-grounding S12. Still accurate: `components/schedule1OtherCosts/index.tsx` renders a `hasIconOnly iconDescription="Remove"` button whose `onClick` → `useEditableCostRows.removeRow` → immediate `persist(next, 'delete')`; no dialog is rendered.
   - **Is it a defect? LEGACY SAYS YES — this is a CONFIRMED PARITY REGRESSION (checked 2026-08-07).**
@@ -196,21 +196,20 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **It is also now internally inconsistent:** the whole-schedule delete (S13) KEPT its "Delete
     schedule" confirm Modal, so the same app confirms the large destructive action and not the small one.
   - **Action — with the Schedule 1 developer (2026-08-07).** Walked through with him as part of the QA
-    review of this UC; he is investigating and will raise a ticket if it is confirmed. Restoring the
-    prompt is an upstream change either way — it lives in bcgov's shared `EditableSubPageLayout` /
-    `useEditableCostRows` rewrite, not in this fork.
-  - **Next step — verify against the REAL legacy app.** The sidecar evidence is strong
-    (`technical.md:102,154`, `detailed.md:66`), but that is captured source, not the running system. Once
-    we have full access to legacy as a BCeID user, the dev will confirm whether it actually prompts. If
-    it does, this is a parity regression to fix upstream; if it does not, the sidecars need correcting —
-    which is worth knowing on its own.
+    review of this UC; when he gets a chance he'll look into it and raise a ticket if it is confirmed.
+    Restoring the prompt means changing the shared `EditableSubPageLayout` / `useEditableCostRows`
+    components either way — the behaviour does not live on the Schedule 1 pages themselves.
+  - **Next step — double-check against the legacy app.** The sidecar evidence is strong
+    (`technical.md:102,154`, `detailed.md:66`), but that is captured source, not the running system, so the
+    dev needs to investigate whether legacy actually prompts. If it does, this is a parity regression to fix
+    in the shared components; if it does not, the sidecars need correcting — which is worth knowing on its own.
   - **If it is confirmed a defect:** S12 should flip from its current GREEN (re-grounded to the
     no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red tracking the missing
     prompt until it is restored. Not done yet — the behaviour under test is real, so an honest red waits
     on the ruling rather than pre-empting it.
   - **Priority / env:** p1 · local seeded DB.
-  - **Status:** OPEN — with the Schedule 1 dev; pending BCeID access to verify against real legacy.
-    Found 2026-08 (bcgov sync); legacy-source-confirmed 2026-08-07.
+  - **Status:** OPEN — with the Schedule 1 dev, who'll double-check it against legacy when he gets a chance.
+    Found 2026-08 (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07.
   - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
 
 - **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
@@ -266,11 +265,11 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     have caught it. If reviewers/auditors relied on it to spot what a licensee changed after submitting,
     this is a real functional gap; if the audit tables now serve that need, dropping it is fine.
   - **Action — with the Schedule 1 developer (2026-08-07).** Raised with him alongside DIV-3 in the QA
-    review; he is investigating and will raise a ticket if it is confirmed. Scope is his call: this
-    cannot be fixed in the frontend alone, because the API exposes no previous value to render — so
-    restoring it means a backend change, not just markup.
+    review; when he gets a chance he'll look into it and raise a ticket if it is confirmed. Scope is his
+    call: this cannot be fixed in the frontend alone, because the API exposes no previous value to render —
+    so restoring it means a backend change, not just markup.
   - **Priority / env:** p2 pending triage · local seeded delivery DB.
-  - **Status:** OPEN — with the Schedule 1 dev. Found 2026-08-07.
+  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Found 2026-08-07.
   - **Test:** none — out of reach for this UC's scenarios, which all run against Draft schedules (the
     indicator only renders once a report has left Draft). S22 covers the non-Draft render but asserts
     only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in
@@ -329,11 +328,11 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     confirm) and none forces a null-data state. The BR-06 hits in
     `Schedule1OtherCostsServiceTest`/`Schedule1OtherCostsIT` are about the shared-volume **inheritance**
     rule, not the save-before-open gate. So this branch is currently covered by nothing, at any level.
-  - **Future action:** raise with the dev — either delete the dead branch (a guard that cannot fire is a
-    maintenance trap) or, if it is being kept for a future backend model with create-on-open, add the
-    component test that mounts `Schedule1` with a forced null-data state. Either way it is not an E2E
-    concern.
-  - **Status:** OPEN. Re-verified 2026-08-07.
+  - **Future action:** with the Schedule 1 dev, who'll look into it when he gets a chance — either delete the
+    dead branch (a guard that cannot fire is a maintenance trap) or, if it is being kept for a future backend
+    model with create-on-open, add the component test that mounts `Schedule1` with a forced null-data state.
+    Either way it is not an E2E concern.
+  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Re-verified 2026-08-07.
   - **Test:** none, at any level — `not-applicable (E2E; unreachable by construction)` in coverage.md.
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
