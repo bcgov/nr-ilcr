@@ -11,7 +11,8 @@
 #   4. The VALIDATION-ERROR state — the deliberate red below.
 #   5. A GUARD state — the PageState error notification that replaces the whole body, which must announce
 #      itself rather than just render red text.
-# (A sixth, the Check-Status result, is swept in `check-status.feature` `@S04` where that state already exists.)
+# (A sixth, the Check-Status result, is swept in `check-status.feature` `@S04`, which carries `@a11y` too so
+#  the documented `--grep @a11y` accessibility-only run includes that render state.)
 #
 # The seeded row in (1)/(2) is what makes those sweeps meaningful: an empty table would leave the row
 # controls, the inline editor and the Actions column entirely unexercised.
@@ -72,6 +73,11 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — accessibility
       | NAR(ha)  | 50.5    |
     And I click Add
     Then I should see the error "Location: Value is required."
+    # The scenario's TITLE claims announcement, so announcement is asserted directly: axe alone would go
+    # green if the app dropped the bad `aria-errormessage` without adding any announcement technique — the
+    # error would then reach nobody and this scenario would have started passing for the wrong reason.
+    # Soft assertion, so the axe sweep below still runs in the same failing scenario (see the step).
+    And the error "Location: Value is required." is announced to assistive technology
     And the "Schedule 11 (validation-error state)" view has no WCAG 2.1 AA accessibility violations
 
   @p2

@@ -1,3 +1,5 @@
+import { type Page } from '@playwright/test';
+
 import { Given, When, Then, expect } from '../fixtures';
 import {
   A11Y_ANCHOR,
@@ -47,10 +49,43 @@ import {
  */
 
 /**
- * How long a "no write was sent" assertion waits before reading the spy. Long enough that a request
- * fired right after the error render would have been counted, short enough not to pad the suite.
+ * Barrier the two "no write was sent" assertions cross before reading the spy — deterministic, NOT a
+ * fixed sleep.
+ *
+ * WHY A BARRIER IS NEEDED AT ALL: the negative has to hold over a window, not at one instant. A
+ * regression that renders the inline error and THEN fires the request a tick later would read a tally
+ * of 0 and pass green.
+ *
+ * WHY NOT `waitForTimeout`: a wall-clock constant is tuned, not derived — too short and it flakes on a
+ * loaded runner, too long and every rejection scenario pays for it. This waits on events instead, so it
+ * is as fast as the app is and does not depend on machine speed:
+ *   1. drain the page's own deferrals — pending microtasks, then one `MessageChannel` task (the queue
+ *      React's scheduler yields through), then one timer task: between them they cover every way a click
+ *      handler can defer work (promise chain, React commit/effect, `setTimeout`). Deliberately NOT
+ *      `requestAnimationFrame`, which browsers throttle when the page is not visible — a headed run
+ *      whose window is backgrounded would hang here rather than settle;
+ *   2. then complete a real round-trip through the page's network stack. The spy is a Playwright route,
+ *      and routes fire at request INITIATION in FIFO order, so any mutation the rejected action had
+ *      already initiated is counted before this sentinel's response lands.
+ *
+ * The sentinel hits the app's own origin (index.html — no API, nothing mutated) and so is not counted by
+ * the locations-scoped spy. Residual limit: a mutation deferred past both queues AND a network round-trip
+ * would still escape the tally — the persisted-state read-backs in the same scenarios are what catch
+ * that, which is why the reject arms assert both.
  */
-const NO_WRITE_SETTLE_MS = 750;
+async function settleBeforeReadingSpy(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => setTimeout(resolve, 0);
+        channel.port2.postMessage(null);
+      }),
+  );
+  await page.evaluate(async () => {
+    await fetch(`${window.location.origin}/?e2e-no-write-barrier`, { cache: 'no-store' });
+  });
+}
 
 /** The named mutating anchors a scenario can claim. Each is owned by exactly one scenario. */
 const MUTATING_ANCHORS: Record<string, { anchor: Sch11Anchor; marker: string }> = {
@@ -611,6 +646,16 @@ Then(
 function readField(row: Sch11Location, field: string): string {
   switch (field) {
     case 'Enhanced':
+      // Require a REAL boolean before mapping. `enhancedIndicator ? 'Yes' : 'No'` reads a missing,
+      // null or malformed field as "No", so a broken API response would silently satisfy every
+      // `| Enhanced | No |` expectation — the read-back would pass while proving nothing.
+      if (typeof row.enhancedIndicator !== 'boolean') {
+        throw new Error(
+          `location "${row.location}" returned enhancedIndicator=${JSON.stringify(
+            row.enhancedIndicator,
+          )} — expected a boolean; the API contract is broken, not the expectation`,
+        );
+      }
       return row.enhancedIndicator ? 'Yes' : 'No';
     case 'Biogeo':
       return asText(row.becLabel);
@@ -662,10 +707,9 @@ Then(
     // so the mutating endpoint is never called. Asserting only the inline error would also pass if a
     // request HAD been sent and rejected server-side, which is a materially different behaviour.
     //
-    // SETTLE WINDOW: read the tally only after a short wait. Without it, a regression that renders the
-    // inline error and THEN fires the request a tick later would still read 0 and pass green — the
-    // negative has to hold over time, not just at one instant.
-    await page.waitForTimeout(NO_WRITE_SETTLE_MS);
+    // Read the tally only after the deferral+round-trip barrier, so a request fired a tick after the
+    // error render is already counted (see settleBeforeReadingSpy).
+    await settleBeforeReadingSpy(page);
     expect(
       schedule11MutationSpy.mutations,
       'a rejected entry must fire NO POST/PUT/DELETE on /schedule11/locations',
@@ -676,8 +720,8 @@ Then(
 Then(
   'no further Schedule 11 location mutation should have been sent',
   async ({ page, world, schedule11MutationSpy }) => {
-    // Same settle window as the absolute form above — the negative must hold over a window.
-    await page.waitForTimeout(NO_WRITE_SETTLE_MS);
+    // Same barrier as the absolute form above — the negative must hold over a window.
+    await settleBeforeReadingSpy(page);
     expect(
       world.sch11MutationsBefore,
       'no baseline mutation count was noted — add the "I note the Schedule 11 mutation count" step first',

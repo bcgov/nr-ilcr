@@ -19,7 +19,10 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — check completeness st
   I want to check whether every location has its cost data
   So that I know what remains before the schedule can be considered complete
 
-  @S04 @p1
+  # @a11y as well as @S04: this scenario carries the Check-Status-result axe sweep (the sixth render state,
+  # noted in accessibility.feature's header), and README's documented accessibility-only command is
+  # `--grep @a11y`. Without the tag that command silently skips this render state.
+  @S04 @a11y @p1
   Scenario: Check Status reports all requirements met when every location has both costs
     Given the Schedule 11 anchor "check-met" has a seeded location "E2E S04 met"
     And I have selected that mill and reporting year on the Home page

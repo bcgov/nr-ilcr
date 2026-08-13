@@ -8,7 +8,9 @@
 # `Schedule11WriteIT.staleAndMissingRevision()` proves the SERVER returns 409 for a stale token. It says
 # nothing about what the USER sees. That is the risk worth testing: if the app swallowed the 409, someone
 # would believe their correction saved when it had not — the reject arm below is what proves it does not.
-# (The IT also does not run in CI — `skip.integration.tests=true`, AR17 — so it is verified but ungated.)
+# (That IT *does* run in CI: `analysis.yml` passes `-Dskip.integration.tests=false` — added in dc6c1bb —
+# even though `backend/pom.xml` still defaults the property to true, and the step is path-filtered to
+# `backend/`, so no backend change merges without it. The endpoint is gated; this scenario adds the UI arm.)
 #
 # HOW THE CONFLICT IS STAGED without a second browser.
 # `startEdit` copies that row's `revisionCount` into React state the moment Edit is clicked. So: open the

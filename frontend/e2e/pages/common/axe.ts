@@ -18,6 +18,8 @@ import { AxeBuilder } from '@axe-core/playwright';
  * violation found in that scan, so a second, unrelated defect appearing in the same state would have been
  * folded into the one-line summary and lost among an expected red. Now only `KNOWN_A11Y_RULES` are
  * summarised; anything else still gets the full triage dump even inside a `@discovered-bug` scenario.
+ * The quiet line still NAMES the offending nodes, so a fresh element failing an already-known rule cannot
+ * pass for the tracked defect at a glance.
  */
 
 const WCAG_2_1_AA_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -56,11 +58,19 @@ export async function assertNoA11yViolations(
   const fresh = violations.filter((v) => !known.includes(v));
 
   if (known.length > 0) {
-    // Already triaged: one line, no rule dump. The expect() below still fails.
-    console.log(
-      `axe: ${String(known.length)} KNOWN violation(s) on ${label} ` +
-        `(${known.map((v) => v.id).join(', ')}) — expected RED, see this UC's defects.md.`,
-    );
+    // Already triaged: one line per rule, no help-URL/impact dump. The expect() below still fails.
+    //
+    // The NODE TARGETS are named even here. Quieting by rule id alone means a second, unrelated element
+    // failing the SAME rule is folded into "1 KNOWN violation" and read as the tracked defect — the
+    // gate never hides it (the assertion below counts every violation), but the triage line would
+    // misattribute it. Printing the targets makes a new node visible at a glance instead of requiring
+    // someone to open the trace to notice the count moved.
+    for (const v of known) {
+      console.log(
+        `axe: KNOWN violation ${v.id} on ${label} — expected RED, see this UC's defects.md. ` +
+          `nodes(${String(v.nodes.length)}): ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+      );
+    }
   }
   if (fresh.length > 0) {
     const report = fresh

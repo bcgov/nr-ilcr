@@ -372,4 +372,15 @@ export const MARKER = {
   a11y: 'E2E a11y row',
   correction: 'E2E corrected',
   staleEdit: 'E2E stale edit',
+  // The reject arms below are NOT cleanup registrations — no scenario that types them should ever write a
+  // row, and none registers a delete. They are here so the residue preflight
+  // (`no leftover E2E marker rows on any Schedule 11 anchor`, which scans Object.values(MARKER) across
+  // EVERY anchor) can SEE them: if a regression ever POSTs after client validation fails, the row lands on
+  // the validate-only anchor, which is deliberately excluded from the pristine/emptiness check, and would
+  // otherwise sit in the delivery DB unnoticed. Listing them turns that into a loud preflight failure.
+  rejectS15: 'E2E S15 reject',
+  rejectS16: 'E2E S16 reject',
+  rejectS17: 'E2E S17 reject',
+  rejectS18: 'E2E S18 reject',
+  rejectS19: 'E2E S19 reject',
 } as const;

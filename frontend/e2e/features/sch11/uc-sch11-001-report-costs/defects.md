@@ -224,12 +224,13 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **Already covered where it belongs:** `Schedule11WriteIT.duplicateBiogeoLocation_returns409()` ("AC6:
     duplicate (year,mill,cat,biogeo,location) → 409 verbatim biogeo-unique") and
     `Schedule11WriteIT.unresolvableBiogeo_returns400()`. Endpoint-level is the right layer for both.
-  - **Caveat, stated rather than implied:** those ITs **do not run in CI** —
-    `backend/pom.xml` defaults `skip.integration.tests=true` and `analysis.yml` runs a plain `mvn verify`.
-    So both rules are *verified once, ungated thereafter*. That is the pre-existing AR17 limitation; closing
-    this gap does **not** mean the rules are protected against regression, only that E2E is the wrong place
-    to protect them.
-  - **Status:** CLOSED — `not-applicable (UI)` in coverage.md, cross-referenced to the two ITs and AR17.
+  - **Those ITs are gated, not merely run once (corrected 2026-08-13):** `backend/pom.xml` still defaults
+    `skip.integration.tests=true`, but `analysis.yml` overrides it — `mvn ... -Dskip.integration.tests=false
+    verify` (added in dc6c1bb) — and the step is path-filtered to `backend/`, so a backend change cannot
+    merge without both rules being exercised. AR17's CI half is therefore closed; an earlier draft of this
+    entry described the ITs as ungated, which is no longer true. Closing this gap still does not put the
+    rules under E2E — it records that endpoint level is where they are protected.
+  - **Status:** CLOSED — `not-applicable (UI)` in coverage.md, cross-referenced to the two ITs.
     See SPEC-1 for the missing slices.
 - **GAP-5 — CLOSED 2026-08-10: column sorting is already covered by unit tests, and they run in CI.**
   - **What we found:** `components/schedule11/__tests__/Schedule11.test.tsx` has a dedicated

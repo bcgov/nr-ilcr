@@ -33,6 +33,33 @@ Then('I should see the error {string}', async ({ page }, message) => {
   await expect(page.getByText(message).first()).toBeVisible();
 });
 
+Then('the error {string} is announced to assistive technology', async ({ page }, message) => {
+  // WHY THIS EXISTS SEPARATELY FROM THE AXE SWEEP: axe checks the markup rules it knows about; it cannot
+  // tell you that a dynamically-rendered error actually REACHES a screen reader. An app could satisfy axe
+  // by dropping the offending `aria-errormessage` attribute entirely and the error would still be
+  // announced to nobody — the scan would go green while the defect got worse. WCAG 4.1.3 needs the error
+  // text inside a live region (`role="alert"`/`role="status"`, or `aria-live`), so that is asserted
+  // directly rather than inferred.
+  //
+  // SOFT on purpose: this step is used in a `@discovered-bug` scenario that is expected RED (BUG-1 —
+  // Carbon `TextInput` renders `invalidText` in a plain `div.cds--form-requirement` with no announcement
+  // technique). A hard failure here would abort the scenario before its axe sweep runs, losing the sweep
+  // that tracks the same defect from the other side. Soft keeps BOTH signals in one run; the scenario
+  // still fails.
+  const announced = page
+    .locator('[role="alert"], [role="status"], [aria-live="polite"], [aria-live="assertive"]')
+    .filter({ hasText: message });
+  await expect
+    .soft(
+      announced.first(),
+      `the error "${message}" must be rendered inside a live region (role="alert"/"status" or aria-live) so assistive technology announces it when it appears — visible red text alone is WCAG 4.1.3 failure`,
+    )
+    // Shorter than the 10 s global expect timeout: the caller has ALREADY asserted the error text is
+    // visible, so the live region either wrapped it in the same render or does not exist. While BUG-1 is
+    // open this assertion always exhausts its budget, and 10 s of that on every full run buys nothing.
+    .toBeVisible({ timeout: 3_000 });
+});
+
 Then('I should see the message {string}', async ({ page }, message) => {
   // Generic visible-confirmation assertion (e.g. a success InlineNotification subtitle). .first() for
   // the same reason as above — a message may appear in more than one region.
