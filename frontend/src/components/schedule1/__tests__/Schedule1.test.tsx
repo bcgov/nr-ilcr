@@ -278,6 +278,27 @@ describe('Schedule1 editable page', () => {
     expect(attempts).toBe(2)
   })
 
+  test('Save and Check Status sit above AND below; Delete only below (schedule1.xhtml:35-38 vs :796-803)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+
+    await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    // Scoped to the two action bars: the confirm Modal keeps its own "Delete" button in the DOM even
+    // while closed, so an unscoped name query cannot tell the bars apart from the dialog.
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-1__actions')
+    expect(bars).toHaveLength(2)
+    const [top, bottom] = [within(bars[0]), within(bars[1])]
+
+    expect(top.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(top.getByRole('button', { name: 'Check Status' })).toBeInTheDocument()
+    // The whole point: legacy kept the destructive action off the bar a reporter meets first.
+    expect(top.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    expect(bottom.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(bottom.getByRole('button', { name: 'Check Status' })).toBeInTheDocument()
+    expect(bottom.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
   test('Delete confirms then shows the API success message and empties the schedule (AC4 / S13)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(schedule1Doc)),

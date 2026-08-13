@@ -249,6 +249,27 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     expect(attempts).toBe(2)
   })
 
+  test('Save and Check Status sit above AND below; Delete only below (schedule3.xhtml:37-38 vs :420-426)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule3Doc)))
+    render(<Schedule3 />)
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    // Scoped to the two action bars: this page keeps a delete-confirm AND a "Leave Schedule 3" modal in
+    // the DOM while closed, so an unscoped name query cannot tell the bars apart from the dialogs.
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-3__actions')
+    expect(bars).toHaveLength(2)
+    const [top, bottom] = [within(bars[0]), within(bars[1])]
+
+    expect(top.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(top.getByRole('button', { name: 'Check Status' })).toBeInTheDocument()
+    // The whole point: legacy kept the destructive action off the bar a reporter meets first.
+    expect(top.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    expect(bottom.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(bottom.getByRole('button', { name: 'Check Status' })).toBeInTheDocument()
+    expect(bottom.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+  })
+
   test('Delete confirms then shows the API message and empties the schedule (SUC-002)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(schedule3Doc)),
