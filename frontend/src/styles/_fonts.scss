@@ -1,0 +1,44 @@
+/// Overrides the upstream @bcgov-nr/nr-theme @font-face declarations to:
+///   - Pin the original BC Sans (v1) files instead of the "BC Sans 2" (`_2f`/`_2g`)
+///     files shipped by nr-theme, whose glyphs render 'a', 'h' and 'i' oddly
+///   - Add font-display: swap
+///   - List woff2 as sole format
+///   - Use deterministic /fonts/ paths for preload compatibility
+///
+/// nr-theme repointed BC Sans at the v2 files in 1.9.0 (design-tokens/type-family.scss); the `^1.8.9`
+/// range floated ILCR onto it. Declaring the v1 faces here — @use'd AFTER './overrides' in index.scss,
+/// which is what pulls in type-family.scss — makes these the last matching @font-face rules per
+/// family/weight/style, so the v1 files win. Mirrors the fix already running in waste-plus.
+/// See bcgov/nr-ilcr#210.
+
+@font-face {
+  font-family: 'BC Sans';
+  font-display: swap;
+  src: url('/fonts/BCSans-Regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'BC Sans';
+  font-display: swap;
+  src: url('/fonts/BCSans-Bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'BC Sans';
+  font-display: swap;
+  src: url('/fonts/BCSans-Italic.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'BC Sans';
+  font-display: swap;
+  src: url('/fonts/BCSans-BoldItalic.woff2') format('woff2');
+  font-style: italic;
+  font-weight: 700;
+}
