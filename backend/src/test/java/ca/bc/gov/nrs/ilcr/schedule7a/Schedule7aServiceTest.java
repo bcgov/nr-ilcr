@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -221,14 +222,19 @@ class Schedule7aServiceTest {
       assertThat(m.text()).startsWith("Bridge Report Id : 1");
       assertThat(m.text()).endsWith("Value Required");
     });
-    assertThat(result.errors().get(0).text()).contains(" - Certification After install Cost ");
-    assertThat(result.errors().get(1).text()).contains(" - Other Costs ");
+    // The full verbatim line, separator included: FacesUtil.addCheckStatusErrorMessage appended
+    // ": " between the label and the bundle text for every schedule (util/FacesUtil.java:134), and
+    // the label itself ends in a space — so the legacy line reads "... Cost : Value Required".
+    assertThat(result.errors().get(0).text())
+        .isEqualTo("Bridge Report Id : 1 - Certification After install Cost : Value Required");
+    assertThat(result.errors().get(1).text())
+        .isEqualTo("Bridge Report Id : 1 - Other Costs : Value Required");
     assertThat(result.bridgeMessages()).isEmpty();
     assertThat(result.requirementsMetMessage()).isNull();
   }
 
   @Test
-  @DisplayName("check-status: complete bridge → all-met per bridge and schedule-wide")
+  @DisplayName("check-status: every bridge complete → the schedule-wide line ALONE, no per-bridge lines")
   void checkStatus_allMet() {
     when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
@@ -240,10 +246,35 @@ class Schedule7aServiceTest {
 
     assertThat(result.requirementsMet()).isTrue();
     assertThat(result.errors()).isEmpty();
-    assertThat(result.bridgeMessages()).hasSize(1);
-    assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
+    // Legacy ran its per-bridge loop only when the SCHEDULE failed (Schedule7aMB.java:197-296), so a
+    // fully complete schedule showed one success line, not one per bridge plus a schedule-wide one.
+    assertThat(result.bridgeMessages()).isEmpty();
     assertThat(result.requirementsMetMessage()).isNotNull();
     assertThat(result.requirementsMetMessage().key()).isEqualTo("scheduleRequirementsMetMsg");
+  }
+
+  @Test
+  @DisplayName("check-status: a MIXED schedule flags the failing bridge and all-mets the passing one")
+  void checkStatus_mixed() {
+    when(repository.findBridges(514, 2021)).thenReturn(List.of(
+        bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
+        bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
+    // Bridge 1 complete; bridge 2 missing every cost.
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
+        cost(1, 7601, 70, 1), cost(2, 7601, 71, 1), cost(3, 7601, 72, 1), cost(4, 7601, 73, 1),
+        cost(5, 7601, 74, 1), cost(6, 7601, 75, 1), cost(7, 7601, 76, 1),
+        cost(8, 7601, 79, 1), cost(9, 7601, 80, 1), cost(10, 7601, 81, 1)));
+
+    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+
+    assertThat(result.requirementsMet()).isFalse();
+    assertThat(result.errors()).isNotEmpty();
+    assertThat(result.errors()).allSatisfy(
+        m -> assertThat(m.text()).startsWith("Bridge Report Id : 2"));
+    assertThat(result.bridgeMessages()).hasSize(1);
+    assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
+    // No schedule-wide line on a mixed result.
+    assertThat(result.requirementsMetMessage()).isNull();
   }
 
   @Test
@@ -368,10 +399,11 @@ class Schedule7aServiceTest {
   }
 
   @Test
-  @DisplayName("delete removes the bridge and cascades its cost children, then recomputes (S04)")
+  @DisplayName("delete removes the cost children BEFORE the bridge, then recomputes (S04)")
   void delete_removesBridgeAndCosts() {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
@@ -379,16 +411,49 @@ class Schedule7aServiceTest {
     Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, true);
 
     assertThat(doc.bridges()).isEmpty();
-    verify(repository).deleteCostsForBridge(7601);
+    // Order is the whole point: delivery's FK on ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID has no ON
+    // DELETE CASCADE, so a parent-first delete raises ORA-02292 and the request 500s. Legacy deleted
+    // the children first for the same reason (Schedule7aDAO:566-570).
+    var order = inOrder(repository);
+    order.verify(repository).deleteCostsForBridge(7601);
+    order.verify(repository).deleteBridge(7601, 514, 2021);
   }
 
   @Test
-  @DisplayName("delete of an unknown id → 404 and never cascades the cost delete")
+  @DisplayName("delete: a parent delete that affects 0 rows is a 404, not a false success (S04)")
+  void delete_parentVanishedMidFlight() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // The probe passes, then the row is gone by the time the delete runs (a concurrent delete won).
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
+    when(repository.deleteBridge(7601, 514, 2021)).thenReturn(0);
+
+    // Acting on the row count is what makes this a 404 rather than a 200 "Data deleted successfully"
+    // over a bridge that is still on screen with its costs stripped (the cost delete having committed).
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+        .isInstanceOf(BridgeNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("delete of an unknown id → 404 and never touches either delete")
   void delete_unknownId() {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.deleteBridge(9999, 514, 2021)).thenReturn(0);
+    when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
 
     assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, true))
+        .isInstanceOf(BridgeNotFoundException.class);
+    verify(repository, never()).deleteCostsForBridge(anyLong());
+    verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("delete of another mill's bridge id → 404, never removing that mill's rows")
+  void delete_otherMillsBridge() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // The id exists, but not under this mill/year — countBridge is mill/year/category-scoped, so the
+    // check still refuses. (It has to be scoped: the cost delete keys on the bridge id alone.)
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(0);
+
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
   }
@@ -397,8 +462,9 @@ class Schedule7aServiceTest {
   @DisplayName("delete rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void delete_persistenceFailure() {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     doThrow(new DataIntegrityViolationException("delete failed"))
-        .when(repository).deleteBridge(7601, 514, 2021);
+        .when(repository).deleteCostsForBridge(7601);
 
     assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
         .isInstanceOf(ScheduleNotSavedException.class);

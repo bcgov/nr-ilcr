@@ -78,6 +78,22 @@ describe('validateBridge — required attributes', () => {
     )
   })
 
+  test('name/location is ALSO capped at 30 UTF-8 bytes, as the column is (VARCHAR2(30 BYTE))', () => {
+    // The DTO carries @Size(max = 30) AND @MaxByteLength(30, charMax = 30). This is the sharper of
+    // the two byte caps on this form: BridgeFields sets maxLength={LOCATION_MAX_LENGTH}, so 15 CJK
+    // characters are inside every limit the UI shows the reporter — and 45 bytes. Counting characters
+    // alone let that through the gate and 400d on save with "must be 30 characters or fewer."
+    const cjk = '橋'.repeat(15)
+    expect(cjk.length).toBeLessThanOrEqual(30)
+    expect(validateBridge(valid({ locationName: cjk })).locationName).toBe(
+      BRIDGE_MESSAGES.locationMaxLength,
+    )
+    // 10 of the same character is exactly 30 bytes — the last length that fits.
+    expect(validateBridge(valid({ locationName: '橋'.repeat(10) })).locationName).toBeUndefined()
+    // ASCII is one byte per character, so the byte rule never fires before the character one.
+    expect(validateBridge(valid({ locationName: 'x'.repeat(30) })).locationName).toBeUndefined()
+  })
+
   test.each([
     'constructionTypeCode',
     'superstructureTypeCode',
@@ -186,6 +202,17 @@ describe('validateBridge — costs and comments', () => {
 
   test('comments are measured trimmed, matching what is sent', () => {
     expect(validateBridge(valid({ comments: `  ${'x'.repeat(3500)}  ` })).comments).toBeUndefined()
+  })
+
+  test('comments are ALSO capped at 4,000 UTF-8 bytes, as the column is (VARCHAR2(4000 BYTE))', () => {
+    // 1,400 CJK characters are well under the 3,500-character cap and 4,200 bytes over the column's.
+    const cjk = '柱'.repeat(1400)
+    expect(cjk.length).toBeLessThan(3500)
+    expect(validateBridge(valid({ comments: cjk })).comments).toBe(
+      BRIDGE_MESSAGES.commentsMaxLength,
+    )
+    // 1,333 of the same character is 3,999 bytes — the last length that fits.
+    expect(validateBridge(valid({ comments: '柱'.repeat(1333) })).comments).toBeUndefined()
   })
 })
 

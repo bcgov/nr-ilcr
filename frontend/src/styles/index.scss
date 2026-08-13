@@ -1,6 +1,9 @@
 @use './variables' as *;
 @use './mixins' as *;
 @use './overrides';
+// MUST stay after './overrides' — that is what pulls in nr-theme's type-family.scss (the BC Sans 2
+// @font-face declarations). './fonts' redeclares the v1 faces last so they win. See ./_fonts.scss.
+@use './fonts';
 @use './custom';
 @use '@carbon/react/scss/spacing' as *;
 @use '@carbon/type';

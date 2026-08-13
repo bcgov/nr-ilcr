@@ -7,6 +7,12 @@
 -- Extend the V1 snapshot (extend-never-fork): the delivery ILCR_COST_REPORT_DETAIL carries a
 -- BASIC_SILVICULTURE_REPORT_ID NUMBER(10) NULL column (NO FK constraint in delivery - AC9 finding)
 -- that the V1 test-scope table lacks.
+-- RE-VERIFIED 2026-08-13 against all_constraints on THE: this column is the ONLY per-report column on
+-- ILCR_COST_REPORT_DETAIL with no FK. The other eight FK'd columns are listed in
+-- R__cost_detail_bridge_culvert_fks.sql, where the same "no FK" claim for BRIDGE_REPORT_ID and
+-- CULVERT_REPORT_ID turned out to be false and cost a
+-- production defect. The claim is CORRECT here — leave it, and keep Schedule 11's delete order safe on
+-- schema grounds rather than assuming the pattern generalises.
 ALTER TABLE THE.ILCR_COST_REPORT_DETAIL ADD BASIC_SILVICULTURE_REPORT_ID NUMBER(10);
 
 -- Delivery-faithful test-scope shape (AC9-verified against nr-mof-oracle-schema 2026-07-28):

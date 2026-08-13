@@ -642,7 +642,7 @@ describe('Schedule 7A page', () => {
           errors: [
             {
               key: 'missingRequiredFieldMsg',
-              text: 'Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost Value Required',
+              text: 'Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost : Value Required',
             },
           ],
           bridgeMessages: [
@@ -659,9 +659,12 @@ describe('Schedule 7A page', () => {
 
     // The legacy label carries a double space before "Cost" — it must survive verbatim.
     expect(
-      await screen.findByText('Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost Value Required', {
-        normalizer: verbatim,
-      }),
+      await screen.findByText(
+        'Bridge Report Id : 2 - Site Plan / Gen. Arr.  Cost : Value Required',
+        {
+          normalizer: verbatim,
+        },
+      ),
     ).toBeInTheDocument()
     expect(screen.getByText('All requirements for 1 have been met.')).toBeInTheDocument()
     expect(
@@ -676,9 +679,9 @@ describe('Schedule 7A page', () => {
         HttpResponse.json({
           requirementsMet: true,
           errors: [],
-          bridgeMessages: [
-            { key: 'bridgeRequirementsMetMsg', text: 'All requirements for 1 have been met.' },
-          ],
+          // Empty on an all-pass result: legacy emitted its per-bridge lines only when the schedule
+          // as a whole failed, so the API sends the schedule-wide message alone (Schedule7aService).
+          bridgeMessages: [],
           requirementsMetMessage: {
             key: 'scheduleRequirementsMetMsg',
             text: 'All requirements for this schedule have been met',
@@ -693,6 +696,8 @@ describe('Schedule 7A page', () => {
     expect(
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
+    // One success banner, not one per bridge plus a schedule-wide one.
+    expect(screen.queryByText(/All requirements for 1 have been met/)).not.toBeInTheDocument()
   })
 
   test('Check Status is offered both above and below the list (AC6)', async () => {

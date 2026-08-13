@@ -532,7 +532,11 @@ const Schedule1: FC = () => {
     </Column>
   )
 
-  const actions = (
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule and
+  // Save + Check Status + Delete below it (schedule1.xhtml:35-38 vs :796-803). Deleting the whole
+  // schedule is the one destructive action on this page, and legacy kept it off the bar a reporter
+  // meets first.
+  const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-1__actions"
       editable={editable}
@@ -541,6 +545,7 @@ const Schedule1: FC = () => {
       onSave={handleSave}
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
+      showDelete={showDelete}
     />
   )
 
@@ -603,7 +608,7 @@ const Schedule1: FC = () => {
           </Column>
         ))}
 
-        {actions}
+        {actionBar(false)}
 
         {crownVolumeField}
 
@@ -672,7 +677,7 @@ const Schedule1: FC = () => {
           )}
         </Column>
 
-        {actions}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

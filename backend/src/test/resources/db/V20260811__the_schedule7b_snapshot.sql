@@ -24,13 +24,18 @@
 -- read/UPDATE/DELETE is falsifiable without touching the shared V2 context mills.
 -- =====================================================================================================
 
--- Per-report FK column on the shared cost-detail table (NO FK constraint in delivery, matching the
--- BRIDGE_REPORT_ID / schedule4 / schedule11 per-report columns).
+-- Per-report FK column on the shared cost-detail table. Delivery DOES carry a real FK constraint here
+-- (ILCR_LCRD_CLV_RPT_FK, ENABLED, DELETE_RULE = 'NO ACTION'); it is declared in
+-- R__cost_detail_bridge_culvert_fks.sql, which Flyway applies after every versioned migration.
+-- Deleting a culvert therefore requires children-first ordering.
 ALTER TABLE THE.ILCR_COST_REPORT_DETAIL ADD CULVERT_REPORT_ID NUMBER(10);
 
--- The culvert parent table (legacy model/CulvertReport.java:36-99). LENGTH is NUMBER(7,1) to carry the
--- BR-04 range 0.0-999,999.9; SPAN_SIZE/RISE_SIZE are NUMBER(7) for 0-9,999,999; CULVERT_PIECE_COUNT is
--- NUMBER(4) for 1-9,999.
+-- The culvert parent table (legacy model/CulvertReport.java:36-99). LENGTH is NUMBER(7,1) here to carry
+-- the BR-04 range 0.0-999,999.9 at the scale the app actually writes; DELIVERY IS NUMBER(8,2) (verified
+-- 2026-08-13), i.e. one decimal WIDER than this snapshot. That is safe in this direction — a value this
+-- test schema accepts, delivery accepts — and the app never emits scale 2 because legacy's
+-- f:convertNumber mask was `###,##0.0` (messages.properties:206) and Schedule7bService rounds to scale
+-- 1 to match. SPAN_SIZE/RISE_SIZE are NUMBER(7) for 0-9,999,999; CULVERT_PIECE_COUNT NUMBER(4) 1-9,999.
 CREATE TABLE THE.CULVERT_REPORT (
   CULVERT_REPORT_ID      NUMBER(10)   PRIMARY KEY,
   REPORT_YEAR            NUMBER(10),
