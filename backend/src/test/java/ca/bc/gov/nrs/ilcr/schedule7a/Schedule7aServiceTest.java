@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -368,27 +369,47 @@ class Schedule7aServiceTest {
   }
 
   @Test
-  @DisplayName("delete removes the bridge and cascades its cost children, then recomputes (S04)")
+  @DisplayName("delete removes the cost children BEFORE the bridge, then recomputes (S04)")
   void delete_removesBridgeAndCosts() {
     stubCodeOptions();
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.deleteBridge(7601, 514, 2021)).thenReturn(1);
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
     Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, true);
 
     assertThat(doc.bridges()).isEmpty();
-    verify(repository).deleteCostsForBridge(7601);
+    // Order is the whole point: delivery's FK on ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID has no ON
+    // DELETE CASCADE, so a parent-first delete raises ORA-02292 and the request 500s. Legacy deleted
+    // the children first for the same reason (Schedule7aDAO:566-570). The IT snapshot declares no FK,
+    // so only this ordering assertion catches a regression.
+    var order = inOrder(repository);
+    order.verify(repository).deleteCostsForBridge(7601);
+    order.verify(repository).deleteBridge(7601, 514, 2021);
   }
 
   @Test
-  @DisplayName("delete of an unknown id → 404 and never cascades the cost delete")
+  @DisplayName("delete of an unknown id → 404 and never touches either delete")
   void delete_unknownId() {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    when(repository.deleteBridge(9999, 514, 2021)).thenReturn(0);
+    when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
 
     assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, true))
+        .isInstanceOf(BridgeNotFoundException.class);
+    verify(repository, never()).deleteCostsForBridge(anyLong());
+    verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("delete of another mill's bridge id → 404, never removing that mill's rows")
+  void delete_otherMillsBridge() {
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    // The id exists, but not under this mill/year — countBridge is mill/year/category-scoped, so the
+    // check still refuses. (It has to be scoped: the cost delete keys on the bridge id alone.)
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(0);
+
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
   }
@@ -397,8 +418,9 @@ class Schedule7aServiceTest {
   @DisplayName("delete rolls back and surfaces ERR-004 when the persistence layer fails (500)")
   void delete_persistenceFailure() {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.countBridge(7601, 514, 2021)).thenReturn(1);
     doThrow(new DataIntegrityViolationException("delete failed"))
-        .when(repository).deleteBridge(7601, 514, 2021);
+        .when(repository).deleteCostsForBridge(7601);
 
     assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
         .isInstanceOf(ScheduleNotSavedException.class);

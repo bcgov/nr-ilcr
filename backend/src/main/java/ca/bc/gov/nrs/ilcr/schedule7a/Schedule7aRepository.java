@@ -181,12 +181,13 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       @Param("user") String user);
 
   /**
-   * Delete one bridge, scoped to the mill/year/category (never another mill's row). The service runs
-   * this FIRST — its 0-rows result is the ownership/404 check — and only then cascades the cost
-   * children ({@link #deleteCostsForBridge}, delivery has no FK cascade).
+   * Delete one bridge, scoped to the mill/year/category (never another mill's row). Runs LAST — the
+   * cost children go first ({@link #deleteCostsForBridge}), because delivery's FK on
+   * {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} has no {@code ON DELETE CASCADE} and would
+   * reject a parent still holding children.
    *
    * @return rows affected — {@code 0} when the id is not a category-{@code '7'} bridge under this
-   *     mill/year (→ 404)
+   *     mill/year (the service has already 404'd on that via {@link #countBridge})
    */
   @Modifying
   @Query("""

@@ -238,19 +238,25 @@ public class Schedule7aService {
 
   /**
    * Delete one bridge and ALL its cost children (S04/S05 — legacy whole-row removal). Draft-gated;
-   * an unknown id → 404. The mill/year-scoped bridge delete runs FIRST so its 0-rows result is the
-   * ownership check.
+   * an unknown id → 404.
+   *
+   * <p>CHILDREN FIRST, then the parent — the order legacy used (Schedule7aDAO:566-570). Delivery
+   * carries an FK from {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} without {@code ON DELETE
+   * CASCADE}, so deleting the bridge while its ten cost rows still reference it raises ORA-02292
+   * ("child record found") and the whole delete fails. The ownership/404 check therefore cannot be
+   * the parent delete's row count; it is a scoped {@code countBridge} taken BEFORE either delete, so
+   * another mill's id still removes nothing.
    */
   @Transactional
   public Schedule7aResponse deleteBridge(
       long millId, int year, long bridgeId, boolean callerMayEdit) {
     requireDraft(millId, year);
     try {
-      int deleted = repository.deleteBridge(bridgeId, millId, year);
-      if (deleted == 0) {
+      if (repository.countBridge(bridgeId, millId, year) == 0) {
         throw new BridgeNotFoundException();
       }
       repository.deleteCostsForBridge(bridgeId);
+      repository.deleteBridge(bridgeId, millId, year);
     } catch (DataAccessException ex) {
       log.warn("Schedule 7A delete failed for mill {} year {} [{}]",
           millId, year, ex.getClass().getSimpleName());
