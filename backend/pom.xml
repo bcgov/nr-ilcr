@@ -473,7 +473,7 @@
                 <executions>
                     <execution>
                         <id>validate</id>
-                        <phase>checkstyle</phase>
+                        <phase>validate</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>
