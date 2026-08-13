@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -53,6 +54,21 @@ class Schedule9DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.records[0].id", is(9101)))
         .andExpect(jsonPath("$.records[1].id", is(9102)))
         .andExpect(jsonPath("$.records[2].id", is(9103)))
+        // Story 9.3: the four dropdown code lists ride on the GET. Contractual Items are the fixed
+        // category-'9' catalogue 108–114 (ordered by id); the unit/BEC/source reference options are
+        // served whole. The record fields above match a code in these lists.
+        .andExpect(jsonPath("$.codeLists.contractualItems", hasSize(7)))
+        .andExpect(jsonPath("$.codeLists.contractualItems[0].code", is("108")))
+        .andExpect(jsonPath("$.codeLists.contractualItems[0].description", is("Cattleguard")))
+        .andExpect(jsonPath("$.codeLists.contractualItems[6].code", is("114")))
+        // Assert BOTH halves so a code/description swap in the query is caught (the code lands in the
+        // code slot, the label in the description slot) — not just that some code is present.
+        .andExpect(jsonPath("$.codeLists.unitTypes[*].code", hasItem("M3")))
+        .andExpect(jsonPath("$.codeLists.unitTypes[*].description", hasItem("Cubic Metres")))
+        .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].code", hasItem("BZ1")))
+        .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].description", hasItem("BEC Zone One")))
+        .andExpect(jsonPath("$.codeLists.sources[*].code", hasItem("A")))
+        .andExpect(jsonPath("$.codeLists.sources[*].description", hasItem("Actual Cost")))
         .andExpect(jsonPath("$.message").doesNotExist());
   }
 

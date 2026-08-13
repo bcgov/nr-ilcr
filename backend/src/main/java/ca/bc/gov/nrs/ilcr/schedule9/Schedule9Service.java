@@ -131,7 +131,7 @@ public class Schedule9Service {
   @Transactional(readOnly = true)
   public Schedule9Response getSchedule9(long millId, int year, boolean callerMayEdit) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, callerMayEdit, true);
   }
 
   /**
@@ -139,7 +139,7 @@ public class Schedule9Service {
    * {@code D} their Draft gate just proved (same transaction) rather than re-running the track query.
    */
   private Schedule9Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
+      long millId, int year, String trackStatus, boolean callerMayEdit, boolean includeCodeLists) {
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
     // One cost line per record; lowest ILCR_COST_REPORT_DETAIL_ID wins if delivery ever holds more
@@ -152,7 +152,8 @@ public class Schedule9Service {
         .map(row -> toRecord(row, costByRecord.get(row.id())))
         .toList();
 
-    return new Schedule9Response(millId, year, trackStatus, editable, records, null);
+    return new Schedule9Response(
+        millId, year, trackStatus, editable, records, includeCodeLists ? repository.codeLists() : null, null);
   }
 
   private static ContractualWorkRecord toRecord(RecordRow row, CostRow cost) {
@@ -235,7 +236,7 @@ public class Schedule9Service {
       logWriteFailure("add", millId, year, null, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
   }
 
   /**
@@ -288,7 +289,7 @@ public class Schedule9Service {
       logWriteFailure("update", millId, year, recordId, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
   }
 
   /**
@@ -321,7 +322,7 @@ public class Schedule9Service {
       logWriteFailure("delete", millId, year, recordId, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
   }
 
   // ===============================================================================================

@@ -36,10 +36,11 @@ public record Schedule9Response(
     String trackStatus,
     boolean editable,
     List<ContractualWorkRecord> records,
+    Schedule9CodeLists codeLists,
     MessageInfo message) {
 
   /** A copy of this document carrying the given success message (for the save echo, AD-8). */
   public Schedule9Response withMessage(MessageInfo message) {
-    return new Schedule9Response(millId, year, trackStatus, editable, records, message);
+    return new Schedule9Response(millId, year, trackStatus, editable, records, codeLists, message);
   }
 }

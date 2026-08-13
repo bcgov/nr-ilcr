@@ -63,7 +63,7 @@ class Schedule9ControllerTest {
 
   private void serviceReturns(boolean editable) {
     when(schedule9Service.getSchedule9(anyLong(), anyInt(), anyBoolean()))
-        .thenReturn(new Schedule9Response(MILL, YEAR, "D", editable, List.of(), null));
+        .thenReturn(new Schedule9Response(MILL, YEAR, "D", editable, List.of(), null, null));
   }
 
   @Test
