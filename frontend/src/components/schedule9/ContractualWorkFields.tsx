@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
 import type { CodeDescription, Schedule9CodeLists } from '@/interfaces/Schedule9Response'
+import { numStrFixed } from '@/utils/number'
 import type { MaskedField, RecordErrors, RecordFormValues } from './validation'
 import {
   COMMENTS_MAX_LENGTH,
@@ -16,13 +17,6 @@ import {
 // transcribed from the legacy page — Company ID, Contractual Item, Item Other Description, Side Slope,
 // Number of Units, Unit Type, Unit Other Description, Biogeoclimatic Zone, Cost, Source, Source Other
 // Description, $/Unit, Comments — and must not be reworded or resequenced; reporters navigate by shape.
-
-// $/Unit renders through a mask, never a recompute of nothing. A null value means "no ratio" (units
-// 0/blank) and must render BLANK — showing "0" would assert a figure the data lacks.
-const money = (value: number | null | undefined): string =>
-  value === null || value === undefined
-    ? ''
-    : value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 type Props = {
   readonly idPrefix: string
@@ -148,8 +142,9 @@ const ContractualWorkFields: FC<Props> = ({
           <div className="schedule-9__derived">
             <span className="schedule-9__derived-label">$/Unit</span>
             <span className="schedule-9__derived-value">
-              {money(
+              {numStrFixed(
                 servedCostPerUnit === undefined ? previewCostPerUnit(form) : servedCostPerUnit,
+                2,
               )}
             </span>
           </div>

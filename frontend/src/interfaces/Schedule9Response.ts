@@ -64,7 +64,7 @@ export default interface Schedule9Response {
   readonly trackStatus: string | null
   readonly editable: boolean
   readonly records: readonly ContractualWorkRecord[]
-  readonly codeLists: Schedule9CodeLists
+  readonly codeLists?: Schedule9CodeLists
   // Write echoes only (AD-8); absent on the GET.
   readonly message?: MessageInfo | null
 }

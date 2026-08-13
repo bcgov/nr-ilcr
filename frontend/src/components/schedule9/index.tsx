@@ -131,7 +131,7 @@ const Schedule9: FC = () => {
   // A write echoes the recomputed document. The just-saved row re-derives from it; other open editors
   // keep unsaved edits (all rows are live at once). `savedId` is absent for add and delete.
   const applyDocument = (doc: Schedule9Response, savedId?: number) => {
-    setData(doc)
+    setData((prev) => (prev ? { ...doc, codeLists: doc.codeLists ?? prev.codeLists } : doc))
     setPage((current) => Math.min(current, Math.max(1, Math.ceil(doc.records.length / PAGE_SIZE))))
     const surviving = new Set(doc.records.map((record) => record.id))
     setRowForms((prev) =>
