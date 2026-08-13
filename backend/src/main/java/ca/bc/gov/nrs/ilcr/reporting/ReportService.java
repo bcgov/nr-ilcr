@@ -31,7 +31,9 @@ import org.springframework.stereotype.Service;
 /**
  * Embedded JasperReports 7 engine (AD-16): renders Schedule 9 to PDF in-process, with no standalone
  * Jasper Server and no cross-network call. The {@code .jrxml} template is compiled to a {@link
- * JasperReport} once at construction and cached; each request only fills and exports.
+ * JasperReport} lazily on the first request and cached — never at startup, so a template or engine
+ * problem in the deployed (read-only-root, non-root) container surfaces as a 500 on this one
+ * endpoint instead of crashing the application context at boot.
  *
  * <p>The report SQL is embedded in the template and runs on a {@link Connection} borrowed from the
  * single {@code @Primary} application {@link DataSource} (AD-2/DL-25 — no dedicated reporting user
@@ -50,14 +52,15 @@ public class ReportService {
 
   private final DataSource dataSource;
   private final Schedule9Repository schedule9Repository;
-  private final JasperReport schedule9Report;
+  private final Resource schedule9Template;
+
+  /** Compiled lazily on first use (see {@link #schedule9Report()}); never at startup. */
+  private volatile JasperReport schedule9Report;
 
   /**
-   * Compile and cache the Schedule 9 template once at startup (AD-16).
-   *
    * @param dataSource the single {@code @Primary} application datasource the report fills from
    * @param schedule9Repository the Story 9.1 read, reused for the empty-schedule pre-check
-   * @param schedule9Template the classpath {@code .jrxml} to compile
+   * @param schedule9Template the classpath {@code .jrxml}, compiled on first request (not at boot)
    */
   public ReportService(
       DataSource dataSource,
@@ -65,7 +68,7 @@ public class ReportService {
       @Value("classpath:reports/schedule9.jrxml") Resource schedule9Template) {
     this.dataSource = dataSource;
     this.schedule9Repository = schedule9Repository;
-    this.schedule9Report = compile(schedule9Template);
+    this.schedule9Template = schedule9Template;
   }
 
   /**
@@ -101,7 +104,7 @@ public class ReportService {
   /** Fill the cached report on a primary-datasource connection, closed the moment fill returns. */
   private JasperPrint fill(Map<String, Object> params) {
     try (Connection connection = dataSource.getConnection()) {
-      return JasperFillManager.fillReport(schedule9Report, params, connection);
+      return JasperFillManager.fillReport(schedule9Report(), params, connection);
     } catch (SQLException | JRException e) {
       throw new ReportGenerationException("Failed to fill the Schedule 9 report", e);
     }
@@ -120,9 +123,29 @@ public class ReportService {
   }
 
   /**
-   * Compile the classpath {@code .jrxml} to a cached {@link JasperReport} once. The v7 template is
-   * parsed with the Jackson-based loader into a {@link JasperDesign}, then compiled with the
-   * bundled expression evaluator (no runtime JDT dependency needed).
+   * The compiled template, built on first use and cached (double-checked locking). Compilation is
+   * kept OFF the startup path deliberately: if the engine cannot compile in the deployed container,
+   * the failure surfaces as a 500 on this endpoint, not a boot-time context failure that would take
+   * the whole backend pod down (the cause of the Epic 20 PR-env deploy failure).
+   */
+  private JasperReport schedule9Report() {
+    JasperReport report = schedule9Report;
+    if (report == null) {
+      synchronized (this) {
+        report = schedule9Report;
+        if (report == null) {
+          report = compile(schedule9Template);
+          schedule9Report = report;
+        }
+      }
+    }
+    return report;
+  }
+
+  /**
+   * Compile the classpath {@code .jrxml} to a {@link JasperReport}. The v7 template is parsed with
+   * the Jackson-based loader into a {@link JasperDesign}, then compiled with the bundled expression
+   * evaluator (no runtime JDT dependency needed).
    */
   private static JasperReport compile(Resource template) {
     try (InputStream in = template.getInputStream()) {
