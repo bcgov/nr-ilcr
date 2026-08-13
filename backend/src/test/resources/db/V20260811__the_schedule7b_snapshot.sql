@@ -25,8 +25,9 @@
 -- =====================================================================================================
 
 -- Per-report FK column on the shared cost-detail table. Delivery DOES carry a real FK constraint here
--- (ILCR_LCRD_CLV_RPT_FK, ENABLED, DELETE_RULE = 'NO ACTION'); it is declared in V20260815, after every
--- fixture that populates this column. Deleting a culvert therefore requires children-first ordering.
+-- (ILCR_LCRD_CLV_RPT_FK, ENABLED, DELETE_RULE = 'NO ACTION'); it is declared in
+-- R__cost_detail_bridge_culvert_fks.sql, which Flyway applies after every versioned migration.
+-- Deleting a culvert therefore requires children-first ordering.
 ALTER TABLE THE.ILCR_COST_REPORT_DETAIL ADD CULVERT_REPORT_ID NUMBER(10);
 
 -- The culvert parent table (legacy model/CulvertReport.java:36-99). LENGTH is NUMBER(7,1) here to carry

@@ -1,5 +1,20 @@
 -- Test-scope Flyway migration (Schedules 7A + 7B).
 --
+-- REPEATABLE (R__), not versioned (V…), on purpose. Flyway applies every repeatable migration AFTER
+-- all pending versioned ones, which is exactly the ordering these constraints need: they must land
+-- after every fixture that populates BRIDGE_REPORT_ID / CULVERT_REPORT_ID, and that set grows every
+-- time a schedule adds a snapshot. As a versioned file this had to claim the highest V number on the
+-- tree, which made it lose a race twice in one day — V20260814 to schedule 5's subpage fixtures, then
+-- V20260815 to schedule 9's write fixtures — because a version number is a scarce shared resource and
+-- "highest" is only knowable at merge time. A repeatable migration has no version to collide with and
+-- stays last no matter how many V-migrations land after it. FlywayMigrationVersionUniquenessTest
+-- deliberately ignores R__ files (its regex matches V-versioned names only).
+--
+-- Safe to re-run: the IT container is created fresh per JVM (AbstractOracleIT has no withReuse), so
+-- this applies exactly once per run. Flyway re-runs a repeatable migration only when its checksum
+-- changes, so editing this file against a reused container would need a clean container — the same
+-- caveat every DDL fixture here already carries.
+--
 -- The two REAL foreign keys from the shared cost-detail table to the Schedule 7 parent report tables.
 -- Verified against the delivery database (all_constraints on THE, 2026-08-13): the column pair is
 -- backed by nine ENABLED constraints on THE.ILCR_COST_REPORT_DETAIL, every one DELETE_RULE = 'NO
