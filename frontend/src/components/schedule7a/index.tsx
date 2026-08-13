@@ -478,19 +478,15 @@ const Schedule7a: FC = () => {
                         Saving is a page-level action covering every bridge at once, so a per-row
                         Save/Cancel pair would offer a granularity the schedule does not have. */}
                     <div className="schedule-7a__panel-actions">
-                      {/* Icon-only. `iconDescription` is what names the control for assistive tech
-                          and drives the hover tooltip, so the action is still "Delete" to anyone
-                          who cannot read the glyph. */}
                       <Button
                         kind="danger--ghost"
                         size="sm"
-                        hasIconOnly
                         renderIcon={TrashCan}
-                        iconDescription="Delete"
-                        tooltipPosition="bottom"
                         disabled={controlsDisabled}
                         onClick={() => setConfirmDeleteId(bridge.bridgeReportId)}
-                      />
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </AccordionItem>
                 ))}

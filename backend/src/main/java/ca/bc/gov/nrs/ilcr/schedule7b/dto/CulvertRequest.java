@@ -62,8 +62,10 @@ public record CulvertRequest(
     // `12.50` (numerically one decimal, scale 2) violated `fraction = 1` and was rejected with a
     // RANGE message for a value squarely inside the range, while the identical `12.5` passed. Any
     // client that formats to two decimals could not save a culvert at all. Legacy applied
-    // f:validateDoubleRange (range only, schedule7B.xhtml:378-379) and let the NUMBER(7,1) column
-    // round the stored value, so Schedule7bService normalizes the scale on write instead.
+    // f:validateDoubleRange (range only, schedule7B.xhtml:378-379) and pinned the scale in its display
+    // converter instead — `f:convertNumber pattern="###,##0.0"` (messages.properties:206), one decimal
+    // — so it never wrote more. The column is NUMBER(8,2) in delivery and so would ACCEPT two decimals;
+    // scale 1 is legacy's converter, not a column limit. Schedule7bService normalizes on write.
     @DecimalMin(value = "0.0", message = "{culvertLengthValidatorErrorMsg}")
     @DecimalMax(value = "999999.9", message = "{culvertLengthValidatorErrorMsg}")
     BigDecimal length,

@@ -463,7 +463,11 @@ const Schedule3: FC = () => {
     </TableRow>
   )
 
-  const actions = (
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule and
+  // Save + Check Status + Delete below it (schedule3.xhtml:37-38 vs :420-426), the same shape as
+  // Schedule 1. Deleting the whole schedule is the one destructive action on this page, and legacy
+  // kept it off the bar a reporter meets first.
+  const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-3__actions"
       editable={editable}
@@ -472,6 +476,7 @@ const Schedule3: FC = () => {
       onSave={handleSave}
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
+      showDelete={showDelete}
     />
   )
 
@@ -508,7 +513,7 @@ const Schedule3: FC = () => {
           />
         ))}
 
-        {actions}
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-3__section">
           {/* No visible section title (legacy form has none); aria-label carries the name for a11y. */}
@@ -617,7 +622,7 @@ const Schedule3: FC = () => {
           )}
         </Column>
 
-        {actions}
+        {actionBar(true)}
       </Grid>
 
       {editable && (
