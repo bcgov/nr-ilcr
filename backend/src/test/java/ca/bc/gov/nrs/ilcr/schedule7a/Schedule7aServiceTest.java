@@ -222,14 +222,19 @@ class Schedule7aServiceTest {
       assertThat(m.text()).startsWith("Bridge Report Id : 1");
       assertThat(m.text()).endsWith("Value Required");
     });
-    assertThat(result.errors().get(0).text()).contains(" - Certification After install Cost ");
-    assertThat(result.errors().get(1).text()).contains(" - Other Costs ");
+    // The full verbatim line, separator included: FacesUtil.addCheckStatusErrorMessage appended
+    // ": " between the label and the bundle text for every schedule (util/FacesUtil.java:134), and
+    // the label itself ends in a space — so the legacy line reads "... Cost : Value Required".
+    assertThat(result.errors().get(0).text())
+        .isEqualTo("Bridge Report Id : 1 - Certification After install Cost : Value Required");
+    assertThat(result.errors().get(1).text())
+        .isEqualTo("Bridge Report Id : 1 - Other Costs : Value Required");
     assertThat(result.bridgeMessages()).isEmpty();
     assertThat(result.requirementsMetMessage()).isNull();
   }
 
   @Test
-  @DisplayName("check-status: complete bridge → all-met per bridge and schedule-wide")
+  @DisplayName("check-status: every bridge complete → the schedule-wide line ALONE, no per-bridge lines")
   void checkStatus_allMet() {
     when(repository.findBridges(514, 2021)).thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
@@ -241,10 +246,35 @@ class Schedule7aServiceTest {
 
     assertThat(result.requirementsMet()).isTrue();
     assertThat(result.errors()).isEmpty();
-    assertThat(result.bridgeMessages()).hasSize(1);
-    assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
+    // Legacy ran its per-bridge loop only when the SCHEDULE failed (Schedule7aMB.java:197-296), so a
+    // fully complete schedule showed one success line, not one per bridge plus a schedule-wide one.
+    assertThat(result.bridgeMessages()).isEmpty();
     assertThat(result.requirementsMetMessage()).isNotNull();
     assertThat(result.requirementsMetMessage().key()).isEqualTo("scheduleRequirementsMetMsg");
+  }
+
+  @Test
+  @DisplayName("check-status: a MIXED schedule flags the failing bridge and all-mets the passing one")
+  void checkStatus_mixed() {
+    when(repository.findBridges(514, 2021)).thenReturn(List.of(
+        bridge(7601, "North Fork", LocalDate.of(2020, 6, 1)),
+        bridge(7602, "South Fork", LocalDate.of(2020, 7, 1))));
+    // Bridge 1 complete; bridge 2 missing every cost.
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(
+        cost(1, 7601, 70, 1), cost(2, 7601, 71, 1), cost(3, 7601, 72, 1), cost(4, 7601, 73, 1),
+        cost(5, 7601, 74, 1), cost(6, 7601, 75, 1), cost(7, 7601, 76, 1),
+        cost(8, 7601, 79, 1), cost(9, 7601, 80, 1), cost(10, 7601, 81, 1)));
+
+    Schedule7aCheckStatusResponse result = service.checkStatus(514, 2021);
+
+    assertThat(result.requirementsMet()).isFalse();
+    assertThat(result.errors()).isNotEmpty();
+    assertThat(result.errors()).allSatisfy(
+        m -> assertThat(m.text()).startsWith("Bridge Report Id : 2"));
+    assertThat(result.bridgeMessages()).hasSize(1);
+    assertThat(result.bridgeMessages().get(0).key()).isEqualTo("bridgeRequirementsMetMsg");
+    // No schedule-wide line on a mixed result.
+    assertThat(result.requirementsMetMessage()).isNull();
   }
 
   @Test

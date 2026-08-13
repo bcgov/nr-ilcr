@@ -88,16 +88,6 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
       """)
   int countBridge(@Param("id") long id, @Param("millId") long millId, @Param("year") int year);
 
-  /** How many bridges remain for a mill/year (drives the SUC-003 empty-schedule message on delete). */
-  @Query("""
-      SELECT COUNT(*)
-        FROM THE.BRIDGE_REPORT
-       WHERE ILCR_MILL_ID = :millId
-         AND REPORT_YEAR = :year
-         AND ILCR_CATEGORY_ID = '7'
-      """)
-  int countBridges(@Param("millId") long millId, @Param("year") int year);
-
   // ===============================================================================================
   // Writes (Story 12.2)
   // ===============================================================================================

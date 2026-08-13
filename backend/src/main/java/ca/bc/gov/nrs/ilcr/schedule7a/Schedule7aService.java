@@ -374,8 +374,9 @@ public class Schedule7aService {
   /**
    * Walk every stored bridge in the exact legacy field order ({@code Schedule7aMB.java:206-289}),
    * flagging each missing required value with {@code missingRequiredFieldMsg} = "Value Required".
-   * A bridge with all 17 values present gets an SUC-005 all-met line; when every bridge passes the
-   * response also carries the SUC-004 schedule-wide all-met message.
+   * When at least one bridge fails, each bridge that passes gets an SUC-005 all-met line; when EVERY
+   * bridge passes the response carries the SUC-004 schedule-wide message alone and no per-bridge
+   * lines (legacy's per-bridge loop ran only in the schedule-failed branch).
    *
    * <p>Recorded deviation: the legacy abutment-height check
    * ({@code Schedule7aCheckStatus.java:23} {@code getBridgeAbutHtM().equals(null)}) never fires and
@@ -387,7 +388,7 @@ public class Schedule7aService {
     Map<Long, Map<Integer, Integer>> costs = costsByBridge(repository.findCostDetails(millId, year));
 
     List<MessageInfo> errors = new ArrayList<>();
-    List<MessageInfo> bridgeMessages = new ArrayList<>();
+    List<Integer> passingRows = new ArrayList<>();
     boolean allMet = true;
 
     int rowCounter = 1;
@@ -395,7 +396,7 @@ public class Schedule7aService {
       Map<Integer, Integer> cost = costs.getOrDefault(row.bridgeReportId(), Map.of());
       List<String> missing = missingLabels(row, cost);
       if (missing.isEmpty()) {
-        bridgeMessages.add(new MessageInfo(MSG_BRIDGE_MET, bridgeMetText(rowCounter)));
+        passingRows.add(rowCounter);
       } else {
         allMet = false;
         for (String label : missing) {
@@ -404,6 +405,16 @@ public class Schedule7aService {
       }
       rowCounter++;
     }
+
+    // The per-bridge all-met lines are emitted ONLY when the schedule as a whole failed. Legacy put
+    // the whole per-bridge loop inside the `else` of `if (chkShedule7a.isPassedCheckStatus())`
+    // (Schedule7aMB.java:197-296), so a fully complete schedule showed the ONE schedule-wide line and
+    // nothing per bridge — emitting both would stack N+1 success banners where legacy showed one.
+    List<MessageInfo> bridgeMessages = allMet
+        ? List.of()
+        : passingRows.stream()
+            .map(counter -> new MessageInfo(MSG_BRIDGE_MET, bridgeMetText(counter)))
+            .toList();
 
     MessageInfo requirementsMetMessage = allMet
         ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
@@ -463,9 +474,18 @@ public class Schedule7aService {
     return missing;
   }
 
-  /** {@code "Bridge Report Id : {rowCounter}{label}Value Required"} — the legacy composition. */
+  /**
+   * {@code "Bridge Report Id : {rowCounter}{label}: Value Required"} — the legacy composition.
+   *
+   * <p>The {@code ": "} is NOT part of the label: legacy built the label as
+   * {@code "Bridge Report Id : " + rowCounter + fieldMissing} ({@code Schedule7aMB.java:191}) and
+   * handed it to {@code FacesUtil.addCheckStatusErrorMessage}, which appends {@code ": "} before the
+   * bundle text for EVERY schedule ({@code util/FacesUtil.java:134}). The labels already end in a
+   * space, so the rendered line reads {@code "... - Length (m) : Value Required"} — the same shape
+   * Schedule 7B composes ({@code Schedule7bService.missingText}).
+   */
   private String missingText(int rowCounter, String label) {
-    return "Bridge Report Id : " + rowCounter + label + resolveText(MSG_VALUE_REQUIRED);
+    return "Bridge Report Id : " + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
   }
 
   private String bridgeMetText(int rowCounter) {
