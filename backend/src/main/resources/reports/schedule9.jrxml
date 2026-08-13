@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 9 (Miscellaneous / Unique Logging Costs) — JasperReports 7 template (AD-16). Migrated
+  from the legacy 6.0.3 schedule9.jrxml with column/section parity: title band, page header, the
+  per-record detail card, the gated Comments block, and the page footer. The v7 JAXB/Jackson model
+  is used (flat <element kind="..."> with alignment/pattern/textAdjust as attributes, <expression>
+  child, <query> in place of <queryString>) — a clean port over pixel-parity.
+
+  Divergence from legacy (deliberate, AD-16 "fills from the datasource"): the legacy shipped empty
+  <queryString>s and fed a bean JRDataSource. Here the data comes from SQL embedded in the template
+  and run on the fill Connection. The main query reproduces Story 9.1's read exactly — one row per
+  category-'9' CONTRACTUAL_WORK_REPORT for the mill/year, LEFT JOINed to its single canonical cost
+  line (item 108-114, lowest ILCR_COST_REPORT_DETAIL_ID wins), the item name, and the three
+  code-table descriptions — plus the mill title block (MILL_NAME||'-'||MILL_NUMBER) cross-joined in.
+  $/Unit is derived in SQL as COST/NULLIF(PERFORMED_UNIT,0) at scale 2 (null when units are 0).
+
+  The p_do_print_body / p_do_print_comment Boolean parameters and their printWhenExpression gating
+  are preserved; the endpoint passes both true for the single-schedule proof.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule9" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millId" class="java.lang.Long"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <query language="sql">
+    <![CDATA[
+      SELECT (m.MILL_NAME || '-' || m.MILL_NUMBER)          AS PRINT_MILL_AND_USER_DETAILS,
+             cwr.CONTRACTUAL_WORK_REPORT_ID                 AS CONTRACTUAL_WORK_REPORT_ID,
+             cwr.CONTRACTOR_ID                              AS CONTRACTOR_ID,
+             (ci.ITEM_NAME || ' - ' || d.ILCR_REPORT_COST_ITEM_ID) AS REPORT_COST_ITEM,
+             d.ITEM_DESCRIPTION                             AS ITEM_DESCRIPTION,
+             cwr.SIDE_SLOPE_PCT                             AS SIDE_SLOPE_PERCENTAGE,
+             cwr.PERFORMED_UNIT                             AS UNIT,
+             cwr.ILCR_UNIT_CODE                             AS UNIT_CODE,
+             cwr.UNIT_DESCRIPTION                           AS UNIT_DESCRIPTION,
+             cwr.BEC_ZONE_CODE                              AS BEC_ZONE_CODE,
+             d.COST                                         AS COST,
+             ROUND(d.COST / NULLIF(cwr.PERFORMED_UNIT, 0), 2) AS COST_UNIT_CALCULATION,
+             cwr.ILCR_CONTRACTUAL_SOURCE_CODE               AS CONTRACTUAL_SOURCE_CODE,
+             cwr.SOURCE_DESCRIPTION                         AS SOURCE_DESCRIPTION,
+             cwr.COMMENTS                                   AS CONTRACTUAL_WORK_REPORT_COMMENTS
+        FROM THE.CONTRACTUAL_WORK_REPORT cwr
+        CROSS JOIN THE.MILL m
+        LEFT JOIN THE.ILCR_COST_REPORT_DETAIL d
+          ON d.ILCR_COST_REPORT_DETAIL_ID = (
+               SELECT MIN(dd.ILCR_COST_REPORT_DETAIL_ID)
+                 FROM THE.ILCR_COST_REPORT_DETAIL dd
+                WHERE dd.CONTRACTUAL_WORK_REPORT_ID = cwr.CONTRACTUAL_WORK_REPORT_ID
+                  AND dd.ILCR_REPORT_COST_ITEM_ID BETWEEN 108 AND 114)
+        LEFT JOIN THE.ILCR_REPORT_COST_ITEM ci
+          ON ci.ILCR_REPORT_COST_ITEM_ID = d.ILCR_REPORT_COST_ITEM_ID
+       WHERE m.MILL_ID = $P{millId}
+         AND cwr.ILCR_MILL_ID = $P{millId}
+         AND cwr.REPORT_YEAR = $P{year}
+         AND cwr.ILCR_CATEGORY_ID = '9'
+       ORDER BY cwr.CONTRACTUAL_WORK_REPORT_ID
+    ]]>
+  </query>
+  <field name="PRINT_MILL_AND_USER_DETAILS" class="java.lang.String"/>
+  <field name="CONTRACTOR_ID" class="java.lang.String"/>
+  <field name="REPORT_COST_ITEM" class="java.lang.String"/>
+  <field name="ITEM_DESCRIPTION" class="java.lang.String"/>
+  <field name="SIDE_SLOPE_PERCENTAGE" class="java.lang.Integer"/>
+  <field name="UNIT" class="java.math.BigDecimal"/>
+  <field name="UNIT_CODE" class="java.lang.String"/>
+  <field name="UNIT_DESCRIPTION" class="java.lang.String"/>
+  <field name="BEC_ZONE_CODE" class="java.lang.String"/>
+  <field name="COST" class="java.lang.Integer"/>
+  <field name="COST_UNIT_CALCULATION" class="java.math.BigDecimal"/>
+  <field name="CONTRACTUAL_SOURCE_CODE" class="java.lang.String"/>
+  <field name="SOURCE_DESCRIPTION" class="java.lang.String"/>
+  <field name="CONTRACTUAL_WORK_REPORT_COMMENTS" class="java.lang.String"/>
+  <title height="30">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="30">
+    <element kind="staticText" x="0" y="0" width="600" height="15">
+      <text><![CDATA[Schedule 9:  Miscellaneous/Unique Logging Costs ]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="600" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$F{PRINT_MILL_AND_USER_DETAILS}]]></expression>
+    </element>
+    <element kind="staticText" x="600" y="0" width="202" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="600" y="15" width="202" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="150">
+      <element kind="staticText" style="bold" x="5" y="11" width="70" height="15">
+        <text><![CDATA[Company ID]]></text>
+      </element>
+      <element kind="textField" x="5" y="31" width="70" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <expression><![CDATA[$F{CONTRACTOR_ID}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="77" y="11" width="70" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Contractual Item]]></text>
+      </element>
+      <element kind="textField" x="77" y="31" width="70" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{REPORT_COST_ITEM}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="151" y="11" width="90" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Item Other]]></text>
+      </element>
+      <element kind="textField" x="151" y="31" width="90" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{ITEM_DESCRIPTION}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="246" y="11" width="40" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Slope%]]></text>
+      </element>
+      <element kind="textField" x="246" y="31" width="40" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{SIDE_SLOPE_PERCENTAGE}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="292" y="11" width="51" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Number of Units]]></text>
+      </element>
+      <element kind="textField" x="292" y="31" width="51" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{UNIT}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="348" y="11" width="30" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Unit Type]]></text>
+      </element>
+      <element kind="textField" x="348" y="31" width="30" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{UNIT_CODE}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="383" y="11" width="113" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Type Other Description]]></text>
+      </element>
+      <element kind="textField" x="383" y="31" width="113" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{UNIT_DESCRIPTION}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="500" y="11" width="83" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Biogeoclimatic Zone]]></text>
+      </element>
+      <element kind="textField" x="500" y="31" width="83" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{BEC_ZONE_CODE}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="586" y="11" width="71" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cost $]]></text>
+      </element>
+      <element kind="textField" x="586" y="31" width="71" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{COST}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="662" y="11" width="60" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[$/Unit]]></text>
+      </element>
+      <element kind="textField" x="662" y="31" width="60" height="20" textAdjust="StretchHeight" blankWhenNull="true" pattern="#,##0.00">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{COST_UNIT_CALCULATION}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="8" y="61" width="67" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Source]]></text>
+      </element>
+      <element kind="textField" x="8" y="81" width="67" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{CONTRACTUAL_SOURCE_CODE}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="78" y="61" width="163" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Source Other Description]]></text>
+      </element>
+      <element kind="textField" x="78" y="81" width="163" height="20" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{SOURCE_DESCRIPTION}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="246" y="61" width="116" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments]]></text>
+      </element>
+      <element kind="textField" x="246" y="81" width="499" height="33" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{CONTRACTUAL_WORK_REPORT_COMMENTS}]]></expression>
+      </element>
+      <element kind="line" x="8" y="140" width="735" height="1"/>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>
