@@ -24,6 +24,7 @@ import net.sf.jasperreports.pdf.JRPdfExporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Service;
  * volume, or personal data.
  */
 @Service
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class ReportService {
 
   private static final Logger log = LoggerFactory.getLogger(ReportService.class);

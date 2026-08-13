@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * as the verbatim {@code Schedule not found.} (ERR-005) — no PDF is produced.
  */
 @RestController
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class ReportController implements ReportApi {
 
   private final MillContextService millContextService;
