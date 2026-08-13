@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -68,6 +71,29 @@ class ReportSchedule9IT extends AbstractOracleIT {
         .andReturn();
 
     assertThat(new String(result.getResponse().getContentAsByteArray(), 0, 4)).isEqualTo("%PDF");
+  }
+
+  @Test
+  @DisplayName("514/2021 PDF text carries the heading, the mill title block, record data, and comments")
+  void pdfText_carriesHeadingMillRecordAndComments() throws Exception {
+    MvcResult result = mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
+            .accept(MediaType.APPLICATION_PDF))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    String text;
+    try (PDDocument document = Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
+      text = new PDFTextStripper().getText(document);
+    }
+
+    // Header (page header static text) and the THE.MILL title block (MILL_NAME || '-' || MILL_NUMBER).
+    assertThat(text).contains("Miscellaneous");
+    assertThat(text).contains("AAA Milling");
+    // Record 9101's contractual item (item 108 name) resolved through the embedded SQL joins.
+    assertThat(text).contains("Cattleguard");
+    // The comment renders because the endpoint passes p_do_print_comment=true — "install" appears
+    // only in record 9101's comment "Cattleguard install.", so this proves the flag is honored.
+    assertThat(text).contains("install");
   }
 
   @Test
