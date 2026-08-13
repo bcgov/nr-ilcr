@@ -413,7 +413,7 @@ public class Schedule7aService {
     }
 
     // The per-bridge all-met lines are emitted ONLY when the schedule as a whole failed. Legacy put
-    // the whole per-bridge loop inside the `else` of `if (chkShedule7a.isPassedCheckStatus())`
+    // the whole per-bridge loop in the else branch of its schedule-passed test
     // (Schedule7aMB.java:197-296), so a fully complete schedule showed the ONE schedule-wide line and
     // nothing per bridge — emitting both would stack N+1 success banners where legacy showed one.
     List<MessageInfo> bridgeMessages = allMet
