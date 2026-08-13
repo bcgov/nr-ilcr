@@ -1,6 +1,5 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
-import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
@@ -64,7 +63,6 @@ public class ReportService {
   private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
   private final DataSource dataSource;
-  private final MillContextService millContextService;
   private final Schedule5Service schedule5Service;
   private final Schedule6Service schedule6Service;
   private final Schedule7aService schedule7aService;
@@ -77,7 +75,6 @@ public class ReportService {
 
   /**
    * @param dataSource the single {@code @Primary} application datasource Schedule 9 fills from
-   * @param millContextService resolves the mill title block shared by every section header
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
@@ -87,7 +84,6 @@ public class ReportService {
    */
   public ReportService(
       DataSource dataSource,
-      MillContextService millContextService,
       Schedule5Service schedule5Service,
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,
@@ -95,7 +91,6 @@ public class ReportService {
       Schedule9Repository schedule9Repository,
       Schedule11Service schedule11Service) {
     this.dataSource = dataSource;
-    this.millContextService = millContextService;
     this.schedule5Service = schedule5Service;
     this.schedule6Service = schedule6Service;
     this.schedule7aService = schedule7aService;
@@ -115,7 +110,10 @@ public class ReportService {
    * @return the rendered PDF bytes
    */
   public byte[] renderSchedule9Pdf(long millId, int year) {
-    JasperPrint print = fillSection(ScheduleKey.SCHEDULE_9, millId, year, PrintOptions.showEverything());
+    // Schedule 9 fills from its embedded-SQL template and carries its own title block, so the
+    // resolved bean-section title block is irrelevant here (passed null, ignored by fillSchedule9).
+    JasperPrint print =
+        fillSection(ScheduleKey.SCHEDULE_9, millId, year, PrintOptions.showEverything(), null);
     if (print == null) {
       throw new ScheduleNotFoundException();
     }
@@ -131,31 +129,34 @@ public class ReportService {
    * @param millId the validated mill id
    * @param year the reporting year
    * @param options the print options (schedule information / comments) passed through to the template
+   * @param millTitleBlock the {@code name-number} title block resolved ONCE for the request and
+   *     shared by every bean-section header (Schedule 9 supplies its own, so it is ignored there)
    * @return the filled {@link JasperPrint}, or {@code null} when the schedule has no data
    */
-  public JasperPrint fillSection(ScheduleKey key, long millId, int year, PrintOptions options) {
+  public JasperPrint fillSection(
+      ScheduleKey key, long millId, int year, PrintOptions options, String millTitleBlock) {
     return switch (key) {
-      case SCHEDULE_5 -> fillBean(key, millId, year, options,
+      case SCHEDULE_5 -> fillBean(key, millId, year, options, millTitleBlock,
           Schedule5SectionMapper.map(schedule5Service.getSchedule5(millId, year, false)));
-      case SCHEDULE_6 -> fillBean(key, millId, year, options,
+      case SCHEDULE_6 -> fillBean(key, millId, year, options, millTitleBlock,
           Schedule6SectionMapper.map(schedule6Service.getSchedule6(millId, year, false)));
-      case SCHEDULE_7A -> fillBean(key, millId, year, options,
+      case SCHEDULE_7A -> fillBean(key, millId, year, options, millTitleBlock,
           Schedule7aSectionMapper.map(schedule7aService.getSchedule7a(millId, year, false)));
-      case SCHEDULE_7B -> fillBean(key, millId, year, options,
+      case SCHEDULE_7B -> fillBean(key, millId, year, options, millTitleBlock,
           Schedule7bSectionMapper.map(schedule7bService.getSchedule7b(millId, year, false)));
-      case SCHEDULE_11 -> fillBean(key, millId, year, options,
+      case SCHEDULE_11 -> fillBean(key, millId, year, options, millTitleBlock,
           Schedule11SectionMapper.map(schedule11Service.getSchedule11(millId, year, false)));
       case SCHEDULE_9 -> fillSchedule9(millId, year, options);
     };
   }
 
   /** Bean-datasource fill: no rows → no section (null); else fill from the mapped section rows. */
-  private JasperPrint fillBean(
-      ScheduleKey key, long millId, int year, PrintOptions options, SectionData section) {
+  private JasperPrint fillBean(ScheduleKey key, long millId, int year, PrintOptions options,
+      String millTitleBlock, SectionData section) {
     if (section == null || section.rows().isEmpty()) {
       return null;
     }
-    Map<String, Object> params = baseParams(millId, year, options);
+    Map<String, Object> params = baseParams(millTitleBlock, year, options);
     params.putAll(section.parameters());
     log.info("Rendering {} section for mill {} year {} ({} rows)",
         key, millId, year, section.rows().size());
@@ -186,10 +187,14 @@ public class ReportService {
     }
   }
 
-  /** The parameters every bean section shares: mill title block, year, and the two print flags. */
-  private Map<String, Object> baseParams(long millId, int year, PrintOptions options) {
+  /**
+   * The parameters every bean section shares: the request-scoped mill title block (resolved ONCE by
+   * the caller, not re-queried per section), the year, and the two print flags.
+   */
+  private static Map<String, Object> baseParams(
+      String millTitleBlock, int year, PrintOptions options) {
     Map<String, Object> params = new HashMap<>();
-    params.put("millTitleBlock", millContextService.resolveMillTitleBlock(millId));
+    params.put("millTitleBlock", millTitleBlock);
     params.put("year", year);
     params.put("p_do_print_body", options.printBody());
     params.put("p_do_print_comment", options.printComment());
@@ -202,7 +207,7 @@ public class ReportService {
       JRPdfExporter exporter = new JRPdfExporter();
       exporter.setExporterInput(SimpleExporterInput.getInstance(prints));
       exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(out));
-      exporter.setConfiguration(batchBookmarkConfig());
+      exporter.setConfiguration(batchBookmarkConfig(prints.size()));
       exporter.exportReport();
       return out.toByteArray();
     } catch (IOException | JRException e) {
@@ -210,10 +215,14 @@ public class ReportService {
     }
   }
 
-  private static net.sf.jasperreports.pdf.SimplePdfExporterConfiguration batchBookmarkConfig() {
+  private static net.sf.jasperreports.pdf.SimplePdfExporterConfiguration batchBookmarkConfig(
+      int sectionCount) {
     var config = new net.sf.jasperreports.pdf.SimplePdfExporterConfiguration();
-    // One top-level bookmark per section (BR-08): each JasperPrint's name becomes a bookmark.
-    config.setCreatingBatchModeBookmarks(true);
+    // One top-level bookmark per section (BR-08): each JasperPrint's name becomes a bookmark. Only
+    // enable batch-mode bookmarks for a MULTI-section export — a single-section PDF (the standalone
+    // Schedule 9 path) would otherwise get a spurious top-level bookmark whose name is null, since
+    // that template's JasperPrint carries no bookmark title.
+    config.setCreatingBatchModeBookmarks(sectionCount > 1);
     return config;
   }
 

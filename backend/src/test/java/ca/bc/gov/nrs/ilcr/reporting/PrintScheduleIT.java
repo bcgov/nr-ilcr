@@ -8,8 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,11 +26,12 @@ import org.springframework.test.web.servlet.MvcResult;
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
  * datasource (Schedule 9) and the schedule {@code *Service} DTOs (5/6/7A/7B/11), on the shared seed:
- * mill 514/2021 carries data for all six in-scope schedules (Schedule 11 added by V20260816). The
+ * mill 517/2021 carries data for all six in-scope schedules (Schedule 11 added by V20260816). The
  * PDF text is asserted with pdfbox to prove each selected section's heading and a seeded value
- * rendered; skip-empty (BR-09), all-empty (ERR-005) and the ERR-002/003/004 selection ladder plus
- * the 400/409 context guards are pinned here. Security is OFF (isolated from authz — {@link
- * PrintAuthorizationIT}).
+ * rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the rendered
+ * schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the deferred
+ * mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409 context guards
+ * are pinned here. Security is OFF (isolated from authz — {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -40,6 +45,14 @@ class PrintScheduleIT extends AbstractOracleIT {
   private static final String ERR_005 = "Schedule not found.";
   private static final String ERR_002_NO_SCHEDULE = "Please select at least one Schedule to print.";
   private static final String ERR_004_NO_OPTION = "At least one 'Print Option' is required to print.";
+  // ERR-003, verbatim = printOptionsErrorMsg in messages.properties (asserted in full, not a prefix).
+  private static final String ERR_003_NO_CONTENT =
+      "Schedules are 'checked' for print but neither the print options 'Print Schedule Information' "
+      + "or 'Print Comments' are selected. Please select at least one of these print options before "
+      + "attempting to print. Alternatively, if you are only wanting to print the 'Mill Information "
+      + "Report' ensure all schedules are unchecked before attempting to print.";
+  // The deferred Mill Information Report (millInformationReportUnavailableMsg), verbatim.
+  private static final String MILL_INFO_UNAVAILABLE = "The Mill Information Report is not yet available.";
 
   private static String body(String json) {
     return json;
@@ -77,10 +90,27 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
     // The mill title block (MILL_NAME-MILL_NUMBER) rides every section header.
     assertThat(text).contains("Submitted Milling");
-    // A seeded value from each of several sections, proving real data (not just headings) rendered.
+    // A distinct seeded value from EACH in-scope section, proving real data (not just headings)
+    // rendered. These are ungated body values (present regardless of the comment flag).
     assertThat(text).contains("Submitted Camp");        // Schedule 5 camp name (517/2021)
+    assertThat(text).contains("03B");                   // Schedule 6 supply block (RMR 8303)
+    assertThat(text).contains("Harbour Overpass");      // Schedule 7A bridge location (7651)
+    assertThat(text).contains("Pipe Arch");             // Schedule 7B culvert type desc (7851 'PA')
     assertThat(text).contains("CTR-517");               // Schedule 9 contractor id (record 9110)
     assertThat(text).contains("Cedar Ridge Reforest");  // Schedule 11 location (V20260816)
+    // printComments=true, so a comment-gated value IS present (Schedule 6 detail 8313 comment). The
+    // sibling commentsGated test pins the absent-when-false half; this pins the present-when-true half.
+    assertThat(text).contains("Bulkley haul road");
+
+    // BR-08/AC9: the PDF's top-level bookmarks are EXACTLY the rendered schedules' titles, in the
+    // fixed legacy order. Fails if batch bookmarks or the per-section print name regress.
+    assertThat(topLevelBookmarks(pdf)).containsExactly(
+        ScheduleKey.SCHEDULE_5.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_6.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_9.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_11.bookmarkTitle());
   }
 
   @Test
@@ -157,8 +187,7 @@ class PrintScheduleIT extends AbstractOracleIT {
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith(
-            "Schedules are 'checked' for print")));
+        .andExpect(jsonPath("$.detail").value(ERR_003_NO_CONTENT));
   }
 
   @Test
@@ -200,9 +229,84 @@ class PrintScheduleIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.detail").value(ERR_004));
   }
 
+  @Test
+  @DisplayName("allSchedules=true -> 200 combined PDF with every in-scope section (BR-07)")
+  void allSchedules_rendersEveryInScopeSection() throws Exception {
+    // BR-07: "all" expands to every schedule; only the six in-scope ones render. Mill 517/2021 has
+    // data in all six, so the combined PDF must carry all six section headings and bookmarks.
+    String selection = """
+        {"allSchedules":true,"printScheduleInformation":true}
+        """;
+    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+        .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 5:  Camp and Access Expense");
+    assertThat(text).contains("Schedule 6:  Road Management Costs");
+    assertThat(text).contains("Schedule 7A:  Bridge Costs");
+    assertThat(text).contains("Schedule 7B:  Culvert Costs");
+    assertThat(text).contains("Miscellaneous");
+    assertThat(text).contains("Schedule 11:  Basic Silviculture");
+    assertThat(topLevelBookmarks(pdf)).containsExactly(
+        ScheduleKey.SCHEDULE_5.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_6.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_9.bookmarkTitle(),
+        ScheduleKey.SCHEDULE_11.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("only an unimplemented schedule (8) -> 404 'Schedule not found.'")
+  void onlyUnimplementedSchedule_returns404() throws Exception {
+    // Schedule 8 is accepted but has no enum constant (not rendered in 20.2), so it produces no
+    // section — leaving nothing selected in scope, which is all-empty (ERR-005), not mill-info-only.
+    String selection = """
+        {"schedule8":true,"printScheduleInformation":true}
+        """;
+    mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
+  }
+
+  @Test
+  @DisplayName("mill-info-report only -> 404 'not yet available' (distinct from 'Schedule not found.')")
+  void millInformationReportOnly_returnsDistinct404() throws Exception {
+    // The ONLY requested content is the deferred Mill Information report: no schedule, no content
+    // option. This must return the honest "not yet available" message, NOT the misleading ERR-005.
+    String selection = """
+        {"printMillInformationReport":true,"printScheduleInformation":false,"printComments":false}
+        """;
+    mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(MILL_INFO_UNAVAILABLE));
+  }
+
   private static String extractText(byte[] pdf) throws Exception {
     try (PDDocument document = Loader.loadPDF(pdf)) {
       return new PDFTextStripper().getText(document);
+    }
+  }
+
+  /** The ordered top-level bookmark (outline) titles of the PDF, or an empty list when it has none. */
+  private static List<String> topLevelBookmarks(byte[] pdf) throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDDocumentOutline outline = document.getDocumentCatalog().getDocumentOutline();
+      List<String> titles = new ArrayList<>();
+      if (outline != null) {
+        for (PDOutlineItem item : outline.children()) {
+          titles.add(item.getTitle());
+        }
+      }
+      return titles;
     }
   }
 }

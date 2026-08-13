@@ -1,9 +1,11 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
 import net.sf.jasperreports.engine.JasperPrint;
@@ -35,9 +37,11 @@ public class PrintService {
   private static final Logger log = LoggerFactory.getLogger(PrintService.class);
 
   private final ReportService reportService;
+  private final MillContextService millContextService;
 
-  public PrintService(ReportService reportService) {
+  public PrintService(ReportService reportService, MillContextService millContextService) {
     this.reportService = reportService;
+    this.millContextService = millContextService;
   }
 
   /**
@@ -54,12 +58,26 @@ public class PrintService {
         new PrintOptions(request.printScheduleInformation(), request.printComments());
     Predicate<ScheduleKey> selected = selectionOf(request);
 
+    if (isMillInformationReportOnly(request, selected)) {
+      // The ONLY requested content is the deferred Mill Information report — no in-scope schedule
+      // and no content option. That yields no PDF for a reason unrelated to missing schedule data,
+      // so surface the honest "not yet available" rather than the misleading "Schedule not found.".
+      log.info("Mill-information-report-only selection for mill {} year {} — report not yet available",
+          context.millId(), context.year());
+      throw new MillInformationReportUnavailableException();
+    }
+
+    // Resolve the mill title block ONCE per request and share it across every section header,
+    // instead of re-querying it for each of the five bean sections.
+    String millTitleBlock = millContextService.resolveMillTitleBlock(context.millId());
+
     List<JasperPrint> sections = new ArrayList<>();
     for (ScheduleKey key : ScheduleKey.values()) {
       if (!selected.test(key)) {
         continue;
       }
-      JasperPrint print = reportService.fillSection(key, context.millId(), context.year(), options);
+      JasperPrint print =
+          reportService.fillSection(key, context.millId(), context.year(), options, millTitleBlock);
       if (print == null) {
         // BR-09 skip-empty: a selected schedule with no data contributes nothing and never aborts.
         log.info("Skipping {} for mill {} year {} — no data",
@@ -80,6 +98,20 @@ public class PrintService {
     log.info("Combining {} section(s) into one PDF for mill {} year {}",
         sections.size(), context.millId(), context.year());
     return reportService.exportPdf(sections);
+  }
+
+  /**
+   * Whether the ONLY requested content is the deferred Mill Information report: it is checked, no
+   * content option is on, and no in-scope schedule is selected. {@code allSchedules} counts as
+   * selecting in-scope schedules (BR-07), so an "all" request is never mill-info-only even with both
+   * content options off.
+   */
+  private static boolean isMillInformationReportOnly(
+      PrintRequest request, Predicate<ScheduleKey> selected) {
+    return request.printMillInformationReport()
+        && !request.printScheduleInformation()
+        && !request.printComments()
+        && Arrays.stream(ScheduleKey.values()).noneMatch(selected);
   }
 
   /**
