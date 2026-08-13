@@ -469,7 +469,7 @@ const SamplePage: FC<SamplePageProps> = ({
         {ynSelect('waterDumpDestination', 'Dump Destination', 'Water Dump', 'Land Dump')}
       </div>
 
-      <h4 className="schedule-8__subheading schedule-8__section-start">Other / Total</h4>
+      <h4 className="schedule-8__subheading schedule-8__section-start">Other</h4>
       <div className="schedule-8__fields">
         {readOnly ? (
           <div className="schedule-8__field">
@@ -492,8 +492,10 @@ const SamplePage: FC<SamplePageProps> = ({
           />
         )}
         {numberField('otherSkiddingPct', 'Other %')}
-        {computedField('Total %', skiddingTotal(form))}
       </div>
+
+      <h4 className="schedule-8__subheading schedule-8__section-start">Total</h4>
+      <div className="schedule-8__fields">{computedField('Total %', skiddingTotal(form))}</div>
       {errors.percentTotal && (
         <InlineNotification
           kind="error"
