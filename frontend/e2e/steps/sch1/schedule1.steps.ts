@@ -132,10 +132,9 @@ Given('a spy is watching the Schedule 1 save request', async ({ schedule1SaveSpy
   expect(schedule1SaveSpy.puts, 'spy must start at zero PUTs').toBe(0);
 });
 
-Given('I have selected that mill and reporting year on the Home page', async ({ homePage, world }) => {
-  await homePage.open();
-  await homePage.selectContextAndSave(world.millOption!, world.scheduleKey!.year);
-});
+// NOTE: 'I have selected that mill and reporting year on the Home page' moved to
+// steps/common/home-context.steps.ts when Schedule 11 landed — it drives only the common HomePage and
+// the shared world fields, so both domains now share the one definition (playwright-bdd rejects two).
 
 When('I open Schedule 1', async ({ schedule1Page }) => {
   await schedule1Page.gotoViaNav();

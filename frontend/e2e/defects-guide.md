@@ -52,6 +52,29 @@ Every entry sits in exactly one register. The five kinds, in plain language:
 the ticket). Coverage gap / Spec gap: `OPEN → CLOSED` when the test is finally written / the BA
 regenerates the `.feature`. Verified-not-a-defect: permanent.
 
+## Entry ids — the `BUG-` / `DIV-` / `GAP-` / `SPEC-` prefixes
+
+Every entry is numbered **within its own register**, and the id carries the register as a prefix so a
+reference is unambiguous on its own — you can read `DIV-3` in a `.feature` comment or a commit message and
+know exactly which log and which register to open, without the surrounding sentence:
+
+| Prefix | Register |
+|---|---|
+| `BUG-<n>` | Bug / Regression |
+| `DIV-<n>` | Divergence |
+| `GAP-<n>` | Coverage gap |
+| `SPEC-<n>` | Spec gap |
+| `VER-<n>` | Verified — not a defect *(numbered only where entries are cross-referenced)* |
+
+**Numbers are permanent and never reused.** An entry that turns out to be wrong is kept and marked
+`RETRACTED (author error)`; one that the app has made obsolete is marked `RETIRED (obsolete)`. Both stay in
+place with their original number, because the id may already be cited in a `.feature` comment, a
+`coverage.md` row, a commit message or a Jira ticket — renumbering would silently break those. Numbering is
+also per-register, so `BUG-2` and `DIV-2` are unrelated entries.
+
+Ids are **local to one use case's log**. When crossing UCs, name the path too — e.g.
+"`features/sch1/uc-sch1-001-enter-save/defects.md` BUG-2".
+
 ## How to read an entry
 
 Every entry — whatever its register — shares the same frame: it **leads with a plain-language summary**
