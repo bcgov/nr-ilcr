@@ -140,7 +140,8 @@ public class PrintService {
    * failing the request (the frontend can build the full screen before those stories land).
    */
   private void logUnimplementedSelections(PrintRequest request) {
-    boolean anyUnimplemented = request.schedule1() || request.schedule2() || request.schedule3()
+    boolean anyUnimplemented = request.allSchedules()
+        || request.schedule1() || request.schedule2() || request.schedule3()
         || request.schedule4() || request.schedule8() || request.schedule10()
         || request.printMillInformationReport();
     if (anyUnimplemented) {
