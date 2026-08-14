@@ -9,7 +9,7 @@ spring:
 ilcr:
   security:
     # This app's Cognito web-client id, validated as the ID token's aud (Story 1.0). Per env via
-    # ConfigMap; never committed.
+    # the backend Secret (common/openshift.init.yml); never committed.
     cognito:
       allowed-audience: ${COGNITO_CLIENT_ID:}
 

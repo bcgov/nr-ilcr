@@ -46,6 +46,7 @@ jobs:
       DB_USER: ${{ secrets.ORACLEDB_USERNAME }}
       DB_PASS: ${{ secrets.ORACLEDB_PASSWORD }}
       COGNITO_POOL: ${{ secrets.USER_POOLS_ID }}
+      COGNITO_CLIENT: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
     steps:
       - uses: bcgov/action-deployer-openshift@27a85b7b157bfc9c3c9bf0aca53bcd288d4d2506 # v4.2.1
         id: deploy
@@ -61,6 +62,7 @@ jobs:
             -p SPRING_DATASOURCE_USERNAME="$DB_USER"
             -p SPRING_DATASOURCE_PASSWORD="$DB_PASS"
             -p COGNITO_USER_POOL="$COGNITO_POOL"
+            -p COGNITO_CLIENT_ID="$COGNITO_CLIENT"
           triggers: ${{ inputs.triggers }}
 
   deploy:
