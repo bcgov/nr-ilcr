@@ -31,10 +31,10 @@ parameters:
   - name: CPU_REQUEST
     value: "30m"
   - name: MEMORY_REQUEST
-    value: "256Mi"
+    value: "384Mi"
   - name: MEMORY_LIMIT
-    description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile)
-    value: "512Mi"
+    description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile). Raised for the embedded JasperReports 7 engine (Batik/OpenPDF/fonts add classpath + metaspace + native AWT footprint) per AD-16 "size the reporting path's pod CPU/Mem".
+    value: "1Gi"
   - name: ILCR_SECURITY_ENABLED
     description: Enforce Cognito (FAM) JWT auth. "false" installs MockPrincipalFilter, treating every request as an authenticated ILCR_SUBMITTER; DeployedSecurityGuard refuses to start a deployed pod with security off and the datasource on. Fail-closed default.
     value: "true"
