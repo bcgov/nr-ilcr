@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
+import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Repository;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository;
@@ -60,6 +61,9 @@ class IlcrBackendApplicationTests {
 
   @MockitoBean
   private Schedule9Repository schedule9Repository;
+
+  @MockitoBean
+  private Schedule10Repository schedule10Repository;
 
   @MockitoBean
   private Schedule11Repository schedule11Repository;

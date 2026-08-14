@@ -1,0 +1,303 @@
+package ca.bc.gov.nrs.ilcr.schedule10;
+
+/**
+ * The Schedule 10 Road Group ({@code RMG}) tables, ported verbatim from legacy
+ * {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468) and
+ * {@code setRG10ByTflNumberCode} (:475-520).
+ *
+ * <p><strong>These are NOT Schedule 6's tables.</strong> Legacy {@code RoadGroupUtil} carries two
+ * independent pairs — {@code setRmgBy*} (:10, :222) for Schedule 6 and {@code setRG10By*} (:285,
+ * :475) for Schedule 10 — and the values genuinely differ: TSA {@code "01"} maps to {@code "15"} in
+ * Schedule 6 but {@code "11"} here; TFL {@code "08"} maps to {@code "7"} there but {@code "10"}
+ * here; TSA {@code "08"} maps to {@code "10"} there but {@code "7"} here. The shipped
+ * {@code schedule6.RoadGroupLookup} ports only the {@code setRmg*} pair, so reusing it would serve
+ * a
+ * wrong Road Group on every Schedule 10 page. It is package-private in {@code schedule6}, so there
+ * is no accidental-import hazard — but there is a "helpful refactor" hazard. Do not merge these.
+ *
+ * <p>Road Group is <strong>derived on every read and never stored</strong>: there is no
+ * {@code RMG}/{@code ROAD_GROUP} column on {@code THE.ROAD_CONSTRUCTION_REPRT} (delivery-verified,
+ * Story 11.1 Task 1 gate (i)).
+ *
+ * <p><strong>Two legacy literal quirks are preserved deliberately.</strong> Case {@code "45"} uses
+ * {@code .*[I-Ki-j]} — uppercase {@code I}–{@code K} but lowercase only {@code i}–{@code j}, so a
+ * lowercase {@code k} suffix falls through to blank. Case {@code "23"} has no branch covering
+ * {@code I} at all. Both are reproduced exactly; they are the shipped business rule, not typos to
+ * quietly fix (AD-12 legacy parity).
+ *
+ * <p><strong>Unmapped combinations are silent.</strong> Legacy has three distinct no-match paths
+ * and
+ * none throws, logs, or raises a message: a null TSA or TSB never enters the outer guard and leaves
+ * the initialiser {@code new String()} → {@code ""}; a TSA that matches a case whose inner branches
+ * all miss also falls through to {@code ""}; a TSA or TFL absent from the switch hits
+ * {@code default} → {@code null}. All three normalize to {@code null} here so the served document
+ * carries a blank Road Group without error (S12, BR-04; Story 11.1 deviation (h)).
+ */
+final class RoadGroup10Lookup {
+
+  private RoadGroup10Lookup() {
+  }
+
+  /**
+   * Derives the Road Group for a page. TFL wins whenever it is present, regardless of TSA — the
+   * routing is {@code tflNumberCode != null ? tfl-table : tsa-table}, taken verbatim from
+   * {@code RoadConstructionReportType.getRmg} (:455-464). Do not reorder.
+   *
+   * @param tsaNumber the TSA number, or {@code null} on a TFL-located page
+   * @param tsbNumberCode the supply block, or {@code null}
+   * @param tflNumberCode the TFL number, or {@code null} on a TSA-located page
+   * @return the derived Road Group, or {@code null} when the combination maps to nothing
+   */
+  static String rmgFor(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
+    String rmg = tflNumberCode != null
+        ? rg10ByTflNumberCode(tflNumberCode)
+        : rg10ByTsaTsbNumberCode(tsaNumber, tsbNumberCode);
+    // Legacy returns "" for the two fall-through paths and null for the default branch; the served
+    // contract makes no distinction between them (S12: "blank, no error").
+    return (rmg == null || rmg.isEmpty()) ? null : rmg;
+  }
+
+  /** Verbatim port of {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468). */
+  private static String rg10ByTsaTsbNumberCode(String tsaNumberCode, String tsbNumberCode) {
+    String roadGroup = "";
+    if (tsaNumberCode != null && tsbNumberCode != null) {
+      switch (tsaNumberCode) {
+        case "01": // TSB Arrow All
+          if (tsbNumberCode.startsWith("01")) {
+            roadGroup = "11";
+          }
+          break;
+        case "02": // TSB Boundary
+          if (tsbNumberCode.startsWith("02")) {
+            roadGroup = "10";
+          }
+          break;
+        case "03": // TSB Bulkley All
+          if (tsbNumberCode.startsWith("03")) {
+            roadGroup = "2";
+          }
+          break;
+        case "04": // TSB Cassiar All
+          if (tsbNumberCode.startsWith("04")) {
+            roadGroup = "2";
+          }
+          break;
+        case "05": // TSB Cranbrook All
+          if (tsbNumberCode.startsWith("05")) {
+            roadGroup = "10";
+          }
+          break;
+        case "07": // TSB Golden All
+          if (tsbNumberCode.startsWith("07")) {
+            roadGroup = "11";
+          }
+          break;
+        case "08": // TSB Fort Nelson All
+          if (tsbNumberCode.startsWith("08")) {
+            roadGroup = "7";
+          }
+          break;
+        case "09": // TSB Invermere All
+          if (tsbNumberCode.startsWith("09")) {
+            roadGroup = "10";
+          }
+          break;
+        case "10": // TSB Kalum All
+          if (tsbNumberCode.startsWith("10")) {
+            roadGroup = "1";
+          }
+          break;
+        case "11": // TSB Kamloops
+          if ("11A".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "12";
+          } else if ("11B".equalsIgnoreCase(tsbNumberCode)
+              || "11C".equalsIgnoreCase(tsbNumberCode)
+              || "11D".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "9";
+          }
+          break;
+        case "12": // TSB Kispiox All
+          if (tsbNumberCode.startsWith("12")) {
+            roadGroup = "2";
+          }
+          break;
+        case "13": // TSB Kootenay Lake All
+          if (tsbNumberCode.startsWith("13")) {
+            roadGroup = "11";
+          }
+          break;
+        case "14": // TSB Lakes Lake All
+          if (tsbNumberCode.startsWith("14")) {
+            roadGroup = "3";
+          }
+          break;
+        case "15": // TSB Lillooet All
+          if (tsbNumberCode.startsWith("15")) {
+            roadGroup = "9";
+          }
+          break;
+        case "16": // TSB Mackenzie All
+          if (tsbNumberCode.matches(".*[A-Fa-f]")) {
+            roadGroup = "7";
+          } else if (tsbNumberCode.matches(".*[G-Pg-p]")) {
+            roadGroup = "6";
+          }
+          break;
+        case "17": // TSB Robson Valley All
+          if (tsbNumberCode.startsWith("17")) {
+            roadGroup = "12";
+          }
+          break;
+        case "18": // TSB Merritt All
+          if (tsbNumberCode.startsWith("18")) {
+            roadGroup = "9";
+          }
+          break;
+        case "20": // TSB Morice All
+          if (tsbNumberCode.startsWith("20")) {
+            roadGroup = "3";
+          }
+          break;
+        case "22": // TSB Okanagan
+          if ("22A".equalsIgnoreCase(tsbNumberCode)
+              || "22B".equalsIgnoreCase(tsbNumberCode)
+              || "22C".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "9";
+          } else if ("22D".equalsIgnoreCase(tsbNumberCode)
+              || "22E".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "9";
+          } else if ("22F".equalsIgnoreCase(tsbNumberCode)
+              || "22G".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "12";
+          } else if ("22H".equalsIgnoreCase(tsbNumberCode)
+              || "22I".equalsIgnoreCase(tsbNumberCode)) {
+            roadGroup = "11";
+          }
+          break;
+        case "23": // TSB 100 Mile House — NOTE: no branch covers "I" (legacy gap, preserved)
+          if (tsbNumberCode.matches(".*[A-Fa-f]")) {
+            roadGroup = "8";
+          } else if (tsbNumberCode.matches(".*[G-Hg-h]")) {
+            roadGroup = "4";
+          }
+          break;
+        case "24": // TSB Prince George
+          if (tsbNumberCode.matches(".*[A-Ba-b]")) {
+            roadGroup = "6";
+          } else if (tsbNumberCode.matches(".*[Cc]")) {
+            roadGroup = "5";
+          } else if (tsbNumberCode.matches(".*[Dd]")) {
+            roadGroup = "5";
+          } else if (tsbNumberCode.matches(".*[E-Fe-fIi]")) {
+            roadGroup = "5";
+          } else if (tsbNumberCode.matches(".*[G-Hg-h]")) {
+            roadGroup = "4";
+          }
+          break;
+        case "26": // TSB Quesnel
+          if (tsbNumberCode.matches(".*[A-Da-d]")) {
+            roadGroup = "8";
+          } else if (tsbNumberCode.matches(".*[E-ie-i]")) {
+            roadGroup = "4";
+          }
+          break;
+        case "27": // TSB Revelstoke All
+          if (tsbNumberCode.startsWith("27")) {
+            roadGroup = "11";
+          }
+          break;
+        case "29": // TSB Williams Lake
+          if (tsbNumberCode.matches(".*[A-Ia-iPp]")) {
+            roadGroup = "8";
+          } else if (tsbNumberCode.matches(".*[J-Lj-l]")) {
+            roadGroup = "4";
+          } else if (tsbNumberCode.matches(".*[M-Nm-n]")) {
+            roadGroup = "12";
+          }
+          break;
+        case "40": // TSB Fort St. John All
+          if (tsbNumberCode.startsWith("40")) {
+            roadGroup = "7";
+          }
+          break;
+        case "41": // TSB Dawson Creek All
+          if (tsbNumberCode.startsWith("41")) {
+            roadGroup = "7";
+          }
+          break;
+        case "45": // TSB Cascadia — NOTE: [I-Ki-j] is asymmetric (legacy quirk, preserved)
+          if (tsbNumberCode.matches(".*[A-Da-d]")) {
+            roadGroup = "11";
+          } else if (tsbNumberCode.matches(".*[Hh]")) {
+            roadGroup = "8";
+          } else if (tsbNumberCode.matches(".*[E-Ge-g]")) {
+            roadGroup = "7";
+          } else if (tsbNumberCode.matches(".*[I-Ki-j]")) {
+            roadGroup = "1";
+          }
+          break;
+        case "43": // TSB Nass All
+          if (tsbNumberCode.startsWith("43")) {
+            roadGroup = "1";
+          }
+          break;
+        default:
+          roadGroup = null;
+          break;
+      }
+    }
+    return roadGroup;
+  }
+
+  /**
+   * Verbatim port of {@code RoadGroupUtil.setRG10ByTflNumberCode} (:475-520). TFL {@code "42"} is
+   * deliberately absent — legacy comments it out as "not used as described in TFL list v2
+   * (ILCR-161)".
+   */
+  private static String rg10ByTflNumberCode(String tflNumberCode) {
+    String roadGroup = "";
+    switch (tflNumberCode) {
+      case "08":
+      case "14":
+        roadGroup = "10";
+        break;
+      case "15":
+      case "35":
+      case "49":
+      case "59":
+      case "62":
+        roadGroup = "9";
+        break;
+      case "03":
+      case "23":
+      case "33":
+      case "55":
+      case "56":
+        roadGroup = "11";
+        break;
+      case "05":
+      case "52B":
+        roadGroup = "5";
+        break;
+      case "30":
+      case "52":
+      case "53":
+        roadGroup = "4";
+        break;
+      case "18":
+        roadGroup = "9";
+        break;
+      case "48":
+        roadGroup = "7";
+        break;
+      case "01":
+      case "41":
+        roadGroup = "1";
+        break;
+      default:
+        roadGroup = null;
+        break;
+    }
+    return roadGroup;
+  }
+}
