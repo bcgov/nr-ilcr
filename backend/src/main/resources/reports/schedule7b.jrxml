@@ -14,6 +14,8 @@
   <parameter name="year" class="java.lang.Integer"/>
   <parameter name="p_do_print_body" class="java.lang.Boolean"/>
   <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <!-- The top-level PDF outline title for this section (BR-08), or null for no bookmark. -->
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
   <field name="type" class="java.lang.String"/>
   <field name="spanSize" class="java.lang.String"/>
   <field name="riseSize" class="java.lang.String"/>
@@ -24,6 +26,15 @@
   <field name="totalCost" class="java.lang.String"/>
   <field name="comments" class="java.lang.String"/>
   <title height="30">
+    <!-- Bookmark anchor (see schedule5.jrxml for the full rationale): an invisible (white, transparent)
+         sized textField that emits one top-level PDF outline entry named by bookmarkTitle, robust for
+         single- and multi-section exports; suppressed when null. -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
     <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
       <text><![CDATA[Government of British Columbia]]></text>
     </element>
@@ -45,7 +56,6 @@
       <expression><![CDATA[new java.util.Date()]]></expression>
     </element>
     <element kind="staticText" style="bold" x="5" y="48" width="120" height="15">
-      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
       <text><![CDATA[Type]]></text>
     </element>
     <element kind="staticText" style="bold" x="130" y="48" width="70" height="15" hTextAlign="Right">
@@ -79,8 +89,9 @@
   </pageHeader>
   <detail>
     <band height="20">
+      <!-- The row identifier (culvert Type) prints regardless of p_do_print_body, matching legacy
+           (schedule7B's type field was ungated) so a comments-only render still identifies each row. -->
       <element kind="textField" x="5" y="2" width="120" height="15" blankWhenNull="true">
-        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
         <expression><![CDATA[$F{type}]]></expression>
       </element>
       <element kind="textField" x="130" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">

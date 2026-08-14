@@ -114,6 +114,45 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("single in-scope schedule -> PDF outline has EXACTLY ONE bookmark (BR-08)")
+  void singleSchedule_hasExactlyOneBookmark() throws Exception {
+    // BR-08 holds for a single-schedule print too: a lone selected schedule (Schedule 6, which 517/2021
+    // has data for) must still carry its one top-level bookmark, not an empty outline. Guards the
+    // caller-gated batch-bookmark decision against the earlier "sectionCount > 1" regression.
+    String selection = """
+        {"schedule6":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+        .andReturn();
+
+    assertThat(topLevelBookmarks(result.getResponse().getContentAsByteArray()))
+        .containsExactly(ScheduleKey.SCHEDULE_6.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("comments-only (info=false, comments=true) -> row identifier still prints")
+  void commentsOnly_keepsRowIdentifier() throws Exception {
+    // With p_do_print_body off, the body columns are suppressed but the primary row identifier is not
+    // (it renders regardless, like Schedule 5's header) so a comments-only render still names each row.
+    // 517/2021 Schedule 7B has one culvert whose type identifier resolves to "Pipe Arch".
+    String selection = """
+        {"schedule7b":true,"printScheduleInformation":false,"printComments":true}
+        """;
+    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+        .andReturn();
+
+    String text = extractText(result.getResponse().getContentAsByteArray());
+    // The row identifier (culvert Type) is present even though the schedule-information body is off.
+    assertThat(text).contains("Pipe Arch");
+  }
+
+  @Test
   @DisplayName("printComments=false hides the comments -> body still prints, no comment text")
   void commentsGated() throws Exception {
     String selection = """

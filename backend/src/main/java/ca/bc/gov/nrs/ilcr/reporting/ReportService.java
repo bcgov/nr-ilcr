@@ -112,8 +112,10 @@ public class ReportService {
   public byte[] renderSchedule9Pdf(long millId, int year) {
     // Schedule 9 fills from its embedded-SQL template and carries its own title block, so the
     // resolved bean-section title block is irrelevant here (passed null, ignored by fillSchedule9).
-    JasperPrint print =
-        fillSection(ScheduleKey.SCHEDULE_9, millId, year, PrintOptions.showEverything(), null);
+    // Standalone Schedule 9 (20.1): no bookmark. A null bookmark title suppresses the section's
+    // outline anchor, so this single-schedule PDF has no top-level bookmark at all.
+    JasperPrint print = fillSection(
+        ScheduleKey.SCHEDULE_9, millId, year, PrintOptions.showEverything(), null, null);
     if (print == null) {
       throw new ScheduleNotFoundException();
     }
@@ -131,32 +133,34 @@ public class ReportService {
    * @param options the print options (schedule information / comments) passed through to the template
    * @param millTitleBlock the {@code name-number} title block resolved ONCE for the request and
    *     shared by every bean-section header (Schedule 9 supplies its own, so it is ignored there)
+   * @param bookmarkTitle the top-level PDF outline title for this section, or {@code null} for none
+   *     (the standalone Schedule 9 path passes null so its single-schedule PDF has no bookmark)
    * @return the filled {@link JasperPrint}, or {@code null} when the schedule has no data
    */
-  public JasperPrint fillSection(
-      ScheduleKey key, long millId, int year, PrintOptions options, String millTitleBlock) {
+  public JasperPrint fillSection(ScheduleKey key, long millId, int year, PrintOptions options,
+      String millTitleBlock, String bookmarkTitle) {
     return switch (key) {
-      case SCHEDULE_5 -> fillBean(key, millId, year, options, millTitleBlock,
+      case SCHEDULE_5 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
           Schedule5SectionMapper.map(schedule5Service.getSchedule5(millId, year, false)));
-      case SCHEDULE_6 -> fillBean(key, millId, year, options, millTitleBlock,
+      case SCHEDULE_6 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
           Schedule6SectionMapper.map(schedule6Service.getSchedule6(millId, year, false)));
-      case SCHEDULE_7A -> fillBean(key, millId, year, options, millTitleBlock,
+      case SCHEDULE_7A -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
           Schedule7aSectionMapper.map(schedule7aService.getSchedule7a(millId, year, false)));
-      case SCHEDULE_7B -> fillBean(key, millId, year, options, millTitleBlock,
+      case SCHEDULE_7B -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
           Schedule7bSectionMapper.map(schedule7bService.getSchedule7b(millId, year, false)));
-      case SCHEDULE_11 -> fillBean(key, millId, year, options, millTitleBlock,
+      case SCHEDULE_11 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
           Schedule11SectionMapper.map(schedule11Service.getSchedule11(millId, year, false)));
-      case SCHEDULE_9 -> fillSchedule9(millId, year, options);
+      case SCHEDULE_9 -> fillSchedule9(millId, year, options, bookmarkTitle);
     };
   }
 
   /** Bean-datasource fill: no rows → no section (null); else fill from the mapped section rows. */
   private JasperPrint fillBean(ScheduleKey key, long millId, int year, PrintOptions options,
-      String millTitleBlock, SectionData section) {
+      String millTitleBlock, String bookmarkTitle, SectionData section) {
     if (section == null || section.rows().isEmpty()) {
       return null;
     }
-    Map<String, Object> params = baseParams(millTitleBlock, year, options);
+    Map<String, Object> params = baseParams(millTitleBlock, year, options, bookmarkTitle);
     params.putAll(section.parameters());
     log.info("Rendering {} section for mill {} year {} ({} rows)",
         key, millId, year, section.rows().size());
@@ -169,8 +173,10 @@ public class ReportService {
   }
 
   /** Schedule 9's embedded-SQL connection fill (20.1). Empty → null so the combiner can skip it. */
-  private JasperPrint fillSchedule9(long millId, int year, PrintOptions options) {
-    int recordCount = schedule9Repository.findRecords(millId, year).size();
+  private JasperPrint fillSchedule9(long millId, int year, PrintOptions options, String bookmarkTitle) {
+    // Count-only pre-check: the template's embedded SQL re-runs the full record query at fill time, so
+    // a findRecords().size() here would materialize (and throw away) that whole list just to test empty.
+    int recordCount = schedule9Repository.countRecords(millId, year);
     if (recordCount == 0) {
       return null;
     }
@@ -180,6 +186,7 @@ public class ReportService {
     params.put("year", year);
     params.put("p_do_print_body", options.printBody());
     params.put("p_do_print_comment", options.printComment());
+    params.put("bookmarkTitle", bookmarkTitle);
     try (Connection connection = dataSource.getConnection()) {
       return JasperFillManager.fillReport(template(ScheduleKey.SCHEDULE_9), params, connection);
     } catch (SQLException | JRException e) {
@@ -192,38 +199,35 @@ public class ReportService {
    * the caller, not re-queried per section), the year, and the two print flags.
    */
   private static Map<String, Object> baseParams(
-      String millTitleBlock, int year, PrintOptions options) {
+      String millTitleBlock, int year, PrintOptions options, String bookmarkTitle) {
     Map<String, Object> params = new HashMap<>();
     params.put("millTitleBlock", millTitleBlock);
     params.put("year", year);
     params.put("p_do_print_body", options.printBody());
     params.put("p_do_print_comment", options.printComment());
+    params.put("bookmarkTitle", bookmarkTitle);
     return params;
   }
 
-  /** Export a list of filled sections to ONE bookmarked PDF (batch-mode bookmarks, BR-08). */
+  /**
+   * Export a list of filled sections to ONE PDF (BR-08). Each section's top-level bookmark is an
+   * in-template outline ANCHOR keyed to its {@code bookmarkTitle} fill parameter, NOT JasperReports'
+   * batch-mode document bookmarks: the latter only emit a bookmark when the export batch holds MORE
+   * THAN ONE JasperPrint (JRPdfExporter gates {@code addBookmark(getName())} on {@code items.size() >
+   * 1}), so a single-schedule {@code /print} would silently get an empty outline. The anchor renders
+   * one bookmark per section for a single-section PDF just as for a combined one; the caller gates it
+   * by passing a null bookmark title (the standalone Schedule 9 path) to suppress the anchor.
+   */
   byte[] exportPdf(List<JasperPrint> prints) {
     try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
       JRPdfExporter exporter = new JRPdfExporter();
       exporter.setExporterInput(SimpleExporterInput.getInstance(prints));
       exporter.setExporterOutput(new SimpleOutputStreamExporterOutput(out));
-      exporter.setConfiguration(batchBookmarkConfig(prints.size()));
       exporter.exportReport();
       return out.toByteArray();
     } catch (IOException | JRException e) {
       throw new ReportGenerationException("Failed to export the combined report to PDF", e);
     }
-  }
-
-  private static net.sf.jasperreports.pdf.SimplePdfExporterConfiguration batchBookmarkConfig(
-      int sectionCount) {
-    var config = new net.sf.jasperreports.pdf.SimplePdfExporterConfiguration();
-    // One top-level bookmark per section (BR-08): each JasperPrint's name becomes a bookmark. Only
-    // enable batch-mode bookmarks for a MULTI-section export — a single-section PDF (the standalone
-    // Schedule 9 path) would otherwise get a spurious top-level bookmark whose name is null, since
-    // that template's JasperPrint carries no bookmark title.
-    config.setCreatingBatchModeBookmarks(sectionCount > 1);
-    return config;
   }
 
   /** The compiled template for a schedule, built on first use and cached (boot-safe). */
