@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -61,9 +60,7 @@ public class SecurityConfiguration {
                     .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
-                            .requestMatchers(PATH_HEALTH, PATH_INFO).permitAll()
                             .requestMatchers(PATH_HEALTH, PATH_HEALTH + "/**", PATH_INFO).permitAll()
-                            .requestMatchers(HttpMethod.GET, BackendConstants.HOME_PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {
