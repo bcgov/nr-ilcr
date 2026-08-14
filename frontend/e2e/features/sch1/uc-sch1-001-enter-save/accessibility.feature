@@ -3,7 +3,7 @@
 # zero WCAG 2.1 AA violations (or a recorded disposition). Read-only anchors, no writes. The axe helper
 # (pages/common/axe.ts) runs wcag2a+wcag2aa+wcag21a+wcag21aa and prints any violation for triage.
 
-@sch1 @UC-SCH1-001 @accessibility
+@sch1 @UC-SCH1-001 @a11y
 Feature: Report Average Cost of Logging (Schedule 1) — accessibility (WCAG 2.1 AA)
   As a Business Analyst / Product Owner
   I want the Schedule 1 surfaces proven accessible rather than assumed

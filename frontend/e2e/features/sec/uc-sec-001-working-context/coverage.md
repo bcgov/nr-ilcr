@@ -22,7 +22,7 @@ every scenario is parallel-safe by construction.
 | S05 Missing reporting year selection | S05.feature (Exc); FLD-002 | Backend `mill-context` 400 `Reporting Year: Value is required.` | — | not-applicable (UI) / covered-by-contract | Same as S04 |
 | S06 Selected mill is closed — Home saves + banners | S06.feature (Alt) | `mill-context` 200 for closed mill (`millViewable:false`) | `working-context.feature` `@S06` | covered | Home-screen half |
 | S06 Selected mill is closed — schedule blocked (=SCH1 S20) | S06 consequence; epics Story-1.5 AC1; ERR-002 | `GET /v1/schedule1` closed mill → 409; page shows verbatim block | `context-drives-schedule.feature` `@S06 @UC-SCH1-001 @S20` | covered | Also flips UC-SCH1-001 S20 → covered |
-| S07 No report-status row for mill/year | S07.feature (Alt) | `mill-context` 200 with null statuses; banner mill line only | `working-context.feature` `@S07` | covered | Legacy S07 banner was `[UNKNOWN]`; re-grounded — defects.md SPEC-1 |
+| S07 No report-status row for mill/year | S07.feature (Alt) | `mill-context` 200 with null statuses; banner mill line only | `working-context.feature` `@S07` + `schedule-tombstone.feature` `@S07` | covered | Legacy S07 banner was `[UNKNOWN]`; answered by observation and asserted both ways (mill line present, status lines absent) — defects.md SPEC-1, now CLOSED |
 | S08 Both mill and year missing | S08.feature (Exc); FLD-001+002 | Backend `mill-context` 400 with BOTH messages | — | not-applicable (UI) / covered-by-contract | Same root cause as S04/S05 |
 | S01 Saved context DISPLAYS on the schedule tombstone (banner → tombstone) | S01 display arm; bcgov #227 | `ScheduleTombstone` renders the shared `WorkingContextLines` in the `region[name="Working context"]` landmark on schedule pages | `schedule-tombstone.feature` `@S01 @tombstone @a11y` (Schedule 2) | covered | Ports bcgov `tombstone.spec.ts` S01; a11y clean on Schedule 2 |
 | S03 Switching context replaces the tombstone lines | S03 display arm; bcgov #227 | client-side re-nav; `useWorkingContext` re-fetch on the tombstone | `schedule-tombstone.feature` `@S03 @tombstone` | covered | New mill + statuses render; the prior dated line is gone |
@@ -62,13 +62,15 @@ No CI wiring (the app + delivery Oracle are not containerized in this pipeline).
 1. Bring up the stack per `../../../README.md` (backend `:8080` `local` profile + datasource on; Vite `:3000`;
    seeded Docker Oracle `THE/…@localhost:1525/DBDOCK_01`, security off).
 2. `cd frontend/e2e && npm test` (the `pretest` hook runs `bddgen`).
-   Scope to this UC with `npx playwright test --grep "@UC-SEC-001"`; a11y is included (`@a11y`).
-3. Flake gate: `npx playwright test --grep "@UC-SEC-001" --repeat-each=5`.
+   Scope to this UC with `npm test -- --grep "@UC-SEC-001"`; a11y is included (`@a11y`).
+3. Flake gate: `npm test -- --grep "@UC-SEC-001" --repeat-each=5`.
 
 **Symmetry check:** happy save (S01) + its banner variants (S06 closed still-saves, S07 null-status
 mill-line-only) + change/replace (S03) cover the positive/alternative arms; the mirror negative
 (required-field S04/S05/S08) is enforced server-side and proven at the contract (GAP-1),
-UI-unreachable by DIV-2 — not silently dropped. The context→page arm is covered both ways: it
+UI-unreachable by DIV-2 — not silently dropped. **Triage 2026-08-10:** the dev will work on DIV-2/DIV-3 when
+she gets a chance; once those are reconciled Home no longer pre-selects the dev default, the empty state
+becomes reachable, and QA can implement the S04/S05/S08 browser tests (GAP-1's unblock path). The context→page arm is covered both ways: it
 drives Schedule 1 (AC2) and blocks a closed mill's schedule (S06/S20). No asymmetric silent omission.
 
 **Cross-suite reconciliation (nr-ilcr/frontend/e2e — Story 1.5):** every journey it proved is now either

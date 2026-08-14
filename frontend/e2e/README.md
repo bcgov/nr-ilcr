@@ -104,6 +104,163 @@ and env flags as **defaults to adjust for your app** — override them via `.env
    admin role — no Cognito/login flow needed. (The one app-specific bit — the Landing page's login
    button test-id and route — is a labeled default at the top of `pages/common/authNav.ts`.)
 
+## Install and run
+
+**`.env` is the single config point.** Copy `.env.example` to `.env` and adjust `BASE_URL` (and `ORACLE_DSN` /
+`DB_CONTAINER` if you'll run the seed-patch scripts). It's loaded by `playwright.config.ts` (via dotenv) and
+auto-sourced by `scripts/apply-patches.sh` / `teardown-patches.sh`.
+
+```bash
+cd e2e
+cp .env.example .env    # then edit BASE_URL / DB vars for your local stack
+npm ci                  # exact versions from the committed package-lock.json
+npm test                # everything: regenerates from features (pretest -> bddgen), then runs headless
+npm run test:gate       # THE PASS/FAIL GATE — same run, minus the known @discovered-* reds
+npm run test:headed     # watch it drive the browser (recommended first run)
+npm run bddgen          # just regenerate .features-gen/ from features + steps
+npm run report          # open the HTML report
+```
+
+**Browser:** by DEFAULT the config uses your **system Google Chrome**, because the CGI proxy blocks the
+managed-chromium download. On a box with no system Chrome (fresh WSL/headless), install the managed build
+and opt in via `.env`: `npx playwright install chromium` + `E2E_BROWSER_CHANNEL=chromium`.
+
+**`python-oracledb` — only if you run the Schedule 1 scenarios.** A few of them snapshot and restore their
+target at the DB (`scripts/sch1_db_restore.py`) because the app's own PUT cannot undo what they do. Set it up
+reproducibly with `npm run setup:python` (needs Python 3.9+ on PATH; creates `scripts/.venv` from the pinned
+`scripts/requirements.txt`). The runner auto-detects that venv — no `PYTHON` export needed (override with
+`PYTHON=/path/to/python`). Every other domain cleans up through the app's own `DELETE` endpoint and needs
+none of this. You never configure sqlplus either — the seed-patch scripts auto-detect a client.
+
+### `npm run test:gate` is the gate, not `npm test`
+
+That is the whole point of having two scripts. `npm test` runs EVERY scenario and therefore **exits 1 by
+design** whenever a `@discovered-divergence` / `@discovered-bug` red is tracking an open defect — the suite
+working as intended, not a broken build. `test:gate` excludes those known reds and exits 0 when nothing new
+has broken, so it is the one that is safe to copy-paste and safe to automate.
+
+Which reds exist at any moment is recorded in each UC's `defects.md` (and, when the fix is someone else's,
+in `deferred-work.md`) — deliberately not listed here, so this file cannot go stale.
+
+> **Stressing a snapshot/restore scenario?** Pass `--workers=1`. `--repeat-each=N` in parallel does not
+> merely go red on the single-owner keys — it can overwrite one repeat's backup with another's
+> already-mutated state and restore that as the "baseline", silently drifting the seeded anchor. See the
+> ⚠️ note in `features/sch1/uc-sch1-001-enter-save/coverage.md`.
+
+Set `BASE_URL` in `.env` (or inline, `BASE_URL=http://localhost:3001 npm test`) if your ports differ.
+Edit `features/` and `steps/` only — `.features-gen/` is regenerated on every `npm test`. An unbound step fails `bddgen`
+(before Playwright runs) and names the exact `.feature` line.
+
+### Scenario tags
+
+Every scenario carries two kinds of tag:
+
+- **Priority** — how important the scenario is, used to pick what to run when you can't run the whole suite:
+
+  | Tag | Meaning | Examples |
+  |---|---|---|
+  | `@p0` | **Critical** — the core happy path must work; if it's red the feature is broken. Runs in every smoke check. | create a record and confirm it persisted |
+  | `@p1` | **Important** — key validation, error handling, and required-field rules. | required-field errors, numeric-format errors, server-error handling |
+  | `@p2` | **Secondary** — UI niceties and lower-risk branches. | field enable/disable gating, Back-button behavior |
+
+- **Traceability** — `@UC-<DOMAIN>-<NNN>` (the use case) and `@S<NN>` (the source slice), so a scenario
+  maps straight back to its Gherkin/spec and to the `coverage.md` matrix.
+
+- **Special handling** — a few tags mark scenarios that aren't a normal pass:
+
+  | Tag | Meaning |
+  |---|---|
+  | `@discovered-divergence` | **Deliberately RED** — reproduces a divergence (app ≠ legacy spec, suspected defect). Never forced green; logged in the UC's `defects.md` for BA/QA → Jira; flips to green when the app is fixed. |
+  | `@discovered-bug` | **Deliberately RED** — reproduces a confirmed bug/regression awaiting a fix (has a Jira ticket). |
+  | `@skip` | Genuinely can't be automated yet (e.g. blocked by a single mock admin role) — never used to hide a failure. |
+
+  **Never force green:** a suspected-defect divergence / confirmed bug is a genuinely-failing tagged test,
+  never masked with `@skip`, xfail, or a weakened assertion. A failing test does not stop the others
+  (Playwright isolates them). For a clean "fresh failures only" pass, use `npm run test:gate` (above).
+
+- **Domain + accessibility** — `@<domain>` (`@sch1`, `@sch11`, `@sec`) scopes a run to one subject area, and
+  **every accessibility scenario is `@a11y`**, in every domain. (It is a tag, not the file name: those
+  scenarios live in each UC's `accessibility.feature`.)
+
+Filter with Playwright's `--grep` (args after `--` pass through; `pretest` still regenerates first):
+
+```bash
+npm test -- --grep @p0                 # smoke: core happy paths only
+npm test -- --grep "@p0|@p1"           # smoke + key validation/error handling
+npm test -- --grep @UC-<DOMAIN>-005    # one use case
+npm test -- --grep @<domain>           # one domain
+npm test -- --grep @a11y               # every accessibility sweep (AC4/NFR1)
+```
+
+Two things that bite:
+
+> ⚠️ **A bare `npx playwright test` runs the LAST-GENERATED tests, not your current `.feature` files.**
+> Only the `npm run …` scripts regenerate first (via their `pretest*` → `bddgen` hooks). Skip `bddgen`
+> after editing a feature and you will watch stale scenarios pass under their old names and tags — which
+> reads exactly like a successful run. Always go through an npm script, including when scoping by tag.
+
+> ⚠️ **`--grep` is a regex over the test title, not a tag expression.** `--grep "@sch11 and @a11y"` matches
+> **nothing** (verified). Combine tags with a regex — `--grep "@sch11.*@a11y"` — or grep a single tag.
+
+At scale you can also filter at *generation* time so only matching scenarios compile:
+`npm run bddgen -- --tags @p0` (that regenerates, so the follow-up run is safe).
+
+## CI / manual gate — delivery-DB verification
+
+**This suite is a documented MANUAL gate, not a default CI job.** CI has **no delivery-DB access** (no Oracle
+in `docker-compose`; the app's own fixtures are Testcontainers-only), and the suite needs the running
+two-process stack plus the seeded Oracle. So run it locally per *Prerequisites*, gate on
+**`npm run test:gate`** (see *Install and run* for why that and not `npm test`), and record the run + the HTML
+report (`playwright-report/`) as the TEST-review evidence.
+
+If a pipeline ever gains delivery-DB access, wire the full data-backed suite (the `chromium` project) behind
+an **env-guarded opt-in job** so it can never run without live data — keep it off the default path.
+
+**What IS safe to run on every PR** is the data-independent `@smoke` project: no `setup`/seeded-DB dependency
+and all `/api` aborted, so it guards against a frontend-only deploy with nothing but the frontend served
+(see *Notes*).
+
+Re-verify the pinned anchors after any DB re-extract — `preflight/` fails fast, with one actionable message,
+if one has drifted.
+
+## Oracle MCP server (data discovery / DB assertions) — optional
+
+An Oracle MCP server (thin-mode `mcp-oracle`, tools `list_tables` / `describe_table` / `run_query`)
+lets the test author query the seeded DB directly — to pin known-good anchor values and confirm writes
+landed. It is an **authoring/verification** aid, not a test-runtime dependency — the specs stay pure-UI
+and portable. Register it project-scoped (e.g. a repo `.mcp.json` for Claude Code) launched portably as
+`python -m mcp_oracle`; install once with `python -m pip install mcp-oracle oracledb`, then trust the
+project. Point `ORACLE_DSN` / `ORACLE_USER` / `ORACLE_PASSWORD` at your seeded DB (defaults match the
+`localhost:1525/DBDOCK_01` `THE`/`default` dev DB — throwaway local creds, not secrets).
+
+> Prereq for the actual queries: the seeded Oracle Docker DB must be up (see step 1 of *Prerequisites*).
+
+## Notes
+
+- **Self-cleaning (fails loud):** a step that creates a record registers its id and the shared fixture
+  deletes it on teardown, so each scenario leaves the seeded DB as it found it. Residue **throws**
+  rather than silently polluting the shared seed. Two cleanup paths by flow:
+  - Resources with a **DELETE endpoint** → registry → `DELETE /api/<your-resource>/{id}`; a `404` is
+    treated as already-gone.
+  - Resources with **no DELETE endpoint** → delete the row directly at the DB via `sqlplus`
+    (`steps/<domain>/*DbCleanup.ts`; DSN + binary env-overridable), then read back through the API to
+    prove it's gone (don't trust the delete blindly).
+- **Reusable steps:** add a `Given/When/Then` only when no existing phrase fits; repeated behavior is a
+  `Scenario Outline` with an `Examples:` table. Selectors live in the page object, never in steps.
+- **Tags & coverage:** every scenario is tagged by priority + UC/slice (see *Scenario tags*), and each
+  UC folder carries a `coverage.md` matrix mapping every source item to the scenario that covers it (or
+  a logged gap) — the durable audit trail behind a green run.
+- Permission-gated scenarios (e.g. "no Delete without the delete permission") can't be expressed with a
+  single mock admin role yet — a `@skip` scenario documents this; deferred.
+- **Data-independent CI smoke (`@smoke`):** the `smoke` Playwright project runs the app-shell smoke
+  (`features/shell/app-shell.feature`) with NO `setup`/seeded-DB dependency and all `/api` aborted, so it
+  guards every PR against a frontend-only deploy — the BDD equivalent of the app repo's
+  `frontend/e2e/app-shell.spec.ts`. Run it alone with **`npm run bddgen && npx playwright test
+  --project=smoke`** (only the frontend need be served; no Oracle — and the `bddgen` first for the reason
+  in *Scenario tags*). Wire THIS command into the per-PR CI job; gate the full data-backed suite
+  (`chromium` project, needs the seeded delivery DB) behind an opt-in/live-data job — see
+  *CI / manual gate — delivery-DB verification*.
+
 ## Seeded database image — how it's built and refreshed
 
 The DB you run in step 1 is a **pre-built Oracle image preloaded with real data extracted from a dev/test
@@ -140,171 +297,3 @@ treat a re-extract as a re-ground event (sweep `fixtures/**` and any hardcoded i
 
 **Windows/WSL note:** building or loading a large Oracle image inflates the WSL virtual disk (`.vhdx`).
 Set your disks to sparse, so `wsl --shutdown` can reclaim the space back to your `C:` drive.
-
-## Install & run
-
-**`.env` is the single config point.** Copy `.env.example` to `.env` and adjust `BASE_URL` (and `ORACLE_DSN` /
-`DB_CONTAINER` if you'll run the seed-patch scripts). It's loaded by `playwright.config.ts` (via dotenv) and
-auto-sourced by `scripts/apply-patches.sh` / `teardown-patches.sh`.
-
-```bash
-cd e2e
-cp .env.example .env    # then edit BASE_URL / DB vars for your local stack
-npm install
-# Browser: by DEFAULT the config uses your system Google Chrome (the CGI proxy blocks the managed-
-# chromium download). If you have NO system Chrome (fresh WSL/headless), install the managed build and
-# opt in via .env instead:  npx playwright install chromium  +  E2E_BROWSER_CHANNEL=chromium
-npm test                # regenerates from features (pretest -> bddgen test), then runs headless
-npm run test:headed     # watch it drive the browser (recommended first run)
-npm run bddgen          # just regenerate .features-gen/ from features + steps
-npm run report          # open the HTML report
-```
-
-**A freshly laid-down scaffold has no features yet**, so `npm test` reports "no tests" until you author your
-first `.feature` (the placeholder `preflight/anchors.setup.ts` skips itself until you fill it in). You never
-configure sqlplus — the seed-patch scripts auto-detect it.
-
-Set `BASE_URL` in `.env` (or inline, `BASE_URL=http://localhost:3001 npm test`) if your ports differ.
-Edit `features/` and `steps/` only — `.features-gen/` is regenerated on every `npm test`. An unbound step fails `bddgen`
-(before Playwright runs) and names the exact `.feature` line.
-
-### Scenario tags
-
-Every scenario carries two kinds of tag:
-
-- **Priority** — how important the scenario is, used to pick what to run when you can't run the whole suite:
-
-  | Tag | Meaning | Examples |
-  |---|---|---|
-  | `@p0` | **Critical** — the core happy path must work; if it's red the feature is broken. Runs in every smoke check. | create a record and confirm it persisted |
-  | `@p1` | **Important** — key validation, error handling, and required-field rules. | required-field errors, numeric-format errors, server-error handling |
-  | `@p2` | **Secondary** — UI niceties and lower-risk branches. | field enable/disable gating, Back-button behavior |
-
-- **Traceability** — `@UC-<DOMAIN>-<NNN>` (the use case) and `@S<NN>` (the source slice), so a scenario
-  maps straight back to its Gherkin/spec and to the `coverage.md` matrix.
-
-- **Special handling** — a few tags mark scenarios that aren't a normal pass:
-
-  | Tag | Meaning |
-  |---|---|
-  | `@discovered-divergence` | **Deliberately RED** — reproduces a divergence (app ≠ legacy spec, suspected defect). Never forced green; logged in the UC's `defects.md` for BA/QA → Jira; flips to green when the app is fixed. |
-  | `@discovered-bug` | **Deliberately RED** — reproduces a confirmed bug/regression awaiting a fix (has a Jira ticket). |
-  | `@skip` | Genuinely can't be automated yet (e.g. blocked by a single mock admin role) — never used to hide a failure. |
-
-  **Never force green:** a suspected-defect divergence / confirmed bug is a genuinely-failing tagged test, never masked with `@skip`, xfail, or a weakened assertion. A failing test does not stop the others (Playwright isolates them). Run a **clean "fresh failures only" pass** — everything except the known reds — with:
-
-  ```bash
-  npm run test:gate     # the same thing, as a script — see note below
-  # or, explicitly (NOTE: prefix with `npx bddgen test &&` — see caution):
-  npx bddgen test && npx playwright test --grep-invert "@discovered-divergence|@discovered-bug"
-  ```
-
-  > ⚠️ **A bare `npx playwright test` runs the LAST-GENERATED tests, not your current `.feature` files.**
-  > Only the `npm run …` scripts regenerate first (via their `pretest*` → `bddgen` hooks). Skip `bddgen`
-  > after editing a feature and you will watch stale scenarios pass under their old names and tags —
-  > which reads exactly like a successful run. Prefer the npm scripts.
-
-  > `npm test` runs EVERYTHING and therefore **exits 1 by design** whenever a `@discovered-*` red is
-  > tracking an open defect. That is the suite working as intended, not a broken build. `npm run
-  > test:gate` is the pass/fail gate: it excludes the known reds and exits 0 when nothing new has broken.
-
-Filter with Playwright's `--grep` (args after `--` pass through; `pretest` still regenerates first):
-
-```bash
-npm test -- --grep @p0                 # smoke: core happy paths only
-npm test -- --grep "@p0|@p1"           # smoke + key validation/error handling
-npm test -- --grep @UC-<DOMAIN>-005    # one use case
-npm test -- --grep @<domain>           # one domain
-```
-
-At scale you can also filter at *generation* time so only matching scenarios compile:
-`npm run bddgen -- --tags @p0` then `npx playwright test`.
-
-## Oracle MCP server (data discovery / DB assertions) — optional
-
-An Oracle MCP server (thin-mode `mcp-oracle`, tools `list_tables` / `describe_table` / `run_query`)
-lets the test author query the seeded DB directly — to pin known-good anchor values and confirm writes
-landed. It is an **authoring/verification** aid, not a test-runtime dependency — the specs stay pure-UI
-and portable. Register it project-scoped (e.g. a repo `.mcp.json` for Claude Code) launched portably as
-`python -m mcp_oracle`; install once with `python -m pip install mcp-oracle oracledb`, then trust the
-project. Point `ORACLE_DSN` / `ORACLE_USER` / `ORACLE_PASSWORD` at your seeded DB (defaults match the
-`localhost:1525/DBDOCK_01` `THE`/`default` dev DB — throwaway local creds, not secrets).
-
-> Prereq for the actual queries: the seeded Oracle Docker DB must be up (see step 1 of *Prerequisites*).
-
-## Notes
-
-- **Self-cleaning (fails loud):** a step that creates a record registers its id and the shared fixture
-  deletes it on teardown, so each scenario leaves the seeded DB as it found it. Residue **throws**
-  rather than silently polluting the shared seed. Two cleanup paths by flow:
-  - Resources with a **DELETE endpoint** → registry → `DELETE /api/<your-resource>/{id}`; a `404` is
-    treated as already-gone.
-  - Resources with **no DELETE endpoint** → delete the row directly at the DB via `sqlplus`
-    (`steps/<domain>/*DbCleanup.ts`; DSN + binary env-overridable), then read back through the API to
-    prove it's gone (don't trust the delete blindly).
-- **Reusable steps:** add a `Given/When/Then` only when no existing phrase fits; repeated behavior is a
-  `Scenario Outline` with an `Examples:` table. Selectors live in the page object, never in steps.
-- **Tags & coverage:** every scenario is tagged by priority + UC/slice (see *Scenario tags*), and each
-  UC folder carries a `coverage.md` matrix mapping every source item to the scenario that covers it (or
-  a logged gap) — the durable audit trail behind a green run.
-- Permission-gated scenarios (e.g. "no Delete without the delete permission") can't be expressed with a
-  single mock admin role yet — a `@skip` scenario documents this; deferred.
-- **Data-independent CI smoke (`@smoke`):** the `smoke` Playwright project runs the app-shell smoke
-  (`features/shell/app-shell.feature`) with NO `setup`/seeded-DB dependency and all `/api` aborted, so it
-  guards every PR against a frontend-only deploy — the BDD equivalent of the app repo's
-  `frontend/e2e/app-shell.spec.ts`. Run it alone with **`npx playwright test --project=smoke`** (only the
-  frontend need be served; no Oracle). Wire THIS command into the per-PR CI job; gate the full
-  data-backed suite (`chromium` project, needs the seeded delivery DB) behind an opt-in/live-data job —
-  see the delivery-DB manual gate below.
-
-## CI / manual gate — delivery-DB verification (issue #74 / Story 2.8)
-
-CI has **no delivery-DB access** (no Oracle in `docker-compose`; the app's own fixtures are
-Testcontainers-only), and this suite runs against the running two-process stack + the seeded delivery
-Oracle. So it is a **documented manual TEST-review gate**, not a default CI job — run it locally against
-the delivery DB with the steps below. (If a pipeline ever gains delivery-DB access, wire it behind an
-env-guarded/opt-in job; keep it off the default path so it never runs without live data.)
-
-**Prerequisites (this host):**
-- The stack up per *Prerequisites* above: frontend `:3000`, backend `:8080`, seeded Oracle on
-  `:1525/DBDOCK_01` (`THE`/`default`).
-- **Node**: `cd e2e && npm install`. Browser channel defaults to your system Google Chrome (the CGI
-  proxy blocks the chromium CDN); on a box with no system Chrome, `npx playwright install chromium` and
-  set `E2E_BROWSER_CHANNEL=chromium` in `.env` (see *Install & run*).
-- **python-oracledb** for the S13/S24 DB snapshot-restore and the S12/S17/S18 row seeding
-  (`scripts/sch1_db_restore.py`). Reproducible setup (needs Python 3.9+ on PATH): `npm run setup:python`
-  — creates `scripts/.venv` and installs the pinned `scripts/requirements.txt` (`oracledb==4.0.2`). The
-  DB runner (`steps/sch1/schedule1DbRestore.ts`) **auto-detects** that venv, so no `PYTHON` export is
-  needed (override with `PYTHON=/path/to/python` to point at an oracledb kept elsewhere). This host has
-  **no local sqlplus** and reaches the Oracle directly on `:1525`, so the suite's DB work goes through
-  thin-mode oracledb rather than the scaffold's sqlplus wrapper. `ORACLE_DSN` in `.env` points it at the
-  seeded DB.
-
-**Run the gate:**
-```bash
-cd e2e
-npm run test:gate                          # THE PASS/FAIL GATE — excludes any @discovered-* reds
-npm test                                   # everything, including intentional reds (see note)
-npm run test:gate -- --grep "@accessibility"   # accessibility only (AC4/NFR1)
-```
-**Use `npm run test:gate` as the gate, not `npm test`** — that is the whole point of the two scripts.
-`npm test` runs EVERY scenario and therefore **exits 1 by design** whenever a `@discovered-divergence` /
-`@discovered-bug` red is tracking an open defect, which is the suite working as intended rather than a
-broken build. `test:gate` excludes those known reds and exits 0 when nothing new has broken, so it is the
-command that is safe to copy-paste and safe to wire into CI. Keeping this block on `test:gate` means it
-stays correct the next time a suspected defect is parked as an honest red.
-
-**As of 2026-08-11 the two commands are equivalent: the suite is all green, 57 passed, and no
-`@discovered-*` reds remain.** The three defects it surfaced have all been fixed and verified — the
-delivery-DB Other-Costs insert 500 (`defects.md` BUG-1, fixed during the story) and the two found by the
-2026-08-07 re-review: BUG-2 (five volume fields could not be cleared, issue #260) and BUG-3 (a null shared
-Other-Costs volume returned a 500, issue #261), both fixed in backend commit `3ee9ff2` and re-verified at
-the API, the DB column, and through the browser.
-
-Record the run + the HTML report (`playwright-report/`) as the TEST-review evidence. Re-verify the pinned
-anchors after any DB re-extract (`preflight/` fails fast if one drifted).
-
-> **Stressing a snapshot/restore scenario?** Pass `--workers=1`. `--repeat-each=N` in parallel does not
-> merely go red on the single-owner keys (S02/S13/S24/clear-amounts) — it can overwrite one repeat's
-> backup with another's already-mutated state and restore that as the "baseline", silently drifting the
-> seeded anchor. See the ⚠️ note in `features/sch1/uc-sch1-001-enter-save/coverage.md`.

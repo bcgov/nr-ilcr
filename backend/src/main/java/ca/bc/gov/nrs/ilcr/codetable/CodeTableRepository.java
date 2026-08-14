@@ -68,10 +68,16 @@ public class CodeTableRepository {
    * Insert the code when it does not exist, otherwise update the matching row (BR-03) — the same
    * upsert legacy {@code CodeListDAO.save*} performed. Returns which arm ran.
    *
-   * <p>Atomic: it tries the UPDATE first (one statement), and only INSERTs when no row matched. If a
-   * concurrent save inserts the same brand-new code in the race window, our INSERT hits the primary
-   * key and we fall back to UPDATE — so two simultaneous saves of a new code both succeed as the
-   * intended silent-update (S05) rather than one 500ing on a constraint violation.
+   * <p>Atomic: it tries the UPDATE first (one statement), and only INSERTs when no row matched.
+   *
+   * <p>An {@code INSERT} that raises an integrity violation is NOT assumed to be a duplicate-key race.
+   * It can equally be a genuine failure — a NOT NULL / CHECK / FK constraint the insert does not
+   * satisfy — in which case NO row was written and returning success would be silent data loss (the
+   * caller sees "saved" but the entry never appears). We distinguish the two by the fallback UPDATE's
+   * row count: only a real race (the row now exists because a concurrent save inserted it) updates a
+   * row, and is absorbed as the intended silent-update (S05). If the fallback UPDATE matches nothing,
+   * the write truly failed, so the original exception propagates and the caller surfaces an error
+   * instead of a false success.
    */
   public UpsertResult upsert(CodeTableRegistry table, CodeTableEntry entry) {
     if (update(table, entry) > 0) {
@@ -80,9 +86,11 @@ public class CodeTableRepository {
     try {
       insert(table, entry);
       return UpsertResult.INSERTED;
-    } catch (DataIntegrityViolationException raced) {
-      update(table, entry);
-      return UpsertResult.UPDATED;
+    } catch (DataIntegrityViolationException ex) {
+      if (update(table, entry) > 0) {
+        return UpsertResult.UPDATED;
+      }
+      throw ex;
     }
   }
 
