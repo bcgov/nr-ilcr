@@ -12,8 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Home-page option-list endpoints (Story 1.1). Delegates to {@link MillContextService} and never
  * touches the repository directly (AD-1 layering). These are pre-selection reads with NO
- * {@code @PreAuthorize} — there are no roles/authorization yet (see the story's Authorization note);
- * the security filter chain permits the two paths even when {@code ilcr.security.enabled=true}.
+ * {@code @PreAuthorize} — no role gate yet (per-user mill filtering is deferred to the FAM auth
+ * story). Since O4 (fam-auth-1-1) they are NOT public: with {@code ilcr.security.enabled=true} they
+ * require an authenticated caller like the rest of {@code /api/**} (Home renders after sign-in).
  */
 @RestController
 @RequiredArgsConstructor
