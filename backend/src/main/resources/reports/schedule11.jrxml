@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 11 (Basic Silviculture) — JasperReports 7 template (AD-16, Epic 20.2). Bean-datasource
+  fill from Schedule11Service's DTO (the 20.2 data-feed decision): one detail row per location, the
+  becLabel concat and the BR-08 row / footer figures all computed by the tested service. Values
+  arrive PRE-FORMATTED as Strings; the footer totals ride as report parameters.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule11" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="totalNetArea" class="java.lang.String"/>
+  <parameter name="totalActualCost" class="java.lang.String"/>
+  <parameter name="totalPlannedCost" class="java.lang.String"/>
+  <parameter name="totalCost" class="java.lang.String"/>
+  <parameter name="totalCostPerNetArea" class="java.lang.String"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <field name="location" class="java.lang.String"/>
+  <field name="enhanced" class="java.lang.String"/>
+  <field name="becLabel" class="java.lang.String"/>
+  <field name="netArea" class="java.lang.String"/>
+  <field name="actualCost" class="java.lang.String"/>
+  <field name="plannedCost" class="java.lang.String"/>
+  <field name="totalCost" class="java.lang.String"/>
+  <field name="costPerNetArea" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="30">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="65">
+    <element kind="staticText" x="0" y="0" width="600" height="15">
+      <text><![CDATA[Schedule 11:  Basic Silviculture]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="600" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+    <element kind="staticText" x="600" y="0" width="202" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="600" y="15" width="202" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+    <element kind="staticText" style="bold" x="5" y="48" width="150" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Location]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="160" y="48" width="30" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[ES]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="195" y="48" width="90" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[BEC]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="290" y="48" width="70" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[NAR (ha)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="365" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Actual Cost($)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="450" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Planned Cost($)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="535" y="48" width="90" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Actual plus Planned Cost($)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="630" y="48" width="70" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Total $/NAR]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="705" y="48" width="90" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+      <text><![CDATA[Comments]]></text>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="20">
+      <element kind="textField" x="5" y="2" width="150" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{location}]]></expression>
+      </element>
+      <element kind="textField" x="160" y="2" width="30" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{enhanced}]]></expression>
+      </element>
+      <element kind="textField" x="195" y="2" width="90" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{becLabel}]]></expression>
+      </element>
+      <element kind="textField" x="290" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{netArea}]]></expression>
+      </element>
+      <element kind="textField" x="365" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{actualCost}]]></expression>
+      </element>
+      <element kind="textField" x="450" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{plannedCost}]]></expression>
+      </element>
+      <element kind="textField" x="535" y="2" width="90" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCost}]]></expression>
+      </element>
+      <element kind="textField" x="630" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{costPerNetArea}]]></expression>
+      </element>
+      <element kind="textField" x="705" y="2" width="90" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+    </band>
+  </detail>
+  <summary height="20">
+    <element kind="staticText" style="bold" x="195" y="2" width="90" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Totals:]]></text>
+    </element>
+    <element kind="textField" style="bold" x="290" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <expression><![CDATA[$P{totalNetArea}]]></expression>
+    </element>
+    <element kind="textField" style="bold" x="365" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <expression><![CDATA[$P{totalActualCost}]]></expression>
+    </element>
+    <element kind="textField" style="bold" x="450" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <expression><![CDATA[$P{totalPlannedCost}]]></expression>
+    </element>
+    <element kind="textField" style="bold" x="535" y="2" width="90" height="15" hTextAlign="Right" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <expression><![CDATA[$P{totalCost}]]></expression>
+    </element>
+    <element kind="textField" style="bold" x="630" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <expression><![CDATA[$P{totalCostPerNetArea}]]></expression>
+    </element>
+  </summary>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>

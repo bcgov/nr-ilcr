@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 7B (Culvert Costs) — JasperReports 7 template (AD-16, Epic 20.2). Bean-datasource fill
+  from Schedule7bService's DTO (the 20.2 data-feed decision): one detail row per culvert, with the
+  Type resolved code->description by the service (from its codeLists) and the BR-05 total it
+  computes. Values arrive PRE-FORMATTED as Strings.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule7b" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <field name="type" class="java.lang.String"/>
+  <field name="spanSize" class="java.lang.String"/>
+  <field name="riseSize" class="java.lang.String"/>
+  <field name="length" class="java.lang.String"/>
+  <field name="pieceCount" class="java.lang.String"/>
+  <field name="materialCost" class="java.lang.String"/>
+  <field name="installCost" class="java.lang.String"/>
+  <field name="totalCost" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="30">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="65">
+    <element kind="staticText" x="0" y="0" width="600" height="15">
+      <text><![CDATA[Schedule 7B:  Culvert Costs]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="600" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+    <element kind="staticText" x="600" y="0" width="202" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="600" y="15" width="202" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+    <element kind="staticText" style="bold" x="5" y="48" width="120" height="15">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Type]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="130" y="48" width="70" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Span (mm)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="205" y="48" width="70" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Rise (mm)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="280" y="48" width="70" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Length  (m)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="355" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Number of pieces]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="440" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Material($)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="525" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Install($)]]></text>
+    </element>
+    <element kind="staticText" style="bold" x="610" y="48" width="80" height="15" hTextAlign="Right">
+      <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      <text><![CDATA[Total($)]]></text>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="20">
+      <element kind="textField" x="5" y="2" width="120" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{type}]]></expression>
+      </element>
+      <element kind="textField" x="130" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{spanSize}]]></expression>
+      </element>
+      <element kind="textField" x="205" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{riseSize}]]></expression>
+      </element>
+      <element kind="textField" x="280" y="2" width="70" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{length}]]></expression>
+      </element>
+      <element kind="textField" x="355" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{pieceCount}]]></expression>
+      </element>
+      <element kind="textField" x="440" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{materialCost}]]></expression>
+      </element>
+      <element kind="textField" x="525" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{installCost}]]></expression>
+      </element>
+      <element kind="textField" x="610" y="2" width="80" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCost}]]></expression>
+      </element>
+    </band>
+    <band height="20">
+      <element kind="staticText" x="5" y="2" width="120" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" x="130" y="2" width="600" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>
