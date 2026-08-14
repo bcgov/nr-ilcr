@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,8 +8,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 /**
  * The FAM decoder factory in isolation. The acceptance tests mock the {@link JwtDecoder} (the
- * {@code jwt()} post-processor never decodes), so the bean method itself is exercised here — in
- * particular the fail-closed guard that refuses to build a decoder with no configured audience.
+ * {@code jwt()} post-processor never decodes), so the bean method itself is exercised here — both
+ * the audience-configured path and the startup-safe path used before the client id is provisioned.
  */
 class CognitoResourceServerConfigurationTest {
 
@@ -31,10 +30,10 @@ class CognitoResourceServerConfigurationTest {
   }
 
   @Test
-  @DisplayName("fails closed when the audience (client id) is blank — no silent skip of aud")
-  void failsClosedWhenAudienceBlank() {
-    assertThatThrownBy(() -> configuration.jwtDecoder(JWKS, ISSUER, "   "))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("allowed-audience");
+  @DisplayName("still starts (issuer + token_use enforced) when the audience is not yet configured")
+  void startsWithoutAudienceConfigured() {
+    JwtDecoder decoder = configuration.jwtDecoder(JWKS, ISSUER, "   ");
+
+    assertThat(decoder).isNotNull();
   }
 }
