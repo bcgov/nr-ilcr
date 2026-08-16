@@ -44,4 +44,4 @@ jobs:
         ${{ github.event.repository.name }}-${{ needs.init.outputs.zone }}
         ${{ github.event.repository.name }}-backend-${{ needs.init.outputs.zone }}
         ${{ github.event.repository.name }}-frontend-${{ needs.init.outputs.zone }}
-      packages: backend frontend
+      packages: backend frontend database

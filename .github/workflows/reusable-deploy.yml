@@ -63,10 +63,58 @@ jobs:
             -p COGNITO_USER_POOL="$COGNITO_POOL"
           triggers: ${{ inputs.triggers }}
 
+  # Fixture-seeded Oracle in the shared -tools namespace (waste-plus `legacydb`
+  # pattern; see database/README.md). One instance serves every zone, so it is
+  # provisioned create-once (overwrite: false) — only the Flyway migration Job,
+  # named per-run via MIGRATE_SUFFIX, is created fresh on each deploy.
+  database:
+    name: Deploy (database)
+    environment: ${{ inputs.environment }}
+    needs: [init]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DB_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+      OC_NS_TOOLS: ${{ secrets.OC_NAMESPACE_TOOLS }}
+    outputs:
+      triggered: ${{ steps.deploy.outputs.triggered }}
+    steps:
+      - uses: bcgov/action-deployer-openshift@27a85b7b157bfc9c3c9bf0aca53bcd288d4d2506 # v4.2.1
+        id: deploy
+        with:
+          file: database/openshift.deploy.yml
+          oc_namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_token: ${{ secrets.OC_TOKEN_TOOLS }}
+          # oc create semantics: existing objects are left alone (AlreadyExists
+          # tolerated); the per-run migration Job is the only new object
+          overwrite: false
+          parameters: -p ZONE=tools
+            -p NAME='${{ github.event.repository.name }}'
+            -p IMAGE_TAG='${{ inputs.tag }}'
+            -p MIGRATE_SUFFIX='${{ github.run_id }}-${{ github.run_attempt }}'
+            -p DATABASE_PASSWORD="$DB_PASSWORD"
+            -p LICENSE_PLATE="${OC_NS_TOOLS%-*}"
+          triggers: ${{ inputs.triggers }}
+      - name: Wait for fixture migration
+        if: steps.deploy.outputs.triggered == 'true'
+        uses: bcgov/action-oc-runner@111868d1fc50db0a40417ba321d865ef5c931bbd # v1.7.0
+        with:
+          oc_namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_token: ${{ secrets.OC_TOKEN_TOOLS }}
+          commands: |
+            JOB=${{ github.event.repository.name }}-tools-database-migrate-${{ github.run_id }}-${{ github.run_attempt }}
+            if ! oc wait --for=condition=complete job/${JOB} --timeout=15m; then
+              echo "Fixture migration did not complete; recent logs:"
+              oc logs job/${JOB} --all-containers --tail=200 || true
+              exit 1
+            fi
+
   deploy:
     name: Deploy (${{ matrix.name }})
     environment: ${{ inputs.environment }}
-    needs: [init]
+    needs: [init, database]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:

@@ -32,7 +32,18 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        package: [backend, frontend]
+        include:
+          - package: backend
+            triggers: ('backend/', 'common/', '.github/workflows/')
+          - package: frontend
+            triggers: ('frontend/', 'common/', '.github/workflows/')
+          # Repo-root build context: the Dockerfile bakes in the test-scope
+          # Flyway fixtures (backend/src/test/resources/db) so the tools DB
+          # stays single-sourced with the *IT suite
+          - package: database
+            build_context: .
+            build_file: database/Dockerfile
+            triggers: ('database/', 'backend/src/test/resources/db/', '.github/workflows/')
     timeout-minutes: 10
     steps:
       - uses: bcgov/action-builder-ghcr@cb2629351c87dd1c2130073e4ebb7233a9653a63 # v4.4.1
@@ -40,9 +51,12 @@ jobs:
           package: ${{ matrix.package }}
           tags: ${{ github.event.number }}
           tag_fallback: latest
-          triggers: ('${{ matrix.package }}/', 'common/', '.github/workflows/')
+          triggers: ${{ matrix.triggers }}
+          build_context: ${{ matrix.build_context }}
+          build_file: ${{ matrix.build_file }}
           build_args: |
             BUILDKIT_INLINE_CACHE=1
+            OPENSHIFT_UID=${{ vars.DATABASE_OPENSHIFT_UID || '1010470000' }}
 
   deploys:
     name: Deploys (${{ github.event.number }})
@@ -51,7 +65,7 @@ jobs:
     secrets: inherit
     with:
       target: ${{ needs.init.outputs.zone }}
-      triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
+      triggers: ('backend/', 'frontend/', 'common/', 'database/', '.github/workflows/')
 
   tests:
      name: Tests

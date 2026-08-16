@@ -1,0 +1,245 @@
+# Fixture-seeded Oracle in the -tools namespace (waste-plus `legacydb` pattern).
+#
+# Deployed with `overwrite: false` (oc create): the Secret/Deployment/Service/
+# NetworkPolicy are created ONCE and left alone on later runs (AlreadyExists is
+# tolerated), while the migration Job carries a per-run MIGRATE_SUFFIX so a fresh
+# Job IS created on every deploy. Flyway's schema history makes re-runs no-ops
+# unless new fixture scripts landed. To re-provision the database itself
+# (image/spec changes), delete the objects and re-run the deploy:
+#   oc delete all,secret,networkpolicy -l app=${NAME}-${ZONE} -n <plate>-tools
+apiVersion: template.openshift.io/v1
+kind: Template
+parameters:
+  - name: NAME
+    description: Product name
+    value: nr-ilcr
+  - name: COMPONENT
+    description: Component name
+    value: database
+  - name: ZONE
+    description: Deployment zone; a single shared instance, so "tools" rather than pr-###
+    value: tools
+  - name: IMAGE_TAG
+    description: Image tag to use
+    required: true
+  - name: REGISTRY
+    description: Container registry to import from
+    value: ghcr.io
+  - name: ORG_NAME
+    description: Organization name
+    value: bcgov
+  - name: DATABASE_USER
+    description: Oracle app user; THE matches the *IT suite's Testcontainer
+    value: THE
+  - name: DATABASE_PASSWORD
+    description: Password for the Oracle app user
+    required: true
+  - name: MIGRATE_SUFFIX
+    description: Unique suffix (e.g. workflow run id) so each deploy creates a fresh migration Job
+    required: true
+  - name: LICENSE_PLATE
+    description: Namespace license plate (e.g. abc123), for the cross-namespace NetworkPolicy
+    required: true
+  - name: CPU_REQUEST
+    value: 100m
+  - name: MEMORY_REQUEST
+    value: 2Gi
+  - name: MEMORY_LIMIT
+    value: 4Gi
+objects:
+  # ── App-user credential, shared by the database and the migration Job ──────
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ${NAME}-${ZONE}-${COMPONENT}
+      labels:
+        app: ${NAME}-${ZONE}
+    type: Opaque
+    stringData:
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+  # ── Oracle Free, fixture-only; no PVC — a restarted pod comes back empty and
+  #    is repopulated by the next deploy's migration Job ──────────────────────
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ${NAME}-${ZONE}-${COMPONENT}
+      labels:
+        app: ${NAME}-${ZONE}
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          deployment: ${NAME}-${ZONE}-${COMPONENT}
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            app: ${NAME}-${ZONE}
+            deployment: ${NAME}-${ZONE}-${COMPONENT}
+        spec:
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            supplementalGroups:
+              - 54321 # oinstall, oracle's primary group
+              - 54322 # dba
+              - 54323 # oper
+              - 54324 # backupdba
+              - 54325 # dgdba
+              - 54326 # kmdba
+              - 54330 # racdba
+          containers:
+            - name: ${NAME}
+              image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
+              imagePullPolicy: Always
+              ports:
+                - name: oracle
+                  containerPort: 1521
+              env:
+                - name: APP_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_USER
+                - name: APP_USER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_PASSWORD
+                - name: ORACLE_RANDOM_PASSWORD
+                  value: "true"
+              resources:
+                requests:
+                  cpu: ${CPU_REQUEST}
+                  memory: ${MEMORY_REQUEST}
+                limits:
+                  memory: ${MEMORY_LIMIT}
+              readinessProbe:
+                exec:
+                  command: [healthcheck.sh]
+                initialDelaySeconds: 90
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 30
+              livenessProbe:
+                exec:
+                  command: [healthcheck.sh]
+                initialDelaySeconds: 120
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 30
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: ${NAME}-${ZONE}-${COMPONENT}
+      labels:
+        app: ${NAME}-${ZONE}
+    spec:
+      ports:
+        - name: oracle
+          port: 1521
+          targetPort: 1521
+      selector:
+        deployment: ${NAME}-${ZONE}-${COMPONENT}
+  # ── Reachable from this namespace (migration Job) and the product's dev
+  #    namespace (PR sandbox backends) ─────────────────────────────────────────
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: ${NAME}-${ZONE}-${COMPONENT}-ingress
+      labels:
+        app: ${NAME}-${ZONE}
+    spec:
+      podSelector:
+        matchLabels:
+          deployment: ${NAME}-${ZONE}-${COMPONENT}
+      ingress:
+        - from:
+            - podSelector: {}
+            - namespaceSelector:
+                matchLabels:
+                  name: ${LICENSE_PLATE}
+                  environment: dev
+      policyTypes:
+        - Ingress
+  # ── Per-deploy Flyway migration: an init container copies the fixture scripts
+  #    baked into the database image (single-sourced with the *IT suite), then
+  #    Flyway applies them with the same ordering semantics as AbstractOracleIT
+  #    (versioned V* first, repeatable R__* last) ───────────────────────────────
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${NAME}-${ZONE}-${COMPONENT}-migrate-${MIGRATE_SUFFIX}
+      labels:
+        app: ${NAME}-${ZONE}
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: ${NAME}-${ZONE}
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: fixtures
+              image: ${REGISTRY}/${ORG_NAME}/${NAME}/${COMPONENT}:${IMAGE_TAG}
+              command: [sh, -c, "cp -a /opt/oracle/sql/. /sql/"]
+              volumeMounts:
+                - name: sql
+                  mountPath: /sql
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+          containers:
+            - name: flyway
+              image: flyway/flyway:11
+              args: [migrate]
+              env:
+                - name: FLYWAY_URL
+                  value: jdbc:oracle:thin:@//${NAME}-${ZONE}-${COMPONENT}:1521/FREEPDB1
+                - name: FLYWAY_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_USER
+                - name: FLYWAY_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: DATABASE_PASSWORD
+                - name: FLYWAY_LOCATIONS
+                  value: filesystem:/sql
+                # First-ever deploy races Oracle's multi-minute init; retry for up to 10 min
+                - name: FLYWAY_CONNECT_RETRIES
+                  value: "60"
+                - name: FLYWAY_CONNECT_RETRIES_INTERVAL
+                  value: "10"
+              volumeMounts:
+                - name: sql
+                  mountPath: /sql
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault
+          volumes:
+            - name: sql
+              emptyDir: {}
