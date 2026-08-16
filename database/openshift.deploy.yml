@@ -37,8 +37,8 @@ parameters:
   - name: MIGRATE_SUFFIX
     description: Unique suffix (e.g. workflow run id) so each deploy creates a fresh migration Job
     required: true
-  - name: LICENSE_PLATE
-    description: Namespace license plate (e.g. abc123), for the cross-namespace NetworkPolicy
+  - name: DEV_NAMESPACE
+    description: Namespace whose pods may reach the database (e.g. abc123-dev, the PR sandboxes)
     required: true
   - name: CPU_REQUEST
     value: 100m
@@ -115,20 +115,26 @@ objects:
                   memory: ${MEMORY_REQUEST}
                 limits:
                   memory: ${MEMORY_LIMIT}
+              # First boot (image unpack + APP_USER creation) can take minutes;
+              # the startup probe absorbs that so readiness/liveness stay tight
+              startupProbe:
+                exec:
+                  command: [healthcheck.sh]
+                periodSeconds: 10
+                timeoutSeconds: 10
+                failureThreshold: 60
               readinessProbe:
                 exec:
                   command: [healthcheck.sh]
-                initialDelaySeconds: 90
-                periodSeconds: 30
+                periodSeconds: 10
                 timeoutSeconds: 10
-                failureThreshold: 30
+                failureThreshold: 3
               livenessProbe:
                 exec:
                   command: [healthcheck.sh]
-                initialDelaySeconds: 120
                 periodSeconds: 30
                 timeoutSeconds: 10
-                failureThreshold: 30
+                failureThreshold: 5
   - apiVersion: v1
     kind: Service
     metadata:
@@ -157,10 +163,11 @@ objects:
       ingress:
         - from:
             - podSelector: {}
+            # kubernetes.io/metadata.name is set automatically on every
+            # namespace, so this needs no platform-specific labels
             - namespaceSelector:
                 matchLabels:
-                  name: ${LICENSE_PLATE}
-                  environment: dev
+                  kubernetes.io/metadata.name: ${DEV_NAMESPACE}
       policyTypes:
         - Ingress
   # ── Per-deploy Flyway migration: an init container copies the fixture scripts
@@ -175,6 +182,8 @@ objects:
         app: ${NAME}-${ZONE}
     spec:
       backoffLimit: 2
+      # A wedged migration fails visibly instead of hanging the pipeline
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 86400
       template:
         metadata:

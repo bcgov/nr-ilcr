@@ -94,7 +94,7 @@ jobs:
             -p IMAGE_TAG='${{ inputs.tag }}'
             -p MIGRATE_SUFFIX='${{ github.run_id }}-${{ github.run_attempt }}'
             -p DATABASE_PASSWORD="$DB_PASSWORD"
-            -p LICENSE_PLATE="${OC_NS_TOOLS%-*}"
+            -p DEV_NAMESPACE="${OC_NS_TOOLS%-*}-dev"
           triggers: ${{ inputs.triggers }}
       - name: Wait for fixture migration
         if: steps.deploy.outputs.triggered == 'true'
@@ -105,11 +105,21 @@ jobs:
           oc_token: ${{ secrets.OC_TOKEN_TOOLS }}
           commands: |
             JOB=${{ github.event.repository.name }}-tools-database-migrate-${{ github.run_id }}-${{ github.run_attempt }}
-            if ! oc wait --for=condition=complete job/${JOB} --timeout=15m; then
-              echo "Fixture migration did not complete; recent logs:"
-              oc logs job/${JOB} --all-containers --tail=200 || true
-              exit 1
-            fi
+            # Poll both terminal conditions: `oc wait --for=condition=complete`
+            # alone would block the full timeout on a job that already failed
+            for i in $(seq 1 90); do
+              STATUS=$(oc get job/${JOB} -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{end}' 2>&1) || {
+                echo "Migration job ${JOB} not found (was its creation rejected?): ${STATUS}"; exit 1; }
+              case "${STATUS}" in
+                *Complete*) echo "Fixture migration complete."; exit 0 ;;
+                *Failed*)   echo "Fixture migration FAILED; logs:";
+                            oc logs job/${JOB} --all-containers --tail=200 || true; exit 1 ;;
+                *)          echo "Waiting for fixture migration (${i}/90)..."; sleep 10 ;;
+              esac
+            done
+            echo "Fixture migration timed out; logs:"
+            oc logs job/${JOB} --all-containers --tail=200 || true
+            exit 1
 
   deploy:
     name: Deploy (${{ matrix.name }})
