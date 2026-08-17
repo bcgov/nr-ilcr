@@ -200,7 +200,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_FOREST_REGION_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_FOREST_REGION_CODE
-       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
          AND (EXPIRY_DATE IS NULL
            OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
           OR ILCR_FOREST_REGION_CODE IN (
@@ -222,7 +223,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_LIFETIME_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_LIFETIME_CODE
-       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
          AND (EXPIRY_DATE IS NULL
            OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
           OR ILCR_ROAD_LIFETIME_CODE IN (
@@ -246,7 +248,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_BALLAST_METHOD_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_METHOD_CODE
-       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
          AND (EXPIRY_DATE IS NULL
            OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
           OR ILCR_ROAD_BALLAST_METHOD_CODE IN (
@@ -270,7 +273,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_BALLAST_MATERL_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_MATERL_CODE
-       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
          AND (EXPIRY_DATE IS NULL
            OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
           OR ILCR_ROAD_BALLAST_MATERL_CODE IN (
@@ -296,7 +300,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT REL_SOIL_MOIST_RGM_CLS_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_RL_SOIL_MOIS_RGM_CLS_CODE
-       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
          AND (EXPIRY_DATE IS NULL
            OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
           OR REL_SOIL_MOIST_RGM_CLS_CODE IN (

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -97,15 +98,85 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].roadDetails[0].subGrade.total", is(126000.0)))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].subGrade.costPerLength", is(10080.0)))
 
-        // Stabilizing: item 22 actual, item 10 TtT, item 9 other transfer (subcategory 4).
+        // Stabilizing: item 22 actual, item 10 TtT (subcategory 2), item 9 other (subcategory 4).
+        // The two transfers carry DISTINCT NON-ZERO values on purpose — seeded as 0 they were
+        // indistinguishable from absent, so swapping items 9 and 10, or dropping both lookups,
+        // left every assertion green (code review 2026-08-17).
         .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.actualCost", is(40000)))
-        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.total", is(40000.0)))
-        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.costPerLength", is(13333.33)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.ttTransfer", is(2500)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.otherTransfer", is(-1500)))
+        // 40000 + 2500 - 1500 = 41000
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.total", is(41000.0)))
+        // 41000 / 3.000 = 13666.666... -> 13666.67
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.costPerLength", is(13666.67)))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.ballastMethodCode", is("C")))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.ballastMaterialCode", is("GR")))
 
-        // Material composition total is derived and, uniquely, never null.
-        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.totalPct", is(100)));
+        // Each material percentage asserted individually with a DISTINCT value: the entity declares
+        // RIPPABLE before SOLID while the DTO takes solid first, so a swap is a plausible slip that
+        // the total alone cannot catch (10+20+40+20+10 and 20+10+40+10+20 both make 100).
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.solidRockPct", is(10)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.rippableRockPct", is(20)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.coarsePct", is(30)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.finePct", is(25)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.organicPct", is(15)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.totalPct", is(100)))
+
+        // The passthrough scalars. Adjacent same-typed pairs (endHaul/overland distance and volume,
+        // stabilizing depth/distanceToSource, the two surface widths) can be transposed in a
+        // positional record constructor and still compile, so each is pinned to a distinct value.
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].roadName", is("Mainline A")))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].roadLifetimeCode", is("P")))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].relSoilMoistRgmClsCode", is("1")))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].sideSlopePct", is(25)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].detailedEngineeringCostInd", is("N")))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].endHaulDistance", is(2.5)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].endHaulVolume", is(1200)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].overlandDistance", is(1.5)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].overlandVolume", is(800)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].comments", is("Fully populated detail")))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].revisionCount", is(0)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].subGrade.length", is(12.5)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].subGrade.surfaceWidth", is(6.5)))
+        // 5.5, deliberately DIFFERENT from the sub-grade width — both were 6.5, which would have
+        // defeated this assertion even once written.
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.surfaceWidth", is(5.5)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.length", is(3.0)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.depth", is(0.3)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[0].stabilizing.distanceToSource", is(12.4)));
+  }
+
+  @Test
+  @DisplayName("a de-listed BEC classification still renders on its row but is NOT offered")
+  void deListedBecRendersOnRowButIsNotOffered() throws Exception {
+    // Catalogue row 8803 (ESSFwc4a) exists but is deliberately absent from the xref. Detail 8940
+    // stores it. This is the ONLY fixture exercising the referenced-BEC fallback — without it the
+    // whole second query and its merge could be deleted with nothing failing.
+    mockMvc.perform(get(ENDPOINT).param("millId", "711").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        // The stored classification resolves and renders in full ...
+        .andExpect(jsonPath("$.pages[0].roadDetails[?(@.roadDetailId == 8940)].becClassification.label",
+            hasItem("ESSFwc4a")))
+        // ... while the offerable dropdown still withholds it (the surviving BR-06 gate).
+        .andExpect(jsonPath(
+            "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8803)]", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName("year and category filters are falsifiable — decoy rows must not appear")
+  void yearAndCategoryFiltersExcludeDecoys() throws Exception {
+    // Mill 710 also owns page 8908 (year 2020) and page 8909 (category '99'). Both must be
+    // excluded. Previously every seeded page was 2021 + '10', so either predicate could be dropped
+    // from findPages/findRoadDetails/findCostLines with the suite still green.
+    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.pages", hasSize(2)))
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8908)]", hasSize(0)))
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8909)]", hasSize(0)))
+        // The wrong-year page owns a cost line of 999999 — it must not leak into any total.
+        .andExpect(jsonPath("$..subGrade[?(@.actualCost == 999999)]", hasSize(0)));
   }
 
   @Test
@@ -210,7 +281,7 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.pages", hasSize(0)))
         // Code lists are still served so the frontend can render an empty add-form.
-        .andExpect(jsonPath("$.codeLists.roadLifetimes", hasSize(2)));
+        .andExpect(jsonPath("$.codeLists.roadLifetimes[?(@.code == 'P')]", hasSize(1)));
   }
 
   @Test
@@ -234,13 +305,25 @@ class Schedule10DocumentIT extends AbstractOracleIT {
     mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        // 'ROLD' expired in 2010, so the 2021 filter must exclude it; RNI and RNO remain, and V22's
-        // pre-existing 'R1' row was widened to 2000-2099 by this migration.
+        // Content filters, not hasSize: these are SHARED code tables, so a future story seeding one
+        // more ballast material would red a size assertion for a reason unrelated to Schedule 10.
+        // Each list now carries an EXPIRED ('XP') and a NOT-YET-EFFECTIVE ('FU') decoy, so BOTH
+        // legs of the date predicate are falsifiable rather than merely present.
         .andExpect(jsonPath("$.codeLists.forestRegions[?(@.code == 'ROLD')]", hasSize(0)))
         .andExpect(jsonPath("$.codeLists.forestRegions[?(@.code == 'RNI')]", hasSize(1)))
-        .andExpect(jsonPath("$.codeLists.ballastMethods", hasSize(3)))
-        .andExpect(jsonPath("$.codeLists.ballastMaterials", hasSize(2)))
-        .andExpect(jsonPath("$.codeLists.rsmrClasses", hasSize(2)))
+        .andExpect(jsonPath("$.codeLists.roadLifetimes[?(@.code == 'XP')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.roadLifetimes[?(@.code == 'FU')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.roadLifetimes[?(@.code == 'P')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.ballastMethods[?(@.code == 'XP')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.ballastMethods[?(@.code == 'FU')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.ballastMethods[?(@.code == 'C')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.ballastMaterials[?(@.code == 'XP')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.ballastMaterials[?(@.code == 'FU')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.rsmrClasses[?(@.code == 'XP')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.rsmrClasses[?(@.code == 'FU')]", hasSize(0)))
+        // A NULL EXPIRY_DATE means "never expires" and MUST appear — NULL >= date is UNKNOWN, so
+        // the original predicate silently dropped it.
+        .andExpect(jsonPath("$.codeLists.forestRegions[?(@.code == 'RNUL')]", hasSize(1)))
         // LD-1/LD-2 removed both of these lists along with their fields.
         .andExpect(jsonPath("$.codeLists.asmCodes").doesNotExist())
         .andExpect(jsonPath("$.codeLists.soilMoistureCodes").doesNotExist());

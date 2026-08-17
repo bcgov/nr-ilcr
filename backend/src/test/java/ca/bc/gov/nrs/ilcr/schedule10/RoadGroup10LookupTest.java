@@ -144,6 +144,23 @@ class RoadGroup10LookupTest {
     }
 
     @Test
+    @DisplayName("case 26: [E-ie-i] is an ASCII range spanning E-Z, punctuation and a-i")
+    void case26RangeIsFarWiderThanEtoI() {
+      // Reads like "E to I" but is not: [E-i] covers E-Z, [ \ ] ^ _ ` and a-i. Documented and
+      // pinned at code review 2026-08-17 because it is the widest of the three preserved quirks
+      // and the most likely to be "helpfully" narrowed to [E-Ie-i] by a later reader.
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26A", null)).isEqualTo("8");
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26E", null)).isEqualTo("4");
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26I", null)).isEqualTo("4");
+      // Well past I, still inside the range — narrowing the class would break these.
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26Z", null)).isEqualTo("4");
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26_", null)).isEqualTo("4");
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26i", null)).isEqualTo("4");
+      // And j is genuinely outside it.
+      assertThat(RoadGroup10Lookup.rmgFor("26", "26j", null)).isNull();
+    }
+
+    @Test
     @DisplayName("regex branches match the LAST character, not the numeric prefix")
     void regexBranchesMatchTrailingCharacter() {
       // TSA 16's branches are regex over the whole code, so a non-16-prefixed TSB still matches.

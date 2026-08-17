@@ -177,6 +177,52 @@ class Schedule10ServiceTest {
   }
 
   @Nested
+  @DisplayName("silent-data-loss guards on the cost map")
+  class CostMapGuards {
+
+    @Test
+    @DisplayName("duplicate rows for one (detail, item) are SUMMED, not silently overwritten")
+    void duplicateCostRowsAreSummed() {
+      // Nothing enforces one row per (detail, item) — no unique constraint, and delivery holds zero
+      // Schedule 10 cost rows so the invariant has never been observed against data. A plain put()
+      // would let the last row win and discard the other, understating the total with no error.
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, new BigDecimal("100000")),
+          new CostLineRow(8910, 20, new BigDecimal("50000"))));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("150000");
+    }
+
+    @Test
+    @DisplayName("a cost row with an unrouted ordinal is excluded, not misattributed")
+    void unroutedCostItemIsExcluded() {
+      // Item 99 belongs to no substructure. Legacy throws; we exclude and log, because refusing to
+      // render a whole report screen is worse for the licensee than rendering with a warning.
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, new BigDecimal("150000")),
+          new CostLineRow(8910, 99, new BigDecimal("777777"))));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      // The stray amount must not appear anywhere, and must not inflate any total.
+      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("150000");
+      assertThat(detail.stabilizing().total()).isEqualByComparingTo("0");
+    }
+  }
+
+  @Nested
   @DisplayName("cost-line routing by legacy ordinal (BR-08)")
   class CostRouting {
 

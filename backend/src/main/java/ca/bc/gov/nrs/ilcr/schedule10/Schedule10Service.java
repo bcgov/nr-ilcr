@@ -17,7 +17,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,6 +73,25 @@ public class Schedule10Service {
   /** The 1–10 track Draft code; the only status at which a SUBMITTER may edit (AD-9). */
   private static final String DRAFT = "D";
 
+  // G8 — Oracle does not preserve trailing zeros, so a NUMBER(6,3) holding 3.000 comes back as 3
+  // and serialises as the integer 3 while its 12.500 neighbour serialises as 12.5. Stored
+  // dimensions are normalised to their column's declared scale so the served document matches the
+  // pinned contract regardless of the value (code review 2026-08-17 — caught by a new assertion).
+  private static final int LENGTH_SCALE = 3;   // SUB_GRADE_LENGTH / STABILIZING_LENGTH NUMBER(6,3)
+  private static final int MEASURE_SCALE = 1;  // widths, depth, distances              NUMBER(x,1)
+  private static final int VOLUME_SCALE = 0;   // END_HAUL_VOLUME / OVERLAND_VOLUME      NUMBER(7,0)
+
+  /**
+   * Every cost-item ordinal this service routes. A cost row outside this set contributes to no
+   * substructure and would silently vanish from the totals, so it is logged instead.
+   */
+  private static final Set<Integer> ROUTED_COST_ITEMS = Set.of(
+      SUB_GRADE_TRANSFER, LESS_OTHER_ENGINEERING, OTHER_TT_TRANSFER, LESS_CULVERT, LESS_BRIDGE,
+      LESS_LANDING, STABILIZING_OTHER_TRANSFER, STABILIZING_TRANSFER, LESS_OVERLAND,
+      SUB_GRADE_ACTUAL, LESS_END_HAUL, STABILIZING_ACTUAL);
+
+  private static final Logger LOG = LoggerFactory.getLogger(Schedule10Service.class);
+
   private final Schedule10Repository repository;
 
   /**
@@ -105,12 +127,36 @@ public class Schedule10Service {
             LinkedHashMap::new,
             Collectors.toList()));
 
-    // costItemId -> cost, per road detail. Legacy stores at most one row per item per detail.
+    // costItemId -> cost, per road detail.
+    //
+    // Two silent-data-loss hazards, both surfaced by code review 2026-08-17 and both handled by
+    // logging rather than by failing the read — this is a report screen, and refusing to render is
+    // worse for the licensee than rendering with a warning in the log.
+    //
+    // (1) DUPLICATES. Nothing enforces one row per (detail, item): there is no unique constraint,
+    //     and delivery holds zero Schedule 10 cost rows so the invariant has never been observed
+    //     against data. A blind put() would let the last-read row win and silently discard the
+    //     other, understating the total. Values are SUMMED instead, which at least conserves the
+    //     money, and the collision is logged.
+    // (2) UNMAPPED ORDINALS. A cost row whose item id is outside the twelve routes nowhere and
+    //     vanishes from the totals. Legacy throws on this (Schedule10DAO:559-561 switches on
+    //     REPORT_COST_ITEMS.valueOfByValue); we log instead, for the same reason.
     Map<Integer, Map<Integer, BigDecimal>> costsByDetail = new LinkedHashMap<>();
     for (CostLineRow row : costRows) {
+      if (!ROUTED_COST_ITEMS.contains(row.costItemId())) {
+        LOG.warn("Schedule 10 cost line {} on road detail {} carries unrouted cost item {} —"
+            + " excluded from every derived total (mill {}, year {})",
+            row.cost(), row.roadDetailId(), row.costItemId(), millId, year);
+        continue;
+      }
       costsByDetail
           .computeIfAbsent(row.roadDetailId(), key -> new LinkedHashMap<>())
-          .put(row.costItemId(), row.cost());
+          .merge(row.costItemId(), row.cost(), (first, second) -> {
+            LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} —"
+                + " summing them (mill {}, year {})", row.roadDetailId(), row.costItemId(),
+                millId, year);
+            return Schedule10Amounts.sum(first, second);
+          });
     }
 
     // Two distinct sets: what the dropdown may OFFER (xref-gated) and what this document must be
@@ -272,8 +318,8 @@ public class Schedule10Service {
         Schedule10Amounts.subGradeTotal(subGradeTotalCosts, subGradeTotalDeductions);
 
     SubGrade subGrade = new SubGrade(
-        detail.subGradeLength(),
-        detail.subGradeSurfaceWidth(),
+        Schedule10Amounts.atScale(detail.subGradeLength(), LENGTH_SCALE),
+        Schedule10Amounts.atScale(detail.subGradeSurfaceWidth(), MEASURE_SCALE),
         subGradeActual,
         subGradeTt,
         subGradeOther,
@@ -297,10 +343,10 @@ public class Schedule10Service {
     Stabilizing stabilizing = new Stabilizing(
         detail.ilcrRoadBallastMethodCode(),
         detail.ilcrRoadBallastMaterlCode(),
-        detail.stabilizingLength(),
-        detail.stabilizingSurfaceWidth(),
-        detail.stabilizingDepth(),
-        detail.stabilizingDistanceToSource(),
+        Schedule10Amounts.atScale(detail.stabilizingLength(), LENGTH_SCALE),
+        Schedule10Amounts.atScale(detail.stabilizingSurfaceWidth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.stabilizingDepth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.stabilizingDistanceToSource(), MEASURE_SCALE),
         stabilizingActual,
         stabilizingTt,
         stabilizingOther,
@@ -330,10 +376,10 @@ public class Schedule10Service {
         stabilizing,
         material,
         detail.detailEngineeringCostInd(),
-        detail.endHaulDistance(),
-        detail.endHaulVolume(),
-        detail.overlandDistance(),
-        detail.overlandVolume(),
+        Schedule10Amounts.atScale(detail.endHaulDistance(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.endHaulVolume(), VOLUME_SCALE),
+        Schedule10Amounts.atScale(detail.overlandDistance(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(detail.overlandVolume(), VOLUME_SCALE),
         detail.comments(),
         detail.revisionCount());
   }

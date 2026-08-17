@@ -19,11 +19,15 @@ package ca.bc.gov.nrs.ilcr.schedule10;
  * {@code RMG}/{@code ROAD_GROUP} column on {@code THE.ROAD_CONSTRUCTION_REPRT} (delivery-verified,
  * Story 11.1 Task 1 gate (i)).
  *
- * <p><strong>Two legacy literal quirks are preserved deliberately.</strong> Case {@code "45"} uses
+ * <p><strong>Three legacy literal quirks are preserved deliberately.</strong> Case {@code "45"} uses
  * {@code .*[I-Ki-j]} — uppercase {@code I}–{@code K} but lowercase only {@code i}–{@code j}, so a
  * lowercase {@code k} suffix falls through to blank. Case {@code "23"} has no branch covering
- * {@code I} at all. Both are reproduced exactly; they are the shipped business rule, not typos to
- * quietly fix (AD-12 legacy parity).
+ * {@code I} at all. Case {@code "26"} uses {@code .*[E-ie-i]}, which despite reading like "E to I"
+ * is an ASCII range spanning {@code E}–{@code Z}, six punctuation characters
+ * ({@code [ \ ] ^ _ `}) and {@code a}–{@code i} — by far the widest blast radius of the three, and
+ * the easiest to mistake for a typo. All three are reproduced exactly; they are the shipped
+ * business rule, not typos to quietly fix (AD-12 legacy parity, third quirk documented at code
+ * review 2026-08-17).
  *
  * <p><strong>Unmapped combinations are silent.</strong> Legacy has three distinct no-match paths
  * and
@@ -195,6 +199,8 @@ final class RoadGroup10Lookup {
           }
           break;
         case "26": // TSB Quesnel
+          // NOTE: [E-ie-i] is NOT "E to I". It is the ASCII range E..i, which covers E-Z, the six
+          // characters [ \ ] ^ _ ` , and a-i. Verbatim from RoadGroupUtil:419 and preserved.
           if (tsbNumberCode.matches(".*[A-Da-d]")) {
             roadGroup = "8";
           } else if (tsbNumberCode.matches(".*[E-ie-i]")) {

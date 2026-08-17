@@ -246,4 +246,25 @@ final class Schedule10Amounts {
   private static BigDecimal round(BigDecimal value) {
     return value == null ? null : value.setScale(DERIVED_SCALE, RoundingMode.HALF_UP);
   }
+
+  /**
+   * Normalises a stored measurement to its column's declared scale.
+   *
+   * <p>Oracle does not preserve trailing zeros: a {@code NUMBER(6,3)} holding {@code 3.000} comes
+   * back from ojdbc as {@code 3}, which Jackson then serialises as the integer {@code 3} while the
+   * neighbouring {@code 12.500} serialises as {@code 12.5}. The served document would therefore
+   * carry an inconsistent, value-dependent scale for the same field — and the pinned wire contract
+   * specifies {@code 3.000}. Every consumer of that contract, including Story 11.3's MSW handlers,
+   * would disagree with the real API for exactly the whole-number case.
+   *
+   * <p>Applied to stored dimensions only. Derived money and rates go through {@link #round}
+   * instead, and raw costs are whole-dollar integers that need no normalisation.
+   *
+   * @param value the stored measurement, or {@code null}
+   * @param scale the column's declared scale
+   * @return the value at the given scale, or {@code null}
+   */
+  static BigDecimal atScale(BigDecimal value, int scale) {
+    return value == null ? null : value.setScale(scale, RoundingMode.HALF_UP);
+  }
 }
