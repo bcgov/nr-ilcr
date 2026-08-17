@@ -91,4 +91,36 @@ describe('APIService real-auth interceptors', () => {
 
     expect(mocks.signInWithRedirect).toHaveBeenCalledTimes(1)
   })
+
+  it('on a transient forced-refresh failure it surfaces the 401 without bouncing (session preserved)', async () => {
+    // forceRefresh rejects (network/provider outage) but a non-forced session still holds a token,
+    // so the route must be preserved — do NOT discard it into a fresh Hosted UI flow (O7).
+    mocks.fetchAuthSession.mockImplementation((opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh
+        ? Promise.reject(new Error('network outage'))
+        : Promise.resolve({ tokens: { idToken: { toString: () => 'ID-TOKEN' } } }),
+    )
+    server.use(http.get(PROBE, () => new HttpResponse(null, { status: 401 })))
+
+    const client = await importClient()
+    await expect(client.get('/v1/probe')).rejects.toBeDefined()
+
+    expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+  })
+
+  it('on 401 bounces when a forced-refresh failure leaves no usable session', async () => {
+    // forceRefresh rejects AND no session remains (refresh token truly gone) → Amplify confirms no
+    // usable session → bounce.
+    mocks.fetchAuthSession.mockImplementation((opts?: { forceRefresh?: boolean }) =>
+      opts?.forceRefresh
+        ? Promise.reject(new Error('no refresh token'))
+        : Promise.resolve({ tokens: undefined }),
+    )
+    server.use(http.get(PROBE, () => new HttpResponse(null, { status: 401 })))
+
+    const client = await importClient()
+    await expect(client.get('/v1/probe')).rejects.toBeDefined()
+
+    expect(mocks.signInWithRedirect).toHaveBeenCalledTimes(1)
+  })
 })

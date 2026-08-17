@@ -36,4 +36,24 @@ describe('configureAmplify', () => {
     window.amplifyConfig = { mockUser: false }
     expect(() => configureAmplify()).toThrow(/amplifyConfig/)
   })
+
+  it('throws when an OAuth redirect URL is missing, so a deployment misconfig fails loudly up front', () => {
+    const base = {
+      userPoolId: 'ca-central-1_UpeAqsYt4',
+      userPoolClientId: '352pis0ark86dam7ht1jlp9uj5',
+      cognitoDomain: 'example.auth.ca-central-1.amazoncognito.com',
+      redirectSignIn: 'https://app.example/',
+      redirectSignOut: 'https://app.example/logout',
+    }
+
+    // A missing redirectSignIn / redirectSignOut would otherwise reach Amplify as the literal
+    // "undefined" and only fail mid-flow at the Hosted UI — guard both up front.
+    window.amplifyConfig = { ...base, redirectSignIn: undefined }
+    expect(() => configureAmplify()).toThrow(/redirectSignIn/)
+    expect(configure).not.toHaveBeenCalled()
+
+    window.amplifyConfig = { ...base, redirectSignOut: undefined }
+    expect(() => configureAmplify()).toThrow(/redirectSignOut/)
+    expect(configure).not.toHaveBeenCalled()
+  })
 })
