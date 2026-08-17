@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { Header, HeaderGlobalBar, HeaderMenuButton, HeaderName, SkipToContent } from '@carbon/react'
 import { Link } from '@tanstack/react-router'
+import DevRoleSwitcher from '@/components/DevRoleSwitcher'
 import MockUserSelector from '@/components/MockUserSelector'
 import ThemeToggle from '@/components/ThemeToggle'
 import useLayout from '@/context/layout/useLayout'
@@ -25,6 +26,7 @@ const LayoutHeader: FC = () => {
       </HeaderName>
       <HeaderGlobalBar>
         <MockUserSelector />
+        <DevRoleSwitcher />
         <ThemeToggle />
       </HeaderGlobalBar>
       <LayoutSideNav />

@@ -10,6 +10,21 @@ type Props = {
   children: ReactNode
 }
 
+// Local-dev "view as" override. Only ever read under import.meta.env.DEV, so it is inert (and
+// tree-shaken) in deployed builds — a real session's role can never be overridden in DEV/TEST/PROD.
+const DEV_ROLE_KEY = 'nr-ilcr.dev-role'
+
+function initialDevRole(): string | null {
+  if (!import.meta.env.DEV || typeof window === 'undefined') {
+    return null
+  }
+  try {
+    return window.localStorage.getItem(DEV_ROLE_KEY)
+  } catch {
+    return null
+  }
+}
+
 function currentRoute(): string {
   return `${window.location.pathname}${window.location.search}`
 }
@@ -34,6 +49,7 @@ function restoreRoute(path: string): void {
 export default function RealAuthProvider({ children }: Props) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [devRole, setDevRole] = useState<string | null>(initialDevRole)
   const redirectingRef = useRef(false)
 
   const loadUser = useCallback(async () => {
@@ -94,13 +110,35 @@ export default function RealAuthProvider({ children }: Props) {
     }
   }, [isLoading, user, signIn])
 
+  const realRoles = user?.roles ?? []
+  const effectiveRoles = import.meta.env.DEV && devRole ? [devRole] : realRoles
+  const effectiveUser = user ? { ...user, roles: effectiveRoles } : null
+
   const value: AuthContextValue = {
-    user,
-    isAuthenticated: user !== null,
+    user: effectiveUser,
+    isAuthenticated: effectiveUser !== null,
     isLoading,
-    hasRole: (role: string) => user?.roles.includes(role) ?? false,
+    hasRole: (role: string) => effectiveRoles.includes(role),
     signIn,
     signOut: doSignOut,
+    devRoleSwitch: import.meta.env.DEV
+      ? {
+          override: devRole,
+          realRoles,
+          setOverride: (role: string | null) => {
+            try {
+              if (role) {
+                window.localStorage.setItem(DEV_ROLE_KEY, role)
+              } else {
+                window.localStorage.removeItem(DEV_ROLE_KEY)
+              }
+            } catch {
+              // Storage disabled — override still applies in memory for this session.
+            }
+            setDevRole(role)
+          },
+        }
+      : undefined,
   }
 
   if (!user) {
