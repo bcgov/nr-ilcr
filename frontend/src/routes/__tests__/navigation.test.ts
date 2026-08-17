@@ -1,4 +1,9 @@
-import { NAVIGATION_ITEMS, visibleNavigationItems } from '@/routes/-navigation'
+import {
+  ADMIN_ONLY_PATHS,
+  isAdminOnlyPath,
+  NAVIGATION_ITEMS,
+  visibleNavigationItems,
+} from '@/routes/-navigation'
 
 const names = (isAdmin: boolean) => visibleNavigationItems(isAdmin).map((item) => item.name)
 
@@ -31,5 +36,18 @@ describe('visibleNavigationItems', () => {
   test('exactly one item is admin-gated, and it is Administration', () => {
     const gated = NAVIGATION_ITEMS.filter((item) => item.adminOnly)
     expect(gated.map((item) => item.name)).toEqual(['Administration'])
+  })
+})
+
+describe('admin-only paths (route guard source)', () => {
+  test('derived from the same adminOnly items the nav hides', () => {
+    expect([...ADMIN_ONLY_PATHS].sort()).toEqual(['/code-tables', '/mill-associations'])
+  })
+
+  test('isAdminOnlyPath matches admin routes only', () => {
+    expect(isAdminOnlyPath('/code-tables')).toBe(true)
+    expect(isAdminOnlyPath('/mill-associations')).toBe(true)
+    expect(isAdminOnlyPath('/schedule-1')).toBe(false)
+    expect(isAdminOnlyPath('/')).toBe(false)
   })
 })
