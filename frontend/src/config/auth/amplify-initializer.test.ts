@@ -28,6 +28,8 @@ describe('configureAmplify', () => {
     expect(cognito.userPoolClientId).toBe('352pis0ark86dam7ht1jlp9uj5')
     expect(cognito.loginWith.oauth.responseType).toBe('code')
     expect(cognito.loginWith.oauth.scopes).toContain('openid')
+    // Sign-out uses the configured value verbatim (carries the FAM logout chain), never the origin.
+    expect(cognito.loginWith.oauth.redirectSignOut).toContain('https://app.example/logout')
   })
 
   it('throws when the required Cognito settings are absent', () => {
