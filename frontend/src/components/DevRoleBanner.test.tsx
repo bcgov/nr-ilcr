@@ -32,6 +32,21 @@ describe('DevRoleBanner', () => {
     expect(screen.queryByText(/viewing as/)).toBeNull()
   })
 
+  it('renders nothing when the override matches the real role (a no-op override)', () => {
+    render(
+      <AuthContext
+        value={authValue({
+          override: 'ILCR_SUBMITTER',
+          realRoles: ['ILCR_SUBMITTER'],
+          setOverride: () => undefined,
+        })}
+      >
+        <DevRoleBanner />
+      </AuthContext>,
+    )
+    expect(screen.queryByText(/viewing as/)).toBeNull()
+  })
+
   it('renders nothing when devRoleSwitch is absent (deployed builds)', () => {
     render(
       <AuthContext value={authValue(undefined)}>
