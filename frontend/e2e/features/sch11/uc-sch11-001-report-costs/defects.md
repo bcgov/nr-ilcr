@@ -339,11 +339,19 @@ location with no costs stores real NULLs (which render as blank, not "0").
     values refresh on the Save re-render (`btnSaveTop` → `update=":mainPnl @form"`).
   - **Fixed at the source, not just noted:** the two Then steps in
     `_bmad-output/.../tests/UC-SCH11-001/gherkin/UC-SCH11-001-S03.feature` now assert the refresh **after**
-    Save, and the misleading trailing note is replaced with the verified explanation. The over-read actually
-    originated one level up, in `UC-SCH11-001-slices.md` (its S03 Expected Outcome and CNT-001 row), so both
-    were corrected too — otherwise a regenerated `.feature` would have reintroduced it.
+    Save, and the misleading trailing note is replaced with the verified explanation. The over-read
+    originated further up the chain, so every authored artifact carrying it was corrected too — otherwise a
+    regeneration would have reintroduced it:
+    - `UC-SCH11-001-slices.md` — S03's Expected Outcome and its CNT-001 row (2026-08-10), plus the S03
+      section's BR-08 row, which still cited the mechanism as a "`p:ajax` row listener" (2026-08-13).
+    - `UC-SCH11-001-detailed.md` — **the actual origin**, found on a re-check 2026-08-13: its CNT-001 listed
+      "row edit `p:ajax`" among the render triggers, and AF2 step 1a stated that the row listener "refreshes
+      the footer Totals row". `slices.md` is authored FROM `detailed.md`, so fixing only the former would
+      have let the next regeneration walk it straight back in. Both now carry the corrected wording and the
+      `schedule11.xhtml` evidence, including that line 349's `update="locationsDT …"` is dead-by-disabled.
   - **Not changed:** `UC-SCH11-001-technical.md` carries the same loose CNT-001 wording, but it is generated
-    ("Do not edit manually — regenerate by re-running `author-technical-sidecar`"), so it is left alone.
+    ("Do not edit manually — regenerate by re-running `author-technical-sidecar`"), so it is left alone. It
+    is the one remaining copy; a re-run of that generator should be checked against this entry.
   - **Status:** CLOSED — source corrected; the E2E test never needed changing (it always asserted the
     post-save refresh, which is what both apps do — see VER-6).
 - **VER-1 — "Enhanced: Value is required." is correct, and better than legacy.**
@@ -421,15 +429,24 @@ location with no costs stores real NULLs (which render as blank, not "0").
     derived sidecar:
     - the two derived cells are `p:inputText … disabled="true"` (lines 334–352), so their
       `p:ajax event="change"` **can never fire** — a disabled input emits no change event;
-    - the editable fields' handlers update only themselves, their original-value indicator and the message
-      panel — e.g. line 303 `update="@this actualCostOV :schedule11MessageForm:messages"`. **No row-field
-      `p:ajax` references either total cell or any footer id.**
+    - the **editable** fields' handlers update only themselves, their original-value indicator and the
+      message panel — e.g. line 303 `update="@this actualCostOV :schedule11MessageForm:messages"` (same
+      shape on 216, 262, 283, 319). **No editable field's `p:ajax` references a total cell or the footer.**
+    - two handlers DO target them, and both are dead: line 340 updates `@this` (a total cell) and line 349
+      updates `locationsDT` — the table that contains the footer `columnGroup` (line 377). Both sit on the
+      permanently-disabled derived cells above, so neither can ever fire. Worth naming explicitly, because
+      line 349 reads at a glance like a live table refresh and is the thing most likely to make someone
+      re-open this entry. If anything it *supports* the finding: a handler was written intending to refresh
+      the table on change, and the field it is attached to can never emit the event.
     - derived values refreshed when the form re-rendered, i.e. on Save: `btnSaveTop` carries
       `update=":mainPnl @form"` (line 188).
   - **Verdict:** Not a defect, and not a divergence. Both apps refresh derived figures on save; the new app
-    reaches the same user-visible behaviour by a different mechanism (server-derived, AD-5). The Gherkin
-    over-read its own source — the sidecar's CNT-001 entry is accurate ("recomputed on every render of
-    `schedule11DTForm`"); the Gherkin turned "on every render" into "immediately as you type".
+    reaches the same user-visible behaviour by a different mechanism (server-derived, AD-5).
+  - **Where the false claim came from — corrected 2026-08-13.** An earlier version of this entry said the
+    Gherkin "over-read its own source", the sidecar being accurate. That was wrong: the sidecar asserted it
+    too. `UC-SCH11-001-detailed.md` listed "row edit `p:ajax`" among CNT-001's render triggers and, in AF2
+    step 1a, stated outright that the row listener "refreshes the footer Totals row". The Gherkin projected
+    that faithfully. So the fix had to go one level further up than first thought — see SPEC-3.
   - **The spec still needs fixing** so this is not re-discovered as a false divergence next time someone
     re-grounds this UC — tracked as **SPEC-3**.
   - **Status:** CLOSED as verified 2026-08-10. The test never changed: `inline-edit.feature` `@S03` always
