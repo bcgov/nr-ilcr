@@ -23,7 +23,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     working_dir: "/app"
-    volumes: ["./backend:/app", "maven-cache:/root/.m2"]
+    volumes: ["./backend:/app", "${M2_HOME:-maven-cache}:/root/.m2"]
 
   frontend:
     container_name: frontend

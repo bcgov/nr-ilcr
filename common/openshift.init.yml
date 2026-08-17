@@ -22,6 +22,9 @@ parameters:
   - name: COGNITO_USER_POOL
     description: Cognito (FAM) user pool ID for JWT validation
     required: true
+  - name: COGNITO_CLIENT_ID
+    description: Cognito (FAM) web-client ID, validated as the ID token's aud
+    required: true
 objects:
   # ── Backend Secret ────────────────────────────────────────
   - apiVersion: v1
@@ -36,6 +39,7 @@ objects:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
       ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
       COGNITO_USER_POOL: ${COGNITO_USER_POOL}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:

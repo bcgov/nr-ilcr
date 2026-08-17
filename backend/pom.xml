@@ -70,6 +70,10 @@
         <jasperreports.version>7.0.8</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <!-- Keep Sonar coverage measurement in step with the jacoco instrumentation excludes
+             below: config/dto/exception/boilerplate are not instrumented, so counting them as
+             uncovered would understate new-code coverage for lines jacoco never reports on. -->
+        <sonar.coverage.exclusions>**/configuration/**,**/dto/**,**/exception/**,**/*Application.*,**/*Constants.*</sonar.coverage.exclusions>
         <oci.revision>${project.version}</oci.revision>
     </properties>
 
