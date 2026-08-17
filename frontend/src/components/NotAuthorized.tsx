@@ -1,6 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
-import { useNavigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 
 /**
  * Shown when a signed-in user reaches a page their role does not permit (e.g. a submitter opening an
@@ -8,7 +8,6 @@ import { useNavigate } from '@tanstack/react-router'
  * deliberately renders no working-context banner — the page is a dead end, not a schedule.
  */
 const NotAuthorized: FC = () => {
-  const navigate = useNavigate()
   return (
     <div className="app-page">
       <Grid fullWidth className="app-page__header">
@@ -19,7 +18,7 @@ const NotAuthorized: FC = () => {
       </Grid>
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
-          <Button name="homeBtn" onClick={() => navigate({ to: '/' })}>
+          <Button as={Link} to="/" name="homeBtn">
             Back Home
           </Button>
         </Column>

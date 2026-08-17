@@ -17,10 +17,15 @@ type Props = {
  * only thing standing between a bookmarked admin link and the page.
  */
 export default function RouteGuard({ children }: Props) {
-  const { user, hasRole } = useAuth()
+  const { user, hasRole, isLoading } = useAuth()
   const { pathname } = useLocation()
 
-  if (user && user.roles.length === 0) {
+  if (isLoading) {
+    // Auth is still resolving (session + /me in flight). user is null and hasRole() is false during
+    // this window, so rendering now would flash NoAccess/NotAuthorized before roles arrive. Wait.
+    return null
+  }
+  if (user && (user.roles ?? []).length === 0) {
     return <NoAccess />
   }
   if (isAdminOnlyPath(pathname) && !hasRole(ILCR_ROLES.admin)) {
