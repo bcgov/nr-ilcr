@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { Button, Column, Grid, Tag, Tile } from '@carbon/react'
 import { useNavigate } from '@tanstack/react-router'
-import useMockAuth from '@/context/auth/useMockAuth'
+import useAuth from '@/context/auth/useAuth'
 import PageTitle from '@/components/core/PageTitle'
 
 /**
@@ -11,8 +11,12 @@ import PageTitle from '@/components/core/PageTitle'
  * {@code millYearDefaults.ts} and this page just links into the schedules.
  */
 const Dashboard: FC = () => {
-  const { user } = useMockAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
+
+  if (!user) {
+    return null
+  }
 
   return (
     <div className="app-page">
@@ -28,7 +32,7 @@ const Dashboard: FC = () => {
           <Tile className="dashboard-summary">
             <h2>{user.displayName}</h2>
             <p className="dashboard-summary__meta">{user.email}</p>
-            <div className="app-role-tags" aria-label="Current mock roles">
+            <div className="app-role-tags" aria-label="Current roles">
               {user.roles.map((role) => (
                 <Tag key={role} type={role === 'ILCR_ADMIN' ? 'purple' : 'teal'}>
                   {role}
