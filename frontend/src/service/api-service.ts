@@ -81,8 +81,14 @@ class APIService {
           if (session.tokens?.idToken) {
             return await this.client.request(original)
           }
+          // A forced refresh that returns no token means the session is genuinely gone → bounce below.
         } catch {
-          // refresh failed — fall through to sign-in
+          // forceRefresh also rejects on a transient network/provider outage. Only bounce when
+          // Amplify confirms no usable session remains; otherwise a temporary outage would discard
+          // the user's route + in-progress work. Preserve the session and let the 401 surface.
+          if (await this.hasUsableSession()) {
+            return Promise.reject(error)
+          }
         }
         await signInWithRedirect({
           customState: `${window.location.pathname}${window.location.search}`,
@@ -90,6 +96,18 @@ class APIService {
         return Promise.reject(error)
       },
     )
+  }
+
+  // Whether Amplify still holds a usable (non-forced) session. Used after a failed forced refresh to
+  // tell "refresh token gone" (no session → bounce) from a transient refresh outage (session still
+  // present → don't bounce). A cached-but-expired id token still counts as a session to preserve.
+  private async hasUsableSession(): Promise<boolean> {
+    try {
+      const session = await fetchAuthSession()
+      return Boolean(session.tokens?.idToken)
+    } catch {
+      return false
+    }
   }
 
   public getAxiosInstance(): AxiosInstance {
