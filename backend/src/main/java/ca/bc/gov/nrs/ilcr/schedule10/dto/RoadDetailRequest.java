@@ -82,6 +82,9 @@ public record RoadDetailRequest(
     @Valid
     SubGradeRequest subGrade,
 
+    // @NotNull as well as @Valid: Bean Validation skips a null nested object, so without this a
+    // client could omit the whole substructure and slip past the required ballast method code.
+    @NotNull(message = "{javax.faces.component.UIInput.REQUIRED}")
     @Valid
     StabilizingRequest stabilizing,
 

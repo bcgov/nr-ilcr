@@ -1,19 +1,29 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.BecClassificationRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
+import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.BecClassification;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.MaterialComposition;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.MaterialCompositionRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Stabilizing;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.StabilizingRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGrade;
+import ca.bc.gov.nrs.ilcr.schedule10.dto.SubGradeRequest;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +31,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -412,5 +423,567 @@ public class Schedule10Service {
     return rows.stream()
         .map(row -> new CodeDescriptionDto(row.code(), row.description()))
         .toList();
+  }
+
+  // ===============================================================================================
+  // WRITES
+  // ===============================================================================================
+
+  /** The legacy sentinel the TSA/TFL dropdown carries for a TFL-located page ({@code Constant.TFL}). */
+  private static final String TFL = "TFL";
+
+  /** The schedule's legacy category id, on every page row and every scoped predicate. */
+  private static final String CATEGORY = "10";
+
+  /** {@code TSA_NUMBER} is {@code VARCHAR2(2)}; the dropdown's 3-char sentinel never reaches it. */
+  private static final int TSA_NUMBER_MAX = 2;
+
+  /** Ballast method "non-required": legacy zeroes the stabilizing figures for this one. */
+  private static final String BALLAST_NOT_REQUIRED = "N";
+
+  /** Ballast method for which legacy forces the material code but leaves the figures alone. */
+  private static final String BALLAST_DEFERRED = "D";
+
+  /** Ballast method requiring a material type. */
+  private static final String BALLAST_CRUSHED = "C";
+
+  /** The material code legacy forces when no ballast material applies. */
+  private static final String BALLAST_MATERIAL_NOT_APPLICABLE = "NA";
+
+  /**
+   * The ASM moisture gradient, driest to wettest, used only to break a tie deterministically.
+   *
+   * <p>The cross-reference resolves a BEC classification plus RSMR class to exactly one moisture pair
+   * for the overwhelming majority of combinations. Where it offers more than one, legacy declined to
+   * auto-select and left the choice to a dropdown the business has since removed — so a rule is
+   * needed, and the driest candidate is chosen because it is the conservative end of the scale and,
+   * being ordered by the Ministry's own code semantics, is stable rather than incidental.
+   */
+  private static final List<String> ASM_MOISTURE_GRADIENT =
+      List.of("ED", "VD", "MD", "SD", "F", "M", "VM", "W");
+
+  /** Stand-ins so an omitted optional substructure needs no null checks at every use site. */
+  private static final SubGradeRequest NO_SUB_GRADE = new SubGradeRequest(
+      null, null, null, null, null, null, null, null, null, null, null);
+
+  private static final MaterialCompositionRequest NO_MATERIAL =
+      new MaterialCompositionRequest(null, null, null, null, null);
+
+  /** A page's location after the mutual-exclusion rule has been applied. */
+  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
+  }
+
+  /**
+   * Creates a construction page.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param request the entered page fields
+   * @param user the actor stamped into the audit columns
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}, for the echoed document
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response addPage(
+      long millId, int year, ConstructionPageRequest request, String user, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    requireOfferedForestRegion(millId, year, request.forestRegionCode());
+    Location location = classify(request);
+    int pageId = repository.nextPageId();
+    persist(() -> repository.insertPage(
+        toPageEntity(pageId, millId, year, request, location), millId, year, user));
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Edits a construction page under its optimistic lock. Changing the location re-derives the Road
+   * Group on the next read; nothing about it is stored.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the page to edit
+   * @param request the entered page fields, carrying the last-read revision
+   * @param user the actor stamped into the audit columns
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response updatePage(
+      long millId, int year, int pageId, ConstructionPageRequest request, String user,
+      boolean callerMayEdit) {
+    requireDraft(millId, year);
+    int expectedRevision = requireRevision(request.revisionCount());
+    // Existence first, and deliberately before any body validation: an unknown or foreign id must
+    // answer 404 regardless of what the body contains, not 400 for a field the caller cannot reach.
+    requirePage(pageId, millId, year);
+    requireOfferedForestRegion(millId, year, request.forestRegionCode());
+    Location location = classify(request);
+    persist(() -> {
+      int updated = repository.updatePage(
+          toPageEntity(pageId, millId, year, request, location), millId, year, expectedRevision,
+          user);
+      if (updated == 0) {
+        // Zero rows means the id is gone or the revision moved. Re-probe to say which.
+        requirePage(pageId, millId, year);
+        throw new StaleRevisionException();
+      }
+    });
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Copies a construction page and saves the copy immediately.
+   *
+   * <p><strong>The copy carries no road details.</strong> Legacy's copy constructor nulls both detail
+   * collections and then saves without cascading, so only the page header is duplicated. Reproduced
+   * as-is; a copy that silently duplicated every road would be a different feature.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the page to copy
+   * @param user the actor stamped into the audit columns
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response copyPage(
+      long millId, int year, int pageId, String user, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    RoadConstructionReportEntity source = repository.findPages(millId, year).stream()
+        .filter(page -> page.roadConstructionReprtId() == pageId)
+        .findFirst()
+        .orElseThrow(ConstructionPageNotFoundException::new);
+
+    int copyId = repository.nextPageId();
+    RoadConstructionReportEntity copy = new RoadConstructionReportEntity(
+        copyId, year, millId, CATEGORY, source.constructionPeriod(),
+        source.constructionDivisionName(), source.ilcrForestRegionCode(), source.tsbNumberCode(),
+        source.tsaNumber(), source.tflNumberCode(), 0);
+    persist(() -> repository.insertPage(copy, millId, year, user));
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Deletes a page and everything beneath it.
+   *
+   * <p>Order is grandchildren, children, parent. Neither delete-path foreign key cascades in delivery,
+   * so the reverse order is rejected outright. Legacy reached the same order through its ORM cascade.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the page to delete
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response deletePage(
+      long millId, int year, int pageId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    requirePage(pageId, millId, year);
+    persist(() -> {
+      repository.deleteCostsForPage(pageId);
+      repository.deleteRoadDetailsForPage(pageId);
+      // The result is checked rather than discarded: a silently zero-row delete would answer
+      // "deleted successfully" while the row survived.
+      if (repository.deletePage(pageId, millId, year) == 0) {
+        throw new ConstructionPageNotFoundException();
+      }
+    });
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Creates a road detail under a page.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the owning page
+   * @param request the entered road-detail fields
+   * @param user the actor stamped into the audit columns
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response addRoadDetail(
+      long millId, int year, int pageId, RoadDetailRequest request, String user,
+      boolean callerMayEdit) {
+    requireDraft(millId, year);
+    requirePage(pageId, millId, year);
+    requireOfferedDetailCodes(millId, year, request);
+    MoistureCodePair moisture = deriveMoistureCodes(request);
+    RoadDetailRequest coupled = applyBallastCoupling(request);
+
+    int roadDetailId = repository.nextRoadDetailId();
+    persist(() -> {
+      repository.insertRoadDetail(
+          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
+          moisture.asmCode(), user);
+      writeCostLines(roadDetailId, coupled, user);
+    });
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Edits a road detail under its own optimistic lock — the detail's revision, not its page's. A
+   * road-detail write deliberately does not bump the page: cross-bumping would make every sibling edit
+   * conflict against a page token the client legitimately holds, and legacy has no lock at all to be
+   * faithful to.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the owning page, part of the identity check
+   * @param roadDetailId the road detail to edit
+   * @param request the entered fields, carrying the last-read revision
+   * @param user the actor stamped into the audit columns
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response updateRoadDetail(
+      long millId, int year, int pageId, int roadDetailId, RoadDetailRequest request, String user,
+      boolean callerMayEdit) {
+    requireDraft(millId, year);
+    int expectedRevision = requireRevision(request.revisionCount());
+    requireRoadDetail(roadDetailId, pageId, millId, year);
+    requireOfferedDetailCodes(millId, year, request);
+    MoistureCodePair moisture = deriveMoistureCodes(request);
+    RoadDetailRequest coupled = applyBallastCoupling(request);
+
+    persist(() -> {
+      int updated = repository.updateRoadDetail(
+          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
+          moisture.asmCode(), millId, year, expectedRevision, user);
+      if (updated == 0) {
+        requireRoadDetail(roadDetailId, pageId, millId, year);
+        throw new StaleRevisionException();
+      }
+      writeCostLines(roadDetailId, coupled, user);
+    });
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Deletes one road detail and its cost lines, leaving the page and its other details untouched.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @param pageId the owning page
+   * @param roadDetailId the road detail to delete
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @return the refreshed document
+   */
+  @Transactional
+  public Schedule10Response deleteRoadDetail(
+      long millId, int year, int pageId, int roadDetailId, boolean callerMayEdit) {
+    requireDraft(millId, year);
+    requireRoadDetail(roadDetailId, pageId, millId, year);
+    persist(() -> {
+      repository.deleteCostsForRoadDetail(roadDetailId);
+      if (repository.deleteRoadDetail(roadDetailId, pageId) == 0) {
+        throw new RoadDetailNotFoundException();
+      }
+    });
+    return getSchedule10(millId, year, callerMayEdit);
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Gates and rules
+  // -----------------------------------------------------------------------------------------------
+
+  /**
+   * The write gate: only a Draft 1–10 track may be written.
+   *
+   * <p>Legacy has no server-side check at all — its gate is the rendered {@code disabled} attribute —
+   * so a crafted post reaches its DAO unimpeded. This is the house hardening rather than parity.
+   *
+   * <p>The status read is deliberately not locked. A concurrent transition between this check and the
+   * write is theoretically possible, but no endpoint in the application can move a track today, and
+   * the locked variant belongs to the status-transition work where it can be applied consistently.
+   */
+  private void requireDraft(long millId, int year) {
+    if (!DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+      throw new ScheduleNotEditableException();
+    }
+  }
+
+  private static int requireRevision(Integer revisionCount) {
+    if (revisionCount == null) {
+      throw new RevisionCountRequiredException();
+    }
+    return revisionCount;
+  }
+
+  private void requirePage(int pageId, long millId, int year) {
+    if (repository.countPage(pageId, millId, year) == 0) {
+      throw new ConstructionPageNotFoundException();
+    }
+  }
+
+  private void requireRoadDetail(int roadDetailId, int pageId, long millId, int year) {
+    if (repository.countRoadDetail(roadDetailId, pageId, millId, year) == 0) {
+      throw new RoadDetailNotFoundException();
+    }
+  }
+
+  /**
+   * Applies the mutual-exclusion rule before anything is persisted: a page is TSA-located or
+   * TFL-located, never both.
+   *
+   * <p>The server clears the counterpart rather than trusting the client. Legacy enforced the
+   * exclusion only in the browser, and its DAO set the supply block unconditionally before the TFL
+   * branch and never nulled the other leg — so a crafted post could store an inconsistent
+   * combination. No real page in delivery carries both, which is the intent this makes enforceable.
+   */
+  private Location classify(ConstructionPageRequest request) {
+    if (TFL.equals(request.tsaOrTfl())) {
+      String canonical = RoadGroup10Lookup.canonicalTfl(blankToNull(request.tflNumberCode()));
+      if (canonical == null) {
+        throw new InvalidTflNumberException();
+      }
+      return new Location(null, null, canonical);
+    }
+    String tsaNumber = blankToNull(request.tsaOrTfl());
+    if (tsaNumber != null && tsaNumber.length() > TSA_NUMBER_MAX) {
+      // The 3-character allowance on the field exists only for the "TFL" sentinel. A wider TSA code
+      // would reach a VARCHAR2(2) column and surface as an opaque 500 instead of naming the field.
+      throw new InvalidClassificationCodeException();
+    }
+    return new Location(tsaNumber, blankToNull(request.supplyBlock()), null);
+  }
+
+  /**
+   * Derives the two moisture codes the business removed from the screen but the schema still demands.
+   *
+   * <p>This is the port of legacy's own filter-and-auto-select: the cross-reference resolves a BEC
+   * classification plus RSMR class to the moisture pair, and legacy selected it automatically whenever
+   * the filtered list held exactly one entry. Both inputs are mandatory on every write, so the
+   * derivation always has what it needs.
+   *
+   * <p>No sentinel is ever written. These columns carry a real moisture classification that the legacy
+   * print reports consume, and every road detail in delivery holds genuine values.
+   *
+   * <p>Zero candidates is a rejection, not a fallback: it means the classification is not offered at
+   * all, or is offered but has no pair for the submitted RSMR class. Letting it through would reach two
+   * NOT NULL columns with enabled foreign keys and return an opaque constraint violation.
+   */
+  private MoistureCodePair deriveMoistureCodes(RoadDetailRequest request) {
+    List<MoistureCodePair> candidates =
+        repository.findMoistureCodes(request.becbiogeoCatalogueId(), request.relSoilMoistRgmClsCode());
+    if (candidates.isEmpty()) {
+      throw new InvalidBecClassificationException();
+    }
+    if (candidates.size() == 1) {
+      return candidates.get(0);
+    }
+    return candidates.stream()
+        .min(Comparator.comparingInt((MoistureCodePair pair) -> gradientRank(pair.asmCode()))
+            .thenComparing(MoistureCodePair::asmCode)
+            .thenComparing(MoistureCodePair::soilMoistureCode))
+        .orElseThrow(InvalidBecClassificationException::new);
+  }
+
+  /** An ASM code's place on the moisture gradient; anything unrecognised sorts last, deterministically. */
+  private static int gradientRank(String asmCode) {
+    int rank = ASM_MOISTURE_GRADIENT.indexOf(asmCode);
+    return rank >= 0 ? rank : ASM_MOISTURE_GRADIENT.size();
+  }
+
+  /**
+   * Reproduces legacy's coupling between the ballast method and the stabilizing figures, as its DAO
+   * applies it at save time.
+   *
+   * <ul>
+   *   <li>{@code N} — the four dimensions, the actual cost and the other transfer are forced to zero,
+   *       and the material code to {@code "NA"}. Note the tree-to-truck transfer is deliberately NOT
+   *       zeroed: legacy re-converts only the actual-cost and other-transfer items.</li>
+   *   <li>{@code D} — only the material code is forced to {@code "NA"}; the figures are stored as
+   *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.</li>
+   *   <li>{@code C} — nothing is forced, and the material code is required.</li>
+   * </ul>
+   *
+   * <p>Legacy additionally cleared these fields from the browser when the method changed. That is view
+   * state rather than save behaviour, and a stateless API cannot observe a change — so only the
+   * save-time rules are reproduced.
+   */
+  private RoadDetailRequest applyBallastCoupling(RoadDetailRequest request) {
+    StabilizingRequest stabilizing = request.stabilizing();
+    String method = stabilizing.ballastMethodCode();
+
+    if (BALLAST_CRUSHED.equals(method)) {
+      if (blankToNull(stabilizing.ballastMaterialCode()) == null) {
+        throw new InvalidClassificationCodeException();
+      }
+      return request;
+    }
+
+    boolean notRequired = BALLAST_NOT_REQUIRED.equals(method);
+    boolean deferred = BALLAST_DEFERRED.equals(method);
+    if (!notRequired && !deferred) {
+      return request;
+    }
+
+    StabilizingRequest coupled = new StabilizingRequest(
+        method,
+        BALLAST_MATERIAL_NOT_APPLICABLE,
+        notRequired ? BigDecimal.ZERO : stabilizing.length(),
+        notRequired ? BigDecimal.ZERO : stabilizing.surfaceWidth(),
+        notRequired ? BigDecimal.ZERO : stabilizing.depth(),
+        notRequired ? BigDecimal.ZERO : stabilizing.distanceToSource(),
+        notRequired ? 0 : stabilizing.actualCost(),
+        stabilizing.ttTransfer(),
+        notRequired ? 0 : stabilizing.otherTransfer());
+
+    return new RoadDetailRequest(
+        request.roadName(), request.roadLifetimeCode(), request.becbiogeoCatalogueId(),
+        request.relSoilMoistRgmClsCode(), request.sideSlopePct(),
+        request.detailedEngineeringCostInd(), request.subGrade(), coupled,
+        request.materialComposition(), request.endHaulDistance(), request.endHaulVolume(),
+        request.overlandDistance(), request.overlandVolume(), request.comments(),
+        request.revisionCount());
+  }
+
+  /**
+   * Rejects a forest region the year-filtered list does not offer.
+   *
+   * <p>The list query already includes any code a stored row in this mill/year still references, which
+   * is what lets a code survive its own expiry rather than permanently blocking a re-save.
+   */
+  private void requireOfferedForestRegion(long millId, int year, String code) {
+    requireOffered(repository.findForestRegions(millId, year), code);
+  }
+
+  private void requireOfferedDetailCodes(long millId, int year, RoadDetailRequest request) {
+    requireOffered(repository.findRoadLifetimes(millId, year), request.roadLifetimeCode());
+    requireOffered(repository.findRsmrClasses(millId, year), request.relSoilMoistRgmClsCode());
+    StabilizingRequest stabilizing = request.stabilizing();
+    requireOffered(repository.findBallastMethods(millId, year), stabilizing.ballastMethodCode());
+    String material = blankToNull(stabilizing.ballastMaterialCode());
+    // "NA" is the code legacy forces for the methods that take no material; it is a real row, but the
+    // coupling can substitute it after this check, so only a client-supplied value is validated.
+    if (material != null) {
+      requireOffered(repository.findBallastMaterials(millId, year), material);
+    }
+  }
+
+  private static void requireOffered(List<CodeRow> offered, String code) {
+    if (code == null) {
+      return;
+    }
+    boolean known = offered.stream().anyMatch(row -> code.equals(row.code()));
+    if (!known) {
+      // Legacy resolved codes through a cache and silently stored NULL on a miss. That is not
+      // reproducible: these columns carry enabled foreign keys, so an unknown code would raise a
+      // constraint violation and surface as an opaque 500 rather than naming the field.
+      throw new InvalidClassificationCodeException();
+    }
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Mapping and persistence
+  // -----------------------------------------------------------------------------------------------
+
+  private static RoadConstructionReportEntity toPageEntity(
+      int pageId, long millId, int year, ConstructionPageRequest request, Location location) {
+    return new RoadConstructionReportEntity(
+        pageId, year, millId, CATEGORY, blankToNull(request.constructionPeriod()),
+        blankToNull(request.divisionName()), request.forestRegionCode(), location.tsbNumberCode(),
+        location.tsaNumber(), location.tflNumberCode(), 0);
+  }
+
+  /**
+   * Maps the request onto the detail entity, normalising every scaled measurement to its column's
+   * declared scale on the way in.
+   *
+   * <p>Normalising on write as well as on read matters: Oracle does not preserve trailing zeros, so a
+   * value stored at the wrong scale would round-trip differently from what was entered.
+   */
+  private static RoadConstructionReportDetailEntity toDetailEntity(
+      int roadDetailId, int pageId, RoadDetailRequest request) {
+    SubGradeRequest subGrade = request.subGrade() != null ? request.subGrade() : NO_SUB_GRADE;
+    StabilizingRequest stabilizing = request.stabilizing();
+    MaterialCompositionRequest material =
+        request.materialComposition() != null ? request.materialComposition() : NO_MATERIAL;
+
+    return new RoadConstructionReportDetailEntity(
+        roadDetailId,
+        pageId,
+        request.roadName(),
+        request.sideSlopePct(),
+        request.roadLifetimeCode(),
+        material.rippableRockPct(),
+        material.solidRockPct(),
+        material.coarsePct(),
+        request.becbiogeoCatalogueId(),
+        material.finePct(),
+        material.organicPct(),
+        Schedule10Amounts.atScale(subGrade.length(), LENGTH_SCALE),
+        request.detailedEngineeringCostInd(),
+        Schedule10Amounts.atScale(request.endHaulDistance(), MEASURE_SCALE),
+        toBigDecimal(request.endHaulVolume()),
+        Schedule10Amounts.atScale(request.overlandDistance(), MEASURE_SCALE),
+        toBigDecimal(request.overlandVolume()),
+        stabilizing.ballastMethodCode(),
+        Schedule10Amounts.atScale(subGrade.surfaceWidth(), MEASURE_SCALE),
+        blankToNull(stabilizing.ballastMaterialCode()),
+        Schedule10Amounts.atScale(stabilizing.length(), LENGTH_SCALE),
+        Schedule10Amounts.atScale(stabilizing.surfaceWidth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(stabilizing.depth(), MEASURE_SCALE),
+        Schedule10Amounts.atScale(stabilizing.distanceToSource(), MEASURE_SCALE),
+        request.relSoilMoistRgmClsCode(),
+        blankToNull(request.comments()),
+        0);
+  }
+
+  /**
+   * Upserts all twelve cost lines for a road detail.
+   *
+   * <p>A blank cost is stored as {@code COST = NULL} rather than deleting its row: legacy never
+   * removes a cost row on save, and the read path treats a stored NULL exactly as it treats an absent
+   * row — the field renders blank while the totals coerce it to zero.
+   */
+  private void writeCostLines(int roadDetailId, RoadDetailRequest request, String user) {
+    SubGradeRequest subGrade = request.subGrade() != null ? request.subGrade() : NO_SUB_GRADE;
+    StabilizingRequest stabilizing = request.stabilizing();
+
+    repository.upsertCostLine(roadDetailId, SUB_GRADE_ACTUAL, subGrade.actualCost(), user);
+    repository.upsertCostLine(roadDetailId, SUB_GRADE_TRANSFER, subGrade.ttTransfer(), user);
+    repository.upsertCostLine(roadDetailId, OTHER_TT_TRANSFER, subGrade.otherTransfer(), user);
+    repository.upsertCostLine(roadDetailId, LESS_BRIDGE, subGrade.lessBridges(), user);
+    repository.upsertCostLine(roadDetailId, LESS_CULVERT, subGrade.lessCulverts(), user);
+    repository.upsertCostLine(roadDetailId, LESS_LANDING, subGrade.lessLandings(), user);
+    repository.upsertCostLine(roadDetailId, LESS_OVERLAND, subGrade.lessOverland(), user);
+    repository.upsertCostLine(roadDetailId, LESS_OTHER_ENGINEERING, subGrade.lessOtherEng(), user);
+    repository.upsertCostLine(roadDetailId, LESS_END_HAUL, subGrade.lessEndHaul(), user);
+    repository.upsertCostLine(roadDetailId, STABILIZING_ACTUAL, stabilizing.actualCost(), user);
+    repository.upsertCostLine(roadDetailId, STABILIZING_TRANSFER, stabilizing.ttTransfer(), user);
+    repository.upsertCostLine(
+        roadDetailId, STABILIZING_OTHER_TRANSFER, stabilizing.otherTransfer(), user);
+  }
+
+  /**
+   * Runs a write, translating a data-access failure into the house save error.
+   *
+   * <p>Only the exception TYPE is logged. Never the values: a rejected write would otherwise put cost,
+   * volume or comment content into the log, which the data-sensitivity rules forbid.
+   */
+  private void persist(Runnable write) {
+    try {
+      write.run();
+    } catch (DataAccessException ex) {
+      LOG.warn("Schedule 10 write failed [{}]", ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+  }
+
+  private static BigDecimal toBigDecimal(Integer value) {
+    return value == null ? null : BigDecimal.valueOf(value);
+  }
+
+  private static String blankToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 }

@@ -85,6 +85,48 @@ final class RoadGroup10Lookup {
   }
 
   /**
+   * The storable form of an entered TFL number, or {@code null} when it is not a valid TFL.
+   *
+   * <p>Legacy's validator ({@code ILCRTflNumberValidator:33-45}) accepts a TFL if the lookup resolves
+   * it directly, or if it resolves after applying the missing-leading-zero aliases
+   * ({@code RoadGroupUtil.translateNoLeadingZeroButNumberMatch} :202-215). It validates the alias but
+   * then stores the raw entry, which leaves an accepted value in a form the reference table does not
+   * hold; this returns the canonical form so the stored value is the one that resolves.
+   *
+   * <p><strong>On which table validates.</strong> The legacy validator calls Schedule <em>6</em>'s
+   * lookup even for this screen. That reads like a defect, but the two tables accept an identical set
+   * of 22 keys — verified by diffing the {@code case} labels of both methods — so validating here
+   * against Schedule 10's own table accepts and rejects exactly what legacy does. Only the returned
+   * Road Group values differ between the tables, which is what this class exists to keep separate.
+   * The cross-wiring is still worth reporting upstream: the tables are maintained independently, so a
+   * future edit to either would silently split validation from derivation.
+   *
+   * @param tflNumberCode the entered TFL number, possibly missing a leading zero
+   * @return the canonical TFL to store, or {@code null} when the value is not a valid TFL
+   */
+  static String canonicalTfl(String tflNumberCode) {
+    if (tflNumberCode == null) {
+      return null;
+    }
+    if (rg10ByTflNumberCode(tflNumberCode) != null) {
+      return tflNumberCode;
+    }
+    String alias = leadingZeroAlias(tflNumberCode);
+    return alias != null && rg10ByTflNumberCode(alias) != null ? alias : null;
+  }
+
+  /** Verbatim {@code RoadGroupUtil.translateNoLeadingZeroButNumberMatch} (:202-215). */
+  private static String leadingZeroAlias(String tflNumberCode) {
+    return switch (tflNumberCode) {
+      case "1" -> "01";
+      case "3" -> "03";
+      case "5" -> "05";
+      case "8" -> "08";
+      default -> null;
+    };
+  }
+
+  /**
    * Verbatim port of {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468).
    *
    * <p>Sonar measures this at cognitive complexity 109 against a limit of 15, and the measurement
