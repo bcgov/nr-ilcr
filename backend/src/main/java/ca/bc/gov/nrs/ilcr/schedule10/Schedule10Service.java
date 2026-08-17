@@ -41,10 +41,11 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *   <li><strong>Road Group</strong> is derived per page from the TSA/TSB or TFL tables and is never
  *       stored. Unmapped combinations serve {@code null} with no error (S12).</li>
- *  <li><strong>Costs</strong> are keyed rows, not columns: each is routed to its substructure field
- *       by legacy cost-item ordinal (BR-08).</li>
- *   <li><strong>Totals</strong> come from {@link Schedule10Amounts} only. An absent cost line counts
- *       as ZERO in a total (legacy {@code getCostValue}) while rendering blank on its own.</li>
+ *   <li><strong>Costs</strong> are keyed rows, not columns: each is routed to its substructure
+ *       field by legacy cost-item ordinal (BR-08).</li>
+ *   <li><strong>Totals</strong> come from {@link Schedule10Amounts} only. An absent cost line
+ *       counts as ZERO in a total (legacy {@code getCostValue}) while rendering blank on its
+ *       own.</li>
  *   <li><strong>{@code editable}</strong> is {@code callerMayEdit && "D".equals(trackStatus)} — the
  *       SUBMITTER row only. Legacy also grants edit on {@code S}+non-Licensee and {@code V}+Admin,
  *       but no shipped schedule implements those paths; they belong to the AD-9/AR14 remediation.

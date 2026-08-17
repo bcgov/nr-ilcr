@@ -8,12 +8,12 @@ import java.math.RoundingMode;
  * {@code RoadConstructionReportDetailType} and {@code CoreUtil}.
  *
  * <p>This lives in ONE pure, testable place on purpose. Legacy spread the same arithmetic across
- * the
- * type class, the JSF view and the Jasper report, and the read path and the print path could
+ * the type class, the JSF view and the Jasper report, and the read path and the print path could
  * disagree. Every derived Schedule 10 value must be computed here and nowhere else — never inside a
  * row mapper, never re-implemented in SQL.
  *
- * <p><strong>An absent cost counts as ZERO in the totals, and is rendered blank on its own.</strong>
+ * <p><strong>An absent cost counts as ZERO in the totals, and is rendered blank on its own.
+ * </strong>
  * Legacy applies {@link #costValue} to every term before summing ({@code getSubGradeTotalCosts}
  * :1170-1178, {@code getSubGradeTotalDeductions} :1180-1190, {@code getStabilizingTotal}
  * :1289-1295), so a road detail with no cost lines at all serves {@code total: 0.00} — while the
@@ -226,7 +226,9 @@ final class Schedule10Amounts {
    *
    * <pre>
    * BigDecimal res = new BigDecimal(0);
-   * if (costType != null &amp;&amp; costType.getCost().getCost() != null) { res = costType.getCost().getCost(); }
+   * if (costType != null &amp;&amp; costType.getCost().getCost() != null) {
+   *   res = costType.getCost().getCost();
+   * }
    * return res;
    * </pre>
    *

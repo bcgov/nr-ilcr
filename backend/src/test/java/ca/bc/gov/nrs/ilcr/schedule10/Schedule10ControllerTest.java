@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +116,6 @@ class Schedule10ControllerTest {
     // The raw Strings go to millcontext, which owns parsing and the verbatim ERR-001 message;
     // the service only ever sees the validated, typed context.
     verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
-    verify(schedule10Service).getSchedule10(eq(MILL), eq(YEAR), eq(true));
+    verify(schedule10Service).getSchedule10(MILL, YEAR, true);
   }
 }

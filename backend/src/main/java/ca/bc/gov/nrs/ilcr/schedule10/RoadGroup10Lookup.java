@@ -10,16 +10,16 @@ package ca.bc.gov.nrs.ilcr.schedule10;
  * :475) for Schedule 10 — and the values genuinely differ: TSA {@code "01"} maps to {@code "15"} in
  * Schedule 6 but {@code "11"} here; TFL {@code "08"} maps to {@code "7"} there but {@code "10"}
  * here; TSA {@code "08"} maps to {@code "10"} there but {@code "7"} here. The shipped
- * {@code schedule6.RoadGroupLookup} ports only the {@code setRmg*} pair, so reusing it would serve
- * a
- * wrong Road Group on every Schedule 10 page. It is package-private in {@code schedule6}, so there
- * is no accidental-import hazard — but there is a "helpful refactor" hazard. Do not merge these.
+ * {@code schedule6.RoadGroupLookup} ports only the {@code setRmg*} pair, so reusing it would
+ * serve a wrong Road Group on every Schedule 10 page. It is package-private in {@code schedule6},
+ * so there is no accidental-import hazard — but there is a "helpful refactor" hazard. Do not merge
+ * these.
  *
  * <p>Road Group is <strong>derived on every read and never stored</strong>: there is no
  * {@code RMG}/{@code ROAD_GROUP} column on {@code THE.ROAD_CONSTRUCTION_REPRT} (delivery-verified,
  * Story 11.1 Task 1 gate (i)).
  *
- * <p><strong>Three legacy literal quirks are preserved deliberately.</strong> Case {@code "45"} uses
+ * <p><strong>Three legacy literal quirks are preserved on purpose.</strong> Case {@code "45"} uses
  * {@code .*[I-Ki-j]} — uppercase {@code I}–{@code K} but lowercase only {@code i}–{@code j}, so a
  * lowercase {@code k} suffix falls through to blank. Case {@code "23"} has no branch covering
  * {@code I} at all. Case {@code "26"} uses {@code .*[E-ie-i]}, which despite reading like "E to I"
@@ -84,7 +84,26 @@ final class RoadGroup10Lookup {
     return (rmg == null || rmg.isEmpty()) ? null : rmg;
   }
 
-  /** Verbatim port of {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468). */
+  /**
+   * Verbatim port of {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468).
+   *
+   * <p>Sonar measures this at cognitive complexity 109 against a limit of 15, and the measurement
+   * is correct — but the complexity is <em>data</em>, not logic. This is a 30-branch lookup table
+   * that the Ministry owns, transcribed one-for-one from legacy; there is no algorithm here to
+   * simplify, and every branch is an independent business fact.
+   *
+   * <p>It is deliberately NOT decomposed into helper methods or a rule map. The property that
+   * makes this class trustworthy is that a reviewer can diff it line-by-line against
+   * {@code RoadGroupUtil.java:285-468} and confirm the transcription. That auditability is the
+   * defence against the specific bug this class exists to prevent — Schedule 6 ships a
+   * near-identical table that maps the same inputs to DIFFERENT road groups, and a wrong
+   * transcription would serve wrong values silently. Restructuring would trade a real safeguard
+   * for a metric.
+   *
+   * <p>If the team later wants this expressed as a declarative table, that is a defensible change
+   * — but it should be its own commit with its own review, not folded into a story.
+   */
+  @SuppressWarnings("java:S3776") // Cognitive Complexity: irreducible lookup table, see above.
   private static String rg10ByTsaTsbNumberCode(String tsaNumberCode, String tsbNumberCode) {
     String roadGroup = "";
     if (tsaNumberCode != null && tsbNumberCode != null) {
@@ -284,31 +303,19 @@ final class RoadGroup10Lookup {
   private static String rg10ByTflNumberCode(String tflNumberCode) {
     String roadGroup = "";
     switch (tflNumberCode) {
-      case "08":
-      case "14":
+      case "08", "14":
         roadGroup = "10";
         break;
-      case "15":
-      case "35":
-      case "49":
-      case "59":
-      case "62":
+      case "15", "35", "49", "59", "62":
         roadGroup = "9";
         break;
-      case "03":
-      case "23":
-      case "33":
-      case "55":
-      case "56":
+      case "03", "23", "33", "55", "56":
         roadGroup = "11";
         break;
-      case "05":
-      case "52B":
+      case "05", "52B":
         roadGroup = "5";
         break;
-      case "30":
-      case "52":
-      case "53":
+      case "30", "52", "53":
         roadGroup = "4";
         break;
       case "18":
@@ -317,8 +324,7 @@ final class RoadGroup10Lookup {
       case "48":
         roadGroup = "7";
         break;
-      case "01":
-      case "41":
+      case "01", "41":
         roadGroup = "1";
         break;
       default:
