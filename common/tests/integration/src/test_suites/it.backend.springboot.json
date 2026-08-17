@@ -4,11 +4,11 @@
   "base_url": "${BASE_URL}",
   "tests": [
     {
-      "name": "Domain endpoint requires authentication (O4 — Home renders post-login)",
+      "name": "Public info endpoint is served (app up); domain endpoints require auth post-O4",
       "methods": [
         "GET"
       ],
-      "path": "/api/v1/mills",
+      "path": "/api/info",
       "headers": {
         "Content-Type": "application/json"
       },
@@ -16,7 +16,7 @@
       "assertions": [
         {
           "method": "GET",
-          "status_code": 401
+          "status_code": 200
         }
       ]
     }
