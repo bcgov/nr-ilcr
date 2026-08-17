@@ -44,6 +44,19 @@ function Probe() {
   )
 }
 
+function OverrideProbe() {
+  const { hasRole, devRoleSwitch } = useAuth()
+  return (
+    <div>
+      <span data-testid="admin">{String(hasRole('ILCR_ADMIN'))}</span>
+      <span data-testid="real">{(devRoleSwitch?.realRoles ?? []).join(',')}</span>
+      <button type="button" onClick={() => devRoleSwitch?.setOverride('ILCR_ADMIN')}>
+        view as admin
+      </button>
+    </div>
+  )
+}
+
 function withSession(idToken: string | undefined) {
   mocks.fetchAuthSession.mockResolvedValue(
     idToken ? { tokens: { idToken: { toString: () => idToken } } } : { tokens: undefined },
@@ -56,6 +69,7 @@ beforeEach(() => {
   mocks.signOut.mockReset().mockResolvedValue(undefined)
   mocks.hubHandlerRef.current = undefined
   window.history.replaceState(null, '', '/')
+  window.localStorage.clear()
 })
 
 afterEach(() => {
@@ -193,5 +207,32 @@ describe('RealAuthProvider', () => {
     mocks.hubHandlerRef.current?.({ payload: { event: 'tokenRefresh_failure' } })
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Signing in'))
+  })
+
+  it('lets local dev override the viewed role (frontend only — real roles preserved)', async () => {
+    withSession('id-token')
+    server.use(
+      http.get(ME, () =>
+        HttpResponse.json({
+          userGuid: 'ABC123',
+          displayName: 'Sam Submitter',
+          email: null,
+          identityProvider: 'idir',
+          roles: ['ILCR_SUBMITTER'],
+        }),
+      ),
+    )
+    render(
+      <RealAuthProvider>
+        <OverrideProbe />
+      </RealAuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('admin')).toHaveTextContent('false'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'view as admin' }))
+
+    // The SPA now treats the user as admin, but the real token roles are unchanged (backend still 403s).
+    await waitFor(() => expect(screen.getByTestId('admin')).toHaveTextContent('true'))
+    expect(screen.getByTestId('real')).toHaveTextContent('ILCR_SUBMITTER')
   })
 })

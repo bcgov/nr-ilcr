@@ -22,6 +22,17 @@ export type MockRoleSwitch = {
   setUserId: (id: string) => void
 }
 
+/**
+ * Local-dev-only "view as" override for a REAL FAM session: forces the role the SPA uses (nav + route
+ * guards) without touching the backend, which still enforces the real token. Exposed by the real
+ * provider only under {@code import.meta.env.DEV}, so it is absent from every deployed build.
+ */
+export type DevRoleSwitch = {
+  override: string | null
+  realRoles: string[]
+  setOverride: (role: string | null) => void
+}
+
 export type AuthContextValue = {
   user: AuthUser | null
   isAuthenticated: boolean
@@ -31,4 +42,6 @@ export type AuthContextValue = {
   signOut: () => void | Promise<void>
   /** Only defined under the Mock provider (local dev); absent in real builds. */
   mock?: MockRoleSwitch
+  /** Only defined under the real provider in local dev; absent in every deployed build. */
+  devRoleSwitch?: DevRoleSwitch
 }
