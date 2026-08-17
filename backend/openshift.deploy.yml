@@ -155,6 +155,11 @@ objects:
                     secretKeyRef:
                       name: ${NAME}-${ZONE}-${COMPONENT}
                       key: COGNITO_USER_POOL
+                - name: COGNITO_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: COGNITO_CLIENT_ID
                 - name: ORACLEDB_SECRET
                   valueFrom:
                     secretKeyRef:

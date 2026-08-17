@@ -290,6 +290,34 @@ public class JwtPrincipalUtil {
   }
 
   /**
+   * Retrieves the raw {@code custom:idp_user_id} claim from the given JwtAuthenticationToken
+   * principal, with no provider prefix. This is the 32-char IDIR/BCeID directory GUID used as the
+   * ILCR association key (it equals {@code ILCR_MILL_USER_XREF.USER_GUID} and the NR User Lookup
+   * directory GUID). Distinct from {@link #getUserId(JwtAuthenticationToken)}, which prefixes the
+   * provider and so must not be used as the join key.
+   *
+   * @param principal JwtAuthenticationToken object from which the id is to be extracted.
+   * @return the raw {@code custom:idp_user_id}, or an empty string if the claim is absent.
+   */
+  public static String getIdpUserId(JwtAuthenticationToken principal) {
+    return getClaimValue(principal.getTokenAttributes(), "custom:idp_user_id");
+  }
+
+  /**
+   * Retrieves the raw {@code custom:idp_user_id} claim from the given Jwt principal, with no
+   * provider prefix. This is the 32-char IDIR/BCeID directory GUID used as the ILCR association key
+   * (it equals {@code ILCR_MILL_USER_XREF.USER_GUID} and the NR User Lookup directory GUID).
+   * Distinct from {@link #getUserId(Jwt)}, which prefixes the provider and so must not be used as
+   * the join key.
+   *
+   * @param principal Jwt object from which the id is to be extracted.
+   * @return the raw {@code custom:idp_user_id}, or an empty string if the claim is absent.
+   */
+  public static String getIdpUserId(Jwt principal) {
+    return getClaimValue(principal.getClaims(), "custom:idp_user_id");
+  }
+
+  /**
    * Retrieves a list of groups from the given JwtPrincipal. This method extracts the token
    * attributes from the provided {@link JwtAuthenticationToken}, then looks for the key
    * "cognito:groups" in the token attributes. If the value associated with this key is a
