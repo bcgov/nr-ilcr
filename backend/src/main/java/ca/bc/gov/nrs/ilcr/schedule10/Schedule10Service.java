@@ -128,36 +128,48 @@ public class Schedule10Service {
             LinkedHashMap::new,
             Collectors.toList()));
 
-    // costItemId -> cost, per road detail.
+    // costItemId -> cost, per road detail. A null value is a legitimate entry, not a defect:
+    // ILCR_COST_REPORT_DETAIL.COST is nullable and legacy stores NULL for a cost the licensee left
+    // blank (Schedule10DAO:722 writes intValueExact() or null). A stored NULL must therefore be
+    // indistinguishable from an absent row — the individual field renders blank while the derived
+    // totals coerce it to zero (see Schedule10Amounts).
     //
-    // Two silent-data-loss hazards, both surfaced by code review 2026-08-17 and both handled by
-    // logging rather than by failing the read — this is a report screen, and refusing to render is
-    // worse for the licensee than rendering with a warning in the log.
+    // Map.merge CANNOT be used to build this map: it is specified to throw NullPointerException on a
+    // null value, which turns an ordinary blank cost into a 500 during document assembly.
     //
-    // (1) DUPLICATES. Nothing enforces one row per (detail, item): there is no unique constraint,
+    // Three hazards, all handled by logging rather than by failing the read — this is a report
+    // screen, and refusing to render is worse for the licensee than rendering with a warning.
+    //
+    // (1) NULL COSTS are stored as-is, so absent and blank behave identically downstream.
+    // (2) DUPLICATES. Nothing enforces one row per (detail, item): there is no unique constraint,
     //     and delivery holds zero Schedule 10 cost rows so the invariant has never been observed
     //     against data. A blind put() would let the last-read row win and silently discard the
     //     other, understating the total. Values are SUMMED instead, which at least conserves the
-    //     money, and the collision is logged.
-    // (2) UNMAPPED ORDINALS. A cost row whose item id is outside the twelve routes nowhere and
+    //     money, and the collision is logged. Summing keeps legacy's null rule: one non-null term
+    //     survives, and two nulls stay null rather than collapsing to zero.
+    // (3) UNMAPPED ORDINALS. A cost row whose item id is outside the twelve routes nowhere and
     //     vanishes from the totals. Legacy throws on this (Schedule10DAO:559-561 switches on
     //     REPORT_COST_ITEMS.valueOfByValue); we log instead, for the same reason.
     Map<Integer, Map<Integer, BigDecimal>> costsByDetail = new LinkedHashMap<>();
     for (CostLineRow row : costRows) {
       if (!ROUTED_COST_ITEMS.contains(row.costItemId())) {
-        LOG.warn("Schedule 10 cost line {} on road detail {} carries unrouted cost item {} —"
-            + " excluded from every derived total (mill {}, year {})",
-            row.cost(), row.roadDetailId(), row.costItemId(), millId, year);
+        LOG.warn("Schedule 10 road detail {} carries unrouted cost item {} — excluded from every"
+            + " derived total (mill {}, year {})",
+            row.roadDetailId(), row.costItemId(), millId, year);
         continue;
       }
-      costsByDetail
-          .computeIfAbsent(row.roadDetailId(), key -> new LinkedHashMap<>())
-          .merge(row.costItemId(), row.cost(), (first, second) -> {
-            LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} —"
-                + " summing them (mill {}, year {})", row.roadDetailId(), row.costItemId(),
-                millId, year);
-            return Schedule10Amounts.sum(first, second);
-          });
+      Map<Integer, BigDecimal> byItem =
+          costsByDetail.computeIfAbsent(row.roadDetailId(), key -> new LinkedHashMap<>());
+      // containsKey, not get() != null — a present-but-null entry is a real cost row that must be
+      // recognised as a duplicate when a second row for the same item arrives.
+      if (byItem.containsKey(row.costItemId())) {
+        LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — summing them"
+            + " (mill {}, year {})", row.roadDetailId(), row.costItemId(), millId, year);
+        byItem.put(
+            row.costItemId(), Schedule10Amounts.sum(byItem.get(row.costItemId()), row.cost()));
+      } else {
+        byItem.put(row.costItemId(), row.cost());
+      }
     }
 
     // Two distinct sets: what the dropdown may OFFER (xref-gated) and what this document must be

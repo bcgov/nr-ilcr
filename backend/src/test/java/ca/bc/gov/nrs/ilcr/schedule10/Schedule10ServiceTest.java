@@ -220,6 +220,66 @@ class Schedule10ServiceTest {
       assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("150000");
       assertThat(detail.stabilizing().total()).isEqualByComparingTo("0");
     }
+
+    @Test
+    @DisplayName("a stored NULL cost assembles cleanly, renders blank, and counts as zero")
+    void nullCostRowIsNotAnError() {
+      // COST is nullable, and legacy writes NULL for a cost left blank
+      // (Schedule10DAO:722 stores intValueExact() or null), so this is ordinary data rather than a
+      // defect. A stored NULL must be indistinguishable from an absent row: the individual field is
+      // omitted while the derived total coerces it to zero.
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, null),
+          new CostLineRow(8910, 22, new BigDecimal("40000"))));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      assertThat(detail.subGrade().actualCost()).isNull();
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("0");
+      assertThat(detail.subGrade().total()).isEqualByComparingTo("0");
+      // A sibling ordinal on the same detail must still resolve normally.
+      assertThat(detail.stabilizing().actualCost()).isEqualByComparingTo("40000");
+    }
+
+    @Test
+    @DisplayName("duplicate rows where one cost is NULL keep the stored value")
+    void duplicateCostRowsWithOneNullKeepTheValue() {
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, null),
+          new CostLineRow(8910, 20, new BigDecimal("150000"))));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      // Legacy's sum rule: one non-null term makes the sum non-null, so the money survives.
+      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("150000");
+    }
+
+    @Test
+    @DisplayName("duplicate rows that are BOTH NULL stay blank rather than becoming zero")
+    void duplicateNullCostRowsStayBlank() {
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, null),
+          new CostLineRow(8910, 20, null)));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      // All terms null keeps the field blank; the total still coerces to zero for display.
+      assertThat(detail.subGrade().actualCost()).isNull();
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("0");
+    }
   }
 
   @Nested
