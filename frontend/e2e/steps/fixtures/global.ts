@@ -32,6 +32,20 @@ export type World = {
   /** Other-Costs mutating-PUT tally captured mid-scenario, so a later reject can prove NO FURTHER write
    * was sent even when an earlier step in the same scenario legitimately saved (SG-1 inline edit). */
   otherCostsMutationsBefore?: number;
+  // --- sch2 ---
+  // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
+  // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 2 unchanged.
+  /**
+   * The Schedule 2 `revisionCount` read at open (absent → null for a never-saved schedule), re-checked
+   * after a rejected action to PROVE the optimistic-lock token never moved, i.e. no write happened.
+   */
+  sch2RevisionAtOpen?: number | null;
+  /**
+   * Schedule 2 mutating-request tally captured mid-scenario, so a later reject can prove NO FURTHER
+   * write was sent even when an earlier step in the same scenario legitimately saved.
+   */
+  sch2MutationsBefore?: number;
+
   // --- sch11 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above —
   // Schedule 11 deliberately reuses them so the promoted common step
