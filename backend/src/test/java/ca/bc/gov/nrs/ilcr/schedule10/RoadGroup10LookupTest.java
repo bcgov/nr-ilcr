@@ -144,6 +144,24 @@ class RoadGroup10LookupTest {
     }
 
     @Test
+    @DisplayName("case 26: the expanded class matches legacy's [E-ie-i] for EVERY ASCII character")
+    void case26ExpandedClassIsBehaviourIdenticalToLegacy() {
+      // The legacy form, verbatim from RoadGroupUtil:419. CodeQL flags it as an overly permissive
+      // range (java/overly-large-range) because E-i silently spans out of the uppercase block,
+      // through six punctuation characters, and into lowercase. RoadGroup10Lookup replaces it with
+      // an explicit expansion — this test is what proves the two are the same function, so the
+      // expansion cannot quietly become a behaviour change.
+      final String legacy = ".*[E-ie-i]";
+
+      for (char c = 0x20; c <= 0x7E; c++) {
+        String candidate = "26" + c;
+        assertThat(candidate.matches(RoadGroup10Lookup.QUESNEL_SECOND_BRANCH))
+            .as("character '%s' (0x%02X) must classify identically under both forms", c, (int) c)
+            .isEqualTo(candidate.matches(legacy));
+      }
+    }
+
+    @Test
     @DisplayName("case 26: [E-ie-i] is an ASCII range spanning E-Z, punctuation and a-i")
     void case26RangeIsFarWiderThanEtoI() {
       // Reads like "E to I" but is not: [E-i] covers E-Z, [ \ ] ^ _ ` and a-i. Documented and

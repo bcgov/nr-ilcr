@@ -39,6 +39,29 @@ package ca.bc.gov.nrs.ilcr.schedule10;
  */
 final class RoadGroup10Lookup {
 
+  /**
+   * Case 26's second branch, written as the exact set of characters legacy matches.
+   *
+   * <p>Legacy writes {@code .*[E-ie-i]} ({@code RoadGroupUtil:419}). That <em>looks</em> like
+   * "E through I", but a character class reads {@code E-i} as an ASCII range, so it actually spans
+   * {@code E}(69) to {@code i}(105): {@code E-Z}, the six characters
+   * <code>[ \ ] ^ _ &#96;</code>, and {@code a-i}. The trailing {@code e-i} is entirely redundant —
+   * {@code e..i} already sits inside {@code E..i} — and it is that redundant overlap which makes
+   * the class read as a typo.
+   *
+   * <p>Expanded here to the identical character set with no overlapping ranges. <strong>The
+   * matching behaviour is unchanged</strong> — {@code RoadGroup10LookupTest} asserts this form and
+   * the original legacy form agree across the entire printable ASCII range, so the expansion is
+   * provably a rewrite and not a behaviour change. Written out rather than left as {@code [E-i]}
+   * so the surprising breadth is visible to the next reader instead of hidden behind two
+   * innocuous-looking letters (CodeQL {@code java/overly-large-range}, 2026-08-17).
+   *
+   * <p>Do NOT "tidy" this to {@code [E-Ie-i]}. That is almost certainly what the legacy author
+   * meant, but it is not what the shipped system does, and Road Group is a user-visible derived
+   * value (AD-12 legacy parity).
+   */
+  static final String QUESNEL_SECOND_BRANCH = ".*[E-Z\\[\\\\\\]^_`a-i]";
+
   private RoadGroup10Lookup() {
   }
 
@@ -199,11 +222,9 @@ final class RoadGroup10Lookup {
           }
           break;
         case "26": // TSB Quesnel
-          // NOTE: [E-ie-i] is NOT "E to I". It is the ASCII range E..i, which covers E-Z, the six
-          // characters [ \ ] ^ _ ` , and a-i. Verbatim from RoadGroupUtil:419 and preserved.
           if (tsbNumberCode.matches(".*[A-Da-d]")) {
             roadGroup = "8";
-          } else if (tsbNumberCode.matches(".*[E-ie-i]")) {
+          } else if (tsbNumberCode.matches(QUESNEL_SECOND_BRANCH)) {
             roadGroup = "4";
           }
           break;
