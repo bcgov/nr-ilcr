@@ -50,11 +50,11 @@ class Schedule10ServiceTest {
     when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of());
     when(repository.findOfferableBecClassifications()).thenReturn(List.of());
     when(repository.findReferencedBecClassifications(MILL, YEAR)).thenReturn(List.of());
-    when(repository.findForestRegions(YEAR)).thenReturn(List.of());
-    when(repository.findRoadLifetimes(YEAR)).thenReturn(List.of());
-    when(repository.findBallastMethods(YEAR)).thenReturn(List.of());
-    when(repository.findBallastMaterials(YEAR)).thenReturn(List.of());
-    when(repository.findRsmrClasses(YEAR)).thenReturn(List.of());
+    when(repository.findForestRegions(MILL, YEAR)).thenReturn(List.of());
+    when(repository.findRoadLifetimes(MILL, YEAR)).thenReturn(List.of());
+    when(repository.findBallastMethods(MILL, YEAR)).thenReturn(List.of());
+    when(repository.findBallastMaterials(MILL, YEAR)).thenReturn(List.of());
+    when(repository.findRsmrClasses(MILL, YEAR)).thenReturn(List.of());
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
   }
 
@@ -157,15 +157,22 @@ class Schedule10ServiceTest {
     }
 
     @Test
-    @DisplayName("blank classification codes normalize to null before Road Group derivation")
-    void blankCodesNormalizeToNull() {
-      // A blank TFL must not win the TFL-first routing; it should fall through to the TSA table.
-      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", "   ")));
+    @DisplayName("a whitespace-only TFL takes the TFL branch and yields blank, as legacy does")
+    void whitespaceTflTakesTheTflBranch() {
+      // Legacy tests `tflNumberCode != null` against the RAW column, so a whitespace-only TFL —
+      // legal in VARCHAR2(2) — enters the TFL branch, misses every case, and yields blank. An
+      // earlier revision trimmed it to null first, which rerouted to the TSA table and served
+      // Road Group "11" where legacy serves nothing. Parity restored at code review 2026-08-17.
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", "  ")));
 
       ConstructionPage page = service.getSchedule10(MILL, YEAR, true).pages().get(0);
 
-      assertThat(page.tflNumberCode()).isNull();
-      assertThat(page.roadGroup()).isEqualTo("11");
+      // The raw value is served, not normalized away.
+      assertThat(page.tflNumberCode()).isEqualTo("  ");
+      // TFL-first routing wins even though the value is blank, so no Road Group is derived.
+      assertThat(page.roadGroup()).isNull();
+      // And the label carries the raw value, not a "-" placeholder.
+      assertThat(page.pageLabel()).endsWith(", TFL:  ");
     }
   }
 
@@ -230,14 +237,15 @@ class Schedule10ServiceTest {
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails();
 
       assertThat(details.get(0).subGrade().actualCost()).isEqualByComparingTo("150000");
-      // 8911 has no cost lines at all — the normal shape in real delivery data.
+      // 8911 has no cost lines at all — the normal shape in real delivery data. Its individual
+      // cost is blank, but its total is 0.00, not absent.
       assertThat(details.get(1).subGrade().actualCost()).isNull();
-      assertThat(details.get(1).subGrade().total()).isNull();
+      assertThat(details.get(1).subGrade().total()).isEqualByComparingTo("0");
     }
 
     @Test
-    @DisplayName("a detail with no cost lines yields null totals, never zero")
-    void noCostLinesYieldsNullTotals() {
+    @DisplayName("a detail with no cost lines yields ZERO totals and blank individual costs")
+    void noCostLinesYieldsZeroTotals() {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
@@ -245,11 +253,17 @@ class Schedule10ServiceTest {
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
 
-      assertThat(detail.subGrade().totalCosts()).isNull();
-      assertThat(detail.subGrade().total()).isNull();
-      assertThat(detail.subGrade().costPerLength()).isNull();
-      assertThat(detail.stabilizing().total()).isNull();
-      // The documented exception: material total is int arithmetic and is always present.
+      // Individual lines stay null (rendered blank); the totals coerce to zero, per legacy
+      // getCostValue (:1160-1168). This is the shape of every real delivery row.
+      assertThat(detail.subGrade().actualCost()).isNull();
+      assertThat(detail.subGrade().ttTransfer()).isNull();
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("0");
+      assertThat(detail.subGrade().totalDeductions()).isEqualByComparingTo("0");
+      assertThat(detail.subGrade().total()).isEqualByComparingTo("0");
+      assertThat(detail.stabilizing().total()).isEqualByComparingTo("0");
+      // The fixture detail() carries SUB_GRADE_LENGTH 12.500, so 0.00 / 12.500 = 0.00.
+      assertThat(detail.subGrade().costPerLength()).isEqualByComparingTo("0");
+      // Material total is int arithmetic and is always present.
       assertThat(detail.materialComposition().totalPct()).isZero();
     }
   }

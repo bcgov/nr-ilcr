@@ -13,10 +13,21 @@ import java.math.RoundingMode;
  * disagree. Every derived Schedule 10 value must be computed here and nowhere else — never inside a
  * row mapper, never re-implemented in SQL.
  *
- * <p><strong>Null is not zero, and that rule is load-bearing.</strong> Schedule 10 has ZERO cost
- * lines in the real delivery database (52 pages, 66 detail rows, 0 cost rows — Story 11.1 Task 1
- * data probe), so an all-null substructure is the NORMAL production shape, not an edge case.
- * Collapsing null to {@code 0} would fabricate a $0 total for every real road detail in the system.
+ * <p><strong>An absent cost counts as ZERO in the totals, and is rendered blank on its own.</strong>
+ * Legacy applies {@link #costValue} to every term before summing ({@code getSubGradeTotalCosts}
+ * :1170-1178, {@code getSubGradeTotalDeductions} :1180-1190, {@code getStabilizingTotal}
+ * :1289-1295), so a road detail with no cost lines at all serves {@code total: 0.00} — while the
+ * individual {@code actualCost} / {@code ttTransfer} / {@code less*} fields stay null and are
+ * omitted. Schedule 10 holds ZERO cost lines in the real delivery database (52 pages, 66 detail
+ * rows, 0 cost rows — Story 11.1 Task 1 data probe), so this is the shape of EVERY production row,
+ * not an edge case.
+ *
+ * <p>An earlier revision of this class omitted the totals entirely in that case, on the reasoning
+ * that "null is not zero". That was wrong: it read {@code CoreUtil.sumBigDecimalValues} without its
+ * caller. Because {@code getCostValue} coerces first, {@code itemAdded} is always true for Schedule
+ * 10 and the null-return branch below is <em>unreachable</em> from this schedule. The primitives
+ * keep their faithful null semantics for correctness, but do not mistake them for the observable
+ * contract.
  *
  * <p>The legacy semantics, reproduced exactly:
  * <ul>
@@ -120,7 +131,7 @@ final class Schedule10Amounts {
    */
   static BigDecimal subGradeTotalCosts(
       BigDecimal actualCost, BigDecimal ttTransfer, BigDecimal otherTransfer) {
-    return sum(actualCost, ttTransfer, otherTransfer);
+    return sum(costValue(actualCost), costValue(ttTransfer), costValue(otherTransfer));
   }
 
   /**
@@ -147,8 +158,8 @@ final class Schedule10Amounts {
       BigDecimal lessOverland,
       BigDecimal lessOtherEngineering) {
     // Legacy order: bridges, culverts, landings, endHaul, overLand, otherEngineering (:1183-1188).
-    return sum(lessBridges, lessCulverts, lessLandings, lessEndHaul, lessOverland,
-        lessOtherEngineering);
+    return sum(costValue(lessBridges), costValue(lessCulverts), costValue(lessLandings),
+        costValue(lessEndHaul), costValue(lessOverland), costValue(lessOtherEngineering));
   }
 
   /**
@@ -173,7 +184,7 @@ final class Schedule10Amounts {
    */
   static BigDecimal stabilizingTotal(
       BigDecimal actualCost, BigDecimal ttTransfer, BigDecimal otherTransfer) {
-    return sum(actualCost, ttTransfer, otherTransfer);
+    return sum(costValue(actualCost), costValue(ttTransfer), costValue(otherTransfer));
   }
 
   /**
@@ -207,6 +218,28 @@ final class Schedule10Amounts {
       sum += percentage != null ? percentage : 0;
     }
     return sum;
+  }
+
+  /**
+   * Coerces an absent cost line to zero, exactly as legacy
+   * {@code RoadConstructionReportDetailType.getCostValue} (:1160-1168) does:
+   *
+   * <pre>
+   * BigDecimal res = new BigDecimal(0);
+   * if (costType != null &amp;&amp; costType.getCost().getCost() != null) { res = costType.getCost().getCost(); }
+   * return res;
+   * </pre>
+   *
+   * <p><strong>This is applied only inside the total calculations, never to the served cost
+   * fields.</strong> Legacy renders an absent individual cost blank but counts it as zero in the
+   * totals — so {@code subGrade.actualCost} is omitted from the response while
+   * {@code subGrade.totalCosts} is {@code 0.00}. Both halves matter.
+   *
+   * @param cost a stored cost line, or {@code null} when no row exists for that ordinal
+   * @return the cost, or {@code ZERO} when absent — never {@code null}
+   */
+  private static BigDecimal costValue(BigDecimal cost) {
+    return cost != null ? cost : BigDecimal.ZERO;
   }
 
   /** Legacy {@code CoreUtil.roundBigDecimal} — scale 2, HALF_UP. */

@@ -18,15 +18,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Assembles the Schedule 10 aggregate document and owns every derived value.
  *
- * <p>The read is three repository queries — pages, all road details joined up to their pages, all
- * cost lines joined up through the details to the pages — then grouped in memory. Depth never
- * multiplies round-trips.
+ * <p>The document body is assembled from THREE queries — pages, all road details joined up to their
+ * pages, and all cost lines joined up through the details to the pages — then grouped in memory, so
+ * nesting never multiplies round-trips. The full request additionally issues the track-status
+ * lookup, two BEC queries and five code-list queries; the three-query property is about the nested
+ * body, not the request as a whole.
+ *
+ * <p>Runs in one read-only transaction so those queries observe a single consistent snapshot.
+ * Without it a concurrent write between the page and detail reads yields a silently torn document —
+ * details belonging to a page that is not in the result are dropped with no error.
  *
  * <p>Derivation rules that matter:
  * <ul>
@@ -34,7 +40,8 @@ import org.springframework.stereotype.Service;
  *       stored. Unmapped combinations serve {@code null} with no error (S12).</li>
  *  <li><strong>Costs</strong> are keyed rows, not columns: each is routed to its substructure field
  *       by legacy cost-item ordinal (BR-08).</li>
- *   <li><strong>Totals</strong> come from {@link Schedule10Amounts} only. Null is not zero.</li>
+ *   <li><strong>Totals</strong> come from {@link Schedule10Amounts} only. An absent cost line counts
+ *       as ZERO in a total (legacy {@code getCostValue}) while rendering blank on its own.</li>
  *   <li><strong>{@code editable}</strong> is {@code callerMayEdit && "D".equals(trackStatus)} — the
  *       SUBMITTER row only. Legacy also grants edit on {@code S}+non-Licensee and {@code V}+Admin,
  *       but no shipped schedule implements those paths; they belong to the AD-9/AR14 remediation.
@@ -86,6 +93,7 @@ public class Schedule10Service {
    * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
    * @return the assembled document
    */
+  @Transactional(readOnly = true)
   public Schedule10Response getSchedule10(long millId, int year, boolean callerMayEdit) {
     List<RoadConstructionReportEntity> pageRows = repository.findPages(millId, year);
     List<RoadConstructionReportDetailEntity> detailRows = repository.findRoadDetails(millId, year);
@@ -105,7 +113,11 @@ public class Schedule10Service {
           .put(row.costItemId(), row.cost());
     }
 
-    Map<Integer, BecClassification> becById = becByIdFor(millId, year);
+    // Two distinct sets: what the dropdown may OFFER (xref-gated) and what this document must be
+    // able to RESOLVE (offerable + already-referenced). Keeping them apart stops a de-listed
+    // classification leaking back into the dropdown.
+    Map<Integer, BecClassification> offerableBec = offerableBecById();
+    Map<Integer, BecClassification> resolvableBec = resolvableBecById(offerableBec, millId, year);
 
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     boolean editable = callerMayEdit && DRAFT.equals(trackStatus);
@@ -116,24 +128,39 @@ public class Schedule10Service {
       pageNumber++;
       List<RoadConstructionReportDetailEntity> owned =
           detailsByPage.getOrDefault(page.roadConstructionReprtId(), List.of());
-      pages.add(toPage(page, pageNumber, owned, costsByDetail, becById));
+      pages.add(toPage(page, pageNumber, owned, costsByDetail, resolvableBec));
     }
 
     return new Schedule10Response(
-        millId, year, trackStatus, editable, pages, codeLists(year, becById), null);
+        millId, year, trackStatus, editable, pages, codeLists(millId, year, offerableBec), null);
   }
 
   /**
-   * The BEC classifications this document may need, keyed by id: the xref-offerable set plus any
-   * classification a stored road detail already references. A row saved before the xref changed
-   * must
-   * still render its stored classification.
+   * The classifications the BEC control may OFFER — the xref-gated set, and nothing else.
+   *
+   * <p>This is what {@code codeLists.becClassifications} serves. It must never include a
+   * classification the xref has de-listed: that would re-admit a code the surviving BR-06 gate
+   * exists to withhold, and Story 11.2's write path would then accept it (code review 2026-08-17).
    */
-  private Map<Integer, BecClassification> becByIdFor(long millId, int year) {
+  private Map<Integer, BecClassification> offerableBecById() {
     Map<Integer, BecClassification> byId = new LinkedHashMap<>();
     for (BecClassificationRow row : repository.findOfferableBecClassifications()) {
       byId.put(row.biogeoclimaticCatalogueId(), toBec(row));
     }
+    return byId;
+  }
+
+  /**
+   * The classifications this document must be able to RESOLVE — the offerable set plus any
+   * classification a stored road detail already references.
+   *
+   * <p>Deliberately wider than {@link #offerableBecById()}: a detail saved before its catalogue row
+   * left the xref must still render its stored classification rather than silently losing it. The
+   * two sets are kept separate so that this widening can never leak into the dropdown.
+   */
+  private Map<Integer, BecClassification> resolvableBecById(
+      Map<Integer, BecClassification> offerable, long millId, int year) {
+    Map<Integer, BecClassification> byId = new LinkedHashMap<>(offerable);
     for (BecClassificationRow row : repository.findReferencedBecClassifications(millId, year)) {
       byId.putIfAbsent(row.biogeoclimaticCatalogueId(), toBec(row));
     }
@@ -153,11 +180,15 @@ public class Schedule10Service {
       Map<Integer, Map<Integer, BigDecimal>> costsByDetail,
       Map<Integer, BecClassification> becById) {
 
-    // Normalize the classification codes ONCE so the TSA-vs-TFL split and the Road Group lookup
-    // decide from identical values; rmgFor's TFL-first routing depends on a blank being null.
-    String tsaNumber = StringUtils.trimToNull(page.tsaNumber());
-    String tsbNumberCode = StringUtils.trimToNull(page.tsbNumberCode());
-    String tflNumberCode = StringUtils.trimToNull(page.tflNumberCode());
+    // The RAW stored values, deliberately un-normalized. Legacy tests `tflNumberCode != null`
+    // against the column itself (RoadConstructionReportType.getRmg :455-464) and concatenates the
+    // raw values into pageLabel (:138-145). Trimming here would silently reroute a whitespace-only
+    // TFL — legal in VARCHAR2(2) — to the TSA table and yield a Road Group where legacy yields
+    // blank, and would render "TFL:-" where legacy renders the stored spaces. Both are
+    // user-visible derived values, so parity wins over tidiness (code review 2026-08-17).
+    String tsaNumber = page.tsaNumber();
+    String tsbNumberCode = page.tsbNumberCode();
+    String tflNumberCode = page.tflNumberCode();
 
     List<RoadDetail> roadDetails = new ArrayList<>(details.size());
     int rowNumber = 0;
@@ -307,14 +338,15 @@ public class Schedule10Service {
         detail.revisionCount());
   }
 
-  private Schedule10CodeLists codeLists(int year, Map<Integer, BecClassification> becById) {
+  private Schedule10CodeLists codeLists(
+      long millId, int year, Map<Integer, BecClassification> offerableBec) {
     return new Schedule10CodeLists(
-        toCodes(repository.findForestRegions(year)),
-        toCodes(repository.findRoadLifetimes(year)),
-        toCodes(repository.findBallastMethods(year)),
-        toCodes(repository.findBallastMaterials(year)),
-        toCodes(repository.findRsmrClasses(year)),
-        List.copyOf(becById.values()));
+        toCodes(repository.findForestRegions(millId, year)),
+        toCodes(repository.findRoadLifetimes(millId, year)),
+        toCodes(repository.findBallastMethods(millId, year)),
+        toCodes(repository.findBallastMaterials(millId, year)),
+        toCodes(repository.findRsmrClasses(millId, year)),
+        List.copyOf(offerableBec.values()));
   }
 
   private static List<CodeDescriptionDto> toCodes(List<CodeRow> rows) {

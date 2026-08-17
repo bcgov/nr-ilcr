@@ -184,19 +184,34 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   // -----------------------------------------------------------------------------------------
 
   /**
-   * Forest regions effective for the reporting year.
+   * Forest regions effective for the reporting year, PLUS any region a stored page already
+   * references.
    *
+   * <p>The second leg matters: the year filter would otherwise hide a code that a stored row still
+   * uses, so the page would serve {@code forestRegionCode: "ROLD"} with no matching entry in its
+   * own dropdown and the field would render unresolved. The FK guarantees the code exists in the
+   * table; it guarantees nothing about the year-filtered list. Added at code review 2026-08-17,
+   * mirroring the equivalent leg already present for BEC.
+   *
+   * @param millId the mill, used to find referenced codes
    * @param year the reporting year
    * @return code/description pairs, ordered by code
    */
   @Query("""
       SELECT ILCR_FOREST_REGION_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_FOREST_REGION_CODE
-       WHERE EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
-         AND EXPIRY_DATE    >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR ILCR_FOREST_REGION_CODE IN (
+             SELECT r.ILCR_FOREST_REGION_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT r
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
        ORDER BY ILCR_FOREST_REGION_CODE
       """)
-  List<CodeRow> findForestRegions(@Param("year") int year);
+  List<CodeRow> findForestRegions(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * Road lifetime (Road Type) codes effective for the reporting year.
@@ -207,11 +222,20 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_LIFETIME_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_LIFETIME_CODE
-       WHERE EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
-         AND EXPIRY_DATE    >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR ILCR_ROAD_LIFETIME_CODE IN (
+             SELECT d.ILCR_ROAD_LIFETIME_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
        ORDER BY ILCR_ROAD_LIFETIME_CODE
       """)
-  List<CodeRow> findRoadLifetimes(@Param("year") int year);
+  List<CodeRow> findRoadLifetimes(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * Ballast method codes effective for the reporting year.
@@ -222,11 +246,20 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_BALLAST_METHOD_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_METHOD_CODE
-       WHERE EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
-         AND EXPIRY_DATE    >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR ILCR_ROAD_BALLAST_METHOD_CODE IN (
+             SELECT d.ILCR_ROAD_BALLAST_METHOD_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
        ORDER BY ILCR_ROAD_BALLAST_METHOD_CODE
       """)
-  List<CodeRow> findBallastMethods(@Param("year") int year);
+  List<CodeRow> findBallastMethods(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * Ballast material codes effective for the reporting year.
@@ -237,11 +270,20 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT ILCR_ROAD_BALLAST_MATERL_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_ROAD_BALLAST_MATERL_CODE
-       WHERE EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
-         AND EXPIRY_DATE    >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR ILCR_ROAD_BALLAST_MATERL_CODE IN (
+             SELECT d.ILCR_ROAD_BALLAST_MATERL_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
        ORDER BY ILCR_ROAD_BALLAST_MATERL_CODE
       """)
-  List<CodeRow> findBallastMaterials(@Param("year") int year);
+  List<CodeRow> findBallastMaterials(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * RSMR class codes effective for the reporting year. This is the ONE list legacy renders as
@@ -254,11 +296,20 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       SELECT REL_SOIL_MOIST_RGM_CLS_CODE AS code, DESCRIPTION AS description
         FROM THE.ILCR_RL_SOIL_MOIS_RGM_CLS_CODE
-       WHERE EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
-         AND EXPIRY_DATE    >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+       WHERE (EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR REL_SOIL_MOIST_RGM_CLS_CODE IN (
+             SELECT d.REL_SOIL_MOIST_RGM_CLS_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
        ORDER BY REL_SOIL_MOIST_RGM_CLS_CODE
       """)
-  List<CodeRow> findRsmrClasses(@Param("year") int year);
+  List<CodeRow> findRsmrClasses(@Param("millId") long millId, @Param("year") int year);
 
   /**
    * The BEC classifications a Schedule 10 road detail may reference.

@@ -109,24 +109,37 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("a detail with no cost lines omits the totals entirely — null is not zero")
-  void noCostLines_omitsTotalsRatherThanServingZero() throws Exception {
+  @DisplayName("a detail with no cost lines serves ZERO totals but blank individual costs")
+  void noCostLines_servesZeroTotalsWithBlankIndividualCosts() throws Exception {
+    // This is the shape ALL 66 real delivery road-detail rows have — zero cost lines. Legacy
+    // renders each individual cost blank while counting it as zero in the totals, because
+    // getCostValue (:1160-1168) coerces before summing. Serving absent totals here would regress
+    // 100% of production data to blanks where the legacy screen shows $0.00.
     mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        // Detail 8911 is the shape real delivery data actually has: no cost lines at all.
         .andExpect(jsonPath("$.pages[0].roadDetails[1].roadDetailId", is(8911)))
         .andExpect(jsonPath("$.pages[0].roadDetails[1].rowNumber", is(2)))
-        // Every cost and every derived total must be ABSENT, not 0.
+
+        // Individual cost lines: ABSENT, because no row exists for them (legacy renders blank).
         .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.actualCost").doesNotExist())
-        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.totalCosts").doesNotExist())
-        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.totalDeductions").doesNotExist())
-        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.total").doesNotExist())
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.ttTransfer").doesNotExist())
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.lessBridges").doesNotExist())
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].stabilizing.actualCost").doesNotExist())
+
+        // Derived totals: ZERO, not absent.
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.totalCosts", is(0.0)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.totalDeductions", is(0.0)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.total", is(0.0)))
+        .andExpect(jsonPath("$.pages[0].roadDetails[1].stabilizing.total", is(0.0)))
+
+        // costPerLength remains ABSENT here — detail 8911 has a null SUB_GRADE_LENGTH, and
+        // bigDecimalDivision returns null on a null denominator. That branch IS reachable.
         .andExpect(jsonPath("$.pages[0].roadDetails[1].subGrade.costPerLength").doesNotExist())
-        .andExpect(jsonPath("$.pages[0].roadDetails[1].stabilizing.total").doesNotExist())
+
         // RSMR class is nullable in delivery and absent on most real rows.
         .andExpect(jsonPath("$.pages[0].roadDetails[1].relSoilMoistRgmClsCode").doesNotExist())
-        // But materialComposition.totalPct is the documented exception: always present, here 0.
+        // materialComposition.totalPct is int arithmetic: always present, here 0.
         .andExpect(jsonPath("$.pages[0].roadDetails[1].materialComposition.totalPct", is(0)));
   }
 

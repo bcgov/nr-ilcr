@@ -10,9 +10,15 @@ import org.junit.jupiter.api.Test;
 /**
  * Pins the transcribed legacy arithmetic, with particular attention to null semantics.
  *
- * <p>This matters more than it looks. Schedule 10 has ZERO cost lines in the real delivery database,
- * so an all-null substructure is the NORMAL production shape. If any of these collapsed null to
- * zero, every real road detail in the system would report a fabricated $0 total.
+ * <p>This matters more than it looks, but not in the direction an earlier revision assumed. Schedule
+ * 10 has ZERO cost lines in the real delivery database, so an all-absent substructure is the NORMAL
+ * production shape — and legacy serves {@code 0.00} for it, because
+ * {@code RoadConstructionReportDetailType.getCostValue} (:1160-1168) coerces each absent line to
+ * zero before summing. Omitting the totals instead would regress 100% of production rows to blanks.
+ *
+ * <p>The {@code sum}/{@code subtract}/{@code divide} primitives keep their faithful
+ * {@code CoreUtil} null semantics and are tested here as such, but for Schedule 10 the
+ * null-return branch of {@code sum} is unreachable — the coercion happens first.
  */
 class Schedule10AmountsTest {
 
@@ -124,35 +130,58 @@ class Schedule10AmountsTest {
     }
 
     @Test
-    @DisplayName("a detail with no cost lines yields null totals throughout")
-    void noCostLinesYieldsNullTotals() {
+    @DisplayName("a detail with no cost lines yields ZERO totals, not absent ones")
+    void noCostLinesYieldsZeroTotals() {
+      // Legacy getCostValue (:1160-1168) coerces every absent cost line to BigDecimal(0) BEFORE
+      // summing, so itemAdded is always true and the null-return branch is unreachable from this
+      // schedule. This is the shape of ALL 66 real delivery road-detail rows (zero cost lines), so
+      // omitting the totals here would regress 100% of production data to blanks where the legacy
+      // screen shows $0.00.
       BigDecimal totalCosts = Schedule10Amounts.subGradeTotalCosts(null, null, null);
       BigDecimal totalDeductions =
           Schedule10Amounts.subGradeTotalDeductions(null, null, null, null, null, null);
       BigDecimal total = Schedule10Amounts.subGradeTotal(totalCosts, totalDeductions);
 
-      assertThat(totalCosts).isNull();
-      assertThat(totalDeductions).isNull();
-      assertThat(total).isNull();
-      assertThat(Schedule10Amounts.costPerLength(total, bd("12.500"))).isNull();
+      assertThat(totalCosts).isEqualByComparingTo("0");
+      assertThat(totalDeductions).isEqualByComparingTo("0");
+      assertThat(total).isEqualByComparingTo("0");
+      // costPerLength still follows bigDecimalDivision: 0.00 over a real length is 0.00 ...
+      assertThat(Schedule10Amounts.costPerLength(total, bd("12.500"))).isEqualByComparingTo("0");
+      // ... but a null or zero length still yields null, which IS reachable (length is nullable).
+      assertThat(Schedule10Amounts.costPerLength(total, null)).isNull();
+      assertThat(Schedule10Amounts.costPerLength(total, BigDecimal.ZERO)).isNull();
     }
 
     @Test
-    @DisplayName("costs present but no deductions keeps the full total (asymmetric subtract)")
+    @DisplayName("costs present but no deductions returns the costs minus zero")
     void costsWithoutDeductionsKeepsTotal() {
       BigDecimal totalCosts = Schedule10Amounts.subGradeTotalCosts(bd("150000"), null, null);
       BigDecimal totalDeductions =
           Schedule10Amounts.subGradeTotalDeductions(null, null, null, null, null, null);
+      assertThat(totalCosts).isEqualByComparingTo("150000");
+      assertThat(totalDeductions).isEqualByComparingTo("0");
       assertThat(Schedule10Amounts.subGradeTotal(totalCosts, totalDeductions))
           .isEqualByComparingTo("150000");
     }
 
     @Test
-    @DisplayName("stabilizing has no deduction leg")
+    @DisplayName("deductions present but no costs yields a NEGATIVE total, not an absent one")
+    void deductionsWithoutCostsGoesNegative() {
+      // The reverse shape — plausible as the first rows Story 11.2 writes. Under the old
+      // null-propagating behaviour this served no total at all; legacy serves -21000.00.
+      BigDecimal totalCosts = Schedule10Amounts.subGradeTotalCosts(null, null, null);
+      BigDecimal totalDeductions = Schedule10Amounts.subGradeTotalDeductions(
+          bd("1000"), bd("2000"), bd("3000"), bd("6000"), bd("4000"), bd("5000"));
+      assertThat(Schedule10Amounts.subGradeTotal(totalCosts, totalDeductions))
+          .isEqualByComparingTo("-21000");
+    }
+
+    @Test
+    @DisplayName("stabilizing has no deduction leg, and an empty one totals zero")
     void stabilizingIsAPlainSum() {
       assertThat(Schedule10Amounts.stabilizingTotal(bd("40000"), BigDecimal.ZERO, BigDecimal.ZERO))
           .isEqualByComparingTo("40000");
-      assertThat(Schedule10Amounts.stabilizingTotal(null, null, null)).isNull();
+      assertThat(Schedule10Amounts.stabilizingTotal(null, null, null)).isEqualByComparingTo("0");
     }
   }
 
