@@ -9,19 +9,25 @@ import useAuth from '@/context/auth/useAuth'
 export default function DevRoleBanner() {
   const { devRoleSwitch } = useAuth()
 
-  if (!devRoleSwitch?.override) {
+  // Show only when the override actually changes the effective role. An override equal to the role
+  // you already hold (e.g. a stale "view as ILCR_SUBMITTER" replayed for a real submitter) is a
+  // no-op, so warning about it is just noise.
+  const override = devRoleSwitch?.override
+  const realRoles = devRoleSwitch?.realRoles ?? []
+  const isNoOp = realRoles.length === 1 && realRoles[0] === override
+  if (!override || isNoOp) {
     return null
   }
 
-  const realRoles = devRoleSwitch.realRoles.join(' + ') || 'no ILCR role'
+  const realLabel = realRoles.join(' + ') || 'no ILCR role'
   return (
     <InlineNotification
       kind="warning"
       lowContrast
       hideCloseButton
       className="dev-role-banner"
-      title={`Dev override — viewing as ${devRoleSwitch.override}`}
-      subtitle={`Frontend only: the backend still enforces your real role (${realRoles}), so admin APIs may return 403.`}
+      title={`Dev override — viewing as ${override}`}
+      subtitle={`Frontend only: the backend still enforces your real role (${realLabel}), so admin APIs may return 403.`}
     />
   )
 }

@@ -16,8 +16,12 @@ type Props = {
 const Layout: FC<Props> = ({ children }) => (
   <LayoutProvider>
     <HeaderContainer render={() => <LayoutHeader />} />
-    <DevRoleBanner />
-    <Content className="app-content">{children}</Content>
+    {/* Inside Content so it inherits the fixed-header top offset (.cds--header ~ .cds--content);
+        rendered at the top of the flow above the fixed brand header would hide it. */}
+    <Content className="app-content">
+      <DevRoleBanner />
+      {children}
+    </Content>
     <Footer />
   </LayoutProvider>
 )
