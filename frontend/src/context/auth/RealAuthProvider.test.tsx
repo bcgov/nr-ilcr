@@ -171,7 +171,9 @@ describe('RealAuthProvider', () => {
     expect(window.location.pathname).toBe('/schedule-9')
   })
 
-  it('treats a session lookup failure as unauthenticated and bounces to sign-in', async () => {
+  it('shows a connection error (not a redirect loop) when the session lookup fails', async () => {
+    // A rejected fetchAuthSession is a transient/Amplify failure — bouncing to the Hosted UI on a
+    // valid Cognito session would return straight here and loop. Render an error with Retry instead.
     mocks.fetchAuthSession.mockRejectedValue(new Error('no session'))
 
     render(
@@ -180,8 +182,56 @@ describe('RealAuthProvider', () => {
       </RealAuthProvider>,
     )
 
-    await waitFor(() => expect(mocks.signInWithRedirect).toHaveBeenCalledTimes(1))
-    expect(screen.getByRole('status')).toHaveTextContent('Signing in')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection error'))
+    expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+  })
+
+  it('shows a connection error and retries (no loop) when /me fails with 5xx', async () => {
+    withSession('id-token')
+    server.use(http.get(ME, () => new HttpResponse(null, { status: 500 })))
+
+    render(
+      <RealAuthProvider>
+        <Probe />
+      </RealAuthProvider>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('temporarily unavailable'),
+    )
+    expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+
+    // Retry re-attempts /me; a now-healthy backend authenticates the user.
+    server.use(
+      http.get(ME, () =>
+        HttpResponse.json({
+          userGuid: 'ABC123',
+          displayName: 'Alex Admin',
+          email: null,
+          identityProvider: 'idir',
+          roles: ['ILCR_ADMIN'],
+        }),
+      ),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.getByTestId('authed')).toHaveTextContent('true'))
+  })
+
+  it('shows access-denied with sign-out (not a loop) when /me forbids the user (403)', async () => {
+    withSession('id-token')
+    server.use(http.get(ME, () => new HttpResponse(null, { status: 403 })))
+
+    render(
+      <RealAuthProvider>
+        <Probe />
+      </RealAuthProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Access denied'))
+    expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    expect(mocks.signOut).toHaveBeenCalledTimes(1)
   })
 
   it('clears the user when the refresh token dies (tokenRefresh_failure Hub event)', async () => {

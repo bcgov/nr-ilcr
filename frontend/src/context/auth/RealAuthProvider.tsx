@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import axios from 'axios'
 import { fetchAuthSession, signInWithRedirect, signOut } from 'aws-amplify/auth'
 import { Hub } from 'aws-amplify/utils'
 import apiService from '@/service/api-service'
@@ -9,6 +10,9 @@ import type { AuthContextValue, AuthUser } from './types'
 type Props = {
   children: ReactNode
 }
+
+/** A blocking failure that must NOT bounce to sign-in (doing so would loop on a valid session). */
+type LoadError = { status?: number; message: string }
 
 // Local-dev "view as" override. Only ever read under import.meta.env.DEV, so it is inert (and
 // tree-shaken) in deployed builds — a real session's role can never be overridden in DEV/TEST/PROD.
@@ -49,23 +53,37 @@ function restoreRoute(path: string): void {
 export default function RealAuthProvider({ children }: Props) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<LoadError | null>(null)
   const [devRole, setDevRole] = useState<string | null>(initialDevRole)
   const redirectingRef = useRef(false)
 
   const loadUser = useCallback(async () => {
     setIsLoading(true)
+    setError(null)
     try {
       const session = await fetchAuthSession()
       if (!session.tokens?.idToken) {
         setUser(null)
         return
       }
+      // roles:[] (no ILCR group) is a valid, non-looping state — the user is set and the no-access
+      // screen renders it; do NOT null the user here.
       const { data } = await apiService.getAxiosInstance().get<AuthUser>('/v1/me')
       setUser(data)
-    } catch {
-      // No/expired session or /me failure — treated as unauthenticated; the effect below bounces
-      // to the Hosted UI.
+    } catch (err: unknown) {
       setUser(null)
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined
+      if (status === 401) {
+        // Token rejected/expired — leave error null so the effect bounces to re-authenticate.
+        return
+      }
+      if (status === 403) {
+        setError({ status, message: 'Your account is not permitted to use this application.' })
+        return
+      }
+      // A 5xx, a network error, or an Amplify session failure: do NOT bounce — with a valid Cognito
+      // session the Hosted UI would redirect straight back and loop. Offer a retry instead.
+      setError({ status, message: 'The server is temporarily unavailable. Please try again.' })
     } finally {
       setIsLoading(false)
     }
@@ -103,12 +121,14 @@ export default function RealAuthProvider({ children }: Props) {
   }, [loadUser])
 
   useEffect(() => {
-    // Unauthenticated (and not mid-callback) → bounce to the Hosted UI exactly once.
-    if (!isLoading && !user && !isOAuthCallback() && !redirectingRef.current) {
+    // Unauthenticated with no blocking error (and not mid-callback) → bounce to the Hosted UI once.
+    // The !error guard is what breaks the redirect loop on 403/5xx: a valid Cognito session would
+    // otherwise return immediately and re-trigger the failing /me.
+    if (!isLoading && !user && !error && !isOAuthCallback() && !redirectingRef.current) {
       redirectingRef.current = true
       void signIn()
     }
-  }, [isLoading, user, signIn])
+  }, [isLoading, user, error, signIn])
 
   const realRoles = user?.roles ?? []
   const effectiveRoles = import.meta.env.DEV && devRole ? [devRole] : realRoles
@@ -139,6 +159,26 @@ export default function RealAuthProvider({ children }: Props) {
           },
         }
       : undefined,
+  }
+
+  if (error) {
+    // Blocking failure — render a screen (not a redirect) so a valid Cognito session can't loop.
+    const accessDenied = error.status === 403
+    return (
+      <div role="alert" className="auth-error">
+        <h2>{accessDenied ? 'Access denied' : 'Connection error'}</h2>
+        <p>{error.message}</p>
+        {accessDenied ? (
+          <button type="button" onClick={() => void doSignOut()}>
+            Sign out
+          </button>
+        ) : (
+          <button type="button" onClick={() => void loadUser()}>
+            Retry
+          </button>
+        )}
+      </div>
+    )
   }
 
   if (!user) {
