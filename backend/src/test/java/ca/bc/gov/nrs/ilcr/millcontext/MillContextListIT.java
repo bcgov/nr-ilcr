@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -26,17 +27,18 @@ import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance tests — Story 1.1 (AD-10, AD-12). The two Home-page option-list endpoints:
  * {@code GET /api/v1/mills} and {@code GET /api/v1/reporting-years}.
  *
- * <p>Runs with security ON ({@code ilcr.security.enabled=true}, the app default) and issues the
- * list requests UNAUTHENTICATED — asserting the two paths are in the GET-scoped permit-all set
- * (Task 4) while neighbouring {@code /api/**} traffic still requires authentication. With security
- * on, {@code oauth2ResourceServer().jwt()} needs a {@link JwtDecoder} bean at config time; a mock
- * satisfies construction (never invoked — no request carries a bearer token). Real FAM decoder
- * wiring is the deferred auth story.
+ * <p>Runs with security ON ({@code ilcr.security.enabled=true}, the app default). Since O4
+ * (fam-auth-1-1) the Home option lists are post-login — the list requests carry an authenticated
+ * principal ({@code AUTH}), and an unauthenticated request is 401 (asserted in
+ * {@code homeListsRequireAuthentication}). With security on, {@code oauth2ResourceServer().jwt()}
+ * needs a {@link JwtDecoder} bean at config time; a mock satisfies construction (never invoked — the
+ * {@code jwt()} post-processor injects the principal directly).
  *
  * <p>Assertions avoid positional/exact-count coupling to the shared snapshot (which later stories
  * extend, V5 header rule): ordering is asserted on the sorted projection itself, per-mill fields via
@@ -53,16 +55,20 @@ class MillContextListIT extends AbstractOracleIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    // Security on -> oauth2ResourceServer().jwt() requires a JwtDecoder bean at config time. The
-    // requests below are unauthenticated (no bearer), so the decoder is never called; the mock only
+    // Home lists are post-login (O4): an authenticated caller is required, no specific role
+    // (no @PreAuthorize, no per-user filter yet — that arrives with Epic 5).
+    private static final RequestPostProcessor AUTH = jwt();
+
+    // Security on -> oauth2ResourceServer().jwt() requires a JwtDecoder bean at config time; the
+    // jwt() post-processor injects the principal so the decoder is never called — the mock only
     // satisfies bean construction.
     @MockitoBean
     private JwtDecoder jwtDecoder;
 
     @Test
-    @DisplayName("GET /api/v1/mills — unauthenticated 200 JSON; asc by mill number; closed included; never-enrolled excluded")
+    @DisplayName("GET /api/v1/mills — authenticated 200 JSON; asc by mill number; closed included; never-enrolled excluded")
     void listMills_returnsEnrolledMillsAscendingIncludingClosed() throws Exception {
-        String body = mockMvc.perform(get("/api/v1/mills").accept(MediaType.APPLICATION_JSON))
+        String body = mockMvc.perform(get("/api/v1/mills").with(AUTH).accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 // Plain JSON success payload, NOT application/problem+json.
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -103,9 +109,9 @@ class MillContextListIT extends AbstractOracleIT {
     }
 
     @Test
-    @DisplayName("GET /api/v1/reporting-years — unauthenticated 200; opened years desc (2021 before 2020)")
+    @DisplayName("GET /api/v1/reporting-years — authenticated 200; opened years desc (2021 before 2020)")
     void listReportingYears_returnsOpenedYearsDescending() throws Exception {
-        String body = mockMvc.perform(get("/api/v1/reporting-years").accept(MediaType.APPLICATION_JSON))
+        String body = mockMvc.perform(get("/api/v1/reporting-years").with(AUTH).accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 // Both seeded years present (V2: 2021, V5: 2020) — no exact count, later
@@ -126,18 +132,21 @@ class MillContextListIT extends AbstractOracleIT {
     }
 
     @Test
-    @DisplayName("auth boundary — neighbouring /api/** paths still 401 unauthenticated; non-GET on public paths 401")
-    void permitAllIsScopedToTheTwoGetEndpoints() throws Exception {
-        // A non-permitted /api/** path must still demand authentication with security on — guards
-        // against a future matcher-ordering mistake silently widening the permit-all set.
+    @DisplayName("auth boundary (O4) — the Home lists and neighbouring /api/** all require authentication")
+    void homeListsRequireAuthentication() throws Exception {
+        // Since O4 (fam-auth-1-1) the Home lists are post-login — an unauthenticated GET is 401,
+        // same as any other /api/** path. Only health/info stay public.
+        mockMvc.perform(get("/api/v1/mills").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/reporting-years").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/v1/schedule1")
                         .param("millId", "514")
                         .param("year", "2021")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
 
-        // The permit-all is GET-scoped: an unauthenticated POST to the same public path is
-        // rejected by the auth gate (401), not let through to MVC (405).
+        // A non-GET on a formerly-public path is likewise rejected by the auth gate (401), not 405.
         mockMvc.perform(post("/api/v1/mills").with(csrf()))
                 .andExpect(status().isUnauthorized());
     }

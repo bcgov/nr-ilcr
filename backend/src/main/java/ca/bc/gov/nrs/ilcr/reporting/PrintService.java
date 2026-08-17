@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Orchestrates the combined Print Schedules PDF (Epic 20.2). Given a validated mill/year context and
@@ -52,7 +51,11 @@ public class PrintService {
    * @return the combined, bookmarked PDF bytes
    * @throws ScheduleNotFoundException 404 — no selected in-scope schedule has any data (ERR-005)
    */
-  @Transactional(readOnly = true)
+  // Deliberately NOT @Transactional: this is six independent read-only reads, each *Service.getScheduleN
+  // managing its own transaction and the Schedule 9 fill borrowing (and releasing) its own connection. A
+  // method-wide readOnly transaction would pin ONE pooled connection for the whole render while the
+  // Schedule 9 fill grabs a SECOND — two connections per /print on a maximum-pool-size of 5, so a handful
+  // of concurrent prints would exhaust the pool and block until the 30s timeout.
   public byte[] render(MillYearContext context, PrintRequest request) {
     PrintOptions options =
         new PrintOptions(request.printScheduleInformation(), request.printComments());
@@ -76,16 +79,16 @@ public class PrintService {
       if (!selected.test(key)) {
         continue;
       }
-      JasperPrint print =
-          reportService.fillSection(key, context.millId(), context.year(), options, millTitleBlock);
+      // BR-08: pass the section's bookmark title so its template renders the top-level PDF outline
+      // anchor. Every rendered schedule gets exactly one bookmark, including a single-schedule print.
+      JasperPrint print = reportService.fillSection(
+          key, context.millId(), context.year(), options, millTitleBlock, key.bookmarkTitle());
       if (print == null) {
         // BR-09 skip-empty: a selected schedule with no data contributes nothing and never aborts.
         log.info("Skipping {} for mill {} year {} — no data",
             key, context.millId(), context.year());
         continue;
       }
-      // The JasperPrint name becomes the top-level PDF bookmark (batch-mode bookmarks, BR-08).
-      print.setName(key.bookmarkTitle());
       sections.add(print);
     }
 
@@ -137,10 +140,13 @@ public class PrintService {
    * failing the request (the frontend can build the full screen before those stories land).
    */
   private void logUnimplementedSelections(PrintRequest request) {
-    boolean anyUnimplemented = request.schedule1() || request.schedule2() || request.schedule3()
+    boolean anyUnimplemented = request.allSchedules()
+        || request.schedule1() || request.schedule2() || request.schedule3()
         || request.schedule4() || request.schedule8() || request.schedule10()
         || request.printMillInformationReport();
-    if (anyUnimplemented && !request.allSchedules()) {
+    if (anyUnimplemented) {
+      // Logged even under allSchedules: "all" still requests these deferred options, and the interim
+      // gap should be visible whether they were checked individually or swept in by the "all" shortcut.
       log.info("Print selection includes schedules/options not yet implemented in Epic 20.2 "
           + "(1/2/3/4/8/10 and/or the Mill Information report); those are skipped for now");
     }

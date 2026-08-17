@@ -20,6 +20,9 @@
   <parameter name="year" class="java.lang.Integer"/>
   <parameter name="p_do_print_body" class="java.lang.Boolean"/>
   <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <!-- The top-level PDF outline title for this section (BR-08), or null when this section must not be
+       bookmarked (the standalone Schedule 9 path). See the anchor element in the title band. -->
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
   <field name="campName" class="java.lang.String"/>
   <field name="roadDistance" class="java.lang.String"/>
   <field name="sizeOfCamp" class="java.lang.String"/>
@@ -43,6 +46,19 @@
   <field name="campAndAccessTotal" class="java.lang.String"/>
   <field name="comments" class="java.lang.String"/>
   <title height="30">
+    <!-- Bookmark anchor: an invisible (white text, transparent fill) textField that contributes ONE
+         top-level PDF outline entry (bookmarkLevel 1) titled by the bookmarkTitle parameter. This is
+         used instead of JasperReports' batch-mode document bookmarks, which JRPdfExporter emits only
+         for a MULTI-document export (items.size() > 1) — so a single-schedule /print would otherwise
+         get an empty outline. The element needs a real size and rendered text for the anchor to fire
+         (a zero-size or blank field is culled and emits no bookmark), hence white-on-white rather than
+         1x1. Suppressed entirely when no title is passed (the standalone Schedule 9 endpoint). -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
     <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
       <text><![CDATA[Government of British Columbia]]></text>
     </element>

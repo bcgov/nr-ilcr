@@ -46,16 +46,4 @@ public class BackendConstants {
     "/api/info",
     "/api/prometheus"
   };
-
-  /**
-   * Home-page option-list endpoints (Story 1.1). Pre-selection reads with no action gate and no
-   * {@code @PreAuthorize}; permitted even when security is enabled. The per-user mill-association
-   * filter arrives with the FAM auth story (AR4); until then these are open like the other
-   * pre-auth reads.
-   */
-  public static final String[] HOME_PUBLIC_PATHS = {
-    "/api/v1/mills",
-    "/api/v1/reporting-years",
-    "/api/v1/mill-context"
-  };
 }

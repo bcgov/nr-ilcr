@@ -86,6 +86,27 @@ mvn spring-boot:run
 
 Do not commit real database passwords. Put local values in `.env`; the file is git-ignored.
 
+### Corporate SSL/TLS Intercept & Certificate Issues (e.g., Zscaler / PKIX) — Local Workaround
+
+*Note: This is a specific workaround for developers behind a corporate SSL-decryption/packet-inspection gateway (such as Zscaler) and is **not** required for all developers (e.g., if you are on a direct internet connection).*
+
+If your corporate network performs SSL decryption/packet-inspection, Maven inside the isolated Docker container may fail to connect to third-party Maven repositories (like Jaspersoft's JFrog instance) with a `PKIX path building failed` error.
+
+The recommended, zero-import workaround is to leverage your Windows host's trusted certificate store by caching the dependencies on Windows once, and mounting your host's `.m2` repository into the container:
+
+1. **Seed the cache on Windows**:
+   Run this once inside your Windows terminal to download and cache the libraries (which automatically trusts your corporate certificate):
+   ```powershell
+   cd backend
+   mvn clean install -DskipTests
+   ```
+2. **Mount the cache in your local environment**:
+   Set the `M2_HOME` variable inside your local, ignored `.env` file pointing to your host's `.m2` directory:
+   ```properties
+   M2_HOME=/mnt/c/Users/<your-username>/.m2
+   ```
+   Docker Compose will automatically detect this variable and mount your local Windows Maven cache into the container's `/root/.m2` path, bypassing the certificate handshake issues completely!
+
 ## Frontend Shared Conventions
 
 Reusable building blocks and global styles that new schedule/feature pages should adopt rather than
