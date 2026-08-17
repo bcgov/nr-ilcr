@@ -1,5 +1,6 @@
 import type { FC, ReactNode } from 'react'
 import { Content, HeaderContainer } from '@carbon/react'
+import DevRoleBanner from '@/components/DevRoleBanner'
 import LayoutProvider from '@/context/layout/LayoutProvider'
 import LayoutHeader from './LayoutHeader'
 import Footer from './Footer'
@@ -15,6 +16,7 @@ type Props = {
 const Layout: FC<Props> = ({ children }) => (
   <LayoutProvider>
     <HeaderContainer render={() => <LayoutHeader />} />
+    <DevRoleBanner />
     <Content className="app-content">{children}</Content>
     <Footer />
   </LayoutProvider>
