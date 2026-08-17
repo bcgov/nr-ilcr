@@ -686,6 +686,27 @@ public class Schedule10Service {
     return getSchedule10(millId, year, callerMayEdit);
   }
 
+  /**
+   * Runs the Schedule 10 readiness rules over the current document.
+   *
+   * <p>Mutates nothing and is deliberately NOT Draft-gated: a submitted or verified schedule can still
+   * be checked, which is why the endpoint asks only for view rights. Scope is always the whole
+   * schedule — legacy has no per-page mode, and neither does any other schedule here.
+   *
+   * <p>Evaluating the assembled document rather than the tables means Check Status and the GET can
+   * never disagree, and it puts the derived totals that several rules check within reach.
+   *
+   * @param millId the validated mill
+   * @param year the validated reporting year
+   * @return the unresolved outcome; the controller composes the verbatim text
+   */
+  @Transactional(readOnly = true)
+  public Schedule10CheckStatus.Outcome checkStatus(long millId, int year) {
+    // callerMayEdit is irrelevant to the rules, and passing false keeps this read from implying any
+    // edit authority in the document it evaluates.
+    return Schedule10CheckStatus.evaluate(getSchedule10(millId, year, false));
+  }
+
   // -----------------------------------------------------------------------------------------------
   // Gates and rules
   // -----------------------------------------------------------------------------------------------
