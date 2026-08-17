@@ -21,9 +21,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfiguration {
 
-    private static final String PATH_HEALTH = "/api/health";
-    private static final String PATH_INFO = "/api/info";
-
     @Bean
     // java:S4502 — Disabling CSRF is safe here: this is a stateless REST API (SessionCreationPolicy
     // .STATELESS below) authenticated by bearer JWTs in the Authorization header, with no session
@@ -60,7 +57,10 @@ public class SecurityConfiguration {
                     .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt ->
                             jwt.jwtAuthenticationConverter(cognitoGroupsConverter)))
                     .authorizeHttpRequests(authorize -> authorize
-                            .requestMatchers(PATH_HEALTH, PATH_HEALTH + "/**", PATH_INFO).permitAll()
+                            // Same public set as the security-off branch: health/info/metrics stay
+                            // reachable (e.g. Prometheus scraping /api/prometheus); everything else
+                            // under /api/** requires authentication (O4 — Home renders post-login).
+                            .requestMatchers(BackendConstants.PUBLIC_PATHS).permitAll()
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().authenticated());
         } else {

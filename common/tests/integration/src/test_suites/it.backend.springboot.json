@@ -4,7 +4,7 @@
   "base_url": "${BASE_URL}",
   "tests": [
     {
-      "name": "Read-only public mills endpoint",
+      "name": "Domain endpoint requires authentication (O4 — Home renders post-login)",
       "methods": [
         "GET"
       ],
@@ -16,7 +16,7 @@
       "assertions": [
         {
           "method": "GET",
-          "status_code": 200
+          "status_code": 401
         }
       ]
     }
