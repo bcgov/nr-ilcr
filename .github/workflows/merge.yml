@@ -29,12 +29,13 @@ jobs:
       # Get PR number for squash merges to main
       - id: pr
         uses: bcgov/action-get-pr@28b0adf8e4d40720d41f9c87356ce24b0a4bd6af # v0.3.1
-  # TEST/PROD deploys are held behind ENABLE_OPENSHIFT_DEPLOY until the code
-  # is ready for those environments; set the repo variable to "true" to open
-  # the pipeline. PR sandbox deploys (pr-open.yml) are not gated.
+  # TEST deploys run on every merge and fail visibly if misconfigured. PROD
+  # stays behind ENABLE_OPENSHIFT_DEPLOY until its environment is ready (it
+  # still lacks prod ORACLEDB_* secrets/vars and would fall back to the
+  # repo-level test-database values); set the repo variable to "true" once
+  # they're in place.
   deploy-test:
     name: TEST Deploys (${{ needs.init.outputs.pr }})
-    if: ${{ vars.ENABLE_OPENSHIFT_DEPLOY == 'true' }}
     needs: [init]
     uses: ./.github/workflows/reusable-deploy.yml
     secrets: inherit
