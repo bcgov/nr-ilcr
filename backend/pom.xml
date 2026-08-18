@@ -65,7 +65,6 @@
         <checkstyle.failsOnError>false</checkstyle.failsOnError>
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
-        <mapstruct.version>1.6.3</mapstruct.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <jasperreports.version>7.0.8</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
@@ -211,11 +210,6 @@
             <artifactId>commons-lang3</artifactId>
             <version>${commons-lang3.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-            <version>${mapstruct.version}</version>
-        </dependency>
 
         <!-- Embedded JasperReports 7 (AD-16): in-process PDF, no Jasper Server. v7 is the Jakarta
              line (correct for Boot 4 / Java 21). PDF export is a SEPARATE OpenPDF-backed artifact in
@@ -336,11 +330,6 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                        </path>
-                        <path>
-                            <groupId>org.mapstruct</groupId>
-                            <artifactId>mapstruct-processor</artifactId>
-                            <version>${mapstruct.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

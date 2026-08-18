@@ -90,7 +90,7 @@ Do not commit real database passwords. Put local values in `.env`; the file is g
 
 *Note: This is a specific workaround for developers behind a corporate SSL-decryption/packet-inspection gateway (such as Zscaler) and is **not** required for all developers (e.g., if you are on a direct internet connection).*
 
-If your corporate network performs SSL decryption/packet-inspection, Maven inside the isolated Docker container may fail to connect to third-party Maven repositories (like Jaspersoft's JFrog instance) with a `PKIX path building failed` error.
+If your corporate network performs SSL decryption/packet-inspection, Maven inside the isolated Docker container may fail to connect to Maven Central (all dependencies, including JasperReports 7, resolve from Central — the build declares no custom `<repositories>`) with a `PKIX path building failed` error.
 
 The recommended, zero-import workaround is to leverage your Windows host's trusted certificate store by caching the dependencies on Windows once, and mounting your host's `.m2` repository into the container:
 
