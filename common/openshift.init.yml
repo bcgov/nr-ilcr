@@ -42,11 +42,12 @@ parameters:
     description: Post-login redirect URL (must be FAM-registered verbatim)
     required: true
   # Cognito validates logout_uri by exact string match against the FAM
-  # client's registered sign-out URLs, so this full SiteMinder → Keycloak →
-  # app logout chain must be registered there verbatim (see
-  # frontend/amplify-config.local.example.js for the DEV shape).
+  # client's registered sign-out URLs (FAM repo: lza-infrastructure/terraform/
+  # server/oidc_clients_ilcr.tf). Dev PR hosts register only the plain
+  # <app>/logout; test/prod also register the full SiteMinder → Keycloak →
+  # app chain (see frontend/amplify-config.local.example.js for its shape).
   - name: COGNITO_REDIRECT_SIGN_OUT
-    description: Post-logout redirect URL chain (must be FAM-registered verbatim)
+    description: Post-logout redirect URL (must be FAM-registered verbatim)
     required: true
 objects:
   # ── Backend Secret ────────────────────────────────────────
