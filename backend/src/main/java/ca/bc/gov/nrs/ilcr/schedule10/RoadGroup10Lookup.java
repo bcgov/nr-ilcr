@@ -94,12 +94,27 @@ final class RoadGroup10Lookup {
    * hold; this returns the canonical form so the stored value is the one that resolves.
    *
    * <p><strong>On which table validates.</strong> The legacy validator calls Schedule <em>6</em>'s
-   * lookup even for this screen. That reads like a defect, but the two tables accept an identical
-   * set of 22 keys — verified by diffing the {@code case} labels of both methods — so validating
-   * here against Schedule 10's own table accepts and rejects exactly what legacy does. Only the
-   * returned Road Group values differ between the tables, which is what this class exists to keep
-   * separate. The cross-wiring is still worth reporting upstream: the tables are maintained
-   * independently, so a future edit to either would silently split validation from derivation.
+   * lookup even for this screen, which reads like a defect. Validating here against Schedule 10's
+   * own table is behaviourally equivalent, but NOT because the tables are identical — an earlier
+   * version of this note claimed "an identical set of 22 keys", and that was wrong on both counts
+   * (corrected at code review 2026-08-18). The accurate position, from counting the {@code case}
+   * labels of both methods:
+   *
+   * <ul>
+   *   <li>this table holds <strong>21</strong> live keys; {@code schedule6.RoadGroupLookup} holds
+   *       <strong>20</strong>;
+   *   <li>the sets are identical on all 20 shared keys and differ only by {@code "52B"}, which
+   *       Schedule 6 demoted to a comment because {@code TFL_NUMBER_CODE} is {@code VARCHAR2(2)} —
+   *       a 3-character TFL is unstorable, and {@code ConstructionPageRequest.tflNumberCode}
+   *       carries {@code @Size(max = 2)} to match;
+   *   <li>so for every input that can physically reach either method, the two accept and reject
+   *       exactly the same values, and validating against this table matches legacy.
+   * </ul>
+   *
+   * <p>Only the returned Road Group values differ between the tables, which is what this class
+   * exists to keep separate. The cross-wiring is still worth reporting upstream: the tables are
+   * maintained independently, so a future edit to either would silently split validation from
+   * derivation.
    *
    * @param tflNumberCode the entered TFL number, possibly missing a leading zero
    * @return the canonical TFL to store, or {@code null} when the value is not a valid TFL
@@ -354,7 +369,12 @@ final class RoadGroup10Lookup {
       case "03", "23", "33", "55", "56":
         roadGroup = "11";
         break;
-      case "05", "52B":
+      // "52B" is legacy-live but unreachable, and is demoted to a comment here for the reason
+      // schedule6.RoadGroupLookup already records: TFL_NUMBER_CODE is VARCHAR2(2) on both sides,
+      // and ConstructionPageRequest.tflNumberCode carries @Size(max = 2), so a 3-character TFL
+      // never reaches this switch on read or on save. As a live case it read as an accepted value
+      // that the request contract rejects (code review 2026-08-18). case "52B": roadGroup = "5";
+      case "05":
         roadGroup = "5";
         break;
       case "30", "52", "53":

@@ -26,9 +26,16 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * <p>Every write names {@code EDIT_SCHEDULE}; Check Status names only {@code VIEW_SCHEDULE}, so a
  * caller who may read may also check readiness on a schedule they cannot edit.
  *
- * <p>Note both shipped groups hold both actions, so no reachable principal can separate them here —
- * these tests pin the "no group at all" and "foreign group" cases, and the unit-level controller test
- * pins that the write path asks for the EDIT action by name.
+ * <p>Note both shipped groups hold both actions, so no reachable principal can separate them here.
+ * These tests pin the "no group at all" and "foreign group" cases.
+ *
+ * <p><strong>What is NOT pinned, stated plainly.</strong> An earlier version of this note claimed
+ * "the unit-level controller test pins that the write path asks for the EDIT action by name". No such
+ * test exists — {@code Schedule10ControllerTest} covers only {@code getSchedule10}, and none of the
+ * eight write handlers is unit-tested. Because both production groups hold both actions, changing
+ * {@code mayEdit()} to ask for {@code VIEW_SCHEDULE} would pass this entire suite. Recorded at code
+ * review 2026-08-18 rather than left as a claim the tests do not support; closing it needs either a
+ * principal that holds one action and not the other, or a controller-level unit test.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Schedule 10 — authorization on the write endpoints")

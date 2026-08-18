@@ -1,5 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.DETAIL_NOT_DELETED;
+import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.DETAIL_NOT_SAVED;
+import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_DELETED;
+import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_SAVED;
+
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
@@ -27,6 +32,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -44,9 +50,14 @@ import org.springframework.transaction.annotation.Transactional;
  * lookup, two BEC queries and five code-list queries; the three-query property is about the nested
  * body, not the request as a whole.
  *
- * <p>Runs in one read-only transaction so those queries observe a single consistent snapshot.
- * Without it a concurrent write between the page and detail reads yields a silently torn document —
- * details belonging to a page that is not in the result are dropped with no error.
+ * <p>{@link #getSchedule10} runs in one read-only transaction so those queries observe a single
+ * consistent snapshot. Without it a concurrent write between the page and detail reads yields a
+ * silently torn document — details belonging to a page that is not in the result are dropped with
+ * no error. Note the scope of that guarantee: the seven write methods call {@code getSchedule10} to
+ * build their response, and Spring's default {@code REQUIRED} propagation makes it JOIN the
+ * caller's read-write transaction, so {@code readOnly} does not apply on those paths. They still
+ * get a single consistent snapshot — their own transaction — but calling the read read-only there
+ * would be wrong to claim (corrected at code review 2026-08-18).
  *
  * <p>Derivation rules that matter:
  * <ul>
@@ -154,10 +165,17 @@ public class Schedule10Service {
     // (1) NULL COSTS are stored as-is, so absent and blank behave identically downstream.
     // (2) DUPLICATES. Nothing enforces one row per (detail, item): there is no unique constraint,
     //     and delivery holds zero Schedule 10 cost rows so the invariant has never been observed
-    //     against data. A blind put() would let the last-read row win and silently discard the
-    //     other, understating the total. Values are SUMMED instead, which at least conserves the
-    //     money, and the collision is logged. Summing keeps legacy's null rule: one non-null term
-    //     survives, and two nulls stay null rather than collapsing to zero.
+    //     against data. LAST ROW WINS, matching legacy: Schedule10DAO:556-600 loops the cost-detail
+    //     Set and ASSIGNS per item (setSubGradeTtTTransfer(...) and its eleven siblings), so a
+    //     second row for the same item overwrites the first. Legacy does NOT sum.
+    //
+    //     Story 11.1 summed instead, which read as the safer choice — it conserves the money — but
+    //     it is an unrecorded deviation, and it made a duplicated value UNFIXABLE through the API:
+    //     the write path's UPDATE sets every duplicate row, so resubmitting the correct figure left
+    //     the sum wrong for ever. Corrected to legacy at code review 2026-08-18 (legacy-first).
+    //     Note legacy iterates a HashSet, so which row wins there is arbitrary; the ORDER BY on the
+    //     cost query makes the choice deterministic here, which is strictly better than legacy.
+    //     The collision is still logged, because it means the data violates an intended invariant.
     // (3) UNMAPPED ORDINALS. A cost row whose item id is outside the twelve routes nowhere and
     //     vanishes from the totals. Legacy throws on this (Schedule10DAO:559-561 switches on
     //     REPORT_COST_ITEMS.valueOfByValue); we log instead, for the same reason.
@@ -174,10 +192,10 @@ public class Schedule10Service {
       // containsKey, not get() != null — a present-but-null entry is a real cost row that must be
       // recognised as a duplicate when a second row for the same item arrives.
       if (byItem.containsKey(row.costItemId())) {
-        LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — summing them"
-            + " (mill {}, year {})", row.roadDetailId(), row.costItemId(), millId, year);
-        byItem.put(
-            row.costItemId(), Schedule10Amounts.sum(byItem.get(row.costItemId()), row.cost()));
+        LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — the last row"
+            + " wins, as in legacy (mill {}, year {})",
+            row.roadDetailId(), row.costItemId(), millId, year);
+        byItem.put(row.costItemId(), row.cost());
       } else {
         byItem.put(row.costItemId(), row.cost());
       }
@@ -494,7 +512,7 @@ public class Schedule10Service {
     Location location = classify(request);
     int pageId = repository.nextPageId();
     persist(() -> repository.insertPage(
-        toPageEntity(pageId, millId, year, request, location), millId, year, user));
+        toPageEntity(pageId, millId, year, request, location), millId, year, user), PAGE_NOT_SAVED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -530,7 +548,7 @@ public class Schedule10Service {
         requirePage(pageId, millId, year);
         throw new StaleRevisionException();
       }
-    });
+    }, PAGE_NOT_SAVED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -562,7 +580,7 @@ public class Schedule10Service {
         copyId, year, millId, CATEGORY, source.constructionPeriod(),
         source.constructionDivisionName(), source.ilcrForestRegionCode(), source.tsbNumberCode(),
         source.tsaNumber(), source.tflNumberCode(), 0);
-    persist(() -> repository.insertPage(copy, millId, year, user));
+    persist(() -> repository.insertPage(copy, millId, year, user), PAGE_NOT_SAVED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -585,14 +603,14 @@ public class Schedule10Service {
     requireDraft(millId, year);
     requirePage(pageId, millId, year);
     persist(() -> {
-      repository.deleteCostsForPage(pageId);
-      repository.deleteRoadDetailsForPage(pageId);
+      repository.deleteCostsForPage(pageId, millId, year);
+      repository.deleteRoadDetailsForPage(pageId, millId, year);
       // The result is checked rather than discarded: a silently zero-row delete would answer
       // "deleted successfully" while the row survived.
       if (repository.deletePage(pageId, millId, year) == 0) {
         throw new ConstructionPageNotFoundException();
       }
-    });
+    }, PAGE_NOT_DELETED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -622,8 +640,8 @@ public class Schedule10Service {
       repository.insertRoadDetail(
           toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
           moisture.asmCode(), user);
-      writeCostLines(roadDetailId, coupled, user);
-    });
+      writeCostLines(roadDetailId, coupled, user, millId, year);
+    }, DETAIL_NOT_SAVED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -650,7 +668,7 @@ public class Schedule10Service {
     int expectedRevision = requireRevision(request.revisionCount());
     requireRoadDetail(roadDetailId, pageId, millId, year);
     requireOfferedDetailCodes(millId, year, request);
-    MoistureCodePair moisture = deriveMoistureCodes(request);
+    MoistureCodePair moisture = moistureForEdit(roadDetailId, request);
     RoadDetailRequest coupled = applyBallastCoupling(request);
 
     persist(() -> {
@@ -661,8 +679,8 @@ public class Schedule10Service {
         requireRoadDetail(roadDetailId, pageId, millId, year);
         throw new StaleRevisionException();
       }
-      writeCostLines(roadDetailId, coupled, user);
-    });
+      writeCostLines(roadDetailId, coupled, user, millId, year);
+    }, DETAIL_NOT_SAVED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -682,11 +700,11 @@ public class Schedule10Service {
     requireDraft(millId, year);
     requireRoadDetail(roadDetailId, pageId, millId, year);
     persist(() -> {
-      repository.deleteCostsForRoadDetail(roadDetailId);
-      if (repository.deleteRoadDetail(roadDetailId, pageId) == 0) {
+      repository.deleteCostsForRoadDetail(roadDetailId, millId, year);
+      if (repository.deleteRoadDetail(roadDetailId, pageId, millId, year) == 0) {
         throw new RoadDetailNotFoundException();
       }
-    });
+    }, DETAIL_NOT_DELETED);
     return getSchedule10(millId, year, callerMayEdit);
   }
 
@@ -811,6 +829,31 @@ public class Schedule10Service {
   }
 
   /**
+   * The moisture pair for an EDIT: preserved when the classification is unchanged, re-derived only
+   * when an input actually moved.
+   *
+   * <p>Legacy never rewrites these two columns on a save. {@code filterMoistureCodeLists()} ({@code
+   * Schedule10MB:665-689}) rebuilds the two dropdown LISTS and nothing else, so the stored ASM and
+   * soil-moisture codes change only when the user selects new ones from the filtered list.
+   * Re-deriving on every edit would let a request that changed only {@code comments} silently
+   * rewrite a stored {@code (F, Moist)} to {@code (SD, Moist)} through the multi-candidate
+   * tie-break — a rule invented for this port, because legacy asked the user (code review
+   * 2026-08-18, decision D4).
+   *
+   * <p>It also delivers the unchanged-code exemption for the BEC classification (decision D5): a
+   * stored id that has dropped out of the offerable xref-gated set no longer makes its road detail
+   * permanently unsaveable, because an unchanged classification never re-enters the gate.
+   */
+  private MoistureCodePair moistureForEdit(int roadDetailId, RoadDetailRequest request) {
+    return repository.findStoredClassification(roadDetailId)
+        .filter(stored -> stored.asmCode() != null && stored.soilMoistureCode() != null)
+        .filter(stored -> Objects.equals(stored.becId(), request.becbiogeoCatalogueId()))
+        .filter(stored -> Objects.equals(stored.rsmrClassCode(), request.relSoilMoistRgmClsCode()))
+        .map(stored -> new MoistureCodePair(stored.asmCode(), stored.soilMoistureCode()))
+        .orElseGet(() -> deriveMoistureCodes(request));
+  }
+
+  /**
    * An ASM code's place on the moisture gradient; anything unrecognised sorts last,
    * deterministically.
    */
@@ -843,15 +886,29 @@ public class Schedule10Service {
 
     if (BALLAST_CRUSHED.equals(method)) {
       if (blankToNull(stabilizing.ballastMaterialCode()) == null) {
-        throw new InvalidClassificationCodeException();
+        throw new MaterialCodeTypeRequiredException();
       }
       return request;
     }
 
     boolean notRequired = BALLAST_NOT_REQUIRED.equals(method);
     boolean deferred = BALLAST_DEFERRED.equals(method);
+
+    // Any OTHER method keeps its figures — legacy's else branch stores them as submitted — but the
+    // material code still cannot be null: ILCR_ROAD_BALLAST_MATERL_CODE is NOT NULL, and legacy's
+    // dropdown carried an empty option, so a blank pick raised ORA-01400 there too. Defaulting to
+    // "NA" follows what legacy already does for the other two non-crushed methods, and keeps a
+    // Ministry-added method code (the reference table already holds XP and FU) from turning a save
+    // into an opaque 500. Found at code review 2026-08-18: this branch previously returned the
+    // request untouched, so a blank material reached Oracle.
     if (!notRequired && !deferred) {
-      return request;
+      if (blankToNull(stabilizing.ballastMaterialCode()) != null) {
+        return request;
+      }
+      return withStabilizing(request, new StabilizingRequest(
+          method, BALLAST_MATERIAL_NOT_APPLICABLE, stabilizing.length(),
+          stabilizing.surfaceWidth(), stabilizing.depth(), stabilizing.distanceToSource(),
+          stabilizing.actualCost(), stabilizing.ttTransfer(), stabilizing.otherTransfer()));
     }
 
     StabilizingRequest coupled = new StabilizingRequest(
@@ -865,10 +922,31 @@ public class Schedule10Service {
         stabilizing.ttTransfer(),
         notRequired ? 0 : stabilizing.otherTransfer());
 
+    return withStabilizing(request, coupled);
+  }
+
+  /**
+   * Defaults the detailed-engineering-cost indicator to {@code "N"} when the client omits it.
+   *
+   * <p>{@code DETAIL_ENGINEERING_COST_IND} is {@code VARCHAR2(1) NOT NULL} with no default and no
+   * trigger, while the field is optional on the request. Legacy's {@code pageDtlECIncludeCosts} is
+   * a two-item dropdown ({@code No}/{@code N}, {@code Yes}/{@code Y}) with no empty option and no
+   * required flag, so it always submitted a value and its effective default was {@code N}.
+   * Reproducing that default is what keeps an omitted field from reaching Oracle as ORA-01400 and
+   * surfacing as an opaque 500 (code review 2026-08-18).
+   */
+  private static String detailEngineeringCostIndOrDefault(String submitted) {
+    String value = blankToNull(submitted);
+    return value == null ? "N" : value;
+  }
+
+  /** Rebuilds a road-detail request around a replacement stabilizing substructure. */
+  private RoadDetailRequest withStabilizing(
+      RoadDetailRequest request, StabilizingRequest stabilizing) {
     return new RoadDetailRequest(
         request.roadName(), request.roadLifetimeCode(), request.becbiogeoCatalogueId(),
         request.relSoilMoistRgmClsCode(), request.sideSlopePct(),
-        request.detailedEngineeringCostInd(), request.subGrade(), coupled,
+        request.detailedEngineeringCostInd(), request.subGrade(), stabilizing,
         request.materialComposition(), request.endHaulDistance(), request.endHaulVolume(),
         request.overlandDistance(), request.overlandVolume(), request.comments(),
         request.revisionCount());
@@ -950,7 +1028,7 @@ public class Schedule10Service {
         material.finePct(),
         material.organicPct(),
         Schedule10Amounts.atScale(subGrade.length(), LENGTH_SCALE),
-        request.detailedEngineeringCostInd(),
+        detailEngineeringCostIndOrDefault(request.detailedEngineeringCostInd()),
         Schedule10Amounts.atScale(request.endHaulDistance(), MEASURE_SCALE),
         toBigDecimal(request.endHaulVolume()),
         Schedule10Amounts.atScale(request.overlandDistance(), MEASURE_SCALE),
@@ -974,23 +1052,30 @@ public class Schedule10Service {
    * removes a cost row on save, and the read path treats a stored NULL exactly as it treats an
    * absent row — the field renders blank while the totals coerce it to zero.
    */
-  private void writeCostLines(int roadDetailId, RoadDetailRequest request, String user) {
+  private void writeCostLines(
+      int roadDetailId, RoadDetailRequest request, String user, long millId, int year) {
     SubGradeRequest subGrade = request.subGrade() != null ? request.subGrade() : NO_SUB_GRADE;
-    StabilizingRequest stabilizing = request.stabilizing();
 
-    repository.upsertCostLine(roadDetailId, SUB_GRADE_ACTUAL, subGrade.actualCost(), user);
-    repository.upsertCostLine(roadDetailId, SUB_GRADE_TRANSFER, subGrade.ttTransfer(), user);
-    repository.upsertCostLine(roadDetailId, OTHER_TT_TRANSFER, subGrade.otherTransfer(), user);
-    repository.upsertCostLine(roadDetailId, LESS_BRIDGE, subGrade.lessBridges(), user);
-    repository.upsertCostLine(roadDetailId, LESS_CULVERT, subGrade.lessCulverts(), user);
-    repository.upsertCostLine(roadDetailId, LESS_LANDING, subGrade.lessLandings(), user);
-    repository.upsertCostLine(roadDetailId, LESS_OVERLAND, subGrade.lessOverland(), user);
-    repository.upsertCostLine(roadDetailId, LESS_OTHER_ENGINEERING, subGrade.lessOtherEng(), user);
-    repository.upsertCostLine(roadDetailId, LESS_END_HAUL, subGrade.lessEndHaul(), user);
-    repository.upsertCostLine(roadDetailId, STABILIZING_ACTUAL, stabilizing.actualCost(), user);
-    repository.upsertCostLine(roadDetailId, STABILIZING_TRANSFER, stabilizing.ttTransfer(), user);
-    repository.upsertCostLine(
-        roadDetailId, STABILIZING_OTHER_TRANSFER, stabilizing.otherTransfer(), user);
+    cost(roadDetailId, SUB_GRADE_ACTUAL, subGrade.actualCost(), user, millId, year);
+    cost(roadDetailId, SUB_GRADE_TRANSFER, subGrade.ttTransfer(), user, millId, year);
+    cost(roadDetailId, OTHER_TT_TRANSFER, subGrade.otherTransfer(), user, millId, year);
+    cost(roadDetailId, LESS_BRIDGE, subGrade.lessBridges(), user, millId, year);
+    cost(roadDetailId, LESS_CULVERT, subGrade.lessCulverts(), user, millId, year);
+    cost(roadDetailId, LESS_LANDING, subGrade.lessLandings(), user, millId, year);
+    cost(roadDetailId, LESS_OVERLAND, subGrade.lessOverland(), user, millId, year);
+    cost(roadDetailId, LESS_OTHER_ENGINEERING, subGrade.lessOtherEng(), user, millId, year);
+    cost(roadDetailId, LESS_END_HAUL, subGrade.lessEndHaul(), user, millId, year);
+
+    StabilizingRequest stabilizing = request.stabilizing();
+    cost(roadDetailId, STABILIZING_ACTUAL, stabilizing.actualCost(), user, millId, year);
+    cost(roadDetailId, STABILIZING_TRANSFER, stabilizing.ttTransfer(), user, millId, year);
+    cost(roadDetailId, STABILIZING_OTHER_TRANSFER, stabilizing.otherTransfer(), user, millId, year);
+  }
+
+  /** One cost-line upsert, mill/year-scoped. Named short so the twelve routings read as a table. */
+  private void cost(
+      int roadDetailId, int costItemId, Integer amount, String user, long millId, int year) {
+    repository.upsertCostLine(roadDetailId, costItemId, amount, user, millId, year);
   }
 
   /**
@@ -1005,6 +1090,26 @@ public class Schedule10Service {
     } catch (DataAccessException ex) {
       LOG.warn("Schedule 10 write failed [{}]", ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
+    }
+  }
+
+  /**
+   * Runs a write, translating a data-access failure into the resource-specific legacy save error.
+   *
+   * <p>Same contract as {@link #persist(Runnable)} — type-only logging, never values — but names
+   * the resource that failed, which is what § Validation rules directs the write path to do
+   * wherever the failing resource is known (code review 2026-08-18: the four keys were dead).
+   *
+   * @param write the write to run
+   * @param messageKey one of the {@link Schedule10PersistenceException} constants
+   */
+  private void persist(Runnable write, String messageKey) {
+    try {
+      write.run();
+    } catch (DataAccessException ex) {
+      LOG.warn(
+          "Schedule 10 write failed [{}] for [{}]", ex.getClass().getSimpleName(), messageKey);
+      throw new Schedule10PersistenceException(messageKey);
     }
   }
 

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -62,10 +63,19 @@ public record ConstructionPageRequest(
     @Size(max = 2, message = "{tflNumberValidatorErrorMsg}")
     String tflNumberCode,
 
+    // Both units. The column is VARCHAR2(20) with BYTE semantics, so 20 accented characters clear
+    // @Size and then raise ORA-12899 — the opaque 500 this field's own message exists to replace
+    // (code review 2026-08-18).
     @Size(max = 20, message = "{divisionNameMaxLengthErrorMsg}")
+    @MaxByteLength(value = 20, charMax = 20, message = "{divisionNameMaxLengthErrorMsg}")
     String divisionName,
 
-    @Pattern(regexp = "\\d{4}-\\d{2}", message = "{bridgeDateformatErrorMsg}")
+    // The month is range-checked, not just shaped. Legacy stores the raw string (its converter has
+    // no dateType attribute), so "2024-99" persists there and then flows into every page label and
+    // into the print reports. This extends the strict-pattern deviation already recorded for this
+    // field rather than adding a new one: the rationale is identical — keep an unrenderable value
+    // out of a VARCHAR2 column (code review 2026-08-18).
+    @Pattern(regexp = "\\d{4}-(0[1-9]|1[0-2])", message = "{bridgeDateformatErrorMsg}")
     String constructionPeriod,
 
     // @Min(0) as well as @NotNull: a never-issued token like -1 matches no row, so without the

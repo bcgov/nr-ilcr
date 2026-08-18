@@ -655,9 +655,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * @param costItemId the legacy cost-item ordinal
    * @param cost the amount, or {@code null} to clear it in place
    * @param user the actor stamped into the audit columns
+   * @param millId the mill the owning page must belong to
+   * @param year the reporting year the owning page must belong to
    */
-  default void upsertCostLine(int roadDetailId, int costItemId, Integer cost, String user) {
-    if (updateCostLine(roadDetailId, costItemId, cost, user) == 0) {
+  default void upsertCostLine(
+      int roadDetailId, int costItemId, Integer cost, String user, long millId, int year) {
+    if (updateCostLine(roadDetailId, costItemId, cost, user, millId, year) == 0) {
       insertCostLine(nextCostDetailId(), roadDetailId, costItemId, cost, user);
     }
   }
@@ -673,10 +676,19 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+                       JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                         ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+                      WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
       """)
   int updateCostLine(
       @Param("roadDetailId") int roadDetailId, @Param("costItemId") int costItemId,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("cost") Integer cost, @Param("user") String user, @Param("millId") long millId,
+      @Param("year") int year);
 
   /**
    * Insert half of {@link #upsertCostLine}. Schedule 10 cost rows carry a NULL {@code
@@ -708,8 +720,18 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   @Query("""
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+                       JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                         ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+                      WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
       """)
-  int deleteCostsForRoadDetail(@Param("roadDetailId") int roadDetailId);
+  int deleteCostsForRoadDetail(
+      @Param("roadDetailId") int roadDetailId, @Param("millId") long millId,
+      @Param("year") int year);
 
   /**
    * Delete every cost line belonging to any road detail of one page — the first step of the page
@@ -721,9 +743,15 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
              SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
                FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
-              WHERE d.ROAD_CONSTRUCTION_REPRT_ID = :pageId)
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE d.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                AND r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
       """)
-  int deleteCostsForPage(@Param("pageId") int pageId);
+  int deleteCostsForPage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
 
   /** Delete one road detail, scoped to its parent page. Its cost lines must already be gone. */
   @Modifying
@@ -731,16 +759,31 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
          AND ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT r
+                      WHERE r.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
       """)
-  int deleteRoadDetail(@Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId);
+  int deleteRoadDetail(
+      @Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId,
+      @Param("millId") long millId, @Param("year") int year);
 
   /** Delete every road detail of one page — the second step of the page cascade. */
   @Modifying
   @Query("""
       DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
        WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT r
+                      WHERE r.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
       """)
-  int deleteRoadDetailsForPage(@Param("pageId") int pageId);
+  int deleteRoadDetailsForPage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
 
   /**
    * Delete one page, scoped to mill/year/category. Runs LAST in the cascade, after its cost lines
@@ -768,20 +811,31 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
              d.ILCR_ROAD_BALLAST_METHOD_CODE  AS ballast_method_code,
              d.ILCR_ROAD_BALLAST_MATERL_CODE  AS ballast_material_code,
              d.REL_SOIL_MOIST_RGM_CLS_CODE    AS rsmr_class_code,
-             d.BECBIOGEO_CATALOGUE_ID         AS bec_id
+             d.BECBIOGEO_CATALOGUE_ID         AS bec_id,
+             d.RELATIVE_SOIL_MOISTUR_RGM_CODE AS asm_code,
+             d.ILCR_SOIL_MOISTURE_CODE        AS soil_moisture_code
         FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
        WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
       """)
   Optional<StoredClassification> findStoredClassification(@Param("roadDetailId") int roadDetailId);
 
   /**
-   * The classification codes a road detail already carries.
+   * The classification codes a road detail already carries, plus the moisture pair derived from
+   * them.
    *
-   * <p>Used only for the exemption that lets an unchanged code survive its own expiry: a code that
-   * has since been retired must not permanently block re-saving a row that already holds it.
+   * <p>Read on every edit so an UNCHANGED classification keeps the moisture pair already stored.
+   * Legacy's {@code filterMoistureCodeLists()} ({@code Schedule10MB:665-689}) rebuilds only the two
+   * dropdown LISTS — it never assigns to the detail — so the stored ASM and soil-moisture codes
+   * change in legacy only when the user picks new ones. Re-deriving unconditionally would rewrite
+   * two NOT NULL columns the legacy print reports consume during an edit that touched neither input
+   * (code review 2026-08-18).
+   *
+   * <p>This also delivers the unchanged-code exemption for the BEC classification: a stored id that
+   * has since dropped out of the offerable xref-gated set would otherwise make its road detail
+   * permanently unsaveable, because the derivation rejects a zero-candidate pair.
    */
   record StoredClassification(
       String roadLifetimeCode, String ballastMethodCode, String ballastMaterialCode,
-      String rsmrClassCode, Integer becId) {
+      String rsmrClassCode, Integer becId, String asmCode, String soilMoistureCode) {
   }
 }

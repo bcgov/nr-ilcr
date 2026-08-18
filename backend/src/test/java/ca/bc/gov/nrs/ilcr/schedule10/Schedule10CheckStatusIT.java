@@ -36,7 +36,15 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
   @Autowired
   private JdbcTemplate jdbc;
 
-  /** Every mutable column of every Schedule 10 row for a mill, including both audit pairs. */
+  /**
+   * Every mutable column of every Schedule 10 row for a mill, across ALL THREE tables the write path
+   * touches, including both audit pairs on each.
+   *
+   * <p>Code review 2026-08-18 found this helper's javadoc overclaiming: the road-detail leg captured
+   * neither timestamp, and {@code ILCR_COST_REPORT_DETAIL} was not fingerprinted at all — so a
+   * check-status run that re-stamped a detail or touched a cost row would have gone unnoticed. The
+   * cost leg is joined up through the detail to the page so the mill filter still applies.
+   */
   private List<String> fingerprint(long millId) {
     List<String> rows = new ArrayList<>(jdbc.query(
         "SELECT r.ROAD_CONSTRUCTION_REPRT_ID || '|' || r.REVISION_COUNT || '|' || r.ENTRY_USERID"
@@ -47,10 +55,23 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
         (rs, i) -> rs.getString(1), millId));
     rows.addAll(jdbc.query(
         "SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID || '|' || d.REVISION_COUNT || '|' || d.ENTRY_USERID"
-            + " || '|' || d.UPDATE_USERID || '|' || d.ROAD_NAME"
+            + " || '|' || d.ENTRY_TIMESTAMP || '|' || d.UPDATE_USERID || '|' || d.UPDATE_TIMESTAMP"
+            + " || '|' || d.ROAD_NAME || '|' || d.RELATIVE_SOIL_MOISTUR_RGM_CODE"
+            + " || '|' || d.ILCR_SOIL_MOISTURE_CODE"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d JOIN THE.ROAD_CONSTRUCTION_REPRT r"
             + " ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID"
             + " WHERE r.ILCR_MILL_ID = ? ORDER BY d.ROAD_CONSTRUCTION_REPRT_DTL_ID",
+        (rs, i) -> rs.getString(1), millId));
+    rows.addAll(jdbc.query(
+        "SELECT c.ILCR_COST_REPORT_DETAIL_ID || '|' || c.ILCR_REPORT_COST_ITEM_ID"
+            + " || '|' || NVL(TO_CHAR(c.COST), 'null') || '|' || c.REVISION_COUNT"
+            + " || '|' || c.ENTRY_USERID || '|' || c.UPDATE_USERID || '|' || c.UPDATE_TIMESTAMP"
+            + " FROM THE.ILCR_COST_REPORT_DETAIL c"
+            + " JOIN THE.ROAD_CONSTRUCTION_REPRT_DTL d"
+            + " ON d.ROAD_CONSTRUCTION_REPRT_DTL_ID = c.ROAD_CONSTRUCTION_REPRT_DTL_ID"
+            + " JOIN THE.ROAD_CONSTRUCTION_REPRT r"
+            + " ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID"
+            + " WHERE r.ILCR_MILL_ID = ? ORDER BY c.ILCR_COST_REPORT_DETAIL_ID",
         (rs, i) -> rs.getString(1), millId));
     return rows;
   }
@@ -163,9 +184,18 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
   @DisplayName("Check Status is NOT Draft-gated — a submitted schedule can still be checked")
   void submittedScheduleCanStillBeChecked() throws Exception {
     // Mill 718 sits on track 'S'. Every write there is a 409; this read must still succeed.
+    //
+    // The outcome VALUE is asserted, not merely its presence: exists() reads like a result assertion
+    // and is not one (code review 2026-08-18). Mill 718's detail 8970 has all five material
+    // percentages null, so its Material Type Total rule fires and the outcome is deterministic.
+    List<String> before = fingerprint(718L);
+
     mockMvc.perform(post(ENDPOINT).param("millId", "718").param("year", "2021").with(csrf()))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.outcome").exists());
+        .andExpect(jsonPath("$.outcome", is("ISSUES")));
+
+    // And a non-Draft context is still not a licence to mutate.
+    assertThat(fingerprint(718L)).as("check status must mutate nothing").isEqualTo(before);
   }
 
   @Test

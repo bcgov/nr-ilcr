@@ -320,10 +320,21 @@ public class GlobalExceptionHandler {
    * collection
    * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
    */
-  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.of(
-      "CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg",
-      "CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg",
-      "CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg");
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.ofEntries(
+      Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg"),
+      // Schedule 10 (code review 2026-08-18). Without these, every malformed Integer on a road
+      // detail — a percentage or a haul volume — fell through to the type default and told the
+      // reporter their COST was invalid.
+      Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
+      Map.entry("RoadDetailRequest[\"endHaulVolume\"]", "volumeConverterErrorMsg"),
+      Map.entry("RoadDetailRequest[\"overlandVolume\"]", "volumeConverterErrorMsg"),
+      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", "percentageConverterErrorMsg"),
+      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", "percentageConverterErrorMsg"),
+      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", "percentageConverterErrorMsg"),
+      Map.entry("MaterialCompositionRequest[\"finePct\"]", "percentageConverterErrorMsg"),
+      Map.entry("MaterialCompositionRequest[\"organicPct\"]", "percentageConverterErrorMsg"));
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this

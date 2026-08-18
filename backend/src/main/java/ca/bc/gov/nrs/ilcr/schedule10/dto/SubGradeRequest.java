@@ -40,12 +40,12 @@ import java.math.BigDecimal;
  * @param lessEndHaul the end-haul deduction (optional, 0–9,999,999)
  */
 public record SubGradeRequest(
-    @DecimalMin(value = "0", message = "{invalidRangeErrorMsg}")
-    @DecimalMax(value = "100", message = "{invalidRangeErrorMsg}")
+    @DecimalMin(value = "0", message = "{rangeZeroToOneHundredErrorMsg}")
+    @DecimalMax(value = "100", message = "{rangeZeroToOneHundredErrorMsg}")
     BigDecimal length,
 
-    @DecimalMin(value = "0", message = "{invalidRangeErrorMsg}")
-    @DecimalMax(value = "999.9", message = "{invalidRangeErrorMsg}")
+    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}")
+    @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}")
     BigDecimal surfaceWidth,
 
     @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")

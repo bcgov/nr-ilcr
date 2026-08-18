@@ -72,9 +72,17 @@ class Schedule10CopyIT extends AbstractOracleIT {
     assertThat(jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_ID = ?",
         Integer.class, copyId)).isZero();
-    assertThat(jdbc.queryForObject(
-        "SELECT ENTRY_USERID FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ROAD_CONSTRUCTION_REPRT_ID = ?",
-        String.class, copyId)).isEqualTo("dev-submitter");
+    // BOTH audit pairs on the copy, not just ENTRY_USERID: the copy goes through the same insertPage
+    // statement, so a missing stamp there would show up here first (code review 2026-08-18).
+    var stored = jdbc.queryForMap(
+        "SELECT ENTRY_USERID, UPDATE_USERID, TSB_NUMBER_CODE, TFL_NUMBER_CODE, REVISION_COUNT"
+            + " FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ROAD_CONSTRUCTION_REPRT_ID = ?", copyId);
+    assertThat(stored.get("ENTRY_USERID")).isEqualTo("dev-submitter");
+    assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
+    // The location legs are carried across verbatim — the supply block was asserted nowhere before.
+    assertThat(stored.get("TSB_NUMBER_CODE")).isEqualTo("01A");
+    assertThat(stored.get("TFL_NUMBER_CODE")).isNull();
   }
 
   @Test

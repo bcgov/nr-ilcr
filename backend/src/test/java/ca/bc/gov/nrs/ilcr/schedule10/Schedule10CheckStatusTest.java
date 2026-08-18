@@ -164,8 +164,14 @@ class Schedule10CheckStatusTest {
     @Test
     @DisplayName("Road Name and Sub Zone are titled with the PAGE label only, not the road label")
     void roadNameAndSubZoneUsePageLabelOnly() {
+      // BOTH halves of the claim are asserted. The earlier version stopped after roadName while its
+      // name promised Sub Zone too, and its fixture supplied a non-blank subzone so no subzone issue
+      // could be produced at all (code review 2026-08-18). A blank subzone is unreachable from stored
+      // data — the column is NOT NULL — but it IS reachable at this seam, which is the whole point of
+      // pinning the rule here.
+      BecClassification blankSubzone = new BecClassification(BEC_ID, "ICH", "  ", "1", null, "ICH1");
       RoadDetail nameless = new RoadDetail(
-          8910, 1, "Road #1, null", null, "P", bec(), "3", 25,
+          8910, 1, "Road #1, null", null, "P", blankSubzone, "3", 25,
           cleanSubGrade(), stabilizingNotRequired(), material(10, 20, 40, 20, 10, 100), "N",
           null, null, null, null, null, 0);
 
@@ -175,6 +181,57 @@ class Schedule10CheckStatusTest {
       // No road label in the prefix — so a multi-road page gives no clue which road is meant.
       assertThat(issueFor(outcome.issues(), "roadName").label())
           .isEqualTo(PAGE_LABEL + " Road Name");
+      // The exact label string, asserted POSITIVELY. Elsewhere it appears only inside absence
+      // assertions, so a typo in it would leave every one of those trivially true.
+      assertThat(issueFor(outcome.issues(), "subzone").label())
+          .isEqualTo(PAGE_LABEL + " Sub Zone");
+      assertThat(issueFor(outcome.issues(), "subzone").messageKey())
+          .isEqualTo("missingRequiredFieldMsg");
+    }
+
+    @Test
+    @DisplayName("EMISSION ORDER is contractual — the ordinals in the user's list are positional")
+    void emissionOrderIsContractual() {
+      // The story declares the order contractual, and nothing asserted it: every multi-issue
+      // assertion used order-insensitive matchers, so reordering any of the 36 road-detail rules left
+      // the whole suite green (code review 2026-08-18). Pinned as an exact sequence.
+      Stabilizing crushedEmpty = new Stabilizing(
+          "C", null, null, null, null, null, null, null, null, null, null);
+      RoadDetail bare = new RoadDetail(
+          8910, 1, "Road #1, null", null, "P", bec(), null, null,
+          new SubGrade(null, null, null, null, null, null, null, null, null, null, null,
+              null, null, null, null),
+          crushedEmpty, material(null, null, null, null, null, null), "N",
+          null, null, null, null, null, 0);
+
+      DetailOutcome outcome =
+          Schedule10CheckStatus.evaluateRoadDetail(bare, PAGE_LABEL, ALLOWABLE);
+
+      // Legacy's declaration order, road-detail scope. Two things this pins that are easy to get
+      // wrong, both confirmed against the implementation rather than assumed:
+      //
+      // 1. The sub-grade dimensions and the five material percentages are OPTIONAL, so a null value
+      //    emits nothing. Only the required fields and the ballast-gated block appear here.
+      // 2. The Material Code Type rule sits IN THE MIDDLE of the additional-stabilizing block —
+      //    after the four dimensions, before the three costs. That position is surprising and is
+      //    exactly the kind of thing a "tidy the rules into groups" refactor would move.
+      assertThat(outcome.issues()).extracting(Issue::field).containsExactly(
+          "roadName",
+          "relSoilMoistRgmClsCode",
+          "sideSlopePct",
+          "stabilizingLength",
+          "stabilizingSurfaceWidth",
+          "stabilizingDepth",
+          "stabilizingDistanceToSource",
+          "ballastMaterialCode",
+          "stabilizingActualCost",
+          "stabilizingTtTransfer",
+          "stabilizingOtherTransfer");
+
+      // The second "unreachable from stored data" label, asserted POSITIVELY — elsewhere it appears
+      // only inside absence assertions, so a typo would leave those trivially true.
+      assertThat(issueFor(outcome.issues(), "ballastMaterialCode").label())
+          .isEqualTo(PAGE_LABEL + ", Road #1, null Additional Stabilizing Type");
     }
 
     @Test

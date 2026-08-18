@@ -14,6 +14,7 @@ import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import jakarta.validation.groups.Default;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
@@ -56,8 +57,20 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Schedule 10 write requests — validation constraints, and which KEY each field uses")
 class Schedule10RequestValidationTest {
 
-  private static final String REQUIRED_TEMPLATE = "{javax.faces.component.UIInput.REQUIRED}";
-  private static final String RANGE = "{invalidRangeErrorMsg}";
+  // The four FLD-005 required keys. These carry legacy's RESOLVED text — "Road Type: Value is
+  // required." and so on — because the parameterised JSF template key cannot work on a Bean
+  // Validation annotation: there are no positional arguments, so {0} reached the reporter literally
+  // (code review 2026-08-18). Pinning the key per field is the point of this class.
+  private static final String ROAD_TYPE_REQUIRED = "{roadTypeRequiredErrorMsg}";
+  private static final String BEC_ZONE_REQUIRED = "{becZoneRequiredErrorMsg}";
+  private static final String BALLAST_METHOD_REQUIRED = "{ballastMethodRequiredErrorMsg}";
+
+  // Range keys are per BAND for dimensions, because legacy has no save-time text for them, and
+  // legacy's OWN keys for percentages, which it does.
+  private static final String RANGE_0_100 = "{rangeZeroToOneHundredErrorMsg}";
+  private static final String RANGE_0_999_999 = "{rangeZeroTo999Point999ErrorMsg}";
+  private static final String PERCENTAGE = "{percentageValidatorErrorMsg}";
+  private static final String SIDE_SLOPE = "{sideSlopePercentageValidatorErrorMsg}";
   private static final String COST_NON_NEGATIVE = "{costValidatorSchedule9ErrorMsg}";
   private static final String COST_TRANSFER = "{costSize7ValidatorErrorMsg}";
   private static final String VOLUME = "{volumeValidatorErrorMsg}";
@@ -83,6 +96,21 @@ class Schedule10RequestValidationTest {
     return validator.validate(request, groups).stream()
         .map(ConstraintViolation::getMessage)
         .collect(Collectors.toSet());
+  }
+
+  /**
+   * Every violation message, MULTIPLICITY PRESERVED.
+   *
+   * <p>{@link #messagesFor} collapses to a {@code Set}, which is what a key-per-field assertion
+   * wants — but it also means {@code containsExactly(SOME_KEY)} passes when two fields share a key
+   * and only one of them is still constrained. Code review 2026-08-18 found exactly that: three tests
+   * drove several fields out of range at once and would have survived deleting any one constraint.
+   * Use this whenever more than one field is expected to fail.
+   */
+  private static List<String> allMessagesFor(Object request, Class<?>... groups) {
+    return validator.validate(request, groups).stream()
+        .map(ConstraintViolation::getMessage)
+        .toList();
   }
 
   // ===== the construction page ====================================================================
@@ -250,10 +278,13 @@ class Schedule10RequestValidationTest {
     void requiredFieldsUseTheirOwnKeys() {
       RoadDetailRequest empty =
           detail(null, null, null, null, subGrade(), stabilizing(), material(), 0);
-      // roadLifetimeCode and becbiogeoCatalogueId share the JSF template — {0} is the field label,
-      // which the controller supplies. roadName and RSMR carry verbatim legacy literals.
+      // FOUR fields, FOUR distinct keys. Every one carries legacy's resolved text: the two literals
+      // legacy hardcodes in schedule10.xhtml (Road Name, RSMR Class) and the two the JSF template
+      // renders from the component label (Road Type, BEC Zone). Sharing one parameterised key here is
+      // what shipped a literal "{0}" to the reporter.
       assertThat(messagesFor(empty, Default.class)).containsExactlyInAnyOrder(
-          "{roadNameRequiredErrorMsg}", "{rsmrClassRequiredErrorMsg}", REQUIRED_TEMPLATE);
+          "{roadNameRequiredErrorMsg}", "{rsmrClassRequiredErrorMsg}",
+          ROAD_TYPE_REQUIRED, BEC_ZONE_REQUIRED);
       assertThat(validator.validate(empty, Default.class)).hasSize(4);
     }
 
@@ -263,7 +294,7 @@ class Schedule10RequestValidationTest {
       // Bean Validation skips a null nested object, so @Valid alone let a client omit the whole
       // substructure and slip past the required ballast method code.
       assertThat(messagesFor(withStabilizing(null), Default.class))
-          .containsExactly(REQUIRED_TEMPLATE);
+          .containsExactly(BALLAST_METHOD_REQUIRED);
     }
 
     @Test
@@ -271,7 +302,8 @@ class Schedule10RequestValidationTest {
     void nestedConstraintsParticipate() {
       SubGradeRequest overLength = new SubGradeRequest(
           new BigDecimal("101"), null, null, null, null, null, null, null, null, null, null);
-      assertThat(messagesFor(withSubGrade(overLength), Default.class)).containsExactly(RANGE);
+      assertThat(messagesFor(withSubGrade(overLength), Default.class))
+          .containsExactly(RANGE_0_100);
     }
 
     @Test
@@ -282,15 +314,19 @@ class Schedule10RequestValidationTest {
       SubGradeRequest overCap = new SubGradeRequest(
           new BigDecimal("100.001"), null, null, null, null, null, null, null, null, null, null);
       assertThat(messagesFor(withSubGrade(atCap), Default.class)).isEmpty();
-      assertThat(messagesFor(withSubGrade(overCap), Default.class)).containsExactly(RANGE);
+      assertThat(messagesFor(withSubGrade(overCap), Default.class))
+          .containsExactly(RANGE_0_100);
 
-      // The other side of the asymmetry: the same magnitude is legal for stabilizing.
+      // The other side of the asymmetry: the same magnitude is legal for stabilizing. Note the two
+      // sides now carry DIFFERENT keys, because each renders its own real bounds — which is the
+      // clearest possible statement that the caps genuinely differ.
       StabilizingRequest longStabilizing = new StabilizingRequest(
           "C", "CRG", new BigDecimal("999.999"), null, null, null, null, null, null);
       StabilizingRequest tooLong = new StabilizingRequest(
           "C", "CRG", new BigDecimal("1000"), null, null, null, null, null, null);
       assertThat(messagesFor(withStabilizing(longStabilizing), Default.class)).isEmpty();
-      assertThat(messagesFor(withStabilizing(tooLong), Default.class)).containsExactly(RANGE);
+      assertThat(messagesFor(withStabilizing(tooLong), Default.class))
+          .containsExactly(RANGE_0_999_999);
     }
 
     @Test
@@ -310,10 +346,14 @@ class Schedule10RequestValidationTest {
       assertThat(messagesFor(withSubGrade(transferTooLow), Default.class))
           .containsExactly(COST_TRANSFER);
 
-      SubGradeRequest deductionTooHigh = new SubGradeRequest(
-          null, null, null, null, null, 10000000, null, null, null, null, null);
-      assertThat(messagesFor(withSubGrade(deductionTooHigh), Default.class))
-          .containsExactly(COST_NON_NEGATIVE);
+      // ALL SIX deductions driven out of range, with the count asserted — the earlier version drove
+      // only lessBridges, so the other five constraints were unpinned (code review 2026-08-18).
+      SubGradeRequest allSixDeductionsTooHigh = new SubGradeRequest(
+          null, null, null, null, null,
+          10000000, 10000000, 10000000, 10000000, 10000000, 10000000);
+      assertThat(allMessagesFor(withSubGrade(allSixDeductionsTooHigh), Default.class))
+          .hasSize(6)
+          .containsOnly(COST_NON_NEGATIVE);
     }
 
     @Test
@@ -353,27 +393,37 @@ class Schedule10RequestValidationTest {
           new BigDecimal("-9999.9"), 0, new BigDecimal("-9999.9"), 0, "ok", 0);
       assertThat(messagesFor(negativeDistances, Default.class)).isEmpty();
 
+      // BOTH volumes are driven negative and the count asserted, so deleting either constraint fails
+      // this test. With a Set and containsExactly it passed on one (code review 2026-08-18).
       RoadDetailRequest negativeVolumes = new RoadDetailRequest(
           "Mainline 400", "L20", 8801, "SD", 45, "Y", subGrade(), stabilizing(), material(),
           null, -1, null, -1, "ok", 0);
-      assertThat(messagesFor(negativeVolumes, Default.class)).containsExactly(VOLUME);
+      assertThat(allMessagesFor(negativeVolumes, Default.class))
+          .hasSize(2)
+          .containsOnly(VOLUME);
     }
 
     @Test
     @DisplayName("sideSlopePct and the five material percentages are 0–100")
     void percentagesAreBounded() {
+      // Side slope has its OWN legacy key, distinct from the material percentages.
       assertThat(messagesFor(
           new RoadDetailRequest(
               "Mainline 400", "L20", 8801, "SD", 101, "Y", subGrade(), stabilizing(), material(),
               null, null, null, null, "ok", 0),
           Default.class))
-          .containsExactly(RANGE);
+          .containsExactly(SIDE_SLOPE);
 
-      MaterialCompositionRequest outOfRange = new MaterialCompositionRequest(-1, 101, 0, 100, null);
-      assertThat(messagesFor(
-          detail("Mainline 400", "L20", 8801, "SD", subGrade(), stabilizing(), outOfRange, 0),
+      // ALL FIVE percentages driven out of range, and the count asserted. The earlier version drove
+      // only two and used containsExactly on a Set, so it passed if either constraint were deleted —
+      // and its @DisplayName claimed five (code review 2026-08-18).
+      MaterialCompositionRequest allFiveBad =
+          new MaterialCompositionRequest(-1, 101, -1, 101, 101);
+      assertThat(allMessagesFor(
+          detail("Mainline 400", "L20", 8801, "SD", subGrade(), stabilizing(), allFiveBad, 0),
           Default.class))
-          .containsExactly(RANGE);
+          .hasSize(5)
+          .containsOnly(PERCENTAGE);
     }
 
     @Test

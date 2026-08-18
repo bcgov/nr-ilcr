@@ -181,11 +181,17 @@ class Schedule10ServiceTest {
   class CostMapGuards {
 
     @Test
-    @DisplayName("duplicate rows for one (detail, item) are SUMMED, not silently overwritten")
-    void duplicateCostRowsAreSummed() {
+    @DisplayName("duplicate rows for one (detail, item): the LAST row wins, exactly as legacy")
+    void duplicateCostRowsTakeTheLastRow() {
       // Nothing enforces one row per (detail, item) — no unique constraint, and delivery holds zero
-      // Schedule 10 cost rows so the invariant has never been observed against data. A plain put()
-      // would let the last row win and discard the other, understating the total with no error.
+      // Schedule 10 cost rows so the invariant has never been observed against data.
+      //
+      // Legacy ASSIGNS rather than accumulates: Schedule10DAO:556-600 loops the cost-detail Set and
+      // calls setSubGradeActualCost(...) and its eleven siblings, so a second row for the same item
+      // overwrites the first. Story 11.1 summed instead — it looked safer, since it conserves the
+      // money — but it was an unrecorded deviation AND it made a duplicated value unfixable through
+      // the API, because the write path's UPDATE touches every duplicate row and the read then
+      // re-summed them. Corrected to legacy at code review 2026-08-18.
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
@@ -196,8 +202,29 @@ class Schedule10ServiceTest {
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
 
-      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
-      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("150000");
+      // 50000, not 150000: the second row wins outright. The cost query's ORDER BY makes which row
+      // that is deterministic here — legacy iterates a HashSet, so there it is arbitrary.
+      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("50000");
+      assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("50000");
+    }
+
+    @Test
+    @DisplayName("a duplicated cost is CORRECTABLE: resubmitting one value settles the read")
+    void duplicateCostIsCorrectable() {
+      // The point of last-row-wins rather than summing. The write path's UPDATE is unbounded, so a
+      // resubmitted figure lands on every duplicate row; with summing the read multiplied it back up
+      // and the value could never be corrected through the API. Both rows now carry 7000.
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
+      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
+          new CostLineRow(8910, 20, new BigDecimal("7000")),
+          new CostLineRow(8910, 20, new BigDecimal("7000"))));
+
+      RoadDetail detail =
+          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+
+      assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("7000");
     }
 
     @Test

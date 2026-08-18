@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.sql.Timestamp;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -87,6 +88,11 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
     assertThat(pageId).isGreaterThanOrEqualTo(9600);
 
     // All five NOT NULL audit/revision columns, which no trigger populates.
+    //
+    // The two timestamps are asserted by VALUE, not with isNotNull(): both columns are DATE NOT NULL,
+    // so isNotNull() is satisfied by any row that exists and constrained nothing — the real guard was
+    // status().isOk() failing on ORA-01400 (code review 2026-08-18). REVISION_COUNT is likewise read
+    // from the row rather than only from the echoed document.
     var stored = jdbc.queryForMap(
         "SELECT ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID,"
             + " UPDATE_TIMESTAMP, CONSTRUCTION_DATE FROM THE.ROAD_CONSTRUCTION_REPRT"
@@ -94,8 +100,12 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
     assertThat(stored.get("ILCR_CATEGORY_ID")).isEqualTo("10");
     assertThat(stored.get("ENTRY_USERID")).isEqualTo("dev-submitter");
     assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
-    assertThat(stored.get("ENTRY_TIMESTAMP")).isNotNull();
-    assertThat(stored.get("UPDATE_TIMESTAMP")).isNotNull();
+    assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
+    // A fresh insert stamps both from the same SYSDATE, so they are equal — and both sit in the
+    // present, which a defaulted or absent value would not.
+    assertThat(stored.get("ENTRY_TIMESTAMP")).isEqualTo(stored.get("UPDATE_TIMESTAMP"));
+    assertThat((Timestamp) stored.get("ENTRY_TIMESTAMP"))
+        .isAfter(Timestamp.valueOf("2020-01-01 00:00:00"));
     // Legacy never writes this column and every real delivery page holds NULL.
     assertThat(stored.get("CONSTRUCTION_DATE")).isNull();
   }
@@ -271,9 +281,61 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
             .with(csrf()))
         .andExpect(status().isConflict());
 
-    // Nothing was created, and the submitted page survives untouched.
+    // The three ROAD-DETAIL endpoints, which AC8 claims are covered and previously were not: the
+    // gate was proven on four of the seven writes only (code review 2026-08-18). requireDraft is
+    // called in all seven service methods, so this was an unverified claim rather than a hole — but
+    // an unverified claim is exactly what a refactor removes without anyone noticing. Detail 8970
+    // lives under the submitted page 8957.
+    String detail = """
+        {"roadName":"Blocked Road","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
+         "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"},"revisionCount":0}
+        """;
+    mockMvc.perform(post(PAGES + "/8957/road-details")
+            .param("millId", NON_DRAFT_MILL).param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).with(csrf()).content(detail))
+        .andExpect(status().isConflict());
+
+    mockMvc.perform(put(PAGES + "/8957/road-details/8970")
+            .param("millId", NON_DRAFT_MILL).param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).with(csrf()).content(detail))
+        .andExpect(status().isConflict());
+
+    mockMvc.perform(delete(PAGES + "/8957/road-details/8970")
+            .param("millId", NON_DRAFT_MILL).param("year", "2021").with(csrf()))
+        .andExpect(status().isConflict());
+
+    // Nothing was created, and the submitted page AND its road detail survive untouched.
     assertThat(jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ILCR_MILL_ID = 718", Integer.class))
         .isEqualTo(1);
+    assertThat(jdbc.queryForObject(
+        "SELECT ROAD_NAME FROM THE.ROAD_CONSTRUCTION_REPRT_DTL"
+            + " WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = 8970", String.class))
+        .isEqualTo("Submitted Road");
+  }
+
+  @Test
+  @DisplayName("a road-detail write does NOT bump its parent page's revision (deviation (f))")
+  void roadDetailWriteDoesNotBumpThePage() throws Exception {
+    // Deviation (f) had no assertion anywhere: no test read the parent page's revision after a detail
+    // write, so a stray page UPDATE would have gone unnoticed (code review 2026-08-18). Page 8956
+    // owns detail 8969, seeded at revision 5.
+    int pageRevisionBefore = jdbc.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT"
+            + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956", Integer.class);
+
+    mockMvc.perform(post(PAGES + "/8956/road-details").param("millId", "717").param("year", "2019")
+            .contentType(MediaType.APPLICATION_JSON).with(csrf())
+            .content("""
+                {"roadName":"No Page Bump","roadLifetimeCode":"P","becbiogeoCatalogueId":8801,
+                 "relSoilMoistRgmClsCode":"1","stabilizing":{"ballastMethodCode":"N"}}
+                """))
+        .andExpect(status().isOk());
+
+    assertThat(jdbc.queryForObject(
+        "SELECT REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT"
+            + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956", Integer.class))
+        .as("a child write must not invalidate the parent's optimistic-lock token")
+        .isEqualTo(pageRevisionBefore);
   }
 }

@@ -57,25 +57,37 @@ import java.math.BigDecimal;
  *     UPDATE)
  */
 public record RoadDetailRequest(
+    // Both units, for the same reason as comments below: ROAD_NAME is VARCHAR2(30) with BYTE
+    // semantics, so 30 accented or CJK characters clear @Size and then raise ORA-12899, which the
+    // blanket DataAccessException catch can only surface as an opaque 500 (code review 2026-08-18).
     @NotBlank(message = "{roadNameRequiredErrorMsg}")
     @Size(max = 30, message = "{roadNameRequiredErrorMsg}")
+    @MaxByteLength(value = 30, charMax = 30, message = "{roadNameRequiredErrorMsg}")
     String roadName,
 
-    @NotBlank(message = "{javax.faces.component.UIInput.REQUIRED}")
+    // The JSF template key is NOT used here. Bean Validation supplies no positional arguments, so
+    // "{0}: Value is required." would reach the reporter with a literal {0} (code review
+    // 2026-08-18). These keys carry legacy's resolved text, label included.
+    @NotBlank(message = "{roadTypeRequiredErrorMsg}")
     @Size(max = 10, message = "{invalidCodeValueErrorMsg}")
     String roadLifetimeCode,
 
-    @NotNull(message = "{javax.faces.component.UIInput.REQUIRED}")
+    @NotNull(message = "{becZoneRequiredErrorMsg}")
     Integer becbiogeoCatalogueId,
 
     @NotBlank(message = "{rsmrClassRequiredErrorMsg}")
     @Size(max = 2, message = "{rsmrClassRequiredErrorMsg}")
     String relSoilMoistRgmClsCode,
 
-    @Min(value = 0, message = "{invalidRangeErrorMsg}")
-    @Max(value = 100, message = "{invalidRangeErrorMsg}")
+    @Min(value = 0, message = "{sideSlopePercentageValidatorErrorMsg}")
+    @Max(value = 100, message = "{sideSlopePercentageValidatorErrorMsg}")
     Integer sideSlopePct,
 
+    // Optional, and the service defaults a blank to "N". The column is NOT NULL, and legacy's
+    // pageDtlECIncludeCosts is a two-item dropdown (No/N, Yes/Y) with no empty option and no
+    // required flag — so legacy always submitted a value and its effective default was N. Requiring
+    // it here would reject a body legacy's own screen could not have produced (code review
+    // 2026-08-18: without the default this reached Oracle as ORA-01400 and surfaced as a 500).
     @Pattern(regexp = "[YN]", message = "{invalidCodeValueErrorMsg}")
     String detailedEngineeringCostInd,
 
@@ -84,7 +96,7 @@ public record RoadDetailRequest(
 
     // @NotNull as well as @Valid: Bean Validation skips a null nested object, so without this a
     // client could omit the whole substructure and slip past the required ballast method code.
-    @NotNull(message = "{javax.faces.component.UIInput.REQUIRED}")
+    @NotNull(message = "{ballastMethodRequiredErrorMsg}")
     @Valid
     StabilizingRequest stabilizing,
 
@@ -93,16 +105,16 @@ public record RoadDetailRequest(
 
     // The only dimensions legacy permits to go negative. Their Check Status rules are commented out
     // in legacy, so nothing downstream catches a negative rate either — reproduced deliberately.
-    @DecimalMin(value = "-9999.9", message = "{invalidRangeErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{invalidRangeErrorMsg}")
+    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}")
+    @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}")
     BigDecimal endHaulDistance,
 
     @Min(value = 0, message = "{volumeValidatorErrorMsg}")
     @Max(value = 9999999, message = "{volumeValidatorErrorMsg}")
     Integer endHaulVolume,
 
-    @DecimalMin(value = "-9999.9", message = "{invalidRangeErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{invalidRangeErrorMsg}")
+    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}")
+    @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}")
     BigDecimal overlandDistance,
 
     @Min(value = 0, message = "{volumeValidatorErrorMsg}")

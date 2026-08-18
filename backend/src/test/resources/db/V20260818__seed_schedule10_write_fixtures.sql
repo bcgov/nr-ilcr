@@ -271,6 +271,23 @@ INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROA
   VALUES (8965, 8953, 'Copy Child Two', 25, 'P', 8801, 1.000, 'N', 'N', 'NA', '1', 'Dry', 'MD', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 
 -- -------------------------------------------------------------------------------------------------
+-- 7b. SURGICAL ROAD-DETAIL DELETE (mill 721, year 2022) -- its OWN context, not the copy source's
+--
+-- Added at code review 2026-08-18. Schedule10DeleteIT.roadDetailDeleteIsSurgical previously deleted
+-- detail 8964 from page 8953, which Schedule10CopyIT asserts still has TWO road details -- so the two
+-- classes shared (721, 2021) and CopyIT passed only because "Copy" sorts before "Delete". One Oracle
+-- container per JVM with no per-test rollback means committed state carries across IT classes, which
+-- is exactly why Task 8 mandates one (mill, YEAR) per destructive test. Year 2022 was already seeded
+-- as a spare Draft context for mill 721 and went unused; this claims it.
+-- -------------------------------------------------------------------------------------------------
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE, TSB_NUMBER_CODE, TSA_NUMBER, TFL_NUMBER_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8958, 2022, 721, '10', '2022-04', 'Surgical', 'RNI', '01A', '01', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROAD_CONSTRUCTION_REPRT_ID, ROAD_NAME, SIDE_SLOPE_PCT, ILCR_ROAD_LIFETIME_CODE, BECBIOGEO_CATALOGUE_ID, SUB_GRADE_LENGTH, DETAIL_ENGINEERING_COST_IND, ILCR_ROAD_BALLAST_METHOD_CODE, ILCR_ROAD_BALLAST_MATERL_CODE, REL_SOIL_MOIST_RGM_CLS_CODE, ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8971, 8958, 'Surgical Target', 25, 'P', 8801, 1.000, 'N', 'N', 'NA', '1', 'Dry', 'MD', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROAD_CONSTRUCTION_REPRT_ID, ROAD_NAME, SIDE_SLOPE_PCT, ILCR_ROAD_LIFETIME_CODE, BECBIOGEO_CATALOGUE_ID, SUB_GRADE_LENGTH, DETAIL_ENGINEERING_COST_IND, ILCR_ROAD_BALLAST_METHOD_CODE, ILCR_ROAD_BALLAST_MATERL_CODE, REL_SOIL_MOIST_RGM_CLS_CODE, ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8972, 8958, 'Surgical Sibling', 25, 'P', 8801, 1.000, 'N', 'N', 'NA', '1', 'Dry', 'MD', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- -------------------------------------------------------------------------------------------------
 -- 8. DELETE CASCADE (mill 722) -- a page with details AND cost lines at both levels
 --
 -- Two details, each carrying cost lines, so the ordered cascade has grandchildren to remove. Getting
