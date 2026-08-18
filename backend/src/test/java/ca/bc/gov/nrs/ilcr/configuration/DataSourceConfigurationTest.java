@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 class DataSourceConfigurationTest {
 
   @Test
-  void reportingHikariConfigIsReadOnlyWithItsOwnSmallPoolAndNoLeakDetection() {
+  void reportingHikariConfigIsReadOnlyWithItsOwnSmallFastFailingPoolAndNoLeakDetection() {
     HikariConfig config = DataSourceConfiguration.reportingHikariConfig(
         "jdbc:oracle:thin:@//db.example:1521/ILCR",
         "THE",
@@ -23,22 +23,24 @@ class DataSourceConfigurationTest {
         "ILCRReportingPool",
         3,
         0,
-        30000L,
+        5000L,
         60000L,
         180000L,
         60000L,
         "SELECT 1 FROM DUAL");
 
-    // Report fills never write.
+    // Read-only HINT (defence-in-depth; not Oracle-enforced write-prevention).
     assertThat(config.isReadOnly()).isTrue();
     // A distinct, small pool of its own — not the @Primary transactional pool.
     assertThat(config.getPoolName()).isEqualTo("ILCRReportingPool");
     assertThat(config.getMaximumPoolSize()).isEqualTo(3);
     assertThat(config.getMinimumIdle()).isEqualTo(0);
+    // Short connection-timeout: the Nth queued render fast-fails rather than parking a Tomcat thread 30s.
+    assertThat(config.getConnectionTimeout()).isEqualTo(5000L);
     // Deliberately unset (0 = disabled): a render holds its connection for the full fill+format, which
     // would otherwise trip a leak warning; the small dedicated pool bounds the exposure instead.
     assertThat(config.getLeakDetectionThreshold()).isZero();
-    // Credentials/URL/validation still wired through.
+    // Credentials/URL/validation still wired through the shared builder.
     assertThat(config.getJdbcUrl()).isEqualTo("jdbc:oracle:thin:@//db.example:1521/ILCR");
     assertThat(config.getConnectionTestQuery()).isEqualTo("SELECT 1 FROM DUAL");
   }

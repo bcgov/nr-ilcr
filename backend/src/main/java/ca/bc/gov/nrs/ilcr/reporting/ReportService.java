@@ -75,9 +75,10 @@ public class ReportService {
   private final Map<ScheduleKey, JasperReport> compiledTemplates = new ConcurrentHashMap<>();
 
   /**
-   * @param dataSource the dedicated read-only reporting datasource (Story 29.1) the Schedule 9 fill
-   *     borrows from — isolated from the {@code @Primary} transactional pool so a burst of report
-   *     renders cannot starve ordinary schedule requests
+   * @param dataSource the dedicated reporting datasource (Story 29.1) the Schedule 9 fill borrows from
+   *     — its own small pool, isolated from the {@code @Primary} transactional pool so a burst of report
+   *     renders cannot starve ordinary schedule requests (its connections are read-only as a hint, not
+   *     an enforced privilege)
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
