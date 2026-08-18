@@ -68,6 +68,13 @@ jobs:
     # raw-Playwright frontend/e2e). Only the DATA-INDEPENDENT `@smoke` project runs here: it aborts /api,
     # so it needs neither the seeded delivery Oracle nor the pinned fixtures the deployed env lacks. The
     # full data-backed suite (setup + chromium — SCH1/SEC) is a LOCAL/manual gate; see frontend/e2e/README.md.
+    #
+    # The smoke runs against a LOCAL Vite server on localhost, NOT the deployed PR URL. Since Story 1.2
+    # turned auth on, mock auth is (by design) disabled off-localhost — `isMockAuth()` double-gates on
+    # `isLocalHost()` (src/env.ts) — so an anonymous visit to a deployed host correctly bounces to the
+    # FAM/Cognito Hosted UI and never renders the shell. On localhost with the repo-default
+    # `{ mockUser: true }` config the shell renders client-side, keeping this smoke auth- AND
+    # backend-independent (the scenarios still abort every /api call).
     defaults:
       run:
         working-directory: frontend/e2e
@@ -82,17 +89,28 @@ jobs:
           node-version: 24
           cache: "npm"
           cache-dependency-path: frontend/e2e/package-lock.json
-      - name: Install dependencies
+      - name: Install e2e dependencies
         run: |
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Run smoke (data-independent)
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run smoke (data-independent, localhost mock auth)
+        working-directory: frontend
         env:
-          E2E_BASE_URL: https://${{ env.PREFIX }}.${{ env.DOMAIN }}/
           CI: "true"
         run: |
-          npm test -- --project=smoke --reporter=html
+          # Serve the app on localhost so mock auth engages (isMockAuth() requires localhost); the
+          # @smoke scenarios abort /api, so no backend is needed. No E2E_BASE_URL → the Playwright
+          # config defaults baseURL to http://localhost:3000.
+          npm run dev -- --port 3000 &
+          DEV_PID=$!
+          npx --yes wait-on -t 120000 http://localhost:3000
+          ( cd e2e && npm test -- --project=smoke --reporter=html )
+          kill "$DEV_PID" 2>/dev/null || true
 
       - uses: actions/upload-artifact@v7
         if: (! cancelled())
