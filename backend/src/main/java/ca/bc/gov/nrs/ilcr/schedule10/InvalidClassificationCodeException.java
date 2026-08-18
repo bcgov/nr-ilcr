@@ -20,14 +20,4 @@ public class InvalidClassificationCodeException extends BusinessException {
   public InvalidClassificationCodeException() {
     super(HttpStatus.BAD_REQUEST, "invalidCodeValueErrorMsg");
   }
-
-  /**
-   * For the BEC-classification case, which carries its own legacy message rather than the generic
-   * code-list one.
-   *
-   * @param messageKey the legacy bundle key to resolve
-   */
-  protected InvalidClassificationCodeException(String messageKey) {
-    super(HttpStatus.BAD_REQUEST, messageKey);
-  }
 }

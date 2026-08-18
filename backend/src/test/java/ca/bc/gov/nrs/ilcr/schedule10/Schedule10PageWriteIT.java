@@ -97,9 +97,10 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
         "SELECT ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID,"
             + " UPDATE_TIMESTAMP, CONSTRUCTION_DATE FROM THE.ROAD_CONSTRUCTION_REPRT"
             + " WHERE ROAD_CONSTRUCTION_REPRT_ID = ?", pageId);
-    assertThat(stored).containsEntry("ILCR_CATEGORY_ID", "10");
-    assertThat(stored).containsEntry("ENTRY_USERID", "dev-submitter");
-    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
+    assertThat(stored)
+        .containsEntry("ILCR_CATEGORY_ID", "10")
+        .containsEntry("ENTRY_USERID", "dev-submitter")
+        .containsEntry("UPDATE_USERID", "dev-submitter");
     assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
     // A fresh insert stamps both from the same SYSDATE, so they are equal — and both sit in the
     // present, which a defaulted or absent value would not.
@@ -194,8 +195,9 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
         "SELECT ENTRY_USERID, UPDATE_USERID FROM THE.ROAD_CONSTRUCTION_REPRT"
             + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956");
     // ENTRY_* must survive an update untouched; only UPDATE_* is restamped.
-    assertThat(stored).containsEntry("ENTRY_USERID", entryBefore);
-    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
+    assertThat(stored)
+        .containsEntry("ENTRY_USERID", entryBefore)
+        .containsEntry("UPDATE_USERID", "dev-submitter");
   }
 
   @Test

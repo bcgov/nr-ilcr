@@ -121,10 +121,11 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE, ENTRY_USERID,"
             + " UPDATE_USERID, REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT_DTL"
             + " WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?", detailId);
-    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Dry");
-    assertThat(stored).containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "MD");
-    assertThat(stored).containsEntry("ENTRY_USERID", "dev-submitter");
-    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
+    assertThat(stored)
+        .containsEntry("ILCR_SOIL_MOISTURE_CODE", "Dry")
+        .containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "MD")
+        .containsEntry("ENTRY_USERID", "dev-submitter")
+        .containsEntry("UPDATE_USERID", "dev-submitter");
 
     // All twelve ordinals, routed across all four subcategories.
     Map<String, Object> costs = jdbc.queryForMap(
@@ -174,8 +175,9 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
-    assertThat(stored).containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "SD");
-    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
+    assertThat(stored)
+        .containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "SD")
+        .containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
   }
 
   @Test
@@ -435,8 +437,9 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
     assertThat(((Number) inserted.get("REVISION_COUNT")).intValue()).isZero();
-    assertThat(inserted).containsEntry("ENTRY_USERID", "dev-submitter");
-    assertThat(inserted).containsEntry("UPDATE_USERID", "dev-submitter");
+    assertThat(inserted)
+        .containsEntry("ENTRY_USERID", "dev-submitter")
+        .containsEntry("UPDATE_USERID", "dev-submitter");
 
     assertThat(jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL"
@@ -475,8 +478,9 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
     assertThat((Timestamp) after.get("UPDATE_TIMESTAMP"))
         .as("UPDATE_TIMESTAMP is re-stamped, not left at the backdated value")
         .isAfter(Timestamp.valueOf("2000-01-02 00:00:00"));
-    assertThat(after).containsEntry("ENTRY_USERID", before.get("ENTRY_USERID"));
-    assertThat(after).containsEntry("ENTRY_TIMESTAMP", before.get("ENTRY_TIMESTAMP"));
+    assertThat(after)
+        .containsEntry("ENTRY_USERID", before.get("ENTRY_USERID"))
+        .containsEntry("ENTRY_TIMESTAMP", before.get("ENTRY_TIMESTAMP"));
 
     // The cost rows the edit touched are re-stamped too; none is left at the backdated value.
     assertThat(jdbc.queryForObject(

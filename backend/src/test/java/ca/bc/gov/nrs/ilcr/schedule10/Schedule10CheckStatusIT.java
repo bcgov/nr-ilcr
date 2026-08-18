@@ -125,47 +125,46 @@ class Schedule10CheckStatusIT extends AbstractOracleIT {
 
     List<String> texts = issueTexts(MAPPER.readTree(body));
 
-    // Page 8951 has neither Division nor Period Surveyed. The label prefix, the single ": "
-    // separator and the message are all contractual.
-    assertThat(texts).contains(
-        "Page 1, Period: null, TSA: 01, SB: 01A, TFL:- Division: Value Required",
-        "Page 1, Period: null, TSA: 01, SB: 01A, TFL:- Period Surveyed: Value Required");
-
-    // The material-total quirk: every percentage is blank, and it still reports 100 because the
-    // legacy total coerces nulls to zero and is therefore never absent.
-    assertThat(texts).anyMatch(text ->
-        text.endsWith("Material Type Total (%): Total value must be equal to 100."));
-
-    // The Road Name and Sub Zone rules carry the PAGE label only, with no road label — so on page
-    // 8951, which holds two roads, their lines would be indistinguishable. That is legacy's
-    // behaviour and it is pinned at the unit seam.
-    //
-    // Sub Zone is UNREACHABLE from stored data and is asserted absent here on purpose. It reads the
-    // BEC classification's subzone, BIOGEOCLIMATIC_CATALOGUE.SUBZONE is NOT NULL, and
-    // BECBIOGEO_CATALOGUE_ID is NOT NULL on the road detail — so no stored row can produce a blank
-    // subzone. The only way to reach the rule is a null classification, which the schema forbids;
-    // Schedule10CheckStatusTest pins that branch directly. Schedule 6 carries an identical
-    // stored-data-unreachable rule.
-    assertThat(texts).noneMatch(text -> text.contains(" Sub Zone: Value Required"));
-
-    // The classification that exists in the catalogue but is absent from the gate.
-    assertThat(texts).anyMatch(text -> text.endsWith(
-        " BEC Zone: Biogeo/Subzone/Variant code is invalid."
-            + " The code must be corrected before the schedule can be saved."));
-
-    // Ballast 'C' gates IN the four additional-stabilizing dimension rules and the three cost rules,
-    // all of which fire here because the seeded detail leaves those columns null.
-    assertThat(texts).anyMatch(text ->
-        text.endsWith(" Additional Stabilizing: Length (km): Value Required"));
-    assertThat(texts).anyMatch(text ->
-        text.endsWith(" Additional Stabilizing: Actual Cost ($): Value Required"));
-
-    // The material-type rule inside that same gate is UNREACHABLE from stored data, and is asserted
-    // absent on purpose: ILCR_ROAD_BALLAST_MATERL_CODE is NOT NULL, so no stored road detail can
-    // present a blank material type however the ballast method is set. Like Sub Zone above, the rule
-    // is ported faithfully and pinned at the unit seam instead.
-    assertThat(texts).noneMatch(text ->
-        text.endsWith(" Additional Stabilizing Type: Value Required"));
+    // One chain over the same subject, with each link's reasoning kept beside it. Every anyMatch and
+    // noneMatch below is safe against a vacuously-empty list because the contains(...) link fails
+    // first if the engine returned nothing.
+    assertThat(texts)
+        // Page 8951 has neither Division nor Period Surveyed. The label prefix, the single ": "
+        // separator and the message are all contractual.
+        .contains(
+            "Page 1, Period: null, TSA: 01, SB: 01A, TFL:- Division: Value Required",
+            "Page 1, Period: null, TSA: 01, SB: 01A, TFL:- Period Surveyed: Value Required")
+        // The material-total quirk: every percentage is blank, and it still reports 100 because the
+        // legacy total coerces nulls to zero and is therefore never absent.
+        .anyMatch(text ->
+            text.endsWith("Material Type Total (%): Total value must be equal to 100."))
+        // The Road Name and Sub Zone rules carry the PAGE label only, with no road label — so on
+        // page 8951, which holds two roads, their lines would be indistinguishable. That is legacy's
+        // behaviour and it is pinned at the unit seam.
+        //
+        // Sub Zone is UNREACHABLE from stored data and is asserted absent here on purpose. It reads
+        // the BEC classification's subzone, BIOGEOCLIMATIC_CATALOGUE.SUBZONE is NOT NULL, and
+        // BECBIOGEO_CATALOGUE_ID is NOT NULL on the road detail — so no stored row can produce a
+        // blank subzone. The only way to reach the rule is a null classification, which the schema
+        // forbids; Schedule10CheckStatusTest pins that branch directly. Schedule 6 carries an
+        // identical stored-data-unreachable rule.
+        .noneMatch(text -> text.contains(" Sub Zone: Value Required"))
+        // The classification that exists in the catalogue but is absent from the gate.
+        .anyMatch(text -> text.endsWith(
+            " BEC Zone: Biogeo/Subzone/Variant code is invalid."
+                + " The code must be corrected before the schedule can be saved."))
+        // Ballast 'C' gates IN the four additional-stabilizing dimension rules and the three cost
+        // rules, all of which fire here because the seeded detail leaves those columns null.
+        .anyMatch(text ->
+            text.endsWith(" Additional Stabilizing: Length (km): Value Required"))
+        .anyMatch(text ->
+            text.endsWith(" Additional Stabilizing: Actual Cost ($): Value Required"))
+        // The material-type rule inside that same gate is UNREACHABLE from stored data, and is
+        // asserted absent on purpose: ILCR_ROAD_BALLAST_MATERL_CODE is NOT NULL, so no stored road
+        // detail can present a blank material type however the ballast method is set. Like Sub Zone
+        // above, the rule is ported faithfully and pinned at the unit seam instead.
+        .noneMatch(text ->
+            text.endsWith(" Additional Stabilizing Type: Value Required"));
 
     assertThat(fingerprint(720L)).as("check status must mutate nothing").isEqualTo(before);
   }

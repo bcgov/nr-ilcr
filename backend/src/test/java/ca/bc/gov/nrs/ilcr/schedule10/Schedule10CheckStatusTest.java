@@ -242,8 +242,23 @@ class Schedule10CheckStatusTest {
       DetailOutcome outcome =
           Schedule10CheckStatus.evaluateRoadDetail(negatives, PAGE_LABEL, ALLOWABLE);
 
-      assertThat(outcome.issues()).extracting(Issue::field)
-          .doesNotContain("endHaulDistance", "endHaulVolume", "overlandDistance", "overlandVolume");
+      // isEmpty(), not doesNotContain(...): with every other figure clean the outcome IS empty, and
+      // doesNotContain is satisfied by an empty list — so it would pass even if the engine returned
+      // nothing at all (Sonar Bug, 2026-08-18). This states the actual claim: four out-of-range haul
+      // values produce no issue whatsoever.
+      assertThat(outcome.issues()).isEmpty();
+
+      // The control that makes the assertion above meaningful. Same fixture, with ONE unrelated
+      // field driven out of range: the engine reports that field and still reports nothing for the
+      // four haul values, which proves it ran rather than silently returning an empty list.
+      RoadDetail alsoBadSideSlope = new RoadDetail(
+          8910, 1, "Road #1, Mainline A", "Mainline A", "P", bec(), "3", 101,
+          cleanSubGrade(), stabilizingNotRequired(), material(10, 20, 40, 20, 10, 100), "N",
+          new BigDecimal("-9999.9"), new BigDecimal("-1"), new BigDecimal("-9999.9"),
+          new BigDecimal("-1"), null, 0);
+
+      assertThat(Schedule10CheckStatus.evaluateRoadDetail(alsoBadSideSlope, PAGE_LABEL, ALLOWABLE)
+          .issues()).extracting(Issue::field).containsExactly("sideSlopePct");
     }
 
     @Test
@@ -307,9 +322,21 @@ class Schedule10CheckStatusTest {
       DetailOutcome outcome =
           Schedule10CheckStatus.evaluateRoadDetail(detail, PAGE_LABEL, ALLOWABLE);
 
-      assertThat(outcome.issues()).extracting(Issue::field).doesNotContain(
-          "stabilizingLength", "ballastMaterialCode", "stabilizingActualCost",
-          "stabilizingTtTransfer", "stabilizingOtherTransfer");
+      // isEmpty(), not doesNotContain(...): everything outside the gated block is clean, so the
+      // outcome IS empty — and doesNotContain passes on an empty list, which would let a broken
+      // engine through (Sonar Bug, 2026-08-18).
+      assertThat(outcome.issues()).isEmpty();
+
+      // crushedRequiresEverything is this test's control: the SAME empty stabilizing block under
+      // method "C" produces all eight gated issues. Asserted here too so the pair cannot drift
+      // apart — if the gate stopped working, one of these two would fail.
+      Stabilizing sameButCrushed = new Stabilizing("C", null, null, null, null, null, null, null,
+          null, null, null);
+      assertThat(Schedule10CheckStatus.evaluateRoadDetail(
+          detail(cleanSubGrade(), sameButCrushed, material(10, 20, 40, 20, 10, 100), 25),
+          PAGE_LABEL, ALLOWABLE).issues())
+          .as("the gate is what suppresses these, not an empty rule set")
+          .isNotEmpty();
     }
   }
 

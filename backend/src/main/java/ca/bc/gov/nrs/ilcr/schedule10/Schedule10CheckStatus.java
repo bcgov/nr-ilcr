@@ -196,76 +196,93 @@ final class Schedule10CheckStatus {
     requirePresent(
         issues, "relSoilMoistRgmClsCode", prefix + " RSMR Class", detail.relSoilMoistRgmClsCode());
     requireRange(issues, "sideSlopePct", prefix + " Side Slope (%)",
-        value(detail.sideSlopePct()), ZERO, FMT_INT, PCT_MAX, true);
+        value(detail.sideSlopePct()),
+        band(ZERO, FMT_INT, PCT_MAX), true);
 
     MaterialComposition material = detail.materialComposition();
     requireRange(issues, "solidRockPct", prefix + " Solid (Hard) Rock (%)",
-        value(material == null ? null : material.solidRockPct()), ZERO, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.solidRockPct()),
+        band(ZERO, FMT_INT, PCT_MAX), false);
     requireRange(issues, "rippableRockPct", prefix + " Ripple Rock (%)",
-        value(material == null ? null : material.rippableRockPct()), ZERO, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.rippableRockPct()),
+        band(ZERO, FMT_INT, PCT_MAX), false);
     requireRange(issues, "coarsePct", prefix + " Coarse (%)",
-        value(material == null ? null : material.coarsePct()), ZERO, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.coarsePct()),
+        band(ZERO, FMT_INT, PCT_MAX), false);
     requireRange(issues, "finePct", prefix + " Fine (%)",
-        value(material == null ? null : material.finePct()), ZERO, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.finePct()),
+        band(ZERO, FMT_INT, PCT_MAX), false);
     requireRange(issues, "organicPct", prefix + " Organic (%)",
-        value(material == null ? null : material.organicPct()), ZERO, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.organicPct()),
+        band(ZERO, FMT_INT, PCT_MAX), false);
     // Both bounds are 100, which selects the must-equal message. The legacy total coerces nulls to
     // zero and is never absent, so an untouched material breakdown reports 0 against 100.
     requireRange(issues, "materialTypeTotal", prefix + " Material Type Total (%)",
-        value(material == null ? null : material.totalPct()), PCT_MAX, FMT_INT, PCT_MAX, false);
+        value(material == null ? null : material.totalPct()),
+        band(PCT_MAX, FMT_INT, PCT_MAX), false);
 
     SubGrade subGrade = detail.subGrade();
     requireRange(issues, "subGradeLength", prefix + " Sub-Grade: Length (km)",
-        field(subGrade, SubGrade::length), ZERO, FMT_3DP, PCT_MAX, false);
+        field(subGrade, SubGrade::length),
+        band(ZERO, FMT_3DP, PCT_MAX), false);
     requireRange(issues, "subGradeSurfaceWidth", prefix + " Sub-Grade: Surface Width (m)",
-        field(subGrade, SubGrade::surfaceWidth), ZERO, FMT_1DP, WIDTH_MAX, false);
+        field(subGrade, SubGrade::surfaceWidth),
+        band(ZERO, FMT_1DP, WIDTH_MAX), false);
     requireRange(issues, "subGradeActualCost", prefix + " Sub-Grade: Actual Cost ($)",
-        field(subGrade, SubGrade::actualCost), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::actualCost),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "subGradeTtTransfer", prefix + " Sub-Grade: TtT Transfer ($)",
-        field(subGrade, SubGrade::ttTransfer), SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS,
-        false);
+        field(subGrade, SubGrade::ttTransfer),
+        band(SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "subGradeOtherTransfer", prefix + " Sub-Grade: Other Transfer ($)",
-        field(subGrade, SubGrade::otherTransfer), SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS,
-        false);
+        field(subGrade, SubGrade::otherTransfer),
+        band(SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "subGradeTotalCosts", prefix + " Sub-Grade: Total Costs ($)",
-        field(subGrade, SubGrade::totalCosts), EIGHT_DIGITS.negate(), FMT_MONEY, EIGHT_DIGITS,
-        false);
+        field(subGrade, SubGrade::totalCosts),
+        band(EIGHT_DIGITS.negate(), FMT_MONEY, EIGHT_DIGITS), false);
     requireRange(issues, "lessBridges", prefix + " Sub-Grade: Less Bridges ($)",
-        field(subGrade, SubGrade::lessBridges), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessBridges),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "lessCulverts", prefix + " Sub-Grade: Less Culverts ($)",
-        field(subGrade, SubGrade::lessCulverts), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessCulverts),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "lessLandings", prefix + " Sub-Grade: Less Landing ($)",
-        field(subGrade, SubGrade::lessLandings), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessLandings),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "lessEndHaul", prefix + " Sub-Grade: Less End Haul ($)",
-        field(subGrade, SubGrade::lessEndHaul), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessEndHaul),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "lessOverland", prefix + " Sub-Grade: Less Overland ($)",
-        field(subGrade, SubGrade::lessOverland), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessOverland),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "lessOtherEng", prefix + " Sub-Grade: Less Other Eng ($)",
-        field(subGrade, SubGrade::lessOtherEng), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::lessOtherEng),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), false);
     requireRange(issues, "subGradeTotal", prefix + " Sub-Grade: Total ($)",
-        field(subGrade, SubGrade::total), EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS,
-        false);
+        field(subGrade, SubGrade::total),
+        band(EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS), false);
     requireRange(issues, "subGradeCostPerLength", prefix + " Sub-Grade: $/km",
-        field(subGrade, SubGrade::costPerLength), EIGHT_DIGITS.negate(), FMT_MONEY_2DP,
-        EIGHT_DIGITS, false);
+        field(subGrade, SubGrade::costPerLength),
+        band(EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS), false);
 
     Stabilizing stabilizing = detail.stabilizing();
     boolean crushed =
         stabilizing != null && BALLAST_CRUSHED.equals(stabilizing.ballastMethodCode());
 
     requireRange(issues, "stabilizingLength", prefix + " Additional Stabilizing: Length (km)",
-        field(stabilizing, Stabilizing::length), ZERO, FMT_3DP, new BigDecimal("999.999"), crushed);
+        field(stabilizing, Stabilizing::length),
+        band(ZERO, FMT_3DP, new BigDecimal("999.999")), crushed);
     requireRange(issues, "stabilizingSurfaceWidth",
         prefix + " Additional Stabilizing: Surface Width (m)",
-        field(stabilizing, Stabilizing::surfaceWidth), ZERO, FMT_1DP, WIDTH_MAX,
-        crushed);
+        field(stabilizing, Stabilizing::surfaceWidth),
+        band(ZERO, FMT_1DP, WIDTH_MAX), crushed);
     requireRange(issues, "stabilizingDepth", prefix + " Additional Stabilizing: Depth (m)",
-        field(stabilizing, Stabilizing::depth), ZERO, FMT_2DP_SMALL, new BigDecimal("99.9"),
-        crushed);
+        field(stabilizing, Stabilizing::depth),
+        band(ZERO, FMT_2DP_SMALL, new BigDecimal("99.9")), crushed);
     requireRange(issues, "stabilizingDistanceToSource",
         prefix + " Additional Stabilizing: Distance to Source (km)",
-        field(stabilizing, Stabilizing::distanceToSource), ZERO, FMT_1DP, WIDTH_MAX,
-        crushed);
+        field(stabilizing, Stabilizing::distanceToSource),
+        band(ZERO, FMT_1DP, WIDTH_MAX), crushed);
 
     if (!crushed) {
       return new DetailOutcome(
@@ -276,19 +293,24 @@ final class Schedule10CheckStatus {
         stabilizing.ballastMaterialCode());
     requireRange(issues, "stabilizingActualCost",
         prefix + " Additional Stabilizing: Actual Cost ($)",
-        stabilizing.actualCost(), ZERO, FMT_MONEY, SEVEN_DIGITS, true);
+        stabilizing.actualCost(),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), true);
     // Floor of ZERO, while the entry form accepts down to -9,999,999 for both transfers. A value
     // the form allowed is therefore reported here. Legacy carries the same disagreement.
     requireRange(issues, "stabilizingTtTransfer",
         prefix + " Additional Stabilizing: TtT Transfer ($)",
-        stabilizing.ttTransfer(), ZERO, FMT_MONEY, SEVEN_DIGITS, true);
+        stabilizing.ttTransfer(),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), true);
     requireRange(issues, "stabilizingOtherTransfer",
         prefix + " Additional Stabilizing: Other Transfer ($)",
-        stabilizing.otherTransfer(), ZERO, FMT_MONEY, SEVEN_DIGITS, true);
+        stabilizing.otherTransfer(),
+        band(ZERO, FMT_MONEY, SEVEN_DIGITS), true);
     requireRange(issues, "stabilizingTotal", prefix + " Additional Stabilizing: total ($)",
-        stabilizing.total(), new BigDecimal("-999999"), FMT_MONEY_NARROW, SEVEN_DIGITS, false);
+        stabilizing.total(),
+        band(new BigDecimal("-999999"), FMT_MONEY_NARROW, SEVEN_DIGITS), false);
     requireRange(issues, "stabilizingCostPerLength", prefix + " Additional Stabilizing: $/km",
-        stabilizing.costPerLength(), ZERO, FMT_MONEY_WIDE, EIGHT_DIGITS, false);
+        stabilizing.costPerLength(),
+        band(ZERO, FMT_MONEY_WIDE, EIGHT_DIGITS), false);
 
     return new DetailOutcome(
         detail.roadDetailId(), detail.rowNumber(), detail.roadDetailLabel(), issues);
@@ -302,6 +324,26 @@ final class Schedule10CheckStatus {
   }
 
   /**
+   * One rule's inclusive bounds and the pattern both are rendered with.
+   *
+   * <p>Bundled into a record so {@link #requireRange} takes six parameters rather than eight (Sonar
+   * brain-overload, 2026-08-18). The three genuinely travel together: legacy formats BOTH bounds
+   * with the LOWER bound's pattern, which is why one format field serves both and why they cannot
+   * sensibly be separated.
+   *
+   * @param lower the inclusive lower bound
+   * @param upper the inclusive upper bound; equal to {@code lower} selects the must-equal message
+   * @param format the legacy number pattern both bounds are rendered with
+   */
+  private record Band(BigDecimal lower, BigDecimal upper, String format) {
+  }
+
+  /** Reads as a bound pair at the call site, in the legacy lower/format/upper order. */
+  private static Band band(BigDecimal lower, String format, BigDecimal upper) {
+    return new Band(lower, upper, format);
+  }
+
+  /**
    * The legacy numeric rule: an absent optional value passes, an absent required value is reported
    * as missing, and otherwise the value must sit inside the inclusive range.
    *
@@ -311,8 +353,11 @@ final class Schedule10CheckStatus {
    * instead, which agrees for every rule in this schedule and does not depend on that accident.
    */
   private static void requireRange(
-      List<Issue> issues, String field, String label, BigDecimal value,
-      BigDecimal lower, String lowerFormat, BigDecimal upper, boolean required) {
+      List<Issue> issues, String field, String label, BigDecimal value, Band band,
+      boolean required) {
+    BigDecimal lower = band.lower();
+    BigDecimal upper = band.upper();
+    String lowerFormat = band.format();
     if (value == null) {
       if (required) {
         issues.add(new Issue(field, label, MSG_REQUIRED, List.of()));
