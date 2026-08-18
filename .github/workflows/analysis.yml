@@ -40,10 +40,14 @@ jobs:
           java-cache: maven
           java-distribution: temurin
           java-version: "21"
-          # cpd.exclusions: RoadGroupLookup is a verbatim port of the legacy RMG tables
-          # (RoadGroupUtil.setRmgByTfaTsbNumberCode/setRmgByTflNumberCode), where ~18 of the
-          # TSA cases are token-identical apart from their literals. CPD reads that as 174
-          # duplicated lines; the table is the business rule and must not be de-duplicated.
+          # cpd.exclusions: both RoadGroup lookups are verbatim ports of the legacy RMG tables,
+          # where ~18 of the TSA cases are token-identical apart from their literals. CPD reads
+          # that as ~174 duplicated lines each; the tables ARE the business rule and must not be
+          # de-duplicated. schedule6 ports setRmgByTfaTsbNumberCode/setRmgByTflNumberCode;
+          # schedule10 ports setRG10ByTsaTsbNumberCode/setRG10ByTflNumberCode.
+          # They are NOT interchangeable: the same inputs map to DIFFERENT road groups (TSA 01 ->
+          # 15 vs 11, TSA 08 -> 10 vs 7, TFL 08 -> 7 vs 10), so "resolving" the duplication by
+          # merging them would silently corrupt one schedule's derived, user-visible Road Group.
           # xmlReportPaths: with the ITs running, the pom's jacoco `merge`/`report-merged` executions
           # produce the union of surefire and failsafe coverage. Sonar would otherwise keep reading
           # the unit-only report and still count IT-covered lines as uncovered.
@@ -52,7 +56,7 @@ jobs:
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_backend
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco-merged/jacoco.xml
-            -Dsonar.cpd.exclusions=**/schedule6/RoadGroupLookup.java
+            -Dsonar.cpd.exclusions=**/schedule6/RoadGroupLookup.java,**/schedule10/RoadGroup10Lookup.java
           sonar_token: ${{ secrets.sonar_token_backend }}
           triggers: ('backend/')
 
