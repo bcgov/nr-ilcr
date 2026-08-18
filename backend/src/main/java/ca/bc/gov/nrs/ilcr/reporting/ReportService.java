@@ -31,6 +31,7 @@ import net.sf.jasperreports.jackson.util.JacksonUtil;
 import net.sf.jasperreports.pdf.JRPdfExporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -74,7 +75,9 @@ public class ReportService {
   private final Map<ScheduleKey, JasperReport> compiledTemplates = new ConcurrentHashMap<>();
 
   /**
-   * @param dataSource the single {@code @Primary} application datasource Schedule 9 fills from
+   * @param dataSource the dedicated read-only reporting datasource (Story 29.1) the Schedule 9 fill
+   *     borrows from — isolated from the {@code @Primary} transactional pool so a burst of report
+   *     renders cannot starve ordinary schedule requests
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
@@ -83,7 +86,7 @@ public class ReportService {
    * @param schedule11Service the Schedule 11 read (bean-datasource feed)
    */
   public ReportService(
-      DataSource dataSource,
+      @Qualifier("reportingDataSource") DataSource dataSource,
       Schedule5Service schedule5Service,
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,

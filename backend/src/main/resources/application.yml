@@ -25,6 +25,17 @@ spring:
       max-lifetime: ${SPRING_DATASOURCE_MAX_LIFETIME:180000}
       keepalive-time: ${SPRING_DATASOURCE_KEEPALIVE_TIME:60000}
       leak-detection-threshold: ${SPRING_DATASOURCE_LEAK_DETECTION_THRESHOLD:60000}
+    # Story 29.1 — a SEPARATE, read-only, small pool dedicated to the Jasper report-fill path
+    # (the Schedule 9 SQL-in-template fill borrows a JDBC connection for the whole render). It shares
+    # the same DB (url/username/password above) but its own small ceiling, so a burst of concurrent
+    # report renders can only exhaust THIS pool — never the transactional pool that serves ordinary
+    # schedule requests. Size it to peak concurrent report renders (default 3). No leak-detection: a
+    # render legitimately holds its connection for the full fill+format.
+    reporting:
+      hikari:
+        pool-name: ${SPRING_DATASOURCE_REPORTING_POOL_NAME:ILCRReportingPool}
+        minimum-idle: ${SPRING_DATASOURCE_REPORTING_MIN_IDLE:0}
+        maximum-pool-size: ${SPRING_DATASOURCE_REPORTING_MAX_POOL_SIZE:3}
 
 server:
   port: ${SERVER_PORT:8080}
