@@ -145,9 +145,10 @@ public class PrintService {
         || request.schedule4() || request.schedule8() || request.schedule10()
         || request.printMillInformationReport();
     if (anyUnimplemented) {
-      // Logged even under allSchedules: "all" still requests these deferred options, and the interim
-      // gap should be visible whether they were checked individually or swept in by the "all" shortcut.
-      log.info("Print selection includes schedules/options not yet implemented in Epic 20.2 "
+      // DEBUG, not INFO: the SPA (Story 20.3) disables the deferred schedules/options, so this is an
+      // expected, benign skip for API/allSchedules callers — not worth a per-request INFO line. The
+      // interim gap is documented; raise to DEBUG logging when diagnosing a caller that still sends them.
+      log.debug("Print selection includes schedules/options not yet implemented in Epic 20.2 "
           + "(1/2/3/4/8/10 and/or the Mill Information report); those are skipped for now");
     }
   }

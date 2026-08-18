@@ -28,28 +28,41 @@ type ScheduleFlag =
   | 'schedule10'
   | 'schedule11'
 
-const SCHEDULES: { readonly key: ScheduleFlag; readonly label: string }[] = [
-  { key: 'schedule1', label: 'Schedule 1' },
-  { key: 'schedule2', label: 'Schedule 2' },
-  { key: 'schedule3', label: 'Schedule 3' },
-  { key: 'schedule4', label: 'Schedule 4' },
-  { key: 'schedule5', label: 'Schedule 5' },
-  { key: 'schedule6', label: 'Schedule 6' },
-  { key: 'schedule7a', label: 'Schedule 7A' },
-  { key: 'schedule7b', label: 'Schedule 7B' },
-  { key: 'schedule8', label: 'Schedule 8' },
-  { key: 'schedule9', label: 'Schedule 9' },
-  { key: 'schedule10', label: 'Schedule 10' },
-  { key: 'schedule11', label: 'Schedule 11' },
+// `renderable` = the backend produces a section today (5/6/7A/7B/9/11). The rest are shown for legacy
+// parity but disabled with a "(coming soon)" note until their print backend lands, so a selection can't
+// silently no-op (and the server never has to skip a deferred schedule).
+const SCHEDULES: {
+  readonly key: ScheduleFlag
+  readonly label: string
+  readonly renderable: boolean
+}[] = [
+  { key: 'schedule1', label: 'Schedule 1', renderable: false },
+  { key: 'schedule2', label: 'Schedule 2', renderable: false },
+  { key: 'schedule3', label: 'Schedule 3', renderable: false },
+  { key: 'schedule4', label: 'Schedule 4', renderable: false },
+  { key: 'schedule5', label: 'Schedule 5', renderable: true },
+  { key: 'schedule6', label: 'Schedule 6', renderable: true },
+  { key: 'schedule7a', label: 'Schedule 7A', renderable: true },
+  { key: 'schedule7b', label: 'Schedule 7B', renderable: true },
+  { key: 'schedule8', label: 'Schedule 8', renderable: false },
+  { key: 'schedule9', label: 'Schedule 9', renderable: true },
+  { key: 'schedule10', label: 'Schedule 10', renderable: false },
+  { key: 'schedule11', label: 'Schedule 11', renderable: true },
 ]
 
 type OptionFlag = 'printScheduleInformation' | 'printComments' | 'printMillInformationReport'
 
-const OPTIONS: { readonly key: OptionFlag; readonly label: string }[] = [
-  { key: 'printScheduleInformation', label: 'Schedule information' },
-  { key: 'printComments', label: 'Comments' },
-  { key: 'printMillInformationReport', label: 'Mill information report' },
-]
+const OPTIONS: { readonly key: OptionFlag; readonly label: string; readonly available: boolean }[] =
+  [
+    { key: 'printScheduleInformation', label: 'Schedule information', available: true },
+    { key: 'printComments', label: 'Comments', available: true },
+    // Deferred to Epic 19 (no Mill Information backend yet).
+    { key: 'printMillInformationReport', label: 'Mill information report', available: false },
+  ]
+
+const RENDERABLE_SCHEDULES = SCHEDULES.filter((s) => s.renderable)
+const AVAILABLE_OPTIONS = OPTIONS.filter((o) => o.available)
+const comingSoon = (label: string) => `${label} (coming soon)`
 
 const noneSelected = <T extends string>(keys: readonly { key: T }[]): Record<T, boolean> =>
   Object.fromEntries(keys.map((k) => [k.key, false])) as Record<T, boolean>
@@ -71,15 +84,21 @@ const PrintSchedules: FC = () => {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const allSelected = SCHEDULES.every((s) => schedules[s.key])
-  const anyScheduleSelected = SCHEDULES.some((s) => schedules[s.key])
-  const anyOptionSelected = OPTIONS.some((o) => options[o.key])
+  // "All"/enable guards consider only the renderable schedules and available options — the disabled
+  // ones can never be selected, so they must not gate (or be swept into) a generate.
+  const allSelected = RENDERABLE_SCHEDULES.every((s) => schedules[s.key])
+  const anyScheduleSelected = RENDERABLE_SCHEDULES.some((s) => schedules[s.key])
+  const anyOptionSelected = AVAILABLE_OPTIONS.some((o) => options[o.key])
   const canGenerate = !busy && !contextMissing && anyScheduleSelected && anyOptionSelected
 
   function toggleAll(checked: boolean) {
-    setSchedules(
-      Object.fromEntries(SCHEDULES.map((s) => [s.key, checked])) as Record<ScheduleFlag, boolean>,
-    )
+    setSchedules((prev) => {
+      const next = { ...prev }
+      for (const s of RENDERABLE_SCHEDULES) {
+        next[s.key] = checked
+      }
+      return next
+    })
   }
 
   async function handleGenerate() {
@@ -87,8 +106,10 @@ const PrintSchedules: FC = () => {
     setError(null)
     setMessage(null)
     try {
-      // allSchedules is the legacy "all" shortcut (BR-07); the individual flags carry the selection.
-      const body = { ...schedules, allSchedules: allSelected, ...options }
+      // Send only the individual flags — NOT the legacy allSchedules "all" shortcut: it would expand
+      // server-side to all twelve (BR-07), re-including the deferred schedules the UI deliberately
+      // disables. The renderable flags already carry the full selectable set.
+      const body = { ...schedules, allSchedules: false, ...options }
       const response = await apiService
         .getAxiosInstance()
         .post(`${PRINT_PATH}?millId=${String(millId)}&year=${String(year)}`, body, {
@@ -149,7 +170,8 @@ const PrintSchedules: FC = () => {
                   <Checkbox
                     key={s.key}
                     id={`print-${s.key}`}
-                    labelText={s.label}
+                    labelText={s.renderable ? s.label : comingSoon(s.label)}
+                    disabled={!s.renderable}
                     checked={schedules[s.key]}
                     onChange={(_event, { checked }) =>
                       setSchedules((prev) => ({ ...prev, [s.key]: checked }))
@@ -163,7 +185,8 @@ const PrintSchedules: FC = () => {
                   <Checkbox
                     key={o.key}
                     id={`print-${o.key}`}
-                    labelText={o.label}
+                    labelText={o.available ? o.label : comingSoon(o.label)}
+                    disabled={!o.available}
                     checked={options[o.key]}
                     onChange={(_event, { checked }) =>
                       setOptions((prev) => ({ ...prev, [o.key]: checked }))

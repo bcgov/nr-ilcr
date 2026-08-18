@@ -37,23 +37,31 @@ afterEach(() => {
 })
 
 describe('PrintSchedules', () => {
-  it('renders all twelve schedules, the print options, and a disabled Generate button', () => {
+  it('renders schedules/options with the deferred ones disabled ("coming soon"), Generate disabled', () => {
     render(<PrintSchedules />)
     expect(screen.getByRole('checkbox', { name: 'Select all schedules' })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Schedule 1' })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Schedule 7A' })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Schedule 11' })).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Comments' })).toBeInTheDocument()
+    // Renderable schedules + content options are enabled.
+    expect(screen.getByRole('checkbox', { name: 'Schedule 7A' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 11' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Comments' })).toBeEnabled()
+    // Deferred schedules + the Mill info report are shown but disabled with a coming-soon note.
+    expect(screen.getByRole('checkbox', { name: 'Schedule 1 (coming soon)' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 8 (coming soon)' })).toBeDisabled()
+    expect(
+      screen.getByRole('checkbox', { name: 'Mill information report (coming soon)' }),
+    ).toBeDisabled()
     // Nothing selected yet → Generate is disabled.
     expect(screen.getByRole('button', { name: /Generate PDF/ })).toBeDisabled()
   })
 
-  it('"Select all schedules" checks every schedule', async () => {
+  it('"Select all schedules" checks only the renderable schedules', async () => {
     render(<PrintSchedules />)
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select all schedules' }))
-    for (const label of ['Schedule 1', 'Schedule 7B', 'Schedule 9', 'Schedule 11']) {
+    for (const label of ['Schedule 5', 'Schedule 7B', 'Schedule 9', 'Schedule 11']) {
       expect(screen.getByRole('checkbox', { name: label })).toBeChecked()
     }
+    // A deferred schedule stays disabled and unchecked.
+    expect(screen.getByRole('checkbox', { name: 'Schedule 1 (coming soon)' })).not.toBeChecked()
   })
 
   it('posts the selection and downloads the PDF on success', async () => {
