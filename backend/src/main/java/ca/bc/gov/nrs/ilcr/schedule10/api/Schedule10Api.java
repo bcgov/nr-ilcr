@@ -211,8 +211,8 @@ public interface Schedule10Api {
    * @param millId the raw mill id param
    * @param year the raw reporting year param
    * @param authentication the caller
-   * @return 200 with the outcome — a single banner when everything passes, otherwise the outstanding
-   *     requirements per page and road detail
+   * @return 200 with the outcome — a single banner when everything passes, otherwise the
+   *     outstanding requirements per page and road detail
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule10CheckStatusResponse> checkStatus(

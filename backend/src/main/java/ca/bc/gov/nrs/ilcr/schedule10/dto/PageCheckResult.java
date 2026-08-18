@@ -9,9 +9,9 @@ import java.util.List;
  * appear here and the emission order is preserved within each.
  *
  * <p>{@code pageLabel} is carried because it is the literal prefix legacy puts in front of every
- * composed message for this page — including, on a TFL-located page, the text {@code "TSA: null"} that
- * the read path reproduces. The label the client sees in a Check Status line therefore matches the
- * label it sees on the page summary.
+ * composed message for this page — including, on a TFL-located page, the text {@code "TSA: null"}
+ * that the read path reproduces. The label the client sees in a Check Status line therefore matches
+ * the label it sees on the page summary.
  *
  * @param pageId the database id, for UI correlation
  * @param pageNumber the 1-based positional ordinal, as used in the label

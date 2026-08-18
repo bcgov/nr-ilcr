@@ -87,19 +87,19 @@ final class RoadGroup10Lookup {
   /**
    * The storable form of an entered TFL number, or {@code null} when it is not a valid TFL.
    *
-   * <p>Legacy's validator ({@code ILCRTflNumberValidator:33-45}) accepts a TFL if the lookup resolves
-   * it directly, or if it resolves after applying the missing-leading-zero aliases
-   * ({@code RoadGroupUtil.translateNoLeadingZeroButNumberMatch} :202-215). It validates the alias but
-   * then stores the raw entry, which leaves an accepted value in a form the reference table does not
+   * <p>Legacy's validator ({@code ILCRTflNumberValidator:33-45}) accepts a TFL if the lookup
+   * resolves it directly, or if it resolves after applying the missing-leading-zero aliases ({@code
+   * RoadGroupUtil.translateNoLeadingZeroButNumberMatch} :202-215). It validates the alias but then
+   * stores the raw entry, which leaves an accepted value in a form the reference table does not
    * hold; this returns the canonical form so the stored value is the one that resolves.
    *
    * <p><strong>On which table validates.</strong> The legacy validator calls Schedule <em>6</em>'s
-   * lookup even for this screen. That reads like a defect, but the two tables accept an identical set
-   * of 22 keys — verified by diffing the {@code case} labels of both methods — so validating here
-   * against Schedule 10's own table accepts and rejects exactly what legacy does. Only the returned
-   * Road Group values differ between the tables, which is what this class exists to keep separate.
-   * The cross-wiring is still worth reporting upstream: the tables are maintained independently, so a
-   * future edit to either would silently split validation from derivation.
+   * lookup even for this screen. That reads like a defect, but the two tables accept an identical
+   * set of 22 keys — verified by diffing the {@code case} labels of both methods — so validating
+   * here against Schedule 10's own table accepts and rejects exactly what legacy does. Only the
+   * returned Road Group values differ between the tables, which is what this class exists to keep
+   * separate. The cross-wiring is still worth reporting upstream: the tables are maintained
+   * independently, so a future edit to either would silently split validation from derivation.
    *
    * @param tflNumberCode the entered TFL number, possibly missing a leading zero
    * @return the canonical TFL to store, or {@code null} when the value is not a valid TFL

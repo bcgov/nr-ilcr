@@ -8,14 +8,14 @@ import java.math.BigDecimal;
 
 /**
  * The sub-grade half of a road-detail write: two dimensions, three costs, and the six "Less"
- * deduction lines. The four derived values ({@code totalCosts}, {@code totalDeductions},
- * {@code total}, {@code costPerLength}) are deliberately ABSENT — they are computed server-side on
- * every read and must never be accepted from a client.
+ * deduction lines. The four derived values ({@code totalCosts}, {@code totalDeductions}, {@code
+ * total}, {@code costPerLength}) are deliberately ABSENT — they are computed server-side on every
+ * read and must never be accepted from a client.
  *
- * <p><strong>Every cost here is a stored row, not a column.</strong> Each maps to a legacy cost-item
- * ordinal in {@code ILCR_COST_REPORT_DETAIL}, and the six deductions span THREE subcategories —
- * {@code lessOtherEng} and {@code otherTransfer} live under subcategory 3 rather than 1. Routing is
- * by item id in the service.
+ * <p><strong>Every cost here is a stored row, not a column.</strong> Each maps to a legacy
+ * cost-item ordinal in {@code ILCR_COST_REPORT_DETAIL}, and the six deductions span THREE
+ * subcategories — {@code lessOtherEng} and {@code otherTransfer} live under subcategory 3 rather
+ * than 1. Routing is by item id in the service.
  *
  * <p><strong>{@code length} is capped at 100, not 999.999.</strong> That looks wrong beside the
  * additional-stabilizing length, which correctly allows 999.999 — but legacy binds this field's

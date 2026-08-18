@@ -145,8 +145,8 @@ public class Schedule10Service {
     // indistinguishable from an absent row — the individual field renders blank while the derived
     // totals coerce it to zero (see Schedule10Amounts).
     //
-    // Map.merge CANNOT be used to build this map: it is specified to throw NullPointerException on a
-    // null value, which turns an ordinary blank cost into a 500 during document assembly.
+    // Map.merge CANNOT be used to build this map: it is specified to throw NullPointerException
+    // on a null value, which turns an ordinary blank cost into a 500 during document assembly.
     //
     // Three hazards, all handled by logging rather than by failing the read — this is a report
     // screen, and refusing to render is worse for the licensee than rendering with a warning.
@@ -429,7 +429,9 @@ public class Schedule10Service {
   // WRITES
   // ===============================================================================================
 
-  /** The legacy sentinel the TSA/TFL dropdown carries for a TFL-located page ({@code Constant.TFL}). */
+  /**
+   * The legacy sentinel the TSA/TFL dropdown carries for a TFL-located page ({@code Constant.TFL}).
+   */
   private static final String TFL = "TFL";
 
   /** The schedule's legacy category id, on every page row and every scoped predicate. */
@@ -453,11 +455,12 @@ public class Schedule10Service {
   /**
    * The ASM moisture gradient, driest to wettest, used only to break a tie deterministically.
    *
-   * <p>The cross-reference resolves a BEC classification plus RSMR class to exactly one moisture pair
-   * for the overwhelming majority of combinations. Where it offers more than one, legacy declined to
-   * auto-select and left the choice to a dropdown the business has since removed — so a rule is
-   * needed, and the driest candidate is chosen because it is the conservative end of the scale and,
-   * being ordered by the Ministry's own code semantics, is stable rather than incidental.
+   * <p>The cross-reference resolves a BEC classification plus RSMR class to exactly one moisture
+   * pair for the overwhelming majority of combinations. Where it offers more than one, legacy
+   * declined to auto-select and left the choice to a dropdown the business has since removed — so a
+   * rule is needed, and the driest candidate is chosen because it is the conservative end of the
+   * scale and, being ordered by the Ministry's own code semantics, is stable rather than
+   * incidental.
    */
   private static final List<String> ASM_MOISTURE_GRADIENT =
       List.of("ED", "VD", "MD", "SD", "F", "M", "VM", "W");
@@ -534,9 +537,9 @@ public class Schedule10Service {
   /**
    * Copies a construction page and saves the copy immediately.
    *
-   * <p><strong>The copy carries no road details.</strong> Legacy's copy constructor nulls both detail
-   * collections and then saves without cascading, so only the page header is duplicated. Reproduced
-   * as-is; a copy that silently duplicated every road would be a different feature.
+   * <p><strong>The copy carries no road details.</strong> Legacy's copy constructor nulls both
+   * detail collections and then saves without cascading, so only the page header is duplicated.
+   * Reproduced as-is; a copy that silently duplicated every road would be a different feature.
    *
    * @param millId the validated mill
    * @param year the validated reporting year
@@ -566,8 +569,9 @@ public class Schedule10Service {
   /**
    * Deletes a page and everything beneath it.
    *
-   * <p>Order is grandchildren, children, parent. Neither delete-path foreign key cascades in delivery,
-   * so the reverse order is rejected outright. Legacy reached the same order through its ORM cascade.
+   * <p>Order is grandchildren, children, parent. Neither delete-path foreign key cascades in
+   * delivery, so the reverse order is rejected outright. Legacy reached the same order through its
+   * ORM cascade.
    *
    * @param millId the validated mill
    * @param year the validated reporting year
@@ -625,9 +629,9 @@ public class Schedule10Service {
 
   /**
    * Edits a road detail under its own optimistic lock — the detail's revision, not its page's. A
-   * road-detail write deliberately does not bump the page: cross-bumping would make every sibling edit
-   * conflict against a page token the client legitimately holds, and legacy has no lock at all to be
-   * faithful to.
+   * road-detail write deliberately does not bump the page: cross-bumping would make every sibling
+   * edit conflict against a page token the client legitimately holds, and legacy has no lock at all
+   * to be faithful to.
    *
    * @param millId the validated mill
    * @param year the validated reporting year
@@ -689,9 +693,9 @@ public class Schedule10Service {
   /**
    * Runs the Schedule 10 readiness rules over the current document.
    *
-   * <p>Mutates nothing and is deliberately NOT Draft-gated: a submitted or verified schedule can still
-   * be checked, which is why the endpoint asks only for view rights. Scope is always the whole
-   * schedule — legacy has no per-page mode, and neither does any other schedule here.
+   * <p>Mutates nothing and is deliberately NOT Draft-gated: a submitted or verified schedule can
+   * still be checked, which is why the endpoint asks only for view rights. Scope is always the
+   * whole schedule — legacy has no per-page mode, and neither does any other schedule here.
    *
    * <p>Evaluating the assembled document rather than the tables means Check Status and the GET can
    * never disagree, and it puts the derived totals that several rules check within reach.
@@ -714,12 +718,13 @@ public class Schedule10Service {
   /**
    * The write gate: only a Draft 1–10 track may be written.
    *
-   * <p>Legacy has no server-side check at all — its gate is the rendered {@code disabled} attribute —
-   * so a crafted post reaches its DAO unimpeded. This is the house hardening rather than parity.
+   * <p>Legacy has no server-side check at all — its gate is the rendered {@code disabled} attribute
+   * — so a crafted post reaches its DAO unimpeded. This is the house hardening rather than parity.
    *
-   * <p>The status read is deliberately not locked. A concurrent transition between this check and the
-   * write is theoretically possible, but no endpoint in the application can move a track today, and
-   * the locked variant belongs to the status-transition work where it can be applied consistently.
+   * <p>The status read is deliberately not locked. A concurrent transition between this check and
+   * the write is theoretically possible, but no endpoint in the application can move a track today,
+   * and the locked variant belongs to the status-transition work where it can be applied
+   * consistently.
    */
   private void requireDraft(long millId, int year) {
     if (!DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
@@ -773,23 +778,25 @@ public class Schedule10Service {
   }
 
   /**
-   * Derives the two moisture codes the business removed from the screen but the schema still demands.
+   * Derives the two moisture codes the business removed from the screen but the schema still
+   * demands.
    *
    * <p>This is the port of legacy's own filter-and-auto-select: the cross-reference resolves a BEC
-   * classification plus RSMR class to the moisture pair, and legacy selected it automatically whenever
-   * the filtered list held exactly one entry. Both inputs are mandatory on every write, so the
-   * derivation always has what it needs.
+   * classification plus RSMR class to the moisture pair, and legacy selected it automatically
+   * whenever the filtered list held exactly one entry. Both inputs are mandatory on every write, so
+   * the derivation always has what it needs.
    *
-   * <p>No sentinel is ever written. These columns carry a real moisture classification that the legacy
-   * print reports consume, and every road detail in delivery holds genuine values.
+   * <p>No sentinel is ever written. These columns carry a real moisture classification that the
+   * legacy print reports consume, and every road detail in delivery holds genuine values.
    *
-   * <p>Zero candidates is a rejection, not a fallback: it means the classification is not offered at
-   * all, or is offered but has no pair for the submitted RSMR class. Letting it through would reach two
-   * NOT NULL columns with enabled foreign keys and return an opaque constraint violation.
+   * <p>Zero candidates is a rejection, not a fallback: it means the classification is not offered
+   * at all, or is offered but has no pair for the submitted RSMR class. Letting it through would
+   * reach two NOT NULL columns with enabled foreign keys and return an opaque constraint violation.
    */
   private MoistureCodePair deriveMoistureCodes(RoadDetailRequest request) {
     List<MoistureCodePair> candidates =
-        repository.findMoistureCodes(request.becbiogeoCatalogueId(), request.relSoilMoistRgmClsCode());
+        repository.findMoistureCodes(
+            request.becbiogeoCatalogueId(), request.relSoilMoistRgmClsCode());
     if (candidates.isEmpty()) {
       throw new InvalidBecClassificationException();
     }
@@ -803,7 +810,10 @@ public class Schedule10Service {
         .orElseThrow(InvalidBecClassificationException::new);
   }
 
-  /** An ASM code's place on the moisture gradient; anything unrecognised sorts last, deterministically. */
+  /**
+   * An ASM code's place on the moisture gradient; anything unrecognised sorts last,
+   * deterministically.
+   */
   private static int gradientRank(String asmCode) {
     int rank = ASM_MOISTURE_GRADIENT.indexOf(asmCode);
     return rank >= 0 ? rank : ASM_MOISTURE_GRADIENT.size();
@@ -814,17 +824,18 @@ public class Schedule10Service {
    * applies it at save time.
    *
    * <ul>
-   *   <li>{@code N} — the four dimensions, the actual cost and the other transfer are forced to zero,
-   *       and the material code to {@code "NA"}. Note the tree-to-truck transfer is deliberately NOT
-   *       zeroed: legacy re-converts only the actual-cost and other-transfer items.</li>
+   *   <li>{@code N} — the four dimensions, the actual cost and the other transfer are forced to
+   *       zero, and the material code to {@code "NA"}. Note the tree-to-truck transfer is
+   *       deliberately NOT zeroed: legacy re-converts only the actual-cost and other-transfer
+   *       items.</li>
    *   <li>{@code D} — only the material code is forced to {@code "NA"}; the figures are stored as
    *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.</li>
    *   <li>{@code C} — nothing is forced, and the material code is required.</li>
    * </ul>
    *
-   * <p>Legacy additionally cleared these fields from the browser when the method changed. That is view
-   * state rather than save behaviour, and a stateless API cannot observe a change — so only the
-   * save-time rules are reproduced.
+   * <p>Legacy additionally cleared these fields from the browser when the method changed. That is
+   * view state rather than save behaviour, and a stateless API cannot observe a change — so only
+   * the save-time rules are reproduced.
    */
   private RoadDetailRequest applyBallastCoupling(RoadDetailRequest request) {
     StabilizingRequest stabilizing = request.stabilizing();
@@ -866,8 +877,8 @@ public class Schedule10Service {
   /**
    * Rejects a forest region the year-filtered list does not offer.
    *
-   * <p>The list query already includes any code a stored row in this mill/year still references, which
-   * is what lets a code survive its own expiry rather than permanently blocking a re-save.
+   * <p>The list query already includes any code a stored row in this mill/year still references,
+   * which is what lets a code survive its own expiry rather than permanently blocking a re-save.
    */
   private void requireOfferedForestRegion(long millId, int year, String code) {
     requireOffered(repository.findForestRegions(millId, year), code);
@@ -879,8 +890,9 @@ public class Schedule10Service {
     StabilizingRequest stabilizing = request.stabilizing();
     requireOffered(repository.findBallastMethods(millId, year), stabilizing.ballastMethodCode());
     String material = blankToNull(stabilizing.ballastMaterialCode());
-    // "NA" is the code legacy forces for the methods that take no material; it is a real row, but the
-    // coupling can substitute it after this check, so only a client-supplied value is validated.
+    // "NA" is the code legacy forces for the methods that take no material; it is a real row, but
+    // the coupling can substitute it after this check, so only a client-supplied value is
+    // validated.
     if (material != null) {
       requireOffered(repository.findBallastMaterials(millId, year), material);
     }
@@ -915,8 +927,8 @@ public class Schedule10Service {
    * Maps the request onto the detail entity, normalising every scaled measurement to its column's
    * declared scale on the way in.
    *
-   * <p>Normalising on write as well as on read matters: Oracle does not preserve trailing zeros, so a
-   * value stored at the wrong scale would round-trip differently from what was entered.
+   * <p>Normalising on write as well as on read matters: Oracle does not preserve trailing zeros, so
+   * a value stored at the wrong scale would round-trip differently from what was entered.
    */
   private static RoadConstructionReportDetailEntity toDetailEntity(
       int roadDetailId, int pageId, RoadDetailRequest request) {
@@ -959,8 +971,8 @@ public class Schedule10Service {
    * Upserts all twelve cost lines for a road detail.
    *
    * <p>A blank cost is stored as {@code COST = NULL} rather than deleting its row: legacy never
-   * removes a cost row on save, and the read path treats a stored NULL exactly as it treats an absent
-   * row — the field renders blank while the totals coerce it to zero.
+   * removes a cost row on save, and the read path treats a stored NULL exactly as it treats an
+   * absent row — the field renders blank while the totals coerce it to zero.
    */
   private void writeCostLines(int roadDetailId, RoadDetailRequest request, String user) {
     SubGradeRequest subGrade = request.subGrade() != null ? request.subGrade() : NO_SUB_GRADE;
@@ -984,8 +996,8 @@ public class Schedule10Service {
   /**
    * Runs a write, translating a data-access failure into the house save error.
    *
-   * <p>Only the exception TYPE is logged. Never the values: a rejected write would otherwise put cost,
-   * volume or comment content into the log, which the data-sensitivity rules forbid.
+   * <p>Only the exception TYPE is logged. Never the values: a rejected write would otherwise put
+   * cost, volume or comment content into the log, which the data-sensitivity rules forbid.
    */
   private void persist(Runnable write) {
     try {

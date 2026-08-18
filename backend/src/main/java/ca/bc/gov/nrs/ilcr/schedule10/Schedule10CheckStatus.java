@@ -21,10 +21,10 @@ import java.util.stream.Collectors;
  * (:32-339).
  *
  * <p><strong>It evaluates the assembled document, not the database.</strong> Legacy validates its
- * loaded domain object, so this takes the same input — which means Check Status sees exactly what the
- * GET serves, needs no queries of its own, and can be unit-tested from a hand-built document. It also
- * puts the derived totals within reach: several rules check {@code Total Costs}, {@code Total} and
- * {@code $/km}, which exist only as derived values.
+ * loaded domain object, so this takes the same input — which means Check Status sees exactly what
+ * the GET serves, needs no queries of its own, and can be unit-tested from a hand-built document.
+ * It also puts the derived totals within reach: several rules check {@code Total Costs}, {@code
+ * Total} and {@code $/km}, which exist only as derived values.
  *
  * <p><strong>Emission order is contractual.</strong> Rules run page-by-page, and within a page the
  * three page-level rules come before the per-road ones, in the order legacy declares them. The
@@ -32,28 +32,29 @@ import java.util.stream.Collectors;
  * the user's error list.
  *
  * <p>This class resolves no text. It emits bundle keys plus pre-formatted arguments and the label
- * prefix; the controller performs the single concatenation {@code label + ": " + resolvedText}, so the
- * verbatim byte composition lives in exactly one place.
+ * prefix; the controller performs the single concatenation {@code label + ": " + resolvedText}, so
+ * the verbatim byte composition lives in exactly one place.
  *
  * <p><strong>Legacy quirks preserved deliberately</strong> — each is reproduced, not corrected:
  * <ul>
- *   <li>{@code Road Name} and {@code Sub Zone} are titled with the PAGE label only, so on a page with
- *       several roads the user cannot tell which road is at fault.</li>
- *   <li>{@code Sub Zone} has no control anywhere on the screen; it is populated only on read from the
- *       catalogue row.</li>
- *   <li>{@code Material Type Total (%)} is reported whenever the five percentages do not total 100 —
- *       including when all five are blank, because the legacy total coerces nulls to zero and is
+ *   <li>{@code Road Name} and {@code Sub Zone} are titled with the PAGE label only, so on a page
+ *       with several roads the user cannot tell which road is at fault.</li>
+ *   <li>{@code Sub Zone} has no control anywhere on the screen; it is populated only on read from
+ *       the catalogue row.</li>
+ *   <li>{@code Material Type Total (%)} is reported whenever the five percentages do not total 100
+ *       — including when all five are blank, because the legacy total coerces nulls to zero and is
  *       therefore never absent.</li>
- *   <li>Additional-stabilizing transfers are checked against a floor of ZERO here while the entry form
- *       accepts negatives, so a value the form allowed can be reported as out of range.</li>
- *   <li>{@code Region}, {@code Road Type} and {@code Ballast Method Code} are required on the form but
- *       checked NOWHERE here.</li>
- *   <li>End Haul and Overland figures are checked nowhere — those rules are commented out in legacy.</li>
- *   <li>Both range bounds are formatted with the LOWER bound's pattern; legacy accepts an upper pattern
- *       and then ignores it.</li>
- *   <li>Label drift against the screen is kept as legacy writes it: {@code Ripple Rock} for the screen's
- *       "Rippable Rock", {@code Less Landing} singular, {@code Less Other Eng}, and a lower-case
- *       {@code total} in one stabilizing label.</li>
+ *   <li>Additional-stabilizing transfers are checked against a floor of ZERO here while the entry
+ *       form accepts negatives, so a value the form allowed can be reported as out of range.</li>
+ *   <li>{@code Region}, {@code Road Type} and {@code Ballast Method Code} are required on the form
+ *       but checked NOWHERE here.</li>
+ *   <li>End Haul and Overland figures are checked nowhere — those rules are commented out in
+ *       legacy.</li>
+ *   <li>Both range bounds are formatted with the LOWER bound's pattern; legacy accepts an upper
+ *       pattern and then ignores it.</li>
+ *   <li>Label drift against the screen is kept as legacy writes it: {@code Ripple Rock} for the
+ *       screen's "Rippable Rock", {@code Less Landing} singular, {@code Less Other Eng}, and a
+ *       lower-case {@code total} in one stabilizing label.</li>
  * </ul>
  *
  * <p>Two deliberate departures: the Boulder Area rule is dropped, because that field is removed by
@@ -78,8 +79,8 @@ final class Schedule10CheckStatus {
   /** Ballast method requiring the additional-stabilizing figures and a material type. */
   private static final String BALLAST_CRUSHED = "C";
 
-  // Legacy number patterns, transcribed per rule. Formatting is applied mechanically so the rendered
-  // bounds are whatever the pattern produces, exactly as legacy renders them.
+  // Legacy number patterns, transcribed per rule. Formatting is applied mechanically so the
+  // rendered bounds are whatever the pattern produces, exactly as legacy renders them.
   private static final String FMT_INT = "###";
   private static final String FMT_3DP = "###.###";
   private static final String FMT_1DP = "###.#";
@@ -97,7 +98,9 @@ final class Schedule10CheckStatus {
   private Schedule10CheckStatus() {
   }
 
-  /** One outstanding requirement: the machine field, its label prefix, and an unresolved message. */
+  /**
+   * One outstanding requirement: the machine field, its label prefix, and an unresolved message.
+   */
   record Issue(String field, String label, String messageKey, List<String> args) {
   }
 
@@ -182,8 +185,8 @@ final class Schedule10CheckStatus {
     requirePresent(
         issues, "subzone", pagePrefix + " Sub Zone", bec == null ? null : bec.subzone());
 
-    // Legacy dereferences the classification and its id without a guard, so one road detail holding a
-    // null foreign key aborts the entire check before any message is emitted. Reported instead.
+    // Legacy dereferences the classification and its id without a guard, so one road detail holding
+    // a null foreign key aborts the entire check before any message is emitted. Reported instead.
     if (bec == null || !allowableBec.contains(bec.biogeoclimaticCatalogueId())) {
       issues.add(new Issue("becClassification", prefix + " BEC Zone", MSG_BEC, List.of()));
     }
@@ -217,12 +220,14 @@ final class Schedule10CheckStatus {
     requireRange(issues, "subGradeActualCost", prefix + " Sub-Grade: Actual Cost ($)",
         field(subGrade, SubGrade::actualCost), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
     requireRange(issues, "subGradeTtTransfer", prefix + " Sub-Grade: TtT Transfer ($)",
-        field(subGrade, SubGrade::ttTransfer), SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS, false);
+        field(subGrade, SubGrade::ttTransfer), SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS,
+        false);
     requireRange(issues, "subGradeOtherTransfer", prefix + " Sub-Grade: Other Transfer ($)",
         field(subGrade, SubGrade::otherTransfer), SEVEN_DIGITS.negate(), FMT_MONEY, SEVEN_DIGITS,
         false);
     requireRange(issues, "subGradeTotalCosts", prefix + " Sub-Grade: Total Costs ($)",
-        field(subGrade, SubGrade::totalCosts), EIGHT_DIGITS.negate(), FMT_MONEY, EIGHT_DIGITS, false);
+        field(subGrade, SubGrade::totalCosts), EIGHT_DIGITS.negate(), FMT_MONEY, EIGHT_DIGITS,
+        false);
     requireRange(issues, "lessBridges", prefix + " Sub-Grade: Less Bridges ($)",
         field(subGrade, SubGrade::lessBridges), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
     requireRange(issues, "lessCulverts", prefix + " Sub-Grade: Less Culverts ($)",
@@ -236,13 +241,15 @@ final class Schedule10CheckStatus {
     requireRange(issues, "lessOtherEng", prefix + " Sub-Grade: Less Other Eng ($)",
         field(subGrade, SubGrade::lessOtherEng), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
     requireRange(issues, "subGradeTotal", prefix + " Sub-Grade: Total ($)",
-        field(subGrade, SubGrade::total), EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS, false);
-    requireRange(issues, "subGradeCostPerLength", prefix + " Sub-Grade: $/km",
-        field(subGrade, SubGrade::costPerLength), EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS,
+        field(subGrade, SubGrade::total), EIGHT_DIGITS.negate(), FMT_MONEY_2DP, EIGHT_DIGITS,
         false);
+    requireRange(issues, "subGradeCostPerLength", prefix + " Sub-Grade: $/km",
+        field(subGrade, SubGrade::costPerLength), EIGHT_DIGITS.negate(), FMT_MONEY_2DP,
+        EIGHT_DIGITS, false);
 
     Stabilizing stabilizing = detail.stabilizing();
-    boolean crushed = stabilizing != null && BALLAST_CRUSHED.equals(stabilizing.ballastMethodCode());
+    boolean crushed =
+        stabilizing != null && BALLAST_CRUSHED.equals(stabilizing.ballastMethodCode());
 
     requireRange(issues, "stabilizingLength", prefix + " Additional Stabilizing: Length (km)",
         field(stabilizing, Stabilizing::length), ZERO, FMT_3DP, new BigDecimal("999.999"), crushed);
@@ -251,7 +258,8 @@ final class Schedule10CheckStatus {
         field(stabilizing, Stabilizing::surfaceWidth), ZERO, FMT_1DP, new BigDecimal("999.9"),
         crushed);
     requireRange(issues, "stabilizingDepth", prefix + " Additional Stabilizing: Depth (m)",
-        field(stabilizing, Stabilizing::depth), ZERO, FMT_2DP_SMALL, new BigDecimal("99.9"), crushed);
+        field(stabilizing, Stabilizing::depth), ZERO, FMT_2DP_SMALL, new BigDecimal("99.9"),
+        crushed);
     requireRange(issues, "stabilizingDistanceToSource",
         prefix + " Additional Stabilizing: Distance to Source (km)",
         field(stabilizing, Stabilizing::distanceToSource), ZERO, FMT_1DP, new BigDecimal("999.9"),
@@ -267,8 +275,8 @@ final class Schedule10CheckStatus {
     requireRange(issues, "stabilizingActualCost",
         prefix + " Additional Stabilizing: Actual Cost ($)",
         stabilizing.actualCost(), ZERO, FMT_MONEY, SEVEN_DIGITS, true);
-    // Floor of ZERO, while the entry form accepts down to -9,999,999 for both transfers. A value the
-    // form allowed is therefore reported here. Legacy carries the same disagreement.
+    // Floor of ZERO, while the entry form accepts down to -9,999,999 for both transfers. A value
+    // the form allowed is therefore reported here. Legacy carries the same disagreement.
     requireRange(issues, "stabilizingTtTransfer",
         prefix + " Additional Stabilizing: TtT Transfer ($)",
         stabilizing.ttTransfer(), ZERO, FMT_MONEY, SEVEN_DIGITS, true);
@@ -292,13 +300,13 @@ final class Schedule10CheckStatus {
   }
 
   /**
-   * The legacy numeric rule: an absent optional value passes, an absent required value is reported as
-   * missing, and otherwise the value must sit inside the inclusive range.
+   * The legacy numeric rule: an absent optional value passes, an absent required value is reported
+   * as missing, and otherwise the value must sit inside the inclusive range.
    *
    * <p>When both bounds are identical the must-equal message is used with a single argument. Legacy
    * reaches that branch by comparing the two bounds by REFERENCE, which happens to work for the one
-   * rule that uses it because small boxed integers are cached; numeric equality is used here instead,
-   * which agrees for every rule in this schedule and does not depend on that accident.
+   * rule that uses it because small boxed integers are cached; numeric equality is used here
+   * instead, which agrees for every rule in this schedule and does not depend on that accident.
    */
   private static void requireRange(
       List<Issue> issues, String field, String label, BigDecimal value,
@@ -324,8 +332,8 @@ final class Schedule10CheckStatus {
    * Renders a bound with its pattern.
    *
    * <p>Both bounds use the LOWER bound's pattern: legacy accepts an upper pattern and then never
-   * applies it. Symbols are pinned to a fixed locale so the rendered separators cannot drift with the
-   * server's default.
+   * applies it. Symbols are pinned to a fixed locale so the rendered separators cannot drift with
+   * the server's default.
    */
   private static String format(BigDecimal bound, String pattern) {
     DecimalFormat format =

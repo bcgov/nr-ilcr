@@ -21,20 +21,20 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Schedule 10 endpoints. Authorizes by naming the action — {@code VIEW_SCHEDULE} for the read and for
- * Check Status, {@code EDIT_SCHEDULE} for every write — delegates ALL mill/year validation to
- * {@link MillContextService} as its first line, and never touches repositories directly. The server is
- * the sole authority for {@code editable}; derivation, rules and assembly live in
- * {@link Schedule10Service}.
+ * Schedule 10 endpoints. Authorizes by naming the action — {@code VIEW_SCHEDULE} for the read and
+ * for Check Status, {@code EDIT_SCHEDULE} for every write — delegates ALL mill/year validation to
+ * {@link MillContextService} as its first line, and never touches repositories directly. The server
+ * is the sole authority for {@code editable}; derivation, rules and assembly live in {@link
+ * Schedule10Service}.
  *
- * <p>The guard is {@code validateMillYearActive}, deliberately NOT
- * {@code validateScheduleViewable(millId, year, "10")}. The latter additionally requires an
- * {@code ILCR_REPORT_SUMMARY} row for the category, and Schedule 10 has none — only categories 1, 2
- * and 3 do. Using the summary-requiring guard would 404 every single request.
+ * <p>The guard is {@code validateMillYearActive}, deliberately NOT {@code
+ * validateScheduleViewable(millId, year, "10")}. The latter additionally requires an {@code
+ * ILCR_REPORT_SUMMARY} row for the category, and Schedule 10 has none — only categories 1, 2 and 3
+ * do. Using the summary-requiring guard would 404 every single request.
  *
- * <p><strong>Message text is resolved here, never in the service.</strong> Domain code carries bundle
- * keys and format arguments; this class turns them into the verbatim strings the client renders, which
- * keeps every user-facing byte in one place.
+ * <p><strong>Message text is resolved here, never in the service.</strong> Domain code carries
+ * bundle keys and format arguments; this class turns them into the verbatim strings the client
+ * renders, which keeps every user-facing byte in one place.
  */
 @RestController
 public class Schedule10Controller implements Schedule10Api {
@@ -42,7 +42,9 @@ public class Schedule10Controller implements Schedule10Api {
   /** Emitted after a successful create, edit or copy. */
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
 
-  /** Emitted after a successful delete. Legacy showed nothing at all; the house envelope adds this. */
+  /**
+   * Emitted after a successful delete. Legacy showed nothing at all; the house envelope adds this.
+   */
   private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
   /** The single schedule-level banner when every checked requirement passes. */
@@ -180,8 +182,8 @@ public class Schedule10Controller implements Schedule10Api {
    * Turns the rule outcome into the wire response, composing every verbatim line.
    *
    * <p>Two mutually exclusive branches, mirroring legacy: a pass emits the single banner and NO
-   * per-page results, because legacy's pass branch never enters its loop; anything outstanding emits
-   * no banner and every visible page and road detail.
+   * per-page results, because legacy's pass branch never enters its loop; anything outstanding
+   * emits no banner and every visible page and road detail.
    */
   private Schedule10CheckStatusResponse compose(Schedule10CheckStatus.Outcome outcome) {
     if (outcome.met()) {
@@ -226,8 +228,8 @@ public class Schedule10Controller implements Schedule10Api {
    * Resolves a bundle key with NO default.
    *
    * <p>Passing the key as its own fallback would ship a raw key to the user as though it were a
-   * message, and every happy-path test would still pass — so a missing or renamed key must fail loudly
-   * instead.
+   * message, and every happy-path test would still pass — so a missing or renamed key must fail
+   * loudly instead.
    */
   private String resolve(String key, Object... args) {
     return messageSource.getMessage(key, args, LocaleContextHolder.getLocale());

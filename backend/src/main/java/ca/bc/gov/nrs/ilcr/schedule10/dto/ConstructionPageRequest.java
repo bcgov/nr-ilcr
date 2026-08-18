@@ -15,21 +15,21 @@ import jakarta.validation.constraints.Size;
  * <p><strong>{@code tsaOrTfl} is one field carrying two meanings</strong>, exactly as the legacy
  * screen models it: the single {@code pageTSATFL} dropdown holds either a TSA number or the literal
  * sentinel {@code "TFL"} ({@code Constant.TFL}). The location is one or the other, never both
- * (BR-05), and the server clears the counterpart before persisting rather than trusting the client —
- * legacy enforced the exclusion in the UI only, and its DAO would happily store an inconsistent
+ * (BR-05), and the server clears the counterpart before persisting rather than trusting the client
+ * — legacy enforced the exclusion in the UI only, and its DAO would happily store an inconsistent
  * combination from a crafted post.
  *
- * <p><strong>{@code divisionName} is capped at 20, not the screen's 30.</strong>
- * {@code CONSTRUCTION_DIVISION_NAME} is {@code VARCHAR2(20)} in delivery while
- * {@code schedule10.xhtml:140} sets {@code maxlength="30"}, so legacy raises {@code ORA-12899} on 21
- * or more characters today. A 400 naming the field beats an opaque 500; widening the column is a
+ * <p><strong>{@code divisionName} is capped at 20, not the screen's 30.</strong> {@code
+ * CONSTRUCTION_DIVISION_NAME} is {@code VARCHAR2(20)} in delivery while {@code
+ * schedule10.xhtml:140} sets {@code maxlength="30"}, so legacy raises {@code ORA-12899} on 21 or
+ * more characters today. A 400 naming the field beats an opaque 500; widening the column is a
  * Ministry decision recorded against this schedule.
  *
- * <p><strong>{@code constructionPeriod} is pattern-enforced.</strong> Legacy's converter returns the
- * raw String when no {@code dateType} attribute is set (Schedule 10 sets none), the field carries no
- * {@code maxlength}, and {@code SimpleDateFormat("yyyy-MM")} accepts {@code 2024-1} — which then
- * persists into a {@code VARCHAR2} column and throws {@code StringIndexOutOfBoundsException} when
- * re-rendered. The strict pattern closes that.
+ * <p><strong>{@code constructionPeriod} is pattern-enforced.</strong> Legacy's converter returns
+ * the raw String when no {@code dateType} attribute is set (Schedule 10 sets none), the field
+ * carries no {@code maxlength}, and {@code SimpleDateFormat("yyyy-MM")} accepts {@code 2024-1} —
+ * which then persists into a {@code VARCHAR2} column and throws {@code
+ * StringIndexOutOfBoundsException} when re-rendered. The strict pattern closes that.
  *
  * @param forestRegionCode the forest region (required — FLD-001)
  * @param tsaOrTfl a TSA number, or the literal {@code "TFL"} for a TFL-located page (required —
@@ -68,9 +68,9 @@ public record ConstructionPageRequest(
     @Pattern(regexp = "\\d{4}-\\d{2}", message = "{bridgeDateformatErrorMsg}")
     String constructionPeriod,
 
-    // @Min(0) as well as @NotNull: a never-issued token like -1 matches no row, so without the floor
-    // it reaches the optimistic-lock UPDATE, misses, and surfaces as a 409 "changed by another user"
-    // for what is simply a malformed body.
+    // @Min(0) as well as @NotNull: a never-issued token like -1 matches no row, so without the
+    // floor it reaches the optimistic-lock UPDATE, misses, and surfaces as a 409 "changed by
+    // another user" for what is simply a malformed body.
     @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
     @Min(value = 0, message = "{revisionCountRequiredErrorMsg}")
     Integer revisionCount) {

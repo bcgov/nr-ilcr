@@ -4,15 +4,16 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import java.util.List;
 
 /**
- * Result of {@code POST /api/v1/schedule10/check-status}. Read-only: the endpoint mutates nothing and
- * is gated on {@code VIEW_SCHEDULE} rather than {@code EDIT_SCHEDULE}, so a submitted or verified
- * schedule can still be checked.
+ * Result of {@code POST /api/v1/schedule10/check-status}. Read-only: the endpoint mutates nothing
+ * and is gated on {@code VIEW_SCHEDULE} rather than {@code EDIT_SCHEDULE}, so a submitted or
+ * verified schedule can still be checked.
  *
  * <p><strong>Two mutually exclusive branches, mirroring legacy.</strong> When everything passes,
  * {@code outcome} is {@code "MET"}, {@code messages} carries the single schedule-level banner, and
  * {@code pages} is EMPTY — legacy's pass branch never enters its per-row loop, so emitting per-row
- * results here would invent output. When anything is outstanding, {@code outcome} is {@code "ISSUES"},
- * {@code messages} is empty, and every visible page and road detail appears with its own issues.
+ * results here would invent output. When anything is outstanding, {@code outcome} is {@code
+ * "ISSUES"}, {@code messages} is empty, and every visible page and road detail appears with its own
+ * issues.
  *
  * <p>A schedule with zero pages is a vacuous {@code "MET"} — legacy's loop simply never runs.
  *

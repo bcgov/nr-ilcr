@@ -374,16 +374,17 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   //
   // Two rules govern everything below.
   //
-  // AUDIT COLUMNS. REVISION_COUNT and both ENTRY_*/UPDATE_* pairs are NOT NULL with no defaults on
-  // both Schedule 10 tables, in delivery and in the test schema, and the delivery triggers only feed
-  // the _AUD shadows — they populate nothing. Every INSERT therefore supplies all five explicitly,
-  // and every UPDATE re-stamps UPDATE_* while leaving ENTRY_* untouched. An omission is ORA-01400
-  // locally, exactly as it would be in delivery.
+  // AUDIT COLUMNS. REVISION_COUNT and both ENTRY_*/UPDATE_* pairs are NOT NULL with no defaults
+  // on both Schedule 10 tables, in delivery and in the test schema, and the delivery triggers
+  // only feed the _AUD shadows — they populate nothing. Every INSERT therefore supplies all five
+  // explicitly, and every UPDATE re-stamps UPDATE_* while leaving ENTRY_* untouched. An omission
+  // is ORA-01400 locally, exactly as it would be in delivery.
   //
-  // MILL SCOPE. There is no shared mill-scope guard in this application, so the SQL predicate IS the
-  // ownership check: every UPDATE and DELETE carries mill + year + category, and a zero-row result is
-  // how an IDOR attempt or an unknown id is detected. The detail table has no ILCR_MILL_ID of its
-  // own, so its statements reach that scope through an EXISTS on the parent page.
+  // MILL SCOPE. There is no shared mill-scope guard in this application, so the SQL predicate IS
+  // the ownership check: every UPDATE and DELETE carries mill + year + category, and a zero-row
+  // result is how an IDOR attempt or an unknown id is detected. The detail table has no
+  // ILCR_MILL_ID of its own, so its statements reach that scope through an EXISTS on the parent
+  // page.
   // ===============================================================================================
 
   /** One derived moisture-code pair, as the surviving cross-reference offers it. */
@@ -395,14 +396,14 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * cross-reference.
    *
    * <p>This one query does double duty, which is why there is no separate offerable-BEC probe: the
-   * join through {@code ILCR_BEC_SOIL_MOISTUR_XREF} is exactly the gate that decides which catalogue
-   * rows may be chosen at all, so a BEC id outside the offerable set yields zero rows — the same
-   * outcome as an offerable id with no pair for the given RSMR class, and both are a 400.
+   * join through {@code ILCR_BEC_SOIL_MOISTUR_XREF} is exactly the gate that decides which
+   * catalogue rows may be chosen at all, so a BEC id outside the offerable set yields zero rows —
+   * the same outcome as an offerable id with no pair for the given RSMR class, and both are a 400.
    *
-   * <p>The service picks from the result: exactly one candidate is used as-is, several are resolved by
-   * a documented deterministic rule (legacy left that choice to a field that no longer exists), and
-   * none is an error. Ordering here is only for stable results; the domain tie-break lives in the
-   * service where it is unit-testable.
+   * <p>The service picks from the result: exactly one candidate is used as-is, several are resolved
+   * by a documented deterministic rule (legacy left that choice to a field that no longer exists),
+   * and none is an error. Ordering here is only for stable results; the domain tie-break lives in
+   * the service where it is unit-testable.
    *
    * <p>{@code ACTIVE_IND} is honoured on both tables. Every row carries {@code 'Y'} today, but the
    * columns exist and a de-activated row must not be offered.
@@ -431,9 +432,10 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    *
    * <p>Deliberately NOT the shared {@code ILCR_REPORT_COMMON_SEQ}: repointing the master at a
    * cross-schedule sequence would diverge from legacy on something every other report family draws
-   * from. This sequence sits un-advanced in the seeded delivery image because Schedule 10's rows were
-   * bulk-loaded rather than written through the application, which is an environment defect to be
-   * corrected by advancing the sequence past the current maximum id — not a reason to change the code.
+   * from. This sequence sits un-advanced in the seeded delivery image because Schedule 10's rows
+   * were bulk-loaded rather than written through the application, which is an environment defect to
+   * be corrected by advancing the sequence past the current maximum id — not a reason to change the
+   * code.
    */
   @Query("SELECT THE.ROAD_CONSTRUCTION_REPORT_SEQ.NEXTVAL FROM DUAL")
   int nextPageId();
@@ -451,8 +453,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * columns stamped). The entered columns arrive as one entity whose id is the PK the service took
    * from {@link #nextPageId()}, so it can key the child writes to it.
    *
-   * <p>{@code CONSTRUCTION_DATE} is deliberately not written: the legacy converter never sets it, and
-   * all 52 real delivery pages hold NULL.
+   * <p>{@code CONSTRUCTION_DATE} is deliberately not written: the legacy converter never sets it,
+   * and all 52 real delivery pages hold NULL.
    */
   @Modifying
   @Query("""
@@ -474,11 +476,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
 
   /**
    * Optimistic-lock update of one page: sets the entered fields, bumps {@code REVISION_COUNT} and
-   * stamps {@code UPDATE_*}, only while the stored revision still matches and the row belongs to this
-   * mill, year and category.
+   * stamps {@code UPDATE_*}, only while the stored revision still matches and the row belongs to
+   * this mill, year and category.
    *
-   * @return rows affected — {@code 1} on success; {@code 0} when the id is absent or foreign (→ 404)
-   *     OR the revision is stale (→ 409), which the service disambiguates via {@link #countPage}
+   * @return rows affected — {@code 1} on success; {@code 0} when the id is absent or foreign (→
+   *     404) OR the revision is stale (→ 409), which the service disambiguates via {@link
+   *     #countPage}
    */
   @Modifying
   @Query("""
@@ -520,8 +523,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    *
    * <p><strong>The two moisture codes are parameters, not entity fields, on purpose.</strong> The
    * entity models the read shape, which omits them because the business departures removed those
-   * fields from the UI and the API. Their columns are nevertheless NOT NULL with enabled foreign keys,
-   * so the write must supply values — and it supplies DERIVED ones, resolved from the BEC
+   * fields from the UI and the API. Their columns are nevertheless NOT NULL with enabled foreign
+   * keys, so the write must supply values — and it supplies DERIVED ones, resolved from the BEC
    * classification and RSMR class through {@link #findMoistureCodes}. Passing them separately keeps
    * the entity faithful to the departure while letting the insert satisfy the schema.
    *
@@ -566,12 +569,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * Optimistic-lock update of one road detail, scoped to its parent page AND that page's mill, year
    * and category.
    *
-   * <p>The detail table has no {@code ILCR_MILL_ID}, so the mill scope arrives through the
-   * {@code EXISTS} on the parent. Pinning {@code ROAD_CONSTRUCTION_REPRT_ID} as well means a detail id
+   * <p>The detail table has no {@code ILCR_MILL_ID}, so the mill scope arrives through the {@code
+   * EXISTS} on the parent. Pinning {@code ROAD_CONSTRUCTION_REPRT_ID} as well means a detail id
    * that exists under a DIFFERENT page cannot be edited through this page's path.
    *
-   * @return rows affected — {@code 1} on success; {@code 0} when the detail is absent, foreign, or the
-   *     revision is stale, which the service disambiguates via {@link #countRoadDetail}
+   * @return rows affected — {@code 1} on success; {@code 0} when the detail is absent, foreign, or
+   *     the revision is stale, which the service disambiguates via {@link #countRoadDetail}
    */
   @Modifying
   @Query("""
@@ -644,9 +647,9 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
    * Upsert one cost line for a road detail: update in place when the row exists, else insert with a
    * fresh sequence PK.
    *
-   * <p>Update-in-place rather than delete-and-reinsert preserves the audit trail, and a blank cost is
-   * an UPDATE to {@code COST = NULL} rather than a row delete — legacy never deletes a cost row on
-   * save, and the read path treats a stored NULL exactly as it treats an absent row.
+   * <p>Update-in-place rather than delete-and-reinsert preserves the audit trail, and a blank cost
+   * is an UPDATE to {@code COST = NULL} rather than a row delete — legacy never deletes a cost row
+   * on save, and the read path treats a stored NULL exactly as it treats an absent row.
    *
    * @param roadDetailId the owning road detail
    * @param costItemId the legacy cost-item ordinal
@@ -659,7 +662,9 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
     }
   }
 
-  /** Update-in-place half of {@link #upsertCostLine}; {@code 0} rows when the item row is absent. */
+  /**
+   * Update-in-place half of {@link #upsertCostLine}; {@code 0} rows when the item row is absent.
+   */
   @Modifying
   @Query("""
       UPDATE THE.ILCR_COST_REPORT_DETAIL
@@ -674,10 +679,10 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       @Param("cost") Integer cost, @Param("user") String user);
 
   /**
-   * Insert half of {@link #upsertCostLine}. Schedule 10 cost rows carry a NULL
-   * {@code ILCR_REPORT_SUMMARY_ID} — there is no category-{@code '10'} summary row to hang them from —
-   * and link to their road detail instead. {@code VOLUME}, {@code ITEM_DESCRIPTION} and
-   * {@code COMMENTS} stay NULL: legacy writes none of them for this schedule.
+   * Insert half of {@link #upsertCostLine}. Schedule 10 cost rows carry a NULL {@code
+   * ILCR_REPORT_SUMMARY_ID} — there is no category-{@code '10'} summary row to hang them from — and
+   * link to their road detail instead. {@code VOLUME}, {@code ITEM_DESCRIPTION} and {@code
+   * COMMENTS} stay NULL: legacy writes none of them for this schedule.
    */
   @Modifying
   @Query("""
@@ -696,8 +701,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
 
   /**
    * Delete every cost line of one road detail. Runs before the detail itself: delivery's FK from
-   * {@code ILCR_COST_REPORT_DETAIL} to the detail table is ENABLED with {@code NO ACTION}, so a parent
-   * still holding children is rejected with {@code ORA-02292}.
+   * {@code ILCR_COST_REPORT_DETAIL} to the detail table is ENABLED with {@code NO ACTION}, so a
+   * parent still holding children is rejected with {@code ORA-02292}.
    */
   @Modifying
   @Query("""
@@ -738,8 +743,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   int deleteRoadDetailsForPage(@Param("pageId") int pageId);
 
   /**
-   * Delete one page, scoped to mill/year/category. Runs LAST in the cascade, after its cost lines and
-   * road details.
+   * Delete one page, scoped to mill/year/category. Runs LAST in the cascade, after its cost lines
+   * and road details.
    *
    * @return rows affected — {@code 0} when the id is not a category-{@code '10'} page under this
    *     mill/year, which the service has already answered as a 404
@@ -752,9 +757,12 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '10'
       """)
-  int deletePage(@Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
+  int deletePage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
 
-  /** The stored classification codes of one road detail, for the unchanged-expired-code exemption. */
+  /**
+   * The stored classification codes of one road detail, for the unchanged-expired-code exemption.
+   */
   @Query("""
       SELECT d.ILCR_ROAD_LIFETIME_CODE        AS road_lifetime_code,
              d.ILCR_ROAD_BALLAST_METHOD_CODE  AS ballast_method_code,
@@ -769,8 +777,8 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   /**
    * The classification codes a road detail already carries.
    *
-   * <p>Used only for the exemption that lets an unchanged code survive its own expiry: a code that has
-   * since been retired must not permanently block re-saving a row that already holds it.
+   * <p>Used only for the exemption that lets an unchanged code survive its own expiry: a code that
+   * has since been retired must not permanently block re-saving a row that already holds it.
    */
   record StoredClassification(
       String roadLifetimeCode, String ballastMethodCode, String ballastMaterialCode,

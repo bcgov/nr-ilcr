@@ -17,13 +17,13 @@ import java.math.BigDecimal;
  * and positional number is derived server-side and deliberately ABSENT.
  *
  * <p><strong>Two required legacy fields are NOT here, and that is the point.</strong> ASM Code and
- * Soil Moisture Code are removed by business direction. Their columns are nevertheless
- * {@code NOT NULL} with enabled foreign keys, so the service DERIVES both from
- * {@code becbiogeoCatalogueId} + {@code relSoilMoistRgmClsCode} through the surviving
- * {@code ILCR_SOIL_MOISTURE_XREF} cross-reference — the same lookup legacy used to filter and
- * auto-select them. That is why both of those fields are required here: they are the derivation's
- * inputs, not merely descriptive. A sentinel is never written; the codes carry a real moisture
- * classification that the legacy print reports consume.
+ * Soil Moisture Code are removed by business direction. Their columns are nevertheless {@code NOT
+ * NULL} with enabled foreign keys, so the service DERIVES both from {@code becbiogeoCatalogueId} +
+ * {@code relSoilMoistRgmClsCode} through the surviving {@code ILCR_SOIL_MOISTURE_XREF}
+ * cross-reference — the same lookup legacy used to filter and auto-select them. That is why both of
+ * those fields are required here: they are the derivation's inputs, not merely descriptive. A
+ * sentinel is never written; the codes carry a real moisture classification that the legacy print
+ * reports consume.
  *
  * <p>Boulder Area % is likewise removed and absent from {@link MaterialCompositionRequest}.
  *
@@ -33,8 +33,8 @@ import java.math.BigDecimal;
  * set, never the wider set the read path uses to resolve already-stored rows.
  *
  * <p>Nested substructures are annotated {@code @Valid} so their constraints participate in the same
- * 400. The response nests the same way, which keeps the request and the document symmetrical for the
- * frontend.
+ * 400. The response nests the same way, which keeps the request and the document symmetrical for
+ * the frontend.
  *
  * @param roadName the road name (required, ≤ 30 — FLD-003)
  * @param roadLifetimeCode the road type (required — FLD-005 template, label "Road Type")

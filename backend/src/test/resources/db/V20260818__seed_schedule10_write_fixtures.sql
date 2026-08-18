@@ -79,6 +79,31 @@ END;
 CREATE SEQUENCE THE.ROAD_CONSTRUCTION_REPORT_SEQ START WITH 9600 INCREMENT BY 1 NOCACHE;
 
 -- -------------------------------------------------------------------------------------------------
+-- 1b. REPAIR A SHARED-SEQUENCE LANDMINE  (cross-schedule; found by this story, not caused by it)
+--
+-- THE.ILCR_COST_REPORT_DETAIL_SEQ starts at 9000 (V4) and EVERY schedule's cost-line writes draw
+-- from it. But V33 SEEDS ILCR_COST_REPORT_DETAIL ids 9500-9506 -- inside that sequence's path. So
+-- once the application has created ~500 cost rows in one container, NEXTVAL reaches 9500 and every
+-- subsequent insert raises ORA-00001 against a seeded row.
+--
+-- Nothing hit it before because no schedule wrote many cost rows per operation: Schedule 6 writes one
+-- item-69 row, 7A and 7B about two. SCHEDULE 10 WRITES TWELVE PER ROAD DETAIL -- all four
+-- subcategories, blank costs included, because legacy maintains every line -- which pushed cumulative
+-- consumption past 9500 for the first time. The failures then landed on whichever schedules happened
+-- to run after Schedule 10 in the suite (observed: Schedule 6 and 7A writes, seven tests, all HTTP
+-- 500 from DuplicateKeyException) which is why it reads as a Schedule 6/7A fault and is not one.
+--
+-- The fix belongs here rather than in a Schedule 10 workaround: a shared sequence must start above
+-- EVERY seeded id in its table, and 9506 is the current maximum. Restarting it removes the ceiling
+-- for all schedules instead of merely moving Schedule 10 below it. DROP + CREATE follows the V21
+-- precedent, which did exactly this to ILCR_REPORT_COMMON_SEQ for the same class of reason.
+--
+-- No test pins a generated cost-detail id in the 9000-9599 band, so raising the floor breaks nothing.
+-- Verified before changing it.
+DROP SEQUENCE THE.ILCR_COST_REPORT_DETAIL_SEQ;
+CREATE SEQUENCE THE.ILCR_COST_REPORT_DETAIL_SEQ START WITH 10000 INCREMENT BY 1;
+
+-- -------------------------------------------------------------------------------------------------
 -- 2. THE REAL MOISTURE CODES
 --
 -- Delivery holds three soil-moisture codes and eight ASM codes, and every one of the 66 real road
