@@ -7,16 +7,14 @@ import { extractDetail } from '@/utils/error'
  */
 export function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
-  try {
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  // Defer revocation: revoking synchronously in the same task as the synthetic <a download> click can
+  // cancel the download in Firefox/Safari (Chrome tolerates it). Let the browser start reading the blob
+  // first. A detached anchor needs no appendChild/remove.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 /**

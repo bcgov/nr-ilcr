@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Checkbox, Column, FormGroup, Grid, InlineNotification } from '@carbon/react'
 import { Printer } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
@@ -67,6 +67,14 @@ const comingSoon = (label: string) => `${label} (coming soon)`
 const noneSelected = <T extends string>(keys: readonly { key: T }[]): Record<T, boolean> =>
   Object.fromEntries(keys.map((k) => [k.key, false])) as Record<T, boolean>
 
+// The S06 default selection: Schedule Information pre-checked, everything else cleared. Used on first
+// load and by the Clear button.
+const defaultOptions = (): Record<OptionFlag, boolean> => ({
+  printScheduleInformation: true,
+  printComments: false,
+  printMillInformationReport: false,
+})
+
 /**
  * Print Schedules selection page (Epic 20.3). Mirrors the legacy PrintSchedulesMB screen: pick any of
  * the twelve schedules (+ "select all") and the print options, then download the combined bookmarked
@@ -74,15 +82,27 @@ const noneSelected = <T extends string>(keys: readonly { key: T }[]): Record<T, 
  * is read-only for every role (BR-01); the server is authoritative for selection validation.
  */
 const PrintSchedules: FC = () => {
-  const { millId, year, contextMissing } = useScheduleContextGuard()
+  const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
   const [schedules, setSchedules] = useState<Record<ScheduleFlag, boolean>>(() =>
     noneSelected(SCHEDULES),
   )
-  const [options, setOptions] = useState<Record<OptionFlag, boolean>>(() => noneSelected(OPTIONS))
+  const [options, setOptions] = useState<Record<OptionFlag, boolean>>(defaultOptions)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    // On a mill/year change, drop the in-flight lock + banners from the previous context, so a context
+    // switch can't leave a stale "Done"/error banner or a stuck Generate button; a late response is
+    // separately ignored via isCurrent() (in handleGenerate). The selection itself is intentionally kept.
+    // Deliberate reset-on-context-change — the synchronous setState here is the point.
+    /* eslint-disable @eslint-react/set-state-in-effect */
+    setBusy(false)
+    setMessage(null)
+    setError(null)
+    /* eslint-enable @eslint-react/set-state-in-effect */
+  }, [millId, year])
 
   // "All"/enable guards consider only the renderable schedules and available options — the disabled
   // ones can never be selected, so they must not gate (or be swept into) a generate.
@@ -102,6 +122,10 @@ const PrintSchedules: FC = () => {
   }
 
   async function handleGenerate() {
+    // Capture the dispatch-time context guard: if the user switches mill/year while Jasper renders the
+    // sections, the late response must NOT download or repaint under the new context (the same
+    // stale-response guard the schedule pages apply to their writes).
+    const dispatchedCurrent = isCurrent
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -115,14 +139,38 @@ const PrintSchedules: FC = () => {
         .post(`${PRINT_PATH}?millId=${String(millId)}&year=${String(year)}`, body, {
           responseType: 'blob',
         })
+      if (!dispatchedCurrent()) {
+        return
+      }
       triggerDownload(response.data as Blob, PDF_FILENAME)
       setMessage('Your Print Schedules PDF has been generated and downloaded.')
     } catch (err: unknown) {
-      // A 400/404/409 problem+json arrives as a Blob under responseType:'blob' — parse it for `detail`.
-      setError((await extractBlobDetail(err)) ?? 'Unable to generate the PDF. Please try again.')
+      if (!dispatchedCurrent()) {
+        return
+      }
+      // With selection validation client-gated, the real-world failure is a valid mill/year that simply
+      // has no rows in the ticked schedules → 404 ERR-005. Verbatim "Schedule not found." reads wrong for
+      // a print, so special-case it; keep the verbatim problem+json detail for 400/409 (ERR-002/003/004),
+      // where the legacy-verbatim-text rule actually applies. (Blob error body → extractBlobDetail.)
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 404) {
+        setError('No data to print for the selected schedules.')
+      } else {
+        setError((await extractBlobDetail(err)) ?? 'Unable to generate the PDF. Please try again.')
+      }
     } finally {
-      setBusy(false)
+      if (dispatchedCurrent()) {
+        setBusy(false)
+      }
     }
+  }
+
+  function handleClear() {
+    // Reset to the S06 default: Schedule Information re-checked, all schedules and other options cleared.
+    setSchedules(noneSelected(SCHEDULES))
+    setOptions(defaultOptions())
+    setMessage(null)
+    setError(null)
   }
 
   return (
@@ -195,13 +243,18 @@ const PrintSchedules: FC = () => {
                 ))}
               </FormGroup>
 
-              <Button
-                renderIcon={Printer}
-                disabled={!canGenerate}
-                onClick={() => void handleGenerate()}
-              >
-                {busy ? 'Generating…' : 'Generate PDF'}
-              </Button>
+              <div className="print-schedules__actions">
+                <Button
+                  renderIcon={Printer}
+                  disabled={!canGenerate}
+                  onClick={() => void handleGenerate()}
+                >
+                  {busy ? 'Generating…' : 'Generate PDF'}
+                </Button>
+                <Button kind="secondary" disabled={busy} onClick={handleClear}>
+                  Clear
+                </Button>
+              </div>
             </>
           )}
         </Column>

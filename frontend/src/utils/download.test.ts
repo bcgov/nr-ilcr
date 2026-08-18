@@ -7,7 +7,8 @@ describe('triggerDownload', () => {
     vi.unstubAllGlobals()
   })
 
-  it('creates an object URL, clicks a download anchor, and revokes the URL', () => {
+  it('creates an object URL, clicks a download anchor, and revokes the URL only after the click task', () => {
+    vi.useFakeTimers()
     const createObjectURL = vi.fn(() => 'blob:mock-url')
     const revokeObjectURL = vi.fn()
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
@@ -17,7 +18,12 @@ describe('triggerDownload', () => {
 
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     expect(click).toHaveBeenCalledTimes(1)
+    // Revocation is deferred (revoking in the click's task cancels the download in Firefox/Safari).
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+
+    vi.runAllTimers()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+    vi.useRealTimers()
   })
 })
 
