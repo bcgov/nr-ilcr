@@ -63,6 +63,10 @@ jobs:
             -p SPRING_DATASOURCE_PASSWORD="$DB_PASS"
             -p COGNITO_USER_POOL="$COGNITO_POOL"
             -p COGNITO_CLIENT_ID="$COGNITO_CLIENT"
+            -p COGNITO_DOMAIN='${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}'
+            -p COGNITO_OAUTH_SCOPES='${{ vars.COGNITO_OAUTH_SCOPES || 'openid' }}'
+            -p COGNITO_REDIRECT_SIGN_IN='${{ vars.COGNITO_REDIRECT_SIGN_IN || format('https://{0}-{1}.apps.gold.devops.gov.bc.ca/', github.event.repository.name, inputs.target) }}'
+            -p COGNITO_REDIRECT_SIGN_OUT='${{ vars.COGNITO_REDIRECT_SIGN_OUT || format('https://logontest7.gov.bc.ca/clp-cgi/logoff.cgi?retnow=1&returl=https://dev.loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/logout?redirect_uri=https://{0}-{1}.apps.gold.devops.gov.bc.ca/logout', github.event.repository.name, inputs.target) }}'
           triggers: ${{ inputs.triggers }}
 
   deploy:
@@ -91,6 +95,7 @@ jobs:
           - name: frontend
             file: frontend/openshift.deploy.yml
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
+              -p COGNITO_DOMAIN="${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}"
     outputs:
       triggered: ${{ steps.deploy.outputs.triggered }}
     steps:

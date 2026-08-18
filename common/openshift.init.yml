@@ -25,6 +25,29 @@ parameters:
   - name: COGNITO_CLIENT_ID
     description: Cognito (FAM) web-client ID, validated as the ID token's aud
     required: true
+
+  # ── Frontend amplify config ───────────────────────────────
+  # Lives here (not in frontend/openshift.deploy.yml) so the values are
+  # processed by the init step, where environment-scoped GitHub variables
+  # resolve. The deploy job reads vars inside a matrix, which GitHub
+  # evaluates before the environment is attached — env-scoped values are
+  # silently ignored there. (Same pattern as nr-csp.)
+  - name: COGNITO_DOMAIN
+    description: Cognito hosted UI domain (no https://)
+    required: true
+  - name: COGNITO_OAUTH_SCOPES
+    description: Comma-separated OAuth scopes
+    value: openid
+  - name: COGNITO_REDIRECT_SIGN_IN
+    description: Post-login redirect URL (must be FAM-registered verbatim)
+    required: true
+  # Cognito validates logout_uri by exact string match against the FAM
+  # client's registered sign-out URLs, so this full SiteMinder → Keycloak →
+  # app logout chain must be registered there verbatim (see
+  # frontend/amplify-config.local.example.js for the DEV shape).
+  - name: COGNITO_REDIRECT_SIGN_OUT
+    description: Post-logout redirect URL chain (must be FAM-registered verbatim)
+    required: true
 objects:
   # ── Backend Secret ────────────────────────────────────────
   - apiVersion: v1
@@ -40,6 +63,28 @@ objects:
       ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
       COGNITO_USER_POOL: ${COGNITO_USER_POOL}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+
+  # ── Frontend amplify ConfigMap (runtime-injected, mounted by the frontend
+  #    Deployment over the repo's mock-auth placeholder public/amplify-config.js;
+  #    see frontend/src/env.ts). Pool/client ids are public identifiers — every
+  #    browser downloads this file — so surfacing them here is fine. ──
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ${NAME}-${ZONE}-frontend-amplify-config
+      labels:
+        app: ${NAME}-${ZONE}
+    data:
+      amplify-config.js: |
+        window.amplifyConfig = {
+          mockUser: false,
+          userPoolId: '${COGNITO_USER_POOL}',
+          userPoolClientId: '${COGNITO_CLIENT_ID}',
+          cognitoDomain: '${COGNITO_DOMAIN}',
+          oauthScopes: '${COGNITO_OAUTH_SCOPES}'.split(','),
+          redirectSignIn: '${COGNITO_REDIRECT_SIGN_IN}',
+          redirectSignOut: '${COGNITO_REDIRECT_SIGN_OUT}',
+        }
   - apiVersion: networking.k8s.io/v1
     kind: NetworkPolicy
     metadata:

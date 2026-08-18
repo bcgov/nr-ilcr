@@ -37,6 +37,9 @@ parameters:
   - name: LOG_LEVEL
     description: Caddy log level (debug|info|warn|error)
     value: "info"
+  - name: COGNITO_DOMAIN
+    description: Cognito hosted UI domain (no https://), for the Caddy CSP connect-src
+    required: true
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -111,6 +114,10 @@ objects:
                   value: ${LOG_LEVEL}
                 - name: BACKEND_URL
                   value: http://${NAME}-${ZONE}-backend
+                # Caddy's Content-Security-Policy connect-src needs the Cognito
+                # domain to allow the SPA's OAuth token-exchange fetch.
+                - name: COGNITO_DOMAIN
+                  value: ${COGNITO_DOMAIN}
                 # readOnlyRootFilesystem: true → redirect every writable path
                 # onto an emptyDir. Caddy stores config/data under the XDG dirs
                 # (mounted at /tmp/caddy); Coraza writes SecTmpDir/SecDataDir
@@ -141,6 +148,13 @@ objects:
                   mountPath: /tmp/caddy
                 - name: coraza-tmp
                   mountPath: /tmp/coraza
+                # Overrides the image's mock-auth placeholder with the real
+                # Cognito settings; the ConfigMap is created by
+                # common/openshift.init.yml (init step), where environment-scoped
+                # GitHub variables resolve correctly.
+                - name: amplify-config
+                  mountPath: /srv/amplify-config.js
+                  subPath: amplify-config.js
               startupProbe:
                 httpGet:
                   path: /health
@@ -172,6 +186,9 @@ objects:
               emptyDir:
                 medium: Memory
                 sizeLimit: 256Mi
+            - name: amplify-config
+              configMap:
+                name: ${NAME}-${ZONE}-frontend-amplify-config
   - apiVersion: v1
     kind: Service
     metadata:
