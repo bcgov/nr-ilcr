@@ -46,6 +46,29 @@ export type World = {
    */
   sch2MutationsBefore?: number;
 
+  // --- sch4 ---
+  // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
+  // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 4 unchanged.
+  /** The location a precondition seeded or a step created — read back by later Thens and by cleanup. */
+  sch4LocationName?: string;
+  /** That location's primary-report id (the write/delete handle, and the sub-page's `?loc=`). */
+  sch4LocationId?: number;
+  /** The sub-page currently open ("Towing Total" / …), so later steps need not repeat the label. */
+  sch4SubPageLabel?: string;
+  /** A seeded sub-page row's id, for the in-place row-edit cells (`#row-{id}-{field}`). */
+  sch4RowId?: number;
+  /**
+   * Schedule 4 mutating-request tally captured mid-scenario, so a later reject can prove NO FURTHER
+   * write was sent even when an earlier step in the same scenario legitimately saved.
+   */
+  sch4MutationsBefore?: number;
+  /**
+   * Listed location names noted before a cancel/reject, re-checked after to prove the list is unchanged.
+   * Always taken through the UI (`schedule4Page.listedLocationNames()`) so the baseline and the re-check
+   * are the same kind of read.
+   */
+  sch4ListedBefore?: string[];
+
   // --- sch11 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above —
   // Schedule 11 deliberately reuses them so the promoted common step
