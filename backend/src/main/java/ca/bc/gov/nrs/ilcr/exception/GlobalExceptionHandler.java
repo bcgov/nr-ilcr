@@ -320,6 +320,9 @@ public class GlobalExceptionHandler {
    * collection
    * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
    */
+  /** Shared by all five Schedule 10 material percentages, which fail identically. */
+  private static final String PERCENTAGE_CONVERTER = "percentageConverterErrorMsg";
+
   private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.ofEntries(
       Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
       Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
@@ -330,11 +333,11 @@ public class GlobalExceptionHandler {
       Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
       Map.entry("RoadDetailRequest[\"endHaulVolume\"]", "volumeConverterErrorMsg"),
       Map.entry("RoadDetailRequest[\"overlandVolume\"]", "volumeConverterErrorMsg"),
-      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", "percentageConverterErrorMsg"),
-      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", "percentageConverterErrorMsg"),
-      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", "percentageConverterErrorMsg"),
-      Map.entry("MaterialCompositionRequest[\"finePct\"]", "percentageConverterErrorMsg"),
-      Map.entry("MaterialCompositionRequest[\"organicPct\"]", "percentageConverterErrorMsg"));
+      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"finePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"organicPct\"]", PERCENTAGE_CONVERTER));
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this

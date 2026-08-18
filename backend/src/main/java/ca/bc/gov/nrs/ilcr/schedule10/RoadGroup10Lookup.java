@@ -369,11 +369,11 @@ final class RoadGroup10Lookup {
       case "03", "23", "33", "55", "56":
         roadGroup = "11";
         break;
-      // "52B" is legacy-live but unreachable, and is demoted to a comment here for the reason
-      // schedule6.RoadGroupLookup already records: TFL_NUMBER_CODE is VARCHAR2(2) on both sides,
-      // and ConstructionPageRequest.tflNumberCode carries @Size(max = 2), so a 3-character TFL
-      // never reaches this switch on read or on save. As a live case it read as an accepted value
-      // that the request contract rejects (code review 2026-08-18). case "52B": roadGroup = "5";
+      // Legacy maps the three-character TFL "52B" to this same road group. It is deliberately NOT
+      // reproduced: TFL_NUMBER_CODE is VARCHAR2(2) on both sides and the request constrains the
+      // field to two characters, so such a value cannot reach this switch on read or on save.
+      // Including it would read as an accepted value the request contract rejects.
+      // schedule6.RoadGroupLookup dropped it earlier for the same reason (code review 2026-08-18).
       case "05":
         roadGroup = "5";
         break;

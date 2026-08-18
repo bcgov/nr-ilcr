@@ -121,10 +121,10 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE, ENTRY_USERID,"
             + " UPDATE_USERID, REVISION_COUNT FROM THE.ROAD_CONSTRUCTION_REPRT_DTL"
             + " WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?", detailId);
-    assertThat(stored.get("ILCR_SOIL_MOISTURE_CODE")).isEqualTo("Dry");
-    assertThat(stored.get("RELATIVE_SOIL_MOISTUR_RGM_CODE")).isEqualTo("MD");
-    assertThat(stored.get("ENTRY_USERID")).isEqualTo("dev-submitter");
-    assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Dry");
+    assertThat(stored).containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "MD");
+    assertThat(stored).containsEntry("ENTRY_USERID", "dev-submitter");
+    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
 
     // All twelve ordinals, routed across all four subcategories.
     Map<String, Object> costs = jdbc.queryForMap(
@@ -174,8 +174,8 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
-    assertThat(stored.get("RELATIVE_SOIL_MOISTUR_RGM_CODE")).isEqualTo("SD");
-    assertThat(stored.get("ILCR_SOIL_MOISTURE_CODE")).isEqualTo("Moist");
+    assertThat(stored).containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "SD");
+    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
   }
 
   @Test
@@ -228,7 +228,7 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
     // so if the zeroing were deleted the stored 0.3 still gave intValue() == 0 and the assertion
     // passed either way. Surface width and distance to source were selected and never asserted at
     // all, so three of the four dimensions were unpinned.
-    assertThat(stored.get("ILCR_ROAD_BALLAST_MATERL_CODE")).isEqualTo("NA");
+    assertThat(stored).containsEntry("ILCR_ROAD_BALLAST_MATERL_CODE", "NA");
     assertThat((BigDecimal) stored.get("STABILIZING_LENGTH")).isEqualByComparingTo("0");
     assertThat((BigDecimal) stored.get("STABILIZING_SURFACE_WIDTH")).isEqualByComparingTo("0");
     assertThat((BigDecimal) stored.get("STABILIZING_DEPTH")).isEqualByComparingTo("0");
@@ -302,7 +302,7 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
     // The material code IS forced, exactly as for N.
-    assertThat(stored.get("ILCR_ROAD_BALLAST_MATERL_CODE")).isEqualTo("NA");
+    assertThat(stored).containsEntry("ILCR_ROAD_BALLAST_MATERL_CODE", "NA");
     // The four dimensions are NOT zeroed — this is the whole asymmetry.
     assertThat((BigDecimal) stored.get("STABILIZING_LENGTH")).isEqualByComparingTo("3.000");
     assertThat((BigDecimal) stored.get("STABILIZING_SURFACE_WIDTH")).isEqualByComparingTo("6.5");
@@ -435,8 +435,8 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
     assertThat(((Number) inserted.get("REVISION_COUNT")).intValue()).isZero();
-    assertThat(inserted.get("ENTRY_USERID")).isEqualTo("dev-submitter");
-    assertThat(inserted.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(inserted).containsEntry("ENTRY_USERID", "dev-submitter");
+    assertThat(inserted).containsEntry("UPDATE_USERID", "dev-submitter");
 
     assertThat(jdbc.queryForObject(
         "SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL"
@@ -471,12 +471,12 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
-    assertThat(after.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(after).containsEntry("UPDATE_USERID", "dev-submitter");
     assertThat((Timestamp) after.get("UPDATE_TIMESTAMP"))
         .as("UPDATE_TIMESTAMP is re-stamped, not left at the backdated value")
         .isAfter(Timestamp.valueOf("2000-01-02 00:00:00"));
-    assertThat(after.get("ENTRY_USERID")).isEqualTo(before.get("ENTRY_USERID"));
-    assertThat(after.get("ENTRY_TIMESTAMP")).isEqualTo(before.get("ENTRY_TIMESTAMP"));
+    assertThat(after).containsEntry("ENTRY_USERID", before.get("ENTRY_USERID"));
+    assertThat(after).containsEntry("ENTRY_TIMESTAMP", before.get("ENTRY_TIMESTAMP"));
 
     // The cost rows the edit touched are re-stamped too; none is left at the backdated value.
     assertThat(jdbc.queryForObject(
@@ -526,7 +526,7 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
     assertThat(stored.get("RELATIVE_SOIL_MOISTUR_RGM_CODE"))
         .as("an unrelated edit must not rewrite the derived ASM code")
         .isEqualTo("F");
-    assertThat(stored.get("ILCR_SOIL_MOISTURE_CODE")).isEqualTo("Moist");
+    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
   }
 
   @Test

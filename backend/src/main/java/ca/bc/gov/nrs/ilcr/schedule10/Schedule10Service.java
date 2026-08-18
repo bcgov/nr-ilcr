@@ -7,7 +7,6 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.BecClassificationRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
@@ -50,14 +49,17 @@ import org.springframework.transaction.annotation.Transactional;
  * lookup, two BEC queries and five code-list queries; the three-query property is about the nested
  * body, not the request as a whole.
  *
- * <p>{@link #getSchedule10} runs in one read-only transaction so those queries observe a single
- * consistent snapshot. Without it a concurrent write between the page and detail reads yields a
- * silently torn document — details belonging to a page that is not in the result are dropped with
- * no error. Note the scope of that guarantee: the seven write methods call {@code getSchedule10} to
- * build their response, and Spring's default {@code REQUIRED} propagation makes it JOIN the
- * caller's read-write transaction, so {@code readOnly} does not apply on those paths. They still
- * get a single consistent snapshot — their own transaction — but calling the read read-only there
- * would be wrong to claim (corrected at code review 2026-08-18).
+ * <p>Assembly always runs inside a transaction so those queries observe a single consistent
+ * snapshot. Without one, a concurrent write between the page and detail reads yields a silently
+ * torn document — details belonging to a page not in the result are dropped with no error.
+ *
+ * <p>The transaction is opened by the ENTRY POINT, not by the assembly: {@link #getSchedule10} and
+ * {@link #checkStatus} open a read-only one, and each write method opens a read-write one, then all
+ * of them call the un-annotated {@code assembleDocument}. An earlier revision had the write methods
+ * call {@code getSchedule10} directly, which never passes through the Spring proxy — so its
+ * {@code @Transactional} was silently ignored and the reads simply joined the caller's transaction.
+ * The behaviour was correct; the annotation just was not what made it so. Restructured at code
+ * review follow-up 2026-08-18 so the code states it rather than depending on a proxy subtlety.
  *
  * <p>Derivation rules that matter:
  * <ul>
@@ -140,6 +142,25 @@ public class Schedule10Service {
    */
   @Transactional(readOnly = true)
   public Schedule10Response getSchedule10(long millId, int year, boolean callerMayEdit) {
+    return assembleDocument(millId, year, callerMayEdit);
+  }
+
+  /**
+   * Assembles the document with NO transaction annotation of its own.
+   *
+   * <p>This exists so the seven write methods and {@link #checkStatus} can build their response
+   * without self-invoking {@link #getSchedule10}. A {@code this.}-call never passes through the
+   * Spring proxy, so the inner {@code @Transactional} was silently ignored — the reads simply
+   * joined the caller's transaction, which is correct behaviour but not what the annotation
+   * appeared to promise. Extracting the body states that directly rather than relying on a
+   * proxy subtlety, and
+   * removes the self-invocation Sonar flags (code review follow-up 2026-08-18).
+   *
+   * <p>Every caller is already inside a transaction: {@code getSchedule10} and {@code checkStatus}
+   * open a read-only one, and each write method opens a read-write one. Nothing calls this
+   * unwrapped, so the single-snapshot guarantee is unchanged.
+   */
+  private Schedule10Response assembleDocument(long millId, int year, boolean callerMayEdit) {
     List<RoadConstructionReportEntity> pageRows = repository.findPages(millId, year);
     List<RoadConstructionReportDetailEntity> detailRows = repository.findRoadDetails(millId, year);
     List<CostLineRow> costRows = repository.findCostLines(millId, year);
@@ -513,7 +534,7 @@ public class Schedule10Service {
     int pageId = repository.nextPageId();
     persist(() -> repository.insertPage(
         toPageEntity(pageId, millId, year, request, location), millId, year, user), PAGE_NOT_SAVED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -549,7 +570,7 @@ public class Schedule10Service {
         throw new StaleRevisionException();
       }
     }, PAGE_NOT_SAVED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -581,7 +602,7 @@ public class Schedule10Service {
         source.constructionDivisionName(), source.ilcrForestRegionCode(), source.tsbNumberCode(),
         source.tsaNumber(), source.tflNumberCode(), 0);
     persist(() -> repository.insertPage(copy, millId, year, user), PAGE_NOT_SAVED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -611,7 +632,7 @@ public class Schedule10Service {
         throw new ConstructionPageNotFoundException();
       }
     }, PAGE_NOT_DELETED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -642,7 +663,7 @@ public class Schedule10Service {
           moisture.asmCode(), user);
       writeCostLines(roadDetailId, coupled, user, millId, year);
     }, DETAIL_NOT_SAVED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -681,7 +702,7 @@ public class Schedule10Service {
       }
       writeCostLines(roadDetailId, coupled, user, millId, year);
     }, DETAIL_NOT_SAVED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -705,7 +726,7 @@ public class Schedule10Service {
         throw new RoadDetailNotFoundException();
       }
     }, DETAIL_NOT_DELETED);
-    return getSchedule10(millId, year, callerMayEdit);
+    return assembleDocument(millId, year, callerMayEdit);
   }
 
   /**
@@ -726,7 +747,7 @@ public class Schedule10Service {
   public Schedule10CheckStatus.Outcome checkStatus(long millId, int year) {
     // callerMayEdit is irrelevant to the rules, and passing false keeps this read from implying any
     // edit authority in the document it evaluates.
-    return Schedule10CheckStatus.evaluate(getSchedule10(millId, year, false));
+    return Schedule10CheckStatus.evaluate(assembleDocument(millId, year, false));
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -1079,26 +1100,15 @@ public class Schedule10Service {
   }
 
   /**
-   * Runs a write, translating a data-access failure into the house save error.
+   * Runs a write, translating a data-access failure into the resource-specific legacy save error.
    *
    * <p>Only the exception TYPE is logged. Never the values: a rejected write would otherwise put
    * cost, volume or comment content into the log, which the data-sensitivity rules forbid.
-   */
-  private void persist(Runnable write) {
-    try {
-      write.run();
-    } catch (DataAccessException ex) {
-      LOG.warn("Schedule 10 write failed [{}]", ex.getClass().getSimpleName());
-      throw new ScheduleNotSavedException();
-    }
-  }
-
-  /**
-   * Runs a write, translating a data-access failure into the resource-specific legacy save error.
    *
-   * <p>Same contract as {@link #persist(Runnable)} — type-only logging, never values — but names
-   * the resource that failed, which is what § Validation rules directs the write path to do
-   * wherever the failing resource is known (code review 2026-08-18: the four keys were dead).
+   * <p>Every write names the resource that failed, which is what § Validation rules directs the
+   * write path to do wherever that resource is known (code review 2026-08-18: the four keys were
+   * declared but dead). A generic no-key overload existed alongside this one until all seven call
+   * sites carried a key, at which point it was unreachable and was removed.
    *
    * @param write the write to run
    * @param messageKey one of the {@link Schedule10PersistenceException} constants

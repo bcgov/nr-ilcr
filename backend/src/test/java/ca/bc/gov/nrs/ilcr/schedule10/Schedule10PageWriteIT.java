@@ -97,13 +97,13 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
         "SELECT ILCR_CATEGORY_ID, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID,"
             + " UPDATE_TIMESTAMP, CONSTRUCTION_DATE FROM THE.ROAD_CONSTRUCTION_REPRT"
             + " WHERE ROAD_CONSTRUCTION_REPRT_ID = ?", pageId);
-    assertThat(stored.get("ILCR_CATEGORY_ID")).isEqualTo("10");
-    assertThat(stored.get("ENTRY_USERID")).isEqualTo("dev-submitter");
-    assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(stored).containsEntry("ILCR_CATEGORY_ID", "10");
+    assertThat(stored).containsEntry("ENTRY_USERID", "dev-submitter");
+    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
     assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
     // A fresh insert stamps both from the same SYSDATE, so they are equal — and both sit in the
     // present, which a defaulted or absent value would not.
-    assertThat(stored.get("ENTRY_TIMESTAMP")).isEqualTo(stored.get("UPDATE_TIMESTAMP"));
+    assertThat(stored).containsEntry("ENTRY_TIMESTAMP", stored.get("UPDATE_TIMESTAMP"));
     assertThat((Timestamp) stored.get("ENTRY_TIMESTAMP"))
         .isAfter(Timestamp.valueOf("2020-01-01 00:00:00"));
     // Legacy never writes this column and every real delivery page holds NULL.
@@ -133,7 +133,7 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
             + " WHERE ROAD_CONSTRUCTION_REPRT_ID = ?", page.get("pageId").asInt());
     assertThat(stored.get("TSA_NUMBER")).isNull();
     assertThat(stored.get("TSB_NUMBER_CODE")).isNull();
-    assertThat(stored.get("TFL_NUMBER_CODE")).isEqualTo("08");
+    assertThat(stored).containsEntry("TFL_NUMBER_CODE", "08");
   }
 
   @Test
@@ -194,8 +194,8 @@ class Schedule10PageWriteIT extends AbstractOracleIT {
         "SELECT ENTRY_USERID, UPDATE_USERID FROM THE.ROAD_CONSTRUCTION_REPRT"
             + " WHERE ROAD_CONSTRUCTION_REPRT_ID = 8956");
     // ENTRY_* must survive an update untouched; only UPDATE_* is restamped.
-    assertThat(stored.get("ENTRY_USERID")).isEqualTo(entryBefore);
-    assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(stored).containsEntry("ENTRY_USERID", entryBefore);
+    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
   }
 
   @Test

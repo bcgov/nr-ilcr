@@ -91,6 +91,8 @@ final class Schedule10CheckStatus {
   private static final String FMT_MONEY_NARROW = "###,###";
 
   private static final BigDecimal PCT_MAX = new BigDecimal("100");
+  /** Shared upper bound for the three one-decimal width/distance rules. */
+  private static final BigDecimal WIDTH_MAX = new BigDecimal("999.9");
   private static final BigDecimal SEVEN_DIGITS = new BigDecimal("9999999");
   private static final BigDecimal EIGHT_DIGITS = new BigDecimal("99999999");
   private static final BigDecimal ZERO = BigDecimal.ZERO;
@@ -216,7 +218,7 @@ final class Schedule10CheckStatus {
     requireRange(issues, "subGradeLength", prefix + " Sub-Grade: Length (km)",
         field(subGrade, SubGrade::length), ZERO, FMT_3DP, PCT_MAX, false);
     requireRange(issues, "subGradeSurfaceWidth", prefix + " Sub-Grade: Surface Width (m)",
-        field(subGrade, SubGrade::surfaceWidth), ZERO, FMT_1DP, new BigDecimal("999.9"), false);
+        field(subGrade, SubGrade::surfaceWidth), ZERO, FMT_1DP, WIDTH_MAX, false);
     requireRange(issues, "subGradeActualCost", prefix + " Sub-Grade: Actual Cost ($)",
         field(subGrade, SubGrade::actualCost), ZERO, FMT_MONEY, SEVEN_DIGITS, false);
     requireRange(issues, "subGradeTtTransfer", prefix + " Sub-Grade: TtT Transfer ($)",
@@ -255,14 +257,14 @@ final class Schedule10CheckStatus {
         field(stabilizing, Stabilizing::length), ZERO, FMT_3DP, new BigDecimal("999.999"), crushed);
     requireRange(issues, "stabilizingSurfaceWidth",
         prefix + " Additional Stabilizing: Surface Width (m)",
-        field(stabilizing, Stabilizing::surfaceWidth), ZERO, FMT_1DP, new BigDecimal("999.9"),
+        field(stabilizing, Stabilizing::surfaceWidth), ZERO, FMT_1DP, WIDTH_MAX,
         crushed);
     requireRange(issues, "stabilizingDepth", prefix + " Additional Stabilizing: Depth (m)",
         field(stabilizing, Stabilizing::depth), ZERO, FMT_2DP_SMALL, new BigDecimal("99.9"),
         crushed);
     requireRange(issues, "stabilizingDistanceToSource",
         prefix + " Additional Stabilizing: Distance to Source (km)",
-        field(stabilizing, Stabilizing::distanceToSource), ZERO, FMT_1DP, new BigDecimal("999.9"),
+        field(stabilizing, Stabilizing::distanceToSource), ZERO, FMT_1DP, WIDTH_MAX,
         crushed);
 
     if (!crushed) {

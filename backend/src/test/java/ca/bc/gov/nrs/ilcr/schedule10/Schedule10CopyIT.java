@@ -77,11 +77,11 @@ class Schedule10CopyIT extends AbstractOracleIT {
     var stored = jdbc.queryForMap(
         "SELECT ENTRY_USERID, UPDATE_USERID, TSB_NUMBER_CODE, TFL_NUMBER_CODE, REVISION_COUNT"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT WHERE ROAD_CONSTRUCTION_REPRT_ID = ?", copyId);
-    assertThat(stored.get("ENTRY_USERID")).isEqualTo("dev-submitter");
-    assertThat(stored.get("UPDATE_USERID")).isEqualTo("dev-submitter");
+    assertThat(stored).containsEntry("ENTRY_USERID", "dev-submitter");
+    assertThat(stored).containsEntry("UPDATE_USERID", "dev-submitter");
     assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
     // The location legs are carried across verbatim — the supply block was asserted nowhere before.
-    assertThat(stored.get("TSB_NUMBER_CODE")).isEqualTo("01A");
+    assertThat(stored).containsEntry("TSB_NUMBER_CODE", "01A");
     assertThat(stored.get("TFL_NUMBER_CODE")).isNull();
   }
 

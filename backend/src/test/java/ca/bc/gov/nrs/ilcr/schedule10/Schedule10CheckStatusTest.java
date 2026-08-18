@@ -76,10 +76,6 @@ class Schedule10CheckStatusTest {
         details.size(), 0, details);
   }
 
-  private static List<String> keysOf(List<Issue> issues) {
-    return issues.stream().map(Issue::messageKey).toList();
-  }
-
   private static Issue issueFor(List<Issue> issues, String field) {
     return issues.stream()
         .filter(issue -> field.equals(issue.field()))
@@ -286,11 +282,18 @@ class Schedule10CheckStatusTest {
       DetailOutcome outcome =
           Schedule10CheckStatus.evaluateRoadDetail(detail, PAGE_LABEL, ALLOWABLE);
 
-      assertThat(outcome.issues()).extracting(Issue::field).contains(
+      // containsExactly, not contains: the sub-grade and material figures are all clean here, so the
+      // gated stabilizing block is the WHOLE outcome, and its order is contractual.
+      assertThat(outcome.issues()).extracting(Issue::field).containsExactly(
           "stabilizingLength", "stabilizingSurfaceWidth", "stabilizingDepth",
           "stabilizingDistanceToSource", "ballastMaterialCode", "stabilizingActualCost",
           "stabilizingTtTransfer", "stabilizingOtherTransfer");
-      assertThat(keysOf(outcome.issues())).contains("missingRequiredFieldMsg");
+      // The key is bound to the FIELD. The previous form asserted only that
+      // "missingRequiredFieldMsg" appeared somewhere in the outcome, which any of the eight issues
+      // satisfied — so it never pinned the material-type rule to its own message (flagged by both the
+      // code review and Sonar, 2026-08-18).
+      assertThat(issueFor(outcome.issues(), "ballastMaterialCode").messageKey())
+          .isEqualTo("missingRequiredFieldMsg");
     }
 
     @Test
