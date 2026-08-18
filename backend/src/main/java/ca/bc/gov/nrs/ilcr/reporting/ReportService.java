@@ -6,7 +6,7 @@ import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
 import ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bService;
-import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository;
+import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,7 +68,7 @@ public class ReportService {
   private final Schedule6Service schedule6Service;
   private final Schedule7aService schedule7aService;
   private final Schedule7bService schedule7bService;
-  private final Schedule9Repository schedule9Repository;
+  private final Schedule9Service schedule9Service;
   private final Schedule11Service schedule11Service;
 
   /** Compiled templates, built on first use and cached (boot-safe); keyed by {@link ScheduleKey}. */
@@ -83,7 +83,8 @@ public class ReportService {
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
    * @param schedule7bService the Schedule 7B read (bean-datasource feed)
-   * @param schedule9Repository the Story 9.1 read, reused for the empty-schedule pre-check
+   * @param schedule9Service the Schedule 9 read seam, used for the empty-schedule pre-check (29.10 —
+   *     through the service, not the repository)
    * @param schedule11Service the Schedule 11 read (bean-datasource feed)
    */
   public ReportService(
@@ -92,14 +93,14 @@ public class ReportService {
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,
       Schedule7bService schedule7bService,
-      Schedule9Repository schedule9Repository,
+      Schedule9Service schedule9Service,
       Schedule11Service schedule11Service) {
     this.dataSource = dataSource;
     this.schedule5Service = schedule5Service;
     this.schedule6Service = schedule6Service;
     this.schedule7aService = schedule7aService;
     this.schedule7bService = schedule7bService;
-    this.schedule9Repository = schedule9Repository;
+    this.schedule9Service = schedule9Service;
     this.schedule11Service = schedule11Service;
   }
 
@@ -180,7 +181,7 @@ public class ReportService {
   private JasperPrint fillSchedule9(long millId, int year, PrintOptions options, String bookmarkTitle) {
     // Count-only pre-check: the template's embedded SQL re-runs the full record query at fill time, so
     // a findRecords().size() here would materialize (and throw away) that whole list just to test empty.
-    int recordCount = schedule9Repository.countRecords(millId, year);
+    int recordCount = schedule9Service.countRecords(millId, year);
     if (recordCount == 0) {
       return null;
     }
