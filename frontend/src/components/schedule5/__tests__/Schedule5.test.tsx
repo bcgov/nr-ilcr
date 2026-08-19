@@ -1304,7 +1304,16 @@ describe('Schedule 5 inline validation timing', () => {
     expect(
       await screen.findByText('Entered number of persons must be between 1 and 999.'),
     ).toBeInTheDocument()
-    // A second bad field the licensee never visited is NOT reported.
+
+    // A second field made genuinely invalid but never LEFT (never blurred) is still not reported.
+    // The seeded `roadDistanceToOperatingArea` (42.5) is already valid, so it has to be made invalid
+    // here — otherwise this assertion would hold trivially under a gate-less implementation too, and
+    // prove nothing about the gate (review fix, fix round 1). Typing into it without ever tabbing or
+    // clicking away is what keeps it unblurred: any focus change away from a field fires that
+    // field's own onBlur, so this interaction has to be the LAST one in the test.
+    const distance = screen.getByLabelText('Road Distance to Operating Area (km)')
+    await user.clear(distance)
+    await user.type(distance, '1000000')
     expect(screen.queryByText('Entered distance must be between 0 and 999,999.')).toBeNull()
   })
 
