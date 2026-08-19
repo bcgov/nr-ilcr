@@ -334,6 +334,37 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+            <!-- Pre-compile the JasperReports templates (.jrxml -> .jasper) at build time, when the
+                 JVM is a JDK. The compiled .jasper carries the expression bytecode, so the runtime
+                 (a JRE container without javac) only LOADS them — never compiles. Runs after compile,
+                 over the resources already copied to target/classes/reports. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <executions>
+                    <execution>
+                        <id>precompile-jasper-reports</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <!-- Fork a real java (not exec:java) so JasperReports' nested javac
+                                 inherits the full project classpath (java.class.path) and can resolve
+                                 the JR classes when compiling the report-expression class. -->
+                            <executable>java</executable>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>ca.bc.gov.nrs.ilcr.reporting.ReportPrecompiler</argument>
+                                <argument>${project.build.outputDirectory}/reports</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
