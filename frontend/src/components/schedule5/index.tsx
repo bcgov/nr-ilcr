@@ -679,8 +679,11 @@ const Schedule5: FC = () => {
    * blank DOES propagate: legacy converts an empty submit to null and clears all eleven.
    */
   const handleCampVolumeChange = (value: string) => {
+    // Computed OUT here, not inside the updater: the updater must stay pure, and the same condition
+    // decides both whether the eleven volumes change and whether they should be un-reported.
+    const propagates = value.trim() === '' || parseDecimalInput(value) !== null
     setForm((prev) => {
-      if (value.trim() !== '' && parseDecimalInput(value) === null) {
+      if (!propagates) {
         return { ...prev, associatedCampVolume: value }
       }
       const categories = { ...prev.categories }
@@ -688,6 +691,21 @@ const Schedule5: FC = () => {
         categories[key] = { ...categories[key], volume: value }
       }
       return { ...prev, associatedCampVolume: value, categories }
+    })
+    // Clear-on-type for this input, plus the eleven volumes BR-03 just overwrote. Those values were
+    // not typed into those fields, and an out-of-range camp volume already reports itself at its own
+    // input rather than as eleven duplicates of one message — the reasoning
+    // `schedule5SubPage/validation.ts:53-55` uses for not flagging untouched rows. An unparseable
+    // entry propagates nothing, so it must un-report nothing but itself.
+    setBlurred((prev) => {
+      const next = new Set(prev)
+      next.delete('associatedCampVolume')
+      if (propagates) {
+        for (const key of VOLUME_CATEGORY_KEYS) {
+          next.delete(`${key}.volume`)
+        }
+      }
+      return next
     })
   }
 

@@ -1622,3 +1622,93 @@ describe('Schedule 5 duplicate camp name (BR-02) inline', () => {
     expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp')
   })
 })
+
+describe('Schedule 5 BR-03 propagation and the blur gate', () => {
+  test('propagating a camp volume does not flag the eleven category volumes it overwrote', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    // Report a category volume first, so there is something for propagation to un-report.
+    const catering = screen.getByLabelText('Catering and Food volume')
+    await user.clear(catering)
+    await user.type(catering, '99999999')
+    await user.tab()
+    expect(
+      await screen.findByText('Entered volume must be between 0 and 9,999,999.'),
+    ).toBeInTheDocument()
+
+    // BR-03 assigns the camp volume into all eleven. The values were not typed there, and an
+    // out-of-range camp volume reports itself at its own input instead of eleven times over.
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '99999999')
+    await waitFor(() =>
+      expect(screen.queryByText('Entered volume must be between 0 and 9,999,999.')).toBeNull(),
+    )
+
+    // The camp volume itself still reports, once, on its own blur.
+    await user.tab()
+    expect(
+      await screen.findByText('Entered volume must be between 0 and 9,999,999.'),
+    ).toBeInTheDocument()
+  })
+
+  test('an UNPARSEABLE camp volume does not propagate, so it un-reports only itself', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const catering = screen.getByLabelText('Catering and Food volume')
+    await user.clear(catering)
+    await user.type(catering, '99999999')
+    await user.tab()
+    expect(
+      await screen.findByText('Entered volume must be between 0 and 9,999,999.'),
+    ).toBeInTheDocument()
+
+    // Legacy's listener ran only after BigDecimal conversion succeeded, so 'abc' reaches no
+    // category — and the category's own reported error must therefore survive. `{selectall}`
+    // replaces the field's existing content with each keystroke atomically, never passing through
+    // a blank intermediate value — `user.clear()` here would fire an empty onChange first, and a
+    // blank camp volume DOES propagate (legacy converts empty submit to null and clears all
+    // eleven), which would wipe the category's value for a reason unrelated to what this test
+    // pins.
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.type(campVolume, '{selectall}abc')
+    await flushAsync()
+    expect(screen.getByText('Entered volume must be between 0 and 9,999,999.')).toBeInTheDocument()
+  })
+
+  test('retyping a previously-blurred camp volume into an invalid value does not flash an error before the next blur', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    // Blur the camp volume on a VALID value first, so its own key enters `blurred` — the state
+    // the field is left in after any ordinary successful edit-and-tab-away.
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '150000')
+    await user.tab()
+    expect(screen.queryByText('Entered volume must be between 0 and 9,999,999.')).toBeNull()
+
+    // Retype it into an out-of-range value WITHOUT tabbing away again. Without clear-on-type for
+    // this input, the stale `associatedCampVolume` entry left in `blurred` by the tab above would
+    // make this report live, mid-keystroke — the exact live-reporting the blur gate exists to
+    // suppress for every other descriptor.
+    await user.click(campVolume)
+    await user.clear(campVolume)
+    await user.type(campVolume, '99999999')
+    expect(screen.queryByText('Entered volume must be between 0 and 9,999,999.')).toBeNull()
+
+    // Only the NEXT blur reports it.
+    await user.tab()
+    expect(
+      await screen.findByText('Entered volume must be between 0 and 9,999,999.'),
+    ).toBeInTheDocument()
+  })
+})
