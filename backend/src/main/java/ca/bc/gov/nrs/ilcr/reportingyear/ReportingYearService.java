@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.reportingyear.dto.OpenReportingYearResult;
 import ca.bc.gov.nrs.ilcr.reportingyear.dto.ReportingYearAdminView;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,7 +48,9 @@ public class ReportingYearService {
 
   @Autowired
   public ReportingYearService(ReportingYearRepository repository) {
-    this(repository, Clock.systemDefaultZone());
+    // Anchor "current year" (BR-07 range + period start) to Pacific time: the app serves BC and its
+    // OpenShift containers run UTC, where systemDefaultZone would drift the year boundary near Jan 1.
+    this(repository, Clock.system(ZoneId.of("America/Vancouver")));
   }
 
   ReportingYearService(ReportingYearRepository repository, Clock clock) {

@@ -428,7 +428,7 @@ public class GlobalExceptionHandler {
 
     ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
     problem.setTitle(ex.getStatus().getReasonPhrase());
-    problem.setDetail(messages.stream().map(FieldMessage::text).collect(Collectors.joining(" ")));
+    problem.setDetail(messages.stream().map(FieldMessage::text).collect(Collectors.joining("; ")));
     problem.setInstance(URI.create(request.getRequestURI()));
     problem.setProperty("messages", messages);
 

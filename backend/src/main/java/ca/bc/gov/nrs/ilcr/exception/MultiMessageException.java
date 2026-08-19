@@ -16,9 +16,9 @@ public class MultiMessageException extends RuntimeException {
   private final transient List<String> messageKeys;
 
   public MultiMessageException(HttpStatus status, List<String> messageKeys) {
-    super("Business rejection: " + String.join(", ", messageKeys));
+    super("Business rejection: " + (messageKeys == null ? "none" : String.join(", ", messageKeys)));
     this.status = status;
-    this.messageKeys = List.copyOf(messageKeys);
+    this.messageKeys = messageKeys == null ? List.of() : List.copyOf(messageKeys);
   }
 
   public HttpStatus getStatus() {
