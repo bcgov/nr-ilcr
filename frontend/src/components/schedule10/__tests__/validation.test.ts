@@ -134,6 +134,32 @@ describe('location branch helpers', () => {
     expect(supplyBlocksFor(blocks, '')).toEqual([])
     expect(supplyBlocksFor(blocks, 'TFL')).toEqual([])
   })
+
+  test('keeps a stored block that does not belong to the stored TSA', () => {
+    // Delivery holds pages on TSA 02 carrying block 01D, because the TSA leg was never validated.
+    // Narrowing that away would blank a field that does hold a value.
+    const blocks = [
+      { code: '01D', description: 'Arrow TSA Block D' },
+      { code: '02A', description: 'Boundary TSA Block A' },
+      { code: '02B', description: 'Boundary TSA Block B' },
+    ]
+    const options = supplyBlocksFor(blocks, '02', '01D').map((b) => b.code)
+    expect(options).toContain('01D')
+    expect(options).toEqual(expect.arrayContaining(['02A', '02B']))
+  })
+
+  test('does not duplicate a stored block that already belongs to the TSA', () => {
+    const blocks = [
+      { code: '02A', description: 'Boundary TSA Block A' },
+      { code: '02B', description: 'Boundary TSA Block B' },
+    ]
+    expect(supplyBlocksFor(blocks, '02', '02A').map((b) => b.code)).toEqual(['02A', '02B'])
+  })
+
+  test('keeps a stored block even with no TSA chosen, so it is never hidden', () => {
+    const blocks = [{ code: '01D', description: 'Arrow TSA Block D' }]
+    expect(supplyBlocksFor(blocks, '', '01D').map((b) => b.code)).toEqual(['01D'])
+  })
 })
 
 describe('ballast method coupling', () => {

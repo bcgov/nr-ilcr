@@ -182,16 +182,28 @@ export const ballastZeroesFigures = (methodCode: string): boolean =>
  * Legacy narrowed the supply-block list to blocks whose code begins with the chosen TSA, which is
  * what makes the pair coherent — block `01A` belongs to TSA `01`. With no TSA chosen the list is
  * empty rather than the full catalogue, matching the legacy control's cleared state.
+ *
+ * A stored block is always kept, even when it does not belong to the stored TSA. Delivery holds such
+ * pairs — a page on TSA `02` carrying block `01D` — because the TSA leg was never validated, and
+ * narrowing them away would blank a field that does hold a value and silently drop it on the next
+ * save. The narrowing governs what can be CHOSEN; it must not hide what is already there.
  */
 export const supplyBlocksFor = <T extends { readonly code: string }>(
   blocks: readonly T[],
   tsaOrTfl: string,
+  selectedCode = '',
 ): T[] => {
   const tsa = tsaOrTfl.trim()
+  const selected = selectedCode.trim()
+  const stored = selected === '' ? [] : blocks.filter((block) => block.code === selected)
+
   if (tsa === '' || isTflLocated(tsa)) {
-    return []
+    return stored
   }
-  return blocks.filter((block) => block.code.startsWith(tsa))
+
+  const offered = blocks.filter((block) => block.code.startsWith(tsa))
+  const missing = stored.filter((block) => !offered.includes(block))
+  return [...offered, ...missing]
 }
 
 export const emptyPageForm = (): PageFormValues => ({

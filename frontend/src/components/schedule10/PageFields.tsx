@@ -64,7 +64,7 @@ const PageFields: FC<PageFieldsProps> = ({
     ...codeLists.tsaNumbers,
     { code: TFL_SENTINEL, description: TFL_SENTINEL },
   ]
-  const blockOptions = supplyBlocksFor(codeLists.supplyBlocks, form.tsaOrTfl)
+  const blockOptions = supplyBlocksFor(codeLists.supplyBlocks, form.tsaOrTfl, form.supplyBlock)
 
   const describe = (options: readonly CodeDescription[], code: string): string =>
     options.find((option) => option.code === code)?.description ?? code

@@ -446,6 +446,14 @@ describe('the TSA and TFL branches', () => {
     expect(body).toMatchObject({ tsaOrTfl: 'TFL', tflNumberCode: '08', supplyBlock: null })
   })
 
+  test('still shows a stored supply block that does not belong to its TSA', async () => {
+    // Real pages carry such pairs; the narrowing must not blank a field that holds a value.
+    server.use(getHandler(doc({ pages: [page({ tsaNumber: '16', tsbNumberCode: '01A' })] })))
+    renderSchedule10()
+    await openPagePanel()
+    expect(await screen.findByDisplayValue('Arrow TSA Block A')).toBeInTheDocument()
+  })
+
   test('narrows the supply blocks to the chosen TSA', async () => {
     renderSchedule10()
     await openPagePanel()
