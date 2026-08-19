@@ -145,14 +145,14 @@ class Schedule10DocumentAssembler {
           costsByDetail.computeIfAbsent(row.roadDetailId(), key -> new LinkedHashMap<>());
       // containsKey, not get() != null — a present-but-null entry is a real cost row that must be
       // recognised as a duplicate when a second row for the same item arrives.
+      // containsKey, not get() != null — a present-but-null entry is a real cost row, and a second
+      // row for the same item must still be recognised as a duplicate.
       if (byItem.containsKey(row.costItemId())) {
         LOG.warn("Schedule 10 road detail {} has MORE THAN ONE cost row for item {} — the last row"
             + " wins, as in legacy (mill {}, year {})",
             row.roadDetailId(), row.costItemId(), millId, year);
-        byItem.put(row.costItemId(), row.cost());
-      } else {
-        byItem.put(row.costItemId(), row.cost());
       }
+      byItem.put(row.costItemId(), row.cost());
     }
 
     // Two distinct sets: what the dropdown may OFFER (xref-gated) and what this document must be

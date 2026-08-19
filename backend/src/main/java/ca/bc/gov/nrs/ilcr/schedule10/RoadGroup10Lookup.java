@@ -95,21 +95,20 @@ final class RoadGroup10Lookup {
    *
    * <p><strong>On which table validates.</strong> The legacy validator calls Schedule <em>6</em>'s
    * lookup even for this screen, which reads like a defect. Validating here against Schedule 10's
-   * own table is behaviourally equivalent, but NOT because the tables are identical — an earlier
-   * version of this note claimed "an identical set of 22 keys", and that was wrong on both counts
-   * (corrected at code review 2026-08-18). The accurate position, from counting the {@code case}
-   * labels of both methods:
+   * own table is behaviourally equivalent, because <strong>the two accept and reject exactly the
+   * same values</strong>: they agree on every key either one holds, and the only code they ever
+   * disagreed on was {@code "52B"}, which neither offers now.
    *
-   * <ul>
-   *   <li>this table holds <strong>21</strong> live keys; {@code schedule6.RoadGroupLookup} holds
-   *       <strong>20</strong>;
-   *   <li>the sets are identical on all 20 shared keys and differ only by {@code "52B"}, which
-   *       Schedule 6 demoted to a comment because {@code TFL_NUMBER_CODE} is {@code VARCHAR2(2)} —
-   *       a 3-character TFL is unstorable, and {@code ConstructionPageRequest.tflNumberCode}
-   *       carries {@code @Size(max = 2)} to match;
-   *   <li>so for every input that can physically reach either method, the two accept and reject
-   *       exactly the same values, and validating against this table matches legacy.
-   * </ul>
+   * <p>{@code "52B"} is worth a sentence because it is the one real difference in the two tables'
+   * history. Legacy kept it live here and Schedule 6 demoted it to a comment, on the grounds that
+   * {@code TFL_NUMBER_CODE} is {@code VARCHAR2(2)} on both sides and {@code
+   * ConstructionPageRequest.tflNumberCode} carries {@code @Size(max = 2)} — so a 3-character TFL
+   * can never reach either switch. This schedule followed at code review 2026-08-18.
+   *
+   * <p>Deliberately stated as a PROPERTY rather than a key count. Two earlier revisions of this
+   * note cited a number — first "an identical set of 22 keys", then "21 versus 20" — and both went
+   * stale, the second within the same change that demoted {@code 52B} (flagged at review
+   * 2026-08-19). The property is what the write path depends on; the count is trivia that rots.
    *
    * <p>Only the returned Road Group values differ between the tables, which is what this class
    * exists to keep separate. The cross-wiring is still worth reporting upstream: the tables are
