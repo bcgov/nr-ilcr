@@ -1712,3 +1712,212 @@ describe('Schedule 5 BR-03 propagation and the blur gate', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('Schedule 5 unsaved-data confirms fire only when the panel is dirty', () => {
+  const CLOSE_CONFIRM = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+  const SWITCH_CONFIRM =
+    'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?'
+
+  /** A second camp, so the switch paths have somewhere to go. */
+  const birchRidge: Camp = { ...cedarFlats, campId: 8402, campName: 'Birch Ridge Camp' }
+
+  /**
+   * Assert the Close confirm actually intercepted the click.
+   *
+   * <strong>Never assert on the confirm's SENTENCE.</strong> Carbon keeps every modal mounted, so
+   * `CLOSE_CONFIRM` is in the DOM whether or not the dialog is open — `queryByText(...).toBeNull()`
+   * can never pass, and `findByText(...)` passes even when nothing opened. What is genuinely
+   * observable is the panel: an intercepted Close leaves it open until Yes is pressed, and an
+   * un-intercepted Close unmounts it outright. The modal itself is located by its unique HEADING.
+   */
+  const expectCloseIntercepted = async (user: ReturnType<typeof userEvent.setup>) => {
+    expect(screen.getByLabelText('Camp Name')).toBeInTheDocument()
+    const dialog = confirmDialog('Close camp report')
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+    await waitFor(() => expect(screen.queryByLabelText('Camp Name')).toBeNull())
+  }
+
+  test('a clean edit panel closes immediately, with no confirm', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.click(panelButton(/^close$/i))
+
+    // The panel is gone: had a confirm intercepted, it would still be open.
+    await waitFor(() => expect(screen.queryByLabelText('Camp Name')).toBeNull())
+  })
+
+  test('a dirty edit panel confirms on Close, and No keeps the edit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.type(screen.getByLabelText('Comments'), ' extra')
+    await user.click(panelButton(/^close$/i))
+
+    const dialog = confirmDialog(CLOSE_CONFIRM)
+    await user.click(within(dialog).getByRole('button', { name: /^no$/i }))
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp')
+    expect(screen.getByLabelText('Comments')).toHaveValue('Seasonal camp, spring only. extra')
+  })
+
+  test('after a successful save the panel is clean again, so Close is silent', async () => {
+    // The "since the last save" case: applySaved re-seeds the form from the saved camp, which IS
+    // the new baseline.
+    const saved = { ...cedarFlats, comments: 'Seasonal camp, spring only. extra' }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(CAMP_URL, () =>
+        HttpResponse.json(
+          doc({
+            camps: [saved],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        ),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.type(screen.getByLabelText('Comments'), ' extra')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    await user.click(panelButton(/^close$/i))
+    await waitFor(() => expect(screen.queryByLabelText('Camp Name')).toBeNull())
+  })
+
+  test('a freshly-opened Copy panel confirms on Close with no edit at all', async () => {
+    // A copy is unsaved data in itself: the camp does not exist server-side, so Close discards a
+    // camp the licensee asked to create.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(MESSAGES_URL, () =>
+        HttpResponse.json({ key: 'x', text: 'Provide a new Camp Name.' }),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+    await screen.findByLabelText('Camp Name')
+
+    await user.click(panelButton(/^close$/i))
+    await expectCloseIntercepted(user)
+  })
+
+  test('an empty New panel closes silently; one typed character makes it confirm', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await screen.findByLabelText('Camp Name')
+
+    await user.click(panelButton(/^close$/i))
+    await waitFor(() => expect(screen.queryByLabelText('Camp Name')).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: /add new camp/i }))
+    await user.type(await screen.findByLabelText('Camp Name'), 'B')
+    await user.click(panelButton(/^close$/i))
+    await expectCloseIntercepted(user)
+  })
+
+  test('a View panel closes with no confirm', async () => {
+    // Only the Close path is testable from a view panel: `view` is reachable only on a NON-editable
+    // document, where Add New Camp is disabled and the rows render `View` alone with no panelOpen
+    // gate — so no switch confirm can fire there in the first place.
+    server.use(http.get(URL, () => HttpResponse.json(doc({ editable: false }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^view$/i }))
+    await screen.findByLabelText('Camp Name')
+
+    await user.click(panelButton(/^close$/i))
+    await waitFor(() => expect(screen.queryByLabelText('Camp Name')).toBeNull())
+  })
+
+  test('switching camps from a CLEAN panel proceeds with no confirm', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, birchRidge] }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click((await screen.findAllByRole('button', { name: /^edit$/i }))[0])
+    await screen.findByLabelText('Camp Name')
+
+    // The panel re-seats on the other camp with no interception.
+    await user.click(screen.getAllByRole('button', { name: /^edit$/i })[1])
+    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp'))
+  })
+
+  test('switching camps from a DIRTY panel still confirms, and Yes discards the draft', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, birchRidge] }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    await user.click((await screen.findAllByRole('button', { name: /^edit$/i }))[0])
+    await user.type(await screen.findByLabelText('Comments'), ' extra')
+
+    await user.click(screen.getAllByRole('button', { name: /^edit$/i })[1])
+    const dialog = confirmDialog(SWITCH_CONFIRM)
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+    await waitFor(() => expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp'))
+  })
+
+  test('Add New Camp from a CLEAN panel opens the new panel with no confirm', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    // The new panel opens directly — an interception would have left the edit panel in place.
+    await user.click(screen.getByRole('button', { name: /add new camp/i }))
+    expect(await screen.findByText('New Camp Details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('')
+  })
+
+  test('BR-03 propagation makes the panel dirty', async () => {
+    // Changing the camp volume rewrites eleven category volumes — unmistakably unsaved data.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '130000')
+
+    await user.click(panelButton(/^close$/i))
+    await expectCloseIntercepted(user)
+  })
+
+  test('a camp missing from the served document is treated as dirty', async () => {
+    // Nothing to compare against, so confirm rather than discard silently.
+    //
+    // The delete echo is the lever: deleting the OTHER camp refreshes `data` while leaving the panel
+    // open (handleDelete only closes it when the deleted camp IS the panel's), and the echo here
+    // drops camp 8401 as well — as if another session had removed it meanwhile.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, birchRidge] }))),
+      http.delete(CAMP_URL, () => HttpResponse.json(doc({ camps: [] }))),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    // Edit 8401, then delete 8402 so the panel survives the refresh.
+    await user.click((await screen.findAllByRole('button', { name: /^edit$/i }))[0])
+    await screen.findByLabelText('Camp Name')
+    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[1])
+    const del = confirmDialog('This will delete the current record. Do you want to continue?')
+    await user.click(within(del).getByRole('button', { name: /^yes$/i }))
+
+    // Panel still seated on a camp the document no longer carries → baseline unprovable → confirm.
+    await waitFor(() => expect(screen.getByText('No records found.')).toBeInTheDocument())
+    expect(screen.getByLabelText('Camp Name')).toBeInTheDocument()
+    await user.click(panelButton(/^close$/i))
+    await expectCloseIntercepted(user)
+  })
+})

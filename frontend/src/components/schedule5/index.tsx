@@ -537,6 +537,56 @@ const Schedule5: FC = () => {
   )
 
   /**
+   * What the panel would be discarding nothing against. DERIVED from the served document rather than
+   * snapshotted into state, so there is nothing to keep in sync — and so "since the last save" falls
+   * out for free: `applySaved` re-seeds the form from the saved camp, which means a successful save
+   * lands the panel exactly on its own new baseline.
+   *
+   * `emptyForm()` for a NEW or COPIED camp, because neither exists server-side and there is no saved
+   * state to compare with. A copy is therefore dirty from the moment it opens — it carries the source
+   * camp's values against an empty baseline — which is exactly right: closing it discards a whole
+   * camp the licensee asked to create. An empty new panel matches its baseline and closes silently.
+   *
+   * `null` means "cannot compare": either no panel, or an edited camp the served document no longer
+   * carries (deleted in another session).
+   */
+  const panelBaseline = useMemo<CampFormValues | null>(() => {
+    if (panelMode === 'closed') {
+      return null
+    }
+    if (panelCampId === null) {
+      return emptyForm()
+    }
+    const served = (data?.camps ?? []).find((camp) => camp.campId === panelCampId)
+    return served === undefined ? null : seedForm(served, true)
+  }, [data, panelMode, panelCampId])
+
+  /**
+   * Whether the panel holds anything not saved since the last save — the gate on all three "unsaved
+   * data will be lost" confirms. Legacy warned on every one of those transitions regardless of state,
+   * so gating them is a deliberate deviation.
+   *
+   * Compared as the ENTERED TEXT (`schedule8/index.tsx:490-493` does the same for its page editor).
+   * Safe here because both sides are built by `seedForm`/`emptyForm` and every update spreads rather
+   * than rebuilds, so key order is stable. Text rather than parsed values means retyping `120,000` as
+   * `120000` counts as dirty though the number is unchanged: it over-warns only there and NEVER
+   * under-warns, and legacy warned every time, so the over-warn is the legacy-faithful direction.
+   * Schedule 5 has no blur-time re-grouping (its masks format only read-only served values), so
+   * merely focusing and leaving a field cannot fake a change.
+   *
+   * A `view` panel is excluded explicitly rather than relying on its form matching its baseline, so
+   * that a view panel whose camp went missing cannot start prompting. `view` is in any case reachable
+   * only on a NON-editable document, where `Add New Camp` is disabled and the rows render `View`
+   * alone with no `panelOpen` gate — so no switch confirm exists there to gate, and this flag reaches
+   * only the Close button. An unprovable baseline is otherwise treated as dirty: a spurious confirm
+   * costs a click, a missing one costs the licensee's work.
+   */
+  const panelDirty =
+    panelMode !== 'closed' &&
+    panelMode !== 'view' &&
+    (panelBaseline === null || JSON.stringify(form) !== JSON.stringify(panelBaseline))
+
+  /**
    * The single mutation tail. The context guard runs on `then`, `catch` AND `finally`: an unguarded
    * `finally` would release the `saving` lock belonging to a request dispatched under the NEW
    * context, letting two writes overlap.
@@ -1027,7 +1077,9 @@ const Schedule5: FC = () => {
           size="sm"
           disabled={saving}
           onClick={() =>
-            panelOpen ? setPendingSwitch({ kind: 'edit', camp }) : openEditOrView(camp, 'edit')
+            panelOpen && panelDirty
+              ? setPendingSwitch({ kind: 'edit', camp })
+              : openEditOrView(camp, 'edit')
           }
         >
           Edit
@@ -1136,7 +1188,8 @@ const Schedule5: FC = () => {
         <Button
           kind="secondary"
           disabled={saving}
-          onClick={() => (readOnlyPanel ? closePanel() : setConfirmClose(true))}
+          // The `readOnlyPanel` test this replaces is subsumed: a view panel is never dirty.
+          onClick={() => (panelDirty ? setConfirmClose(true) : closePanel())}
         >
           Close
         </Button>
@@ -1197,7 +1250,9 @@ const Schedule5: FC = () => {
           <Button
             kind="primary"
             disabled={!editable || saving}
-            onClick={() => (panelOpen ? setPendingSwitch({ kind: 'new' }) : openNew())}
+            onClick={() =>
+              panelOpen && panelDirty ? setPendingSwitch({ kind: 'new' }) : openNew()
+            }
           >
             Add New Camp
           </Button>
