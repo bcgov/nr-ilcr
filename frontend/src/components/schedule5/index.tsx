@@ -10,7 +10,7 @@ import type CampRequest from '@/interfaces/Schedule5Request'
 import type { CategoryEntry } from '@/interfaces/Schedule5Request'
 import type { SubPageKind } from '@/interfaces/Schedule5SubPage'
 import type { CampErrors, CampFormValues, CategoryKey, DerivedKey, GridRow } from './validation'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getRouteApi } from '@tanstack/react-router'
 import Schedule5SubPage from '@/components/schedule5SubPage'
 import {
@@ -185,7 +185,8 @@ const AmountCell: FC<{
   readonly readOnly: boolean
   readonly invalidText?: string
   readonly onChange?: (value: string) => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange }) =>
+  readonly onBlur?: () => void
+}> = ({ inputId, label, value, readOnly, invalidText, onChange, onBlur }) =>
   readOnly ? (
     <TableCell className="schedule-5__num">{value}</TableCell>
   ) : (
@@ -197,6 +198,7 @@ const AmountCell: FC<{
         size="sm"
         value={value}
         onChange={(event) => onChange?.(event.target.value)}
+        onBlur={onBlur}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
@@ -214,9 +216,10 @@ const CategoryGridRow: FC<{
   readonly readOnly: boolean
   readonly errors: CampErrors
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
+  readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   /** Present only on the two Other … rows, and only once the camp can be navigated to. */
   readonly onOpenSubPage?: () => void
-}> = ({ row, values, served, subPageCount, readOnly, errors, onChange, onOpenSubPage }) => {
+}> = ({ row, values, served, subPageCount, readOnly, errors, onChange, onBlur, onOpenSubPage }) => {
   // The two Other … rows carry their live sub-page row count in the label itself.
   const label = row.subPageCount === undefined ? row.label : `${row.label} (${subPageCount}): `
   // The displayed label keeps legacy's trailing ": "; the accessible name drops it so a screen
@@ -245,6 +248,7 @@ const CategoryGridRow: FC<{
           readOnly={readOnly}
           invalidText={errors[`${row.key}.volume`]}
           onChange={(value) => onChange(row.key, 'volume', value)}
+          onBlur={() => onBlur(row.key, 'volume')}
         />
       ) : (
         <AbsentCell />
@@ -260,6 +264,7 @@ const CategoryGridRow: FC<{
           readOnly={readOnly}
           invalidText={errors[`${row.key}.cost`]}
           onChange={(value) => onChange(row.key, 'cost', value)}
+          onBlur={() => onBlur(row.key, 'cost')}
         />
       )}
       {row.hasVolume ? (
@@ -294,8 +299,9 @@ const CategoryGrid: FC<{
   readonly readOnly: boolean
   readonly errors: CampErrors
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
+  readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   readonly onOpenSubPage: (kind: SubPageKind) => void
-}> = ({ values, served, readOnly, errors, onChange, onOpenSubPage }) => (
+}> = ({ values, served, readOnly, errors, onChange, onBlur, onOpenSubPage }) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
       <TableBody>
@@ -340,6 +346,7 @@ const CategoryGrid: FC<{
               readOnly={readOnly}
               errors={errors}
               onChange={onChange}
+              onBlur={onBlur}
               onOpenSubPage={
                 row.subPageCount === undefined
                   ? undefined
@@ -363,8 +370,18 @@ const DescriptorFields: FC<{
   readonly readOnly: boolean
   readonly errors: CampErrors
   readonly onFieldChange: (field: keyof CampFormValues, value: string) => void
+  readonly onFieldBlur: (field: keyof CampFormValues) => void
+  readonly onIsolatedCampChange: (value: string) => void
   readonly onCampVolumeChange: (value: string) => void
-}> = ({ values, readOnly, errors, onFieldChange, onCampVolumeChange }) => (
+}> = ({
+  values,
+  readOnly,
+  errors,
+  onFieldChange,
+  onFieldBlur,
+  onIsolatedCampChange,
+  onCampVolumeChange,
+}) => (
   <div className="schedule-5__descriptors">
     <TextInput
       id="camp-name"
@@ -373,6 +390,7 @@ const DescriptorFields: FC<{
       value={values.campName}
       readOnly={readOnly}
       onChange={(event) => onFieldChange('campName', event.target.value)}
+      onBlur={() => onFieldBlur('campName')}
       invalid={Boolean(errors.campName)}
       invalidText={errors.campName}
     />
@@ -382,6 +400,7 @@ const DescriptorFields: FC<{
       value={values.roadDistanceToOperatingArea}
       readOnly={readOnly}
       onChange={(event) => onFieldChange('roadDistanceToOperatingArea', event.target.value)}
+      onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
       invalid={Boolean(errors.roadDistanceToOperatingArea)}
       invalidText={errors.roadDistanceToOperatingArea}
     />
@@ -391,6 +410,7 @@ const DescriptorFields: FC<{
       value={values.sizeOfCamp}
       readOnly={readOnly}
       onChange={(event) => onFieldChange('sizeOfCamp', event.target.value)}
+      onBlur={() => onFieldBlur('sizeOfCamp')}
       invalid={Boolean(errors.sizeOfCamp)}
       invalidText={errors.sizeOfCamp}
     />
@@ -400,6 +420,7 @@ const DescriptorFields: FC<{
       value={values.associatedCampVolume}
       readOnly={readOnly}
       onChange={(event) => onCampVolumeChange(event.target.value)}
+      onBlur={() => onFieldBlur('associatedCampVolume')}
       invalid={Boolean(errors.associatedCampVolume)}
       invalidText={errors.associatedCampVolume}
     />
@@ -408,7 +429,7 @@ const DescriptorFields: FC<{
       labelText="Isolated Camp"
       value={values.isolatedCamp}
       disabled={readOnly}
-      onChange={(event) => onFieldChange('isolatedCamp', event.target.value)}
+      onChange={(event) => onIsolatedCampChange(event.target.value)}
       invalid={Boolean(errors.isolatedCamp)}
       invalidText={errors.isolatedCamp}
     >
@@ -434,7 +455,17 @@ const Schedule5: FC = () => {
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<CampFormValues>(emptyForm)
-  const [errors, setErrors] = useState<CampErrors>({})
+  /**
+   * Which fields are worth reporting on. Errors themselves are DERIVED at render from
+   * `validateCamp` (the single rule source, the `schedule3/index.tsx:352` pattern); this set decides
+   * only which of them are on screen.
+   *
+   * Keyed exactly as `CampErrors` is, category halves included (`cateringAndFood.volume`), so the
+   * gate and the error map can never drift into two naming schemes.
+   *
+   * Legacy validated the camp panel only at submit, so reporting on blur is a deliberate deviation.
+   */
+  const [blurred, setBlurred] = useState<ReadonlySet<string>>(() => new Set())
   const [panelCampId, setPanelCampId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
 
@@ -459,7 +490,7 @@ const Schedule5: FC = () => {
     setCheckResult(null)
     setPanelMode('closed')
     setForm(emptyForm())
-    setErrors({})
+    setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
     setConfirmDelete(null)
@@ -484,6 +515,26 @@ const Schedule5: FC = () => {
   })
 
   const query = `millId=${String(millId)}&year=${String(year)}`
+
+  /**
+   * Every OTHER camp's name in the served mill/year — the client's half of BR-02.
+   *
+   * Excluded by campId, never by name, which is what makes the three panel modes come out right with
+   * no mode-specific branching. An EDIT excludes the camp it is editing, so re-saving an unrenamed
+   * camp cannot collide with itself — and a rename that duplicates a THIRD camp is still caught. A
+   * NEW and a COPY both carry a null panelCampId, so every stored name collides; for a copy that is
+   * exactly the rename WRN-001 asks for, now enforced before the request instead of by the 409
+   * afterwards. And once `applySaved` re-seats the panel in edit mode, panelCampId is set, so the
+   * second Save of a camp is not blocked by the row the first Save created.
+   */
+  const otherCampNames = useMemo(
+    () =>
+      (data?.camps ?? [])
+        .filter((camp) => camp.campId !== panelCampId)
+        .map((camp) => camp.campName)
+        .filter((name): name is string => name !== null),
+    [data, panelCampId],
+  )
 
   /**
    * The single mutation tail. The context guard runs on `then`, `catch` AND `finally`: an unguarded
@@ -525,7 +576,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode(mode)
     setForm(seedForm(camp, true))
-    setErrors({})
+    setBlurred(new Set())
     setPanelCampId(camp.campId)
     // THIS camp's own token, read from its row. A falsy 0 is a valid token — never coerce it.
     setPanelRevision(camp.revisionCount)
@@ -535,7 +586,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('new')
     setForm(emptyForm())
-    setErrors({})
+    setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
   }
@@ -544,7 +595,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('copy')
     setForm(seedForm(camp, false))
-    setErrors({})
+    setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
     // WRN-001 is bundle text with no write behind it, so it is resolved over HTTP rather than
@@ -565,7 +616,7 @@ const Schedule5: FC = () => {
   const closePanel = () => {
     setPanelMode('closed')
     setForm(emptyForm())
-    setErrors({})
+    setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
     // The copy instruction belongs to the panel it opened with — closing must not leave "provide a
@@ -574,8 +625,44 @@ const Schedule5: FC = () => {
     setCopyWarning(null)
   }
 
+  /** Blur is the commit point: a field's error appears only once the licensee has left it. */
+  const markBlurred = (key: string) => {
+    setBlurred((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }
+
+  /**
+   * Clear-on-type. Editing a reported field un-reports it, so the message goes while the licensee is
+   * correcting it and returns on the next blur if the value is still wrong.
+   *
+   * This is also what keeps a rejected Save from freezing its errors on screen: Save reports every
+   * offending field through the SAME set, so each message is then cleared by the very edit that
+   * starts fixing it. A separate "show everything" flag would have suppressed that.
+   */
+  const clearBlurred = (key: string) => {
+    setBlurred((prev) => {
+      if (!prev.has(key)) {
+        return prev
+      }
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+  }
+
   const setField = (field: keyof CampFormValues, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+    clearBlurred(field)
+  }
+
+  /**
+   * The Select's change IS its commit — there is no half-entered state to protect from flicker — so
+   * choosing a value reports the field at once. Choosing the blank option therefore surfaces
+   * "Isolated Camp is required." immediately, which is the point of a tri-state control whose empty
+   * state is invalid.
+   */
+  const handleIsolatedCampChange = (value: string) => {
+    setForm((prev) => ({ ...prev, isolatedCamp: value as CampFormValues['isolatedCamp'] }))
+    markBlurred('isolatedCamp')
   }
 
   /**
@@ -609,6 +696,11 @@ const Schedule5: FC = () => {
       ...prev,
       categories: { ...prev.categories, [key]: { ...prev.categories[key], [half]: value } },
     }))
+    clearBlurred(`${key}.${half}`)
+  }
+
+  const handleCategoryBlur = (key: CategoryKey, half: 'volume' | 'cost') => {
+    markBlurred(`${key}.${half}`)
   }
 
   /**
@@ -633,7 +725,7 @@ const Schedule5: FC = () => {
       setForm(seedForm(saved, true))
       setPanelCampId(saved.campId)
       setPanelRevision(saved.revisionCount)
-      setErrors({})
+      setBlurred(new Set())
     } else {
       closePanel()
     }
@@ -644,10 +736,12 @@ const Schedule5: FC = () => {
       return
     }
     clearBanners()
-    const found = validateCamp(form)
-    setErrors(found)
+    const found = validateCamp(form, otherCampNames)
     if (!isCampFormValid(found)) {
-      // A client rejection issues NO request; the entered values stay exactly as typed.
+      // A client rejection issues NO request; the entered values stay exactly as typed. Reporting
+      // every offending field at once is the one place blur is bypassed — at Save the licensee has
+      // asked about the whole form, not one field.
+      setBlurred(new Set(Object.keys(found)))
       return
     }
     const savedName = form.campName.trim()
@@ -755,9 +849,9 @@ const Schedule5: FC = () => {
       return
     }
     clearBanners()
-    const found = validateCamp(form)
-    setErrors(found)
+    const found = validateCamp(form, otherCampNames)
     if (!isCampFormValid(found)) {
+      setBlurred(new Set(Object.keys(found)))
       return
     }
     const savedName = form.campName.trim()
@@ -880,6 +974,15 @@ const Schedule5: FC = () => {
   const editable = data.editable
   const panelOpen = panelMode !== 'closed'
   const readOnlyPanel = panelMode === 'view'
+
+  // Derived, never stored: `validateCamp` stays the single rule source and `blurred` filters it
+  // (the `schedule3/index.tsx:352` pattern). A read-only or non-editable panel validates nothing, so
+  // a stored value today's rules would reject is never flagged at a licensee who cannot fix it.
+  const allErrors: CampErrors = editable && !readOnlyPanel ? validateCamp(form, otherCampNames) : {}
+  const errors: CampErrors = Object.fromEntries(
+    Object.entries(allErrors).filter(([key]) => blurred.has(key)),
+  )
+
   const servedCamp =
     panelCampId !== null ? data.camps.find((camp) => camp.campId === panelCampId) : undefined
   // A new or copied camp has no served document yet, so it has no derived figures to show. Legacy's
@@ -972,6 +1075,8 @@ const Schedule5: FC = () => {
         readOnly={readOnlyPanel}
         errors={errors}
         onFieldChange={setField}
+        onFieldBlur={markBlurred}
+        onIsolatedCampChange={handleIsolatedCampChange}
         onCampVolumeChange={handleCampVolumeChange}
       />
 
@@ -982,6 +1087,7 @@ const Schedule5: FC = () => {
         readOnly={readOnlyPanel}
         errors={errors}
         onChange={handleCategoryChange}
+        onBlur={handleCategoryBlur}
       />
 
       <div className="schedule-5__comments">
@@ -994,6 +1100,9 @@ const Schedule5: FC = () => {
           value={form.comments}
           readOnly={readOnlyPanel}
           onChange={(event) => setField('comments', event.target.value)}
+          onBlur={() => {
+            markBlurred('comments')
+          }}
           invalid={Boolean(errors.comments)}
           invalidText={errors.comments}
         />

@@ -1286,3 +1286,330 @@ describe('the sub-page URL wiring (Story 7.4 — the early return and Back)', ()
     }
   })
 })
+
+describe('Schedule 5 inline validation timing', () => {
+  test('an invalid entry reports itself on blur, and untouched fields stay silent', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    // Nothing yet: the licensee has not left the field.
+    expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull()
+
+    await user.tab()
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+    // A second bad field the licensee never visited is NOT reported.
+    expect(screen.queryByText('Entered distance must be between 0 and 999,999.')).toBeNull()
+  })
+
+  test('editing a reported field clears its message, and the next blur restores it', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    await user.tab()
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+
+    // Clear-on-type: still invalid ('00'), but the message goes while it is being corrected.
+    await user.type(size, '0')
+    await waitFor(() =>
+      expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull(),
+    )
+
+    await user.tab()
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+  })
+
+  test('a corrected value leaves nothing behind on blur', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    await user.tab()
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+
+    await user.clear(size)
+    await user.type(size, '60')
+    await user.tab()
+    await waitFor(() =>
+      expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull(),
+    )
+  })
+
+  test('a rejected Save reveals EVERY offending field at once and issues no request', async () => {
+    let put = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(CAMP_URL, () => {
+        put = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    const distance = screen.getByLabelText('Road Distance to Operating Area (km)')
+    await user.clear(distance)
+    await user.type(distance, '1000000')
+    const recoveries = screen.getByLabelText('Recoveries cost')
+    await user.clear(recoveries)
+    await user.type(recoveries, '-1')
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Entered distance must be between 0 and 999,999.')).toBeInTheDocument()
+    expect(screen.getByText('Entered cost must be between 0 and 9,999,999.')).toBeInTheDocument()
+    await flushAsync()
+    expect(put).toBe(false)
+  })
+
+  test('a revealed error still clears as its own field is edited', async () => {
+    // The reveal must not freeze on screen — Save adds keys to the same gate blur uses.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+
+    await user.type(size, '0')
+    await waitFor(() =>
+      expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull(),
+    )
+  })
+
+  test('choosing the blank Isolated Camp option reports it immediately — a Select change IS its commit', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), '')
+    expect(await screen.findByText('Isolated Camp is required.')).toBeInTheDocument()
+  })
+
+  test('a category cell reports on blur, keyed to that half of that row alone', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '99999999')
+    expect(screen.queryByText('Entered cost must be between -9,999,999 and 9,999,999.')).toBeNull()
+
+    await user.tab()
+    expect(
+      await screen.findByText('Entered cost must be between -9,999,999 and 9,999,999.'),
+    ).toBeInTheDocument()
+  })
+
+  test('a view-only panel reports nothing, however the stored values look', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ editable: false, camps: [{ ...cedarFlats, isolatedCamp: null, sizeOfCamp: 0 }] }),
+        ),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /^view$/i }))
+
+    // The panel heading, not `findByText`: the camp's name also appears in the Existing Camps table
+    // row, so a plain text query matches both and throws "Found multiple elements".
+    await screen.findByRole('heading', { name: 'Cedar Flats Camp' })
+    expect(screen.queryByText('Isolated Camp is required.')).toBeNull()
+    expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull()
+  })
+
+  test('reopening the panel starts clean', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const size = screen.getByLabelText('Size of Camp (number of persons)')
+    await user.clear(size)
+    await user.type(size, '0')
+    await user.tab()
+    expect(
+      await screen.findByText('Entered number of persons must be between 1 and 999.'),
+    ).toBeInTheDocument()
+
+    await user.click(panelButton(/^close$/i))
+    // The "Close camp report" modal renders CONFIRM_NAVIGATION (`index.tsx`'s Close flow), not the
+    // CONFIRM_CAMP_SWITCH text the Edit/Add-New ladder uses — that text is unconditionally in the DOM
+    // for the (closed) "Switch camp report" modal, so asserting on it here would silently confirm the
+    // WRONG dialog and never actually close the panel.
+    const dialog = confirmDialog(
+      'Any unsaved data will be lost. Are you sure you would like to continue?',
+    )
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+    await openEditor(user)
+
+    expect(screen.queryByText('Entered number of persons must be between 1 and 999.')).toBeNull()
+  })
+})
+
+describe('Schedule 5 duplicate camp name (BR-02) inline', () => {
+  test('a new camp taking a stored name is reported on blur and blocks the POST', async () => {
+    let posted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CAMPS_URL, () => {
+        posted = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+
+    const name = await screen.findByLabelText('Camp Name')
+    await user.type(name, 'cedar flats camp')
+    await user.tab()
+    expect(await screen.findByText('Camp name already exists.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await flushAsync()
+    expect(posted).toBe(false)
+  })
+
+  test('editing a camp WITHOUT renaming it does not collide with itself — the PUT goes out', async () => {
+    let put = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(CAMP_URL, () => {
+        put = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    // Blur the untouched, unchanged name: exclusion is by campId, so it must not flag.
+    await user.click(screen.getByLabelText('Camp Name'))
+    await user.tab()
+    expect(screen.queryByText('Camp name already exists.')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(put).toBe(true))
+  })
+
+  test('a COPY collides with its source camp, enforcing WRN-001’s rename', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(MESSAGES_URL, () =>
+        HttpResponse.json({ key: 'x', text: 'Provide a new Camp Name.' }),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+
+    // A copy seeds a BLANK name (WRN-001's own prompt, asserted elsewhere) — an untouched blank field
+    // reports "Camp Name is required." on blur, not the duplicate, so the collision this test is
+    // named for needs the licensee to actually re-type the source's own name.
+    const name = await screen.findByLabelText('Camp Name')
+    await user.type(name, 'Cedar Flats Camp')
+    await user.tab()
+    expect(await screen.findByText('Camp name already exists.')).toBeInTheDocument()
+
+    // Renaming clears it.
+    await user.clear(name)
+    await user.type(name, 'Birch Ridge Camp')
+    await user.tab()
+    await waitFor(() => expect(screen.queryByText('Camp name already exists.')).toBeNull())
+  })
+
+  test('a duplicate name blocks the CFM-004 save-and-navigate path', async () => {
+    let posted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CAMPS_URL, () => {
+        posted = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+
+    const name = await screen.findByLabelText('Camp Name')
+    await user.type(name, 'Cedar Flats Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+    // `navigateSpy` is a module-level mock shared across every test in this file and is never reset,
+    // so a plain `.not.toHaveBeenCalledWith` would trip on an EARLIER test's unrelated navigation —
+    // the call-count-delta pattern already established at :1131/:1160 is what actually isolates this
+    // assertion to this test's own action.
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /other camp expenses/i }))
+
+    // CFM-004, verbatim from index.tsx:74.
+    const dialog = confirmDialog(
+      'The information for the New Camp must be saved before you can add other expenses. Would you like to save the information now?',
+    )
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+
+    expect(await screen.findByText('Camp name already exists.')).toBeInTheDocument()
+    await flushAsync()
+    expect(posted).toBe(false)
+    expect(navigateSpy.mock.calls).toHaveLength(before)
+  })
+
+  test('the server’s own 409 still lands in the page banner, verbatim, not on the field', async () => {
+    // A race: the name is free in the served snapshot, so the client passes and the server rejects.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CAMPS_URL, () => problemBody(409, 'Camp name already exists.')),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+
+    await user.type(await screen.findByLabelText('Camp Name'), 'Birch Ridge Camp')
+    await user.selectOptions(screen.getByLabelText('Isolated Camp'), 'true')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Action failed')).toBeInTheDocument()
+    expect(screen.getByText('Camp name already exists.')).toBeInTheDocument()
+    // The entered name is retained for correction.
+    expect(screen.getByLabelText('Camp Name')).toHaveValue('Birch Ridge Camp')
+  })
+})
