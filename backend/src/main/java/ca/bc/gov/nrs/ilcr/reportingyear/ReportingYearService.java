@@ -84,6 +84,9 @@ public class ReportingYearService {
           HttpStatus.CONFLICT, List.of(MSG_NO_ACTIVE_MILLS, MSG_NO_REPORTING_PERIODS));
     }
 
+    // Official start = creation date, end = Dec 31 of the target year — legacy-faithful
+    // (ReportYearDAO.saveNewYear:116-117 sets `new Date()` unconditionally). A first-time back-year
+    // therefore stores a start after the end, exactly as legacy did: intentional parity, not a bug.
     LocalDate today = LocalDate.now(clock);
     try {
       repository.insertReportingPeriod(targetYear, today, LocalDate.of(targetYear, 12, 31), user);
