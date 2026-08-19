@@ -12,6 +12,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
 import ca.bc.gov.nrs.ilcr.reportingyear.dto.OpenReportingYearResult;
 import java.time.Clock;
 import java.time.Instant;
@@ -60,16 +61,16 @@ class ReportingYearServiceTest {
   }
 
   @Test
-  @DisplayName("recurring + zero active mills: rejected (INF-001), nothing created (S03)")
+  @DisplayName("recurring + zero active mills: rejected with INF-001 + ERR-002, nothing created (S03)")
   void recurring_zeroActiveMills_createsNothing() {
     when(repository.findMaxReportYear()).thenReturn(2025);
     when(repository.reportingYearExists(2026)).thenReturn(false);
     when(repository.findActiveMillIds()).thenReturn(List.of());
 
-    ReportingYearException ex = assertThrows(ReportingYearException.class, () -> service.open(null, USER));
+    MultiMessageException ex = assertThrows(MultiMessageException.class, () -> service.open(null, USER));
 
     assertEquals(HttpStatus.CONFLICT, ex.getStatus());
-    assertEquals("noActiveMillsForNewYearMsg", ex.getMessageKey());
+    assertEquals(List.of("noActiveMillsForNewYearMsg", "reportingPeriodNotFoundMsg"), ex.getMessageKeys());
     verify(repository, never()).insertReportingPeriod(anyInt(), any(), any(), anyString());
     verify(repository, never()).insertMillReportStatus(anyInt(), anyLong(), any(), any(), any(), anyString());
   }

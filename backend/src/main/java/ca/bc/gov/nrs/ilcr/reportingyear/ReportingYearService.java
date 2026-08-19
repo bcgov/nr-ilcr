@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.reportingyear;
 
+import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
 import ca.bc.gov.nrs.ilcr.reportingyear.dto.OpenReportingYearResult;
 import ca.bc.gov.nrs.ilcr.reportingyear.dto.ReportingYearAdminView;
 import java.time.Clock;
@@ -8,6 +9,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,9 @@ public class ReportingYearService {
 
   private static final String STATUS_DRAFT = "D";
   private static final String NOT_COMPLETED = "N";
+  // AC3: the recurring zero-active-mills path emits BOTH legacy messages verbatim — INF-001 and ERR-002.
+  private static final String MSG_NO_ACTIVE_MILLS = "noActiveMillsForNewYearMsg";
+  private static final String MSG_NO_REPORTING_PERIODS = "reportingPeriodNotFoundMsg";
   private static final int START_YEAR_LOOKBACK = 2;
   private static final int START_YEAR_LOOKAHEAD = 1;
   // The 11 schedule categories the delivery DB pre-seeds per active mill on open (verified against DEV).
@@ -83,7 +88,8 @@ public class ReportingYearService {
 
     List<Long> activeMillIds = repository.findActiveMillIds();
     if (!firstTime && activeMillIds.isEmpty()) {
-      throw ReportingYearException.noActiveMills();
+      throw new MultiMessageException(
+          HttpStatus.CONFLICT, List.of(MSG_NO_ACTIVE_MILLS, MSG_NO_REPORTING_PERIODS));
     }
 
     LocalDate today = LocalDate.now(clock);

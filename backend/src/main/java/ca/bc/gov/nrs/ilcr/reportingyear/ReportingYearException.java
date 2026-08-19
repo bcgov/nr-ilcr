@@ -5,9 +5,9 @@ import org.springframework.http.HttpStatus;
 
 /**
  * Business failures for opening a reporting year (UC-RY-001): a missing/out-of-range starting-year
- * selection (400, FLD-001), no active mills on the recurring path (409, INF-001), or the year already
- * being open (409). Carries a {@code messages.properties} key the {@code GlobalExceptionHandler}
- * resolves to the client-facing ProblemDetail detail (AD-8).
+ * selection (400, FLD-001) or the year already being open (409). Carries a {@code messages.properties}
+ * key the {@code GlobalExceptionHandler} resolves to the client-facing ProblemDetail detail (AD-8).
+ * The recurring zero-active-mills case (INF-001 + ERR-002 together) uses {@code MultiMessageException}.
  */
 public class ReportingYearException extends BusinessException {
 
@@ -18,11 +18,6 @@ public class ReportingYearException extends BusinessException {
   /** First-time setup with no (or an out-of-range) starting-year selection — nothing is created (FLD-001). */
   public static ReportingYearException invalidStartYear() {
     return new ReportingYearException(HttpStatus.BAD_REQUEST, "reportingYearNotValid");
-  }
-
-  /** Recurring path with zero active mills — nothing is created, the current year is unchanged (INF-001, S03). */
-  public static ReportingYearException noActiveMills() {
-    return new ReportingYearException(HttpStatus.CONFLICT, "noActiveMillsForNewYearMsg");
   }
 
   /** The target reporting year is already open (defensive guard against a duplicate open). */
