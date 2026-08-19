@@ -30,6 +30,8 @@ export const CAMP_MESSAGES = {
   costRangeWide: 'Entered cost must be between -99,999,999 and 99,999,999.',
   costRangeNonNegative: 'Entered cost must be between 0 and 9,999,999.',
   costInvalid: 'Entered cost is invalid.',
+  // BR-02/ERR-001. Mirrored so the client's pre-check and the server's 409 say the same sentence.
+  campNameDuplicate: 'Camp name already exists.',
 } as const
 
 // The four cost bands. Encoded as DATA keyed by category rather than three copies of an `if`,
@@ -271,6 +273,20 @@ const validateOptionalNumber = (
   return value < bounds.min || value > bounds.max ? rangeMessage : undefined
 }
 
+/**
+ * BR-02's comparison, matching the server's exactly: `countCampsNamed` upper-cases both sides
+ * (`Schedule5Repository.java:419`) and the service trims the submitted name before counting
+ * (`Schedule5Service.trimmedCampName():863`). Trimming and folding case here is what stops
+ * `  cedar flats camp ` from passing an advisory check and then drawing a 409.
+ *
+ * `toUpperCase`, not `toLocaleUpperCase`: Oracle's `UPPER` is not locale-aware, and a locale-aware
+ * fold would disagree with it on a Turkish dotless i.
+ */
+const isDuplicateName = (raw: string, otherCampNames: readonly string[]): boolean => {
+  const candidate = raw.trim().toUpperCase()
+  return otherCampNames.some((name) => name.trim().toUpperCase() === candidate)
+}
+
 const validateCampName = (raw: string): string | undefined => {
   const trimmed = raw.trim()
   if (trimmed === '') {
@@ -301,15 +317,30 @@ const validateCategoryCost = (raw: string, band: CostBand): string | undefined =
 /**
  * Validate the whole camp panel. Returns a field-keyed error map, empty when the form may be sent.
  *
- * There is no duplicate-name check: BR-02 is the server's (a name collision is its 409, rendered
- * verbatim), and the client cannot see other mills' camps anyway.
+ * `otherCampNames` carries the names of every OTHER camp in the served mill/year, letting BR-02 be
+ * reported inline instead of only as the server's 409 on a doomed round-trip. It is a PRE-check, not
+ * a replacement: the served list is a snapshot, so a camp another licensee adds after this page
+ * loaded is invisible here and only `Schedule5Service`'s own `countCampsNamed` can catch it. That
+ * 409 still renders verbatim on the page banner (AD-6/AD-8).
+ *
+ * Legacy left this check entirely to the server, so the client half is a deliberate deviation.
+ *
+ * The caller supplies the list already filtered — by campId, see `otherCampNames` in index.tsx — so
+ * this module stays free of transport types and of any notion of which camp the panel is showing.
  */
-export const validateCamp = (values: CampFormValues): CampErrors => {
+export const validateCamp = (
+  values: CampFormValues,
+  otherCampNames: readonly string[] = [],
+): CampErrors => {
   const errors: CampErrors = {}
 
   const nameError = validateCampName(values.campName)
   if (nameError) {
     errors.campName = nameError
+  } else if (isDuplicateName(values.campName, otherCampNames)) {
+    // Only once the name is otherwise legal: "required"/"30 characters or fewer" and "already
+    // exists" are two statements about one field where only the first is actionable.
+    errors.campName = CAMP_MESSAGES.campNameDuplicate
   }
 
   // No converter message exists in the bundle for distance or size, so an unparseable entry falls

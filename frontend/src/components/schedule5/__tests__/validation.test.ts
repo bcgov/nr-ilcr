@@ -332,7 +332,7 @@ describe('camp name length is judged on the trimmed value (review fix)', () => {
 })
 
 describe('CAMP_MESSAGES drift guard (review fix)', () => {
-  // The twelve mirrored strings claim to be "verbatim from the backend bundle"; this is the check
+  // The thirteen mirrored strings claim to be "verbatim from the backend bundle"; this is the check
   // that keeps the claim true. A backend wording change must fail HERE, not silently split the
   // advisory text from the server's 400 detail for the same field.
   const bundle = (() => {
@@ -366,6 +366,7 @@ describe('CAMP_MESSAGES drift guard (review fix)', () => {
     costRangeWide: 'costValidatorErrorMsg',
     costRangeNonNegative: 'costValidatorSchedule9ErrorMsg',
     costInvalid: 'costConverterErrorMsg',
+    campNameDuplicate: 'campAlreadyExists',
   }
 
   it.each(Object.keys(BUNDLE_KEYS) as (keyof typeof CAMP_MESSAGES)[])(
@@ -376,4 +377,46 @@ describe('CAMP_MESSAGES drift guard (review fix)', () => {
       expect(CAMP_MESSAGES[local]).toBe(bundle[bundleKey])
     },
   )
+})
+
+describe('camp name uniqueness (BR-02, client pre-check)', () => {
+  it('reports a duplicate case-insensitively and ignoring surrounding whitespace', () => {
+    // The server upper-cases both sides (Schedule5Repository:419) and trims the submitted name
+    // (Schedule5Service.trimmedCampName():863), so this entry WOULD be rejected server-side.
+    const errors = validateCamp(baseForm({ campName: '  cedar flats camp  ' }), [
+      'Cedar Flats Camp',
+    ])
+    expect(errors.campName).toBe(CAMP_MESSAGES.campNameDuplicate)
+  })
+
+  it('accepts a name no other camp holds', () => {
+    expect(validateCamp(baseForm({ campName: 'Birch Ridge Camp' }), ['Cedar Flats Camp'])).toEqual(
+      {},
+    )
+  })
+
+  it('checks nothing when the caller supplies no names, including by omission', () => {
+    expect(validateCamp(baseForm())).toEqual({})
+    expect(validateCamp(baseForm(), [])).toEqual({})
+  })
+
+  it('reports the name’s OWN error ahead of the duplicate when it is also blank or over-length', () => {
+    // Two statements about one field where only the first is actionable.
+    expect(validateCamp(baseForm({ campName: '   ' }), ['   ']).campName).toBe(
+      CAMP_MESSAGES.campNameRequired,
+    )
+    const overLong = 'C'.repeat(31)
+    expect(validateCamp(baseForm({ campName: overLong }), [overLong]).campName).toBe(
+      CAMP_MESSAGES.campNameMaxLength,
+    )
+  })
+
+  it('leaves every other field’s rules untouched', () => {
+    // A duplicate name must not mask, or be masked by, an unrelated error.
+    const errors = validateCamp(baseForm({ campName: 'Cedar Flats Camp', sizeOfCamp: '0' }), [
+      'Cedar Flats Camp',
+    ])
+    expect(errors.campName).toBe(CAMP_MESSAGES.campNameDuplicate)
+    expect(errors.sizeOfCamp).toBe(CAMP_MESSAGES.sizeRange)
+  })
 })
