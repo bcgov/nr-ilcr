@@ -91,6 +91,22 @@ class ReportingYearServiceTest {
   }
 
   @Test
+  @DisplayName("first-time + active mills: creates the selected year and initializes each mill (S02)")
+  void firstTime_withActiveMills_createsSelectedYear() {
+    when(repository.findMaxReportYear()).thenReturn(null);
+    when(repository.reportingYearExists(2027)).thenReturn(false);
+    when(repository.findActiveMillIds()).thenReturn(List.of(5L));
+
+    OpenReportingYearResult result = service.open(2027, USER);
+
+    assertEquals(2027, result.year());
+    assertEquals(1, result.millsInitialized());
+    verify(repository).insertReportingPeriod(eq(2027), any(), eq(LocalDate.of(2027, 12, 31)), eq(USER));
+    verify(repository).insertMillReportStatus(2027, 5L, "D", "D", "N", USER);
+    verify(repository, times(11)).insertReportCategory(eq(2027), eq(5L), anyString(), eq(USER));
+  }
+
+  @Test
   @DisplayName("first-time: null selection is rejected (FLD-001), nothing created (S04)")
   void firstTime_nullSelection_rejected() {
     when(repository.findMaxReportYear()).thenReturn(null);

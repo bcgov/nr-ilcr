@@ -105,22 +105,31 @@ class ReportingYearIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.message")
             .value("The new reporting year " + expected + " has been successfully created."));
 
-    // The period row exists (year selectable on Home).
-    Integer periods = jdbc.queryForObject(
-        "SELECT COUNT(*) FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :y",
-        new MapSqlParameterSource("y", expected), Integer.class);
-    assertThat(periods).isEqualTo(1);
+    // The period row exists (year selectable on Home) with the audit quartet populated — a missing
+    // stamp would be NULL here and fail, catching the delivery NOT NULL before deployment.
+    Map<String, Object> period = jdbc.queryForMap(
+        "SELECT ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP "
+            + "FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :y",
+        new MapSqlParameterSource("y", expected));
+    assertThat(period.get("ENTRY_USERID")).isNotNull();
+    assertThat(period.get("ENTRY_TIMESTAMP")).isNotNull();
+    assertThat(period.get("UPDATE_USERID")).isNotNull();
+    assertThat(period.get("UPDATE_TIMESTAMP")).isNotNull();
 
     // Active mill got a both-tracks-Draft, not-completed row; closed mill got none.
     assertThat(statusRowCount(ACTIVE_MILL, expected)).isEqualTo(1);
     assertThat(statusRowCount(CLOSED_MILL, expected)).isZero();
     Map<String, Object> row = jdbc.queryForMap(
-        "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND "
-            + "FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
+        "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
+            + "ENTRY_USERID, UPDATE_USERID FROM THE.ILCR_MILL_REPORT_STATUS "
+            + "WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
         new MapSqlParameterSource(Map.of("m", ACTIVE_MILL, "y", expected)));
     assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("D");
     assertThat(row.get("MILL_SILVICULTUR_STATUS_CODE")).isEqualTo("D");
     assertThat(row.get("REPORT_COMPLETED_IND")).isEqualTo("N");
+    // Audit quartet populated (delivery NOT NULL) — a dropped stamp fails here, not in production.
+    assertThat(row.get("ENTRY_USERID")).isNotNull();
+    assertThat(row.get("UPDATE_USERID")).isNotNull();
 
     // Active mill gets one per-category record per schedule category (Draft, reportable-detail Y);
     // closed mill gets none.
