@@ -6,6 +6,8 @@ import { configureAmplify } from '@/config/auth/amplify-initializer'
 import { isMockAuth } from '@/env'
 import '@/styles/index.scss'
 
+//so AMB can test.
+
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
 
