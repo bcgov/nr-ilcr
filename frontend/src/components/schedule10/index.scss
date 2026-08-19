@@ -83,6 +83,12 @@
   flex: 0 0 8rem;
 }
 
+// A short-valued control (a Yes/No select) that would otherwise stretch to fill its row: sized to
+// the value it holds rather than to its longer label.
+.schedule-10__field--compact {
+  flex: 0 0 12rem;
+}
+
 // Match the Carbon input label (.cds--label) so a read-only field's label reads the same as the
 // editable labels beside it.
 .schedule-10__field-label {

@@ -44,9 +44,10 @@ const SubHeading: FC<{ readonly children: ReactNode }> = ({ children }) => (
   <h5 className="schedule-10__detail-subheading">{children}</h5>
 )
 
-const Field: FC<{ readonly children: ReactNode }> = ({ children }) => (
-  <div className="schedule-10__field">{children}</div>
-)
+const Field: FC<{ readonly className?: string; readonly children: ReactNode }> = ({
+  className,
+  children,
+}) => <div className={`schedule-10__field ${className ?? ''}`.trim()}>{children}</div>
 
 /** A derived figure: label above, value below — text, so it is announced as a value. */
 const Derived: FC<{ readonly label: string; readonly value: string }> = ({ label, value }) => (
@@ -228,7 +229,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
             form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No',
           )
         ) : (
-          <Field>
+          <Field className="schedule-10__field--compact">
             <Select
               id={id('detailedEngineeringCostInd')}
               labelText="Includes Detailed Engineering Costs"
