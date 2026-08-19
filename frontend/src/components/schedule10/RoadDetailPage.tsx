@@ -67,6 +67,17 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
 
   return (
     <>
+      <div className="schedule-10__actions">
+        <Button kind="primary" disabled={controlsDisabled} onClick={onOpenNew}>
+          Add Road
+        </Button>
+        {/* Back is never disabled, including outside Draft — a read-only reporter must be able to
+            leave the level. */}
+        <Button kind="secondary" onClick={onBack}>
+          Back
+        </Button>
+      </div>
+
       <TableContainer title={`${page.pageLabel} -> Roads`} className="schedule-10__section">
         <Table aria-label="Road details">
           <TableHead>
@@ -82,10 +93,15 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               </TableRow>
             ) : (
               page.roadDetails.map((detail) => (
-                <TableRow key={detail.roadDetailId}>
-                  <TableCell className="schedule-10__label-cell">
-                    {detail.roadDetailLabel}
-                  </TableCell>
+                <TableRow
+                  key={detail.roadDetailId}
+                  className={
+                    openDetailId === detail.roadDetailId && panelMode !== 'closed'
+                      ? 'schedule-10__row--editing'
+                      : undefined
+                  }
+                >
+                  <TableCell>{detail.roadDetailLabel}</TableCell>
                   <TableCell>
                     <div className="schedule-10__row-actions">
                       {/* Unlike the page list, legacy leaves a road row actionable while that road
@@ -115,44 +131,37 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
         </Table>
       </TableContainer>
 
-      <div className="schedule-10__actions">
-        <Button kind="primary" disabled={controlsDisabled} onClick={onOpenNew}>
-          Add
-        </Button>
-        {/* Back is never disabled, including outside Draft — a read-only reporter must be able to
-            leave the level. */}
-        <Button kind="secondary" onClick={onBack}>
-          Back
-        </Button>
-      </div>
-
       {panelMode !== 'closed' && (
         <section className="schedule-10__section">
-          <h3 className="schedule-10__heading">
-            {panelMode === 'new'
-              ? 'New Road Data'
-              : (page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)
-                  ?.roadDetailLabel ?? 'Road Data')}
-          </h3>
-          <RoadDetailFields
-            idPrefix={panelMode === 'new' ? 'road-new' : `road-${String(openDetailId ?? 0)}`}
-            form={form}
-            errors={errors}
-            codeLists={codeLists}
-            disabled={controlsDisabled}
-            readOnly={readOnly}
-            onChange={onChange}
-            onMask={onMask}
-          />
-          <div className="schedule-10__panel-actions">
-            {!readOnly && (
-              <Button kind="primary" disabled={controlsDisabled} onClick={onSave}>
-                Save
+          <div className="schedule-10__panel">
+            <h3 className="schedule-10__heading">
+              {panelMode === 'new'
+                ? 'New Road'
+                : `${readOnly ? 'View' : 'Edit'} Road — ${
+                    page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)
+                      ?.roadDetailLabel ?? ''
+                  }`}
+            </h3>
+            <RoadDetailFields
+              idPrefix={panelMode === 'new' ? 'road-new' : `road-${String(openDetailId ?? 0)}`}
+              form={form}
+              errors={errors}
+              codeLists={codeLists}
+              disabled={controlsDisabled}
+              readOnly={readOnly}
+              onChange={onChange}
+              onMask={onMask}
+            />
+            <div className="schedule-10__panel-actions">
+              {!readOnly && (
+                <Button kind="primary" disabled={controlsDisabled} onClick={onSave}>
+                  Save
+                </Button>
+              )}
+              <Button kind="secondary" onClick={onCloseForm}>
+                Close
               </Button>
-            )}
-            <Button kind="secondary" onClick={onCloseForm}>
-              Close
-            </Button>
+            </div>
           </div>
         </section>
       )}

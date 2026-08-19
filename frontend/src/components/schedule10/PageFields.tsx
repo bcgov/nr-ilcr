@@ -18,30 +18,24 @@ type PageFieldsProps = {
 }
 
 /**
- * One labelled row of the page-information form. Legacy lays this out as a two-column grid with the
- * label right-aligned against its control, and each control at its own width.
- *
- * The visible text is a span rather than a label: each control already carries its own Carbon label
- * as the accessible name, and a second `<label for>` would concatenate into a doubled name.
+ * One field in the wrapping row. Each control carries its own Carbon label above it, so the fields
+ * flow across the panel rather than stacking against a label column.
  */
-const FieldRow: FC<{
-  readonly label: string
-  readonly children: ReactNode
-}> = ({ label, children }) => (
-  <div className="schedule-10__field-row">
-    <span className="schedule-10__field-label">{label}</span>
-    <div className="schedule-10__field-control">{children}</div>
-  </div>
-)
+const Field: FC<{ readonly className?: string; readonly children: ReactNode }> = ({
+  className,
+  children,
+}) => <div className={`schedule-10__field ${className ?? ''}`.trim()}>{children}</div>
 
-/** A read-only value rendered as text, so a screen reader announces a value not a dead control. */
-const ReadOnlyRow: FC<{ readonly label: string; readonly value: string }> = ({ label, value }) => (
-  <div className="schedule-10__field-row">
+/** A derived or read-only value: label above, value below, aligned with the inputs beside it. */
+const ReadOnlyField: FC<{
+  readonly label: string
+  readonly value: string
+  readonly className?: string
+}> = ({ label, value, className }) => (
+  <Field className={className}>
     <span className="schedule-10__field-label">{label}</span>
-    <div className="schedule-10__field-control">
-      <span className="schedule-10__derived-value">{value === '' ? '—' : value}</span>
-    </div>
-  </div>
+    <span className="schedule-10__field-value">{value === '' ? '—' : value}</span>
+  </Field>
 )
 
 /**
@@ -78,62 +72,57 @@ const PageFields: FC<PageFieldsProps> = ({
   if (readOnly) {
     return (
       <div className="schedule-10__fields">
-        <ReadOnlyRow label="Division:" value={form.divisionName} />
-        <ReadOnlyRow label="Period Surveyed:" value={form.constructionPeriod} />
-        <ReadOnlyRow
-          label="Region:"
+        <ReadOnlyField label="Division" value={form.divisionName} />
+        <ReadOnlyField label="Period Surveyed" value={form.constructionPeriod} />
+        <ReadOnlyField
+          label="Region"
           value={describe(codeLists.forestRegions, form.forestRegionCode)}
         />
-        <ReadOnlyRow label="TSA or TFL:" value={describe(tsaOptions, form.tsaOrTfl)} />
-        <ReadOnlyRow
-          label="Supply Block:"
+        <ReadOnlyField label="TSA or TFL" value={describe(tsaOptions, form.tsaOrTfl)} />
+        <ReadOnlyField
+          label="Supply Block"
           value={tflLocated ? '' : describe(codeLists.supplyBlocks, form.supplyBlock)}
         />
-        <ReadOnlyRow label="TFL:" value={tflLocated ? form.tflNumberCode : ''} />
-        <ReadOnlyRow label="Road Group:" value={roadGroup ?? ''} />
+        <ReadOnlyField label="TFL" value={tflLocated ? form.tflNumberCode : ''} />
+        <ReadOnlyField label="Road Group" value={roadGroup ?? ''} />
       </div>
     )
   }
 
   return (
     <div className="schedule-10__fields">
-      <FieldRow label="Division:">
+      <Field>
         <TextInput
           id={id('division')}
           labelText="Division"
-          hideLabel
           maxLength={DIVISION_MAX}
           autoComplete="off"
-          className="schedule-10__control--medium"
           value={form.divisionName}
           disabled={disabled}
           invalid={Boolean(errors.divisionName)}
           invalidText={errors.divisionName ?? ''}
           onChange={(event) => onChange('divisionName', event.target.value)}
         />
-      </FieldRow>
+      </Field>
 
-      <FieldRow label="Period Surveyed:">
+      <Field>
         <TextInput
           id={id('period')}
           labelText="Period Surveyed"
-          hideLabel
           placeholder="YYYY-MM"
           autoComplete="off"
-          className="schedule-10__control--medium"
           value={form.constructionPeriod}
           disabled={disabled}
           invalid={Boolean(errors.constructionPeriod)}
           invalidText={errors.constructionPeriod ?? ''}
           onChange={(event) => onChange('constructionPeriod', event.target.value)}
         />
-      </FieldRow>
+      </Field>
 
-      <FieldRow label="Region:">
+      <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('region')}
           titleText="Region"
-          className="schedule-10__control--wide"
           items={[...codeLists.forestRegions]}
           selectedCode={form.forestRegionCode}
           disabled={disabled}
@@ -141,13 +130,12 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.forestRegionCode}
           onSelect={(code) => onChange('forestRegionCode', code)}
         />
-      </FieldRow>
+      </Field>
 
-      <FieldRow label="TSA or TFL:">
+      <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('tsa-or-tfl')}
           titleText="TSA or TFL"
-          className="schedule-10__control--wider"
           items={tsaOptions}
           selectedCode={form.tsaOrTfl}
           disabled={disabled}
@@ -155,13 +143,12 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.tsaOrTfl}
           onSelect={(code) => onChange('tsaOrTfl', code)}
         />
-      </FieldRow>
+      </Field>
 
-      <FieldRow label="Supply Block:">
+      <Field className="schedule-10__field--wide">
         <CodeComboBox
           id={id('supply-block')}
           titleText="Supply Block"
-          className="schedule-10__control--widest"
           items={blockOptions}
           selectedCode={form.supplyBlock}
           disabled={disabled || tflLocated}
@@ -169,25 +156,27 @@ const PageFields: FC<PageFieldsProps> = ({
           invalidText={errors.supplyBlock}
           onSelect={(code) => onChange('supplyBlock', code)}
         />
-      </FieldRow>
+      </Field>
 
-      <FieldRow label="TFL:">
+      <Field className="schedule-10__field--narrow">
         <TextInput
           id={id('tfl')}
           labelText="TFL"
-          hideLabel
           maxLength={TFL_MAX}
           autoComplete="off"
-          className="schedule-10__control--tiny"
           value={form.tflNumberCode}
           disabled={disabled || !tflLocated}
           invalid={Boolean(errors.tflNumberCode)}
           invalidText={errors.tflNumberCode ?? ''}
           onChange={(event) => onChange('tflNumberCode', event.target.value)}
         />
-      </FieldRow>
+      </Field>
 
-      <ReadOnlyRow label="Road Group:" value={roadGroup ?? ''} />
+      <ReadOnlyField
+        label="Road Group"
+        value={roadGroup ?? ''}
+        className="schedule-10__field--narrow"
+      />
     </div>
   )
 }

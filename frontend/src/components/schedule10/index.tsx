@@ -527,13 +527,9 @@ const Schedule10: FC = () => {
       <Grid fullWidth className="app-page__body">
         {banners}
 
-        <Column sm={4} md={8} lg={16} className="schedule-10__actions schedule-10__actions--top">
-          <Button
-            kind="primary"
-            disabled={controlsDisabled || !panelOpen || pagePanelMode === 'view'}
-            onClick={() => savePage(pages)}
-          >
-            Save
+        <Column sm={4} md={8} lg={16} className="schedule-10__actions">
+          <Button kind="primary" disabled={controlsDisabled} onClick={openNewPage}>
+            Add New Page
           </Button>
           <Button kind="tertiary" disabled={controlsDisabled} onClick={checkStatus}>
             Check Status
@@ -557,11 +553,14 @@ const Schedule10: FC = () => {
                 ) : (
                   pages.map((page) => {
                     // The page already open in the panel below cannot act on itself; greying its
-                    // row actions is how legacy marks which page is being edited.
+                    // row actions and highlighting the row is how the open page is marked.
                     const isOpen = openPageId === page.pageId && panelOpen
                     return (
-                      <TableRow key={page.pageId}>
-                        <TableCell className="schedule-10__label-cell">{page.pageLabel}</TableCell>
+                      <TableRow
+                        key={page.pageId}
+                        className={isOpen ? 'schedule-10__row--editing' : undefined}
+                      >
+                        <TableCell>{page.pageLabel}</TableCell>
                         <TableCell>
                           <div className="schedule-10__row-actions">
                             <Button
@@ -597,60 +596,62 @@ const Schedule10: FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <div className="schedule-10__actions schedule-10__actions--centred">
-            <Button kind="primary" disabled={controlsDisabled} onClick={openNewPage}>
-              Add
-            </Button>
-          </div>
         </Column>
 
         {panelOpen && (
           <Column sm={4} md={8} lg={16} className="schedule-10__section">
-            <h3 className="schedule-10__heading">
-              {pagePanelMode === 'new' ? 'New Page Data' : (openStoredPage?.pageLabel ?? 'Page')}
-            </h3>
-            <PageFields
-              idPrefix={pagePanelMode === 'new' ? 'page-new' : `page-${String(openPageId ?? 0)}`}
-              form={pageForm}
-              errors={pageErrors}
-              codeLists={codeLists}
-              disabled={controlsDisabled}
-              readOnly={pagePanelMode === 'view'}
-              roadGroup={openStoredPage?.roadGroup ?? null}
-              onChange={setPageField}
-            />
+            <div className="schedule-10__panel">
+              <h3 className="schedule-10__heading">
+                {pagePanelMode === 'new'
+                  ? 'New Page'
+                  : `${pagePanelMode === 'view' ? 'View' : 'Edit'} Page — ${openStoredPage?.pageLabel ?? ''}`}
+              </h3>
+              <PageFields
+                idPrefix={pagePanelMode === 'new' ? 'page-new' : `page-${String(openPageId ?? 0)}`}
+                form={pageForm}
+                errors={pageErrors}
+                codeLists={codeLists}
+                disabled={controlsDisabled}
+                readOnly={pagePanelMode === 'view'}
+                roadGroup={openStoredPage?.roadGroup ?? null}
+                onChange={setPageField}
+              />
 
-            {/* A page must be saved before it can hold roads, so the link appears only once the
-                page exists — matching the legacy link's own render condition. */}
-            {openStoredPage && (
-              <div className="schedule-10__enter-road">
-                <Button
-                  kind="ghost"
-                  onClick={() =>
-                    guardLevelChange(true, pagePanelMode === 'view', () => {
-                      void navigate({
-                        to: '/schedule-10',
-                        search: { pageId: openStoredPage.pageId },
+              {/* A page must be saved before it can hold roads, so the link appears only once the
+                  page exists — matching the legacy link's own render condition. */}
+              {openStoredPage && (
+                <div className="schedule-10__enter-road">
+                  <Button
+                    kind="ghost"
+                    onClick={() =>
+                      guardLevelChange(true, pagePanelMode === 'view', () => {
+                        void navigate({
+                          to: '/schedule-10',
+                          search: { pageId: openStoredPage.pageId },
+                        })
                       })
-                    })
-                  }
-                >
-                  {`Enter Road Data (${String(openStoredPage.roadDetailCount)})`}
+                    }
+                  >
+                    {`Enter Road Data (${String(openStoredPage.roadDetailCount)})`}
+                  </Button>
+                </div>
+              )}
+
+              <div className="schedule-10__panel-actions">
+                {pagePanelMode !== 'view' && (
+                  <Button
+                    kind="primary"
+                    disabled={controlsDisabled}
+                    onClick={() => savePage(pages)}
+                  >
+                    Save
+                  </Button>
+                )}
+                {/* Close discards silently, as legacy does — only the two level changes confirm. */}
+                <Button kind="secondary" onClick={closePagePanel}>
+                  Close
                 </Button>
               </div>
-            )}
-
-            <div className="schedule-10__panel-actions">
-              {pagePanelMode !== 'view' && (
-                <Button kind="primary" disabled={controlsDisabled} onClick={() => savePage(pages)}>
-                  Save
-                </Button>
-              )}
-              {/* Close discards silently, as legacy does — only the two level changes confirm. */}
-              <Button kind="secondary" onClick={closePagePanel}>
-                Close
-              </Button>
             </div>
           </Column>
         )}

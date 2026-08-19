@@ -288,7 +288,7 @@ describe('the page panel', () => {
     server.use(getHandler(doc({ pages: [page({ roadGroup: null })] })))
     renderSchedule10()
     await openPagePanel()
-    expect(await screen.findByText('Road Group:')).toBeInTheDocument()
+    expect(await screen.findByText('Road Group')).toBeInTheDocument()
     // An unmapped location is a saved state, not a failure.
     expect(screen.queryByText(/road group.*(error|invalid)/i)).not.toBeInTheDocument()
   })
@@ -307,7 +307,7 @@ describe('the page panel', () => {
       }),
     )
     renderSchedule10()
-    await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
 
     await userEvent.type(await screen.findByLabelText('Division'), 'New Division')
     await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
@@ -382,7 +382,7 @@ describe('the page panel', () => {
       }),
     )
     renderSchedule10()
-    await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
     await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
 
     expect(await screen.findByText('Region is required.')).toBeInTheDocument()
@@ -549,7 +549,7 @@ describe('the road level', () => {
       }),
     )
     renderSchedule10('/schedule-10?pageId=8900')
-    await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
 
     await userEvent.type(await screen.findByLabelText('Road Name'), 'New Road')
     await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
@@ -600,19 +600,19 @@ describe('the road level', () => {
   test('copies the sub-grade surface width into the stabilizing width', async () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
-    const subGradeWidth = await screen.findByLabelText('Sub-Grade Surface Width')
+    const subGradeWidth = await screen.findByLabelText('Sub-Grade Surface Width (m)')
     await userEvent.clear(subGradeWidth)
     await userEvent.type(subGradeWidth, '7.5')
 
-    expect(screen.getByLabelText('Additional Stabilizing Surface Width')).toHaveValue('7.5')
+    expect(screen.getByLabelText('Additional Stabilizing Surface Width (m)')).toHaveValue('7.5')
   })
 
   test('seeds numeric fields through their legacy display mask', async () => {
     renderSchedule10('/schedule-10?pageId=8900')
     await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
     // Served as 12.5 and 3 after JSON.parse; the mask restores the decimals legacy showed.
-    expect(await screen.findByLabelText('Sub-Grade Length')).toHaveValue('12.500')
-    expect(screen.getByLabelText('Additional Stabilizing Length')).toHaveValue('3.000')
+    expect(await screen.findByLabelText('Sub-Grade Length (km)')).toHaveValue('12.500')
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toHaveValue('3.000')
   })
 
   test('blocks an invalid road save and issues no request', async () => {
@@ -624,7 +624,7 @@ describe('the road level', () => {
       }),
     )
     renderSchedule10('/schedule-10?pageId=8900')
-    await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
@@ -749,7 +749,7 @@ describe('read-only rendering outside Draft', () => {
     expect(await screen.findByText(page().pageLabel)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add New Page' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Check Status' })).toBeDisabled()
@@ -762,11 +762,9 @@ describe('read-only rendering outside Draft', () => {
 
     expect(await screen.findByText('North Division')).toBeInTheDocument()
     expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
-    // The panel drops its own Save; the page-level Save stays rendered and disabled, so a read-only
-    // reporter can still see which actions exist.
-    const saves = screen.getAllByRole('button', { name: 'Save' })
-    expect(saves).toHaveLength(1)
-    expect(saves[0]).toBeDisabled()
+    // Saving is the one action a read-only panel drops entirely; Close stays so the panel can be
+    // dismissed.
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled()
   })
 

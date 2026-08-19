@@ -29,6 +29,7 @@ type RoadDetailFieldsProps = {
   readonly onMask: (key: MaskedField) => void
 }
 
+/** One of the three legacy columns: Road Information, Sub-Grade, Additional Stabilizing. */
 const Section: FC<{ readonly heading: string; readonly children: ReactNode }> = ({
   heading,
   children,
@@ -43,25 +44,16 @@ const SubHeading: FC<{ readonly children: ReactNode }> = ({ children }) => (
   <h5 className="schedule-10__detail-subheading">{children}</h5>
 )
 
-/**
- * The visible text is a span rather than a label: each control already carries its own Carbon label
- * as the accessible name, and a second `<label for>` would concatenate into a doubled name.
- */
-const Row: FC<{
-  readonly label: string
-  readonly children: ReactNode
-}> = ({ label, children }) => (
-  <div className="schedule-10__detail-row">
-    <span className="schedule-10__field-label">{label}</span>
-    <div className="schedule-10__field-control">{children}</div>
-  </div>
+const Field: FC<{ readonly children: ReactNode }> = ({ children }) => (
+  <div className="schedule-10__field">{children}</div>
 )
 
-/** A derived figure: text rather than a disabled input, so it is announced as a value. */
+/** A derived figure: label above, value below — text, so it is announced as a value. */
 const Derived: FC<{ readonly label: string; readonly value: string }> = ({ label, value }) => (
-  <Row label={label}>
-    <span className="schedule-10__derived-value">{value}</span>
-  </Row>
+  <Field>
+    <span className="schedule-10__field-label">{label}</span>
+    <span className="schedule-10__field-value">{value}</span>
+  </Field>
 )
 
 const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
@@ -91,43 +83,42 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   const describe = (options: readonly CodeDescription[], code: string): string =>
     options.find((option) => option.code === code)?.description ?? code
 
-  const text = (
-    key: keyof RoadDetailFormValues,
-    label: string,
-    extra?: { readonly maxLength?: number },
-  ): ReactNode =>
-    readOnly ? (
-      <span className="schedule-10__derived-value">{form[key] === '' ? '—' : form[key]}</span>
-    ) : (
-      <TextInput
-        id={id(key)}
-        labelText={label}
-        hideLabel
-        autoComplete="off"
-        maxLength={extra?.maxLength}
-        value={form[key]}
-        disabled={disabled}
-        invalid={Boolean(errors[key])}
-        invalidText={errors[key] ?? ''}
-        onChange={(event) => onChange(key, event.target.value)}
-      />
-    )
+  const readOnlyField = (label: string, value: string): ReactNode => (
+    <Field>
+      <span className="schedule-10__field-label">{label}</span>
+      <span className="schedule-10__field-value">{value === '' ? '—' : value}</span>
+    </Field>
+  )
 
-  const numeric = (key: MaskedField, label: string, suffix?: string): ReactNode => {
-    if (readOnly) {
-      return (
-        <span className="schedule-10__derived-value">
-          {form[key] === '' ? '—' : form[key]}
-          {suffix ? ` ${suffix}` : ''}
-        </span>
-      )
-    }
-    return (
-      <div className="schedule-10__numeric">
-        <CommaNumberInput
+  const text = (key: keyof RoadDetailFormValues, label: string, maxLength?: number): ReactNode =>
+    readOnly ? (
+      readOnlyField(label, form[key])
+    ) : (
+      <Field>
+        <TextInput
           id={id(key)}
           labelText={label}
-          hideLabel
+          autoComplete="off"
+          maxLength={maxLength}
+          value={form[key]}
+          disabled={disabled}
+          invalid={Boolean(errors[key])}
+          invalidText={errors[key] ?? ''}
+          onChange={(event) => onChange(key, event.target.value)}
+        />
+      </Field>
+    )
+
+  // The unit rides in the label rather than beside the box, so a labelled column of fields lines up.
+  const numeric = (key: MaskedField, label: string, unit?: string): ReactNode => {
+    const labelWithUnit = unit ? `${label} (${unit})` : label
+    return readOnly ? (
+      readOnlyField(labelWithUnit, form[key])
+    ) : (
+      <Field>
+        <CommaNumberInput
+          id={id(key)}
+          labelText={labelWithUnit}
           autoComplete="off"
           value={form[key]}
           disabled={disabled}
@@ -136,8 +127,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           onValueChange={(raw) => onChange(key, raw)}
           onBlur={() => onMask(key)}
         />
-        {suffix && <span className="schedule-10__suffix">{suffix}</span>}
-      </div>
+      </Field>
     )
   }
 
@@ -147,20 +137,20 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
     options: readonly CodeDescription[],
   ): ReactNode =>
     readOnly ? (
-      <span className="schedule-10__derived-value">
-        {form[key] === '' ? '—' : describe(options, form[key])}
-      </span>
+      readOnlyField(label, form[key] === '' ? '' : describe(options, form[key]))
     ) : (
-      <CodeComboBox
-        id={id(key)}
-        titleText={label}
-        items={[...options]}
-        selectedCode={form[key]}
-        disabled={disabled}
-        invalid={Boolean(errors[key])}
-        invalidText={errors[key]}
-        onSelect={(code) => onChange(key, code)}
-      />
+      <Field>
+        <CodeComboBox
+          id={id(key)}
+          titleText={label}
+          items={[...options]}
+          selectedCode={form[key]}
+          disabled={disabled}
+          invalid={Boolean(errors[key])}
+          invalidText={errors[key]}
+          onSelect={(code) => onChange(key, code)}
+        />
+      </Field>
     )
 
   const endHaulRate = previewCostPerVolumePerLength(
@@ -178,94 +168,70 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
     <div className="schedule-10__detail-fields">
       <div className="schedule-10__detail-grid">
         <Section heading="Road Information">
-          <Row label="Road Name:">
-            {text('roadName', 'Road Name', { maxLength: ROAD_NAME_MAX })}
-          </Row>
-          <Row label="Road Type:">
-            {combo('roadLifetimeCode', 'Road Type', codeLists.roadLifetimes)}
-          </Row>
+          {text('roadName', 'Road Name', ROAD_NAME_MAX)}
+          {combo('roadLifetimeCode', 'Road Type', codeLists.roadLifetimes)}
 
           <SubHeading>Moisture</SubHeading>
-          <Row label="BEC Zone:">{combo('becbiogeoCatalogueId', 'BEC Zone', becOptions)}</Row>
-          <Row label="RSMR Class:">
-            {combo('relSoilMoistRgmClsCode', 'RSMR Class', codeLists.rsmrClasses)}
-          </Row>
+          {combo('becbiogeoCatalogueId', 'BEC Zone', becOptions)}
+          {combo('relSoilMoistRgmClsCode', 'RSMR Class', codeLists.rsmrClasses)}
 
           <SubHeading>Shoulder</SubHeading>
-          <Row label="Side Slope:">{numeric('sideSlopePct', 'Side Slope', '%')}</Row>
+          {numeric('sideSlopePct', 'Side Slope', '%')}
 
           <SubHeading>Material Type</SubHeading>
-          <Row label="Solid (Hard) Rock:">{numeric('solidRockPct', 'Solid (Hard) Rock', '%')}</Row>
-          <Row label="Rippable Rock:">{numeric('rippableRockPct', 'Rippable Rock', '%')}</Row>
-          <Row label="Coarse:">{numeric('coarsePct', 'Coarse', '%')}</Row>
-          <Row label="Fine:">{numeric('finePct', 'Fine', '%')}</Row>
-          <Row label="Organic:">{numeric('organicPct', 'Organic', '%')}</Row>
-          <Derived label="Total:" value={`${String(previewMaterialTotal(form))} %`} />
+          {numeric('solidRockPct', 'Solid (Hard) Rock', '%')}
+          {numeric('rippableRockPct', 'Rippable Rock', '%')}
+          {numeric('coarsePct', 'Coarse', '%')}
+          {numeric('finePct', 'Fine', '%')}
+          {numeric('organicPct', 'Organic', '%')}
+          <Derived label="Total (%)" value={String(previewMaterialTotal(form))} />
         </Section>
 
         <Section heading="Sub-Grade">
-          <Row label="Length:">{numeric('sgLength', 'Sub-Grade Length', 'km')}</Row>
-          <Row label="Surface Width:">
-            {numeric('sgSurfaceWidth', 'Sub-Grade Surface Width', 'm')}
-          </Row>
+          {numeric('sgLength', 'Sub-Grade Length', 'km')}
+          {numeric('sgSurfaceWidth', 'Sub-Grade Surface Width', 'm')}
 
           <SubHeading>Costs</SubHeading>
-          <Row label="Actual Cost($):">{numeric('sgActualCost', 'Sub-Grade Actual Cost')}</Row>
-          <Row label="TtT Transfer($):">{numeric('sgTtTransfer', 'Sub-Grade TtT Transfer')}</Row>
-          <Row label="Other Transfer($):">
-            {numeric('sgOtherTransfer', 'Sub-Grade Other Transfer')}
-          </Row>
-          <Derived label="Total Costs($):" value={fmtCurrency(previewSubGradeTotalCosts(form))} />
-          <Row label="Less Bridges($):">{numeric('lessBridges', 'Less Bridges')}</Row>
-          <Row label="Less Culverts($):">{numeric('lessCulverts', 'Less Culverts')}</Row>
-          <Row label="Less Landings($):">{numeric('lessLandings', 'Less Landings')}</Row>
-          <Row label="Less End Haul($):">{numeric('lessEndHaul', 'Less End Haul')}</Row>
-          <Row label="Less Overland($):">{numeric('lessOverland', 'Less Overland')}</Row>
-          <Row label="Less OtherEng($):">{numeric('lessOtherEng', 'Less OtherEng')}</Row>
-          <Derived label="Total($):" value={fmtCurrency(previewSubGradeTotal(form))} />
-          <Derived label="$/km:" value={fmtCurrency(previewSubGradeCostPerLength(form))} />
+          {numeric('sgActualCost', 'Sub-Grade Actual Cost', '$')}
+          {numeric('sgTtTransfer', 'Sub-Grade TtT Transfer', '$')}
+          {numeric('sgOtherTransfer', 'Sub-Grade Other Transfer', '$')}
+          <Derived label="Total Costs ($)" value={fmtCurrency(previewSubGradeTotalCosts(form))} />
+          {numeric('lessBridges', 'Less Bridges', '$')}
+          {numeric('lessCulverts', 'Less Culverts', '$')}
+          {numeric('lessLandings', 'Less Landings', '$')}
+          {numeric('lessEndHaul', 'Less End Haul', '$')}
+          {numeric('lessOverland', 'Less Overland', '$')}
+          {numeric('lessOtherEng', 'Less OtherEng', '$')}
+          <Derived label="Total ($)" value={fmtCurrency(previewSubGradeTotal(form))} />
+          <Derived label="$/km" value={fmtCurrency(previewSubGradeCostPerLength(form))} />
         </Section>
 
         <Section heading="Additional Stabilizing">
-          <Row label="Code:">
-            {combo('stBallastMethodCode', 'Ballast Method Code', codeLists.ballastMethods)}
-          </Row>
-          <Row label="Length:">{numeric('stLength', 'Additional Stabilizing Length', 'km')}</Row>
-          <Row label="Surface Width:">
-            {numeric('stSurfaceWidth', 'Additional Stabilizing Surface Width', 'm')}
-          </Row>
-          <Row label="Type:">
-            {combo('stBallastMaterialCode', 'Type', codeLists.ballastMaterials)}
-          </Row>
-          <Row label="Depth:">{numeric('stDepth', 'Depth', 'm')}</Row>
-          <Row label="Distance to Source:">
-            {numeric('stDistanceToSource', 'Distance to Source', 'km')}
-          </Row>
-          <Row label="Actual Costs($):">
-            {numeric('stActualCost', 'Additional Stabilizing Actual Costs')}
-          </Row>
-          <Row label="TtT Transfer($):">
-            {numeric('stTtTransfer', 'Additional Stabilizing TtT Transfer')}
-          </Row>
-          <Row label="Other Transfer($):">
-            {numeric('stOtherTransfer', 'Additional Stabilizing Other Transfer')}
-          </Row>
-          <Derived label="Total($):" value={fmtCurrency(previewStabilizingTotal(form))} />
-          <Derived label="$/km:" value={fmtCurrency(previewStabilizingCostPerLength(form))} />
+          {combo('stBallastMethodCode', 'Ballast Method Code', codeLists.ballastMethods)}
+          {numeric('stLength', 'Additional Stabilizing Length', 'km')}
+          {numeric('stSurfaceWidth', 'Additional Stabilizing Surface Width', 'm')}
+          {combo('stBallastMaterialCode', 'Type', codeLists.ballastMaterials)}
+          {numeric('stDepth', 'Depth', 'm')}
+          {numeric('stDistanceToSource', 'Distance to Source', 'km')}
+          {numeric('stActualCost', 'Additional Stabilizing Actual Costs', '$')}
+          {numeric('stTtTransfer', 'Additional Stabilizing TtT Transfer', '$')}
+          {numeric('stOtherTransfer', 'Additional Stabilizing Other Transfer', '$')}
+          <Derived label="Total ($)" value={fmtCurrency(previewStabilizingTotal(form))} />
+          <Derived label="$/km" value={fmtCurrency(previewStabilizingCostPerLength(form))} />
         </Section>
       </div>
 
-      <div className="schedule-10__haul">
-        <Row label="Includes Detailed Engineering Costs:">
-          {readOnly ? (
-            <span className="schedule-10__derived-value">
-              {form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No'}
-            </span>
-          ) : (
+      <div className="schedule-10__fields">
+        {readOnly ? (
+          readOnlyField(
+            'Includes Detailed Engineering Costs',
+            form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No',
+          )
+        ) : (
+          <Field>
             <Select
               id={id('detailedEngineeringCostInd')}
               labelText="Includes Detailed Engineering Costs"
-              hideLabel
               value={form.detailedEngineeringCostInd}
               disabled={disabled}
               onChange={(event) => onChange('detailedEngineeringCostInd', event.target.value)}
@@ -273,39 +239,37 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
               <SelectItem value="N" text="No" />
               <SelectItem value="Y" text="Yes" />
             </Select>
-          )}
-        </Row>
+          </Field>
+        )}
+      </div>
 
-        <div className="schedule-10__haul-grid">
-          <span />
-          <span className="schedule-10__haul-heading">Distance km</span>
-          <span className="schedule-10__haul-heading">Volume(m3)</span>
-          <span className="schedule-10__haul-heading">$/m3/km</span>
+      <h4 className="schedule-10__detail-heading">End Haul</h4>
+      <div className="schedule-10__fields">
+        {numeric('endHaulDistance', 'End Haul Distance', 'km')}
+        {numeric('endHaulVolume', 'End Haul Volume', 'm3')}
+        <Derived label="$/m3/km" value={fmtNumber(endHaulRate)} />
+      </div>
 
-          <span className="schedule-10__field-label">End Haul Details:</span>
-          {numeric('endHaulDistance', 'End Haul Distance')}
-          {numeric('endHaulVolume', 'End Haul Volume')}
-          <span className="schedule-10__derived-value">{fmtNumber(endHaulRate)}</span>
-
-          <span className="schedule-10__field-label">Overland Details:</span>
-          {numeric('overlandDistance', 'Overland Distance')}
-          {numeric('overlandVolume', 'Overland Volume')}
-          <span className="schedule-10__derived-value">{fmtNumber(overlandRate)}</span>
-        </div>
+      <h4 className="schedule-10__detail-heading">Overland</h4>
+      <div className="schedule-10__fields">
+        {numeric('overlandDistance', 'Overland Distance', 'km')}
+        {numeric('overlandVolume', 'Overland Volume', 'm3')}
+        <Derived label="$/m3/km" value={fmtNumber(overlandRate)} />
       </div>
 
       <div className="schedule-10__comments">
-        <span className="schedule-10__field-label schedule-10__comments-label">
-          If you have any comments, please enter them here:
-        </span>
         {readOnly ? (
-          <p className="schedule-10__derived-value">{form.comments === '' ? '—' : form.comments}</p>
+          <>
+            <span className="schedule-10__field-label">
+              If you have any comments, please enter them here:
+            </span>
+            <p className="schedule-10__field-value">{form.comments === '' ? '—' : form.comments}</p>
+          </>
         ) : (
           <TextArea
             id={id('comments')}
-            labelText="Comments"
-            hideLabel
-            rows={7}
+            labelText="If you have any comments, please enter them here:"
+            rows={5}
             enableCounter
             maxCount={COMMENTS_MAX}
             value={form.comments}
