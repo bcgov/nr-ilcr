@@ -897,6 +897,19 @@ const Schedule5: FC = () => {
       openSubPage(kind, panelCampId)
       return
     }
+    // `pendingSubPage` drives TWO modals and only one of them warns about losing edits, so only one
+    // is dirty-gated:
+    //
+    //   CFM-004 (unsaved new-or-copied camp) is not a warning at all — it is the ONLY route to a
+    //   sub-page for a camp that does not exist server-side yet, which is why legacy saves first
+    //   (`Schedule5MB.java:212-217`). It must fire even for a pristine, empty new panel.
+    //
+    //   CFM-002 (existing camp) is a genuine warning: legacy saves nothing here and discards the
+    //   panel's edits outright (`:195-203`). With nothing entered there is nothing to discard.
+    if (!panelIsUnsavedCamp && !panelDirty) {
+      openSubPage(kind, panelCampId)
+      return
+    }
     setPendingSubPage(kind)
   }
 

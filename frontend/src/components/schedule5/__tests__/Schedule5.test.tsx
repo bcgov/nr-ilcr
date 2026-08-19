@@ -1066,6 +1066,11 @@ describe('the expense sub-page links and the CFM-004 ladder (Story 7.4, AC13/AC1
     const user = userEvent.setup()
     await openEditor(user)
 
+    // CFM-002 is dirty-gated, so the panel must actually hold an unsaved edit to reach it — which is
+    // the state this test's own rationale below describes. A clean panel navigates straight through
+    // now, because there would be nothing for the warning to warn about.
+    await user.type(screen.getByLabelText('Comments'), ' extra')
+
     await user.click(subPageLink(/^Other Camp Expenses \(3\):$/))
     // Schedule5MB.java:195-203 does no save at all here, so the warning is real: the panel's
     // unsaved edits are genuinely discarded.
@@ -1919,5 +1924,94 @@ describe('Schedule 5 unsaved-data confirms fire only when the panel is dirty', (
     expect(screen.getByLabelText('Camp Name')).toBeInTheDocument()
     await user.click(panelButton(/^close$/i))
     await expectCloseIntercepted(user)
+  })
+})
+
+describe('Schedule 5 sub-page links: CFM-002 is dirty-gated, CFM-004 is not', () => {
+  /**
+   * Located by HEADING, never by sentence: every confirm modal stays mounted, so the sentences are
+   * always in the DOM. "Leave camp report" is CFM-002 and "Save camp report" is CFM-004, and only
+   * their headings tell them apart — CFM-002 shares its wording with the close confirm.
+   */
+  const dialogIsOpen = (heading: string): boolean =>
+    (screen.getByText(heading).closest('.cds--modal') as HTMLElement).classList.contains(
+      'is-visible',
+    )
+
+  test('a CLEAN existing camp reaches its sub-page with no confirm', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /other camp expenses/i }))
+
+    // Navigation happened directly — no CFM-002 in between.
+    await waitFor(() => expect(navigateSpy.mock.calls.length).toBe(before + 1))
+    expect(navigateSpy).toHaveBeenLastCalledWith({
+      to: '/schedule-5',
+      search: { camp: 8401, sub: 'CAMP' },
+    })
+    expect(dialogIsOpen('Leave camp report')).toBe(false)
+  })
+
+  test('a DIRTY existing camp confirms before navigating', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    await user.type(screen.getByLabelText('Comments'), ' extra')
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /other camp expenses/i }))
+
+    // Held behind the confirm: nothing navigated yet.
+    expect(navigateSpy.mock.calls.length).toBe(before)
+    expect(dialogIsOpen('Leave camp report')).toBe(true)
+
+    const dialog = screen.getByText('Leave camp report').closest('.cds--modal') as HTMLElement
+    await user.click(within(dialog).getByRole('button', { name: /^yes$/i }))
+    await waitFor(() =>
+      expect(navigateSpy).toHaveBeenLastCalledWith({
+        to: '/schedule-5',
+        search: { camp: 8401, sub: 'CAMP' },
+      }),
+    )
+  })
+
+  test('a PRISTINE new camp still fires CFM-004 — it is a route, not a warning', async () => {
+    // The camp does not exist server-side, so there is nothing to navigate to until it is saved
+    // (Schedule5MB.java:212-217). Dirtiness is irrelevant here.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add new camp/i }))
+    await screen.findByLabelText('Camp Name')
+
+    const before = navigateSpy.mock.calls.length
+    await user.click(screen.getByRole('button', { name: /other camp expenses/i }))
+
+    expect(dialogIsOpen('Save camp report')).toBe(true)
+    expect(dialogIsOpen('Leave camp report')).toBe(false)
+    expect(navigateSpy.mock.calls.length).toBe(before)
+  })
+
+  test('a COPY panel fires CFM-004, not CFM-002', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.get(MESSAGES_URL, () =>
+        HttpResponse.json({ key: 'x', text: 'Provide a new Camp Name.' }),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /^copy$/i }))
+    await screen.findByLabelText('Camp Name')
+
+    await user.click(screen.getByRole('button', { name: /other camp expenses/i }))
+
+    expect(dialogIsOpen('Save camp report')).toBe(true)
+    expect(dialogIsOpen('Leave camp report')).toBe(false)
   })
 })
