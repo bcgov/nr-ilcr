@@ -17,8 +17,7 @@ them unconditionally:
 | CFM-002 | `CONFIRM_NAVIGATION` again | a sub-page link from an existing camp (`:1302`) |
 
 None of them asks whether there is anything to lose. Open a camp, read it, press Close — the licensee
-is warned about discarding data they never touched. Worse, the Switch confirm fires even from a
-**View** panel, which has no editable field at all.
+is warned about discarding data they never touched.
 
 ## Goals
 
@@ -126,8 +125,12 @@ The Close site no longer needs its own `readOnlyPanel` test — a view panel is 
 existing read-only short-circuit in `requestSubPage` stays, because it also covers a non-editable
 document.
 
-Switching away from a View panel stops prompting as a consequence. That is a fix, not a side effect
-to be tolerated: there was never anything to lose there.
+**The `view` exclusion only ever matters to the Close button.** A view panel can exist only on a
+non-editable document (`openEditOrView(camp, 'view')` is reached solely from the `View` button in
+`rowActions`' `!editable` branch), and on such a document `Add New Camp` is disabled and the rows
+render `View` alone with no `panelOpen` gate. So no switch path is reachable from a view panel, and
+excluding `view` from `panelDirty` is defensive rather than a behaviour fix. It is kept so that a view
+panel whose camp went missing cannot start prompting.
 
 ## Testing
 
@@ -138,7 +141,7 @@ to be tolerated: there was never anything to lose there.
 - **after a successful save, Close is silent** — the "since the last save" case
 - a freshly-opened Copy panel confirms on Close without any edit
 - an empty New panel closes silently; one typed character makes it confirm
-- a View panel confirms on neither Close nor switch
+- a View panel closes with no confirm (its switch paths are unreachable — see above)
 - switching camps, and Add New Camp, from a clean panel proceed with no confirm
 - switching from a dirty panel still confirms, and Yes still discards the draft
 - a sub-page link from a clean existing camp navigates with no CFM-002
