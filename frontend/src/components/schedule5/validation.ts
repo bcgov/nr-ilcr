@@ -274,17 +274,27 @@ const validateOptionalNumber = (
 }
 
 /**
- * BR-02's comparison, matching the server's exactly: `countCampsNamed` upper-cases both sides
- * (`Schedule5Repository.java:419`) and the service trims the submitted name before counting
- * (`Schedule5Service.trimmedCampName():863`). Trimming and folding case here is what stops
- * `  cedar flats camp ` from passing an advisory check and then drawing a 409.
+ * BR-02's comparison, matching the server's predicate exactly — which is ASYMMETRIC:
+ *
+ *     UPPER(CAMP_NAME) = UPPER(:name)      -- Schedule5Repository.java:417
+ *
+ * Case is folded on both sides, but only the SUBMITTED side is trimmed, by
+ * `Schedule5Service.trimmedCampName()` (`:862-864`) before the value is bound. The STORED side is
+ * deliberately left untrimmed, and that repository docblock (`:400-410`) says why: legacy persisted
+ * names untrimmed (it cites `Schedule5DAO.java:373`), so a stored `" Cedar "` does not collide with a
+ * new `"Cedar"` there either, and adding `TRIM(CAMP_NAME)` "would retroactively 409 edits next to
+ * padded incumbents legacy accepted."
+ *
+ * So this must NOT trim `name`. Doing so made the advisory check STRICTER than the authority it
+ * mirrors, and because Save is gated on `validateCamp`, a padded legacy incumbent hard-blocked a save
+ * the server accepts — with no way out, since `buildRequest` trims the entry.
  *
  * `toUpperCase`, not `toLocaleUpperCase`: Oracle's `UPPER` is not locale-aware, and a locale-aware
  * fold would disagree with it on a Turkish dotless i.
  */
 const isDuplicateName = (raw: string, otherCampNames: readonly string[]): boolean => {
   const candidate = raw.trim().toUpperCase()
-  return otherCampNames.some((name) => name.trim().toUpperCase() === candidate)
+  return otherCampNames.some((name) => name.toUpperCase() === candidate)
 }
 
 const validateCampName = (raw: string): string | undefined => {

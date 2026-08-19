@@ -395,6 +395,16 @@ describe('camp name uniqueness (BR-02, client pre-check)', () => {
     expect(errors.campName).toBe('Camp name already exists.')
   })
 
+  it('does NOT collide with a padded STORED name — the server does not trim that side either', () => {
+    // `countCampsNamed` compares `UPPER(CAMP_NAME)` with no TRIM on the stored side
+    // (Schedule5Repository.java:400-410): legacy persisted names untrimmed, so the server ACCEPTS
+    // this save. Trimming here would hard-block it, and buildRequest trims the entry so the
+    // licensee could not type padding to escape.
+    expect(
+      validateCamp(baseForm({ campName: 'Cedar Flats Camp' }), ['  Cedar Flats Camp  ']),
+    ).toEqual({})
+  })
+
   it('accepts a name no other camp holds', () => {
     expect(validateCamp(baseForm({ campName: 'Birch Ridge Camp' }), ['Cedar Flats Camp'])).toEqual(
       {},
