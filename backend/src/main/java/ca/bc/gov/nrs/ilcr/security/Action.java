@@ -15,5 +15,10 @@ public enum Action {
    * Maintenance surface. ADMIN-only: unlike VIEW/EDIT_SCHEDULE (held by both production roles), this
    * is granted solely to {@link Role#ADMIN}, so a SUBMITTER hitting the code-table APIs is denied 403.
    */
-  MAINTAIN_CODE_TABLES
+  MAINTAIN_CODE_TABLES,
+  /**
+   * Open a new reporting year (UC-RY-001) — the Administration ▸ Open Reporting Year surface. ADMIN-only,
+   * like {@link #MAINTAIN_CODE_TABLES}: a SUBMITTER hitting the open-year API is denied 403.
+   */
+  OPEN_REPORTING_YEAR
 }

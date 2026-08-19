@@ -407,6 +407,37 @@ public class GlobalExceptionHandler {
   }
 
   /**
+   * Handles a business rejection carrying MORE THAN ONE legacy message (AD-8) — resolves each key to
+   * its verbatim text and returns them together in the {@code messages} extension (same shape as the
+   * required-field handler), with the exception's status. Used e.g. by the reporting-year open when
+   * zero active mills exist (INF-001 + ERR-002 together).
+   *
+   * @param ex the exception carrying the ordered message keys and target status
+   * @param request the current HTTP request
+   * @return a {@link ProblemDetail} with the exception's status and a {@code messages} array
+   */
+  @ExceptionHandler(MultiMessageException.class)
+  public ResponseEntity<ProblemDetail> handleMultiMessage(
+      MultiMessageException ex, HttpServletRequest request) {
+    log.info("Multi-message business rejection ({}): {}", ex.getStatus(), ex.getMessageKeys());
+
+    var messages = ex.getMessageKeys().stream()
+        .map(key -> new FieldMessage(
+            key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale())))
+        .toList();
+
+    ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
+    problem.setTitle(ex.getStatus().getReasonPhrase());
+    problem.setDetail(messages.stream().map(FieldMessage::text).collect(Collectors.joining("; ")));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    problem.setProperty("messages", messages);
+
+    return ResponseEntity.status(ex.getStatus())
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(problem);
+  }
+
+  /**
    * Handles a missing required request parameter (e.g. absent {@code millId}/{@code year}) and
    * returns a 400 problem response. Without this handler these fall through to the generic 500
    * handler (AD-4, slice S19).

@@ -41,12 +41,17 @@ describe('visibleNavigationItems', () => {
 
 describe('admin-only paths (route guard source)', () => {
   test('derived from the same adminOnly items the nav hides', () => {
-    expect([...ADMIN_ONLY_PATHS].sort()).toEqual(['/code-tables', '/mill-associations'])
+    expect([...ADMIN_ONLY_PATHS].sort()).toEqual([
+      '/code-tables',
+      '/mill-associations',
+      '/open-reporting-year',
+    ])
   })
 
   test('isAdminOnlyPath matches admin routes only', () => {
     expect(isAdminOnlyPath('/code-tables')).toBe(true)
     expect(isAdminOnlyPath('/mill-associations')).toBe(true)
+    expect(isAdminOnlyPath('/open-reporting-year')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
     expect(isAdminOnlyPath('/')).toBe(false)
   })
@@ -56,6 +61,7 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/code-tables/')).toBe(true)
     expect(isAdminOnlyPath('/code-tables/edit')).toBe(true)
     expect(isAdminOnlyPath('/mill-associations/123')).toBe(true)
+    expect(isAdminOnlyPath('/open-reporting-year/edit')).toBe(true)
     // ...but a different route that merely starts with the same prefix string is NOT admin-only.
     expect(isAdminOnlyPath('/code-tables-public')).toBe(false)
     expect(isAdminOnlyPath('/schedule-1/other-costs')).toBe(false)
