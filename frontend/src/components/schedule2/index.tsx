@@ -330,7 +330,9 @@ const Schedule2: FC = () => {
   )
 
   return (
-    <div className="app-page schedule-page">
+    // EXPERIMENT (throwaway): `schedule-2--csp` scopes the CSP-convention restyle. Every rule it
+    // enables lives under that class in index.scss — remove the class to revert the whole look.
+    <div className="app-page schedule-page schedule-2--csp">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
@@ -384,8 +386,12 @@ const Schedule2: FC = () => {
               id="comments"
               className="schedule-2__comments-field"
               labelText="If you have any additional comments, please enter them here:"
-              enableCounter
-              maxCount={COMMENTS_MAX}
+              // EXPERIMENT: Carbon's `enableCounter`/`maxCount` renders a "260/3500" ratio in the
+              // label row. The client asked to see a countdown instead, so the ceiling moves to
+              // `maxLength` (same 3500 hard stop) and the count is spelled out as helper text.
+              maxLength={COMMENTS_MAX}
+              rows={6}
+              helperText={`${fmtNumber(COMMENTS_MAX - (form[F_COMMENTS] ?? '').length)} characters remaining`}
               value={form[F_COMMENTS] ?? ''}
               onChange={setField(F_COMMENTS)}
             />

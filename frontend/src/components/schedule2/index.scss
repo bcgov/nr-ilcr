@@ -54,3 +54,165 @@
   // Space the action bar off the adjacent table/comments (matches Schedule 4's action bar).
   margin-block-end: $spacing-05;
 }
+
+// ---------------------------------------------------------------------------------------------------
+// EXPERIMENT (throwaway — remove this block and the `schedule-2--csp` class in index.tsx to revert).
+//
+// Restyles Schedule 2 to the CSP (nr-csp) form conventions so the BA can screenshot the look for the
+// client. Everything is scoped under `.schedule-2--csp` so no other schedule is affected: the global
+// sheets (_overrides.scss, _custom.scss, styles/index.scss) coordinate control sizing across
+// Schedules 2/4/8/9 and are deliberately left untouched.
+//
+// Port of nr-csp/frontend/src/styles/_mixins.scss:14-67 `report-form-size(3rem)`.
+// ---------------------------------------------------------------------------------------------------
+
+// The width the cost table settles at with its two data columns pinned to 272px: 280 (label) + 272 +
+// 272 + 81 ($/m³) = 905. Declared once so the comment box below is pinned to the SAME number and the two
+// edges cannot drift apart.
+$csp-table-width: 905px;
+
+.schedule-2--csp {
+  // Inset the page content from the left edge. CSP overrides Carbon's grid side padding and re-adds
+  // `padding-left: $spacing-07` (32px) at page level — Invoice/index.scss:8,
+  // FlatPriceConversion/index.scss:14. ILCR inherits Carbon's 16px, so the table sits half as far in.
+  // Setting it on the Grid elements themselves replaces the grid's own left padding rather than adding
+  // to it, which is how CSP does it too.
+  .app-page__header,
+  .app-page__body {
+    padding-inline-start: $spacing-07;
+  }
+
+  // ILCR forces 2rem fields / 2.5rem buttons by setting Carbon's height custom property on a
+  // single-class selector (_overrides.scss:69-76, :101-107), which is why `size` props have no
+  // effect here. Redeclaring the same property two classes deep wins on specificity, so CSP's 3rem
+  // controls need no `!important`.
+  .cds--text-input {
+    --cds-layout-size-height-local: 3rem;
+  }
+
+  .cds--btn {
+    // 34px by request. Note this is NOT a Carbon size: Carbon's button heights are 32 / 40 / 48px, and
+    // CSP's buttons sit at 48px (Carbon's default `lg`). So the buttons are now shorter than both the
+    // 48px fields beside them and anything CSP renders.
+    --cds-layout-size-height-local: 2.125rem;
+    // CSP's global button radius (nr-csp _overrides.scss:74).
+    border-radius: 0.25rem;
+  }
+
+  // CSP fields read as a filled cell with a single underline rather than a bordered box.
+  //
+  // The fill is the LITERAL #f4f4f4, not `var(--cds-field-01)`. CSP's mixin uses the token, but in this
+  // app that token resolves to #ffffff — which is exactly why _custom.scss:10-17 hardcodes #f4f4f4 for
+  // every field. Using the token here painted the comment box white (measured rgb(255,255,255)) instead
+  // of matching the inputs.
+  .cds--text-input {
+    background-color: #f4f4f4;
+    border: none;
+    border-block-end: 1px solid var(--cds-text-primary);
+    border-radius: 0;
+
+    // Carbon lightens the field on hover; CSP holds the fill steady.
+    &:hover {
+      background-color: #f4f4f4;
+    }
+
+    // Focus is the underline thickening — no ring, no shadow.
+    &:focus {
+      outline: none;
+      box-shadow: none;
+      border-block-end: 2px solid var(--cds-focus);
+    }
+  }
+
+  // CSP labels sit on their own line in text-primary (Carbon defaults to text-secondary) —
+  // nr-csp _mixins.scss:15 and _overrides.scss:332.
+  .cds--label {
+    display: block;
+    margin-block-end: 0.25rem;
+    color: var(--cds-text-primary);
+  }
+
+  // The base rule above indents read-only numeric cells by a bordered input's inset
+  // (padding + 1px border). CSP inputs are borderless, so the matching inset is the padding alone.
+  .schedule-2__num:not(:has(.cds--text-input)) {
+    text-indent: 1rem;
+  }
+
+  // Narrow the two wide data columns to 272px — the width a CSP Invoice field renders at (a Carbon
+  // `lg={4}` span, i.e. 4 of 16, in a 1088px content area). Unstyled they measure 448px each, which
+  // leaves the number inputs 416px wide for values only a few digits long.
+  //
+  // Columns are addressed by position because all three numeric cells share `.schedule-2__num`:
+  // 2 = Volume (m³), 3 = Cost ($). The $/m³ column (4) is deliberately left alone — it already sits at
+  // 128px, so pinning it to 272 would make it WIDER, the opposite of the intent here.
+  //
+  // The four-class selector is for SPECIFICITY, not scoping: the base rule at the top of this file
+  // (`.schedule-2__section .cds--data-table td`) sets `width: auto; max-width: none` and would
+  // otherwise outrank a shorter selector and discard these widths.
+  .schedule-2__section .cds--data-table {
+    // Carbon stretches the table to 100%. Left stretched, pinning the data columns to 272px just dumps
+    // the reclaimed space into the auto-sized label column (measured: 443px -> 715px) and opens a void
+    // between the labels and the figures. Pin it to the packed width instead, which is also how CSP
+    // reads — its fields occupy their grid column rather than stretching to the viewport. Explicit
+    // rather than `auto` so the comment box can be pinned to the identical number.
+    width: $csp-table-width;
+
+    th.schedule-2__num:nth-child(2),
+    th.schedule-2__num:nth-child(3),
+    td.schedule-2__num:nth-child(2),
+    td.schedule-2__num:nth-child(3) {
+      width: 272px;
+      max-width: 272px;
+    }
+  }
+
+  // NOTE: no row-height rule here. Measured on the running page, Carbon's rows are already 48px and
+  // the 3rem inputs only push their own rows to 49-50px, so the `min-height: 3rem` this block
+  // originally carried sat below the natural height and did nothing. The residual 1-2px variance on
+  // the two input rows is not visible.
+
+  // CSP semibold table headers (nr-csp _overrides.scss:224).
+  .cds--table-header-label {
+    font-weight: 600;
+  }
+
+  // NOTE: no page-title rule here either. CSP titles are heading-05 / 2rem
+  // (nr-csp pages/R08InvoiceAudit/index.scss:10) and `.schedule-tombstone__title` measures 32px on the
+  // running page already, so ILCR's title is a match as-is. (The `.schedule-2__heading` selector in
+  // styles/index.scss:72 is stale — it matches no element, confirmed 0 nodes at runtime.)
+
+  // No background rule for the comment box: _custom.scss:10-17 already paints `.cds--text-area`
+  // #f4f4f4, and a rule here ties it on specificity (3 classes each) then wins on source order,
+  // because a route chunk is appended after the global sheet. Only the countdown helper text needs
+  // sizing.
+  //
+  // Width is pinned to the table's, so the comment box's right edge lines up with the $/m³ column
+  // instead of running ~560px past it. (CSP's own Invoice comments are full-width `lg={16}`, so this is
+  // a deliberate departure — on this page the overhang read as unintentional.)
+  .schedule-2__comments-field {
+    max-width: $csp-table-width;
+
+    .cds--form__helper-text {
+      font-size: 0.875rem;
+      color: var(--cds-text-primary);
+    }
+  }
+
+  // Move the working-context block (Mill / Year / per-track status) out of the top-right corner and
+  // centre it on the page. Absolute positioning takes it out of the tombstone's flex row so the
+  // "Schedule 2" identity keeps its left slot; the shared ScheduleTombstone component is untouched.
+  //
+  // Trade-off accepted for the experiment: this forfeits the component's wrap-to-stacked behaviour on
+  // narrow viewports (the block would overlap the title rather than dropping below it), and its
+  // right-aligned text becomes centred.
+  .schedule-tombstone {
+    position: relative;
+
+    .schedule-tombstone__context {
+      position: absolute;
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+    }
+  }
+}
