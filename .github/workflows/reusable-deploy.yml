@@ -45,6 +45,8 @@ jobs:
     env:
       DB_USER: ${{ secrets.ORACLEDB_USERNAME }}
       DB_PASS: ${{ secrets.ORACLEDB_PASSWORD }}
+      DB_HOST: ${{ secrets.ORACLEDB_HOST }}
+      DB_SERVICENAME: ${{ secrets.ORACLEDB_SERVICENAME }}
       COGNITO_POOL: ${{ secrets.USER_POOLS_ID }}
       COGNITO_CLIENT: ${{ secrets.USER_POOLS_WEB_CLIENT_ID }}
     steps:
@@ -67,6 +69,8 @@ jobs:
             -p NAME='${{ github.event.repository.name }}'
             -p SPRING_DATASOURCE_USERNAME="$DB_USER"
             -p SPRING_DATASOURCE_PASSWORD="$DB_PASS"
+            -p ORACLEDB_HOST="$DB_HOST"
+            -p ORACLEDB_SERVICENAME="$DB_SERVICENAME"
             -p COGNITO_USER_POOL="$COGNITO_POOL"
             -p COGNITO_CLIENT_ID="$COGNITO_CLIENT"
             -p COGNITO_DOMAIN='${{ vars.COGNITO_DOMAIN || 'lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com' }}'
@@ -87,16 +91,13 @@ jobs:
         include:
           - name: backend
             file: backend/openshift.deploy.yml
-            # Security and datasource flags come from GitHub vars, resolved
-            # environment-first, and FAIL CLOSED: auth is enforced unless a
-            # var explicitly opts a scope out. The backend refuses to start
-            # with security off and the datasource on (DeployedSecurityGuard),
-            # so a mock-auth deployment requires disabling both — mock auth
-            # never fronts real data.
+            # Oracle host/servicename are environment-scoped SECRETS, passed
+            # through the init job above (env-scoped secrets don't resolve in
+            # this matrix — GitHub evaluates it before the environment
+            # attaches) into the backend Secret. ILCR_SECURITY_ENABLED is
+            # hardcoded "true" in the backend template — deployed pods always
+            # enforce auth.
             parameters: -p IMAGE_TAG="${{ inputs.tag }}"
-              -p ORACLEDB_HOST="${{ vars.ORACLEDB_HOST }}"
-              -p ORACLEDB_SERVICENAME="${{ vars.ORACLEDB_SERVICENAME }}"
-              -p ILCR_SECURITY_ENABLED="${{ vars.ILCR_SECURITY_ENABLED || 'true' }}"
               -p ILCR_DATASOURCE_ENABLED="${{ vars.ILCR_DATASOURCE_ENABLED || 'true' }}"
           - name: frontend
             file: frontend/openshift.deploy.yml

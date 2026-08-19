@@ -35,24 +35,18 @@ parameters:
   - name: MEMORY_LIMIT
     description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile). Raised for the embedded JasperReports 7 engine (Batik/OpenPDF/fonts add classpath + metaspace + native AWT footprint) per AD-16 "size the reporting path's pod CPU/Mem".
     value: "1Gi"
-  - name: ILCR_SECURITY_ENABLED
-    description: Enforce Cognito (FAM) JWT auth. "false" installs MockPrincipalFilter, treating every request as an authenticated ILCR_SUBMITTER; DeployedSecurityGuard refuses to start a deployed pod with security off and the datasource on. Fail-closed default.
-    value: "true"
   - name: ILCR_DATASOURCE_ENABLED
-    description: Connect to the Oracle datasource. Set "false" together with ILCR_SECURITY_ENABLED="false" for a data-less mock-auth smoke deployment.
+    description: Connect to the Oracle datasource. Set "false" for a data-less smoke deployment. Deployed pods always enforce Cognito (FAM) JWT auth — ILCR_SECURITY_ENABLED is hardcoded "true" below, not parameterized.
     value: "true"
   - name: LOG_LEVEL
     description: Application log level (debug|info|warn|error)
     value: "info"
-  - name: ORACLEDB_HOST
-    description: Oracle database host; the init container fetches its TCPS cert
-    required: true
+  # ORACLEDB_HOST / ORACLEDB_SERVICENAME are not parameters: they come from
+  # environment-scoped GitHub secrets via the init-created backend Secret
+  # (common/openshift.init.yml), read below with secretKeyRef.
   - name: ORACLEDB_PORT
     description: Oracle database TCPS port
     value: "1543"
-  - name: ORACLEDB_SERVICENAME
-    description: Oracle database service name
-    required: true
   - name: COGNITO_REGION
     description: AWS region of the Cognito (FAM) user pool
     value: ca-central-1
@@ -94,7 +88,10 @@ objects:
               imagePullPolicy: Always
               env:
                 - name: ORACLEDB_HOST
-                  value: ${ORACLEDB_HOST}
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: ORACLEDB_HOST
                 - name: ORACLEDB_PORT
                   value: ${ORACLEDB_PORT}
                 - name: ORACLEDB_SECRET
@@ -137,15 +134,21 @@ objects:
                 - name: APP_VERSION
                   value: ${IMAGE_TAG}
                 - name: ILCR_SECURITY_ENABLED
-                  value: ${ILCR_SECURITY_ENABLED}
+                  value: "true"
                 - name: ILCR_DATASOURCE_ENABLED
                   value: ${ILCR_DATASOURCE_ENABLED}
                 - name: ORACLEDB_HOST
-                  value: ${ORACLEDB_HOST}
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: ORACLEDB_HOST
                 - name: ORACLEDB_PORT
                   value: ${ORACLEDB_PORT}
                 - name: ORACLEDB_SERVICENAME
-                  value: ${ORACLEDB_SERVICENAME}
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${NAME}-${ZONE}-${COMPONENT}
+                      key: ORACLEDB_SERVICENAME
                 - name: ORACLEDB_KEYSTORE
                   value: /cert/jssecacerts
                 - name: COGNITO_REGION

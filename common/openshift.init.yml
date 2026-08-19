@@ -19,6 +19,12 @@ parameters:
   - name: ORACLEDB_KEYSTORE_SECRET
     description: Password for the Oracle keystore built by the backend init container
     value: changeit
+  - name: ORACLEDB_HOST
+    description: Oracle database host (environment-scoped GitHub secret)
+    required: true
+  - name: ORACLEDB_SERVICENAME
+    description: Oracle database service name (environment-scoped GitHub secret)
+    required: true
   - name: COGNITO_USER_POOL
     description: Cognito (FAM) user pool ID for JWT validation
     required: true
@@ -62,6 +68,8 @@ objects:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
       ORACLEDB_KEYSTORE_SECRET: ${ORACLEDB_KEYSTORE_SECRET}
+      ORACLEDB_HOST: ${ORACLEDB_HOST}
+      ORACLEDB_SERVICENAME: ${ORACLEDB_SERVICENAME}
       COGNITO_USER_POOL: ${COGNITO_USER_POOL}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
 
