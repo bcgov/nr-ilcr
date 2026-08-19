@@ -41,14 +41,6 @@ public class ReportingYearRepository {
         new MapSqlParameterSource(), Integer.class);
   }
 
-  /** Whether the reporting year is already open (a period row exists). */
-  public boolean reportingYearExists(int year) {
-    Integer count = jdbc.queryForObject(
-        "SELECT COUNT(*) FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :year",
-        new MapSqlParameterSource("year", year), Integer.class);
-    return count != null && count > 0;
-  }
-
   /**
    * The ids of the active ({@code ACT}) mills — the whitelist that receives report-status rows for a
    * new year (DL-22: closed mills are excluded). Mirrors {@code MillContextService.STATUS_ACTIVE}.

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -21,6 +22,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -42,9 +44,7 @@ class ReportingYearServiceTest {
   @Test
   @DisplayName("recurring: creates max+1 and a Draft/Draft/not-completed row per active mill (S01)")
   void recurring_createsNextYearForActiveMills() {
-    when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.reportingYearExists(2026)).thenReturn(false);
-    when(repository.findActiveMillIds()).thenReturn(List.of(11L, 22L));
+    when(repository.findMaxReportYear()).thenReturn(2025);    when(repository.findActiveMillIds()).thenReturn(List.of(11L, 22L));
 
     OpenReportingYearResult result = service.open(null, USER);
 
@@ -63,9 +63,7 @@ class ReportingYearServiceTest {
   @Test
   @DisplayName("recurring + zero active mills: rejected with INF-001 + ERR-002, nothing created (S03)")
   void recurring_zeroActiveMills_createsNothing() {
-    when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.reportingYearExists(2026)).thenReturn(false);
-    when(repository.findActiveMillIds()).thenReturn(List.of());
+    when(repository.findMaxReportYear()).thenReturn(2025);    when(repository.findActiveMillIds()).thenReturn(List.of());
 
     MultiMessageException ex = assertThrows(MultiMessageException.class, () -> service.open(null, USER));
 
@@ -78,9 +76,7 @@ class ReportingYearServiceTest {
   @Test
   @DisplayName("first-time + zero active mills: allowed, empty year created (S07, decision D-1)")
   void firstTime_zeroActiveMills_createsEmptyYear() {
-    when(repository.findMaxReportYear()).thenReturn(null);
-    when(repository.reportingYearExists(2026)).thenReturn(false);
-    when(repository.findActiveMillIds()).thenReturn(List.of());
+    when(repository.findMaxReportYear()).thenReturn(null);    when(repository.findActiveMillIds()).thenReturn(List.of());
 
     OpenReportingYearResult result = service.open(2026, USER);
 
@@ -94,9 +90,7 @@ class ReportingYearServiceTest {
   @Test
   @DisplayName("first-time + active mills: creates the selected year and initializes each mill (S02)")
   void firstTime_withActiveMills_createsSelectedYear() {
-    when(repository.findMaxReportYear()).thenReturn(null);
-    when(repository.reportingYearExists(2027)).thenReturn(false);
-    when(repository.findActiveMillIds()).thenReturn(List.of(5L));
+    when(repository.findMaxReportYear()).thenReturn(null);    when(repository.findActiveMillIds()).thenReturn(List.of(5L));
 
     OpenReportingYearResult result = service.open(2027, USER);
 
@@ -130,14 +124,18 @@ class ReportingYearServiceTest {
   }
 
   @Test
-  @DisplayName("year already open is rejected 409, nothing created (defensive guard)")
-  void yearAlreadyOpen_rejected() {
+  @DisplayName("concurrent open that loses the period PK race is mapped to 409 (not a 500)")
+  void concurrentOpen_mappedToConflict() {
     when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.reportingYearExists(2026)).thenReturn(true);
+    when(repository.findActiveMillIds()).thenReturn(List.of(5L));
+    doThrow(new DataIntegrityViolationException("ORA-00001 PK_ILCR_REPORTING_PERIOD"))
+        .when(repository).insertReportingPeriod(eq(2026), any(), any(), eq(USER));
 
     ReportingYearException ex = assertThrows(ReportingYearException.class, () -> service.open(null, USER));
 
     assertEquals(HttpStatus.CONFLICT, ex.getStatus());
-    verify(repository, never()).insertReportingPeriod(anyInt(), any(), any(), anyString());
+    assertEquals("reportingYearAlreadyOpenErrorMsg", ex.getMessageKey());
+    // The period insert failed, so no mill rows were attempted.
+    verify(repository, never()).insertMillReportStatus(anyInt(), anyLong(), any(), any(), any(), anyString());
   }
 }

@@ -41,7 +41,11 @@ describe('visibleNavigationItems', () => {
 
 describe('admin-only paths (route guard source)', () => {
   test('derived from the same adminOnly items the nav hides', () => {
-    expect([...ADMIN_ONLY_PATHS].sort()).toEqual(['/code-tables', '/mill-associations', '/open-reporting-year'])
+    expect([...ADMIN_ONLY_PATHS].sort()).toEqual([
+      '/code-tables',
+      '/mill-associations',
+      '/open-reporting-year',
+    ])
   })
 
   test('isAdminOnlyPath matches admin routes only', () => {

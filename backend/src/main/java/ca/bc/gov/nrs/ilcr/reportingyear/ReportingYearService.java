@@ -9,21 +9,17 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Opens a reporting year (UC-RY-001) — the annual-cycle trigger. In one transaction it creates the
- * reporting period and, for every active mill, the report-status row (both tracks, Draft) that the
- * mill/year guards read; on any failure nothing commits (S08). The per-category report records the
- * legacy {@code saveReportCategory} wrote to {@code ILCR_REPORT_CATEGORY} are NOT created here: that
- * table is not modelled anywhere in this codebase and its shape is unconfirmed against the delivery
- * database, so seeding it is deferred to the Task-1 delivery-DB gate rather than guessed.
- *
- * <p>Per active mill it also seeds the per-category records (11 categories, Draft, reportable-detail Y)
- * the delivery DB pre-creates on open (verified against DEV); {@code ILCR_REPORT_SUMMARY} is left for
- * first schedule save.
+ * reporting period and, for every active mill, the report-status row (both tracks, Draft) plus the
+ * per-category records (11 categories, Draft, reportable-detail Y) the delivery DB pre-creates on open
+ * (verified against DEV) — the rows the mill/year guards read. {@code ILCR_REPORT_SUMMARY} is left for
+ * first schedule save. On any failure nothing commits (S08).
  *
  * <p>Two entry paths (BR-05/BR-07): recurring ({@code max + 1}) when a year already exists, and
  * first-time setup (an administrator-selected year within {@code currentYear - 2 .. currentYear + 1})
@@ -82,10 +78,6 @@ public class ReportingYearService {
     boolean firstTime = maxYear == null;
     int targetYear = firstTime ? resolveFirstTimeYear(requestedYear) : maxYear + 1;
 
-    if (repository.reportingYearExists(targetYear)) {
-      throw ReportingYearException.yearAlreadyOpen();
-    }
-
     List<Long> activeMillIds = repository.findActiveMillIds();
     if (!firstTime && activeMillIds.isEmpty()) {
       throw new MultiMessageException(
@@ -93,7 +85,13 @@ public class ReportingYearService {
     }
 
     LocalDate today = LocalDate.now(clock);
-    repository.insertReportingPeriod(targetYear, today, LocalDate.of(targetYear, 12, 31), user);
+    try {
+      repository.insertReportingPeriod(targetYear, today, LocalDate.of(targetYear, 12, 31), user);
+    } catch (DataIntegrityViolationException concurrentOpen) {
+      // A concurrent open inserted this year's ILCR_REPORTING_PERIOD row first; lose the PK race as a
+      // clean 409 rather than a generic 500. (A serial max+1 never collides — this is the race guard.)
+      throw ReportingYearException.yearAlreadyOpen();
+    }
     for (long millId : activeMillIds) {
       repository.insertMillReportStatus(
           targetYear, millId, STATUS_DRAFT, STATUS_DRAFT, NOT_COMPLETED, user);
