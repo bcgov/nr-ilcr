@@ -382,6 +382,8 @@ class Schedule10DocumentAssembler {
       long millId, int year, Map<Integer, BecClassification> offerableBec) {
     return new Schedule10CodeLists(
         toCodes(repository.findForestRegions(millId, year)),
+        toCodes(repository.findTsaNumbers(millId, year)),
+        toCodes(repository.findSupplyBlocks(millId, year)),
         toCodes(repository.findRoadLifetimes(millId, year)),
         toCodes(repository.findBallastMethods(millId, year)),
         toCodes(repository.findBallastMaterials(millId, year)),

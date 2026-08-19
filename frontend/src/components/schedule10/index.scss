@@ -1,0 +1,209 @@
+// Layout for the Schedule 10 page. Legacy renders a page-summary list with the page form directly
+// below it, then a road list with the road form below that — labels right-aligned against their
+// control in a two-column grid, and every action row centred.
+
+.schedule-10__section {
+  margin-block: 1rem;
+}
+
+.schedule-10__heading {
+  margin-block-end: 0.5rem;
+}
+
+.schedule-10__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+
+// The global Save / Check Status pair sits centred above the page summary, as in legacy.
+.schedule-10__actions--top,
+.schedule-10__actions--centred {
+  justify-content: center;
+}
+
+.schedule-10__panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-block-start: 1rem;
+}
+
+.schedule-10__enter-road {
+  display: flex;
+  justify-content: center;
+  margin-block-start: 1rem;
+}
+
+.schedule-10__row-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+// Legacy right-aligns the page label against the action column.
+.schedule-10__label-cell {
+  text-align: right;
+}
+
+// ---- The two-column label/control form -----------------------------------------------------
+
+.schedule-10__fields {
+  display: flex;
+  flex-direction: column;
+  row-gap: 1rem;
+  margin-block-start: 1rem;
+}
+
+.schedule-10__field-row,
+.schedule-10__detail-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr;
+  column-gap: 1rem;
+  align-items: center;
+
+  @media (max-width: 42rem) {
+    grid-template-columns: 1fr;
+    row-gap: 0.25rem;
+  }
+}
+
+.schedule-10__field-label {
+  justify-self: end;
+  text-align: right;
+  font-size: 0.875rem;
+  line-height: 1.33333;
+
+  @media (max-width: 42rem) {
+    justify-self: start;
+    text-align: left;
+  }
+}
+
+.schedule-10__field-control {
+  min-width: 0;
+}
+
+// Control widths follow the legacy form, where each field is sized to its content rather than
+// stretched to the column.
+.schedule-10__control--tiny {
+  max-width: 5rem;
+}
+
+.schedule-10__control--medium {
+  max-width: 10rem;
+}
+
+.schedule-10__control--wide {
+  max-width: 16rem;
+}
+
+.schedule-10__control--wider {
+  max-width: 21rem;
+}
+
+.schedule-10__control--widest {
+  max-width: 28rem;
+}
+
+// A derived figure rendered as text rather than a disabled input, so it is announced as a value.
+.schedule-10__derived-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  font-size: 0.875rem;
+  line-height: 1.29;
+}
+
+// ---- The road-detail form ------------------------------------------------------------------
+
+.schedule-10__detail-fields {
+  margin-block-start: 1rem;
+}
+
+// Three columns as in legacy: Road Information, Sub-Grade, Additional Stabilizing.
+.schedule-10__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: 2.5rem;
+  row-gap: 1.5rem;
+  align-items: start;
+
+  @media (max-width: 82rem) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 52rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.schedule-10__detail-column {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.75rem;
+  min-width: 0;
+}
+
+.schedule-10__detail-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  padding-block-end: 0.25rem;
+  border-block-end: 1px solid var(--cds-border-subtle);
+}
+
+.schedule-10__detail-subheading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-block-start: 0.5rem;
+}
+
+// A numeric entry and its unit suffix (km, m, %), which legacy prints beside the field.
+.schedule-10__numeric {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.schedule-10__suffix {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+// ---- End Haul / Overland ---------------------------------------------------------------------
+
+.schedule-10__haul {
+  margin-block-start: 2rem;
+  display: flex;
+  flex-direction: column;
+  row-gap: 1rem;
+}
+
+.schedule-10__haul-grid {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) repeat(3, minmax(6rem, 12rem));
+  column-gap: 1rem;
+  row-gap: 0.75rem;
+  align-items: center;
+
+  @media (max-width: 52rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.schedule-10__haul-heading {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.schedule-10__comments {
+  margin-block-start: 2rem;
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5rem;
+}
+
+.schedule-10__hint {
+  margin-block-start: 0.75rem;
+  font-size: 0.875rem;
+}
