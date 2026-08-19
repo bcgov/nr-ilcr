@@ -430,6 +430,10 @@ const DescriptorFields: FC<{
       value={values.isolatedCamp}
       disabled={readOnly}
       onChange={(event) => onIsolatedCampChange(event.target.value)}
+      // A change IS this control's commit, so it reports immediately — but blur is still needed:
+      // tabbing THROUGH the empty option fires no change at all, and without this the required
+      // field would stay silent until Save while every text field beside it reports on blur.
+      onBlur={() => onFieldBlur('isolatedCamp')}
       invalid={Boolean(errors.isolatedCamp)}
       invalidText={errors.isolatedCamp}
     >
@@ -532,7 +536,12 @@ const Schedule5: FC = () => {
       (data?.camps ?? [])
         .filter((camp) => camp.campId !== panelCampId)
         .map((camp) => camp.campName)
-        .filter((name): name is string => name !== null),
+        // `typeof name === 'string'`, NOT `name !== null`: `Camp` is serialised with
+        // `@JsonInclude(NON_NULL)` (`Camp.java:37`), so a null CAMP_NAME is OMITTED from the JSON
+        // rather than sent as null. The served value is then `undefined` — which the interface's
+        // `string | null` does not describe — and a null-only guard would pass it through to
+        // `name.toUpperCase()` in `isDuplicateName`, throwing during render.
+        .filter((name): name is string => typeof name === 'string'),
     [data, panelCampId],
   )
 
@@ -799,6 +808,31 @@ const Schedule5: FC = () => {
     }
   }
 
+  /**
+   * Reveal every offending field — the one place blur is bypassed, because at Save the licensee has
+   * asked about the whole form rather than one field.
+   *
+   * Minus the ones BR-03 merely COPIED. An out-of-range Associated Camp Volume propagates into all
+   * eleven volume-bearing categories (`handleCampVolumeChange`), so revealing every erroring key puts
+   * TWELVE copies of one mistake on screen.
+   *
+   * Scoped to categories still holding the propagated text, NOT to every `.volume` key: a category
+   * the licensee edited afterwards differs, and that is their own error to see. Blanket-suppressing
+   * volume errors would leave Save refusing with nothing on screen to explain why. Nothing stays
+   * hidden either way — fixing the camp volume re-propagates over all eleven, and BR-03 clobbers
+   * unconditionally, so the copies resolve with the field that caused them.
+   */
+  const revealErrors = (found: CampErrors) => {
+    const propagated = new Set(
+      found.associatedCampVolume === undefined
+        ? []
+        : VOLUME_CATEGORY_KEYS.filter(
+            (key) => form.categories[key].volume === form.associatedCampVolume,
+          ).map((key) => `${key}.volume`),
+    )
+    setBlurred(new Set(Object.keys(found).filter((key) => !propagated.has(key))))
+  }
+
   const handleSave = () => {
     if (saving || panelMode === 'closed' || panelMode === 'view') {
       return
@@ -806,10 +840,8 @@ const Schedule5: FC = () => {
     clearBanners()
     const found = validateCamp(form, otherCampNames)
     if (!isCampFormValid(found)) {
-      // A client rejection issues NO request; the entered values stay exactly as typed. Reporting
-      // every offending field at once is the one place blur is bypassed — at Save the licensee has
-      // asked about the whole form, not one field.
-      setBlurred(new Set(Object.keys(found)))
+      // A client rejection issues NO request; the entered values stay exactly as typed.
+      revealErrors(found)
       return
     }
     const savedName = form.campName.trim()
@@ -932,7 +964,7 @@ const Schedule5: FC = () => {
     clearBanners()
     const found = validateCamp(form, otherCampNames)
     if (!isCampFormValid(found)) {
-      setBlurred(new Set(Object.keys(found)))
+      revealErrors(found)
       return
     }
     const savedName = form.campName.trim()

@@ -2015,3 +2015,84 @@ describe('Schedule 5 sub-page links: CFM-002 is dirty-gated, CFM-004 is not', ()
     expect(dialogIsOpen('Leave camp report')).toBe(false)
   })
 })
+
+describe('Schedule 5 review fixes (PR #317)', () => {
+  const VOLUME_RANGE = 'Entered volume must be between 0 and 9,999,999.'
+
+  test('a camp whose campName is OMITTED from the JSON does not crash the page', async () => {
+    // `Camp` is serialised with @JsonInclude(NON_NULL) (Camp.java:37), so a null CAMP_NAME is
+    // omitted entirely rather than sent as null. The served value is `undefined`, which the
+    // interface's `string | null` does not describe — a `!== null` guard passes it through to
+    // `name.toUpperCase()` in isDuplicateName and throws during render.
+    const nameless: Partial<Camp> = { ...cedarFlats, campId: 8402 }
+    delete nameless.campName
+    server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [cedarFlats, nameless] }))))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+
+    // Editing the NAMED camp is what reaches the duplicate check: its name is non-blank and legal,
+    // so validateCampName passes and the `else if (isDuplicateName(...))` branch runs.
+    await user.click((await screen.findAllByRole('button', { name: /^edit$/i }))[0])
+    expect(await screen.findByLabelText('Camp Name')).toHaveValue('Cedar Flats Camp')
+  })
+
+  test('an out-of-range camp volume reports ONCE on Save, not twelve times', async () => {
+    // BR-03 copies the Associated Camp Volume into all eleven volume-bearing categories, so a
+    // naive reveal of every erroring key shows twelve copies of one mistake.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '99999999')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText(VOLUME_RANGE)).toBeInTheDocument()
+    expect(screen.getAllByText(VOLUME_RANGE)).toHaveLength(1)
+  })
+
+  test('a category volume the licensee edited themselves is still reported on Save', async () => {
+    // The suppression is scoped to values BR-03 merely copied. An independently-edited category
+    // must not be silenced, or Save would refuse with nothing on screen to explain why.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText('Associated Camp Volume (m³)')
+    await user.clear(campVolume)
+    await user.type(campVolume, '99999999')
+    // Now diverge one category from the propagated text, keeping it invalid in its own right.
+    const catering = screen.getByLabelText('Catering and Food volume')
+    await user.clear(catering)
+    await user.type(catering, '88888888')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    // Two: the camp-level field and the one the licensee edited. Not twelve.
+    // findAllByText, not findByText — the latter throws on multiple matches, which is the state
+    // this test exists to assert.
+    expect(await screen.findAllByText(VOLUME_RANGE)).toHaveLength(2)
+  })
+
+  test('leaving the Isolated Camp select without choosing reports it on blur', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ camps: [{ ...cedarFlats, isolatedCamp: null }] })),
+      ),
+    )
+    render(<Schedule5 />)
+    const user = userEvent.setup()
+    await openEditor(user)
+
+    const select = screen.getByLabelText('Isolated Camp')
+    expect(select).toHaveValue('')
+    expect(screen.queryByText('Isolated Camp is required.')).toBeNull()
+
+    // Focus it, then leave without choosing anything — no change event fires, only a blur.
+    select.focus()
+    await user.tab()
+    expect(await screen.findByText('Isolated Camp is required.')).toBeInTheDocument()
+  })
+})
