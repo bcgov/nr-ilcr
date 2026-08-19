@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule10;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -367,4 +368,474 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       """)
   List<BecClassificationRow> findReferencedBecClassifications(
       @Param("millId") long millId, @Param("year") int year);
+
+  // ===============================================================================================
+  // WRITES
+  //
+  // Two rules govern everything below.
+  //
+  // AUDIT COLUMNS. REVISION_COUNT and both ENTRY_*/UPDATE_* pairs are NOT NULL with no defaults
+  // on both Schedule 10 tables, in delivery and in the test schema, and the delivery triggers
+  // only feed the _AUD shadows — they populate nothing. Every INSERT therefore supplies all five
+  // explicitly, and every UPDATE re-stamps UPDATE_* while leaving ENTRY_* untouched. An omission
+  // is ORA-01400 locally, exactly as it would be in delivery.
+  //
+  // MILL SCOPE. There is no shared mill-scope guard in this application, so the SQL predicate IS
+  // the ownership check: every UPDATE and DELETE carries mill + year + category, and a zero-row
+  // result is how an IDOR attempt or an unknown id is detected. The detail table has no
+  // ILCR_MILL_ID of its own, so its statements reach that scope through an EXISTS on the parent
+  // page.
+  // ===============================================================================================
+
+  /** One derived moisture-code pair, as the surviving cross-reference offers it. */
+  record MoistureCodePair(String asmCode, String soilMoistureCode) {
+  }
+
+  /**
+   * The moisture codes offered for a BEC classification and RSMR class, through the surviving
+   * cross-reference.
+   *
+   * <p>This one query does double duty, which is why there is no separate offerable-BEC probe: the
+   * join through {@code ILCR_BEC_SOIL_MOISTUR_XREF} is exactly the gate that decides which
+   * catalogue rows may be chosen at all, so a BEC id outside the offerable set yields zero rows —
+   * the same outcome as an offerable id with no pair for the given RSMR class, and both are a 400.
+   *
+   * <p>The service picks from the result: exactly one candidate is used as-is, several are resolved
+   * by a documented deterministic rule (legacy left that choice to a field that no longer exists),
+   * and none is an error. Ordering here is only for stable results; the domain tie-break lives in
+   * the service where it is unit-testable.
+   *
+   * <p>{@code ACTIVE_IND} is honoured on both tables. Every row carries {@code 'Y'} today, but the
+   * columns exist and a de-activated row must not be offered.
+   *
+   * @param becId the BEC classification id
+   * @param rsmrClass the RSMR class code
+   * @return the candidate pairs, empty when the combination is not offered
+   */
+  @Query("""
+      SELECT DISTINCT x.RELATIVE_SOIL_MOISTUR_RGM_CODE AS asm_code,
+             x.ILCR_SOIL_MOISTURE_CODE                 AS soil_moisture_code
+        FROM THE.ILCR_SOIL_MOISTURE_XREF x
+        JOIN THE.ILCR_BEC_SOIL_MOISTUR_XREF b
+          ON b.SOIL_MOISTURE_XREF_ID = x.SOIL_MOISTURE_XREF_ID
+       WHERE b.BIOGEOCLIMATIC_CATALOGUE_ID = :becId
+         AND x.REL_SOIL_MOIST_RGM_CLS_CODE = :rsmrClass
+         AND x.ACTIVE_IND = 'Y'
+         AND b.ACTIVE_IND = 'Y'
+       ORDER BY x.RELATIVE_SOIL_MOISTUR_RGM_CODE, x.ILCR_SOIL_MOISTURE_CODE
+      """)
+  List<MoistureCodePair> findMoistureCodes(
+      @Param("becId") int becId, @Param("rsmrClass") String rsmrClass);
+
+  /**
+   * Next construction-page id, from the sequence legacy declares for this table.
+   *
+   * <p>Deliberately NOT the shared {@code ILCR_REPORT_COMMON_SEQ}: repointing the master at a
+   * cross-schedule sequence would diverge from legacy on something every other report family draws
+   * from. This sequence sits un-advanced in the seeded delivery image because Schedule 10's rows
+   * were bulk-loaded rather than written through the application, which is an environment defect to
+   * be corrected by advancing the sequence past the current maximum id — not a reason to change the
+   * code.
+   */
+  @Query("SELECT THE.ROAD_CONSTRUCTION_REPORT_SEQ.NEXTVAL FROM DUAL")
+  int nextPageId();
+
+  /** Next road-detail id, from the shared report sequence legacy declares for the detail table. */
+  @Query("SELECT THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL FROM DUAL")
+  int nextRoadDetailId();
+
+  /** Next cost-line id. */
+  @Query("SELECT THE.ILCR_COST_REPORT_DETAIL_SEQ.NEXTVAL FROM DUAL")
+  int nextCostDetailId();
+
+  /**
+   * Insert one construction page (category {@code '10'}, {@code REVISION_COUNT = 0}, all four audit
+   * columns stamped). The entered columns arrive as one entity whose id is the PK the service took
+   * from {@link #nextPageId()}, so it can key the child writes to it.
+   *
+   * <p>{@code CONSTRUCTION_DATE} is deliberately not written: the legacy converter never sets it,
+   * and all 52 real delivery pages hold NULL.
+   */
+  @Modifying
+  @Query("""
+      INSERT INTO THE.ROAD_CONSTRUCTION_REPRT
+          (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+           CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE,
+           TSB_NUMBER_CODE, TSA_NUMBER, TFL_NUMBER_CODE,
+           REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES
+          (:#{#page.roadConstructionReprtId()}, :year, :millId, '10',
+           :#{#page.constructionPeriod()}, :#{#page.constructionDivisionName()},
+           :#{#page.ilcrForestRegionCode()},
+           :#{#page.tsbNumberCode()}, :#{#page.tsaNumber()}, :#{#page.tflNumberCode()},
+           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+      """)
+  void insertPage(
+      @Param("page") RoadConstructionReportEntity page, @Param("millId") long millId,
+      @Param("year") int year, @Param("user") String user);
+
+  /**
+   * Optimistic-lock update of one page: sets the entered fields, bumps {@code REVISION_COUNT} and
+   * stamps {@code UPDATE_*}, only while the stored revision still matches and the row belongs to
+   * this mill, year and category.
+   *
+   * @return rows affected — {@code 1} on success; {@code 0} when the id is absent or foreign (→
+   *     404) OR the revision is stale (→ 409), which the service disambiguates via {@link
+   *     #countPage}
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ROAD_CONSTRUCTION_REPRT
+         SET CONSTRUCTION_PERIOD = :#{#page.constructionPeriod()},
+             CONSTRUCTION_DIVISION_NAME = :#{#page.constructionDivisionName()},
+             ILCR_FOREST_REGION_CODE = :#{#page.ilcrForestRegionCode()},
+             TSB_NUMBER_CODE = :#{#page.tsbNumberCode()},
+             TSA_NUMBER = :#{#page.tsaNumber()},
+             TFL_NUMBER_CODE = :#{#page.tflNumberCode()},
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ROAD_CONSTRUCTION_REPRT_ID = :#{#page.roadConstructionReprtId()}
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '10'
+         AND REVISION_COUNT = :expectedRevision
+      """)
+  int updatePage(
+      @Param("page") RoadConstructionReportEntity page, @Param("millId") long millId,
+      @Param("year") int year, @Param("expectedRevision") int expectedRevision,
+      @Param("user") String user);
+
+  /** Existence probe scoped to mill/year/category — the 404-versus-409 disambiguator for a page. */
+  @Query("""
+      SELECT COUNT(*)
+        FROM THE.ROAD_CONSTRUCTION_REPRT
+       WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '10'
+      """)
+  int countPage(@Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Insert one road detail. All five NOT NULL audit/revision columns are supplied, as are the two
+   * moisture codes.
+   *
+   * <p><strong>The two moisture codes are parameters, not entity fields, on purpose.</strong> The
+   * entity models the read shape, which omits them because the business departures removed those
+   * fields from the UI and the API. Their columns are nevertheless NOT NULL with enabled foreign
+   * keys, so the write must supply values — and it supplies DERIVED ones, resolved from the BEC
+   * classification and RSMR class through {@link #findMoistureCodes}. Passing them separately keeps
+   * the entity faithful to the departure while letting the insert satisfy the schema.
+   *
+   * <p>{@code BOULDER_AREA_PCT} is likewise removed and simply never written; it is nullable.
+   */
+  @Modifying
+  @Query("""
+      INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL
+          (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROAD_CONSTRUCTION_REPRT_ID, ROAD_NAME,
+           SIDE_SLOPE_PCT, ILCR_ROAD_LIFETIME_CODE, RIPPABLE_ROCK_PCT, SOLID_ROCK_PCT,
+           COARSE_MATERIAL_PCT, BECBIOGEO_CATALOGUE_ID, FINE_MATERIAL_PCT, ORGANIC_MATERIAL_PCT,
+           SUB_GRADE_LENGTH, DETAIL_ENGINEERING_COST_IND, END_HAUL_DISTANCE, END_HAUL_VOLUME,
+           OVERLAND_DISTANCE, OVERLAND_VOLUME, ILCR_ROAD_BALLAST_METHOD_CODE,
+           SUB_GRADE_SURFACE_WIDTH, ILCR_ROAD_BALLAST_MATERL_CODE, STABILIZING_LENGTH,
+           STABILIZING_SURFACE_WIDTH, STABILIZING_DEPTH, STABILIZING_DISTANCE_TO_SOURCE,
+           REL_SOIL_MOIST_RGM_CLS_CODE, COMMENTS,
+           ILCR_SOIL_MOISTURE_CODE, RELATIVE_SOIL_MOISTUR_RGM_CODE,
+           REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES
+          (:#{#detail.roadConstructionReprtDtlId()}, :#{#detail.roadConstructionReprtId()},
+           :#{#detail.roadName()}, :#{#detail.sideSlopePct()}, :#{#detail.ilcrRoadLifetimeCode()},
+           :#{#detail.rippableRockPct()}, :#{#detail.solidRockPct()},
+           :#{#detail.coarseMaterialPct()}, :#{#detail.becbiogeoCatalogueId()},
+           :#{#detail.fineMaterialPct()}, :#{#detail.organicMaterialPct()},
+           :#{#detail.subGradeLength()}, :#{#detail.detailEngineeringCostInd()},
+           :#{#detail.endHaulDistance()}, :#{#detail.endHaulVolume()},
+           :#{#detail.overlandDistance()}, :#{#detail.overlandVolume()},
+           :#{#detail.ilcrRoadBallastMethodCode()}, :#{#detail.subGradeSurfaceWidth()},
+           :#{#detail.ilcrRoadBallastMaterlCode()}, :#{#detail.stabilizingLength()},
+           :#{#detail.stabilizingSurfaceWidth()}, :#{#detail.stabilizingDepth()},
+           :#{#detail.stabilizingDistanceToSource()}, :#{#detail.relSoilMoistRgmClsCode()},
+           :#{#detail.comments()},
+           :soilMoistureCode, :asmCode,
+           0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+      """)
+  void insertRoadDetail(
+      @Param("detail") RoadConstructionReportDetailEntity detail,
+      @Param("soilMoistureCode") String soilMoistureCode, @Param("asmCode") String asmCode,
+      @Param("user") String user);
+
+  /**
+   * Optimistic-lock update of one road detail, scoped to its parent page AND that page's mill, year
+   * and category.
+   *
+   * <p>The detail table has no {@code ILCR_MILL_ID}, so the mill scope arrives through the {@code
+   * EXISTS} on the parent. Pinning {@code ROAD_CONSTRUCTION_REPRT_ID} as well means a detail id
+   * that exists under a DIFFERENT page cannot be edited through this page's path.
+   *
+   * @return rows affected — {@code 1} on success; {@code 0} when the detail is absent, foreign, or
+   *     the revision is stale, which the service disambiguates via {@link #countRoadDetail}
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ROAD_CONSTRUCTION_REPRT_DTL
+         SET ROAD_NAME = :#{#detail.roadName()},
+             SIDE_SLOPE_PCT = :#{#detail.sideSlopePct()},
+             ILCR_ROAD_LIFETIME_CODE = :#{#detail.ilcrRoadLifetimeCode()},
+             RIPPABLE_ROCK_PCT = :#{#detail.rippableRockPct()},
+             SOLID_ROCK_PCT = :#{#detail.solidRockPct()},
+             COARSE_MATERIAL_PCT = :#{#detail.coarseMaterialPct()},
+             BECBIOGEO_CATALOGUE_ID = :#{#detail.becbiogeoCatalogueId()},
+             FINE_MATERIAL_PCT = :#{#detail.fineMaterialPct()},
+             ORGANIC_MATERIAL_PCT = :#{#detail.organicMaterialPct()},
+             SUB_GRADE_LENGTH = :#{#detail.subGradeLength()},
+             DETAIL_ENGINEERING_COST_IND = :#{#detail.detailEngineeringCostInd()},
+             END_HAUL_DISTANCE = :#{#detail.endHaulDistance()},
+             END_HAUL_VOLUME = :#{#detail.endHaulVolume()},
+             OVERLAND_DISTANCE = :#{#detail.overlandDistance()},
+             OVERLAND_VOLUME = :#{#detail.overlandVolume()},
+             ILCR_ROAD_BALLAST_METHOD_CODE = :#{#detail.ilcrRoadBallastMethodCode()},
+             SUB_GRADE_SURFACE_WIDTH = :#{#detail.subGradeSurfaceWidth()},
+             ILCR_ROAD_BALLAST_MATERL_CODE = :#{#detail.ilcrRoadBallastMaterlCode()},
+             STABILIZING_LENGTH = :#{#detail.stabilizingLength()},
+             STABILIZING_SURFACE_WIDTH = :#{#detail.stabilizingSurfaceWidth()},
+             STABILIZING_DEPTH = :#{#detail.stabilizingDepth()},
+             STABILIZING_DISTANCE_TO_SOURCE = :#{#detail.stabilizingDistanceToSource()},
+             REL_SOIL_MOIST_RGM_CLS_CODE = :#{#detail.relSoilMoistRgmClsCode()},
+             COMMENTS = :#{#detail.comments()},
+             ILCR_SOIL_MOISTURE_CODE = :soilMoistureCode,
+             RELATIVE_SOIL_MOISTUR_RGM_CODE = :asmCode,
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :#{#detail.roadConstructionReprtDtlId()}
+         AND ROAD_CONSTRUCTION_REPRT_ID = :#{#detail.roadConstructionReprtId()}
+         AND REVISION_COUNT = :expectedRevision
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT r
+                      WHERE r.ROAD_CONSTRUCTION_REPRT_ID = :#{#detail.roadConstructionReprtId()}
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int updateRoadDetail(
+      @Param("detail") RoadConstructionReportDetailEntity detail,
+      @Param("soilMoistureCode") String soilMoistureCode, @Param("asmCode") String asmCode,
+      @Param("millId") long millId, @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision, @Param("user") String user);
+
+  /**
+   * Existence probe for a road detail under a specific page and mill/year — the 404-versus-409
+   * disambiguator, and the IDOR check for the detail level.
+   */
+  @Query("""
+      SELECT COUNT(*)
+        FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+        JOIN THE.ROAD_CONSTRUCTION_REPRT r
+          ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+       WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+         AND d.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND r.ILCR_MILL_ID = :millId
+         AND r.REPORT_YEAR = :year
+         AND r.ILCR_CATEGORY_ID = '10'
+      """)
+  int countRoadDetail(
+      @Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId,
+      @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Upsert one cost line for a road detail: update in place when the row exists, else insert with a
+   * fresh sequence PK.
+   *
+   * <p>Update-in-place rather than delete-and-reinsert preserves the audit trail, and a blank cost
+   * is an UPDATE to {@code COST = NULL} rather than a row delete — legacy never deletes a cost row
+   * on save, and the read path treats a stored NULL exactly as it treats an absent row.
+   *
+   * @param roadDetailId the owning road detail
+   * @param costItemId the legacy cost-item ordinal
+   * @param cost the amount, or {@code null} to clear it in place
+   * @param user the actor stamped into the audit columns
+   * @param millId the mill the owning page must belong to
+   * @param year the reporting year the owning page must belong to
+   */
+  default void upsertCostLine(
+      int roadDetailId, int costItemId, Integer cost, String user, long millId, int year) {
+    if (updateCostLine(roadDetailId, costItemId, cost, user, millId, year) == 0) {
+      insertCostLine(nextCostDetailId(), roadDetailId, costItemId, cost, user);
+    }
+  }
+
+  /**
+   * Update-in-place half of {@link #upsertCostLine}; {@code 0} rows when the item row is absent.
+   */
+  @Modifying
+  @Query("""
+      UPDATE THE.ILCR_COST_REPORT_DETAIL
+         SET COST = :cost,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSTIMESTAMP
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+         AND ILCR_REPORT_COST_ITEM_ID = :costItemId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+                       JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                         ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+                      WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int updateCostLine(
+      @Param("roadDetailId") int roadDetailId, @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost, @Param("user") String user, @Param("millId") long millId,
+      @Param("year") int year);
+
+  /**
+   * Insert half of {@link #upsertCostLine}. Schedule 10 cost rows carry a NULL {@code
+   * ILCR_REPORT_SUMMARY_ID} — there is no category-{@code '10'} summary row to hang them from — and
+   * link to their road detail instead. {@code VOLUME}, {@code ITEM_DESCRIPTION} and {@code
+   * COMMENTS} stay NULL: legacy writes none of them for this schedule.
+   */
+  @Modifying
+  @Query("""
+      INSERT INTO THE.ILCR_COST_REPORT_DETAIL
+          (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_CONSTRUCTION_REPRT_DTL_ID,
+           ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES
+          (:id, NULL, :roadDetailId, :costItemId, NULL, :cost, NULL, 0,
+           :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+      """)
+  void insertCostLine(
+      @Param("id") int id, @Param("roadDetailId") int roadDetailId,
+      @Param("costItemId") int costItemId, @Param("cost") Integer cost,
+      @Param("user") String user);
+
+  /**
+   * Delete every cost line of one road detail. Runs before the detail itself: delivery's FK from
+   * {@code ILCR_COST_REPORT_DETAIL} to the detail table is ENABLED with {@code NO ACTION}, so a
+   * parent still holding children is rejected with {@code ORA-02292}.
+   */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+                       JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                         ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+                      WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int deleteCostsForRoadDetail(
+      @Param("roadDetailId") int roadDetailId, @Param("millId") long millId,
+      @Param("year") int year);
+
+  /**
+   * Delete every cost line belonging to any road detail of one page — the first step of the page
+   * cascade, since the grandchildren must go before the children.
+   */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (
+             SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID
+               FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+               JOIN THE.ROAD_CONSTRUCTION_REPRT r
+                 ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+              WHERE d.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                AND r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int deleteCostsForPage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
+
+  /** Delete one road detail, scoped to its parent page. Its cost lines must already be gone. */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
+       WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+         AND ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT r
+                      WHERE r.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int deleteRoadDetail(
+      @Param("roadDetailId") int roadDetailId, @Param("pageId") int pageId,
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Delete every road detail of one page — the second step of the page cascade. */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ROAD_CONSTRUCTION_REPRT_DTL
+       WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND EXISTS (SELECT 1
+                       FROM THE.ROAD_CONSTRUCTION_REPRT r
+                      WHERE r.ROAD_CONSTRUCTION_REPRT_ID = :pageId
+                        AND r.ILCR_MILL_ID = :millId
+                        AND r.REPORT_YEAR = :year
+                        AND r.ILCR_CATEGORY_ID = '10')
+      """)
+  int deleteRoadDetailsForPage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Delete one page, scoped to mill/year/category. Runs LAST in the cascade, after its cost lines
+   * and road details.
+   *
+   * @return rows affected — {@code 0} when the id is not a category-{@code '10'} page under this
+   *     mill/year, which the service has already answered as a 404
+   */
+  @Modifying
+  @Query("""
+      DELETE FROM THE.ROAD_CONSTRUCTION_REPRT
+       WHERE ROAD_CONSTRUCTION_REPRT_ID = :pageId
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '10'
+      """)
+  int deletePage(
+      @Param("pageId") int pageId, @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * The stored classification codes of one road detail, for the unchanged-expired-code exemption.
+   */
+  @Query("""
+      SELECT d.ILCR_ROAD_LIFETIME_CODE        AS road_lifetime_code,
+             d.ILCR_ROAD_BALLAST_METHOD_CODE  AS ballast_method_code,
+             d.ILCR_ROAD_BALLAST_MATERL_CODE  AS ballast_material_code,
+             d.REL_SOIL_MOIST_RGM_CLS_CODE    AS rsmr_class_code,
+             d.BECBIOGEO_CATALOGUE_ID         AS bec_id,
+             d.RELATIVE_SOIL_MOISTUR_RGM_CODE AS asm_code,
+             d.ILCR_SOIL_MOISTURE_CODE        AS soil_moisture_code
+        FROM THE.ROAD_CONSTRUCTION_REPRT_DTL d
+       WHERE d.ROAD_CONSTRUCTION_REPRT_DTL_ID = :roadDetailId
+      """)
+  Optional<StoredClassification> findStoredClassification(@Param("roadDetailId") int roadDetailId);
+
+  /**
+   * The classification codes a road detail already carries, plus the moisture pair derived from
+   * them.
+   *
+   * <p>Read on every edit so an UNCHANGED classification keeps the moisture pair already stored.
+   * Legacy's {@code filterMoistureCodeLists()} ({@code Schedule10MB:665-689}) rebuilds only the two
+   * dropdown LISTS — it never assigns to the detail — so the stored ASM and soil-moisture codes
+   * change in legacy only when the user picks new ones. Re-deriving unconditionally would rewrite
+   * two NOT NULL columns the legacy print reports consume during an edit that touched neither input
+   * (code review 2026-08-18).
+   *
+   * <p>This also delivers the unchanged-code exemption for the BEC classification: a stored id that
+   * has since dropped out of the offerable xref-gated set would otherwise make its road detail
+   * permanently unsaveable, because the derivation rejects a zero-candidate pair.
+   */
+  record StoredClassification(
+      String roadLifetimeCode, String ballastMethodCode, String ballastMaterialCode,
+      String rsmrClassCode, Integer becId, String asmCode, String soilMoistureCode) {
+  }
 }

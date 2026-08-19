@@ -60,13 +60,25 @@ class RoadGroup10LookupTest {
         "08, 10", "14, 10",
         "15, 9", "35, 9", "49, 9", "59, 9", "62, 9", "18, 9",
         "03, 11", "23, 11", "33, 11", "55, 11", "56, 11",
-        "05, 5", "52B, 5",
+        "05, 5",
         "30, 4", "52, 4", "53, 4",
         "48, 7",
         "01, 1", "41, 1",
     })
     void mapsToLegacyRoadGroup(String tfl, String expected) {
       assertThat(RoadGroup10Lookup.rmgFor(null, null, tfl)).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("TFL 52B is unmapped — unstorable at VARCHAR2(2), demoted as Schedule 6 did")
+    void tfl52bIsUnmapped() {
+      // Legacy leaves this case live, but it is unreachable on both sides: TFL_NUMBER_CODE is
+      // VARCHAR2(2) and ConstructionPageRequest.tflNumberCode carries @Size(max = 2), so a 3-char
+      // TFL never reaches the switch. Schedule 6 demoted it at an earlier review for exactly this
+      // reason; Schedule 10 followed at code review 2026-08-18. Asserted rather than deleted so the
+      // unreachability is recorded instead of merely absent.
+      assertThat(RoadGroup10Lookup.rmgFor(null, null, "52B")).isNull();
+      assertThat(RoadGroup10Lookup.canonicalTfl("52B")).isNull();
     }
 
     @Test

@@ -258,7 +258,7 @@ public class GlobalExceptionHandler {
     String key = converterKeyForField(causeMessage);
     if (key == null) {
       if (causeMessage.contains("java.math.BigDecimal")) {
-        key = "volumeConverterErrorMsg";
+        key = VOLUME_CONVERTER;
       } else if (causeMessage.contains("java.lang.Integer")
           || causeMessage.contains("java.lang.Long")) {
         key = "costConverterErrorMsg";
@@ -298,6 +298,12 @@ public class GlobalExceptionHandler {
         .orElse(null);
   }
 
+  /** Shared by the five Schedule 10 material percentages, which all fail identically. */
+  private static final String PERCENTAGE_CONVERTER = "percentageConverterErrorMsg";
+
+  /** Shared by every volume field, Schedule 10's two haul volumes included. */
+  private static final String VOLUME_CONVERTER = "volumeConverterErrorMsg";
+
   /**
    * Converter message keys scoped to {@code DeclaringType["property"]}, matched against the
    * reference
@@ -320,10 +326,21 @@ public class GlobalExceptionHandler {
    * collection
    * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
    */
-  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.of(
-      "CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg",
-      "CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg",
-      "CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg");
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.ofEntries(
+      Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg"),
+      // Schedule 10 (code review 2026-08-18). Without these, every malformed Integer on a road
+      // detail — a percentage or a haul volume — fell through to the type default and told the
+      // reporter their COST was invalid.
+      Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
+      Map.entry("RoadDetailRequest[\"endHaulVolume\"]", VOLUME_CONVERTER),
+      Map.entry("RoadDetailRequest[\"overlandVolume\"]", VOLUME_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"finePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"organicPct\"]", PERCENTAGE_CONVERTER));
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this

@@ -154,9 +154,16 @@ CREATE TABLE THE.ROAD_CONSTRUCTION_REPRT (
 --
 -- ILCR_SOIL_MOISTURE_CODE and RELATIVE_SOIL_MOISTUR_RGM_CODE are NOT NULL in delivery, yet LD-2 and
 -- LD-1 remove exactly those two fields from the UI/API. Story 11.1 is read-only and simply never
--- reads them, so they are nullable HERE to let the read fixtures exist. STORY 11.2 CANNOT INSERT A
--- DETAIL ROW WITHOUT THEM in delivery -- a sentinel value or a DDL change must be decided before
--- 11.2 is drafted. Their FKs are therefore omitted rather than mirrored (nothing references them).
+-- reads them.
+--
+-- CORRECTED: an earlier revision of this comment claimed both columns were "nullable HERE" with
+-- "their FKs omitted rather than mirrored". That contradicted the DDL 20 lines below, which declares
+-- both NOT NULL and mirrors both foreign keys (RCR_DTL_ILCR_SMC_FK, RCR_DTL_RSMRC_FK). The DDL is
+-- correct and the comment was not. It also framed the write path as needing "a sentinel value or a
+-- DDL change" -- neither is used: the write DERIVES both codes from the BEC classification and RSMR
+-- class through the surviving cross-reference, which is legacy's own mechanism. The single-row
+-- 'SM1'/'ASM1' placeholders below exist ONLY to satisfy these constraints for the read fixtures and
+-- exist nowhere in delivery; V20260818 adds the real codes alongside them.
 --
 -- REL_SOIL_MOIST_RGM_CLS_CODE (RSMR Class) is NULLABLE in delivery despite the view marking it
 -- required, and is populated in only 18 of 66 real rows -- the read must not assume it.

@@ -85,6 +85,62 @@ final class RoadGroup10Lookup {
   }
 
   /**
+   * The storable form of an entered TFL number, or {@code null} when it is not a valid TFL.
+   *
+   * <p>Legacy's validator ({@code ILCRTflNumberValidator:33-45}) accepts a TFL if the lookup
+   * resolves it directly, or if it resolves after applying the missing-leading-zero aliases ({@code
+   * RoadGroupUtil.translateNoLeadingZeroButNumberMatch} :202-215). It validates the alias but then
+   * stores the raw entry, which leaves an accepted value in a form the reference table does not
+   * hold; this returns the canonical form so the stored value is the one that resolves.
+   *
+   * <p><strong>On which table validates.</strong> The legacy validator calls Schedule <em>6</em>'s
+   * lookup even for this screen, which reads like a defect. Validating here against Schedule 10's
+   * own table is behaviourally equivalent, because <strong>the two accept and reject exactly the
+   * same values</strong>: they agree on every key either one holds, and the only code they ever
+   * disagreed on was {@code "52B"}, which neither offers now.
+   *
+   * <p>{@code "52B"} is worth a sentence because it is the one real difference in the two tables'
+   * history. Legacy kept it live here and Schedule 6 demoted it to a comment, on the grounds that
+   * {@code TFL_NUMBER_CODE} is {@code VARCHAR2(2)} on both sides and {@code
+   * ConstructionPageRequest.tflNumberCode} carries {@code @Size(max = 2)} — so a 3-character TFL
+   * can never reach either switch. This schedule followed at code review 2026-08-18.
+   *
+   * <p>Deliberately stated as a PROPERTY rather than a key count. Two earlier revisions of this
+   * note cited a number — first "an identical set of 22 keys", then "21 versus 20" — and both went
+   * stale, the second within the same change that demoted {@code 52B} (flagged at review
+   * 2026-08-19). The property is what the write path depends on; the count is trivia that rots.
+   *
+   * <p>Only the returned Road Group values differ between the tables, which is what this class
+   * exists to keep separate. The cross-wiring is still worth reporting upstream: the tables are
+   * maintained independently, so a future edit to either would silently split validation from
+   * derivation.
+   *
+   * @param tflNumberCode the entered TFL number, possibly missing a leading zero
+   * @return the canonical TFL to store, or {@code null} when the value is not a valid TFL
+   */
+  static String canonicalTfl(String tflNumberCode) {
+    if (tflNumberCode == null) {
+      return null;
+    }
+    if (rg10ByTflNumberCode(tflNumberCode) != null) {
+      return tflNumberCode;
+    }
+    String alias = leadingZeroAlias(tflNumberCode);
+    return alias != null && rg10ByTflNumberCode(alias) != null ? alias : null;
+  }
+
+  /** Verbatim {@code RoadGroupUtil.translateNoLeadingZeroButNumberMatch} (:202-215). */
+  private static String leadingZeroAlias(String tflNumberCode) {
+    return switch (tflNumberCode) {
+      case "1" -> "01";
+      case "3" -> "03";
+      case "5" -> "05";
+      case "8" -> "08";
+      default -> null;
+    };
+  }
+
+  /**
    * Verbatim port of {@code RoadGroupUtil.setRG10ByTsaTsbNumberCode} (:285-468).
    *
    * <p>Sonar measures this at cognitive complexity 109 against a limit of 15, and the measurement
@@ -312,7 +368,12 @@ final class RoadGroup10Lookup {
       case "03", "23", "33", "55", "56":
         roadGroup = "11";
         break;
-      case "05", "52B":
+      // Legacy maps the three-character TFL "52B" to this same road group. It is deliberately NOT
+      // reproduced: TFL_NUMBER_CODE is VARCHAR2(2) on both sides and the request constrains the
+      // field to two characters, so such a value cannot reach this switch on read or on save.
+      // Including it would read as an accepted value the request contract rejects.
+      // schedule6.RoadGroupLookup dropped it earlier for the same reason (code review 2026-08-18).
+      case "05":
         roadGroup = "5";
         break;
       case "30", "52", "53":
