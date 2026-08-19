@@ -527,10 +527,10 @@ class Schedule10RoadDetailWriteIT extends AbstractOracleIT {
         "SELECT RELATIVE_SOIL_MOISTUR_RGM_CODE, ILCR_SOIL_MOISTURE_CODE"
             + " FROM THE.ROAD_CONSTRUCTION_REPRT_DTL WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID = ?",
         detailId);
-    assertThat(stored.get("RELATIVE_SOIL_MOISTUR_RGM_CODE"))
-        .as("an unrelated edit must not rewrite the derived ASM code")
-        .isEqualTo("F");
-    assertThat(stored).containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
+    assertThat(stored)
+        .as("an unrelated edit must not rewrite the derived moisture pair")
+        .containsEntry("RELATIVE_SOIL_MOISTUR_RGM_CODE", "F")
+        .containsEntry("ILCR_SOIL_MOISTURE_CODE", "Moist");
   }
 
   @Test
