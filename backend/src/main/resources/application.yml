@@ -3,6 +3,9 @@ spring:
     name: nr-ilcr-backend
   jackson:
     default-property-inclusion: non_null
+    # Serialize dates/times in Pacific (the app serves BC); paired with TimeZoneConfiguration, which
+    # sets the JVM default so java.util.Date/SYSDATE values are Pacific on UTC containers too.
+    time-zone: America/Vancouver
     deserialization:
       # Money must never be silently truncated. Jackson enables ACCEPT_FLOAT_AS_INT by default, so a
       # cost of 1234.99 posted into an Integer field binds as 1234 and the licensee is told the save
