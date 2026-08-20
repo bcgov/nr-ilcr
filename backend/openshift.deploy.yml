@@ -31,7 +31,7 @@ parameters:
   - name: CPU_REQUEST
     value: "30m"
   - name: MEMORY_REQUEST
-    value: "384Mi"
+    value: "256Mi"
   - name: MEMORY_LIMIT
     description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile). Raised for the embedded JasperReports 7 engine (Batik/OpenPDF/fonts add classpath + metaspace + native AWT footprint) per AD-16 "size the reporting path's pod CPU/Mem".
     value: "1Gi"
