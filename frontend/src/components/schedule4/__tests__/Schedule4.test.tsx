@@ -784,4 +784,88 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
 
     expect(await screen.findByRole('table', { name: /Towing Total/i })).toBeInTheDocument()
   })
+
+  test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
+    let releasePut = () => {}
+    const releasePromise = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+
+    server.use(
+      http.get(URL, ({ request }) =>
+        new window.URL(request.url).searchParams.get('millId') === '999'
+          ? HttpResponse.json(
+              doc({
+                millId: 999,
+                year: 2020,
+                editable: false,
+                locations: [
+                  {
+                    id: 999,
+                    revisionCount: 1,
+                    name: 'Context 999/2020 loaded',
+                    comments: null,
+                    categories: [],
+                    subPageRows: [],
+                  },
+                ],
+              }),
+            )
+          : HttpResponse.json(doc()),
+      ),
+      http.put(LOCATIONS_URL, async () => {
+        await releasePromise
+        return HttpResponse.json({
+          ...doc(),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+
+    const rootRoute = createRootRoute()
+    const scheduleRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/schedule-4',
+      validateSearch: realScheduleRoute.options.validateSearch,
+      component: () => (
+        <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+          {/* eslint-disable-next-line @typescript-eslint/no-use-before-define */}
+          <StaleRaceHarness />
+        </MillYearProvider>
+      ),
+    })
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([scheduleRoute]),
+      history: createMemoryHistory({ initialEntries: ['/schedule-4'] }),
+    })
+    render(<RouterProvider router={router} />)
+    const user = userEvent.setup()
+
+    await screen.findByText('Harbour Dump')
+    await user.click(screen.getByRole('button', { name: /add new location/i }))
+    await user.type(screen.getByLabelText('Location Name'), 'New Dump')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Context 999/2020 loaded')).toBeInTheDocument()
+
+    releasePut()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+  })
 })
+
+import useMillYear from '@/context/millYear/useMillYear'
+
+const StaleRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule4 />
+    </>
+  )
+}

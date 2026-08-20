@@ -25,7 +25,8 @@ import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
-import useMillYear from '@/context/millYear/useMillYear'
+import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
+import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import CodeComboBox from '@/components/core/CodeComboBox'
@@ -85,8 +86,31 @@ const phoneInput = (raw: string): string => {
 }
 
 const Schedule8: FC = () => {
-  const { millId, year } = useMillYear()
-  const contextMissing = millId === null || year === null
+  const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
+
+  // Save/delete/check-status all run through the shared hook's guarded run() (Story 29.6): a stale
+  // in-flight write can no longer repaint a newly-switched mill/year. `saving` is the single in-flight
+  // lock for every write (it also gates Check Status) — Schedule 8 had no separate checking lock.
+  const {
+    saving,
+    message: saveMessage,
+    actionError: saveError,
+    checkResult,
+    setMessage: setSaveMessage,
+    setActionError: setSaveError,
+    setCheckResult,
+    clearBanners,
+    resetBanners,
+    run,
+    save,
+    remove,
+    checkStatus,
+  } = useScheduleMutations<Schedule8CheckStatusResponse>({
+    path: '/v1/schedule8',
+    millId,
+    year,
+    isCurrent,
+  })
 
   // Sample/rates level from the URL (pageId, sampleId); navigate updates it.
   const search = scheduleRoute.useSearch()
@@ -113,10 +137,6 @@ const Schedule8: FC = () => {
   const [optionsError, setOptionsError] = useState<string | null>(null)
   const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!contextMissing)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [checkResult, setCheckResult] = useState<Schedule8CheckStatusResponse | null>(null)
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<PageForm>(() => emptyPageForm())
@@ -133,9 +153,8 @@ const Schedule8: FC = () => {
     setIsLoading(true)
     setData(null)
     setErrorDetail(null)
-    setSaveMessage(null)
-    setSaveError(null)
-    setCheckResult(null)
+    // Drop the banners AND release the in-flight lock (Story 29.6 reset) on a mill/year change.
+    resetBanners()
     setPanelMode('closed')
     /* eslint-enable @eslint-react/set-state-in-effect */
     let active = true
@@ -160,7 +179,7 @@ const Schedule8: FC = () => {
     return () => {
       active = false
     }
-  }, [millId, year, contextMissing])
+  }, [millId, year, contextMissing, resetBanners])
 
   // Load the dropdown option lists once — reference data, independent of mill/year. A failure leaves
   // options null (dropdowns show empty lists); it never blocks the schedule read.
@@ -186,14 +205,8 @@ const Schedule8: FC = () => {
     }
   }, [])
 
-  const clearMessages = () => {
-    setSaveMessage(null)
-    setSaveError(null)
-    setCheckResult(null)
-  }
-
   const openNew = () => {
-    clearMessages()
+    clearBanners()
     setPanelMode('new')
     setForm(emptyPageForm())
     setEditId(null)
@@ -202,7 +215,7 @@ const Schedule8: FC = () => {
   }
 
   const openEditOrView = (page: Page, mode: 'edit' | 'view') => {
-    clearMessages()
+    clearBanners()
     setPanelMode(mode)
     setForm(seedPageForm(page))
     setEditId(page.id)
@@ -211,7 +224,7 @@ const Schedule8: FC = () => {
   }
 
   const openCopy = (page: Page) => {
-    clearMessages()
+    clearBanners()
     setPanelMode('copy')
     setForm(seedPageForm(page))
     setEditId(null)
@@ -259,22 +272,23 @@ const Schedule8: FC = () => {
       setSaveError('Please correct the highlighted fields before saving.')
       return
     }
-    setSaving(true)
-    clearMessages()
+    clearBanners()
     // Page ids present before the save — used to find a freshly created page (new/copy) in the reply.
     const prevIds = new Set(data.pages.map((p) => p.id))
-    apiService
-      .getAxiosInstance()
-      .put<Schedule8Response>(`/v1/schedule8/pages?millId=${millId}&year=${year}`, buildRequest())
-      .then((response) => {
-        setData(response.data)
-        setSaveMessage(response.data.message?.text ?? null)
+    // List-shaped write: PUT the /pages list endpoint (no by-id suffix — the id/revision travels in the
+    // body). run()'s isCurrent() guard drops the echo if mill/year changed mid-flight (Story 29.6).
+    save<Schedule8Response>(buildRequest(), {
+      suffix: '/pages',
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        setData(doc)
+        setSaveMessage(doc.message?.text ?? null)
         // Stay on the saved record (don't close): re-open it in edit mode — by id when editing, or the
         // one new id (new/copy) — refreshing the optimistic-lock token so a follow-up save doesn't 409.
         const saved =
           panelMode === 'edit' && editId !== null
-            ? response.data.pages.find((p) => p.id === editId)
-            : response.data.pages.find((p) => p.id != null && !prevIds.has(p.id))
+            ? doc.pages.find((p) => p.id === editId)
+            : doc.pages.find((p) => p.id != null && !prevIds.has(p.id))
         if (saved && saved.id != null) {
           setPanelMode('edit')
           setEditId(saved.id)
@@ -282,53 +296,51 @@ const Schedule8: FC = () => {
         } else {
           setPanelMode('closed')
         }
-      })
-      .catch((error: unknown) =>
-        setSaveError(extractDetail(error) || 'Schedule could not be saved.'),
-      )
-      .finally(() => setSaving(false))
+      },
+    })
   }
 
   const handleDelete = () => {
     if (saving || !confirmDelete) return
     const target = confirmDelete
     setConfirmDelete(null)
-    setSaving(true)
-    clearMessages()
-    apiService
-      .getAxiosInstance()
-      .delete<{ message?: { text?: string } }>(
-        `/v1/schedule8/pages/${target.id}?millId=${millId}&year=${year}`,
-      )
-      .then((response) => {
-        setSaveMessage(response.data?.message?.text ?? null)
+    clearBanners()
+    // By-id DELETE; the id/revision travels in the path. Schedule 8 is list-shaped, so (unlike the
+    // single-doc pages) it re-GETs after delete — DELETE returns only a message and the list must
+    // refresh. The re-GET stays hand-rolled at the call site (Story 29.6 per-page empty-state).
+    remove<{ message?: { text?: string } }>({
+      suffix: `/pages/${target.id}`,
+      fallback: 'Unable to delete page.',
+      onSuccess: (resp) => {
+        setSaveMessage(resp?.message?.text ?? null)
         setPanelMode('closed')
         // Delete returns only a message — re-read the document so the list reflects the removal.
-        return apiService
-          .getAxiosInstance()
-          .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`)
-          .then((reload) => setData(reload.data))
-      })
-      .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to delete page.'))
-      .finally(() => setSaving(false))
+        run(
+          apiService
+            .getAxiosInstance()
+            .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`),
+          {
+            fallback: 'Deleted, but the list could not be refreshed.',
+            onSuccess: (data) => setData(data),
+          },
+        )
+      },
+    })
   }
 
   const handleCheckStatus = () => {
     if (saving) return
-    setSaving(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
-    clearMessages()
-    apiService
-      .getAxiosInstance()
-      .post<Schedule8CheckStatusResponse>(
-        `/v1/schedule8/check-status?millId=${millId}&year=${year}`,
-      )
-      .then((response) => setCheckResult(response.data))
-      .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
-      .finally(() => setSaving(false))
+    // The single `saving` lock (shared with save/delete via run()) gates re-entrancy — Schedule 8 had
+    // no separate checking flag, so Check Status disables alongside any in-flight write.
+    clearBanners()
+    checkStatus<Schedule8CheckStatusResponse>({
+      fallback: 'Unable to check status.',
+      onSuccess: setCheckResult,
+    })
   }
 
   const openSamples = (pageId: number) => {
-    clearMessages()
+    clearBanners()
     setPanelMode('closed')
     // Push a history entry (search: pageId) so browser Back returns here to the page list.
     void navigate({ to: '/schedule-8', search: { pageId } })

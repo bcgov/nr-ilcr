@@ -30,7 +30,7 @@ import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
-import { numStr } from '@/utils/number'
+import { numStr, numStrFixed } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -53,17 +53,12 @@ const BEC_CATALOGUE_PATH = '/v1/schedule11/biogeoclimatic-catalogue'
 const BEC_DEBOUNCE_MS = 250
 
 // Legacy display masks (AD-5 no recompute — the values are server-computed, this only formats them).
-// Null renders BLANK, never "0": a null total means "no contributors", which is meaningful.
-const mask = (value: number | null | undefined, minFrac: number, maxFrac: number): string =>
-  value === null || value === undefined
-    ? ''
-    : value.toLocaleString('en-US', {
-        minimumFractionDigits: minFrac,
-        maximumFractionDigits: maxFrac,
-      })
-const money = (value: number | null | undefined): string => mask(value, 0, 0) // #,###,##0
-const area = (value: number | null | undefined): string => mask(value, 1, 1) // #,###,##0.0
-const ratio = (value: number | null | undefined): string => mask(value, 2, 2) // #,###,##0.00
+// Delegate to the shared en-CA numStrFixed (Story 29.8): one locale app-wide, no local toLocaleString
+// copy. numStrFixed keeps the same contract — fixed decimals, and BLANK (never "0") on null, since a
+// null total means "no contributors", which is meaningful.
+const money = (value: number | null | undefined): string => numStrFixed(value, 0) // #,###,##0
+const area = (value: number | null | undefined): string => numStrFixed(value, 1) // #,###,##0.0
+const ratio = (value: number | null | undefined): string => numStrFixed(value, 2) // #,###,##0.00
 
 // Whole-dollar costs: legacy accepted fractional input (ILCRCostConverter BigDecimal parse) and
 // Oracle COST NUMBER(15) ROUNDED it on insert, while the modern Integer wire would silently
