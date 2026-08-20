@@ -94,4 +94,95 @@ describe('Content Editing (Story 24.2)', () => {
     ).toBeInTheDocument()
     expect(put).not.toHaveBeenCalled()
   })
+
+  test('an edited message is sent on save', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(ENDPOINT, () => HttpResponse.json(SEED)),
+      http.put(ENDPOINT, async ({ request }) => {
+        put(await request.json())
+        return HttpResponse.json({
+          messageKey: '',
+          message: 'Data saved successfully',
+          entries: SEED,
+        })
+      }),
+    )
+    render(<HomeContent />)
+
+    const licensee = await screen.findByLabelText('Licensee Welcome Message')
+    await userEvent.clear(licensee)
+    await userEvent.type(licensee, '<p>New licensee text</p>')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ licensee: '<p>New licensee text</p>' }),
+    )
+  })
+
+  test('a load failure surfaces the error and disables save', async () => {
+    server.use(
+      http.get(ENDPOINT, () => HttpResponse.json({ detail: 'Boom on load.' }, { status: 500 })),
+    )
+    render(<HomeContent />)
+
+    expect(await screen.findByText('Boom on load.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  test('a 400 with per-field messages shows each verbatim (deduped)', async () => {
+    server.use(
+      http.get(ENDPOINT, () => HttpResponse.json(SEED)),
+      http.put(ENDPOINT, () =>
+        HttpResponse.json(
+          {
+            messages: [
+              { text: 'Licensee message is too long.' },
+              { text: 'Auditor message is too long.' },
+              { text: 'Licensee message is too long.' },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    )
+    render(<HomeContent />)
+
+    await screen.findByLabelText('Administrator Welcome Message')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Licensee message is too long.')).toBeInTheDocument()
+    expect(screen.getByText('Auditor message is too long.')).toBeInTheDocument()
+    // Deduped: the repeated licensee message renders once.
+    expect(screen.getAllByText('Licensee message is too long.')).toHaveLength(1)
+  })
+
+  test('a 400 with only a detail falls back to it', async () => {
+    server.use(
+      http.get(ENDPOINT, () => HttpResponse.json(SEED)),
+      http.put(ENDPOINT, () =>
+        HttpResponse.json({ detail: 'Home content not found.' }, { status: 400 }),
+      ),
+    )
+    render(<HomeContent />)
+
+    await screen.findByLabelText('Administrator Welcome Message')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Home content not found.')).toBeInTheDocument()
+  })
+
+  test('a save failure with no problem body shows the generic fallback', async () => {
+    server.use(
+      http.get(ENDPOINT, () => HttpResponse.json(SEED)),
+      http.put(ENDPOINT, () => HttpResponse.error()),
+    )
+    render(<HomeContent />)
+
+    await screen.findByLabelText('Administrator Welcome Message')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Unable to save the Home content.')).toBeInTheDocument()
+  })
 })
