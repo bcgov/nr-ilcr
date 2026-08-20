@@ -36,6 +36,26 @@
   gap: 0.5rem;
 }
 
+// Every label/value pair on the page — the record display grid, the derived read-outs in the
+// add/edit grid, and the totals strip. The label is told apart from its value by SIZE and COLOUR,
+// Carbon's own convention for a field label, rather than by weight: a 12px secondary-colour label
+// over a 14px primary-colour value, separated by Carbon's standard $spacing-03 label-to-field gap.
+// Three reinforcing cues, so nothing here needs to be bold to read as a label.
+.schedule-6__field {
+  dt {
+    @include type-style('label-01');
+
+    color: var(--cds-text-secondary);
+    margin-block-end: $spacing-03;
+  }
+
+  dd {
+    @include type-style('body-compact-01');
+
+    margin: 0;
+  }
+}
+
 // The add/edit field grid and the record display grid share one shape so a row reads the same in
 // both modes (legacy's two field rows: type/TFL/block/RMG then volume/cost/$ per m³, then Comments).
 //
@@ -52,36 +72,21 @@
 }
 
 // RMG and $/m³ are server-derived, so they sit in the add/edit grid as read-only text among Carbon
-// fields — and must wear Carbon's field metrics or they read as a different kind of thing. Carbon
-// renders a field as a 12px label-01 label, a $spacing-03 gap, then a 2rem size="sm" input whose
-// text is inset by the input's own $spacing-05 padding. These rules reproduce that so the derived
-// label lines up with `Supply Block`/`Volume m³` and the derived value lines up with the values
-// inside the inputs beside it (the same read-only-vs-input indent the sibling schedules document —
-// schedule1/index.scss:100-108, schedule2:25, schedule3:58). Scoped to `.schedule-6__derived`,
-// which appears only in the add/edit grid — the read-only row display renders plain `dt`/`dd` at
-// body size, which is uniform within that grid.
+// fields. The shared `.schedule-6__field` typography above already matches a Carbon field label;
+// what is left here is only what sitting BESIDE AN INPUT demands — a value on the input's own line,
+// indented to the input's own text inset (the read-only-vs-input indent the sibling schedules
+// document — schedule1/index.scss:100-108, schedule2:25, schedule3:58). Scoped to
+// `.schedule-6__derived`, which appears only in the add/edit grid.
 .schedule-6__derived {
   margin: 0;
 
-  // label-01 is 12px against the `dt`'s inherited 14px, so this is what makes the derived label
-  // match the Carbon field labels beside it rather than the display grid's plainer ones.
-  .schedule-6__field dt {
-    @include type-style('label-01');
-
-    color: var(--cds-text-secondary);
-    margin-block-end: $spacing-03;
-  }
-
   .schedule-6__field dd {
-    @include type-style('body-compact-01');
-
     display: flex;
     align-items: center;
     // $spacing-07 is 2rem — the height of the size="sm" inputs, so the value sits on their line
     // rather than riding up under the label. Holds the row aligned even when the value is blank,
     // as RMG is in the Add panel (deviation D).
     min-height: $spacing-07;
-    margin: 0;
     padding-inline-start: $spacing-05;
   }
 }
