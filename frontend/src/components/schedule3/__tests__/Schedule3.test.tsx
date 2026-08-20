@@ -432,4 +432,71 @@ describe('Schedule3 sub-page navigation (AC6)', () => {
     await user.click(within(dialog).getByRole('button', { name: /cancel/i }))
     expect(mockNavigate).not.toHaveBeenCalled()
   })
+
+  test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
+    let putGate: (v: unknown) => void = () => {}
+    const putPromise = new Promise((resolve) => {
+      putGate = resolve
+    })
+    let releasePut = () => {}
+    const releasePromise = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+
+    let putCalled = false
+    server.use(
+      http.get(URL, ({ request }) =>
+        new window.URL(request.url).searchParams.get('millId') === '999'
+          ? HttpResponse.json({
+              ...schedule3Doc,
+              millId: 999,
+              year: 2020,
+              editable: false,
+              comments: 'Context 999/2020 loaded',
+            })
+          : HttpResponse.json(schedule3Doc),
+      ),
+      http.put(URL, async () => {
+        putCalled = true
+        putGate(null)
+        await releasePromise
+        return HttpResponse.json({
+          ...schedule3Doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+
+    render(
+      <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findAllByRole('button', { name: /^save$/i })
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Context 999/2020 loaded')).toBeInTheDocument()
+
+    releasePut()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+  })
 })
+
+import useMillYear from '@/context/millYear/useMillYear'
+
+const StaleRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule3 />
+    </>
+  )
+}
