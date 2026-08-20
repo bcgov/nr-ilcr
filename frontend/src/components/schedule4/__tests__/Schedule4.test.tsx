@@ -786,16 +786,11 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
   })
 
   test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
-    let putGate: (v: unknown) => void = () => {}
-    const putPromise = new Promise((resolve) => {
-      putGate = resolve
-    })
     let releasePut = () => {}
     const releasePromise = new Promise<void>((resolve) => {
       releasePut = resolve
     })
 
-    let putCalled = false
     server.use(
       http.get(URL, ({ request }) =>
         new window.URL(request.url).searchParams.get('millId') === '999'
@@ -804,14 +799,21 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
                 millId: 999,
                 year: 2020,
                 editable: false,
-                locations: [{ id: 999, revisionCount: 1, name: 'Context 999/2020 loaded', comments: null, categories: [], subPageRows: [] }],
+                locations: [
+                  {
+                    id: 999,
+                    revisionCount: 1,
+                    name: 'Context 999/2020 loaded',
+                    comments: null,
+                    categories: [],
+                    subPageRows: [],
+                  },
+                ],
               }),
             )
           : HttpResponse.json(doc()),
       ),
       http.put(LOCATIONS_URL, async () => {
-        putCalled = true
-        putGate(null)
         await releasePromise
         return HttpResponse.json({
           ...doc(),
@@ -827,6 +829,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
       validateSearch: realScheduleRoute.options.validateSearch,
       component: () => (
         <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+          {/* eslint-disable-next-line @typescript-eslint/no-use-before-define */}
           <StaleRaceHarness />
         </MillYearProvider>
       ),

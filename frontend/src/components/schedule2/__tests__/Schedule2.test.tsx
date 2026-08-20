@@ -350,16 +350,11 @@ describe('Schedule2 page', () => {
   })
 
   test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
-    let putGate: (v: unknown) => void = () => {}
-    const putPromise = new Promise((resolve) => {
-      putGate = resolve
-    })
     let releasePut = () => {}
     const releasePromise = new Promise<void>((resolve) => {
       releasePut = resolve
     })
 
-    let putCalled = false
     server.use(
       http.get(URL, ({ request }) =>
         new window.URL(request.url).searchParams.get('millId') === '999'
@@ -373,8 +368,6 @@ describe('Schedule2 page', () => {
           : HttpResponse.json(schedule2Doc),
       ),
       http.put(URL, async () => {
-        putCalled = true
-        putGate(null)
         await releasePromise
         return HttpResponse.json({
           ...schedule2Doc,
@@ -385,6 +378,7 @@ describe('Schedule2 page', () => {
 
     render(
       <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+        {/* eslint-disable-next-line @typescript-eslint/no-use-before-define */}
         <StaleRaceHarness />
       </MillYearProvider>,
     )
