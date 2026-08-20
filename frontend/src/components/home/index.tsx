@@ -10,6 +10,8 @@ import type ReportingYear from '@/interfaces/ReportingYear'
 import type WorkingContext from '@/interfaces/WorkingContext'
 import type { ProblemBody } from '@/interfaces/WorkingContext'
 import { extractDetail } from '@/utils/error'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import type { HomeContentEntry } from '@/interfaces/HomeContent'
 import './index.scss'
 
 // Home is the landing page (legacy home.xhtml): pick a mill + reporting year and Save to establish
@@ -77,6 +79,25 @@ const Home: FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveErrors, setSaveErrors] = useState<string[]>([])
+  // Role-specific welcome message (Story 24.2 / UC-CNT-001, FR3 tie). Best-effort: a failure just
+  // hides the section, never blocks the picker.
+  const [roleMessage, setRoleMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    apiService
+      .getAxiosInstance()
+      .get<HomeContentEntry>('/v1/home-content/mine')
+      .then((response) => {
+        if (active) setRoleMessage(response.data.messageText)
+      })
+      .catch(() => {
+        // No welcome message to show — leave the section hidden.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -202,6 +223,16 @@ const Home: FC = () => {
             <InlineNotification kind="error" lowContrast title="Cannot save" subtitle={message} />
           </Column>
         ))}
+
+        {roleMessage && sanitizeHtml(roleMessage) && (
+          <Column sm={4} md={8} lg={16} className="home__message">
+            {/* Admin-authored welcome message, sanitized at render (the only dangerouslySetInnerHTML
+                in the app — see utils/sanitizeHtml). */}
+            {/* eslint-disable-next-line @eslint-react/dom-no-dangerously-set-innerhtml -- HTML is
+                DOMPurify-sanitized in sanitizeHtml(); this is the sole, deliberate rich-text sink. */}
+            <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(roleMessage) }} />
+          </Column>
+        )}
 
         <Column sm={4} md={8} lg={16} className="home__field">
           <Dropdown<MillSummary>

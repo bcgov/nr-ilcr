@@ -29,7 +29,9 @@ public class SchedulePermissions {
     // SUBMITTER is denied 403 on the Table Maintenance APIs, not merely hidden from the menu (S13).
     ROLE_ACTIONS.put(
         Role.ADMIN,
-        EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.MAINTAIN_CODE_TABLES));
+        EnumSet.of(
+            Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.MAINTAIN_CODE_TABLES,
+            Action.OPEN_REPORTING_YEAR, Action.EDIT_HOME_CONTENT));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 

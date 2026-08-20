@@ -17,6 +17,8 @@ export const ROUTES = {
   scheduleEleven: '/schedule-11',
   checkStatus: '/check-status',
   codeTables: '/code-tables',
+  openReportingYear: '/open-reporting-year',
+  homeContent: '/home-content',
   millAssociations: '/mill-associations',
   generateReports: '/generate-reports',
   printSchedules: '/print-schedules',
@@ -91,6 +93,8 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     name: 'Administration',
     adminOnly: true,
     items: [
+      { name: 'Open Reporting Year', path: ROUTES.openReportingYear },
+      { name: 'Home Content', path: ROUTES.homeContent },
       { name: 'Table Maintenance', path: ROUTES.codeTables },
       { name: 'Mill Associations', path: ROUTES.millAssociations },
     ],
