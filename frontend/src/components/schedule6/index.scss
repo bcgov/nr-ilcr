@@ -114,8 +114,12 @@
   margin: 0;
 }
 
-.schedule-6__totals-label {
-  font-weight: 600;
+// An expanded row keeps the grey its header shows on hover. `--cds-layer-hover` is the very token
+// Carbon's own `.cds--accordion__heading:hover` uses, so the two states match exactly and both
+// follow the active theme. Scoped to this page's accordion, and at three classes it outranks
+// Carbon's two-class hover rule.
+.schedule-6__section .cds--accordion__item--active > .cds--accordion__heading {
+  background-color: var(--cds-layer-hover);
 }
 
 .schedule-6__empty {

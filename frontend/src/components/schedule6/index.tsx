@@ -788,7 +788,7 @@ const Schedule6: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-6__section">
           <section aria-label="Totals" className="schedule-6__totals">
-            <span className="schedule-6__totals-label">Totals: </span>
+            <span>Totals: </span>
             {/* Its own container, NOT the record-row grid: that grid's 10rem minimum track is sized
                 for rows of inputs and wraps these three short numbers into a stack. */}
             <dl className="schedule-6__totals-fields">
