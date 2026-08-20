@@ -20,6 +20,8 @@ import java.util.List;
  * fields, which also eliminates BR-06's runtime filtering of those two lists.
  *
  * @param forestRegions the forest region codes
+ * @param tsaNumbers the TSA numbers offered by the location control
+ * @param supplyBlocks the supply block codes; the control narrows these to the chosen TSA
  * @param roadLifetimes the Road Type codes
  * @param ballastMethods the ballast method codes
  * @param ballastMaterials the ballast material codes
@@ -29,6 +31,8 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Schedule10CodeLists(
     List<CodeDescriptionDto> forestRegions,
+    List<CodeDescriptionDto> tsaNumbers,
+    List<CodeDescriptionDto> supplyBlocks,
     List<CodeDescriptionDto> roadLifetimes,
     List<CodeDescriptionDto> ballastMethods,
     List<CodeDescriptionDto> ballastMaterials,

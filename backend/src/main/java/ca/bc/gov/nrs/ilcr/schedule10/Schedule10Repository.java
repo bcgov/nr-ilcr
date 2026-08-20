@@ -318,6 +318,63 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
   List<CodeRow> findRsmrClasses(@Param("millId") long millId, @Param("year") int year);
 
   /**
+   * TSA numbers effective for the reporting year, PLUS any TSA a stored page already references.
+   *
+   * <p>Legacy sourced this control from {@code LookUpCaches.getTsaNumberCodeCache()}
+   * ({@code RoadConstructionReportType.java:378}). Serving it here keeps the entry constrained to
+   * real TSA numbers: the write path validates only the WIDTH of this leg, so without a bounded list
+   * an arbitrary value would persist and then serve a blank Road Group.
+   *
+   * @param millId the mill, used to find referenced codes
+   * @param year the reporting year
+   * @return code/description pairs, ordered by code
+   */
+  @Query("""
+      SELECT TSA_NUMBER AS code, DESCRIPTION AS description
+        FROM THE.TSA_NUMBER_CODE
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR TSA_NUMBER IN (
+             SELECT r.TSA_NUMBER
+               FROM THE.ROAD_CONSTRUCTION_REPRT r
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
+       ORDER BY TSA_NUMBER
+      """)
+  List<CodeRow> findTsaNumbers(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Supply block codes effective for the reporting year, PLUS any block a stored page references.
+   *
+   * <p>Legacy narrowed this list to blocks whose code starts with the chosen TSA
+   * ({@code RoadConstructionReportType.java:428-434}); the full list is served and that narrowing is
+   * left to the control, which is where the chosen TSA lives.
+   *
+   * @param millId the mill, used to find referenced codes
+   * @param year the reporting year
+   * @return code/description pairs, ordered by code
+   */
+  @Query("""
+      SELECT TSB_NUMBER_CODE AS code, DESCRIPTION AS description
+        FROM THE.TSB_NUMBER_CODE
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR TSB_NUMBER_CODE IN (
+             SELECT r.TSB_NUMBER_CODE
+               FROM THE.ROAD_CONSTRUCTION_REPRT r
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '10')
+       ORDER BY TSB_NUMBER_CODE
+      """)
+  List<CodeRow> findSupplyBlocks(@Param("millId") long millId, @Param("year") int year);
+
+  /**
    * The BEC classifications a Schedule 10 road detail may reference.
    *
    * <p><strong>Joined through {@code ILCR_BEC_SOIL_MOISTUR_XREF} on purpose.</strong> Removing ASM
