@@ -33,7 +33,7 @@ import {
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
-import { extractDetail } from '@/utils/error'
+import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { numStr, numStrGroup, parseDecimalInput, roundCost } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -78,9 +78,9 @@ const NEW_CAMP_HEADING = 'New Camp Details'
 const COMMENTS_HEADING = 'If you have any additional comments, please enter them here.'
 const SECTION_HEADING = 'Existing Camps'
 
+// Base path for the shared mutations hook: camps writes go through its `/camps[/{id}]` suffix and
+// Check Status through its default `/check-status` suffix, so those literals no longer live here.
 const SCHEDULE5_PATH = '/v1/schedule5'
-const CAMPS_PATH = `${SCHEDULE5_PATH}/camps`
-const CHECK_STATUS_PATH = `${SCHEDULE5_PATH}/check-status`
 const MESSAGES_PATH = '/v1/messages'
 const COPY_MESSAGE_KEY = 'sch5.copy.msg'
 
@@ -451,11 +451,32 @@ const Schedule5: FC = () => {
   // The sub-page level is a search param, not a second route (see routes/schedule-5.tsx).
   const { camp: subPageCampId, sub: subPageKind } = scheduleRoute.useSearch()
 
-  const [saving, setSaving] = useState(false)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  // Save/delete/check-status all run through the shared hook's guarded run() (Story 29.6): the
+  // request/error/lock scaffolding and the stale-response guard live in one place rather than
+  // re-hand-rolled here. `saving` is the single in-flight lock for every write.
+  const {
+    saving,
+    message: actionMessage,
+    actionError,
+    checkResult,
+    setMessage: setActionMessage,
+    setCheckResult,
+    clearBanners: clearHookBanners,
+    resetBanners: resetHookBanners,
+    run,
+    save,
+    remove,
+    checkStatus,
+  } = useScheduleMutations<Schedule5CheckStatusResponse>({
+    path: SCHEDULE5_PATH,
+    millId,
+    year,
+    isCurrent,
+  })
+
+  // Page-specific banner (not one of the hook's four): the copy instruction WRN-001, tied to the
+  // panel that opened it rather than to a write.
   const [copyWarning, setCopyWarning] = useState<string | null>(null)
-  const [checkResult, setCheckResult] = useState<Schedule5CheckStatusResponse | null>(null)
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<CampFormValues>(emptyForm)
@@ -479,19 +500,18 @@ const Schedule5: FC = () => {
   /** Which sub-page a link asked for, held behind CFM-004 (new camp) or CFM-002 (existing). */
   const [pendingSubPage, setPendingSubPage] = useState<SubPageKind | null>(null)
 
+  // The hook's clearBanners covers message/actionError/checkResult; the page adds its own copyWarning.
   const clearBanners = () => {
-    setActionMessage(null)
-    setActionError(null)
+    clearHookBanners()
     setCopyWarning(null)
-    setCheckResult(null)
   }
 
   // A mill/year change abandons the open panel, its draft, every banner and the check verdict.
   const resetTransient = useCallback(() => {
-    setActionMessage(null)
-    setActionError(null)
+    // resetBanners drops the three hook banners AND releases the saving lock (see below); copyWarning
+    // is the page's own banner and is cleared alongside it.
+    resetHookBanners()
     setCopyWarning(null)
-    setCheckResult(null)
     setPanelMode('closed')
     setForm(emptyForm())
     setBlurred(new Set())
@@ -501,11 +521,10 @@ const Schedule5: FC = () => {
     setConfirmClose(false)
     setPendingSwitch(null)
     setPendingSubPage(null)
-    // Release the mutation lock: a request still in flight was dispatched under the OLD context and
-    // its own guarded `finally` will deliberately skip the unlock, so without this every control
-    // gated on `saving` stays dead in the new context until a remount.
-    setSaving(false)
-  }, [])
+    // resetHookBanners() above also releases the mutation lock: a request still in flight was
+    // dispatched under the OLD context and its own guarded `finally` deliberately skips the unlock,
+    // so without this every control gated on `saving` stays dead in the new context until a remount.
+  }, [resetHookBanners])
 
   const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule5Response>({
     path: SCHEDULE5_PATH,
@@ -595,42 +614,6 @@ const Schedule5: FC = () => {
     panelMode !== 'view' &&
     (panelBaseline === null || JSON.stringify(form) !== JSON.stringify(panelBaseline))
 
-  /**
-   * The single mutation tail. The context guard runs on `then`, `catch` AND `finally`: an unguarded
-   * `finally` would release the `saving` lock belonging to a request dispatched under the NEW
-   * context, letting two writes overlap.
-   */
-  const runMutation = <T,>(
-    request: Promise<{ data: T }>,
-    onSuccess: (payload: T) => void,
-    fallbackError: string | null,
-  ) => {
-    setSaving(true)
-    request
-      .then((response) => {
-        if (!isCurrent()) {
-          return
-        }
-        onSuccess(response.data)
-      })
-      .catch((error: unknown) => {
-        if (!isCurrent()) {
-          return
-        }
-        // A null fallback fails SILENTLY (the copy resolve: a failed lookup leaves the banner
-        // absent, never an invented sentence). Otherwise keep the panel open with every entered
-        // value in place so a corrected save can retry.
-        if (fallbackError !== null) {
-          setActionError(extractDetail(error) || fallbackError)
-        }
-      })
-      .finally(() => {
-        if (isCurrent()) {
-          setSaving(false)
-        }
-      })
-  }
-
   const openEditOrView = (camp: Camp, mode: 'edit' | 'view') => {
     clearBanners()
     setPanelMode(mode)
@@ -663,12 +646,15 @@ const Schedule5: FC = () => {
     // panel. The null fallback means a failed resolve leaves the banner absent rather than
     // substituting an invented sentence — the blank name in an obviously-new panel already carries
     // the instruction.
-    runMutation(
+    // Raw run(): the resolve hits /v1/messages with a params object, not the /v1/schedule5 base +
+    // mill/year query the hook's save/remove/checkStatus build — so it cannot go through a suffix.
+    // It still shares the hook's guarded run() (same saving lock, same isCurrent guard). The null
+    // fallback fails SILENTLY: a failed lookup leaves the banner absent rather than inventing text.
+    run(
       apiService.getAxiosInstance().get<MessageInfo>(MESSAGES_PATH, {
         params: { key: COPY_MESSAGE_KEY, arg: camp.campName ?? '' },
       }),
-      (message) => setCopyWarning(message.text),
-      null,
+      { fallback: null, onSuccess: (message) => setCopyWarning(message.text) },
     )
   }
 
@@ -847,14 +833,15 @@ const Schedule5: FC = () => {
     const savedName = form.campName.trim()
     const isUpdate = panelMode === 'edit' && panelCampId !== null
     const body = buildRequest(form, isUpdate ? panelRevision : null)
-    const axios = apiService.getAxiosInstance()
-    runMutation(
-      isUpdate
-        ? axios.put<Schedule5Response>(`${CAMPS_PATH}/${String(panelCampId)}?${query}`, body)
-        : axios.post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
-      (document) => applySaved(document, savedName, isUpdate ? panelCampId : null),
-      'Camp could not be saved.',
-    )
+    // An update PUTs /v1/schedule5/camps/{id}; a new camp POSTs /v1/schedule5/camps. The suffix
+    // reproduces each URL verbatim over the '/v1/schedule5' base, with the mill/year query the hook
+    // appends.
+    save<Schedule5Response>(body, {
+      method: isUpdate ? 'put' : 'post',
+      suffix: isUpdate ? `/camps/${String(panelCampId)}` : '/camps',
+      fallback: 'Camp could not be saved.',
+      onSuccess: (document) => applySaved(document, savedName, isUpdate ? panelCampId : null),
+    })
   }
 
   const handleDelete = () => {
@@ -864,11 +851,12 @@ const Schedule5: FC = () => {
     const target = confirmDelete
     setConfirmDelete(null)
     clearBanners()
-    runMutation(
-      apiService
-        .getAxiosInstance()
-        .delete<Schedule5Response>(`${CAMPS_PATH}/${String(target.campId)}?${query}`),
-      (document) => {
+    remove<Schedule5Response>({
+      suffix: `/camps/${String(target.campId)}`,
+      fallback: 'Unable to delete camp.',
+      onSuccess: (document) => {
+        // A list page re-seeds from the reload rather than resetting to an empty read-only shape
+        // (the per-page empty-state difference the hook documents at the call site).
         setData(document)
         setActionMessage(document.message?.text ?? null)
         // Deleting the camp the panel is showing leaves nothing to show.
@@ -876,8 +864,7 @@ const Schedule5: FC = () => {
           closePanel()
         }
       },
-      'Unable to delete camp.',
-    )
+    })
   }
 
   const handleCheckStatus = () => {
@@ -885,13 +872,12 @@ const Schedule5: FC = () => {
       return
     }
     clearBanners()
-    runMutation(
-      apiService
-        .getAxiosInstance()
-        .post<Schedule5CheckStatusResponse>(`${CHECK_STATUS_PATH}?${query}`),
-      (result) => setCheckResult(result),
-      'Unable to check status.',
-    )
+    // The hook's default `/check-status` suffix over the '/v1/schedule5' base reproduces the
+    // check-status URL verbatim.
+    checkStatus<Schedule5CheckStatusResponse>({
+      fallback: 'Unable to check status.',
+      onSuccess: (result) => setCheckResult(result),
+    })
   }
 
   /**
@@ -974,9 +960,13 @@ const Schedule5: FC = () => {
     // breaks the lookup, and its miss fell back to a null id, a silent no-navigation after the
     // user confirmed a save-and-go.
     const knownIds = new Set((data?.camps ?? []).map((camp) => camp.campId))
-    runMutation(
-      apiService.getAxiosInstance().post<Schedule5Response>(`${CAMPS_PATH}?${query}`, body),
-      (document) => {
+    // Always a POST to /v1/schedule5/camps: this ladder opens only for an UNSAVED (new or copied)
+    // camp, so the save is a create.
+    save<Schedule5Response>(body, {
+      method: 'post',
+      suffix: '/camps',
+      fallback: 'Camp could not be saved.',
+      onSuccess: (document) => {
         applySaved(document, savedName, null)
         const created = document.camps.find((camp) => !knownIds.has(camp.campId))
         // Name-match fallback for the degenerate case of an echo missing a new id entirely.
@@ -986,8 +976,7 @@ const Schedule5: FC = () => {
           null
         openSubPage(kind, target)
       },
-      'Camp could not be saved.',
-    )
+    })
   }
 
   /** CFM-002 Yes from an existing camp: navigate, discarding the panel edits. No save (`:195-203`). */

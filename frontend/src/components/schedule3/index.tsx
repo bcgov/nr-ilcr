@@ -3,7 +3,7 @@ import type Schedule3Response from '@/interfaces/Schedule3Response'
 import type { CostLine, ThreeColumnTotal } from '@/interfaces/Schedule3Response'
 import type Schedule3Request from '@/interfaces/Schedule3Request'
 import type CheckStatusResponse from '@/interfaces/CheckStatusResponse'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -22,10 +22,10 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
-import apiService from '@/service/api-service'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
-import useMillYear from '@/context/millYear/useMillYear'
-import { extractDetail } from '@/utils/error'
+import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
+import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -103,71 +103,51 @@ function buildRequest(doc: Schedule3Response, form: FieldValues): Schedule3Reque
   }
 }
 
-const Schedule3: FC = () => {
-  const { millId, year } = useMillYear()
-  const navigate = useNavigate()
-  const contextMissing = millId === null || year === null
+const mapLoadErrorDetail = (detail: string | undefined): string =>
+  detail || 'Unable to load Schedule 3.'
 
-  const [data, setData] = useState<Schedule3Response | null>(null)
-  const [form, setForm] = useState<FieldValues>({})
-  const [errorDetail, setErrorDetail] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(!contextMissing)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+const Schedule3: FC = () => {
+  const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
+  const navigate = useNavigate()
+
+  // Save/delete/check-status all run through the shared hook's guarded run() (Story 29.6): a stale
+  // in-flight write can no longer repaint a newly-switched mill/year. `saving` is the single in-flight
+  // lock for every write (it also gates Check Status), replacing the old separate save/checking locks.
+  const {
+    saving,
+    message: saveMessage,
+    actionError: saveError,
+    checkResult,
+    setMessage: setSaveMessage,
+    setActionError: setSaveError,
+    setCheckResult,
+    clearBanners,
+    resetBanners,
+    save,
+    remove,
+    checkStatus,
+  } = useScheduleMutations<CheckStatusResponse>({ path: '/v1/schedule3', millId, year, isCurrent })
+
   const [saveWarnings, setSaveWarnings] = useState<string[]>([])
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [checkResult, setCheckResult] = useState<CheckStatusResponse | null>(null)
   // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (contextMissing) {
-      return
-    }
-    /* eslint-disable @eslint-react/set-state-in-effect -- intentional reset on mill/year change */
-    setIsLoading(true)
-    setData(null)
-    setErrorDetail(null)
-    setSaveMessage(null)
-    setSaveError(null)
-    setSaveWarnings([])
-    setCheckResult(null)
-    /* eslint-enable @eslint-react/set-state-in-effect */
-    let active = true
-    apiService
-      .getAxiosInstance()
-      .get<Schedule3Response>(`/v1/schedule3?millId=${millId}&year=${year}`)
-      .then((response) => {
-        if (active) {
-          setData(response.data)
-          setForm(seedForm(response.data))
-          setErrorDetail(null)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setErrorDetail(extractDetail(error) || 'Unable to load Schedule 3.')
-          setData(null)
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [millId, year, contextMissing])
-
-  const setField =
-    (key: string) =>
-    (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-      const { value } = event.target
-      setForm((prev) => ({ ...prev, [key]: value }))
-    }
+  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+    useScheduleDocument<Schedule3Response>({
+      path: '/v1/schedule3',
+      millId,
+      year,
+      contextMissing,
+      seedForm,
+      mapLoadError: mapLoadErrorDetail,
+      // saveWarnings is page-specific transient banner state; drop it on each fresh load alongside
+      // the shared banners (resetBanners).
+      onReset: () => {
+        resetBanners()
+        setSaveWarnings([])
+      },
+    })
 
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
@@ -192,30 +172,19 @@ const Schedule3: FC = () => {
       setSaveError('Please correct the highlighted fields before saving.')
       return
     }
-    setSaving(true)
-    setSaveMessage(null)
-    setSaveError(null)
+    clearBanners() // drop any prior banners incl. a now-stale Check Status result
     setSaveWarnings([])
-    setCheckResult(null) // a prior Check Status result is stale once the data changes
-    apiService
-      .getAxiosInstance()
-      .put<Schedule3Response>(
-        `/v1/schedule3?millId=${millId}&year=${year}`,
-        buildRequest(data, form),
-      )
-      .then((response) => {
-        setData(response.data)
-        setForm(seedForm(response.data))
+    save<Schedule3Response>(buildRequest(data, form), {
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        setData(doc)
+        setForm(seedForm(doc))
         // SUC-001 verbatim from the API message field (AD-8), never hardcoded.
-        setSaveMessage(response.data.message?.text ?? null)
+        setSaveMessage(doc.message?.text ?? null)
         // BR-09 crown-push outcome (WRN-001/002) rides the echo's warnings channel.
-        setSaveWarnings((response.data.warnings ?? []).map((w) => w.text || w.key))
-      })
-      .catch((error: unknown) => {
-        // Keep the entered values (S17); surface the API's verbatim ProblemDetail.detail.
-        setSaveError(extractDetail(error) || 'Schedule could not be saved.')
-      })
-      .finally(() => setSaving(false))
+        setSaveWarnings((doc.warnings ?? []).map((w) => w.text || w.key))
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -223,17 +192,14 @@ const Schedule3: FC = () => {
       return
     }
     setConfirmDeleteOpen(false)
-    setSaving(true)
-    setSaveMessage(null)
-    setSaveError(null)
+    clearBanners() // the deleted schedule's check result / save banner are stale
     setSaveWarnings([])
-    setCheckResult(null)
-    apiService
-      .getAxiosInstance()
-      .delete<{ message?: { text?: string } }>(`/v1/schedule3?millId=${millId}&year=${year}`)
-      .then((response) => {
-        // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place
-        // (no re-fetch) and show SUC-002 from the API message.
+    remove<{ message?: { text?: string } }>({
+      fallback: 'Unable to delete Schedule 3.',
+      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
+      // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
+      // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
+      onSuccess: (resp) => {
         const empty: ThreeColumnTotal = { harvest: null, pop: null, crown: null }
         setData((prev) =>
           prev
@@ -257,33 +223,21 @@ const Schedule3: FC = () => {
             : prev,
         )
         setForm({})
-        setSaveMessage(response.data?.message?.text ?? null)
-      })
-      .catch((error: unknown) => {
-        setSaveError(extractDetail(error) || 'Unable to delete Schedule 3.')
-      })
-      .finally(() => setSaving(false))
+        setSaveMessage(resp?.message?.text ?? null)
+      },
+    })
   }
 
   const handleCheckStatus = () => {
-    if (!data || checking || saving) {
+    if (!data || saving) {
       return
     }
-    setChecking(true)
-    setCheckResult(null)
-    setSaveError(null)
-    setSaveMessage(null)
+    clearBanners() // don't leave a stale Save success banner beside a new check result
     setSaveWarnings([])
-    apiService
-      .getAxiosInstance()
-      .post<CheckStatusResponse>(`/v1/schedule3/check-status?millId=${millId}&year=${year}`)
-      .then((response) => {
-        setCheckResult(response.data)
-      })
-      .catch((error: unknown) => {
-        setSaveError(extractDetail(error) || 'Unable to check status.')
-      })
-      .finally(() => setChecking(false))
+    checkStatus<CheckStatusResponse>({
+      fallback: 'Unable to check status.',
+      onSuccess: setCheckResult,
+    })
   }
 
   const openSubPage = (route: string) => {
@@ -472,7 +426,6 @@ const Schedule3: FC = () => {
       className="schedule-3__actions"
       editable={editable}
       saving={saving}
-      checking={checking}
       onSave={handleSave}
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}

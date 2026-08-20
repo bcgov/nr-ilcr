@@ -348,4 +348,65 @@ describe('Schedule2 page', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
+
+  test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
+    let releasePut = () => {}
+    const releasePromise = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+
+    server.use(
+      http.get(URL, ({ request }) =>
+        new window.URL(request.url).searchParams.get('millId') === '999'
+          ? HttpResponse.json({
+              ...schedule2Doc,
+              millId: 999,
+              year: 2020,
+              editable: false,
+              comments: 'Context 999/2020 loaded',
+            })
+          : HttpResponse.json(schedule2Doc),
+      ),
+      http.put(URL, async () => {
+        await releasePromise
+        return HttpResponse.json({
+          ...schedule2Doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+
+    render(
+      <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+        {/* eslint-disable-next-line @typescript-eslint/no-use-before-define */}
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    await screen.findAllByRole('button', { name: /^save$/i })
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText('Context 999/2020 loaded')).toBeInTheDocument()
+
+    releasePut()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+  })
 })
+
+import useMillYear from '@/context/millYear/useMillYear'
+
+const StaleRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule2 />
+    </>
+  )
+}

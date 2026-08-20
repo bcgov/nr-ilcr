@@ -6,7 +6,6 @@ type ScheduleActionsProps = {
   className: string
   editable: boolean
   saving: boolean
-  checking: boolean
   onSave: () => void
   onCheckStatus: () => void
   onDelete: () => void
@@ -28,7 +27,6 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
   className,
   editable,
   saving,
-  checking,
   onSave,
   onCheckStatus,
   onDelete,
@@ -38,12 +36,7 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
     <Button kind="primary" size="md" disabled={!editable || saving} onClick={onSave}>
       Save
     </Button>
-    <Button
-      kind="tertiary"
-      size="md"
-      disabled={!editable || saving || checking}
-      onClick={onCheckStatus}
-    >
+    <Button kind="tertiary" size="md" disabled={!editable || saving} onClick={onCheckStatus}>
       Check Status
     </Button>
     {showDelete && (
