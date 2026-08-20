@@ -426,9 +426,6 @@ const Schedule3: FC = () => {
       className="schedule-3__actions"
       editable={editable}
       saving={saving}
-      // Check Status now shares the single `saving` lock (it runs through the same run()); there is no
-      // separate checking flag, so both Save and Check disable together while any write is in flight.
-      checking={false}
       onSave={handleSave}
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}

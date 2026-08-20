@@ -101,6 +101,7 @@ const Schedule8: FC = () => {
     setCheckResult,
     clearBanners,
     resetBanners,
+    run,
     save,
     remove,
     checkStatus,
@@ -314,10 +315,15 @@ const Schedule8: FC = () => {
         setSaveMessage(resp?.message?.text ?? null)
         setPanelMode('closed')
         // Delete returns only a message — re-read the document so the list reflects the removal.
-        void apiService
-          .getAxiosInstance()
-          .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`)
-          .then((reload) => setData(reload.data))
+        run(
+          apiService
+            .getAxiosInstance()
+            .get<Schedule8Response>(`/v1/schedule8?millId=${millId}&year=${year}`),
+          {
+            fallback: 'Deleted, but the list could not be refreshed.',
+            onSuccess: (data) => setData(data),
+          },
+        )
       },
     })
   }

@@ -94,6 +94,7 @@ const Schedule2: FC = () => {
     setCheckResult: setStatusMessages,
     clearBanners,
     resetBanners,
+    run,
     save,
     remove,
     checkStatus,
@@ -152,14 +153,19 @@ const Schedule2: FC = () => {
       // from the reload, single-doc reset-in-place pages (Schedules 1/3) reset in place instead.
       onSuccess: (delResp) => {
         const deleteMessage = delResp?.message?.text ?? null
-        apiService
-          .getAxiosInstance()
-          .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`)
-          .then((reload) => {
-            setData(reload.data)
-            setForm(seedForm(reload.data))
-            setSaveMessage(deleteMessage)
-          })
+        run(
+          apiService
+            .getAxiosInstance()
+            .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`),
+          {
+            fallback: 'Deleted, but the list could not be refreshed.',
+            onSuccess: (data) => {
+              setData(data)
+              setForm(seedForm(data))
+              setSaveMessage(deleteMessage)
+            },
+          },
+        )
       },
     })
   }

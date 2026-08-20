@@ -378,7 +378,7 @@ const Schedule4: FC = () => {
     // the entered name off these rather than the (possibly changed) live state.
     const wasEdit = panelMode === 'edit'
     const editId = panelEditId
-    const savedName = panelName.trim()
+    const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
@@ -386,7 +386,7 @@ const Schedule4: FC = () => {
       const saved =
         wasEdit && editId !== null
           ? document.locations.find((l) => l.id === editId)
-          : document.locations.find((l) => (l.name ?? '').toLowerCase() === savedName.toLowerCase())
+          : document.locations.find((l) => l.id != null && !prevIds.has(l.id))
       if (saved && saved.id != null) {
         setPanelMode('edit')
         setPanelEditId(saved.id)
@@ -419,10 +419,15 @@ const Schedule4: FC = () => {
           setSaveMessage(resp?.message?.text ?? null)
           setPanelMode('closed')
           // Re-read the document so the list reflects the removed family (delete returns only a message).
-          void apiService
-            .getAxiosInstance()
-            .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`)
-            .then((reload) => setData(reload.data))
+          run(
+            apiService
+              .getAxiosInstance()
+              .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`),
+            {
+              fallback: 'Deleted, but the list could not be refreshed.',
+              onSuccess: (data) => setData(data),
+            },
+          )
         },
       },
     )
@@ -449,9 +454,9 @@ const Schedule4: FC = () => {
   // Save the panel (create path) and open the sub-page for the new location — the create → save-first
   // (NAV-003) flow. Runs the post-save lookup inside putLocation's guarded onSuccess.
   const saveLocationThenOpen = (def: SubPageDef) => {
-    const savedName = panelName.trim()
+    const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
     putLocation((document) => {
-      const id = document.locations.find((l) => l.name === savedName)?.id ?? null
+      const id = document.locations.find((l) => l.id != null && !prevIds.has(l.id))?.id ?? null
       if (id !== null) openSubPage(def, id)
     })
   }

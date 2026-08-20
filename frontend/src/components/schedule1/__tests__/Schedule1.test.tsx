@@ -33,16 +33,6 @@ const StaleRaceHarness = () => {
   )
 }
 
-// Deterministically drain the event loop so a settled-but-guarded request finishes its whole
-// then/catch/finally chain before a negative assertion runs (turn-based, never wall-clock).
-const flushAsync = async () => {
-  for (let i = 0; i < 4; i += 1) {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0)
-    })
-  }
-}
-
 const URL = 'http://localhost:3000/api/v1/schedule1'
 
 const schedule1Doc = {
@@ -737,8 +727,9 @@ describe('Schedule1 stale-response guard (Story 29.6)', () => {
 
     // Release the stale PUT, let its chain settle, then confirm nothing from it landed on 999/2020.
     releasePut()
-    await flushAsync()
-    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Standing Tree to Loaded Truck cost')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Standing Tree to Loaded Truck cost')).not.toBeInTheDocument()
+    })
   })
 })

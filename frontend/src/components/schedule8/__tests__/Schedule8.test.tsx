@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule8 from '@/components/schedule8'
+import MillYearProvider from '@/context/millYear/MillYearProvider'
 import type { Page, Sample } from '@/interfaces/Schedule8Response'
 
 // Schedule 8's samples/rates levels are URL-driven (search: pageId + sampleId), so render it inside a
@@ -1344,4 +1345,87 @@ describe('Schedule8 additions/deductions level', () => {
     await userEvent.click(screen.getAllByRole('button', { name: /^close$/i })[0])
     expect(await screen.findByRole('button', { name: /add new sample/i })).toBeInTheDocument()
   })
+
+  test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
+    let putGate: (v: unknown) => void = () => {}
+    const putPromise = new Promise((resolve) => {
+      putGate = resolve
+    })
+    let releasePut = () => {}
+    const releasePromise = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+
+    let putCalled = false
+    server.use(
+      http.get(URL, ({ request }) =>
+        new window.URL(request.url).searchParams.get('millId') === '999'
+          ? HttpResponse.json(
+              doc({
+                millId: 999,
+                year: 2020,
+                editable: false,
+                pages: [{ id: 999, revisionCount: 1, tsaNumber: 'TSA1', supplyBlock: null, cuttingPermit: 'Context 999/2020 loaded', comments: null, subPageRows: [], categories: [] }],
+              }),
+            )
+          : HttpResponse.json(doc()),
+      ),
+      http.put(PAGES_URL, async () => {
+        putCalled = true
+        putGate(null)
+        await releasePromise
+        return HttpResponse.json({
+          ...doc(),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+
+    const rootRoute = createRootRoute()
+    const scheduleRoute = createRoute({
+      getParentRoute: () => rootRoute,
+      path: '/schedule-8',
+      validateSearch: (s: Record<string, unknown>) => ({
+        pageId: s.pageId == null || s.pageId === '' ? undefined : Number(s.pageId),
+        sampleId: s.sampleId == null || s.sampleId === '' ? undefined : Number(s.sampleId),
+      }),
+      component: () => (
+        <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+          <StaleRaceHarness />
+        </MillYearProvider>
+      ),
+    })
+    const router = createRouter({
+      routeTree: rootRoute.addChildren([scheduleRoute]),
+      history: createMemoryHistory({ initialEntries: ['/schedule-8'] }),
+    })
+    render(<RouterProvider router={router} />)
+    const user = userEvent.setup()
+
+    await screen.findByText(/Page # 1/)
+    await user.click(screen.getAllByRole('button', { name: /^(edit|view)$/i })[0])
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    expect(await screen.findByText(/Context 999\/2020 loaded/)).toBeInTheDocument()
+
+    releasePut()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+    })
+  })
 })
+
+import useMillYear from '@/context/millYear/useMillYear'
+
+const StaleRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule8 />
+    </>
+  )
+}
