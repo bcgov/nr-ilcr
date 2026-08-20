@@ -16,6 +16,22 @@ vi.mock('@tanstack/react-router', () => ({
 
 import Schedule1 from '@/components/schedule1'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
+import useMillYear from '@/context/millYear/useMillYear'
+
+// Drives a mid-save mill/year change so the shared run() stale-response guard can be exercised
+// (Story 29.6). Module-level so it is not re-created per render (an @eslint-react rule forbids nested
+// component definitions).
+const StaleRaceHarness = () => {
+  const { setContext } = useMillYear()
+  return (
+    <>
+      <button type="button" onClick={() => setContext(999, 2020)}>
+        change
+      </button>
+      <Schedule1 />
+    </>
+  )
+}
 
 const URL = 'http://localhost:3000/api/v1/schedule1'
 
@@ -661,5 +677,59 @@ describe('Schedule1 Other Costs navigation (Story 2.5)', () => {
     await user.click(await screen.findByRole('button', { name: /Subtotal Other Costs/i }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/schedule-1/other-costs' })
+  })
+})
+
+describe('Schedule1 stale-response guard (Story 29.6)', () => {
+  test('a mill/year change mid-save does not apply the stale response (AC1)', async () => {
+    // The PUT is gated on an explicit release, not a wall-clock delay, so the "stale response settles
+    // after the context change" ordering holds under any CI load. Routing save through the shared
+    // useScheduleMutations run() gives Schedule 1 the isCurrent() guard it previously lacked.
+    let releasePut = () => {}
+    const putGate = new Promise<void>((resolve) => {
+      releasePut = resolve
+    })
+    server.use(
+      http.get(URL, ({ request }) =>
+        request.url.includes('millId=999')
+          ? HttpResponse.json({
+              ...schedule1Doc,
+              millId: 999,
+              year: 2020,
+              editable: false,
+              comments: 'Context 999/2020 loaded',
+            })
+          : HttpResponse.json(schedule1Doc),
+      ),
+      http.put(URL, async () => {
+        await putGate
+        return HttpResponse.json({
+          ...schedule1Doc,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        })
+      }),
+    )
+
+    render(
+      <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+        <StaleRaceHarness />
+      </MillYearProvider>,
+    )
+    const user = userEvent.setup()
+
+    // Editable 514 loaded → dispatch the save (PUT now in flight) → switch mill/year before it settles.
+    await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    await user.click(screen.getByRole('button', { name: /change/i }))
+
+    // The new context's document has rendered (read-only 999/2020).
+    expect(await screen.findByText('Context 999/2020 loaded')).toBeInTheDocument()
+
+    // Release the stale PUT, let its chain settle, then confirm nothing from it landed on 999/2020.
+    releasePut()
+    await waitFor(() => {
+      expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Standing Tree to Loaded Truck cost')).not.toBeInTheDocument()
+    })
   })
 })
