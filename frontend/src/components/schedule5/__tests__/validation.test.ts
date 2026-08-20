@@ -332,7 +332,7 @@ describe('camp name length is judged on the trimmed value (review fix)', () => {
 })
 
 describe('CAMP_MESSAGES drift guard (review fix)', () => {
-  // The twelve mirrored strings claim to be "verbatim from the backend bundle"; this is the check
+  // The thirteen mirrored strings claim to be "verbatim from the backend bundle"; this is the check
   // that keeps the claim true. A backend wording change must fail HERE, not silently split the
   // advisory text from the server's 400 detail for the same field.
   const bundle = (() => {
@@ -366,6 +366,7 @@ describe('CAMP_MESSAGES drift guard (review fix)', () => {
     costRangeWide: 'costValidatorErrorMsg',
     costRangeNonNegative: 'costValidatorSchedule9ErrorMsg',
     costInvalid: 'costConverterErrorMsg',
+    campNameDuplicate: 'campAlreadyExists',
   }
 
   it.each(Object.keys(BUNDLE_KEYS) as (keyof typeof CAMP_MESSAGES)[])(
@@ -376,4 +377,70 @@ describe('CAMP_MESSAGES drift guard (review fix)', () => {
       expect(CAMP_MESSAGES[local]).toBe(bundle[bundleKey])
     },
   )
+})
+
+describe('camp name uniqueness (BR-02, client pre-check)', () => {
+  it('reports a duplicate case-insensitively and ignoring surrounding whitespace', () => {
+    // The server upper-cases both sides (Schedule5Repository:419) and trims the submitted name
+    // (Schedule5Service.trimmedCampName():863), so this entry WOULD be rejected server-side.
+    //
+    // Asserted against the LITERAL, not CAMP_MESSAGES.campNameDuplicate: if the whole feature
+    // (constant and logic together) were reverted, the constant access would also become
+    // `undefined` and this assertion would pass vacuously against itself. The bundle drift-guard
+    // `it.each` above is what pins the constant to the backend string; this test's job is to pin
+    // the FEATURE to that same string.
+    const errors = validateCamp(baseForm({ campName: '  cedar flats camp  ' }), [
+      'Cedar Flats Camp',
+    ])
+    expect(errors.campName).toBe('Camp name already exists.')
+  })
+
+  it('does NOT collide with a padded STORED name — the server does not trim that side either', () => {
+    // `countCampsNamed` compares `UPPER(CAMP_NAME)` with no TRIM on the stored side
+    // (Schedule5Repository.java:400-410): legacy persisted names untrimmed, so the server ACCEPTS
+    // this save. Trimming here would hard-block it, and buildRequest trims the entry so the
+    // licensee could not type padding to escape.
+    expect(
+      validateCamp(baseForm({ campName: 'Cedar Flats Camp' }), ['  Cedar Flats Camp  ']),
+    ).toEqual({})
+  })
+
+  it('accepts a name no other camp holds', () => {
+    expect(validateCamp(baseForm({ campName: 'Birch Ridge Camp' }), ['Cedar Flats Camp'])).toEqual(
+      {},
+    )
+  })
+
+  it('checks nothing when the caller supplies no names, including by omission', () => {
+    expect(validateCamp(baseForm())).toEqual({})
+    expect(validateCamp(baseForm(), [])).toEqual({})
+  })
+
+  it('reports the name’s OWN error ahead of the duplicate when it is also blank or over-length', () => {
+    // Two statements about one field where only the first is actionable. Both entries below are
+    // ALSO their own duplicate under the fold (blank trims to '' on both sides; overLong is listed
+    // verbatim in otherCampNames), so this only proves precedence — rather than merely re-proving
+    // the pre-existing required/max-length rules — if it also fails were the `else` at
+    // validation.ts's name block dropped, letting an unconditional duplicate check run after and
+    // overwrite the required/max-length error. Asserting the duplicate message's ABSENCE, not just
+    // the own-error's presence, is what makes that mutation observable here.
+    const blank = validateCamp(baseForm({ campName: '   ' }), ['   ']).campName
+    expect(blank).toBe(CAMP_MESSAGES.campNameRequired)
+    expect(blank).not.toBe('Camp name already exists.')
+
+    const overLong = 'C'.repeat(31)
+    const long = validateCamp(baseForm({ campName: overLong }), [overLong]).campName
+    expect(long).toBe(CAMP_MESSAGES.campNameMaxLength)
+    expect(long).not.toBe('Camp name already exists.')
+  })
+
+  it('leaves every other field’s rules untouched', () => {
+    // A duplicate name must not mask, or be masked by, an unrelated error. campName asserted
+    // against the LITERAL for the same reason as the first test in this block.
+    const errors = validateCamp(baseForm({ campName: 'Cedar Flats Camp', sizeOfCamp: '0' }), [
+      'Cedar Flats Camp',
+    ])
+    expect(errors.campName).toBe('Camp name already exists.')
+    expect(errors.sizeOfCamp).toBe(CAMP_MESSAGES.sizeRange)
+  })
 })

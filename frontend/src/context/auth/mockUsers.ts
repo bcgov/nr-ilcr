@@ -10,6 +10,8 @@ export type MockUser = {
   displayName: string
   userName: string
   email: string
+  // An array to mirror the /me + cognito:groups wire shape, but a user holds exactly ONE ILCR role
+  // (ADMIN or SUBMITTER) — there is no combined role.
   roles: IlcrRole[]
 }
 
@@ -29,13 +31,6 @@ export const MOCK_USERS: MockUser[] = [
     userName: 'sam.submitter',
     email: 'sam.submitter@gov.bc.ca',
     roles: [ILCR_ROLES.submitter],
-  },
-  {
-    id: 'admin-submitter',
-    displayName: 'Casey Dual Role',
-    userName: 'casey.dual',
-    email: 'casey.dual@gov.bc.ca',
-    roles: [ILCR_ROLES.admin, ILCR_ROLES.submitter],
   },
 ]
 

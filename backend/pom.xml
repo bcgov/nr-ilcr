@@ -65,11 +65,14 @@
         <checkstyle.failsOnError>true</checkstyle.failsOnError>
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
-        <mapstruct.version>1.6.3</mapstruct.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <jasperreports.version>7.0.8</jasperreports.version>
         <sonar.organization>bcgov-sonarcloud</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <!-- Keep Sonar coverage measurement in step with the jacoco instrumentation excludes
+             below: config/dto/exception/boilerplate are not instrumented, so counting them as
+             uncovered would understate new-code coverage for lines jacoco never reports on. -->
+        <sonar.coverage.exclusions>**/configuration/**,**/dto/**,**/exception/**,**/*Application.*,**/*Constants.*</sonar.coverage.exclusions>
         <oci.revision>${project.version}</oci.revision>
     </properties>
 
@@ -207,11 +210,6 @@
             <artifactId>commons-lang3</artifactId>
             <version>${commons-lang3.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-            <version>${mapstruct.version}</version>
-        </dependency>
 
         <!-- Embedded JasperReports 7 (AD-16): in-process PDF, no Jasper Server. v7 is the Jakarta
              line (correct for Boot 4 / Java 21). PDF export is a SEPARATE OpenPDF-backed artifact in
@@ -262,7 +260,7 @@
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
-            <version>3.0.5</version>
+            <version>3.0.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -302,7 +300,7 @@
             <dependency>
                 <groupId>org.apache.tomcat.embed</groupId>
                 <artifactId>tomcat-embed-core</artifactId>
-                <version>11.0.24</version>
+                <version>11.0.25</version>
             </dependency>
             <dependency>
                 <groupId>org.antlr</groupId>
@@ -333,13 +331,42 @@
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                         </path>
-                        <path>
-                            <groupId>org.mapstruct</groupId>
-                            <artifactId>mapstruct-processor</artifactId>
-                            <version>${mapstruct.version}</version>
-                        </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <!-- Pre-compile the JasperReports templates (.jrxml -> .jasper) at build time, when the
+                 JVM is a JDK. The compiled .jasper carries the expression bytecode, so the runtime
+                 (a JRE container without javac) only LOADS them — never compiles. Runs after compile,
+                 over the resources already copied to target/classes/reports. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.3</version>
+                <executions>
+                    <execution>
+                        <id>precompile-jasper-reports</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <!-- Fork a real java (not exec:java) so JasperReports' nested javac
+                                 inherits the full project classpath (java.class.path) and can resolve
+                                 the JR classes when compiling the report-expression class.
+                                 ${java.home}/bin/java pins it to Maven's own JVM (guaranteed a JDK
+                                 here) rather than whatever `java` PATH resolves to — a PATH JRE would
+                                 have no javac and reproduce the very failure this precompile fixes. -->
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>ca.bc.gov.nrs.ilcr.reporting.ReportPrecompiler</argument>
+                                <argument>${project.build.outputDirectory}/reports</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -514,7 +541,7 @@
                     <dependency>
                         <groupId>com.puppycrawl.tools</groupId>
                         <artifactId>checkstyle</artifactId>
-                        <version>13.9.0</version>
+                        <version>13.10.0</version>
                     </dependency>
                 </dependencies>
                 <configuration>

@@ -49,11 +49,12 @@
 -- correct for that column, and Schedule 11's parent-first delete is safe on schema grounds, not on
 -- ordering grounds. Do not "fix" V20 to match this file.
 --
--- Only 7A/7B are declared here, because this is a 7A/7B change: declaring the other seven means
+-- 7A, 7B and S10 are declared here. Declaring the remaining six means
 -- re-verifying every fixture insert order and every IT teardown across S1-S11. Today nothing else is
 -- broken — S4 deletes children first (Schedule4Repository.deleteFamily), S5 likewise
--- (Schedule5Service:668-674), S6 and S9 have no row-delete path, S10 is not built — but nothing stops
--- the next one repeating the mistake. That audit is the follow-up.
+-- (Schedule5Service:668-674), S6 and S9 have no row-delete path, and S10 now deletes grandchildren,
+-- children and parent in that order — but nothing stops the next one repeating the mistake. That
+-- audit is the follow-up.
 --
 -- NO ON DELETE CASCADE, deliberately: the delivery constraints have none, and adding one here would
 -- re-hide exactly the bug this migration exists to catch.
@@ -65,3 +66,12 @@ ALTER TABLE THE.ILCR_COST_REPORT_DETAIL
 ALTER TABLE THE.ILCR_COST_REPORT_DETAIL
   ADD CONSTRAINT ILCR_LCRD_CLV_RPT_FK
   FOREIGN KEY (CULVERT_REPORT_ID) REFERENCES THE.CULVERT_REPORT (CULVERT_REPORT_ID);
+
+-- Schedule 10, added with its write path. Delivery-verified ENABLED with DELETE_RULE = NO ACTION,
+-- like the two above. Without it declared here, a page delete that removed the parent before its
+-- grandchildren would pass every integration test and then raise ORA-02292 in delivery -- which is
+-- the exact class of bug this file exists to catch.
+ALTER TABLE THE.ILCR_COST_REPORT_DETAIL
+  ADD CONSTRAINT ILCR_LCRD_RCR_DTL_FK
+  FOREIGN KEY (ROAD_CONSTRUCTION_REPRT_DTL_ID)
+  REFERENCES THE.ROAD_CONSTRUCTION_REPRT_DTL (ROAD_CONSTRUCTION_REPRT_DTL_ID);

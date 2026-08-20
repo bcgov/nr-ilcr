@@ -52,6 +52,7 @@ two such branches merge:
    | Schedule 7B               | **680–681**     | `V20260811`                                  |
    | Schedule 5 sub-pages      | **690–693**     | `V20260814`                                   |
    | Schedule 9                | **700–706**     | `V20260815`                                  |
+   | Schedule 10               | **710–716**     | `V20260817`                                  |
 
    **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per convention 1 and
    the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
@@ -118,6 +119,72 @@ two such branches merge:
    authorization tests. PK ranges: `CONTRACTUAL_WORK_REPORT_ID` **`9101–9199`** and
    `ILCR_COST_REPORT_DETAIL_ID` **`8481–8499`** (both below the sequence starts and clear of other
    schedules). Read fixtures reuse the shared `514`/`515`/`516`/`517` context from `V2`.
+
+   **Schedule 10 (`V20260817`, Story 11.1)** — a **timestamp version**; `V20260816` was the
+   high-water mark on disk when it was claimed. This migration **creates the Schedule 10 tables for
+   the first time** — no DDL for them existed anywhere in the repo before it (the repeatable FK
+   script previously recorded "S10 is not built"). Shape is delivery-faithful throughout: every
+   column type, precision and nullability was read from `ALL_TAB_COLUMNS` on the real-data image.
+
+   It creates `ROAD_CONSTRUCTION_REPRT`, `ROAD_CONSTRUCTION_REPRT_DTL` and five code tables
+   (`ILCR_ROAD_LIFETIME_CODE`, `ILCR_ROAD_BALLAST_METHOD_CODE`, `ILCR_ROAD_BALLAST_MATERL_CODE`,
+   `ILCR_RL_SOIL_MOIS_RGM_CLS_CODE`, `ILCR_BEC_SOIL_MOISTUR_XREF`), adds
+   `ROAD_CONSTRUCTION_REPRT_DTL_ID` to `ILCR_COST_REPORT_DETAIL` (guarded), and widens the
+   pre-existing `ILCR_FOREST_REGION_CODE` with `EFFECTIVE_DATE`/`EXPIRY_DATE` (guarded) so the legacy
+   year filter applies. `BIOGEOCLIMATIC_CATALOGUE` and the TSA/TSB/TFL code tables are **reused**
+   from `V20`/`V22`, not recreated.
+
+   **Unlike Schedule 6, all five classification columns carry ENABLED foreign keys in delivery** —
+   verified against `ALL_CONSTRAINTS`, and mirrored here so an unknown code fails in tests exactly as
+   it would in delivery. Do not inherit Schedule 6's no-FK finding by analogy.
+
+   Mills **`710–716`**: `710` the rich Draft fixture (2 pages, 2 details, full cost lines), `711`
+   TFL-located, `712` unmapped TSA/TSB, `713` unmapped TFL, `714` a page with zero details,
+   `715` valid context with zero pages, `716` track `S`. PK ranges (**corrected 2026-08-17** — the
+   previously recorded `8900–8907` / `8910–8917` / `8920–8931` understated all three, and an
+   understated range is exactly what invites the next story to claim a taken id):
+   `ROAD_CONSTRUCTION_REPRT_ID` **`8900–8909`**, `ROAD_CONSTRUCTION_REPRT_DTL_ID`
+   **`8910–8919` plus `8940`**, `ILCR_COST_REPORT_DETAIL_ID` **`8920–8932`** (all below the sequence
+   starts). Read fixtures reuse `516` (closed → 409) and unseeded `999999` (→ 404) from `V2`.
+
+### `V20260818__seed_schedule10_write_fixtures.sql` — Schedule 10 write path (Story 11.2)
+
+Adds the schema the write path needs and the fixtures that make its defects fail.
+
+**Schema.** Creates `THE.ILCR_SOIL_MOISTURE_XREF`, which `V20260817` never needed because the read
+never touches the moisture cross-reference. Widens `ILCR_BEC_SOIL_MOISTUR_XREF` with the
+`SOIL_MOISTURE_XREF_ID` join key and `ACTIVE_IND` (added nullable, backfilled, then tightened — an
+existing row cannot satisfy a NOT NULL column added in one step). Creates
+**`THE.ROAD_CONSTRUCTION_REPORT_SEQ`** (`START WITH 9600`), the sequence legacy declares for the
+master table; it does not exist in the seeded delivery image either, where it sits un-advanced at 1
+against real ids of 90–184 because those rows were bulk-loaded rather than written through the
+application. That is an environment defect to be fixed by advancing the sequence, **not** a reason to
+repoint the code at the shared `ILCR_REPORT_COMMON_SEQ`.
+
+**Codes.** Adds the REAL delivery moisture codes — `Dry`/`Moist`/`Wet` and the eight-code ASM
+gradient `ED`/`VD`/`MD`/`SD`/`F`/`M`/`VM`/`W`. `V20260817`'s single `SM1`/`ASM1` placeholders exist
+nowhere in delivery, so an insert test written against them would pass here and raise `ORA-02291`
+there. They are **retained**, not replaced, because Story 11.1's detail rows reference them by
+foreign key.
+
+**Claimed:** mills **`717–723`**, `ROAD_CONSTRUCTION_REPRT_ID` **`8950–8959`**,
+`ROAD_CONSTRUCTION_REPRT_DTL_ID` **`8960–8979`**, `ILCR_COST_REPORT_DETAIL_ID` **`8980–8999`**,
+`SOIL_MOISTURE_XREF_ID` **`9001–9004`**, `ILCR_BEC_SOIL_MOISTUR_XREF_ID` **`8803–8805`**. Mill `717`
+carries six Draft years (2019–2024) so each destructive test method claims its own `(mill, year)` and
+the suite stays order-independent. Story 11.1's mills `710–716` are read-only here and never mutated.
+
+The derivation fixtures deliberately cover all three outcomes: BEC `8801` + RSMR `'1'` resolves to
+exactly one pair, BEC `8802` + RSMR `'2'` to two (forcing the tie-break to be exercised), and BEC
+`8801` + RSMR `'2'` to none via an inactive link. Row `9004` is an inactive xref sharing a BEC and
+RSMR class with `9001`, so dropping `ACTIVE_IND` from the join would turn the single-candidate case
+into a two-candidate one — the flag is falsifiable rather than decorative.
+
+   It registers cost items **3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 21, 22** — all twelve verified absent
+   from every existing migration first, and verified present in delivery with exactly these
+   category/subcategory pairs. Note the deliberately populated cost lines on detail `8910`:
+   **delivery holds ZERO Schedule 10 cost rows**, so the cost-reassembly assertions cannot be proven
+   against real data and need a constructed fixture. Detail `8911` deliberately has none, which is
+   the shape real data actually has.
 
    Cost-item IDs (`ILCR_REPORT_COST_ITEM_ID`) are a **shared** master-data space across schedules.
    Define each item **once**; if another track already seeds it (identical row), reference it, don't

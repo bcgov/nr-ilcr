@@ -30,6 +30,8 @@ export const CAMP_MESSAGES = {
   costRangeWide: 'Entered cost must be between -99,999,999 and 99,999,999.',
   costRangeNonNegative: 'Entered cost must be between 0 and 9,999,999.',
   costInvalid: 'Entered cost is invalid.',
+  // BR-02/ERR-001. Mirrored so the client's pre-check and the server's 409 say the same sentence.
+  campNameDuplicate: 'Camp name already exists.',
 } as const
 
 // The four cost bands. Encoded as DATA keyed by category rather than three copies of an `if`,
@@ -271,6 +273,30 @@ const validateOptionalNumber = (
   return value < bounds.min || value > bounds.max ? rangeMessage : undefined
 }
 
+/**
+ * BR-02's comparison, matching the server's predicate exactly — which is ASYMMETRIC:
+ *
+ *     UPPER(CAMP_NAME) = UPPER(:name)      -- Schedule5Repository.java:417
+ *
+ * Case is folded on both sides, but only the SUBMITTED side is trimmed, by
+ * `Schedule5Service.trimmedCampName()` (`:862-864`) before the value is bound. The STORED side is
+ * deliberately left untrimmed, and that repository docblock (`:400-410`) says why: legacy persisted
+ * names untrimmed (it cites `Schedule5DAO.java:373`), so a stored `" Cedar "` does not collide with a
+ * new `"Cedar"` there either, and adding `TRIM(CAMP_NAME)` "would retroactively 409 edits next to
+ * padded incumbents legacy accepted."
+ *
+ * So this must NOT trim `name`. Doing so made the advisory check STRICTER than the authority it
+ * mirrors, and because Save is gated on `validateCamp`, a padded legacy incumbent hard-blocked a save
+ * the server accepts — with no way out, since `buildRequest` trims the entry.
+ *
+ * `toUpperCase`, not `toLocaleUpperCase`: Oracle's `UPPER` is not locale-aware, and a locale-aware
+ * fold would disagree with it on a Turkish dotless i.
+ */
+const isDuplicateName = (raw: string, otherCampNames: readonly string[]): boolean => {
+  const candidate = raw.trim().toUpperCase()
+  return otherCampNames.some((name) => name.toUpperCase() === candidate)
+}
+
 const validateCampName = (raw: string): string | undefined => {
   const trimmed = raw.trim()
   if (trimmed === '') {
@@ -301,15 +327,30 @@ const validateCategoryCost = (raw: string, band: CostBand): string | undefined =
 /**
  * Validate the whole camp panel. Returns a field-keyed error map, empty when the form may be sent.
  *
- * There is no duplicate-name check: BR-02 is the server's (a name collision is its 409, rendered
- * verbatim), and the client cannot see other mills' camps anyway.
+ * `otherCampNames` carries the names of every OTHER camp in the served mill/year, letting BR-02 be
+ * reported inline instead of only as the server's 409 on a doomed round-trip. It is a PRE-check, not
+ * a replacement: the served list is a snapshot, so a camp another licensee adds after this page
+ * loaded is invisible here and only `Schedule5Service`'s own `countCampsNamed` can catch it. That
+ * 409 still renders verbatim on the page banner (AD-6/AD-8).
+ *
+ * Legacy left this check entirely to the server, so the client half is a deliberate deviation.
+ *
+ * The caller supplies the list already filtered — by campId, see `otherCampNames` in index.tsx — so
+ * this module stays free of transport types and of any notion of which camp the panel is showing.
  */
-export const validateCamp = (values: CampFormValues): CampErrors => {
+export const validateCamp = (
+  values: CampFormValues,
+  otherCampNames: readonly string[] = [],
+): CampErrors => {
   const errors: CampErrors = {}
 
   const nameError = validateCampName(values.campName)
   if (nameError) {
     errors.campName = nameError
+  } else if (isDuplicateName(values.campName, otherCampNames)) {
+    // Only once the name is otherwise legal: "required"/"30 characters or fewer" and "already
+    // exists" are two statements about one field where only the first is actionable.
+    errors.campName = CAMP_MESSAGES.campNameDuplicate
   }
 
   // No converter message exists in the bundle for distance or size, so an unparseable entry falls

@@ -37,7 +37,19 @@ public class CognitoGroupsJwtAuthenticationConverter
         authorities.add(new SimpleGrantedAuthority(role.name()));
       }
     }
-    return new JwtAuthenticationToken(jwt, authorities);
+    return new JwtAuthenticationToken(jwt, authorities, auditUsername(jwt));
+  }
+
+  /**
+   * The principal name — i.e. {@code authentication.getName()}, which every admin write stamps into
+   * the {@code ENTRY_/UPDATE_USERID VARCHAR2(30)} audit columns. FAM's {@code custom:idp_username} is
+   * sized for that (per the identity contract); without this the token name defaults to the {@code sub}
+   * (a ~36-char Cognito UUID), which overflows the column (ORA-12899) on every write in production.
+   * Falls back to the {@code sub} only when the claim is absent (defensive; never expected with FAM).
+   */
+  private static String auditUsername(Jwt jwt) {
+    String username = jwt.getClaimAsString("custom:idp_username");
+    return (username != null && !username.isBlank()) ? username : jwt.getSubject();
   }
 
   private static List<String> extractGroups(Jwt jwt) {

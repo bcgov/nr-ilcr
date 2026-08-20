@@ -1,0 +1,15 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// Print Schedules selection page: space the two checkbox groups and the action buttons apart.
+.print-schedules {
+  &__group {
+    margin-block-end: $spacing-07;
+  }
+
+  // Generate + Clear sit on one row with a small gap.
+  &__actions {
+    display: flex;
+    gap: $spacing-03;
+    margin-block-start: $spacing-03;
+  }
+}

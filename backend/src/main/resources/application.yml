@@ -3,6 +3,11 @@ spring:
     name: nr-ilcr-backend
   jackson:
     default-property-inclusion: non_null
+    # Pin JSON date serialization to Pacific for any zoned value. Note the API surface is almost
+    # entirely LocalDate/LocalDateTime (zone-less), so this is close to a no-op today; the JVM default
+    # set in IlcrBackendApplication.main() is what actually fixes date boundaries. Kept for the zoned
+    # cases (e.g. java.util.Date/SYSDATE) and so serialization can't drift from the JVM zone.
+    time-zone: America/Vancouver
     deserialization:
       # Money must never be silently truncated. Jackson enables ACCEPT_FLOAT_AS_INT by default, so a
       # cost of 1234.99 posted into an Integer field binds as 1234 and the licensee is told the save
@@ -25,6 +30,20 @@ spring:
       max-lifetime: ${SPRING_DATASOURCE_MAX_LIFETIME:180000}
       keepalive-time: ${SPRING_DATASOURCE_KEEPALIVE_TIME:60000}
       leak-detection-threshold: ${SPRING_DATASOURCE_LEAK_DETECTION_THRESHOLD:60000}
+    # Story 29.1 — a SEPARATE, small pool dedicated to the Jasper report-fill path (the Schedule 9
+    # SQL-in-template fill borrows a JDBC connection for the whole render). Same DB (url/username/
+    # password above) but its own small ceiling, so a burst of concurrent report renders can only
+    # exhaust THIS pool — never the transactional pool that serves ordinary schedule requests. Size it
+    # to peak concurrent report renders (default 3). Short connection-timeout (5s) so the Nth queued
+    # render fast-fails instead of parking a Tomcat thread for 30s. No leak-detection: a render
+    # legitimately holds its connection for the full fill+format. Connections are marked read-only as a
+    # HINT / intent signal (defence-in-depth) — it is not enforced write-prevention on Oracle.
+    reporting:
+      hikari:
+        pool-name: ${SPRING_DATASOURCE_REPORTING_POOL_NAME:ILCRReportingPool}
+        minimum-idle: ${SPRING_DATASOURCE_REPORTING_MIN_IDLE:0}
+        maximum-pool-size: ${SPRING_DATASOURCE_REPORTING_MAX_POOL_SIZE:3}
+        connection-timeout: ${SPRING_DATASOURCE_REPORTING_CONNECTION_TIMEOUT:5000}
 
 server:
   port: ${SERVER_PORT:8080}

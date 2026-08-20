@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import MockAuthProvider from '@/context/auth/MockAuthProvider'
+import AuthProvider from '@/context/auth/AuthProvider'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import ThemeProvider from '@/context/theme/ThemeProvider'
 
@@ -10,9 +10,9 @@ type Props = {
 export default function AppProviders({ children }: Props) {
   return (
     <ThemeProvider>
-      <MockAuthProvider>
+      <AuthProvider>
         <MillYearProvider>{children}</MillYearProvider>
-      </MockAuthProvider>
+      </AuthProvider>
     </ThemeProvider>
   )
 }

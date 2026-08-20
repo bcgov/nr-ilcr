@@ -49,7 +49,7 @@
 			frame-ancestors 'self'; 
 			form-action 'self';
 			block-all-mixed-content;
-			connect-src 'self' https://*.gov.bc.ca wss://*.gov.bc.ca;"
+			connect-src 'self' https://*.gov.bc.ca wss://*.gov.bc.ca https://{$COGNITO_DOMAIN:lza-prod-fam-user-pool-domain.auth.ca-central-1.amazoncognito.com};"
 		Referrer-Policy "same-origin"
 		Permissions-Policy "fullscreen=(self), camera=(), microphone=()"
 		Cross-Origin-Resource-Policy "same-origin"

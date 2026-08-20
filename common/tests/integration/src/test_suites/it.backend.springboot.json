@@ -4,11 +4,11 @@
   "base_url": "${BASE_URL}",
   "tests": [
     {
-      "name": "Read-only public mills endpoint",
+      "name": "Public info endpoint is served (app up); domain endpoints require auth post-O4",
       "methods": [
         "GET"
       ],
-      "path": "/api/v1/mills",
+      "path": "/api/info",
       "headers": {
         "Content-Type": "application/json"
       },

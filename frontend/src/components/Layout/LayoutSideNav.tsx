@@ -2,14 +2,14 @@ import type { FC } from 'react'
 import { SideNav, SideNavItems, SideNavLink, SideNavMenu, SideNavMenuItem } from '@carbon/react'
 import { Link, useLocation } from '@tanstack/react-router'
 import useLayout from '@/context/layout/useLayout'
-import useMockAuth from '@/context/auth/useMockAuth'
+import useAuth from '@/context/auth/useAuth'
 import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import { isNavigationMenu, visibleNavigationItems } from '@/routes/-navigation'
 
 const LayoutSideNav: FC = () => {
   const { closeSideNav, isSideNavExpanded } = useLayout()
   const location = useLocation()
-  const { hasRole } = useMockAuth()
+  const { hasRole } = useAuth()
   // Admin-only items (Administration) are hidden entirely for non-admins; the server still enforces
   // the 403 (MAINTAIN_CODE_TABLES), so this is UX, not the security boundary.
   const visibleItems = visibleNavigationItems(hasRole(ILCR_ROLES.admin))
