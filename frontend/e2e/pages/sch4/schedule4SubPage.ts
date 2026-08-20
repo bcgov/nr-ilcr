@@ -70,6 +70,19 @@ export class Schedule4SubPage {
     await expect(this.table(label)).toBeVisible();
   }
 
+  /**
+   * ANY confirmation dialog raised from the sub-page, matched by the message it carries.
+   *
+   * Deliberately NOT pinned to a specific modal the way the panel's NAV-002/NAV-003 accessors are: the
+   * dialog this asserts (legacy NAV-001 on the sub-page's Back button, `schedule4TowingTotal.xhtml:173-175`)
+   * DOES NOT EXIST in the app yet — see DIV-3. Pinning a test id or heading would be inventing an
+   * implementation detail for something unbuilt, and would keep failing after a correct fix that happened to
+   * name things differently. Matching on the required message is the part the spec actually fixes.
+   */
+  confirmDialogAsking(message: string): Locator {
+    return this.page.getByRole('dialog').filter({ hasText: message });
+  }
+
   // ---- the add-row form ----------------------------------------------------------------------------
 
   addField(field: RowField): Locator {

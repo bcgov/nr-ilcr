@@ -80,6 +80,18 @@ Then(
 );
 
 /**
+ * The confirmation legacy raised from the SUB-PAGE's Back button (NAV-001) — a different control from the
+ * two above, which guard the location PANEL. Asserted by message rather than by a named modal because the
+ * app has no such dialog yet (DIV-3); see `schedule4SubPage.confirmDialogAsking`.
+ */
+Then(
+  'the Schedule 4 sub-page unsaved-changes confirmation asks {string}',
+  async ({ schedule4SubPage }, message) => {
+    await expect(schedule4SubPage.confirmDialogAsking(message)).toBeVisible();
+  },
+);
+
+/**
  * Confirm a nav prompt WITHOUT asserting where it lands. Deliberately separate from the compound
  * "open … from the saved/new location" steps: NAV-003's blocked arm confirms the prompt and must then
  * STAY on the panel, so a step that waited for the sub-page URL could never express it.

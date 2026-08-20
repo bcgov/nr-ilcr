@@ -167,6 +167,12 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   // --- the unsaved-change / recompute divergences ---------------------------------------------------
   'nav-dirty-panel': at(MILL_9171, 25050, 2016, 'S12 / Divergence #3 — closing a dirty panel must warn'),
   'nav-dirty-switch': at(MILL_20171, 22050, 2020, 'S12 / Divergence #3 — opening a new location over a dirty panel'),
+  'nav-subpage-back': at(
+    MILL_987,
+    12050,
+    2015,
+    'S12 / DIV-3 — Back on a sub-page must warn before discarding typed row input',
+  ),
   'discard-safe': at(MILL_20173, 23050, 2020, 'S12 — a discarded panel edit is never written (green)'),
   'per-unit-after-save': at(MILL_20171, 22050, 2019, 'Divergence #4 — $/m³ on the panel that saved it'),
   'per-unit-reopen': at(MILL_20173, 23050, 2021, 'reopening shows the recomputed $/m³ (green)'),

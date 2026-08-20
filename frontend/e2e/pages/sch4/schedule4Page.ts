@@ -45,6 +45,14 @@ import {
  * ("1,200") while holding a raw one ("1200"), so `inputValue()` reads the grouped form the user
  * actually sees; `TextInput` keeps its `labelText` as the accessible name even under `hideLabel`.
  */
+/**
+ * How long to let a hover's background transition finish before a colour-sensitive assertion reads it.
+ * Carbon's is 70ms (`$duration-fast-02`); this is deliberately several times that so the settled colour is
+ * measured, not a frame part-way through the fade. Only the DELIBERATE hover-state a11y scan needs it —
+ * every other scan parks the pointer, which has no transition to wait for.
+ */
+const HOVER_SETTLE_MS = 400;
+
 export class Schedule4Page {
   constructor(private readonly page: Page) {}
 
@@ -138,9 +146,20 @@ export class Schedule4Page {
   /**
    * Rest the pointer on a location's row — for the DELIBERATE hover-state accessibility scan. The axe
    * helper parks the pointer before every other scan, so hover has to be asked for explicitly.
+   *
+   * Hovers the row's FIRST CELL, not the row: `locationRow(name).hover()` aims at the row's centre point,
+   * which in this two-column table lands inside the actions cell and can sit ON a button — and a hovered
+   * Carbon button is a DIFFERENT, passing state (it moves its label with its background: `ghost` darkens to
+   * #0043ce, `danger--ghost` inverts to white on red). Aiming at the name cell measures the row-hover state
+   * unambiguously, instead of depending on how wide the buttons happen to render.
+   *
+   * The wait is for Carbon's 70ms background transition: axe reads the COMPOSITED background, so a scan
+   * fired immediately after the pointer moves samples a mid-fade colour that is lighter than the settled
+   * one — i.e. it understates the contrast failure and can go green by luck of timing.
    */
   async hoverLocationRow(name: string): Promise<void> {
-    await this.locationRow(name).hover();
+    await this.locationRow(name).locator('td').first().hover();
+    await this.page.waitForTimeout(HOVER_SETTLE_MS);
   }
 
   /** Open a location's panel: Edit in Draft, View outside it (the same control, renamed). */

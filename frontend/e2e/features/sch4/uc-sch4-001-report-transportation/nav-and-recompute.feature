@@ -15,7 +15,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   So that I neither lose data by accident nor read stale numbers off the screen
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-3 — DELIBERATELY RED. defects.md Divergence #3 → BA/QA/Jira.
+  # DIV-3 — DELIBERATELY RED. defects.md DIV-3 → BA/QA/Jira.
   #
   # NAV-001 is not implemented. Leaving a dirty location panel discards the edit with NO warning:
   #   - legacy raised `confirmNavigationMsg` ("Any unsaved data will be lost…") from the top-level
@@ -33,7 +33,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   # subpages.feature), so this is a missing case rather than a missing feature.
   # ---------------------------------------------------------------------------------------------------
   @p1 @S12 @discovered-divergence
-  Scenario: Closing a dirty location panel warns before discarding [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md Divergence #3 → BA/QA/Jira]
+  Scenario: Closing a dirty location panel warns before discarding [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 → BA/QA/Jira]
     Given the Schedule 4 anchor "nav-dirty-panel" is an editable Draft with no locations
     And the Schedule 4 location "E2E Dirty Panel" is already saved with:
       | category          | distance | volume | cost |
@@ -47,7 +47,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     Then the Schedule 4 unsaved-changes confirmation asks "Any unsaved data will be lost. Are you sure you would like to continue?"
 
   @p2 @S12 @discovered-divergence
-  Scenario: Opening a new location over a dirty panel warns first [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md Divergence #3 → BA/QA/Jira]
+  Scenario: Opening a new location over a dirty panel warns first [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 → BA/QA/Jira]
     Given the Schedule 4 anchor "nav-dirty-switch" is an editable Draft with no locations
     And the Schedule 4 location "E2E Dirty Switch" is already saved with:
       | category          | distance | volume | cost |
@@ -58,6 +58,35 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     And I enter "8888" in the Schedule 4 "Lakeside Dry Dump" "cost" cell
     And I add a new Schedule 4 location
     Then the Schedule 4 unsaved-changes confirmation asks "Any unsaved data will be lost. Are you sure you would like to continue?"
+
+  # ---------------------------------------------------------------------------------------------------
+  # DIV-3, THIRD CASE — DELIBERATELY RED. Added 2026-08-19 after the app-wide sweep for issue #324.
+  #
+  # NAV-001 is missing on the SUB-PAGE's Back button too, not just on the location panel. Legacy attached
+  # the confirm to that Back button UNCONDITIONALLY — `schedule4TowingTotal.xhtml:173-175`, and the same in
+  # `schedule4TruckRehaul.xhtml` / `schedule4OtherTransportation.xhtml` — so it fired whether or not
+  # anything had been typed. `schedule4/SubPage.tsx` has no confirm state at all.
+  #
+  # Confirmed in the browser 2026-08-19: typed "E2E unsaved text" into the add-row form, pressed Back, and
+  # the app returned to the location list immediately with 0 dialogs and the typed input gone.
+  #
+  # This asserts the message rather than a named modal, because the dialog does not exist yet — pinning a
+  # test id would invent an implementation detail for something unbuilt.
+  # ---------------------------------------------------------------------------------------------------
+  @p2 @S12 @discovered-divergence
+  Scenario: Leaving a sub-page with typed row input warns before discarding [DISCOVERED DIVERGENCE — no NAV-001 confirm on the sub-page; defects.md DIV-3 / issue #324]
+    Given the Schedule 4 anchor "nav-subpage-back" is an editable Draft with no locations
+    And the Schedule 4 location "E2E Subpage Back" is already saved with only its name
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 4
+    And I open the Schedule 4 location "E2E Subpage Back" for edit
+    And I open the Schedule 4 "Towing Total" sub-page from the saved location
+    And I enter the following Schedule 4 row values:
+      | description       | distance | volume | cost |
+      | E2E unsaved text  | 12.5     | 500    | 1500 |
+    And I go back from the Schedule 4 sub-page
+    # The legacy warning must appear BEFORE the typed row is dropped.
+    Then the Schedule 4 sub-page unsaved-changes confirmation asks "Any unsaved data will be lost. Are you sure you would like to continue?"
 
   # The compensating GREEN assertion for the same behaviour: whatever the app decides about warning, the
   # discarded edit must never reach the database. This one passes today and would catch the far worse bug
@@ -86,7 +115,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     Then the Schedule 4 "Lakeside Dry Dump" "cost" cell shows "1,000"
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-4 — DELIBERATELY RED. defects.md Divergence #4 → BA/QA/Jira.
+  # DIV-4 — DELIBERATELY RED. defects.md DIV-4 → BA/QA/Jira.
   #
   # The recomputed $/m³ is not shown on the panel that just saved. Both S01 and S02 assert it explicitly
   # ("the lakeSideDryDumpCostVolume field shows the recomputed / recalculated cost-per-volume"), and BR-05
@@ -100,7 +129,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   # So the figure is right in the database and stale on screen until the location is reopened.
   # ---------------------------------------------------------------------------------------------------
   @p1 @S01 @S02 @discovered-divergence
-  Scenario: The recomputed $/m³ appears on the panel that saved it [DISCOVERED DIVERGENCE — stale until reopened; defects.md Divergence #4 → BA/QA/Jira]
+  Scenario: The recomputed $/m³ appears on the panel that saved it [DISCOVERED DIVERGENCE — stale until reopened; defects.md DIV-4 → BA/QA/Jira]
     Given the Schedule 4 anchor "per-unit-after-save" is an editable Draft with no locations
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4
