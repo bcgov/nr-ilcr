@@ -1,16 +1,23 @@
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
+
 // Self-contained layout for the Schedule 6 page (global scss, like the sibling schedule pages). The
 // .schedule-6__* class names mirror the schedule11 layout for visual consistency; no new global
 // styles and no Carbon token overrides.
+
+// Left, not the right-alignment schedules 1/3/11 use: those are data-table columns, where right
+// alignment lets a reader scan magnitudes down a column. These values sit in `dl` grid cells with
+// the label directly above, so right alignment pushes each number away from the label naming it.
+// Legacy left-aligned them too — every row and totals figure is a plain `p:inputText`
+// (schedule6.xhtml:357-365, :474-481). Same choice as schedule2's `__num`. The class stays even
+// though `dd` is left-aligned by default: it marks which fields are numeric if they ever move
+// into a table.
 .schedule-6__num {
-  text-align: right;
+  text-align: left;
 }
 
 .schedule-6__section {
   margin-block: 1rem;
-}
-
-.schedule-6__meta {
-  margin-block-end: 1rem;
 }
 
 .schedule-6__heading {
@@ -29,29 +36,59 @@
   gap: 0.5rem;
 }
 
-.schedule-6__summary {
-  display: flex;
-  gap: 2rem;
-  margin-block-start: 0.5rem;
-}
-
+// Every label/value pair on the page — the record display grid, the derived read-outs in the
+// add/edit grid, and the totals strip. The label is told apart from its value by SIZE and COLOUR,
+// Carbon's own convention for a field label, rather than by weight: a 12px secondary-colour label
+// over a 14px primary-colour value, separated by Carbon's standard $spacing-03 label-to-field gap.
+// Three reinforcing cues, so nothing here needs to be bold to read as a label.
 .schedule-6__field {
   dt {
-    font-weight: 600;
+    @include type-style('label-01');
+
+    color: var(--cds-text-secondary);
+    margin-block-end: $spacing-03;
+  }
+
+  dd {
+    @include type-style('body-compact-01');
+
+    margin: 0;
   }
 }
 
 // The add/edit field grid and the record display grid share one shape so a row reads the same in
 // both modes (legacy's two field rows: type/TFL/block/RMG then volume/cost/$ per m³, then Comments).
+//
+// Top-aligned, NOT bottom-aligned. BR-02 always leaves one of TFL / Supply Block empty, and an empty
+// `dd` generates no line box — so under `flex-end` that field came up one line short and its label
+// was pushed down out of line with its neighbours. Aligning to the start pins every label to the
+// row's first line regardless of whether its value is empty, and keeps a field that grows a
+// validation message from shifting the labels beside it.
 .schedule-6__fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 1rem;
-  align-items: flex-end;
+  align-items: start;
 }
 
+// RMG and $/m³ are server-derived, so they sit in the add/edit grid as read-only text among Carbon
+// fields. The shared `.schedule-6__field` typography above already matches a Carbon field label;
+// what is left here is only what sitting BESIDE AN INPUT demands — a value on the input's own line,
+// indented to the input's own text inset (the read-only-vs-input indent the sibling schedules
+// document — schedule1/index.scss:100-108, schedule2:25, schedule3:58). Scoped to
+// `.schedule-6__derived`, which appears only in the add/edit grid.
 .schedule-6__derived {
-  align-self: flex-end;
+  margin: 0;
+
+  .schedule-6__field dd {
+    display: flex;
+    align-items: center;
+    // $spacing-07 is 2rem — the height of the size="sm" inputs, so the value sits on their line
+    // rather than riding up under the label. Holds the row aligned even when the value is blank,
+    // as RMG is in the Add panel (deviation D).
+    min-height: $spacing-07;
+    padding-inline-start: $spacing-05;
+  }
 }
 
 // Comments spans the grid so a two-row textarea is not squeezed into one narrow column.
@@ -59,18 +96,30 @@
   grid-column: 1 / -1;
 }
 
-.schedule-6__comments-save {
-  margin-block-start: 1rem;
-}
-
+// Legacy laid the totals out as a 4-column grid — `"" | Volume m³ | Cost $ | $ / m³` above
+// `Totals: | 1,000 | 50,000 | 50.00` (schedule6.xhtml:466-482) — so the three figures run ACROSS,
+// labels above values, with `Totals:` on the values' line. `flex-end` puts the label on that line.
 .schedule-6__totals {
   display: flex;
   gap: 1rem;
-  align-items: baseline;
+  align-items: flex-end;
 }
 
-.schedule-6__totals-label {
-  font-weight: 600;
+// Each pair takes only its content width, so all three sit side by side at any realistic width;
+// wrapping is the graceful fallback on a phone rather than an overflow.
+.schedule-6__totals-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-07;
+  margin: 0;
+}
+
+// An expanded row keeps the grey its header shows on hover. `--cds-layer-hover` is the very token
+// Carbon's own `.cds--accordion__heading:hover` uses, so the two states match exactly and both
+// follow the active theme. Scoped to this page's accordion, and at three classes it outranks
+// Carbon's two-class hover rule.
+.schedule-6__section .cds--accordion__item--active > .cds--accordion__heading {
+  background-color: var(--cds-layer-hover);
 }
 
 .schedule-6__empty {

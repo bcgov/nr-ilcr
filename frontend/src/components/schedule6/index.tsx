@@ -137,9 +137,12 @@ const FieldValue: FC<FieldValueProps> = ({ label, value, numeric }) => (
 // toggle behaviour and the column caps cannot drift between the two. `rmg`/`costPerVolume` are
 // server-derived (AD-5) and passed in as pre-formatted read-only text — blank in the Add panel, where
 // no server answer exists yet (deviation D).
+//
+// Labels are the bare legacy field names in both modes. Legacy rows were always directly editable
+// under those names (schedule6.xhtml:248-431) and had no edit mode to qualify; `idPrefix` keeps each
+// instance's id/htmlFor pairing unique, so the repeated text costs nothing.
 type RoadRecordFieldsProps = {
   readonly idPrefix: string
-  readonly labelPrefix: string
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
   readonly disabled: boolean
@@ -151,7 +154,6 @@ type RoadRecordFieldsProps = {
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   idPrefix,
-  labelPrefix,
   form,
   errors,
   disabled,
@@ -168,7 +170,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
           endpoint exists (the blessed Schedule 8 simplification). */}
       <TextInput
         id={`${idPrefix}-area-type`}
-        labelText={`${labelPrefix}TSA or TFL`}
+        labelText="TSA or TFL"
         size="sm"
         maxLength={AREA_TYPE_MAX_LENGTH}
         disabled={disabled}
@@ -179,7 +181,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-tfl-number`}
-        labelText={`${labelPrefix}TFL`}
+        labelText="TFL"
         size="sm"
         maxLength={TFL_MAX_LENGTH}
         disabled={disabled || !tfl}
@@ -190,7 +192,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-supply-block`}
-        labelText={`${labelPrefix}Supply Block`}
+        labelText="Supply Block"
         size="sm"
         maxLength={SUPPLY_BLOCK_MAX_LENGTH}
         disabled={disabled || tfl}
@@ -204,7 +206,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       </dl>
       <TextInput
         id={`${idPrefix}-volume`}
-        labelText={`${labelPrefix}Volume m³`}
+        labelText="Volume m³"
         size="sm"
         inputMode="decimal"
         disabled={disabled}
@@ -215,7 +217,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-cost`}
-        labelText={`${labelPrefix}Cost $`}
+        labelText="Cost $"
         size="sm"
         inputMode="numeric"
         disabled={disabled}
@@ -230,7 +232,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       <div className="schedule-6__comments">
         <TextArea
           id={`${idPrefix}-comments`}
-          labelText={`${labelPrefix}Comments`}
+          labelText="Comments"
           rows={2}
           enableCounter
           // 400, not legacy's maxlength=3500: the per-record comment lands in
@@ -270,7 +272,6 @@ const AddPanel: FC<AddPanelProps> = ({
     <h3 className="schedule-6__heading">{ADD_PANEL_HEADING}</h3>
     <RoadRecordFields
       idPrefix="add"
-      labelPrefix=""
       form={form}
       errors={errors}
       disabled={disabled}
@@ -343,7 +344,6 @@ const RecordEditor: FC<RecordEditorProps> = ({
   <>
     <RoadRecordFields
       idPrefix={`edit-${String(row.recordId)}`}
-      labelPrefix="Edit "
       form={form}
       errors={errors}
       disabled={saving}
@@ -639,27 +639,47 @@ const Schedule6: FC = () => {
   // never contradict visible unsaved input.
   const addDirty = showAdd && Object.values(addForm).some((value) => value.trim() !== '')
 
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
+  // (saveButton0/checkStatusButton0, schedule6.xhtml:222-229) and the same pair again below the
+  // General Comment (saveButton1/checkStatusButton1, :518-526) — the same mirrored shape as
+  // Schedules 1 and 3. `Add` rides the top bar only: it toggles the entry panel that sits directly
+  // beneath it, and legacy's bottom bar carried no add control.
+  //
+  // Save is the General Comment PUT (deviation C): 8.2 decomposed legacy's page-wide save() into
+  // three endpoints, so the road records save themselves via Add Report and the per-row Save, and
+  // this is the only page-level write left. Placement changed here; nothing about what it sends did.
+  const actionBar = (includeAdd: boolean) => (
+    <Column sm={4} md={8} lg={16} className="schedule-6__actions">
+      <Button kind="primary" disabled={!editable || saving} onClick={handleSaveComments}>
+        Save
+      </Button>
+      {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
+          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
+      <Button
+        kind="tertiary"
+        disabled={!editable || saving || editing || addDirty}
+        onClick={handleCheckStatus}
+      >
+        Check Status
+      </Button>
+      {includeAdd && (
+        <Button
+          kind="tertiary"
+          disabled={entryLocked}
+          onClick={() => {
+            setShowAdd((prev) => !prev)
+          }}
+        >
+          {showAdd ? 'Close' : 'Add'}
+        </Button>
+      )}
+    </Column>
+  )
+
   return (
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-6__meta">
-          <dl className="schedule-6__summary">
-            <div className="schedule-6__field">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-6__field">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-6__field">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
           <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
@@ -707,26 +727,7 @@ const Schedule6: FC = () => {
           </Column>
         )}
 
-        <Column sm={4} md={8} lg={16} className="schedule-6__actions">
-          {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
-              disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
-          <Button
-            kind="tertiary"
-            disabled={!editable || saving || editing || addDirty}
-            onClick={handleCheckStatus}
-          >
-            Check Status
-          </Button>
-          <Button
-            kind="tertiary"
-            disabled={entryLocked}
-            onClick={() => {
-              setShowAdd((prev) => !prev)
-            }}
-          >
-            {showAdd ? 'Close' : 'Add'}
-          </Button>
-        </Column>
+        {actionBar(true)}
 
         {showAdd && (
           <Column sm={4} md={8} lg={16}>
@@ -787,8 +788,10 @@ const Schedule6: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-6__section">
           <section aria-label="Totals" className="schedule-6__totals">
-            <span className="schedule-6__totals-label">Totals: </span>
-            <dl className="schedule-6__fields">
+            <span>Totals: </span>
+            {/* Its own container, NOT the record-row grid: that grid's 10rem minimum track is sized
+                for rows of inputs and wraps these three short numbers into a stack. */}
+            <dl className="schedule-6__totals-fields">
               <FieldValue label="Volume m³" value={volumeMask(data.totalVolume)} numeric />
               <FieldValue label="Cost $" value={moneyMask(data.totalCost)} numeric />
               <FieldValue label="$ / m³" value={ratioMask(data.totalCostPerVolume)} numeric />
@@ -814,18 +817,12 @@ const Schedule6: FC = () => {
               invalid={Boolean(commentsError)}
               invalidText={commentsError}
             />
-            {/* Its own save (deviation C): 8.2 decomposed legacy's page-wide Save into three
-                independent endpoints, and this one saves with zero road records (BR-09). */}
-            <Button
-              kind="primary"
-              className="schedule-6__comments-save"
-              disabled={!editable || saving}
-              onClick={handleSaveComments}
-            >
-              Save
-            </Button>
           </section>
         </Column>
+
+        {/* Legacy's bottom bar sits AFTER the General Comment, not beside it (schedule6.xhtml:515-529),
+            and carries Save + Check Status only. */}
+        {actionBar(false)}
       </Grid>
     </div>
   )

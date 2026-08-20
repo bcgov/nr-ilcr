@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
 import type { Bridge, BridgeCodeLists, BridgeCodeOption } from '@/interfaces/Schedule7aResponse'
+import { numStrGroup } from '@/utils/number'
 import type { BridgeErrors, BridgeFormValues, CodeField, CostField } from './validation'
 import { COMMENTS_MAX_LENGTH, LOCATION_MAX_LENGTH } from './validation'
 
@@ -61,10 +62,9 @@ const COST_ROWS: readonly CostRowSpec[] = [
   },
 ]
 
-// Server-computed values render through a mask, never a recompute. A null total means "no
-// contributing costs" and must render BLANK — showing "0" would assert a figure the data lacks.
-const money = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : value.toLocaleString('en-US')
+// Server-computed totals render through the shared en-CA numStrGroup (Story 29.8 — one app locale, no
+// local en-US copy). A null total means "no contributing costs" and must render BLANK — numStrGroup
+// returns '' on null, so "0" (a figure the data lacks) is never shown.
 
 type Props = {
   readonly idPrefix: string
@@ -174,7 +174,7 @@ const BridgeFields: FC<Props> = ({
       <span className={hideLabel ? 'cds--visually-hidden' : 'schedule-7a__total-label'}>
         {label}
       </span>
-      <span className="schedule-7a__total-value">{money(value)}</span>
+      <span className="schedule-7a__total-value">{numStrGroup(value)}</span>
     </div>
   )
 

@@ -4,6 +4,8 @@
 // bundle, so an advisory message reads identically to a server rejection — which still renders
 // verbatim on a 400 (AD-8/AD-6), never replaced by anything here.
 
+import { parseDecimalInput } from '@/utils/number'
+
 // Column-fidelity caps, exported so index.tsx binds the SAME numbers to maxLength/maxCount that this
 // module validates against. The two comment caps are DIFFERENT columns, not a typo: the per-record
 // comment lands in ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE) while the schedule-level
@@ -58,24 +60,10 @@ export interface RoadRecordFormValues {
   comments: string
 }
 
-// Legacy JSF numeric fields (volume, cost) bind through a US-locale DecimalFormat converter
-// (ILCRVolumeConverter/ILCRCostConverter :36). This parser accepts that format — an optional leading
-// '-', digits with optional comma grouping, and an optional '.' fractional part (the same format the
-// page DISPLAYS) — but is deliberately STRICTER than legacy: DecimalFormat.parse has no
-// consumed-length check, so legacy also accepted junk-suffixed/mis-grouped input by silently
-// mangling it ('12,34' -> 1234, '1e2' -> 1, '1000abc' -> 1000); this gate rejects those outright
-// (recorded deviation (L), Story 8.3). Native Number() diverges the other way and must NOT be used:
-// it rejects grouped input legacy accepts (`Number('1,000')` -> NaN) and accepts JS-only forms
-// legacy never allowed as full values (`1e2` -> 100, `0x10` -> 16, `Infinity`). Returns the numeric
-// value, or null when the string is blank or not a valid decimal in this strict format.
-const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
-export const parseDecimalInput = (raw: string): number | null => {
-  const trimmed = raw.trim()
-  if (trimmed === '' || !DECIMAL_INPUT.test(trimmed)) {
-    return null
-  }
-  return Number(trimmed.replace(/,/g, ''))
-}
+// The strict legacy-format decimal parser (STRICTER than legacy DecimalFormat.parse — recorded
+// deviation (L), Story 8.3) lives in @/utils/number (Story 29.8 consolidation — this file's identical
+// local copy was removed). Re-exported so callers importing it from this module keep working.
+export { parseDecimalInput }
 
 // Whole-dollar costs: legacy accepted fractional input (ILCRCostConverter BigDecimal parse) and
 // Oracle rounded it on insert, while the modern Integer wire would silently TRUNCATE at

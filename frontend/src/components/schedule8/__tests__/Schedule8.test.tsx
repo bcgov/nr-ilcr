@@ -1347,16 +1347,11 @@ describe('Schedule8 additions/deductions level', () => {
   })
 
   test('stale PUT is ignored when context changes before it settles (Story 29.6)', async () => {
-    let putGate: (v: unknown) => void = () => {}
-    const putPromise = new Promise((resolve) => {
-      putGate = resolve
-    })
     let releasePut = () => {}
     const releasePromise = new Promise<void>((resolve) => {
       releasePut = resolve
     })
 
-    let putCalled = false
     server.use(
       http.get(URL, ({ request }) =>
         new window.URL(request.url).searchParams.get('millId') === '999'
@@ -1365,14 +1360,23 @@ describe('Schedule8 additions/deductions level', () => {
                 millId: 999,
                 year: 2020,
                 editable: false,
-                pages: [{ id: 999, revisionCount: 1, tsaNumber: 'TSA1', supplyBlock: null, cuttingPermit: 'Context 999/2020 loaded', comments: null, subPageRows: [], categories: [] }],
+                pages: [
+                  {
+                    id: 999,
+                    revisionCount: 1,
+                    tsaNumber: 'TSA1',
+                    supplyBlock: null,
+                    cuttingPermit: 'Context 999/2020 loaded',
+                    comments: null,
+                    subPageRows: [],
+                    categories: [],
+                  },
+                ],
               }),
             )
           : HttpResponse.json(doc()),
       ),
       http.put(PAGES_URL, async () => {
-        putCalled = true
-        putGate(null)
         await releasePromise
         return HttpResponse.json({
           ...doc(),
@@ -1391,6 +1395,7 @@ describe('Schedule8 additions/deductions level', () => {
       }),
       component: () => (
         <MillYearProvider initial={{ millId: 514, year: 2021 }}>
+          {/* eslint-disable-next-line @typescript-eslint/no-use-before-define */}
           <StaleRaceHarness />
         </MillYearProvider>
       ),

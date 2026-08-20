@@ -36,12 +36,7 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
     <Button kind="primary" size="md" disabled={!editable || saving} onClick={onSave}>
       Save
     </Button>
-    <Button
-      kind="tertiary"
-      size="md"
-      disabled={!editable || saving}
-      onClick={onCheckStatus}
-    >
+    <Button kind="tertiary" size="md" disabled={!editable || saving} onClick={onCheckStatus}>
       Check Status
     </Button>
     {showDelete && (
