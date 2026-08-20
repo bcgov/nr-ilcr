@@ -207,8 +207,22 @@ legend.#{variables.$bcgov-prefix}--label {
 
 // Dropdown / ComboBox / Select menu options wrap instead of truncating with an ellipsis, so a long
 // option string is fully readable when the menu is open (used by the shared CodeComboBox selectors).
+//
+// Wrapping alone is not enough: Carbon fixes BOTH the row and the option to
+// --cds-list-box-menu-item-height, so a wrapped option renders its second line outside that height
+// and is clipped mid-word. The row has to be free to grow with its text, keeping the fixed height as
+// a floor so single-line options are unchanged.
+.#{variables.$bcgov-prefix}--list-box__menu-item,
+.#{variables.$bcgov-prefix}--list-box__menu-item__option {
+  block-size: auto;
+  min-block-size: var(--cds-list-box-menu-item-height, 2.5rem);
+}
+
 .#{variables.$bcgov-prefix}--list-box__menu-item__option {
   white-space: normal;
+  // Carbon centres a single line by line-height alone; wrapped text needs real vertical padding so
+  // the two lines sit inside the row rather than against its borders.
+  padding-block: $spacing-03;
 }
 
 .#{variables.$bcgov-prefix}--date-picker__input,

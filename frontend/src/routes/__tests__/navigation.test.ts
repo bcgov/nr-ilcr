@@ -37,6 +37,22 @@ describe('visibleNavigationItems', () => {
     const gated = NAVIGATION_ITEMS.filter((item) => item.adminOnly)
     expect(gated.map((item) => item.name)).toEqual(['Administration'])
   })
+
+  test('Schedule 10 sits between Schedule 9 and Schedule 11, and is not admin-only', () => {
+    // AC14 of Story 11.3. The route test proves the route exists; this proves it is REACHABLE, in
+    // the right place, to a non-admin — the half no test asserted when 11.3 shipped.
+    const schedules = NAVIGATION_ITEMS.find((item) => item.name === 'Schedules')
+    const names = schedules?.items?.map((child) => child.name) ?? []
+    const at = names.indexOf('Schedule 10')
+    expect(at).toBeGreaterThan(-1)
+    expect(names[at - 1]).toBe('Schedule 9')
+    expect(names[at + 1]).toBe('Schedule 11')
+
+    const item = schedules?.items?.find((child) => child.name === 'Schedule 10')
+    expect(item?.path).toBe('/schedule-10')
+    expect(item?.adminOnly).toBeFalsy()
+    expect(isAdminOnlyPath('/schedule-10')).toBe(false)
+  })
 })
 
 describe('admin-only paths (route guard source)', () => {
