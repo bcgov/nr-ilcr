@@ -96,10 +96,22 @@
   grid-column: 1 / -1;
 }
 
+// Legacy laid the totals out as a 4-column grid — `"" | Volume m³ | Cost $ | $ / m³` above
+// `Totals: | 1,000 | 50,000 | 50.00` (schedule6.xhtml:466-482) — so the three figures run ACROSS,
+// labels above values, with `Totals:` on the values' line. `flex-end` puts the label on that line.
 .schedule-6__totals {
   display: flex;
   gap: 1rem;
-  align-items: baseline;
+  align-items: flex-end;
+}
+
+// Each pair takes only its content width, so all three sit side by side at any realistic width;
+// wrapping is the graceful fallback on a phone rather than an overflow.
+.schedule-6__totals-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-07;
+  margin: 0;
 }
 
 .schedule-6__totals-label {
