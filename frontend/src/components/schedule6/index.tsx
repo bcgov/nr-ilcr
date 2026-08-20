@@ -137,9 +137,12 @@ const FieldValue: FC<FieldValueProps> = ({ label, value, numeric }) => (
 // toggle behaviour and the column caps cannot drift between the two. `rmg`/`costPerVolume` are
 // server-derived (AD-5) and passed in as pre-formatted read-only text — blank in the Add panel, where
 // no server answer exists yet (deviation D).
+//
+// Labels are the bare legacy field names in both modes. Legacy rows were always directly editable
+// under those names (schedule6.xhtml:248-431) and had no edit mode to qualify; `idPrefix` keeps each
+// instance's id/htmlFor pairing unique, so the repeated text costs nothing.
 type RoadRecordFieldsProps = {
   readonly idPrefix: string
-  readonly labelPrefix: string
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
   readonly disabled: boolean
@@ -151,7 +154,6 @@ type RoadRecordFieldsProps = {
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   idPrefix,
-  labelPrefix,
   form,
   errors,
   disabled,
@@ -168,7 +170,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
           endpoint exists (the blessed Schedule 8 simplification). */}
       <TextInput
         id={`${idPrefix}-area-type`}
-        labelText={`${labelPrefix}TSA or TFL`}
+        labelText="TSA or TFL"
         size="sm"
         maxLength={AREA_TYPE_MAX_LENGTH}
         disabled={disabled}
@@ -179,7 +181,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-tfl-number`}
-        labelText={`${labelPrefix}TFL`}
+        labelText="TFL"
         size="sm"
         maxLength={TFL_MAX_LENGTH}
         disabled={disabled || !tfl}
@@ -190,7 +192,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-supply-block`}
-        labelText={`${labelPrefix}Supply Block`}
+        labelText="Supply Block"
         size="sm"
         maxLength={SUPPLY_BLOCK_MAX_LENGTH}
         disabled={disabled || tfl}
@@ -204,7 +206,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       </dl>
       <TextInput
         id={`${idPrefix}-volume`}
-        labelText={`${labelPrefix}Volume m³`}
+        labelText="Volume m³"
         size="sm"
         inputMode="decimal"
         disabled={disabled}
@@ -215,7 +217,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <TextInput
         id={`${idPrefix}-cost`}
-        labelText={`${labelPrefix}Cost $`}
+        labelText="Cost $"
         size="sm"
         inputMode="numeric"
         disabled={disabled}
@@ -230,7 +232,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       <div className="schedule-6__comments">
         <TextArea
           id={`${idPrefix}-comments`}
-          labelText={`${labelPrefix}Comments`}
+          labelText="Comments"
           rows={2}
           enableCounter
           // 400, not legacy's maxlength=3500: the per-record comment lands in
@@ -270,7 +272,6 @@ const AddPanel: FC<AddPanelProps> = ({
     <h3 className="schedule-6__heading">{ADD_PANEL_HEADING}</h3>
     <RoadRecordFields
       idPrefix="add"
-      labelPrefix=""
       form={form}
       errors={errors}
       disabled={disabled}
@@ -343,7 +344,6 @@ const RecordEditor: FC<RecordEditorProps> = ({
   <>
     <RoadRecordFields
       idPrefix={`edit-${String(row.recordId)}`}
-      labelPrefix="Edit "
       form={form}
       errors={errors}
       disabled={saving}

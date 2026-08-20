@@ -428,7 +428,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
@@ -448,7 +448,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured[9501].comments).toBe('Culvert replacement')
     // The echoed document replaces page state: the editor is torn down and the row re-renders the
     // SAVED volume, not the pre-edit 1,000 — a save that only banners is a silent data-staleness bug.
-    expect(within(rowPanel(1)).queryByLabelText('Edit Volume m³')).not.toBeInTheDocument()
+    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
     expect(within(rowPanel(1)).getByText('2,000')).toBeInTheDocument()
     expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
 
@@ -477,13 +477,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '4321')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
 
     expect(put).not.toHaveBeenCalled()
-    expect(within(rowPanel(1)).queryByLabelText('Edit Volume m³')).not.toBeInTheDocument()
+    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
     expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
   })
 
@@ -1124,7 +1124,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
@@ -1132,7 +1132,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
     // it can be corrected, page state is not replaced, and no success banner appears alongside.
-    expect(within(rowPanel(1)).getByLabelText('Edit Volume m³')).toHaveValue('2000')
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
     await waitFor(() =>
