@@ -639,6 +639,43 @@ const Schedule6: FC = () => {
   // never contradict visible unsaved input.
   const addDirty = showAdd && Object.values(addForm).some((value) => value.trim() !== '')
 
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
+  // (saveButton0/checkStatusButton0, schedule6.xhtml:222-229) and the same pair again below the
+  // General Comment (saveButton1/checkStatusButton1, :518-526) — the same mirrored shape as
+  // Schedules 1 and 3. `Add` rides the top bar only: it toggles the entry panel that sits directly
+  // beneath it, and legacy's bottom bar carried no add control.
+  //
+  // Save is the General Comment PUT (deviation C): 8.2 decomposed legacy's page-wide save() into
+  // three endpoints, so the road records save themselves via Add Report and the per-row Save, and
+  // this is the only page-level write left. Placement changed here; nothing about what it sends did.
+  const actionBar = (includeAdd: boolean) => (
+    <Column sm={4} md={8} lg={16} className="schedule-6__actions">
+      <Button kind="primary" disabled={!editable || saving} onClick={handleSaveComments}>
+        Save
+      </Button>
+      {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
+          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
+      <Button
+        kind="tertiary"
+        disabled={!editable || saving || editing || addDirty}
+        onClick={handleCheckStatus}
+      >
+        Check Status
+      </Button>
+      {includeAdd && (
+        <Button
+          kind="tertiary"
+          disabled={entryLocked}
+          onClick={() => {
+            setShowAdd((prev) => !prev)
+          }}
+        >
+          {showAdd ? 'Close' : 'Add'}
+        </Button>
+      )}
+    </Column>
+  )
+
   return (
     <div className="app-page">
       {PAGE_HEADER}
@@ -707,26 +744,7 @@ const Schedule6: FC = () => {
           </Column>
         )}
 
-        <Column sm={4} md={8} lg={16} className="schedule-6__actions">
-          {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
-              disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
-          <Button
-            kind="tertiary"
-            disabled={!editable || saving || editing || addDirty}
-            onClick={handleCheckStatus}
-          >
-            Check Status
-          </Button>
-          <Button
-            kind="tertiary"
-            disabled={entryLocked}
-            onClick={() => {
-              setShowAdd((prev) => !prev)
-            }}
-          >
-            {showAdd ? 'Close' : 'Add'}
-          </Button>
-        </Column>
+        {actionBar(true)}
 
         {showAdd && (
           <Column sm={4} md={8} lg={16}>
@@ -814,18 +832,12 @@ const Schedule6: FC = () => {
               invalid={Boolean(commentsError)}
               invalidText={commentsError}
             />
-            {/* Its own save (deviation C): 8.2 decomposed legacy's page-wide Save into three
-                independent endpoints, and this one saves with zero road records (BR-09). */}
-            <Button
-              kind="primary"
-              className="schedule-6__comments-save"
-              disabled={!editable || saving}
-              onClick={handleSaveComments}
-            >
-              Save
-            </Button>
           </section>
         </Column>
+
+        {/* Legacy's bottom bar sits AFTER the General Comment, not beside it (schedule6.xhtml:515-529),
+            and carries Save + Check Status only. */}
+        {actionBar(false)}
       </Grid>
     </div>
   )
