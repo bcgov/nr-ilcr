@@ -86,6 +86,32 @@
   border-top-right-radius: 0.25rem;
 }
 
+// Global field height: normalize every single-line control (text inputs, dropdowns/combo boxes,
+// selects, date pickers) to 32px regardless of the Carbon `size` prop, so fields line up across the
+// schedule forms. Without this a `size`-less CodeComboBox (Carbon defaults it to md/40px) stands 8px
+// taller than the sm inputs beside it, and Schedule 8's page editor (all md) is taller than
+// Schedules 2/4/9 (all sm).
+//
+// NOTE (SScholefield review): `--cds-layout-size-height-local` is an internal Carbon variable. A
+// minor Carbon update could rename it and silently revert field heights (tracked as a style-pinning
+// risk). Overriding the layout height token — as the button rule above does — drives both the
+// min-block-size and the centering padding, so values stay vertically centred at any size. Text
+// areas are intentionally excluded (multiline, auto-height). We target `.cds--search` instead of
+// `.cds--search-input` so the token inherits down to its sibling clear/magnify sub-elements.
+.#{variables.$bcgov-prefix}--text-input,
+.#{variables.$bcgov-prefix}--select-input,
+.#{variables.$bcgov-prefix}--list-box,
+.#{variables.$bcgov-prefix}--list-box__field,
+.#{variables.$bcgov-prefix}--search {
+  --cds-layout-size-height-local: 2rem;
+}
+
+// Carbon's DatePicker does not consume the layout height token, hardcoding height to 40px
+// in @carbon/styles. We override its block-size directly to match the 32px (2rem) standard.
+.#{variables.$bcgov-prefix}--date-picker__input {
+  block-size: 2rem;
+}
+
 .#{variables.$bcgov-prefix}--list-box__menu,
 .#{variables.$bcgov-prefix}--modal-container,
 .#{variables.$bcgov-prefix}--number__control-btn,

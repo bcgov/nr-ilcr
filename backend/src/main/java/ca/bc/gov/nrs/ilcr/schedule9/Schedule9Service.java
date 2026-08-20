@@ -120,6 +120,19 @@ public class Schedule9Service {
   // ===============================================================================================
 
   /**
+   * The number of Schedule 9 records for a mill/year — the reporting empty-schedule pre-check reads
+   * this through the service seam (Story 29.10) rather than reaching into {@code Schedule9Repository}.
+   *
+   * @param millId the validated mill id
+   * @param year the validated reporting year
+   * @return the record count (0 when the schedule is empty)
+   */
+  @Transactional(readOnly = true)
+  public int countRecords(long millId, int year) {
+    return repository.countRecords(millId, year);
+  }
+
+  /**
    * The Schedule 9 document for a mill/year. A valid, active mill/year with no records returns an
    * empty {@code records} list (never a 404 — the guards live in {@code MillContextService}).
    *

@@ -303,6 +303,22 @@ public class MillContextService {
   public record MillYearContext(long millId, int year) {}
 
   /**
+   * The report title-block string for a mill — {@code MILL_NAME + "-" + MILL_NUMBER} (legacy
+   * {@code Schedule*Report.createReportDataSource}), the same value Schedule 9's embedded-SQL
+   * template renders, so every combined-PDF section's header block reads identically. Resolves
+   * through the existing selectable-mill read (mill/year context is already validated by the
+   * caller); returns just the id if the mill row cannot be resolved, rather than failing the render.
+   *
+   * @param millId the validated mill id
+   * @return the {@code name-number} title block
+   */
+  public String resolveMillTitleBlock(long millId) {
+    return repository.findSelectableMillById(millId)
+        .map(mill -> mill.millName() + "-" + mill.millNumber())
+        .orElse(String.valueOf(millId));
+  }
+
+  /**
    * The Schedule 11 track's status code ({@code MILL_SILVICULTUR_STATUS_CODE}) for a mill/year —
    * millcontext is the single owner of the track-status read (AD-9); schedule services never query
    * the status row themselves. NEVER the 1–10 track's {@code ILCR_MILL_REPORT_STATUS_CODE} (AR7).

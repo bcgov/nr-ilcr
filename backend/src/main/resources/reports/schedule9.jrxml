@@ -26,6 +26,9 @@
   <parameter name="year" class="java.lang.Integer"/>
   <parameter name="p_do_print_body" class="java.lang.Boolean"/>
   <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <!-- The top-level PDF outline title for this section when combined via /print (BR-08); null on the
+       standalone Story 20.1 endpoint, which then has no bookmark. See the anchor in the title band. -->
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
   <query language="sql">
     <![CDATA[
       SELECT (m.MILL_NAME || '-' || m.MILL_NUMBER)          AS PRINT_MILL_AND_USER_DETAILS,
@@ -75,6 +78,16 @@
   <field name="SOURCE_DESCRIPTION" class="java.lang.String"/>
   <field name="CONTRACTUAL_WORK_REPORT_COMMENTS" class="java.lang.String"/>
   <title height="30">
+    <!-- Bookmark anchor (see schedule5.jrxml for the full rationale): an invisible (white, transparent)
+         sized textField that emits one top-level PDF outline entry named by bookmarkTitle, robust for
+         single- and multi-section exports; suppressed when null (the standalone 20.1 endpoint passes
+         null, so its single-schedule PDF has no bookmark). -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
     <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
       <text><![CDATA[Government of British Columbia]]></text>
     </element>

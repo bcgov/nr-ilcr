@@ -258,7 +258,7 @@ public class GlobalExceptionHandler {
     String key = converterKeyForField(causeMessage);
     if (key == null) {
       if (causeMessage.contains("java.math.BigDecimal")) {
-        key = "volumeConverterErrorMsg";
+        key = VOLUME_CONVERTER;
       } else if (causeMessage.contains("java.lang.Integer")
           || causeMessage.contains("java.lang.Long")) {
         key = "costConverterErrorMsg";
@@ -298,6 +298,12 @@ public class GlobalExceptionHandler {
         .orElse(null);
   }
 
+  /** Shared by the five Schedule 10 material percentages, which all fail identically. */
+  private static final String PERCENTAGE_CONVERTER = "percentageConverterErrorMsg";
+
+  /** Shared by every volume field, Schedule 10's two haul volumes included. */
+  private static final String VOLUME_CONVERTER = "volumeConverterErrorMsg";
+
   /**
    * Converter message keys scoped to {@code DeclaringType["property"]}, matched against the
    * reference
@@ -320,10 +326,21 @@ public class GlobalExceptionHandler {
    * collection
    * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
    */
-  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.of(
-      "CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg",
-      "CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg",
-      "CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg");
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.ofEntries(
+      Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
+      Map.entry("CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg"),
+      // Schedule 10 (code review 2026-08-18). Without these, every malformed Integer on a road
+      // detail — a percentage or a haul volume — fell through to the type default and told the
+      // reporter their COST was invalid.
+      Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
+      Map.entry("RoadDetailRequest[\"endHaulVolume\"]", VOLUME_CONVERTER),
+      Map.entry("RoadDetailRequest[\"overlandVolume\"]", VOLUME_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"finePct\"]", PERCENTAGE_CONVERTER),
+      Map.entry("MaterialCompositionRequest[\"organicPct\"]", PERCENTAGE_CONVERTER));
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this
@@ -385,6 +402,37 @@ public class GlobalExceptionHandler {
     problem.setProperty("messages", messages);
 
     return ResponseEntity.badRequest()
+        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        .body(problem);
+  }
+
+  /**
+   * Handles a business rejection carrying MORE THAN ONE legacy message (AD-8) — resolves each key to
+   * its verbatim text and returns them together in the {@code messages} extension (same shape as the
+   * required-field handler), with the exception's status. Used e.g. by the reporting-year open when
+   * zero active mills exist (INF-001 + ERR-002 together).
+   *
+   * @param ex the exception carrying the ordered message keys and target status
+   * @param request the current HTTP request
+   * @return a {@link ProblemDetail} with the exception's status and a {@code messages} array
+   */
+  @ExceptionHandler(MultiMessageException.class)
+  public ResponseEntity<ProblemDetail> handleMultiMessage(
+      MultiMessageException ex, HttpServletRequest request) {
+    log.info("Multi-message business rejection ({}): {}", ex.getStatus(), ex.getMessageKeys());
+
+    var messages = ex.getMessageKeys().stream()
+        .map(key -> new FieldMessage(
+            key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale())))
+        .toList();
+
+    ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
+    problem.setTitle(ex.getStatus().getReasonPhrase());
+    problem.setDetail(messages.stream().map(FieldMessage::text).collect(Collectors.joining("; ")));
+    problem.setInstance(URI.create(request.getRequestURI()));
+    problem.setProperty("messages", messages);
+
+    return ResponseEntity.status(ex.getStatus())
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .body(problem);
   }

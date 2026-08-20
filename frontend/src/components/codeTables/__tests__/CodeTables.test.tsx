@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, render, screen } from '@/test-utils'
+import { fireEvent, render, screen, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import CodeTables from '@/components/codeTables'
@@ -38,6 +38,18 @@ describe('Table Maintenance (Story 24.3)', () => {
     expect(screen.getByText('Cubic Metres')).toBeInTheDocument()
     expect(screen.getByText('Tonnes')).toBeInTheDocument()
     expect(screen.getByText('2020-12-31')).toBeInTheDocument() // TON expiry
+  })
+
+  test('the add-entry row is the first row of the table body', async () => {
+    server.use(...listHandlers())
+    render(<CodeTables />)
+    await selectUnitCodes()
+
+    // Row 0 is the header; row 1 is the first body row and must be the add form (not a data row).
+    // Pins BR-03's "add at the top" so a future refactor can't silently move it back to the bottom.
+    const firstBodyRow = screen.getAllByRole('row')[1]
+    expect(within(firstBodyRow).getByLabelText('Code')).toBeInTheDocument()
+    expect(within(firstBodyRow).queryByText('M3')).not.toBeInTheDocument()
   })
 
   test('adding a valid entry PUTs it and shows the verbatim success + reloaded grid', async () => {

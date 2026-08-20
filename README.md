@@ -86,6 +86,70 @@ mvn spring-boot:run
 
 Do not commit real database passwords. Put local values in `.env`; the file is git-ignored.
 
+### Corporate SSL/TLS Intercept & Certificate Issues (e.g., Zscaler / PKIX) — Local Workaround
+
+*Note: This is a specific workaround for developers behind a corporate SSL-decryption/packet-inspection gateway (such as Zscaler) and is **not** required for all developers (e.g., if you are on a direct internet connection).*
+
+If your corporate network performs SSL decryption/packet-inspection, Maven inside the isolated Docker container may fail to connect to Maven Central (all dependencies, including JasperReports 7, resolve from Central — the build declares no custom `<repositories>`) with a `PKIX path building failed` error.
+
+The recommended, zero-import workaround is to leverage your Windows host's trusted certificate store by caching the dependencies on Windows once, and mounting your host's `.m2` repository into the container:
+
+1. **Seed the cache on Windows**:
+   Run this once inside your Windows terminal to download and cache the libraries (which automatically trusts your corporate certificate):
+   ```powershell
+   cd backend
+   mvn clean install -DskipTests
+   ```
+2. **Mount the cache in your local environment**:
+   Set the `M2_HOME` variable inside your local, ignored `.env` file pointing to your host's `.m2` directory:
+   ```properties
+   M2_HOME=/mnt/c/Users/<your-username>/.m2
+   ```
+   Docker Compose will automatically detect this variable and mount your local Windows Maven cache into the container's `/root/.m2` path, bypassing the certificate handshake issues completely!
+
+### Authentication (FAM/Cognito) — local testing
+
+The SPA has two auth modes, selected at runtime by `public/amplify-config.js` (loaded before the
+bundle). The repo default is **mock**; deployed environments mount a per-env ConfigMap over it. See
+`src/context/auth/` (the `AuthProvider` seam) and `src/config/auth/amplify-initializer.ts`.
+
+**Mock mode (default — no Cognito).** `npm run dev` with the backend running (security off by
+default) signs you in automatically. Use the **"Mock user"** dropdown in the header to switch
+`ILCR_ADMIN` ↔ `ILCR_SUBMITTER` — it switches both the nav/route-guards **and** the backend mock
+principal (via the `X-Mock-Groups` header), so it exercises role gating end to end. This is the
+fastest path for manual testing.
+
+**Real FAM/Cognito login (Hosted UI).**
+
+1. Frontend — copy the example config over the default (do **not** commit it; the repo default must
+   stay `mockUser: true`):
+   ```bash
+   cd frontend
+   cp amplify-config.local.example.js public/amplify-config.js
+   npm run dev            # then hard-refresh the browser (public/ files load at page load)
+   ```
+2. Backend — run with security on so `/api/v1/me` validates the real ID token:
+   ```bash
+   cd backend
+   ILCR_SECURITY_ENABLED=true COGNITO_REGION=ca-central-1 \
+   COGNITO_USER_POOL=ca-central-1_UpeAqsYt4 COGNITO_CLIENT_ID=352pis0ark86dam7ht1jlp9uj5 \
+   SPRING_PROFILES_ACTIVE=oracle,openshift ./mvnw spring-boot:run
+   ```
+3. Open `http://localhost:3000` → FAM Hosted UI → sign in (IDIR/BCeID) → back to the app with your
+   real role. Confirm the exact `cognitoDomain` with the FAM admin if the Hosted UI does not load.
+
+**Dev-only testing aids (real session, local dev only — `import.meta.env.DEV`, tree-shaken from every
+deployed build):**
+
+- **"View as (dev)"** header dropdown — overrides the role the SPA uses (nav + route guards) so you
+  can test both roles without re-logging-in. It is **frontend-only**: the backend still enforces your
+  real token, so admin APIs still `403` if your account isn't really in that group.
+- A **"viewing as" warning banner** appears whenever an override is active, naming your real role.
+- A **Sign out** button (header, Logout icon) runs the Cognito/loginproxy logout chain on a real
+  session; hidden in mock mode.
+
+When done with real login: `git checkout -- frontend/public/amplify-config.js`.
+
 ## Frontend Shared Conventions
 
 Reusable building blocks and global styles that new schedule/feature pages should adopt rather than
@@ -126,7 +190,7 @@ FAM authentication is tracked separately. The dashboard currently displays the s
 
 ## OpenShift Status
 
-OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Pull requests always deploy a sandbox environment (zone = PR number mod 50). Merges to `main` deploy to TEST and then, if tests pass, to PROD in the same workflow run — but only while the `ENABLE_OPENSHIFT_DEPLOY` repository variable is `true`; it is left unset until the code is ready for those environments.
+OpenShift Gold is the destination environment, but the Gold project is not required for this local-dev scaffold. Pull requests always deploy a sandbox environment (zone = PR number mod 50). Merges to `main` deploy to TEST on every merge. The PROD pipeline (deploy, Sysdig monitor, image promotion) is commented out in `.github/workflows/merge.yml` until the `prod` GitHub environment has its own `ORACLEDB_*` secrets; restore those jobs to open PROD.
 
 Deployed pods fail closed on authentication: JWT enforcement (`ILCR_SECURITY_ENABLED`) and the Oracle datasource (`ILCR_DATASOURCE_ENABLED`) both default to `true` and can be overridden per scope with GitHub variables (environment-first, then repository). The backend refuses to start a deployed pod with security off while the datasource is on (`DeployedSecurityGuard`), so mock auth can never serve real data from a public route; setting both variables to `false` yields a data-less mock-auth smoke deployment.
 

@@ -28,7 +28,11 @@ CREATE TABLE THE.ILCR_REPORTING_PERIOD (
   REPORT_OFFICIAL_END_DATE   DATE,
   REVISION_COUNT             NUMBER(10) DEFAULT 0,
   ENTRY_USERID               VARCHAR2(30),
-  ENTRY_TIMESTAMP            TIMESTAMP DEFAULT SYSTIMESTAMP
+  ENTRY_TIMESTAMP            TIMESTAMP DEFAULT SYSTIMESTAMP,
+  -- Delivery has these NOT NULL; kept nullable here so the pre-existing period seeds (which omit them)
+  -- still load. Story 24.1's write stamps both explicitly.
+  UPDATE_USERID              VARCHAR2(30),
+  UPDATE_TIMESTAMP           TIMESTAMP
 );
 
 CREATE TABLE THE.ILCR_MILL_REPORT_STATUS_CODE (
