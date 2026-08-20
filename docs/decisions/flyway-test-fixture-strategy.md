@@ -64,7 +64,7 @@ The failure mode moves from *invisible and fatal* to *visible or harmless*. A sh
 - **No test changes and no file conversions** are required to adopt this. Cost is the convention, the README, and one rename.
 - **`R__cost_detail_bridge_culvert_fks.sql` should gain a `90_` prefix** when the first prefixed seed lands beside it. It sorts last among repeatables today only by ASCII accident (`c` sorts after any digit), which happens to be the order it needs; the prefix makes that explicit rather than incidental. Not renamed in this PR — it changes no behaviour until a prefixed `R__` constraint exists to sort against, and this PR is deliberately docs-only.
 - **P1 is closed. P2 is not.** Cross-schedule data collisions remain governed by the mill-ID range registry in `backend/src/test/resources/db/README.md`.
-- **The convention needs a machine check to hold.** The README convention alone did not prevent any of the five collisions, whereas `FlywayMigrationVersionUniquenessTest` caught the fifth at PR time. Extending it to reject a *new* `V__` file containing `INSERT`s — so seed data cannot drift back into the versioned namespace — is the follow-up that makes this self-enforcing. Tracked separately; not done in this PR.
+- **The convention needs a machine check to hold.** The README convention alone did not prevent any of the five collisions, whereas `FlywayMigrationVersionUniquenessTest` caught the fifth at PR time. Extending it to reject a *new* `V__` file containing `INSERT`s — so seed data cannot drift back into the versioned namespace — is the follow-up that makes this self-enforcing. **Not done in this PR and not yet ticketed** — it needs an owner, or the convention rests on the same README discipline that failed five times.
 
 ## Why not Option 3 now
 
