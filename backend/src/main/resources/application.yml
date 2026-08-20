@@ -78,6 +78,14 @@ ilcr:
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:false}
     validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}
+  reporting:
+    # Story 29.2 — the Jasper swap-file virtualizer that spills report page objects to disk under a
+    # large or combined ("all schedules") fill, so the section object graph never pins the JVM heap.
+    # swap-directory empty → the JVM temp dir; max-size is the number of pages kept in memory before
+    # the least-recently-used ones page out. The swap file is deleted when each render finishes.
+    virtualizer:
+      swap-directory: ${ILCR_REPORTING_SWAP_DIR:}
+      max-size: ${ILCR_REPORTING_VIRTUALIZER_MAX_SIZE:300}
 
 features:
   flags:
