@@ -115,9 +115,18 @@ Feature: Schedule 4 — edit a saved location
       | Lakeside Dry Dump |          | 400    | 800  | 2       |
       | Crew Barge/Ferry  | 9        | 90     | 270  | 3       |
 
-  # Clearing a distance category to fully-empty DELETES its child report (§Decision 1's write mirror),
-  # rather than leaving a zero-amount row behind. The fixed category on the same location must survive.
-  @p2 @S02
+  # ---------------------------------------------------------------------------------------------------
+  # BUG-4 — DELIBERATELY RED. See defects.md BUG-4.
+  #
+  # Clearing a distance category to fully-empty must DELETE its child report (§Decision 1's write mirror).
+  # It does not: the save reports success and the stored child survives untouched.
+  #
+  # THIS SCENARIO USED TO PASS, AND SHOULD NOT HAVE. Its assertion was the SUBSET step
+  # ("the stored Schedule 4 location … is:") listing only the surviving Lakeside Dry Dump row — so a
+  # surviving Truck Barge/Ferry was invisible to it and the removal, which is the scenario's whole point,
+  # was never checked. It now uses the EXACT-set step, which fails while the cleared category persists.
+  # ---------------------------------------------------------------------------------------------------
+  @p0 @S02 @discovered-bug
   Scenario: Clearing a distance category removes it and leaves the rest of the location intact
     Given the Schedule 4 anchor "clear-category" is an editable Draft with no locations
     And the Schedule 4 location "E2E Cleared Category" is already saved with:
@@ -132,6 +141,47 @@ Feature: Schedule 4 — edit a saved location
     And I clear the Schedule 4 "Truck Barge/Ferry" "cost" cell
     And I save the Schedule 4 location
     Then I should see the message "Data saved successfully"
-    And the stored Schedule 4 location "E2E Cleared Category" is:
-      | category          | distance | volume | cost | perUnit |
-      | Lakeside Dry Dump |          | 400    | 800  | 2       |
+    # EXACT set: Lakeside must survive AND Truck Barge/Ferry must be gone. The subset step could not see
+    # the second half — see the header.
+    And the stored Schedule 4 location "E2E Cleared Category" has exactly these categories:
+      | category          | distance | volume | cost |
+      | Lakeside Dry Dump |          | 400    | 800  |
+
+  # ---------------------------------------------------------------------------------------------------
+  # BUG-4, the FIXED-category half — DELIBERATELY RED. See defects.md BUG-4.
+  #
+  # This walks the bug's BOUNDARY in one journey, because the two halves behave differently and a reader
+  # needs both to understand the defect:
+  #   1. a PARTIAL clear (empty the Cost, leave the Volume) DOES persist — the category still has a value,
+  #      so the client keeps sending it and the server upserts the null. This half passes today.
+  #   2. clearing the LAST value in that category does NOT persist — the client drops the whole category
+  #      from the payload (`buildRequest`'s `if (!anyPresent) return []`) and the server only iterates what
+  #      was sent, so the stored row survives and the reporter's correction is silently lost.
+  # Both halves are asserted here so the fix cannot satisfy one and break the other.
+  # ---------------------------------------------------------------------------------------------------
+  @p0 @S02 @discovered-bug
+  Scenario: Clearing a fixed category's amounts persists, one field at a time and then entirely
+    Given the Schedule 4 anchor "clear-fixed" is an editable Draft with no locations
+    And the Schedule 4 location "E2E Clear Fixed" is already saved with:
+      | category          | distance | volume | cost |
+      | Lakeside Dry Dump |          | 400    | 800  |
+      | Water Dump        |          | 7      | 70   |
+    And I have selected that mill and reporting year on the Home page
+    When I open Schedule 4
+    And I open the Schedule 4 location "E2E Clear Fixed" for edit
+    # 1. PARTIAL clear — the Volume keeps the category alive, so this half already works.
+    And I clear the Schedule 4 "Lakeside Dry Dump" "cost" cell
+    And I save the Schedule 4 location
+    Then I should see the message "Data saved successfully"
+    And the stored Schedule 4 location "E2E Clear Fixed" has exactly these categories:
+      | category          | distance | volume | cost |
+      | Lakeside Dry Dump |          | 400    |      |
+      | Water Dump        |          | 7      | 70   |
+    # 2. Now empty the LAST value in that category. The amounts must go, not come back.
+    When I open the Schedule 4 location "E2E Clear Fixed" for edit
+    And I clear the Schedule 4 "Lakeside Dry Dump" "volume" cell
+    And I save the Schedule 4 location
+    Then I should see the message "Data saved successfully"
+    And the stored Schedule 4 location "E2E Clear Fixed" has exactly these categories:
+      | category   | distance | volume | cost |
+      | Water Dump |          | 7      | 70   |

@@ -85,6 +85,8 @@ const MILL_9175: MillRef = { millNumber: '9175', millName: 'TCASEY-TEST' }; // m
 // category-"4" transportation rows, which no other schedule derives a figure from. Pair-by-pair isolation
 // holds — see the CROSS-DOMAIN note above.
 const MILL_9174: MillRef = { millNumber: '9174', millName: 'AOLSON-TEST' }; // millId 25053
+// millId 23051 also belongs to sch2 (which pins other years there); 2021 is free. Same pair-by-pair rule.
+const MILL_20174: MillRef = { millNumber: '20174', millName: 'AO CUSTOM' }; // millId 23051
 const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; // millId 22050
 const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' }; // millId 22051
 const MILL_20173: MillRef = { millNumber: '20173', millName: 'TOMTESTMILL042017' }; // millId 23050
@@ -185,6 +187,12 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
     25053,
     2021,
     'the optimistic-lock conflict — a save carrying a token another session already moved',
+  ),
+  'clear-fixed': at(
+    MILL_20174,
+    23051,
+    2021,
+    'BUG-4 — clearing a FIXED category to fully-empty must persist (partial clears already do)',
   ),
 
   // --- accessibility --------------------------------------------------------------------------------

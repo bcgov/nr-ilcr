@@ -690,3 +690,66 @@ When(
     });
   },
 );
+
+/**
+ * EXACT category-set assertion — the antidote to the subset trap.
+ *
+ * `the stored Schedule 4 location {string} is:` builds its expectation from `table.hashes()`, so it only
+ * ever compares the categories the table LISTS. That makes it blind to a category that should have been
+ * removed and wasn't: a "clearing" scenario written against it can assert the survivors and pass while the
+ * cleared category is still in the database. That is exactly how BUG-4 escaped the suite.
+ *
+ * This step compares the WHOLE stored set, ordered by cost-item code, so an unexpected survivor fails.
+ * Use it for anything whose point is REMOVAL; the subset step stays fine for "these amounts are right".
+ */
+Then(
+  'the stored Schedule 4 location {string} has exactly these categories:',
+  async ({ request, world }, name, table: { hashes: () => Record<string, string>[] }) => {
+    const expected = table
+      .hashes()
+      .map((row) => ({
+        code: categoryCode(row.category.trim()),
+        volume: cellNum(row.volume),
+        cost: cellNum(row.cost),
+        distance: cellNum(row.distance),
+      }))
+      .sort((a, b) => a.code - b.code);
+    await expect
+      .poll(
+        async () => {
+          const location = findLocation(await getSchedule4(request, world.scheduleKey!), name);
+          if (!location) return null;
+          return location.categories
+            .map((c) => ({
+              code: c.code,
+              volume: c.volume ?? null,
+              cost: c.cost ?? null,
+              distance: c.distance ?? null,
+            }))
+            .sort((a, b) => a.code - b.code);
+        },
+        {
+          message:
+            `the stored Schedule 4 location "${name}" must hold EXACTLY these categories — an extra one ` +
+            'means a clear/delete did not persist',
+        },
+      )
+      .toEqual(expected);
+  },
+);
+
+/** The removal end-state: the location survives but holds no category amounts at all. */
+Then(
+  'the stored Schedule 4 location {string} has no stored categories',
+  async ({ request, world }, name) => {
+    await expect
+      .poll(
+        async () => {
+          const location = findLocation(await getSchedule4(request, world.scheduleKey!), name);
+          return location ? location.categories.length : -1;
+        },
+        { message: `Schedule 4 location "${name}" must hold no category amounts` },
+      )
+      .toBe(0);
+  },
+);
