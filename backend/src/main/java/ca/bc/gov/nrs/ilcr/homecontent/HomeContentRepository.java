@@ -45,7 +45,8 @@ public class HomeContentRepository {
   public int updateMessage(String role, String messageText, String user) {
     return jdbc.update(
         "UPDATE THE.ILCR_ROLE SET MESSAGE_TEXT = :text, UPDATE_USERID = :user, "
-            + "UPDATE_TIMESTAMP = SYSTIMESTAMP WHERE ILCR_ROLE_NAME = :role",
+            + "UPDATE_TIMESTAMP = SYSTIMESTAMP, REVISION_COUNT = REVISION_COUNT + 1 "
+            + "WHERE ILCR_ROLE_NAME = :role",
         new MapSqlParameterSource()
             .addValue("text", messageText)
             .addValue("user", user)

@@ -41,6 +41,7 @@ public class HomeContentController implements HomeContentApi {
   }
 
   @Override
+  @PreAuthorize("isAuthenticated()")
   public ResponseEntity<HomeContentEntry> mine(Authentication authentication) {
     return ResponseEntity.ok(service.readForRole(contentRoleOf(authentication)));
   }

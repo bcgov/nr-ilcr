@@ -33,8 +33,8 @@ class HomeContentServiceTest {
     service.saveAll(
         new HomeContentSaveRequest("<p>a\tb\nc&nbsp;d</p>", "<p>Aud</p>", "<p>Adm</p>"), USER);
 
-    // \t -> two spaces, \n -> one space, &nbsp; removed.
-    verify(repository).updateMessage("LICENSEE", "<p>a  b cd</p>", USER);
+    // \t -> two spaces, \n -> one space, &nbsp; -> one space (preserves word breaks TipTap emits).
+    verify(repository).updateMessage("LICENSEE", "<p>a  b c d</p>", USER);
     verify(repository).updateMessage("AUDITOR", "<p>Aud</p>", USER);
     verify(repository).updateMessage("ADMIN", "<p>Adm</p>", USER);
   }

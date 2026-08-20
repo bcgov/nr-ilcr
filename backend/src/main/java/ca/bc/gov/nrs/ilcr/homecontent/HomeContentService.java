@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.homecontent;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.homecontent.dto.HomeContentEntry;
 import ca.bc.gov.nrs.ilcr.homecontent.dto.HomeContentSaveRequest;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -76,7 +77,9 @@ public class HomeContentService {
 
     for (RoleMessage message : messages) {
       String transformed = transform(message.text());
-      if (transformed.length() > MAX_MESSAGE_LENGTH) {
+      // Cap by BYTES: MESSAGE_TEXT is VARCHAR2(4000 BYTE), so multi-byte content (smart quotes,
+      // em dashes from paste) could pass a char-count check and then fail the insert with ORA-12899.
+      if (transformed.getBytes(StandardCharsets.UTF_8).length > MAX_MESSAGE_LENGTH) {
         throw HomeContentException.tooLong();
       }
       if (repository.updateMessage(message.role(), transformed, user) == 0) {
@@ -95,11 +98,14 @@ public class HomeContentService {
   }
 
   /**
-   * Legacy save-transform ({@code CoreUtil.replaceCharsForExtractFormat}): tab &rarr; two spaces,
-   * newline &rarr; one space, literal {@code &nbsp;} removed. Save-time only (recorded parity, D-3).
+   * Save-transform after {@code CoreUtil.replaceCharsForExtractFormat}: tab &rarr; two spaces, newline
+   * &rarr; one space. Legacy dropped {@code &nbsp;} entirely (CoreUtil.java:972), but the legacy
+   * PrimeFaces editor rarely emitted it; TipTap emits {@code &nbsp;} for leading/consecutive spaces,
+   * so dropping it would silently delete word breaks. We map it to a space instead (deliberate,
+   * editor-driven deviation from legacy).
    */
   private static String transform(String text) {
-    return text.replace("\t", "  ").replace("\n", " ").replace("&nbsp;", "");
+    return text.replace("\t", "  ").replace("\n", " ").replace("&nbsp;", " ");
   }
 
   private record RoleMessage(String role, String label, String text) {}

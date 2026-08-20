@@ -21,12 +21,13 @@ const ROLES = [
 
 const REQUIRED = (label: string) => `${label}: Value is required.`
 
-/** Empty once tags, &nbsp; and whitespace are stripped — mirrors the server's required-editor check. */
+/**
+ * Empty once markup + entities + whitespace are stripped — mirrors the server's required-editor check.
+ * Parses to text via DOMParser (robust tag/entity handling, and not a regex "sanitizer") rather than a
+ * tag-stripping regex; trim() also drops the NBSP ( ) that &nbsp; decodes to.
+ */
 const isBlankHtml = (html: string) =>
-  html
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .trim().length === 0
+  (new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '').trim().length === 0
 
 /** Verbatim per-field message(s) from a 400 body, else detail, else a generic fallback. */
 const extractSaveErrors = (error: unknown): string[] => {
@@ -55,6 +56,8 @@ const HomeContent: FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveErrors, setSaveErrors] = useState<string[]>([])
+  // Bumped on a successful save so the editors remount with the server-transformed content.
+  const [editorVersion, setEditorVersion] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -95,7 +98,17 @@ const HomeContent: FC = () => {
         auditor: messages.AUDITOR,
         administrator: messages.ADMIN,
       })
-      .then((response) => setSaveMessage(response.data.message))
+      .then((response) => {
+        setSaveMessage(response.data.message)
+        // The server rewrites the stored HTML (transform); re-seed the editors from the response so
+        // what the admin sees matches what's stored and a second save can't re-transform stale text.
+        const reloaded: Record<string, string> = {}
+        response.data.entries.forEach((entry) => {
+          reloaded[entry.role] = entry.messageText ?? ''
+        })
+        setMessages(reloaded)
+        setEditorVersion((version) => version + 1)
+      })
       .catch((error: unknown) => setSaveErrors(extractSaveErrors(error)))
       .finally(() => setSaving(false))
   }
@@ -113,7 +126,7 @@ const HomeContent: FC = () => {
           {loaded &&
             ROLES.map(({ role, label }) => (
               <RichTextEditor
-                key={role}
+                key={`${role}-${editorVersion}`}
                 id={`home-content-${role.toLowerCase()}`}
                 label={label}
                 value={messages[role] ?? ''}

@@ -72,6 +72,21 @@ class HomeContentIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("ILCR_SUBMITTER is denied the admin list — 403 (S13)")
+  void submitter_listForbidden() throws Exception {
+    mockMvc.perform(get(ENDPOINT).with(groups("ILCR_SUBMITTER")))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+  }
+
+  @Test
+  @DisplayName("no ILCR group is denied the admin list — 403")
+  void noGroup_listForbidden() throws Exception {
+    mockMvc.perform(get(ENDPOINT).with(groups()))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   @DisplayName("a blank editor is rejected 400 (FLD-001) and nothing is saved")
   void blankEditorRejected() throws Exception {
     String body = """
