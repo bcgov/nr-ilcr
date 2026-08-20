@@ -24,6 +24,7 @@ import useMillYear from '@/context/millYear/useMillYear'
 const MILLS = 'http://localhost:3000/api/v1/mills'
 const YEARS = 'http://localhost:3000/api/v1/reporting-years'
 const CONTEXT = 'http://localhost:3000/api/v1/mill-context'
+const MINE = 'http://localhost:3000/api/v1/home-content/mine'
 
 const MILLS_TWO = [
   { millId: 514, millNumber: '514', millName: 'AAA Milling', millStatusCode: 'ACT' },
@@ -296,6 +297,23 @@ describe('Home — select mill and year (Story 1.3)', () => {
     expect(requestedUrl).toContain('millId=514')
     expect(requestedUrl).toContain('year=')
     expect(screen.getByTestId('ctx')).toHaveTextContent('null/null')
+  })
+
+  test('renders the sanitized role welcome message when one is returned (Story 24.2)', async () => {
+    server.use(
+      ...listHandlers(),
+      http.get(MINE, () =>
+        HttpResponse.json({
+          role: 'LICENSEE',
+          messageText: '<p>Welcome, <strong>licensee</strong></p><script>alert(1)</script>',
+        }),
+      ),
+    )
+    render(<Home />)
+
+    // The formatting survives; the <script> is stripped by DOMPurify (sanitizeHtml) before render.
+    expect(await screen.findByText('licensee')).toBeInTheDocument()
+    expect(screen.queryByText('alert(1)')).not.toBeInTheDocument()
   })
 
   test('list-load failure renders the problem detail in an error notification', async () => {
