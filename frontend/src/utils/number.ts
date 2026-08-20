@@ -88,7 +88,8 @@ export const numStr = (value: number | null | undefined): string =>
  * forms legacy never allowed ('1e2', '0x10', 'Infinity'). Returns null when blank or not a valid
  * decimal in this strict format.
  *
- * Schedules 6 and 11 still carry their own copies; converge them here in the consistency PR.
+ * The single source: Schedules 6 and 11 import this (their identical local copies were removed in
+ * the Story 29.8 consolidation).
  */
 const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
 export const parseDecimalInput = (raw: string): number | null => {
@@ -129,7 +130,7 @@ export const numStrGroup = (value: number | null | undefined): string => groupIn
 export const numStrFixed = (value: number | null | undefined, fractionDigits: number): string =>
   value === null || value === undefined
     ? ''
-    : value.toLocaleString('en-US', {
+    : value.toLocaleString('en-CA', {
         minimumFractionDigits: fractionDigits,
         maximumFractionDigits: fractionDigits,
       })
