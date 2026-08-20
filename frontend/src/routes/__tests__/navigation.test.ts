@@ -43,6 +43,7 @@ describe('admin-only paths (route guard source)', () => {
   test('derived from the same adminOnly items the nav hides', () => {
     expect([...ADMIN_ONLY_PATHS].sort()).toEqual([
       '/code-tables',
+      '/home-content',
       '/mill-associations',
       '/open-reporting-year',
     ])
@@ -52,6 +53,7 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/code-tables')).toBe(true)
     expect(isAdminOnlyPath('/mill-associations')).toBe(true)
     expect(isAdminOnlyPath('/open-reporting-year')).toBe(true)
+    expect(isAdminOnlyPath('/home-content')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
     expect(isAdminOnlyPath('/')).toBe(false)
   })

@@ -5,6 +5,7 @@ import { fetchAuthSession, signInWithRedirect, signOut } from 'aws-amplify/auth'
 import { Hub } from 'aws-amplify/utils'
 import apiService from '@/service/api-service'
 import { AuthContext } from './AuthContext'
+import { useIdleTimeout } from './useIdleTimeout'
 import type { AuthContextValue, AuthUser } from './types'
 
 type Props = {
@@ -17,6 +18,10 @@ type LoadError = { status?: number; message: string }
 // Local-dev "view as" override. Only ever read under import.meta.env.DEV, so it is inert (and
 // tree-shaken) in deployed builds — a real session's role can never be overridden in DEV/TEST/PROD.
 const DEV_ROLE_KEY = 'nr-ilcr.dev-role'
+
+// Idle timeout: sign out after 60 minutes with no user activity (the token stays refreshed while
+// active). Shared-workstation safety.
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000
 
 function initialDevRole(): string | null {
   if (!import.meta.env.DEV || typeof window === 'undefined') {
@@ -129,6 +134,9 @@ export default function RealAuthProvider({ children }: Props) {
       void signIn()
     }
   }, [isLoading, user, error, signIn])
+
+  // Arm the 60-minute idle timeout once a real session exists; activity resets it, inactivity signs out.
+  useIdleTimeout(doSignOut, IDLE_TIMEOUT_MS, user !== null)
 
   const realRoles = user?.roles ?? []
   const effectiveRoles = import.meta.env.DEV && devRole ? [devRole] : realRoles

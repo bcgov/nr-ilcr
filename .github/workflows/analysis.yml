@@ -68,7 +68,12 @@ jobs:
       checks: write
       security-events: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Covers all four commands below — npm ci, lint, format:check AND a coverage run — not the tests
+    # alone. Raised from 5 after PR #317 was cancelled at 4m58s with zero test failures: the same job
+    # had passed at 3m22s one commit earlier, so the 5-minute budget was already two thirds spent and
+    # a growing component suite left no room for runner variance. 10 restores headroom without
+    # hiding a genuine hang.
+    timeout-minutes: 10
     steps:
       - uses: bcgov/action-test-and-analyse@8f699e3fd3fadd9a6adf6f4b1f2638ef7ecfefb9 # v2.0.0
         env:
