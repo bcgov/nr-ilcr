@@ -22,11 +22,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for the Schedule 8 read assembly + server-side derivation (AD-5/AD-6). Mocked repository —
- * no DB, no Spring. Covers the three-level page → sample → rate assembly, the addition/deduction split
- * by cost-item subcategory (§Decision 1), the code→label resolution (§Decision 3), the computed
- * {@code percentTotal}/{@code actualHarvested}/{@code additionsTotal}/{@code deductionsTotal}/
- * {@code finalRate} + counts, the Y/N indicator booleans, editability, and the no-pages empty list.
+ * Unit test for the Schedule 8 read assembly + server-side derivation (AD-5/AD-6). Mocked
+ * repository — no DB, no Spring. Covers the three-level page → sample → rate assembly, the
+ * addition/deduction split by cost-item subcategory (§Decision 1), the code→label resolution
+ * (§Decision 3), the computed {@code percentTotal}/{@code actualHarvested}/{@code
+ * additionsTotal}/{@code deductionsTotal}/ {@code finalRate} + counts, the Y/N indicator booleans,
+ * editability, and the no-pages empty list.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8ServiceTest {
@@ -34,15 +35,14 @@ class Schedule8ServiceTest {
   private static final long MILL = 570L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule8Repository repository;
+  @Mock private Schedule8Repository repository;
 
-  @InjectMocks
-  private Schedule8Service service;
+  @InjectMocks private Schedule8Service service;
 
   @BeforeEach
   void stubLabelMapsAndSubcategories() {
-    lenient().when(repository.supportCentreLabels())
+    lenient()
+        .when(repository.supportCentreLabels())
         .thenReturn(Map.of("SC1", "Support Centre One"));
     lenient().when(repository.regionLabels()).thenReturn(Map.of("R1", "Region One"));
     lenient().when(repository.becZoneLabels()).thenReturn(Map.of("BZ1", "BEC Zone One"));
@@ -50,15 +50,19 @@ class Schedule8ServiceTest {
     lenient().when(repository.supplyBlockLabels()).thenReturn(Map.of("B", "Supply Block B"));
     lenient().when(repository.tflNumberLabels()).thenReturn(Map.of("48", "Tree Farm Licence 48"));
     lenient().when(repository.skidTypeLabels()).thenReturn(Map.of("ST1", "Skid Type One"));
-    lenient().when(repository.costTypeLabels())
+    lenient()
+        .when(repository.costTypeLabels())
         .thenReturn(Map.of("CT1", "Cost Type One", "CT2", "Cost Type Two"));
     // §Decision 1: '1'/'2' = addition, '3'/'4' = deduction.
-    lenient().when(repository.costItemSubcategories())
+    lenient()
+        .when(repository.costItemSubcategories())
         .thenReturn(Map.of(82, "1", 100, "2", 101, "3", 107, "4"));
   }
 
   private static void eq(String expected, BigDecimal actual) {
-    assertEquals(0, new BigDecimal(expected).compareTo(actual),
+    assertEquals(
+        0,
+        new BigDecimal(expected).compareTo(actual),
         () -> "expected " + expected + " but was " + actual);
   }
 
@@ -70,19 +74,55 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add A", "5.00"),
-        rate(8701, 8600, "CT2", 101, "Ded A", "2.00")));
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add A", "5.00"),
+                rate(8701, 8600, "CT2", 101, "Ded A", "2.00")));
   }
 
   private static TreeToTruckReportEntity page(int id) {
-    return new TreeToTruckReportEntity(id, "SC1", "R1", "BZ1", "TSA5", "B", "48", "CP1", "L570",
-        "North Div", "Pat Contact", "2505551212", "Seed page", 0);
+    return new TreeToTruckReportEntity(
+        id,
+        "SC1",
+        "R1",
+        "BZ1",
+        "TSA5",
+        "B",
+        "48",
+        "CP1",
+        "L570",
+        "North Div",
+        "Pat Contact",
+        "2505551212",
+        "Seed page",
+        0);
   }
 
   private static TreeToTruckDetailReportEntity sample(int id, int reportId) {
-    return new TreeToTruckDetailReportEntity(id, reportId, "C1", "CB1", 60, 40, 0, 0, 0, 0,
-        null, null, null, null, null, "N", "Y", "ST1", 700, 300, new BigDecimal("25.50"), 0);
+    return new TreeToTruckDetailReportEntity(
+        id,
+        reportId,
+        "C1",
+        "CB1",
+        60,
+        40,
+        0,
+        0,
+        0,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "N",
+        "Y",
+        "ST1",
+        700,
+        300,
+        new BigDecimal("25.50"),
+        0);
   }
 
   private static TreeToTruckRateDetailEntity rate(
@@ -117,11 +157,11 @@ class Schedule8ServiceTest {
   void computedRollups_totalsAndFinalRate() {
     stubOnePageOneSample();
     Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
-    assertEquals(100, sample.percentTotal());       // 60 + 40
-    assertEquals(1000, sample.actualHarvested());    // 700 + 300
+    assertEquals(100, sample.percentTotal()); // 60 + 40
+    assertEquals(1000, sample.actualHarvested()); // 700 + 300
     eq("5", sample.additionsTotal());
     eq("2", sample.deductionsTotal());
-    eq("28.5", sample.finalRate());                  // 25.50 + 5.00 − 2.00
+    eq("28.5", sample.finalRate()); // 25.50 + 5.00 − 2.00
     eq("25.5", sample.originalRate());
   }
 
@@ -132,16 +172,20 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add A", "5.00"),      // subcat '1' — addition
-        rate(8702, 8600, "CT1", 999, "Orphan", "9.99")));  // 999 not in subcategories → dropped
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add A", "5.00"), // subcat '1' — addition
+                rate(
+                    8702, 8600, "CT1", 999, "Orphan",
+                    "9.99"))); // 999 not in subcategories → dropped
 
     Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
 
-    assertEquals(1, sample.additionCount());   // only the classifiable addition
+    assertEquals(1, sample.additionCount()); // only the classifiable addition
     assertEquals(0, sample.deductionCount());
-    eq("5", sample.additionsTotal());          // the orphan 9.99 is NOT summed in
-    eq("30.5", sample.finalRate());            // 25.50 + 5.00 − 0
+    eq("5", sample.additionsTotal()); // the orphan 9.99 is NOT summed in
+    eq("30.5", sample.finalRate()); // 25.50 + 5.00 − 0
   }
 
   @Test
@@ -161,8 +205,8 @@ class Schedule8ServiceTest {
   void ynIndicators_mappedToBooleans() {
     stubOnePageOneSample();
     Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
-    assertTrue(sample.uphillDirection());        // "Y"
-    assertFalse(sample.waterDumpDestination());  // "N"
+    assertTrue(sample.uphillDirection()); // "Y"
+    assertFalse(sample.waterDumpDestination()); // "N"
   }
 
   @Test
@@ -202,31 +246,37 @@ class Schedule8ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
-    when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of(
-        rate(8700, 8600, "CT1", 82, "Add subcat 1", "5.00"),
-        rate(8701, 8600, "CT1", 100, "Add subcat 2", "3.25"),
-        rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
-        rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
+    when(repository.findRateRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                rate(8700, 8600, "CT1", 82, "Add subcat 1", "5.00"),
+                rate(8701, 8600, "CT1", 100, "Add subcat 2", "3.25"),
+                rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
+                rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
 
     Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
 
     assertEquals(2, sample.additionCount());
     assertEquals(2, sample.deductionCount());
-    eq("8.25", sample.additionsTotal());   // 5.00 + 3.25  (subcats '1' + '2')
-    eq("3.75", sample.deductionsTotal());  // 2.00 + 1.75  (subcats '3' + '4')
-    eq("30", sample.finalRate());          // 25.50 + 8.25 − 3.75
+    eq("8.25", sample.additionsTotal()); // 5.00 + 3.25  (subcats '1' + '2')
+    eq("3.75", sample.deductionsTotal()); // 2.00 + 1.75  (subcats '3' + '4')
+    eq("30", sample.finalRate()); // 25.50 + 8.25 − 3.75
   }
 
   @Test
   void getOptions_partitionsCategory8CostItemsIntoAdditionsAndDeductions() {
-    // Category-8 cost items spanning all four subcategories: '1'/'2' are additions, '3'/'4' deductions
-    // (§Decision 1). getOptions must split the single query result into the two per-form lists, keying
+    // Category-8 cost items spanning all four subcategories: '1'/'2' are additions, '3'/'4'
+    // deductions
+    // (§Decision 1). getOptions must split the single query result into the two per-form lists,
+    // keying
     // each choice by String(id) + itemName and preserving the query's ITEM_NAME order.
-    when(repository.findCategory8CostItems()).thenReturn(List.of(
-        new Schedule8Repository.CostItemRow(82, "Add subcat 1", "1"),
-        new Schedule8Repository.CostItemRow(100, "Add subcat 2", "2"),
-        new Schedule8Repository.CostItemRow(101, "Ded subcat 3", "3"),
-        new Schedule8Repository.CostItemRow(107, "Ded subcat 4", "4")));
+    when(repository.findCategory8CostItems())
+        .thenReturn(
+            List.of(
+                new Schedule8Repository.CostItemRow(82, "Add subcat 1", "1"),
+                new Schedule8Repository.CostItemRow(100, "Add subcat 2", "2"),
+                new Schedule8Repository.CostItemRow(101, "Ded subcat 3", "3"),
+                new Schedule8Repository.CostItemRow(107, "Ded subcat 4", "4")));
 
     Schedule8Options options = service.getOptions();
 

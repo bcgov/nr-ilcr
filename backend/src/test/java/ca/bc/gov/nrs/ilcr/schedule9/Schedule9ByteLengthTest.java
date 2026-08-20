@@ -17,7 +17,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test for {@code @MaxByteLength} on {@link ContractualWorkRecordRequest} — pure Jakarta Validator.
+ * Unit test for {@code @MaxByteLength} on {@link ContractualWorkRecordRequest} — pure Jakarta
+ * Validator.
  */
 @DisplayName("ContractualWorkRecordRequest byte-length bounds (the BYTE-declared delivery columns)")
 class Schedule9ByteLengthTest {
@@ -38,15 +39,30 @@ class Schedule9ByteLengthTest {
 
   /** A minimal valid request varying only the length-capped fields. */
   private static ContractualWorkRecordRequest request(
-      String contractorId, String itemDescription, String unitDescription, String sourceDescription, String comments) {
+      String contractorId,
+      String itemDescription,
+      String unitDescription,
+      String sourceDescription,
+      String comments) {
     return new ContractualWorkRecordRequest(
-        contractorId, 108, itemDescription, "U", unitDescription, null, "BEC", null, null, "S", sourceDescription, comments, null);
+        contractorId,
+        108,
+        itemDescription,
+        "U",
+        unitDescription,
+        null,
+        "BEC",
+        null,
+        null,
+        "S",
+        sourceDescription,
+        comments,
+        null);
   }
 
   private static Set<String> violatedProperties(ContractualWorkRecordRequest request) {
     Set<ConstraintViolation<ContractualWorkRecordRequest>> violations = validator.validate(request);
-    return violations.stream().map(v -> v.getPropertyPath().toString())
-        .collect(Collectors.toSet());
+    return violations.stream().map(v -> v.getPropertyPath().toString()).collect(Collectors.toSet());
   }
 
   private static int utf8Bytes(String value) {
@@ -91,7 +107,8 @@ class Schedule9ByteLengthTest {
   void unitDescriptionOverLimitIsRejected() {
     String val = "é".repeat(60) + "x";
     assertEquals(121, utf8Bytes(val));
-    assertTrue(violatedProperties(request(null, null, val, null, null)).contains("unitDescription"));
+    assertTrue(
+        violatedProperties(request(null, null, val, null, null)).contains("unitDescription"));
   }
 
   @Test

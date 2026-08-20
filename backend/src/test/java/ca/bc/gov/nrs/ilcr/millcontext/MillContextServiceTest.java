@@ -36,45 +36,45 @@ class MillContextServiceTest {
   private static final int YEAR = 2021;
   private static final String CATEGORY = "1";
 
-  @Mock
-  private MillContextRepository repository;
+  @Mock private MillContextRepository repository;
 
   // Story 1.3 (AC7): the service resolves the SUC-001 text via MessageSource for the 200 message.
-  // Unstubbed here except where a success test asserts the message; unused-mock is fine under strict
+  // Unstubbed here except where a success test asserts the message; unused-mock is fine under
+  // strict
   // Mockito (only unused STUBS fail). @InjectMocks wires it through the two-arg constructor.
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private MillContextService service;
+  @InjectMocks private MillContextService service;
 
   @Test
   void unknownContext_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.validateScheduleViewable(999999L, YEAR, CATEGORY));
   }
 
   @Test
   void millClosedForYear_throwsMillClosed() {
     when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateScheduleViewable(516L, YEAR, CATEGORY));
+    assertThrows(
+        MillClosedException.class, () -> service.validateScheduleViewable(516L, YEAR, CATEGORY));
   }
 
   @Test
   void unexpectedNonActiveStatus_throwsMillClosed() {
     // Legacy has only ACT/CLS, but the guard whitelists ACT: any other status is not viewable.
     when(repository.findMillStatusCodeForYear(518L, YEAR)).thenReturn(Optional.of("SUS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateScheduleViewable(518L, YEAR, CATEGORY));
+    assertThrows(
+        MillClosedException.class, () -> service.validateScheduleViewable(518L, YEAR, CATEGORY));
   }
 
   @Test
   void activeButNoSummary_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(515L, YEAR)).thenReturn(Optional.of("ACT"));
     when(repository.scheduleSummaryExists(515L, YEAR, CATEGORY)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.validateScheduleViewable(515L, YEAR, CATEGORY));
   }
 
@@ -97,32 +97,34 @@ class MillContextServiceTest {
 
   @Test
   void resolve_missingBoth_throwsWithBothLabelsInScreenOrder() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.resolveWorkingContext(null, "  "));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class, () -> service.resolveWorkingContext(null, "  "));
     // S08: BOTH fields reported together, Mill first (home.xhtml screen order).
     assertEquals(List.of("Mill", "Reporting Year"), ex.getFieldLabels());
   }
 
   @Test
   void resolve_nonNumericMill_reportsMillRequired() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.resolveWorkingContext("abc", "2021"));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class, () -> service.resolveWorkingContext("abc", "2021"));
     assertEquals(List.of("Mill"), ex.getFieldLabels());
   }
 
   @Test
   void resolve_unknownMill_throwsNotFound() {
     when(repository.findSelectableMillById(999L)).thenReturn(Optional.empty());
-    assertThrows(MillYearContextNotFoundException.class,
-        () -> service.resolveWorkingContext("999", "2021"));
+    assertThrows(
+        MillYearContextNotFoundException.class, () -> service.resolveWorkingContext("999", "2021"));
   }
 
   @Test
   void resolve_unopenedYear_throwsNotFound() {
     when(repository.findSelectableMillById(514L)).thenReturn(Optional.of(MILL_514));
     when(repository.reportingYearExists(2019)).thenReturn(false);
-    assertThrows(MillYearContextNotFoundException.class,
-        () -> service.resolveWorkingContext("514", "2019"));
+    assertThrows(
+        MillYearContextNotFoundException.class, () -> service.resolveWorkingContext("514", "2019"));
   }
 
   @Test
@@ -130,9 +132,12 @@ class MillContextServiceTest {
     stubSelectable(MILL_514, 2020);
     when(repository.findTrackStatusCodes(514L, 2020)).thenReturn(Optional.empty());
     when(repository.findStatusDates(514L, 2020)).thenReturn(Optional.empty());
-    // AC7: the success path resolves the reused SUC-001 key to its verbatim text (server-side, AD-8).
+    // AC7: the success path resolves the reused SUC-001 key to its verbatim text (server-side,
+    // AD-8).
     when(messageSource.getMessage(
-            eq("dataSavedSuccesfullyInfoMsg"), isNull(), eq("dataSavedSuccesfullyInfoMsg"),
+            eq("dataSavedSuccesfullyInfoMsg"),
+            isNull(),
+            eq("dataSavedSuccesfullyInfoMsg"),
             any(Locale.class)))
         .thenReturn("Data saved successfully");
 
@@ -143,7 +148,8 @@ class MillContextServiceTest {
     assertTrue(ctx.millViewable());
     assertEquals(514L, ctx.millId());
     assertEquals(2020, ctx.reportYear());
-    // Every 200 carries the SUC-001 message (key + resolved text); the frontend displays it on Save.
+    // Every 200 carries the SUC-001 message (key + resolved text); the frontend displays it on
+    // Save.
     assertEquals("dataSavedSuccesfullyInfoMsg", ctx.message().key());
     assertEquals("Data saved successfully", ctx.message().text());
   }
@@ -172,16 +178,24 @@ class MillContextServiceTest {
     // branch; the deviation pins each track to its OWN code.
     when(repository.findTrackStatusCodes(514L, 2020))
         .thenReturn(Optional.of(new TrackCodes("S", "D")));
-    when(repository.findStatusDates(514L, 2020)).thenReturn(Optional.of(new StatusDates(
-        "00 2020-01-01", "01 2020-02-02", "02 2020-11-30", "03 2020-12-31",
-        "01 2020-08-01", "02 2020-09-09", "03 2020-10-10")));
+    when(repository.findStatusDates(514L, 2020))
+        .thenReturn(
+            Optional.of(
+                new StatusDates(
+                    "00 2020-01-01",
+                    "01 2020-02-02",
+                    "02 2020-11-30",
+                    "03 2020-12-31",
+                    "01 2020-08-01",
+                    "02 2020-09-09",
+                    "03 2020-10-10")));
     when(repository.findStatusDescription("S")).thenReturn(Optional.of("Submitted"));
     when(repository.findStatusDescription("D")).thenReturn(Optional.of("Draft"));
 
     WorkingContext ctx = service.resolveWorkingContext("514", "2020");
 
     assertEquals("2020-11-30", ctx.schedules1To10Status().date()); // S -> submit, prefix stripped
-    assertEquals("2020-08-01", ctx.schedule11Status().date());     // D -> SILVI draft
+    assertEquals("2020-08-01", ctx.schedule11Status().date()); // D -> SILVI draft
   }
 
   @Test
@@ -225,8 +239,8 @@ class MillContextServiceTest {
         .thenReturn(Optional.of(new TrackCodes("O", "V")));
     // 'O' -> open1To10 = "---" (legacy empty sentinel: substring(3) -> "" -> Not Initiated);
     // 'V'/else -> verifySilvi = "   " (blank remainder).
-    when(repository.findStatusDates(514L, 2021)).thenReturn(Optional.of(new StatusDates(
-        "---", null, null, null, null, null, "      ")));
+    when(repository.findStatusDates(514L, 2021))
+        .thenReturn(Optional.of(new StatusDates("---", null, null, null, null, null, "      ")));
     when(repository.findStatusDescription("O")).thenReturn(Optional.of("Opened"));
     when(repository.findStatusDescription("V")).thenReturn(Optional.of("Verified"));
 
@@ -247,23 +261,21 @@ class MillContextServiceTest {
   @Test
   void millYearActive_noStatusRow_throwsScheduleNotFound() {
     when(repository.findMillStatusCodeForYear(999999L, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class,
-        () -> service.validateMillYearActive(999999L, YEAR));
+    assertThrows(
+        ScheduleNotFoundException.class, () -> service.validateMillYearActive(999999L, YEAR));
   }
 
   @Test
   void millYearActive_millClosedForYear_throwsMillClosed() {
     when(repository.findMillStatusCodeForYear(516L, YEAR)).thenReturn(Optional.of("CLS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateMillYearActive(516L, YEAR));
+    assertThrows(MillClosedException.class, () -> service.validateMillYearActive(516L, YEAR));
   }
 
   @Test
   void millYearActive_unexpectedNonActiveStatus_throwsMillClosed() {
     // Same ACT whitelist as validateScheduleViewable: any unexpected status is not viewable.
     when(repository.findMillStatusCodeForYear(518L, YEAR)).thenReturn(Optional.of("SUS"));
-    assertThrows(MillClosedException.class,
-        () -> service.validateMillYearActive(518L, YEAR));
+    assertThrows(MillClosedException.class, () -> service.validateMillYearActive(518L, YEAR));
   }
 
   @Test
@@ -279,28 +291,28 @@ class MillContextServiceTest {
 
   @Test
   void millYearActive_missingMillId_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive(null, "2021"));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive(null, "2021"));
   }
 
   @Test
   void millYearActive_blankYear_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive("514", "   "));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive("514", "   "));
   }
 
   @Test
   void millYearActive_nonNumericMillId_throwsMillYearNotSelected() {
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive("abc", "2021"));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive("abc", "2021"));
   }
 
   @Test
   void millYearActive_bothMissing_throwsMillYearNotSelected() {
     // Legacy shows ONE combined message (schedule11.xhtml guard), not per-field texts — unlike
     // resolveWorkingContext's S08 per-field list.
-    assertThrows(MillYearNotSelectedException.class,
-        () -> service.validateMillYearActive(null, null));
+    assertThrows(
+        MillYearNotSelectedException.class, () -> service.validateMillYearActive(null, null));
   }
 
   @Test

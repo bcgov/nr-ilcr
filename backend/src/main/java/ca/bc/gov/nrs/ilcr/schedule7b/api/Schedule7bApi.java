@@ -26,8 +26,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings so a missing/blank/non-numeric
  * value resolves to the ONE verbatim legacy ERR-003 message ({@code
- * MillContextService.validateMillYearActive}, AD-4) — a typed required {@code
- * @RequestParam} cannot produce it.
+ * MillContextService.validateMillYearActive}, AD-4) — a typed required {@code @RequestParam} cannot
+ * produce it.
  */
 @RequestMapping("/api/v1/schedule7b")
 public interface Schedule7bApi {

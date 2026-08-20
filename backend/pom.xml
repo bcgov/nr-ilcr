@@ -61,8 +61,8 @@
         <skip.integration.tests>true</skip.integration.tests>
         <skip.unit.tests>false</skip.unit.tests>
         <jacoco.skip>false</jacoco.skip>
-        <checkstyle.skip>true</checkstyle.skip>
-        <checkstyle.failsOnError>false</checkstyle.failsOnError>
+        <checkstyle.skip>false</checkstyle.skip>
+        <checkstyle.failsOnError>true</checkstyle.failsOnError>
         <checkstyle.includeTestSourceDirectory>false</checkstyle.includeTestSourceDirectory>
         <cyclonedx.skip>false</cyclonedx.skip>
         <mapstruct.version>1.6.3</mapstruct.version>
@@ -480,6 +480,29 @@
                                 <banDuplicatePomDependencyVersions/>
                             </rules>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>2.44.3</version>
+                <configuration>
+                    <java>
+                        <googleJavaFormat>
+                            <version>1.25.2</version>
+                            <style>GOOGLE</style>
+                        </googleJavaFormat>
+                        <formatAnnotations />
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>

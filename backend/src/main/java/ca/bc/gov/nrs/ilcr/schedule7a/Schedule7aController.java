@@ -17,13 +17,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Schedule 7A endpoints. Authorizes by naming the action (AD-7) — {@code VIEW_SCHEDULE} for the read
- * and check-status, {@code EDIT_SCHEDULE} for the writes — delegates ALL mill/year validation to
- * {@link MillContextService} as its first line (AD-4, the list-schedule guard, verbatim ERR-001 on a
- * missing/blank/non-numeric param), and never touches repositories directly (AD-1). The Draft write
- * gate (1–10 track, AD-9), derivations, validation, and check-status live in
- * {@link Schedule7aService}; success text on a mutation echo is resolved verbatim from the bundle
- * here (AD-8).
+ * Schedule 7A endpoints. Authorizes by naming the action (AD-7) — {@code VIEW_SCHEDULE} for the
+ * read and check-status, {@code EDIT_SCHEDULE} for the writes — delegates ALL mill/year validation
+ * to {@link MillContextService} as its first line (AD-4, the list-schedule guard, verbatim ERR-001
+ * on a missing/blank/non-numeric param), and never touches repositories directly (AD-1). The Draft
+ * write gate (1–10 track, AD-9), derivations, validation, and check-status live in {@link
+ * Schedule7aService}; success text on a mutation echo is resolved verbatim from the bundle here
+ * (AD-8).
  */
 @RestController
 public class Schedule7aController implements Schedule7aApi {
@@ -37,6 +37,14 @@ public class Schedule7aController implements Schedule7aApi {
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
+  /**
+   * Constructs a new {@link Schedule7aController}.
+   *
+   * @param millContextService the mill context service
+   * @param schedule7aService the schedule 7a service
+   * @param permissions the schedule permissions
+   * @param messageSource the message source
+   */
   public Schedule7aController(
       MillContextService millContextService,
       Schedule7aService schedule7aService,
@@ -63,8 +71,9 @@ public class Schedule7aController implements Schedule7aApi {
   public ResponseEntity<Schedule7aResponse> addBridge(
       String millId, String year, BridgeRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7aResponse doc = schedule7aService.addBridge(
-        context.millId(), context.year(), request, true, authentication.getName());
+    Schedule7aResponse doc =
+        schedule7aService.addBridge(
+            context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -73,8 +82,9 @@ public class Schedule7aController implements Schedule7aApi {
   public ResponseEntity<Schedule7aResponse> updateBridge(
       long id, String millId, String year, BridgeRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7aResponse doc = schedule7aService.updateBridge(
-        context.millId(), context.year(), id, request, true, authentication.getName());
+    Schedule7aResponse doc =
+        schedule7aService.updateBridge(
+            context.millId(), context.year(), id, request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -83,8 +93,9 @@ public class Schedule7aController implements Schedule7aApi {
   public ResponseEntity<Schedule7aResponse> saveAllBridges(
       String millId, String year, BridgeSaveAllRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7aResponse doc = schedule7aService.saveAllBridges(
-        context.millId(), context.year(), request, true, authentication.getName());
+    Schedule7aResponse doc =
+        schedule7aService.saveAllBridges(
+            context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -93,8 +104,8 @@ public class Schedule7aController implements Schedule7aApi {
   public ResponseEntity<Schedule7aResponse> deleteBridge(
       long id, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7aResponse doc = schedule7aService.deleteBridge(
-        context.millId(), context.year(), id, true);
+    Schedule7aResponse doc =
+        schedule7aService.deleteBridge(context.millId(), context.year(), id, true);
     // SUC-002 when bridges remain; SUC-003 (empty schedule) when the last bridge was removed.
     String key = doc.bridges().isEmpty() ? MSG_EMPTY : MSG_DELETED;
     return ResponseEntity.ok(doc.withMessage(message(key)));

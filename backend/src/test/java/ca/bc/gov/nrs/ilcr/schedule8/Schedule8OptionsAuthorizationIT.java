@@ -17,8 +17,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance test for authorization on VIEW_SCHEDULE (AD-7) for the Schedule 8 page-editor option
- * lists. The {@code /options} endpoint serves global reference data (no mill/year context), so it is
- * gated only by the same VIEW_SCHEDULE permission as the read — mirrors {@link Schedule8AuthorizationIT}.
+ * lists. The {@code /options} endpoint serves global reference data (no mill/year context), so it
+ * is gated only by the same VIEW_SCHEDULE permission as the read — mirrors {@link
+ * Schedule8AuthorizationIT}.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/schedule8/options — authorization on VIEW_SCHEDULE (AD-7)")
@@ -28,8 +29,7 @@ class Schedule8OptionsAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -40,8 +40,8 @@ class Schedule8OptionsAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(get(ENDPOINT).with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -49,8 +49,8 @@ class Schedule8OptionsAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ suffix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(get(ENDPOINT).with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -58,16 +58,16 @@ class Schedule8OptionsAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (200)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(get(ENDPOINT).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isOk());
   }
 
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz (200)")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(get(ENDPOINT).with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isOk());
   }
 }

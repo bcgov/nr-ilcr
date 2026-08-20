@@ -18,9 +18,7 @@ import java.util.List;
  * @param culverts every culvert to save (non-empty; each entry validated)
  */
 public record CulvertSaveAllRequest(
-    @NotEmpty(message = "{missingRequiredFieldMsg}")
-    @Valid
-    List<Item> culverts) {
+    @NotEmpty(message = "{missingRequiredFieldMsg}") @Valid List<Item> culverts) {
 
   /**
    * One entry of the batch: which culvert, and the values to store on it.
@@ -29,11 +27,6 @@ public record CulvertSaveAllRequest(
    * @param culvert the entered fields + required {@code revisionCount}
    */
   public record Item(
-      @NotNull(message = "{missingRequiredFieldMsg}")
-      Long culvertReportId,
-
-      @NotNull(message = "{missingRequiredFieldMsg}")
-      @Valid
-      CulvertRequest culvert) {
-  }
+      @NotNull(message = "{missingRequiredFieldMsg}") Long culvertReportId,
+      @NotNull(message = "{missingRequiredFieldMsg}") @Valid CulvertRequest culvert) {}
 }

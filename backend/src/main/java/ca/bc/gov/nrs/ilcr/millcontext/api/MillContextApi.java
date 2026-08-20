@@ -10,13 +10,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Mill-context API contract (controller + api-interface split, CSP idiom; mirrors
- * {@code Schedule1Api}). The interface owns the request mapping; {@code MillContextController}
- * implements it and adds {@code @Override} only.
+ * Mill-context API contract (controller + api-interface split, CSP idiom; mirrors {@code
+ * Schedule1Api}). The interface owns the request mapping; {@code MillContextController} implements
+ * it and adds {@code @Override} only.
  *
- * <p>Story 1.1 owns the two Home-page option-list endpoints below. Both are pre-selection reads with
- * no action gate: no {@code @PreAuthorize} and no per-user filter (roles/authorization are out of
- * scope for the whole Home epic; the per-user mill-association filter arrives with the FAM auth
+ * <p>Story 1.1 owns the two Home-page option-list endpoints below. Both are pre-selection reads
+ * with no action gate: no {@code @PreAuthorize} and no per-user filter (roles/authorization are out
+ * of scope for the whole Home epic; the per-user mill-association filter arrives with the FAM auth
  * story, AR4). Success payloads are plain {@code application/json} (Jackson {@code non_null}).
  *
  * <p>Story 1.2 will add {@code GET /mill-context?millId&year} returning {@code WorkingContext}
@@ -48,15 +48,15 @@ public interface MillContextApi {
 
   /**
    * Resolve the working context for a selected (mill, year) pair (Story 1.2; UC-SEC-001
-   * S01/S06/S07): the pinned {@code WorkingContext} with both independent track statuses (AR6),
-   * the closed-mill {@code millViewable} flag, and null statuses when no report-status row exists.
+   * S01/S06/S07): the pinned {@code WorkingContext} with both independent track statuses (AR6), the
+   * closed-mill {@code millViewable} flag, and null statuses when no report-status row exists.
    *
    * <p>Params are deliberately raw Strings: {@code MillContextService} owns the validation
    * (AR4/NFR6), so missing/blank/non-numeric values return the verbatim legacy required-field
    * messages — BOTH together when both are absent (S08) — rather than a first-error framework 400.
    *
-   * <p>Story 1.3 amendment (AD-12, AC7): the 200 {@link WorkingContext} now carries a
-   * {@code message} (SUC-001, {@code dataSavedSuccesfullyInfoMsg} → "Data saved successfully"),
+   * <p>Story 1.3 amendment (AD-12, AC7): the 200 {@link WorkingContext} now carries a {@code
+   * message} (SUC-001, {@code dataSavedSuccesfullyInfoMsg} → "Data saved successfully"),
    * server-resolved (AD-8), on EVERY 200. This endpoint is used both to CONFIRM a Home save (1.3)
    * and to LOAD the banner (1.4); the message is always present, but callers must only DISPLAY it
    * after an explicit Save — Story 1.4's banner load must IGNORE {@code message}. The 400/404 error

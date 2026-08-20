@@ -3,12 +3,12 @@ package ca.bc.gov.nrs.ilcr.reporting;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.reporting.api.ReportApi;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -17,9 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
  * validation to {@link MillContextService} as its first line (AD-4), and streams the PDF from
  * {@link ReportService} (AD-16). It never touches repositories directly (AD-1).
  *
- * <p>Mirrors the Schedule 9 read controller's guard/auth posture; the only difference is the
- * binary response ({@code application/pdf} + an attachment Content-Disposition). The empty-schedule
- * 404 is
+ * <p>Mirrors the Schedule 9 read controller's guard/auth posture; the only difference is the binary
+ * response ({@code application/pdf} + an attachment Content-Disposition). The empty-schedule 404 is
  * raised inside the service ({@code ScheduleNotFoundException}) and rendered by the global handler
  * as the verbatim {@code Schedule not found.} (ERR-005) — no PDF is produced.
  */

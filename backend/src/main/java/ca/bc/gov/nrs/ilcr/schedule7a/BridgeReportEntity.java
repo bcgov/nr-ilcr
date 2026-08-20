@@ -8,19 +8,20 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * Spring Data JDBC row shape for one Schedule 7A bridge (AD-3): a {@code THE.BRIDGE_REPORT} row
- * keyed {@code (ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID = '7')} (legacy
- * {@code Constant.CATEGORIES.Schedule7}). The five code columns store the selected code string as an
- * FK into the corresponding {@code THE.*_CODE} table (the code IS that table's PK). Costs are NOT
+ * keyed {@code (ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID = '7')} (legacy {@code
+ * Constant.CATEGORIES.Schedule7}). The five code columns store the selected code string as an FK
+ * into the corresponding {@code THE.*_CODE} table (the code IS that table's PK). Costs are NOT
  * columns here — each bridge's ten costs are {@code THE.ILCR_COST_REPORT_DETAIL} rows keyed by
- * {@code BRIDGE_REPORT_ID} + {@code ILCR_REPORT_COST_ITEM_ID} (items 70-76/79-81). Never crosses the
- * service boundary — {@link Schedule7aService} maps it to {@code dto/Bridge}.
+ * {@code BRIDGE_REPORT_ID} + {@code ILCR_REPORT_COST_ITEM_ID} (items 70-76/79-81). Never crosses
+ * the service boundary — {@link Schedule7aService} maps it to {@code dto/Bridge}.
  *
  * <p>Legacy source: {@code model/BridgeReport.java:40-130}. {@code EXPECTED_BRIDGE_LIFE_SPAN}
- * ({@code NUMBER(3)}) and {@code DISTANCE_FROM_STORAGE} ({@code NUMBER(4)}) are whole numbers mapped
- * to {@code Integer}; {@code HEIGHT}/{@code LENGTH}/{@code DECK_WIDTH} ({@code NUMBER(5,1)}) are
- * one-decimal measurements mapped to {@code BigDecimal}.
+ * ({@code NUMBER(3)}) and {@code DISTANCE_FROM_STORAGE} ({@code NUMBER(4)}) are whole numbers
+ * mapped to {@code Integer}; {@code HEIGHT}/{@code LENGTH}/{@code DECK_WIDTH} ({@code NUMBER(5,1)})
+ * are one-decimal measurements mapped to {@code BigDecimal}.
  *
- * @param bridgeReportId the bridge PK ({@code BRIDGE_REPORT_ID}; seq {@code ILCR_REPORT_COMMON_SEQ})
+ * @param bridgeReportId the bridge PK ({@code BRIDGE_REPORT_ID}; seq {@code
+ *     ILCR_REPORT_COMMON_SEQ})
  * @param locationName the bridge name/location (max 30)
  * @param builtDate the completion date (stored {@code DATE}; served/entered as {@code yyyy-MM})
  * @param lifeSpan the expected life span (0-999)
@@ -52,5 +53,4 @@ public record BridgeReportEntity(
     @Column("ILCR_BRIDGE_ABUTMENT_TYPE_CODE") String abutmentTypeCode,
     @Column("ILCR_BRIDGE_LOAD_RATING_CODE") String loadRatingCode,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") int revisionCount) {
-}
+    @Column("REVISION_COUNT") int revisionCount) {}

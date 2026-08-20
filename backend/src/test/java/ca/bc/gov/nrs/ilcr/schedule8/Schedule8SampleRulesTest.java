@@ -15,9 +15,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test for the Schedule 8 sample Bean Validation rules (Story 14.3) — pure Jakarta Validator, no
- * Spring/DB. Documents the intentional BR-06 Save-vs-Check asymmetry (S15 sum &gt; 100 rejected, S16
- * sum &lt; 100 allowed) and the Helicopter/Other conditionals + Contract-ID-required + per-% range.
+ * Unit test for the Schedule 8 sample Bean Validation rules (Story 14.3) — pure Jakarta Validator,
+ * no Spring/DB. Documents the intentional BR-06 Save-vs-Check asymmetry (S15 sum &gt; 100 rejected,
+ * S16 sum &lt; 100 allowed) and the Helicopter/Other conditionals + Contract-ID-required + per-%
+ * range.
  */
 class Schedule8SampleRulesTest {
 
@@ -37,59 +38,85 @@ class Schedule8SampleRulesTest {
 
   private static boolean hasViolationOn(
       Set<ConstraintViolation<Schedule8SampleRequest>> violations, String property) {
-    return violations.stream()
-        .anyMatch(v -> v.getPropertyPath().toString().equals(property));
+    return violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals(property));
   }
 
   /** A sample request varying only the fields the rules key on; everything else null. */
-  private static Schedule8SampleRequest sample(String contractId, Integer groundBase,
-      Integer grapple, Integer helicopter, Integer other, BigDecimal distance, BigDecimal cycle,
-      Boolean uphill, Boolean waterDump, String skidType) {
-    return new Schedule8SampleRequest(null, null, contractId, null, groundBase, grapple, null, null,
-        helicopter, other, null, null, null, cycle, distance, uphill, waterDump, skidType, null,
-        null, null);
+  private static Schedule8SampleRequest sample(
+      String contractId,
+      Integer groundBase,
+      Integer grapple,
+      Integer helicopter,
+      Integer other,
+      BigDecimal distance,
+      BigDecimal cycle,
+      Boolean uphill,
+      Boolean waterDump,
+      String skidType) {
+    return new Schedule8SampleRequest(
+        null,
+        null,
+        contractId,
+        null,
+        groundBase,
+        grapple,
+        null,
+        null,
+        helicopter,
+        other,
+        null,
+        null,
+        null,
+        cycle,
+        distance,
+        uphill,
+        waterDump,
+        skidType,
+        null,
+        null,
+        null);
   }
 
   @Test
   void skiddingSumBelow100_isValid_theS16Half() {
-    var violations = validator.validate(
-        sample("C", 50, null, null, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample("C", 50, null, null, null, null, null, null, null, null));
     assertTrue(violations.isEmpty(), () -> "sum < 100 must SAVE at Save-time, got " + violations);
   }
 
   @Test
   void skiddingSumExactly100_isValid() {
-    var violations = validator.validate(
-        sample("C", 60, 40, null, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample("C", 60, 40, null, null, null, null, null, null, null));
     assertTrue(violations.isEmpty());
   }
 
   @Test
   void skiddingSumAbove100_isRejected_theS15Half() {
-    var violations = validator.validate(
-        sample("C", 60, 60, null, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample("C", 60, 60, null, null, null, null, null, null, null));
     assertFalse(violations.isEmpty());
     assertTrue(hasViolationOn(violations, "groundBasePct"));
   }
 
   @Test
   void individualPercentAbove100_isRejected() {
-    var violations = validator.validate(
-        sample("C", 150, null, null, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample("C", 150, null, null, null, null, null, null, null, null));
     assertTrue(hasViolationOn(violations, "groundBasePct"));
   }
 
   @Test
   void contractIdMissing_isRejected() {
-    var violations = validator.validate(
-        sample(null, 100, null, null, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample(null, 100, null, null, null, null, null, null, null, null));
     assertTrue(hasViolationOn(violations, "contractId"));
   }
 
   @Test
   void helicopterNonZeroWithoutRequiredFields_isRejected() {
-    var violations = validator.validate(
-        sample("C", 50, null, 50, null, null, null, null, null, null));
+    var violations =
+        validator.validate(sample("C", 50, null, 50, null, null, null, null, null, null));
     assertTrue(hasViolationOn(violations, "distance"));
     assertTrue(hasViolationOn(violations, "cycleTime"));
     assertTrue(hasViolationOn(violations, "uphillDirection"));
@@ -98,22 +125,33 @@ class Schedule8SampleRulesTest {
 
   @Test
   void helicopterNonZeroWithRequiredFields_isValid() {
-    var violations = validator.validate(sample("C", 50, null, 50, null,
-        new BigDecimal("12.5"), new BigDecimal("3.0"), true, false, null));
+    var violations =
+        validator.validate(
+            sample(
+                "C",
+                50,
+                null,
+                50,
+                null,
+                new BigDecimal("12.5"),
+                new BigDecimal("3.0"),
+                true,
+                false,
+                null));
     assertTrue(violations.isEmpty());
   }
 
   @Test
   void otherNonZeroWithNaSkidType_isRejected() {
-    var violations = validator.validate(
-        sample("C", 50, null, null, 50, null, null, null, null, "NA"));
+    var violations =
+        validator.validate(sample("C", 50, null, null, 50, null, null, null, null, "NA"));
     assertTrue(hasViolationOn(violations, "skidTypeCode"));
   }
 
   @Test
   void otherNonZeroWithValidSkidType_isValid() {
-    var violations = validator.validate(
-        sample("C", 50, null, null, 50, null, null, null, null, "ST1"));
+    var violations =
+        validator.validate(sample("C", 50, null, null, 50, null, null, null, null, "ST1"));
     assertTrue(violations.isEmpty());
   }
 }

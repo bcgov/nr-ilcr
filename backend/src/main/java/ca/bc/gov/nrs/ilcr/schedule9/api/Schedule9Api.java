@@ -20,18 +20,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Schedule 9 (Miscellaneous and Unique Logging Costs) API contract (controller + api-interface
- * split, the established idiom). The interface owns the request mapping; {@code Schedule9Controller}
- * implements it and adds authorization.
+ * split, the established idiom). The interface owns the request mapping; {@code
+ * Schedule9Controller} implements it and adds authorization.
  *
  * <p>Story 9.2 adds the write half (add/edit/delete + {@code POST /check-status}); it realizes the
  * document pinned by {@link Schedule9Response} in Story 9.1 rather than re-pinning it. Each write
  * body is a {@link ContractualWorkRecordRequest} of entered fields only — no derived {@code
  * costPerUnit}.
  *
- * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like Schedules 5/6/11 — because the
- * guards pin the verbatim ERR message for missing, blank, AND non-numeric values, which a typed
- * required {@code @RequestParam} cannot produce. Parsing + the guard chain live in
- * {@code MillContextService} (AD-4).
+ * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like Schedules 5/6/11 — because
+ * the guards pin the verbatim ERR message for missing, blank, AND non-numeric values, which a typed
+ * required {@code @RequestParam} cannot produce. Parsing + the guard chain live in {@code
+ * MillContextService} (AD-4).
  */
 @RequestMapping("/api/v1/schedule9")
 public interface Schedule9Api {
@@ -41,8 +41,8 @@ public interface Schedule9Api {
    *
    * <p>Guards (verbatim legacy text from the message bundle): missing/blank/non-numeric params →
    * 400 (EF1); mill not active for the year → 409 (EF2); no report-status context → 404 (EF3); no
-   * {@code VIEW_SCHEDULE} → 403. A mill/year with zero records is a valid 200 with
-   * {@code records: []}, never a 404.
+   * {@code VIEW_SCHEDULE} → 403. A mill/year with zero records is a valid 200 with {@code records:
+   * []}, never a 404.
    *
    * @param millId the mill id (optional raw String)
    * @param year the reporting year (optional raw String)
@@ -60,9 +60,9 @@ public interface Schedule9Api {
    * document — every {@code costPerUnit} re-derived — is echoed with a {@code
    * dataSavedSuccesfullyInfoMsg} (SUC-001) message.
    *
-   * <p>Guards: required-field omissions → 400 with one FLD-001 line per field; a range failure → 400
-   * with the verbatim FLD-002/003/004 text; a code outside its list → 400 FLD-005; a non-Draft 1–10
-   * track → 409; no {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/409/404.
+   * <p>Guards: required-field omissions → 400 with one FLD-001 line per field; a range failure →
+   * 400 with the verbatim FLD-002/003/004 text; a code outside its list → 400 FLD-005; a non-Draft
+   * 1–10 track → 409; no {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/409/404.
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
@@ -79,9 +79,10 @@ public interface Schedule9Api {
       Authentication authentication);
 
   /**
-   * Edit one record in place (S02/S07). Same validation and gates as add; the body must additionally
-   * carry the record's own {@code revisionCount} (the {@link OnUpdate} group — omitting it is a clean
-   * 400, never a coerced 409). A stale token → 409; an unknown or foreign record id → 404.
+   * Edit one record in place (S02/S07). Same validation and gates as add; the body must
+   * additionally carry the record's own {@code revisionCount} (the {@link OnUpdate} group —
+   * omitting it is a clean 400, never a coerced 409). A stale token → 409; an unknown or foreign
+   * record id → 404.
    *
    * @param id the record id ({@code CONTRACTUAL_WORK_REPORT_ID}) to edit
    * @param millId the raw mill id param
@@ -105,8 +106,8 @@ public interface Schedule9Api {
    * <p>CFM-001 ({@code This will delete the current record. Do you want to continue?}) is the
    * CLIENT's confirmation (Story 9.3), not a server round-trip — reaching this endpoint IS the
    * confirmation. Carries NO body and NO revision token, so a delete is never rejected as stale. An
-   * unknown or foreign record id → 404 (mill/year/category-scoped, unlike legacy's PK-only delete); a
-   * non-Draft track → 409.
+   * unknown or foreign record id → 404 (mill/year/category-scoped, unlike legacy's PK-only delete);
+   * a non-Draft track → 409.
    *
    * @param id the record id to delete
    * @param millId the raw mill id param
@@ -126,9 +127,9 @@ public interface Schedule9Api {
    * request body, and is NOT Draft-gated: {@code VIEW_SCHEDULE} only (the Schedule 5/7A precedent),
    * so a Submitted mill can still be checked.
    *
-   * <p>Returns either {@code requirementsMet: true} with the single SUC-002 banner and no errors, or
-   * {@code requirementsMet: false} with each record's composed {@code Value Required} / range lines
-   * byte-for-byte. Zero records is vacuously met.
+   * <p>Returns either {@code requirementsMet: true} with the single SUC-002 banner and no errors,
+   * or {@code requirementsMet: false} with each record's composed {@code Value Required} / range
+   * lines byte-for-byte. Zero records is vacuously met.
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param

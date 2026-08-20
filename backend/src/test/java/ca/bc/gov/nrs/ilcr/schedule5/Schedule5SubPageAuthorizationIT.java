@@ -29,9 +29,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * argument resolution, BEFORE {@code @PreAuthorize} fires, so an invalid body would yield 400 and
  * the test would pass for the wrong reason — proving nothing about authorization.
  *
- * <p><strong>Mill 693 is this class's own fixture and its track is deliberately {@code 'S'}</strong>
- * — see the seed migration's block comment. Authorized writes therefore land on 409 from the Draft
- * gate, which proves {@code @PreAuthorize} admitted them without this suite mutating anything.
+ * <p><strong>Mill 693 is this class's own fixture and its track is deliberately {@code
+ * 'S'}</strong> — see the seed migration's block comment. Authorized writes therefore land on 409
+ * from the Draft gate, which proves {@code @PreAuthorize} admitted them without this suite mutating
+ * anything.
  *
  * <p><strong>Coverage gap (inherited, recorded on 25.2):</strong> a "holds VIEW but not EDIT → 403"
  * case is unreachable today because both shipped roles hold {@code EDIT_SCHEDULE}. It becomes
@@ -50,12 +51,12 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
       new CognitoGroupsJwtAuthenticationConverter();
 
   /** A VALID body — so a 403 fires at {@code @PreAuthorize}, not at {@code @Valid}. */
-  private static final String VALID_BODY = """
+  private static final String VALID_BODY =
+      """
       {"rows":[{"rowId":null,"description":"Authz Row","cost":10}]}
       """;
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -78,21 +79,36 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no token -> 401 on every sub-page verb")
   void anonymousIsUnauthorized() throws Exception {
-    mockMvc.perform(get(CAMP_ROWS).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(CAMP_ROWS).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isUnauthorized());
-    mockMvc.perform(get(ACCESS_ROWS).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(ACCESS_ROWS).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isUnauthorized());
-    mockMvc.perform(put(CAMP_ROWS).with(csrf()).param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(CAMP_ROWS)
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isUnauthorized());
-    mockMvc.perform(put(ACCESS_ROWS).with(csrf()).param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(ACCESS_ROWS)
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isUnauthorized());
-    mockMvc.perform(delete(CAMP_ROWS + "/8749").with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(delete(CAMP_ROWS + "/8749").with(csrf()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isUnauthorized());
-    mockMvc.perform(delete(ACCESS_ROWS + "/8749").with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(
+            delete(ACCESS_ROWS + "/8749").with(csrf()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isUnauthorized());
   }
 
@@ -103,33 +119,57 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("a token with no group -> 403 on both GETs (VIEW_SCHEDULE)")
   void noGroupCannotRead() throws Exception {
-    mockMvc.perform(get(CAMP_ROWS).with(noGroup()).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(CAMP_ROWS).with(noGroup()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isForbidden());
-    mockMvc.perform(get(ACCESS_ROWS).with(noGroup()).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(ACCESS_ROWS).with(noGroup()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isForbidden());
   }
 
   @Test
   @DisplayName("a token with no group -> 403 on both PUTs (EDIT_SCHEDULE)")
   void noGroupCannotSave() throws Exception {
-    mockMvc.perform(put(CAMP_ROWS).with(noGroup()).with(csrf())
-            .param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(CAMP_ROWS)
+                .with(noGroup())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isForbidden());
-    mockMvc.perform(put(ACCESS_ROWS).with(noGroup()).with(csrf())
-            .param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(ACCESS_ROWS)
+                .with(noGroup())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isForbidden());
   }
 
   @Test
   @DisplayName("a token with no group -> 403 on both DELETEs (EDIT_SCHEDULE)")
   void noGroupCannotDelete() throws Exception {
-    mockMvc.perform(delete(CAMP_ROWS + "/8749").with(noGroup()).with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(
+            delete(CAMP_ROWS + "/8749")
+                .with(noGroup())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR))
         .andExpect(status().isForbidden());
-    mockMvc.perform(delete(ACCESS_ROWS + "/8749").with(noGroup()).with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(
+            delete(ACCESS_ROWS + "/8749")
+                .with(noGroup())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR))
         .andExpect(status().isForbidden());
   }
 
@@ -140,9 +180,11 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER may READ — 200, and the row is served read-only")
   void submitterMayRead() throws Exception {
-    mockMvc.perform(get(CAMP_ROWS).with(submitter()).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(CAMP_ROWS).with(submitter()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isOk());
-    mockMvc.perform(get(ACCESS_ROWS).with(submitter()).param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(get(ACCESS_ROWS).with(submitter()).param("millId", MILL).param("year", YEAR))
         .andExpect(status().isOk());
   }
 
@@ -151,19 +193,41 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
   void submitterIsAdmittedToWrites() throws Exception {
     // 409, not 403: authorization passed and the non-Draft track stopped the write. Nothing is
     // mutated either way, which is what lets this class own its fixture safely.
-    mockMvc.perform(put(CAMP_ROWS).with(submitter()).with(csrf())
-            .param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(CAMP_ROWS)
+                .with(submitter())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isConflict());
-    mockMvc.perform(put(ACCESS_ROWS).with(submitter()).with(csrf())
-            .param("millId", MILL).param("year", YEAR)
-            .contentType(MediaType.APPLICATION_JSON).content(VALID_BODY))
+    mockMvc
+        .perform(
+            put(ACCESS_ROWS)
+                .with(submitter())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
         .andExpect(status().isConflict());
-    mockMvc.perform(delete(CAMP_ROWS + "/8749").with(submitter()).with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(
+            delete(CAMP_ROWS + "/8749")
+                .with(submitter())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR))
         .andExpect(status().isConflict());
-    mockMvc.perform(delete(ACCESS_ROWS + "/8749").with(submitter()).with(csrf())
-            .param("millId", MILL).param("year", YEAR))
+    mockMvc
+        .perform(
+            delete(ACCESS_ROWS + "/8749")
+                .with(submitter())
+                .with(csrf())
+                .param("millId", MILL)
+                .param("year", YEAR))
         .andExpect(status().isConflict());
   }
 }

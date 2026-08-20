@@ -40,9 +40,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 /**
  * Unit test for the BR-08 derivations, the editable matrix, and the empty-document state (Story
  * 25.1 AC1/AC2/AC6/AC7). Mocked repository + millcontext — no DB, no Spring. Legacy arithmetic is
- * transcribed VERBATIM from {@code CoreUtil} ({@code bigDecimalAddition} /
- * {@code bigDecimalDivision} / {@code sumBigDecimalAreas} / {@code sumBigDecimalCosts}): null is
- * the no-data signal everywhere — never zero. The null/zero-NAR division branches live HERE only:
+ * transcribed VERBATIM from {@code CoreUtil} ({@code bigDecimalAddition} / {@code
+ * bigDecimalDivision} / {@code sumBigDecimalAreas} / {@code sumBigDecimalCosts}): null is the
+ * no-data signal everywhere — never zero. The null/zero-NAR division branches live HERE only:
  * delivery's {@code REFORESTED_NET_AREA} is NOT NULL (AC9 finding), so the IT seed cannot produce
  * them — the service stays defensive regardless.
  */
@@ -52,25 +52,26 @@ class Schedule11ServiceTest {
   private static final long MILL = 610L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule11Repository repository;
+  @Mock private Schedule11Repository repository;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule11Service service;
+  @InjectMocks private Schedule11Service service;
 
   private static SilvicultureLocationRequest request(Integer actual, Integer planned, Integer rev) {
     // Costs are whole-dollar BigDecimals on the wire (fraction=0); the service narrows them back to
     // the Integer COST column via wholeDollars — the upsertCost verifications pin that narrowing.
     return new SilvicultureLocationRequest(
-        "North Ridge", true, 8801L, new BigDecimal("125.5"),
+        "North Ridge",
+        true,
+        8801L,
+        new BigDecimal("125.5"),
         actual == null ? null : BigDecimal.valueOf(actual),
-        planned == null ? null : BigDecimal.valueOf(planned), null, rev);
+        planned == null ? null : BigDecimal.valueOf(planned),
+        null,
+        rev);
   }
 
   private void stubTrack(String code) {
@@ -84,7 +85,8 @@ class Schedule11ServiceTest {
         id, "Location " + id, enhancedInd, 8801L, "ICH", "dw", "1", null, netArea, null, 0);
   }
 
-  private static SilvicultureCostEntity cost(long detailId, long locationId, int itemId, Integer cost) {
+  private static SilvicultureCostEntity cost(
+      long detailId, long locationId, int itemId, Integer cost) {
     return new SilvicultureCostEntity(detailId, locationId, itemId, cost);
   }
 
@@ -95,15 +97,16 @@ class Schedule11ServiceTest {
     stubTrack("D");
     when(repository.findLocations(YEAR, MILL))
         .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
-    when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(
-        cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
+    when(repository.findCostDetails(YEAR, MILL))
+        .thenReturn(List.of(cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
 
     SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
 
     assertEquals(25000, row.actualCost());
     assertEquals(10000, row.plannedCost());
     assertEquals(35000, row.totalCost());
-    // 35000 / 120.5 = 290.45643... -> scale 4 HALF_UP (recorded deviation from legacy display scale 2).
+    // 35000 / 120.5 = 290.45643... -> scale 4 HALF_UP (recorded deviation from legacy display scale
+    // 2).
     assertEquals(new BigDecimal("290.4564"), row.costPerNetArea());
   }
 
@@ -168,8 +171,7 @@ class Schedule11ServiceTest {
     // Defensive-only branch: delivery REFORESTED_NET_AREA is NOT NULL (AC9), but the legacy
     // arithmetic tolerates null and the service must not NPE on unexpected data.
     stubTrack("D");
-    when(repository.findLocations(YEAR, MILL))
-        .thenReturn(List.of(location(9101L, null, "N")));
+    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(location(9101L, null, "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 1000)));
 
     SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
@@ -185,8 +187,8 @@ class Schedule11ServiceTest {
     stubTrack("D");
     when(repository.findLocations(YEAR, MILL))
         .thenReturn(List.of(location(9101L, new BigDecimal("10"), "N")));
-    when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(
-        cost(1L, 9101L, 19, 99999), cost(2L, 9101L, 24, 500)));
+    when(repository.findCostDetails(YEAR, MILL))
+        .thenReturn(List.of(cost(1L, 9101L, 19, 99999), cost(2L, 9101L, 24, 500)));
 
     SilvicultureLocation row = service.getSchedule11(MILL, YEAR, true).locations().get(0);
 
@@ -197,8 +199,9 @@ class Schedule11ServiceTest {
   @Test
   void enhancedIndicator_mapsYToTrueElseFalse() {
     stubTrack("D");
-    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(
-        location(9101L, BigDecimal.ONE, "Y"), location(9102L, BigDecimal.ONE, "N")));
+    when(repository.findLocations(YEAR, MILL))
+        .thenReturn(
+            List.of(location(9101L, BigDecimal.ONE, "Y"), location(9102L, BigDecimal.ONE, "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
     List<SilvicultureLocation> rows = service.getSchedule11(MILL, YEAR, true).locations();
@@ -210,17 +213,19 @@ class Schedule11ServiceTest {
   @Test
   void becLabel_concatenatesWithNullsAsEmpty() {
     stubTrack("D");
-    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(
-        new SilvicultureLocationEntity(9101L, "A", "N", 8803L, "ESSF", "wc", "4", "a",
-            BigDecimal.ONE, null, 0),
-        new SilvicultureLocationEntity(9102L, "B", "N", 8802L, "CWH", "vm", null, null,
-            BigDecimal.ONE, null, 0)));
+    when(repository.findLocations(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                new SilvicultureLocationEntity(
+                    9101L, "A", "N", 8803L, "ESSF", "wc", "4", "a", BigDecimal.ONE, null, 0),
+                new SilvicultureLocationEntity(
+                    9102L, "B", "N", 8802L, "CWH", "vm", null, null, BigDecimal.ONE, null, 0)));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
 
     List<SilvicultureLocation> rows = service.getSchedule11(MILL, YEAR, true).locations();
 
     assertEquals("ESSFwc4a", rows.get(0).becLabel()); // full zone+subzone+variant+phase
-    assertEquals("CWHvm", rows.get(1).becLabel());    // nulls -> "" (getBiogeoSubZoneVariantPase)
+    assertEquals("CWHvm", rows.get(1).becLabel()); // nulls -> "" (getBiogeoSubZoneVariantPase)
   }
 
   // ---- BR-08 footer totals ---------------------------------------------------------------------
@@ -228,14 +233,18 @@ class Schedule11ServiceTest {
   @Test
   void footerTotals_sumRoundAndDivideLikeLegacy() {
     stubTrack("D");
-    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(
-        location(9101L, new BigDecimal("120.5"), "N"),
-        location(9102L, new BigDecimal("33.3"), "N"),
-        location(9103L, new BigDecimal("50"), "N"),
-        location(9104L, new BigDecimal("10.25"), "N")));
-    when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(
-        cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000),
-        cost(3L, 9102L, 24, 4500), cost(4L, 9103L, 23, 7000)));
+    when(repository.findLocations(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                location(9101L, new BigDecimal("120.5"), "N"),
+                location(9102L, new BigDecimal("33.3"), "N"),
+                location(9103L, new BigDecimal("50"), "N"),
+                location(9104L, new BigDecimal("10.25"), "N")));
+    when(repository.findCostDetails(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000),
+                cost(3L, 9102L, 24, 4500), cost(4L, 9103L, 23, 7000)));
 
     Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
 
@@ -292,8 +301,11 @@ class Schedule11ServiceTest {
   @Test
   void footerCostsPartiallyNull_onlyContributorsSum() {
     stubTrack("D");
-    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(
-        location(9101L, new BigDecimal("10"), "N"), location(9102L, new BigDecimal("20"), "N")));
+    when(repository.findLocations(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                location(9101L, new BigDecimal("10"), "N"),
+                location(9102L, new BigDecimal("20"), "N")));
     when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(cost(1L, 9101L, 24, 3000)));
 
     Schedule11Response doc = service.getSchedule11(MILL, YEAR, true);
@@ -361,18 +373,28 @@ class Schedule11ServiceTest {
   @Test
   void addLocation_nonDraftSilvicultureTrack_throwsNotEditable() {
     stubTrack("S"); // silviculture Submitted -> write gate 409, before any repository write
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
-    verify(repository, never()).insertLocation(
-        anyLong(), anyLong(), anyInt(), anyString(), anyLong(), any(), anyString(), any(),
-        anyString());
+    verify(repository, never())
+        .insertLocation(
+            anyLong(),
+            anyLong(),
+            anyInt(),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString());
   }
 
   @Test
   void addLocation_unresolvableBiogeo_throwsInvalidBiogeoCode() {
     stubTrack("D");
     when(repository.countBiogeo(8801L)).thenReturn(0); // not in catalogue -> 400 (S16)
-    assertThrows(InvalidBiogeoCodeException.class,
+    assertThrows(
+        InvalidBiogeoCodeException.class,
         () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
   }
 
@@ -382,12 +404,22 @@ class Schedule11ServiceTest {
     when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.nextLocationId()).thenReturn(9500L);
     // The BSRPT_BSRPT_UK_UK unique key surfaces as DataIntegrityViolationException -> verbatim 409.
-    org.mockito.Mockito.doThrow(new DataIntegrityViolationException(
-            "ORA-00001: unique constraint (THE.BSRPT_BSRPT_UK_UK) violated"))
-        .when(repository).insertLocation(
-            anyLong(), anyLong(), anyInt(), anyString(), anyLong(), any(), anyString(), any(),
+    org.mockito.Mockito.doThrow(
+            new DataIntegrityViolationException(
+                "ORA-00001: unique constraint (THE.BSRPT_BSRPT_UK_UK) violated"))
+        .when(repository)
+        .insertLocation(
+            anyLong(),
+            anyLong(),
+            anyInt(),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
             anyString());
-    assertThrows(SilvicultureBiogeoConflictException.class,
+    assertThrows(
+        SilvicultureBiogeoConflictException.class,
         () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
   }
 
@@ -398,12 +430,22 @@ class Schedule11ServiceTest {
     when(repository.nextLocationId()).thenReturn(9500L);
     // A PK collision (lagging sequence) or a cost-child NOT NULL is a server fault: 500 ERR-004 —
     // never the biogeo 409, whose "make the biogeo unique" advice would be false and unactionable.
-    org.mockito.Mockito.doThrow(new DataIntegrityViolationException(
-            "ORA-00001: unique constraint (THE.BSRPT_PK) violated"))
-        .when(repository).insertLocation(
-            anyLong(), anyLong(), anyInt(), anyString(), anyLong(), any(), anyString(), any(),
+    org.mockito.Mockito.doThrow(
+            new DataIntegrityViolationException(
+                "ORA-00001: unique constraint (THE.BSRPT_PK) violated"))
+        .when(repository)
+        .insertLocation(
+            anyLong(),
+            anyLong(),
+            anyInt(),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
             anyString());
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.addLocation(MILL, YEAR, request(5000, 4000, null), true, "u"));
   }
 
@@ -412,12 +454,24 @@ class Schedule11ServiceTest {
     stubTrack("D");
     when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.updateLocation(
-        eq(9201L), eq(MILL), eq(YEAR), eq(0), anyString(), anyLong(), any(), anyString(), any(),
-        anyString())).thenReturn(1);
-    org.mockito.Mockito.doThrow(new DataIntegrityViolationException(
-            "ORA-01400: cannot insert NULL into (THE.ILCR_COST_REPORT_DETAIL.UPDATE_USERID)"))
-        .when(repository).upsertCost(9201L, 24, 5000, "u");
-    assertThrows(ScheduleNotSavedException.class,
+            eq(9201L),
+            eq(MILL),
+            eq(YEAR),
+            eq(0),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString()))
+        .thenReturn(1);
+    org.mockito.Mockito.doThrow(
+            new DataIntegrityViolationException(
+                "ORA-01400: cannot insert NULL into (THE.ILCR_COST_REPORT_DETAIL.UPDATE_USERID)"))
+        .when(repository)
+        .upsertCost(9201L, 24, 5000, "u");
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.updateLocation(MILL, YEAR, 9201L, request(5000, 4000, 0), true, "u"));
   }
 
@@ -438,10 +492,20 @@ class Schedule11ServiceTest {
     stubTrack("D");
     when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.updateLocation(
-        eq(9201L), eq(MILL), eq(YEAR), eq(0), anyString(), anyLong(), any(), anyString(), any(),
-        anyString())).thenReturn(0);
+            eq(9201L),
+            eq(MILL),
+            eq(YEAR),
+            eq(0),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString()))
+        .thenReturn(0);
     when(repository.countLocation(9201L, MILL, YEAR)).thenReturn(1); // exists -> stale, not 404
-    assertThrows(StaleRevisionException.class,
+    assertThrows(
+        StaleRevisionException.class,
         () -> service.updateLocation(MILL, YEAR, 9201L, request(5000, 4000, 0), true, "u"));
   }
 
@@ -450,10 +514,20 @@ class Schedule11ServiceTest {
     stubTrack("D");
     when(repository.countBiogeo(8801L)).thenReturn(1);
     when(repository.updateLocation(
-        eq(9999L), eq(MILL), eq(YEAR), eq(0), anyString(), anyLong(), any(), anyString(), any(),
-        anyString())).thenReturn(0);
+            eq(9999L),
+            eq(MILL),
+            eq(YEAR),
+            eq(0),
+            anyString(),
+            anyLong(),
+            any(),
+            anyString(),
+            any(),
+            anyString()))
+        .thenReturn(0);
     when(repository.countLocation(9999L, MILL, YEAR)).thenReturn(0); // absent -> 404, not stale
-    assertThrows(SilvicultureLocationNotFoundException.class,
+    assertThrows(
+        SilvicultureLocationNotFoundException.class,
         () -> service.updateLocation(MILL, YEAR, 9999L, request(5000, 4000, 0), true, "u"));
   }
 
@@ -461,7 +535,8 @@ class Schedule11ServiceTest {
   void deleteLocation_unknownId_throwsNotFound_withoutTouchingCostRows() {
     stubTrack("D");
     when(repository.deleteLocation(9999L, MILL, YEAR)).thenReturn(0);
-    assertThrows(SilvicultureLocationNotFoundException.class,
+    assertThrows(
+        SilvicultureLocationNotFoundException.class,
         () -> service.deleteLocation(MILL, YEAR, 9999L, true));
     // The mill/year-scoped location delete IS the ownership check — an id the caller does not own
     // must fail 404 BEFORE the id-scoped cost cascade runs (cross-mill isolation without relying
@@ -500,28 +575,35 @@ class Schedule11ServiceTest {
     assertTrue(res.requirementsMet());
     assertTrue(res.errors().isEmpty());
     assertEquals("scheduleRequirementsMetMsg", res.requirementsMetMessage().key()); // SUC-003
-    assertEquals("checkStatusMessage", res.message().key());                        // SUC-004 always
+    assertEquals("checkStatusMessage", res.message().key()); // SUC-004 always
   }
 
   @Test
   void checkStatus_missingActualThenPlanned_flagsInLegacyOrderWithDoubleSpace() {
     stubMessages();
-    when(repository.findLocations(YEAR, MILL)).thenReturn(List.of(
-        location(9205L, new BigDecimal("20"), "N"),   // will miss actual
-        location(9206L, new BigDecimal("25"), "N")));  // will miss planned
-    when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of(
-        cost(1L, 9205L, 23, 800),    // planned only -> actual missing
-        cost(2L, 9206L, 24, 900)));  // actual only -> planned missing
+    when(repository.findLocations(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                location(9205L, new BigDecimal("20"), "N"), // will miss actual
+                location(9206L, new BigDecimal("25"), "N"))); // will miss planned
+    when(repository.findCostDetails(YEAR, MILL))
+        .thenReturn(
+            List.of(
+                cost(1L, 9205L, 23, 800), // planned only -> actual missing
+                cost(2L, 9206L, 24, 900))); // actual only -> planned missing
 
     Schedule11CheckStatusResponse res = service.checkStatus(MILL, YEAR);
 
     assertFalse(res.requirementsMet());
     assertNull(res.requirementsMetMessage()); // no SUC-003 when not met
     assertEquals("checkStatusMessage", res.message().key()); // SUC-004 still emitted
-    // Composed verbatim, in BASIC_SILVICULTURE_REPORT_ID order; note the DOUBLE space after "location".
-    assertEquals("location  : Location 9205 - Actual cost: missingRequiredFieldMsg",
+    // Composed verbatim, in BASIC_SILVICULTURE_REPORT_ID order; note the DOUBLE space after
+    // "location".
+    assertEquals(
+        "location  : Location 9205 - Actual cost: missingRequiredFieldMsg",
         res.errors().get(0).text());
-    assertEquals("location  : Location 9206 - Planned cost: missingRequiredFieldMsg",
+    assertEquals(
+        "location  : Location 9206 - Planned cost: missingRequiredFieldMsg",
         res.errors().get(1).text());
   }
 
@@ -553,22 +635,24 @@ class Schedule11ServiceTest {
   @Test
   void searchBiogeoCatalogue_mapsRowsToLabelWithNullsAsEmpty() {
     // Same concat as SilvicultureLocation.becLabel (getBiogeoSubZoneVariantPase): nulls -> "".
-    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
-        catalogue(8804L, "SBS", "dk", null, null),
-        catalogue(8806L, "SBS", "wk", "1", "a")));
+    when(repository.searchBiogeoCatalogue("SBS"))
+        .thenReturn(
+            List.of(
+                catalogue(8804L, "SBS", "dk", null, null),
+                catalogue(8806L, "SBS", "wk", "1", "a")));
 
     List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("SBS");
 
     assertEquals(2, options.size());
     assertEquals(8804L, options.get(0).id());
-    assertEquals("SBSdk", options.get(0).label());   // null variant + phase -> ""
-    assertEquals("SBSwk1a", options.get(1).label());  // full zone+subzone+variant+phase
+    assertEquals("SBSdk", options.get(0).label()); // null variant + phase -> ""
+    assertEquals("SBSwk1a", options.get(1).label()); // full zone+subzone+variant+phase
   }
 
   @Test
   void searchBiogeoCatalogue_trimsTermBeforeQuery() {
-    when(repository.searchBiogeoCatalogue("SBS")).thenReturn(List.of(
-        catalogue(8804L, "SBS", "dk", null, null)));
+    when(repository.searchBiogeoCatalogue("SBS"))
+        .thenReturn(List.of(catalogue(8804L, "SBS", "dk", null, null)));
 
     List<BiogeoclimaticOption> options = service.searchBiogeoCatalogue("  SBS  ");
 

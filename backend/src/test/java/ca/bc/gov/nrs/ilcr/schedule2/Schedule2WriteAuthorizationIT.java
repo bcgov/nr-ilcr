@@ -18,10 +18,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Authorization on EDIT_SCHEDULE (AD-7) for the Schedule 2 write verbs. Security ON; drives the real
- * {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without EDIT_SCHEDULE must
- * get 403 {@code problem+json} on both PUT and DELETE; a submitter passes authz. Mirrors
- * {@link ca.bc.gov.nrs.ilcr.schedule1.Schedule1WriteAuthorizationIT}.
+ * Authorization on EDIT_SCHEDULE (AD-7) for the Schedule 2 write verbs. Security ON; drives the
+ * real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without
+ * EDIT_SCHEDULE must get 403 {@code problem+json} on both PUT and DELETE; a submitter passes authz.
+ * Mirrors {@link ca.bc.gov.nrs.ilcr.schedule1.Schedule1WriteAuthorizationIT}.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("PUT/DELETE /api/v1/schedule2 — authorization on EDIT_SCHEDULE (AD-7)")
@@ -31,8 +31,7 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -40,7 +39,8 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
-  private static final String BODY = """
+  private static final String BODY =
+      """
       { "revisionCount": 0, "comments": "authz", "purchasedLogCostCost": 5000,
         "lessLogSalesVolume": 1000, "lessLogSalesCost": 5000 }
       """;
@@ -48,9 +48,14 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> PUT 403 problem+json")
   void put_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(ENDPOINT).param("millId", "624").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "624")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -58,8 +63,12 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> DELETE 403 problem+json")
   void delete_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "624").param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            delete(ENDPOINT)
+                .param("millId", "624")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -69,9 +78,14 @@ class Schedule2WriteAuthorizationIT extends AbstractOracleIT {
   void put_submitter_passesAuthorization() throws Exception {
     // Dedicated mill 624 (REVISION_COUNT 0, only this test writes it) so the hard-coded token can
     // never be made stale by another class sharing the container.
-    mockMvc.perform(put(ENDPOINT).param("millId", "624").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(BODY)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "624")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 }

@@ -30,7 +30,8 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
    * @param millId the mill id
    * @return the location rows in serving order; empty when the mill/year has none (a valid state)
    */
-  @Query("""
+  @Query(
+      """
       SELECT b.BASIC_SILVICULTURE_REPORT_ID, b.LOCATION, b.ENHANCED_IND,
              b.BECBIOGEOCLIMATIC_CATALOGUE_ID, c.BEC_ZONE_CODE, c.SUBZONE, c.VARIANT, c.PHASE,
              b.REFORESTED_NET_AREA, b.COMMENTS, b.REVISION_COUNT
@@ -47,15 +48,16 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
 
   /**
    * The Actual/Planned cost rows (items 24/23) for every location of a mill/year, in one read.
-   * Filtered to 23/24 here AND re-checked in the service's unpacking loop (legacy
-   * {@code getSilvicultureReport} assigns only those two) — out-of-scope items attached to a
-   * location must reach no figure.
+   * Filtered to 23/24 here AND re-checked in the service's unpacking loop (legacy {@code
+   * getSilvicultureReport} assigns only those two) — out-of-scope items attached to a location must
+   * reach no figure.
    *
    * @param year the reporting year
    * @param millId the mill id
    * @return the cost rows; a location may have 0, 1, or both items (real data: 0 is dominant)
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.BASIC_SILVICULTURE_REPORT_ID,
              d.ILCR_REPORT_COST_ITEM_ID, d.COST
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -78,7 +80,8 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
   // ===============================================================================================
 
   /** True iff the BEC id resolves to a catalogue row (force-selection backend enforcement, S16). */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.BIOGEOCLIMATIC_CATALOGUE
        WHERE BIOGEOCLIMATIC_CATALOGUE_ID = :biogeoId
@@ -88,19 +91,20 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
   /**
    * Type-ahead search over the GLOBAL BEC catalogue for the forced-selection field (BR-09, S16;
    * legacy {@code Schedule11MB.completeBiogeoSubzoneVariant}, {@code minQueryLength=1}). Matches
-   * {@code :term} case-insensitively as a PREFIX of the concatenated
-   * zone+subzone+variant+phase label — the SAME concat the served location rows use, so the WHERE
-   * and ORDER BY agree with the label the service derives in Java. Oracle {@code ||} treats a NULL
-   * variant/phase as {@code ""}, mirroring {@code getBiogeoSubZoneVariantPase()}. Ordered by that
-   * label and capped so the type-ahead payload stays bounded; the blank/whitespace short-circuit
-   * (empty result, no query) and the {@code LIKE}-metacharacter escaping (a user-typed {@code %}/
-   * {@code _} must match LITERALLY, not as a wildcard — legacy {@code String.startsWith}) live in
-   * {@link Schedule11Service}, paired with the {@code ESCAPE '\'} clause here.
+   * {@code :term} case-insensitively as a PREFIX of the concatenated zone+subzone+variant+phase
+   * label — the SAME concat the served location rows use, so the WHERE and ORDER BY agree with the
+   * label the service derives in Java. Oracle {@code ||} treats a NULL variant/phase as {@code ""},
+   * mirroring {@code getBiogeoSubZoneVariantPase()}. Ordered by that label and capped so the
+   * type-ahead payload stays bounded; the blank/whitespace short-circuit (empty result, no query)
+   * and the {@code LIKE}-metacharacter escaping (a user-typed {@code %}/ {@code _} must match
+   * LITERALLY, not as a wildcard — legacy {@code String.startsWith}) live in {@link
+   * Schedule11Service}, paired with the {@code ESCAPE '\'} clause here.
    *
    * @param term the already-trimmed, non-blank, LIKE-escaped search prefix
    * @return the matching catalogue rows, label-ordered, at most 50
    */
-  @Query("""
+  @Query(
+      """
       SELECT c.BIOGEOCLIMATIC_CATALOGUE_ID, c.BEC_ZONE_CODE, c.SUBZONE, c.VARIANT, c.PHASE
         FROM THE.BIOGEOCLIMATIC_CATALOGUE c
        WHERE UPPER(c.BEC_ZONE_CODE || c.SUBZONE || c.VARIANT || c.PHASE)
@@ -111,7 +115,8 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
   List<BiogeoclimaticCatalogueEntity> searchBiogeoCatalogue(@Param("term") String term);
 
   /** True iff a Schedule 11 location with this id exists under the mill/year (404-vs-409, AC7). */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.BASIC_SILVICULTURE_REPORT
        WHERE BASIC_SILVICULTURE_REPORT_ID = :id
@@ -131,11 +136,12 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
 
   /**
    * Insert one Schedule 11 location (category {@code '11'}, {@code REVISION_COUNT = 0}, audit
-   * {@code ENTRY_*}/{@code UPDATE_*} set — DB triggers own the {@code _AUD} rows). The PK is supplied
-   * from {@link #nextLocationId()} so the service can key the cost-child inserts to it.
+   * {@code ENTRY_*}/{@code UPDATE_*} set — DB triggers own the {@code _AUD} rows). The PK is
+   * supplied from {@link #nextLocationId()} so the service can key the cost-child inserts to it.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.BASIC_SILVICULTURE_REPORT
           (BASIC_SILVICULTURE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION,
            BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, ENHANCED_IND, COMMENTS,
@@ -145,21 +151,27 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
            0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertLocation(
-      @Param("id") long id, @Param("millId") long millId, @Param("year") int year,
-      @Param("location") String location, @Param("biogeoId") long biogeoId,
-      @Param("netArea") BigDecimal netArea, @Param("enhancedInd") String enhancedInd,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("id") long id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("location") String location,
+      @Param("biogeoId") long biogeoId,
+      @Param("netArea") BigDecimal netArea,
+      @Param("enhancedInd") String enhancedInd,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
-   * Optimistic-lock update of one location (AR11): sets the entered fields, bumps
-   * {@code REVISION_COUNT}, and stamps {@code UPDATE_*} ONLY when the stored revision still matches
-   * {@code expectedRevision} and the row belongs to this mill/year.
+   * Optimistic-lock update of one location (AR11): sets the entered fields, bumps {@code
+   * REVISION_COUNT}, and stamps {@code UPDATE_*} ONLY when the stored revision still matches {@code
+   * expectedRevision} and the row belongs to this mill/year.
    *
    * @return rows affected — {@code 1} on success; {@code 0} when the id is absent (→ 404) OR the
    *     revision is stale (→ 409). The service disambiguates via {@link #countLocation}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.BASIC_SILVICULTURE_REPORT
          SET LOCATION = :location,
              BECBIOGEOCLIMATIC_CATALOGUE_ID = :biogeoId,
@@ -176,10 +188,15 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateLocation(
-      @Param("id") long id, @Param("millId") long millId, @Param("year") int year,
-      @Param("expectedRevision") int expectedRevision, @Param("location") String location,
-      @Param("biogeoId") long biogeoId, @Param("netArea") BigDecimal netArea,
-      @Param("enhancedInd") String enhancedInd, @Param("comments") String comments,
+      @Param("id") long id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("location") String location,
+      @Param("biogeoId") long biogeoId,
+      @Param("netArea") BigDecimal netArea,
+      @Param("enhancedInd") String enhancedInd,
+      @Param("comments") String comments,
       @Param("user") String user);
 
   /**
@@ -188,10 +205,12 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
    * ({@link #deleteCostsForLocation}, which is scoped by location id alone; delivery has no FK
    * cascade, AC9).
    *
-   * @return rows affected — {@code 0} when the id is not a Schedule 11 row under this mill/year (→ 404)
+   * @return rows affected — {@code 0} when the id is not a Schedule 11 row under this mill/year (→
+   *     404)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.BASIC_SILVICULTURE_REPORT
        WHERE BASIC_SILVICULTURE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
@@ -208,17 +227,18 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
    * The service enforces mill/year ownership via {@link #deleteLocation} BEFORE calling this.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE BASIC_SILVICULTURE_REPORT_ID = :locationId
       """)
   void deleteCostsForLocation(@Param("locationId") long locationId);
 
   /**
-   * Upsert one cost child (item 23 Planned / 24 Actual) for a location: update-in-place when the row
-   * exists (audit continuity — no delete/re-insert churn), else insert with a fresh sequence PK.
-   * Cost rows carry a NULL {@code ILCR_REPORT_SUMMARY_ID} (a list schedule has no summary) and null
-   * {@code VOLUME}/{@code ITEM_DESCRIPTION} (unused by Schedule 11).
+   * Upsert one cost child (item 23 Planned / 24 Actual) for a location: update-in-place when the
+   * row exists (audit continuity — no delete/re-insert churn), else insert with a fresh sequence
+   * PK. Cost rows carry a NULL {@code ILCR_REPORT_SUMMARY_ID} (a list schedule has no summary) and
+   * null {@code VOLUME}/{@code ITEM_DESCRIPTION} (unused by Schedule 11).
    */
   default void upsertCost(long locationId, int costItemId, Integer cost, String user) {
     int updated = updateCost(locationId, costItemId, cost, user);
@@ -229,7 +249,8 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
 
   /** Update-in-place half of {@link #upsertCost}; {@code 0} rows when the item row is absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              UPDATE_USERID = :user,
@@ -238,18 +259,21 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
   int updateCost(
-      @Param("locationId") long locationId, @Param("costItemId") int costItemId,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("locationId") long locationId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
-   * Insert half of {@link #upsertCost} (summary id NULL; PK from the sequence). Stamps
-   * {@code REVISION_COUNT = 0} and BOTH {@code ENTRY_*}/{@code UPDATE_*} like {@link #insertLocation}:
-   * all three are NOT NULL in delivery with no defaults, and the {@code ILCR_CRDA_B_I_U} audit
-   * trigger propagates them into the {@code _AUD} shadow row — omitting them fails the insert
+   * Insert half of {@link #upsertCost} (summary id NULL; PK from the sequence). Stamps {@code
+   * REVISION_COUNT = 0} and BOTH {@code ENTRY_*}/{@code UPDATE_*} like {@link #insertLocation}: all
+   * three are NOT NULL in delivery with no defaults, and the {@code ILCR_CRDA_B_I_U} audit trigger
+   * propagates them into the {@code _AUD} shadow row — omitting them fails the insert
    * (ORA-01400/ORA-20001, verified against the seeded real-data image 2026-07-29).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, BASIC_SILVICULTURE_REPORT_ID,
            ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -259,12 +283,16 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertCost(
-      @Param("id") long id, @Param("locationId") long locationId,
-      @Param("costItemId") int costItemId, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("id") long id,
+      @Param("locationId") long locationId,
+      @Param("costItemId") int costItemId,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /** Delete one cost child (used to CLEAR a cost that the edit set to null — clear semantics). */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE BASIC_SILVICULTURE_REPORT_ID = :locationId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId

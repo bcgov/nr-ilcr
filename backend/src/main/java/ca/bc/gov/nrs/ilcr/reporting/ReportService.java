@@ -54,10 +54,15 @@ public class ReportService {
   private final Schedule9Repository schedule9Repository;
   private final Resource schedule9Template;
 
-  /** Compiled lazily on first use (see {@link #schedule9Report()}); never at startup. Guarded by {@code this}. */
+  /**
+   * Compiled lazily on first use (see {@link #schedule9Report()}); never at startup. Guarded by
+   * {@code this}.
+   */
   private JasperReport schedule9Report;
 
   /**
+   * Constructs the service.
+   *
    * @param dataSource the single {@code @Primary} application datasource the report fills from
    * @param schedule9Repository the Story 9.1 read, reused for the empty-schedule pre-check
    * @param schedule9Template the classpath {@code .jrxml}, compiled on first request (not at boot)

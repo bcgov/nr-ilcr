@@ -4,9 +4,10 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Business failures for code-table maintenance (Story 24.3 / UC-CODE-001): an unknown table key (404)
- * or a field/date-range validation rejection (400, FLD-001..005). Carries a {@code messages.properties}
- * key the {@code GlobalExceptionHandler} resolves to the client-facing ProblemDetail detail (AD-8).
+ * Business failures for code-table maintenance (Story 24.3 / UC-CODE-001): an unknown table key
+ * (404) or a field/date-range validation rejection (400, FLD-001..005). Carries a {@code
+ * messages.properties} key the {@code GlobalExceptionHandler} resolves to the client-facing
+ * ProblemDetail detail (AD-8).
  */
 public class CodeTableException extends BusinessException {
 

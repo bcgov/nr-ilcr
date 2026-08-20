@@ -18,9 +18,9 @@ import org.springframework.stereotype.Component;
  * {@code @PreAuthorize} action checks work with a real FAM token.
  *
  * <p>Matching is CSP {@code groupMatchesRole} style but ILCR-app-scoped: a group grants a role when
- * it equals the role name (e.g. {@code ILCR_ADMIN}) or ends with {@code _ILCR_ADMIN} (e.g.
- * {@code NRS_ILCR_ADMIN}). A foreign group like {@code SOME_OTHER_APP_ADMIN} does NOT match — the
- * bare {@code _ADMIN} suffix is deliberately not accepted, to keep authorization app-scoped.
+ * it equals the role name (e.g. {@code ILCR_ADMIN}) or ends with {@code _ILCR_ADMIN} (e.g. {@code
+ * NRS_ILCR_ADMIN}). A foreign group like {@code SOME_OTHER_APP_ADMIN} does NOT match — the bare
+ * {@code _ADMIN} suffix is deliberately not accepted, to keep authorization app-scoped.
  */
 @Component
 public class CognitoGroupsJwtAuthenticationConverter

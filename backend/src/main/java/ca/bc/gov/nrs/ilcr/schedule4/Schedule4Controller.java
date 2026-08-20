@@ -26,12 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
  * layering). The read-only {@code editable} flag is derived from the caller's {@code EDIT_SCHEDULE}
  * permission, computed server-side (AD-5).
  *
- * <p>The read (GET) never 404s on "no locations" — an opened active mill/year with no
- * {@code TRANSPORTATION_REPORT} rows returns a 200 empty list. It uses
- * {@link MillContextService#validateMillYearActive} (mill status only — no summary required), which
- * is correct for Schedule 4 (Schedule 4 has no {@code ILCR_REPORT_SUMMARY} row of its own). The write
- * path (PUT/DELETE {@code /locations}, Story 4.2) uses the same no-summary-required context guard and
- * resolves the AD-8 success-message keys via {@link MessageSource} on the echo.
+ * <p>The read (GET) never 404s on "no locations" — an opened active mill/year with no {@code
+ * TRANSPORTATION_REPORT} rows returns a 200 empty list. It uses {@link
+ * MillContextService#validateMillYearActive} (mill status only — no summary required), which is
+ * correct for Schedule 4 (Schedule 4 has no {@code ILCR_REPORT_SUMMARY} row of its own). The write
+ * path (PUT/DELETE {@code /locations}, Story 4.2) uses the same no-summary-required context guard
+ * and resolves the AD-8 success-message keys via {@link MessageSource} on the echo.
  */
 @RestController
 @RequiredArgsConstructor
@@ -47,8 +47,8 @@ public class Schedule4Controller implements Schedule4Api {
 
   /** Resolve a legacy bundle key to verbatim text (AD-8), substituting any positional args. */
   private MessageInfo message(String key, Object... args) {
-    return new MessageInfo(key,
-        messageSource.getMessage(key, args, key, LocaleContextHolder.getLocale()));
+    return new MessageInfo(
+        key, messageSource.getMessage(key, args, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -85,7 +85,10 @@ public class Schedule4Controller implements Schedule4Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule4Response> addSubPageRow(
-      long millId, int year, int locationId, Schedule4SubPageRowRequest request,
+      long millId,
+      int year,
+      int locationId,
+      Schedule4SubPageRowRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
@@ -98,14 +101,18 @@ public class Schedule4Controller implements Schedule4Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule4Response> updateSubPageRow(
-      long millId, int year, int locationId, int rowId, Schedule4SubPageRowRequest request,
+      long millId,
+      int year,
+      int locationId,
+      int rowId,
+      Schedule4SubPageRowRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     String user = authentication.getName();
     Schedule4Response saved =
-        schedule4Service.updateSubPageRow(millId, year, locationId, rowId, request, callerMayEdit,
-            user);
+        schedule4Service.updateSubPageRow(
+            millId, year, locationId, rowId, request, callerMayEdit, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -129,19 +136,25 @@ public class Schedule4Controller implements Schedule4Api {
     Schedule4CheckStatusResponse raw = schedule4Service.checkStatus(millId, year);
     // Resolve every bundle key to verbatim text (AD-8): the schedule banner, each location's met
     // message (with the location name as the {0} arg), and each field's "Value Required".
-    List<MessageInfo> scheduleMessages = raw.messages().stream()
-        .map(m -> message(m.key()))
-        .toList();
-    List<LocationCheckResult> locations = raw.locations().stream()
-        .map(location -> new LocationCheckResult(
-            location.id(),
-            location.name(),
-            location.met(),
-            location.messages().stream().map(m -> message(m.key(), location.name())).toList(),
-            location.issues().stream()
-                .map(issue -> new FieldIssue(issue.code(), message(issue.message().key())))
-                .toList()))
-        .toList();
+    List<MessageInfo> scheduleMessages =
+        raw.messages().stream().map(m -> message(m.key())).toList();
+    List<LocationCheckResult> locations =
+        raw.locations().stream()
+            .map(
+                location ->
+                    new LocationCheckResult(
+                        location.id(),
+                        location.name(),
+                        location.met(),
+                        location.messages().stream()
+                            .map(m -> message(m.key(), location.name()))
+                            .toList(),
+                        location.issues().stream()
+                            .map(
+                                issue ->
+                                    new FieldIssue(issue.code(), message(issue.message().key())))
+                            .toList()))
+            .toList();
     return ResponseEntity.ok(
         new Schedule4CheckStatusResponse(raw.outcome(), scheduleMessages, locations));
   }

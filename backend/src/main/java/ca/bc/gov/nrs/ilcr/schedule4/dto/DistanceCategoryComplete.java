@@ -9,19 +9,19 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Class-level constraint enforcing BR-04 (bidirectional required) on a {@link CategoryInput} for the
- * 3 distance-based codes (47 Truck Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul), transcribed from
- * legacy {@code schedule4NewLocation.xhtml} {@code required} expressions (Story 4.2, S22/S23):
+ * Class-level constraint enforcing BR-04 (bidirectional required) on a {@link CategoryInput} for
+ * the 3 distance-based codes (47 Truck Barge/Ferry, 48 Crew Barge/Ferry, 52 Rail Haul), transcribed
+ * from legacy {@code schedule4NewLocation.xhtml} {@code required} expressions (Story 4.2, S22/S23):
  *
  * <ul>
- *   <li>a Distance entered obliges both Volume and Cost (distance ⇒ volume + cost), and</li>
- *   <li>a Volume or Cost entered obliges a Distance (volume|cost ⇒ distance).</li>
+ *   <li>a Distance entered obliges both Volume and Cost (distance ⇒ volume + cost), and
+ *   <li>a Volume or Cost entered obliges a Distance (volume|cost ⇒ distance).
  * </ul>
  *
- * <p>Non-distance (fixed) codes are unaffected. Each violation carries the verbatim
- * {@code missingRequiredFieldMsg} ("Value Required") on the specific missing field (AD-8), so the
- * 400 ProblemDetail names {@code volume}/{@code cost}/{@code distance} like the legacy per-field
- * "Value Required".
+ * <p>Non-distance (fixed) codes are unaffected. Each violation carries the verbatim {@code
+ * missingRequiredFieldMsg} ("Value Required") on the specific missing field (AD-8), so the 400
+ * ProblemDetail names {@code volume}/{@code cost}/{@code distance} like the legacy per-field "Value
+ * Required".
  */
 @Documented
 @Constraint(validatedBy = DistanceCategoryCompleteValidator.class)
@@ -29,9 +29,24 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DistanceCategoryComplete {
 
+  /**
+   * The error message template.
+   *
+   * @return the error message template
+   */
   String message() default "{missingRequiredFieldMsg}";
 
+  /**
+   * The groups the constraint belongs to.
+   *
+   * @return the groups
+   */
   Class<?>[] groups() default {};
 
+  /**
+   * The payload associated to the constraint.
+   *
+   * @return the payload
+   */
   Class<? extends Payload>[] payload() default {};
 }

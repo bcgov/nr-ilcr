@@ -14,10 +14,9 @@ import org.springframework.web.bind.annotation.RequestParam;
  * <p>This is the backend's first binary-response endpoint: {@code ResponseEntity<byte[]>} with
  * {@code application/pdf}. Later Epic 20 report stories copy this shape.
  *
- * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like the Schedule read
- * endpoints — so the shared {@code MillContextService} guard can emit the verbatim ERR-003 for
- * missing, blank, AND non-numeric values, which a typed required {@code @RequestParam} cannot
- * produce.
+ * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like the Schedule read endpoints
+ * — so the shared {@code MillContextService} guard can emit the verbatim ERR-003 for missing,
+ * blank, AND non-numeric values, which a typed required {@code @RequestParam} cannot produce.
  */
 @RequestMapping("/api/v1/reports")
 public interface ReportApi {
@@ -27,10 +26,9 @@ public interface ReportApi {
    * reporting year.
    *
    * <p>Guards (identical to the Schedule 9 read, verbatim legacy text): missing/blank/non-numeric
-   * params → 400 (ERR-003); mill not active for the year → 409 (ERR-004); no report-status
-   * context → 404 (ERR-005); no {@code VIEW_SCHEDULE} → 403. A valid mill/year whose Schedule 9
-   * has zero records yields no PDF → 404 {@code Schedule not found.} (legacy single-schedule
-   * semantics).
+   * params → 400 (ERR-003); mill not active for the year → 409 (ERR-004); no report-status context
+   * → 404 (ERR-005); no {@code VIEW_SCHEDULE} → 403. A valid mill/year whose Schedule 9 has zero
+   * records yields no PDF → 404 {@code Schedule not found.} (legacy single-schedule semantics).
    *
    * @param millId the mill id (optional raw String)
    * @param year the reporting year (optional raw String)

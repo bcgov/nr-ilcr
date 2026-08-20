@@ -28,10 +28,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * composed label is the controller's), {@code cost == 0} is MET (D2 null-only check), volume is
  * never checked (the evaluation seam takes no volume at all), the area-type flag is emitted but
  * never gates the schedule pass, placeholders are excluded (deviation (d)), and the
- * stored-data-unreachable TFL-missing branch (S10 — legacy view-state-only, story Completion
- * Notes) is pinned at the {@code evaluateRecord} seam. The service emits bundle KEYS with null
- * text; resolution/composition is {@code Schedule6Controller}'s and is byte-proven in
- * {@link Schedule6CheckStatusIT}. Pure JUnit + Mockito — no Spring context, no database.
+ * stored-data-unreachable TFL-missing branch (S10 — legacy view-state-only, story Completion Notes)
+ * is pinned at the {@code evaluateRecord} seam. The service emits bundle KEYS with null text;
+ * resolution/composition is {@code Schedule6Controller}'s and is byte-proven in {@link
+ * Schedule6CheckStatusIT}. Pure JUnit + Mockito — no Spring context, no database.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule6Service — Check Status (verbatim legacy port)")
@@ -40,11 +40,9 @@ class Schedule6CheckStatusServiceTest {
   private static final long MILL = 664L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule6Repository repository;
+  @Mock private Schedule6Repository repository;
 
-  @InjectMocks
-  private Schedule6Service service;
+  @InjectMocks private Schedule6Service service;
 
   private void stub(List<RoadRecordRow> rows, List<CostDetailRow> details) {
     when(repository.findRoadRecords(MILL, YEAR)).thenReturn(rows);
@@ -58,8 +56,9 @@ class Schedule6CheckStatusServiceTest {
   // ---- The evaluation seam (legacy Schedule6MB.checkStatus() order + branches) -----------------
 
   @Test
-  @DisplayName("S10 seam: a TFL-classified record with a blank TFL number emits the tflNumber issue "
-      + "(the branch is unreachable from stored rows — ported verbatim, pinned here)")
+  @DisplayName(
+      "S10 seam: a TFL-classified record with a blank TFL number emits the tflNumber issue "
+          + "(the branch is unreachable from stored rows — ported verbatim, pinned here)")
   void evaluateRecord_tflMissingNumber() {
     List<FieldIssue> issues = Schedule6Service.evaluateRecord("TFL", null, null, 5000);
     assertEquals(List.of("tflNumber"), issues.stream().map(FieldIssue::field).toList());
@@ -71,37 +70,46 @@ class Schedule6CheckStatusServiceTest {
   @DisplayName("Issue order is the legacy order: type, then TFL/Supply Block, then cost")
   void evaluateRecord_legacyOrder() {
     List<FieldIssue> issues = Schedule6Service.evaluateRecord(null, null, null, null);
-    assertEquals(List.of("areaType", "supplyBlock", "cost"),
+    assertEquals(
+        List.of("areaType", "supplyBlock", "cost"),
         issues.stream().map(FieldIssue::field).toList());
   }
 
   @Test
   @DisplayName("The TSA side checks Supply Block, the TFL side never does (and vice versa)")
   void evaluateRecord_sidesAreExclusive() {
-    assertEquals(List.of("supplyBlock"),
+    assertEquals(
+        List.of("supplyBlock"),
         Schedule6Service.evaluateRecord("01", null, null, 100).stream()
-            .map(FieldIssue::field).toList());
-    assertEquals(List.of(),
+            .map(FieldIssue::field)
+            .toList());
+    assertEquals(
+        List.of(),
         Schedule6Service.evaluateRecord("TFL", "18", null, 100).stream()
-            .map(FieldIssue::field).toList());
+            .map(FieldIssue::field)
+            .toList());
   }
 
   @Test
   @DisplayName("D2 quirk: cost == 0 is MET (null-only check); a null cost is the only cost finding")
   void evaluateRecord_zeroCostIsMet() {
     assertTrue(Schedule6Service.evaluateRecord("01", null, "01B", 0).isEmpty());
-    assertEquals(List.of("cost"),
+    assertEquals(
+        List.of("cost"),
         Schedule6Service.evaluateRecord("01", null, "01B", null).stream()
-            .map(FieldIssue::field).toList());
+            .map(FieldIssue::field)
+            .toList());
   }
 
   @Test
   @DisplayName("isScheduleValid quirk: the area-type flag is emitted but never gates the pass")
   void areaTypeFlag_doesNotGateThePass() {
     // A record with no area type but a supply block and a cost: flagged by the evaluation...
-    assertEquals(List.of("areaType"),
+    assertEquals(
+        List.of("areaType"),
         Schedule6Service.evaluateRecord(null, null, "01B", 100).stream()
-            .map(FieldIssue::field).toList());
+            .map(FieldIssue::field)
+            .toList());
     // ...yet it PASSES the schedule gate (legacy isScheduleValid ignores missingTsaNumberOnCheck).
     assertTrue(Schedule6Service.recordPasses(null, null, "01B", 100));
     // The gate's real inputs: TFL needs a number, TSA needs a supply block, both need cost.
@@ -114,14 +122,15 @@ class Schedule6CheckStatusServiceTest {
   // ---- The full check over stored rows ---------------------------------------------------------
 
   @Test
-  @DisplayName("Mixed results: placeholder excluded, 1-based rowCounters, met banner only for clean "
-      + "records, keys-with-null-text emitted for the controller to resolve")
+  @DisplayName(
+      "Mixed results: placeholder excluded, 1-based rowCounters, met banner only for clean "
+          + "records, keys-with-null-text emitted for the controller to resolve")
   void checkStatus_mixedResults() {
     stub(
         List.of(
-            new RoadRecordRow(8324, null, null, null, "comment", 0),        // placeholder
-            new RoadRecordRow(8325, "01", "01B", null, "comment", 0),       // met
-            new RoadRecordRow(8326, "03", "03B", null, "comment", 0)),      // missing cost
+            new RoadRecordRow(8324, null, null, null, "comment", 0), // placeholder
+            new RoadRecordRow(8325, "01", "01B", null, "comment", 0), // met
+            new RoadRecordRow(8326, "03", "03B", null, "comment", 0)), // missing cost
         List.of(new CostDetailRow(8325, new BigDecimal("800"), 25000, null)));
 
     Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR);
@@ -132,7 +141,7 @@ class Schedule6CheckStatusServiceTest {
 
     RoadRecordCheckResult met = response.records().get(0);
     assertEquals(8325, met.recordId());
-    assertEquals(1, met.rowCounter());   // the placeholder shifted nothing — counters are 1-based
+    assertEquals(1, met.rowCounter()); // the placeholder shifted nothing — counters are 1-based
     assertTrue(met.met());
     assertEquals("roadRequirementsMetMsg", met.metMessage().key());
     assertNull(met.metMessage().text()); // key-only — the controller resolves with the ordinal
@@ -175,8 +184,9 @@ class Schedule6CheckStatusServiceTest {
   }
 
   @Test
-  @DisplayName("Blank-but-not-null classification codes are trimmed like the read side "
-      + "(a whitespace TSA row with a TFL code is a TFL record)")
+  @DisplayName(
+      "Blank-but-not-null classification codes are trimmed like the read side "
+          + "(a whitespace TSA row with a TFL code is a TFL record)")
   void checkStatus_trimsLikeTheReadSide() {
     stub(
         List.of(new RoadRecordRow(8329, " ", " ", "18", null, 0)),

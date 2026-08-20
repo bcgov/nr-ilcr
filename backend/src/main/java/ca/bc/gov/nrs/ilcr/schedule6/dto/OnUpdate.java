@@ -10,5 +10,4 @@ package ca.bc.gov.nrs.ilcr.schedule6.dto;
  * lesson). Deliberately schedule6-local, not imported from {@code schedule11.dto} — cross-schedule
  * coupling is a deferred-work extraction, not a story import.
  */
-public interface OnUpdate {
-}
+public interface OnUpdate {}

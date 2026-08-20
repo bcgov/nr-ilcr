@@ -14,6 +14,4 @@ import jakarta.validation.constraints.Size;
  * @param generalComments the schedule-level comment (&le; 3500; null/blank = clear)
  */
 public record GeneralCommentsRequest(
-    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
-    String generalComments) {
-}
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") String generalComments) {}
