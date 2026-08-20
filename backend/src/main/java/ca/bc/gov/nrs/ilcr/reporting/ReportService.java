@@ -243,7 +243,7 @@ public class ReportService {
    * never compiles a report. The {@code .jrxml} stays the source of truth; only the extension swaps.
    */
   private static JasperReport load(ScheduleKey key) {
-    String path = key.templatePath().replace(".jrxml", ".jasper");
+    String path = key.templatePath().replaceAll("\\.jrxml$", ".jasper");
     try (InputStream in = new ClassPathResource(path).getInputStream()) {
       return (JasperReport) JRLoader.loadObject(in);
     } catch (IOException | JRException e) {

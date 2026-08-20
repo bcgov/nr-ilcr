@@ -3,8 +3,10 @@ spring:
     name: nr-ilcr-backend
   jackson:
     default-property-inclusion: non_null
-    # Serialize dates/times in Pacific (the app serves BC); paired with TimeZoneConfiguration, which
-    # sets the JVM default so java.util.Date/SYSDATE values are Pacific on UTC containers too.
+    # Pin JSON date serialization to Pacific for any zoned value. Note the API surface is almost
+    # entirely LocalDate/LocalDateTime (zone-less), so this is close to a no-op today; the JVM default
+    # set in IlcrBackendApplication.main() is what actually fixes date boundaries. Kept for the zoned
+    # cases (e.g. java.util.Date/SYSDATE) and so serialization can't drift from the JVM zone.
     time-zone: America/Vancouver
     deserialization:
       # Money must never be silently truncated. Jackson enables ACCEPT_FLOAT_AS_INT by default, so a
