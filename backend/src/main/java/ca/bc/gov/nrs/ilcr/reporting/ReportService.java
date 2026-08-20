@@ -17,24 +17,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.sql.DataSource;
-import net.sf.jasperreports.engine.DefaultJasperReportsContext;
 import net.sf.jasperreports.engine.JRException;
-import net.sf.jasperreports.engine.JasperCompileManager;
 import net.sf.jasperreports.engine.JasperFillManager;
 import net.sf.jasperreports.engine.JasperPrint;
 import net.sf.jasperreports.engine.JasperReport;
 import net.sf.jasperreports.engine.data.JRMapCollectionDataSource;
-import net.sf.jasperreports.engine.design.JasperDesign;
+import net.sf.jasperreports.engine.util.JRLoader;
 import net.sf.jasperreports.export.SimpleExporterInput;
 import net.sf.jasperreports.export.SimpleOutputStreamExporterOutput;
-import net.sf.jasperreports.jackson.util.JacksonUtil;
 import net.sf.jasperreports.pdf.JRPdfExporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 
 /**
@@ -235,24 +231,23 @@ public class ReportService {
     }
   }
 
-  /** The compiled template for a schedule, built on first use and cached (boot-safe). */
+  /** The compiled template for a schedule, loaded on first use and cached (boot-safe). */
   private JasperReport template(ScheduleKey key) {
-    return compiledTemplates.computeIfAbsent(key, k -> compile(new ClassPathResource(k.templatePath())));
+    return compiledTemplates.computeIfAbsent(key, ReportService::load);
   }
 
   /**
-   * Compile a classpath {@code .jrxml} to a {@link JasperReport}. The v7 template is parsed with the
-   * Jackson-based loader into a {@link JasperDesign}, then compiled with the bundled expression
-   * evaluator (no runtime JDT dependency needed) — the same load path Story 20.1 established.
+   * Load the pre-compiled {@code .jasper} for a schedule from the classpath. Templates are compiled
+   * from {@code .jrxml} to {@code .jasper} at BUILD time ({@code ReportPrecompiler}, run by
+   * exec-maven-plugin with the build JDK), so the runtime — a JRE container without {@code javac} —
+   * never compiles a report. The {@code .jrxml} stays the source of truth; only the extension swaps.
    */
-  private static JasperReport compile(Resource template) {
-    try (InputStream in = template.getInputStream()) {
-      JasperDesign design =
-          JacksonUtil.getInstance(DefaultJasperReportsContext.getInstance())
-              .loadXml(in, JasperDesign.class);
-      return JasperCompileManager.compileReport(design);
+  private static JasperReport load(ScheduleKey key) {
+    String path = key.templatePath().replaceAll("\\.jrxml$", ".jasper");
+    try (InputStream in = new ClassPathResource(path).getInputStream()) {
+      return (JasperReport) JRLoader.loadObject(in);
     } catch (IOException | JRException e) {
-      throw new ReportGenerationException("Failed to compile the report template " + template, e);
+      throw new ReportGenerationException("Failed to load the compiled report template " + path, e);
     }
   }
 }

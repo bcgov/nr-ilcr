@@ -116,6 +116,14 @@ const rowPanel = (ordinal: number): HTMLElement =>
 const totalsRegion = (): HTMLElement => screen.getByRole('region', { name: 'Totals' })
 const commentsRegion = (): HTMLElement => screen.getByRole('region', { name: 'General Comments' })
 
+// Save and Check Status render on BOTH action bars — above the records and below the General Comment
+// — mirroring legacy's saveButton0/saveButton1 pair, so every query is plural (the same convention
+// Schedules 1 and 3 use for their duplicated bars). `[0]` is the TOP bar in DOM order; a row
+// editor's own Save sorts after it, so indexing the first stays unambiguous with an editor open.
+const barSaveButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /^save$/i })
+const checkStatusButtons = (): HTMLElement[] =>
+  screen.getAllByRole('button', { name: /check status/i })
+
 // Drives a mid-flight mill/year change so the stale-response guards can be exercised (module-level
 // so it is not re-created per render — an @eslint-react rule forbids nested component definitions).
 const StaleRaceHarness = () => {
@@ -420,7 +428,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
@@ -440,7 +448,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured[9501].comments).toBe('Culvert replacement')
     // The echoed document replaces page state: the editor is torn down and the row re-renders the
     // SAVED volume, not the pre-edit 1,000 — a save that only banners is a silent data-staleness bug.
-    expect(within(rowPanel(1)).queryByLabelText('Edit Volume m³')).not.toBeInTheDocument()
+    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
     expect(within(rowPanel(1)).getByText('2,000')).toBeInTheDocument()
     expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
 
@@ -469,13 +477,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '4321')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
 
     expect(put).not.toHaveBeenCalled()
-    expect(within(rowPanel(1)).queryByLabelText('Edit Volume m³')).not.toBeInTheDocument()
+    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
     expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
   })
 
@@ -489,6 +497,54 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(within(rowPanel(2)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled()
+  })
+
+  test('Save and Check Status render on both bars, Add on the top one only (legacy saveButton0/1)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    expect(barSaveButtons()).toHaveLength(2)
+    expect(checkStatusButtons()).toHaveLength(2)
+    // Legacy's bottom bar carried no add control (schedule6.xhtml:515-529); the toggle belongs with
+    // the entry panel it opens.
+    expect(screen.getAllByRole('button', { name: /^add$/i })).toHaveLength(1)
+    // The top bar precedes the records, the second bar follows the General Comment.
+    const [topSave, bottomSave] = barSaveButtons()
+    expect(topSave.compareDocumentPosition(commentsRegion())).toBe(
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(bottomSave.compareDocumentPosition(commentsRegion())).toBe(
+      window.Node.DOCUMENT_POSITION_PRECEDING,
+    )
+  })
+
+  test('the bottom bar’s Save fires the same General Comment PUT as the top one', async () => {
+    let calls = 0
+    let captured: GeneralCommentsRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(COMMENTS_URL, async ({ request }) => {
+        calls += 1
+        captured = (await request.json()) as GeneralCommentsRequest
+        return HttpResponse.json(doc({ generalComments: 'Revised summary' }))
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const region = await waitFor(() => commentsRegion())
+    const comments = within(region).getByLabelText('General Comments')
+    await user.clear(comments)
+    await user.type(comments, 'Revised summary')
+    // The LAST Save — the bar below the comment, the one legacy reporters reached for after typing.
+    const saves = barSaveButtons()
+    await user.click(saves[saves.length - 1])
+
+    await waitFor(() => {
+      expect(calls).toBe(1)
+    })
+    expect(captured).toEqual({ generalComments: 'Revised summary' })
   })
 
   test('the General Comment saves independently via PUT /general-comments (AC5)', async () => {
@@ -514,7 +570,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const comments = within(region).getByLabelText('General Comments')
     await user.clear(comments)
     await user.type(comments, 'Revised summary')
-    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
     expect(captured).toEqual({ generalComments: 'Revised summary' })
@@ -538,7 +594,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     const region = await waitFor(() => commentsRegion())
     await user.type(within(region).getByLabelText('General Comments'), 'First note')
-    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured!.generalComments).toBe('First note')
@@ -558,7 +614,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     const region = await waitFor(() => commentsRegion())
     await user.clear(within(region).getByLabelText('General Comments'))
-    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured!.generalComments).toBeNull()
@@ -632,9 +688,14 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(rowPanel(1)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
     const region = commentsRegion()
     expect(within(region).getByLabelText('General Comments')).toBeDisabled()
-    expect(within(region).getByRole('button', { name: /^save$/i })).toBeDisabled()
+    // Both bars, not just the first: a read-only reporter must not find a live Save at either end.
+    barSaveButtons().forEach((button) => {
+      expect(button).toBeDisabled()
+    })
     // Deviation (H): the API only needs VIEW_SCHEDULE, but legacy gates the button on edit rights.
-    expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+    checkStatusButtons().forEach((button) => {
+      expect(button).toBeDisabled()
+    })
     // Read-only still shows the data.
     expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
     expect(within(totalsRegion()).getByText('50,000')).toBeInTheDocument()
@@ -663,7 +724,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(checkStatusButtons()[0])
 
     expect(
       await screen.findByText('All requirements for this schedule have been met'),
@@ -692,7 +753,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(checkStatusButtons()[0])
 
     expect(await screen.findByText('Schedule-level failure text')).toBeInTheDocument()
     expect(screen.getByText('Action required')).toBeInTheDocument()
@@ -740,7 +801,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(checkStatusButtons()[0])
 
     expect(await screen.findByText(blockLine, { normalizer: verbatim })).toBeInTheDocument()
     expect(screen.getByText(costLine, { normalizer: verbatim })).toBeInTheDocument()
@@ -782,7 +843,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(checkStatusButtons()[0])
 
     expect(
       await screen.findByText('Road : 1 - TSA or TFL (Cost $) : Value Required', {
@@ -806,7 +867,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    const button = screen.getByRole('button', { name: /check status/i })
+    const button = checkStatusButtons()[0]
     await user.click(button)
     await waitFor(() => expect(button).toBeDisabled())
     await waitFor(() => expect(button).toBeEnabled())
@@ -847,7 +908,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    const check = screen.getByRole('button', { name: /check status/i })
+    const check = checkStatusButtons()[0]
 
     // Legacy's full postback applied the on-screen values before evaluating; the modern check reads
     // only the DB, so a verdict must never contradict visible unsaved input.
@@ -1063,7 +1124,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Edit Volume m³')
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
     await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
@@ -1071,7 +1132,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
     // it can be corrected, page state is not replaced, and no success banner appears alongside.
-    expect(within(rowPanel(1)).getByLabelText('Edit Volume m³')).toHaveValue('2000')
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
     await waitFor(() =>
@@ -1090,7 +1151,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const region = await waitFor(() => commentsRegion())
     await user.clear(within(region).getByLabelText('General Comments'))
     await user.type(within(region).getByLabelText('General Comments'), 'Revised summary')
-    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     // The comment mutation owns a DIFFERENT fallback than the record mutations — sharing the record
     // string here would misattribute which save failed.
@@ -1123,15 +1184,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
       const user = userEvent.setup()
 
       await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-      await user.click(screen.getByRole('button', { name: /check status/i }))
+      await user.click(checkStatusButtons()[0])
 
       // handleCheckStatus owns its own error text and lock, separate from runMutation's.
       expect(await screen.findByText(expected)).toBeInTheDocument()
       expect(screen.queryByText('Requirements met')).not.toBeInTheDocument()
       expect(screen.queryByText('Action required')).not.toBeInTheDocument()
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled(),
-      )
+      await waitFor(() => expect(checkStatusButtons()[0]).toBeEnabled())
     },
   )
 
@@ -1253,7 +1312,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await user.click(checkStatusButtons()[0])
     await user.click(screen.getByRole('button', { name: /change/i }))
 
     expect(await screen.findByText('Other mill record')).toBeInTheDocument()
@@ -1324,8 +1383,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    const region = await waitFor(() => commentsRegion())
-    await user.click(within(region).getByRole('button', { name: /^save$/i }))
+    // Waits for the document to land before the save fires the race.
+    await waitFor(() => commentsRegion())
+    await user.click(barSaveButtons()[0])
     await user.click(screen.getByRole('button', { name: /change/i }))
 
     expect(await screen.findByText('Other mill record')).toBeInTheDocument()
@@ -1368,8 +1428,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     // Check first (the dirty gate disables the button once the Add panel holds a value), then dirty
     // the Add panel so the context change has both a check result and an open panel to reset.
-    await waitFor(() => expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled())
-    await user.click(screen.getByRole('button', { name: /check status/i }))
+    await waitFor(() => expect(checkStatusButtons()[0]).toBeEnabled())
+    await user.click(checkStatusButtons()[0])
     expect(
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
