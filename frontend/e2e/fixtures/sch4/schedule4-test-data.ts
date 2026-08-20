@@ -81,6 +81,10 @@ const MILL_9171: MillRef = { millNumber: '9171', millName: 'BCOVEY-TEST' }; // m
 const MILL_9172: MillRef = { millNumber: '9172', millName: 'MDOBIE-TEST' }; // millId 25051, CLS
 const MILL_9173: MillRef = { millNumber: '9173', millName: 'MRICE-TEST' }; // millId 25052
 const MILL_9175: MillRef = { millNumber: '9175', millName: 'TCASEY-TEST' }; // millId 25054
+// millId 25053 belongs to sch2, which pins years 2016-2020 there; 2021 is free, and Schedule 4 writes only
+// category-"4" transportation rows, which no other schedule derives a figure from. Pair-by-pair isolation
+// holds — see the CROSS-DOMAIN note above.
+const MILL_9174: MillRef = { millNumber: '9174', millName: 'AOLSON-TEST' }; // millId 25053
 const MILL_20171: MillRef = { millNumber: '20171', millName: 'MILES MILLING' }; // millId 22050
 const MILL_20172: MillRef = { millNumber: '20172', millName: 'COVEY CUSTOM CUT' }; // millId 22051
 const MILL_20173: MillRef = { millNumber: '20173', millName: 'TOMTESTMILL042017' }; // millId 23050
@@ -176,6 +180,12 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   'discard-safe': at(MILL_20173, 23050, 2020, 'S12 — a discarded panel edit is never written (green)'),
   'per-unit-after-save': at(MILL_20171, 22050, 2019, 'Divergence #4 — $/m³ on the panel that saved it'),
   'per-unit-reopen': at(MILL_20173, 23050, 2021, 'reopening shows the recomputed $/m³ (green)'),
+  'stale-edit': at(
+    MILL_9174,
+    25053,
+    2021,
+    'the optimistic-lock conflict — a save carrying a token another session already moved',
+  ),
 
   // --- accessibility --------------------------------------------------------------------------------
   a11y: at(MILL_9171, 25050, 2018, 'the editable location-list axe sweep'),

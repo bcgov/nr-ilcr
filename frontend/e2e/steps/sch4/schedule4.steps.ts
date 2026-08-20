@@ -661,3 +661,32 @@ Then(
       .toBe(expected);
   },
 );
+
+/**
+ * Stage an optimistic-lock conflict WITHOUT a second browser context.
+ *
+ * The panel captures a location's `revisionCount` when it opens (`schedule4/index.tsx:277`), so one
+ * out-of-band save is enough to move the stored token past the one the browser is holding — the same
+ * technique `sch11`'s `concurrency.feature` uses. `saveLocation` re-reads the document first, so it always
+ * sends the CURRENT revision and therefore succeeds; it is the browser's next save that goes stale.
+ *
+ * Everything except the named category's cost is re-sent unchanged, so the conflict is the only difference
+ * between the two sessions.
+ */
+When(
+  'another session changes the Schedule 4 location {string} {string} cost to {string}',
+  async ({ request, world }, name, label, cost) => {
+    const stored = requireLocation(await getSchedule4(request, world.scheduleKey!), name);
+    const target = categoryCode(label);
+    await saveLocation(request, world.scheduleKey!, {
+      name,
+      comments: stored.comments ?? undefined,
+      categories: stored.categories.map((c) => ({
+        code: c.code,
+        volume: c.volume,
+        cost: c.code === target ? Number(cost) : c.cost,
+        distance: c.distance,
+      })),
+    });
+  },
+);
