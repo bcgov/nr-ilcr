@@ -221,6 +221,72 @@ const CodeTables: FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
+                    {/* New-entry row at the TOP of the table (BR-03 add; add-of-existing silently
+                        updates server-side). */}
+                    <TableRow>
+                      <TableCell>
+                        <TextInput
+                          id="add-code"
+                          labelText="Code"
+                          hideLabel
+                          size="sm"
+                          maxLength={selectedTable?.codeMaxLength}
+                          value={addForm.code}
+                          invalid={Boolean(addErrors.code)}
+                          invalidText={addErrors.code}
+                          onChange={(event) =>
+                            setAddForm((prev) => ({ ...prev, code: event.target.value }))
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <TextInput
+                          id="add-desc"
+                          labelText="Description"
+                          hideLabel
+                          size="sm"
+                          maxLength={selectedTable?.descriptionMaxLength}
+                          value={addForm.description}
+                          invalid={Boolean(addErrors.description)}
+                          invalidText={addErrors.description}
+                          onChange={(event) =>
+                            setAddForm((prev) => ({ ...prev, description: event.target.value }))
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {dateInput(
+                          'add-eff',
+                          'Effective Date',
+                          addForm.effectiveDate,
+                          (next) => setAddForm((prev) => ({ ...prev, effectiveDate: next })),
+                          addErrors.effectiveDate,
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {dateInput(
+                          'add-exp',
+                          'Expiry Date',
+                          addForm.expiryDate,
+                          (next) => setAddForm((prev) => ({ ...prev, expiryDate: next })),
+                          addErrors.expiryDate,
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          disabled={saving}
+                          onClick={() =>
+                            save(addForm, true, () => {
+                              setAddForm(EMPTY_FORM)
+                              setAddErrors({})
+                            })
+                          }
+                        >
+                          Add
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                     {entries.map((row) =>
                       editingCode === row.code ? (
                         <TableRow key={row.code}>
@@ -298,72 +364,6 @@ const CodeTables: FC = () => {
                         </TableRow>
                       ),
                     )}
-
-                    {/* New-entry row (BR-03 add; add-of-existing silently updates server-side). */}
-                    <TableRow>
-                      <TableCell>
-                        <TextInput
-                          id="add-code"
-                          labelText="Code"
-                          hideLabel
-                          size="sm"
-                          maxLength={selectedTable?.codeMaxLength}
-                          value={addForm.code}
-                          invalid={Boolean(addErrors.code)}
-                          invalidText={addErrors.code}
-                          onChange={(event) =>
-                            setAddForm((prev) => ({ ...prev, code: event.target.value }))
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextInput
-                          id="add-desc"
-                          labelText="Description"
-                          hideLabel
-                          size="sm"
-                          maxLength={selectedTable?.descriptionMaxLength}
-                          value={addForm.description}
-                          invalid={Boolean(addErrors.description)}
-                          invalidText={addErrors.description}
-                          onChange={(event) =>
-                            setAddForm((prev) => ({ ...prev, description: event.target.value }))
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {dateInput(
-                          'add-eff',
-                          'Effective Date',
-                          addForm.effectiveDate,
-                          (next) => setAddForm((prev) => ({ ...prev, effectiveDate: next })),
-                          addErrors.effectiveDate,
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {dateInput(
-                          'add-exp',
-                          'Expiry Date',
-                          addForm.expiryDate,
-                          (next) => setAddForm((prev) => ({ ...prev, expiryDate: next })),
-                          addErrors.expiryDate,
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          disabled={saving}
-                          onClick={() =>
-                            save(addForm, true, () => {
-                              setAddForm(EMPTY_FORM)
-                              setAddErrors({})
-                            })
-                          }
-                        >
-                          Add
-                        </Button>
-                      </TableCell>
-                    </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>

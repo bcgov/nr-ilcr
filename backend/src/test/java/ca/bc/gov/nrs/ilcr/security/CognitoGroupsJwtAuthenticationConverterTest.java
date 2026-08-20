@@ -81,4 +81,24 @@ class CognitoGroupsJwtAuthenticationConverterTest {
         Set.of("SUBMITTER", "ADMIN"),
         authorities(converter.convert(jwtWithGroups(List.of("ILCR_SUBMITTER", "ILCR_ADMIN")))));
   }
+
+  @Test
+  void principalName_isIdpUsername_notTheSubUuid() {
+    // The audit user (authentication.getName()) must be custom:idp_username, which fits
+    // UPDATE_USERID VARCHAR2(30) — not the ~36-char sub UUID that would overflow it.
+    Jwt jwt = Jwt.withTokenValue("token")
+        .header("alg", "none")
+        .issuedAt(Instant.now())
+        .expiresAt(Instant.now().plusSeconds(60))
+        .subject("11111111-2222-3333-4444-555555555555")
+        .claim("cognito:groups", List.of("ILCR_ADMIN"))
+        .claim("custom:idp_username", "GPASCUCCI")
+        .build();
+    assertEquals("GPASCUCCI", converter.convert(jwt).getName());
+  }
+
+  @Test
+  void principalName_fallsBackToSubjectWhenNoIdpUsername() {
+    assertEquals("user", converter.convert(jwtWithGroups(List.of("ILCR_ADMIN"))).getName());
+  }
 }
