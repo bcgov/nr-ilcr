@@ -1,3 +1,6 @@
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
+
 // Self-contained layout for the Schedule 6 page (global scss, like the sibling schedule pages). The
 // .schedule-6__* class names mirror the schedule11 layout for visual consistency; no new global
 // styles and no Carbon token overrides.
@@ -47,8 +50,40 @@
   align-items: flex-end;
 }
 
+// RMG and $/m³ are server-derived, so they sit in the add/edit grid as read-only text among Carbon
+// fields — and must wear Carbon's field metrics or they read as a different kind of thing. Carbon
+// renders a field as a 12px label-01 label, a $spacing-03 gap, then a 2rem size="sm" input whose
+// text is inset by the input's own $spacing-05 padding. These rules reproduce that so the derived
+// label lines up with `Supply Block`/`Volume m³` and the derived value lines up with the values
+// inside the inputs beside it (the same read-only-vs-input indent the sibling schedules document —
+// schedule1/index.scss:100-108, schedule2:25, schedule3:58). Scoped to `.schedule-6__derived`,
+// which appears only here: the read-only row display keeps its bold `dt` labels, consistent within
+// that grid.
 .schedule-6__derived {
   align-self: flex-end;
+  margin: 0;
+
+  // Specificity (0,2,1) so this outranks the shared `.schedule-6__field dt` bold above; label-01
+  // carries weight 400, which is what un-bolds these two labels.
+  .schedule-6__field dt {
+    @include type-style('label-01');
+
+    color: var(--cds-text-secondary);
+    margin-block-end: $spacing-03;
+  }
+
+  .schedule-6__field dd {
+    @include type-style('body-compact-01');
+
+    display: flex;
+    align-items: center;
+    // $spacing-07 is 2rem — the height of the size="sm" inputs, so the value sits on their line
+    // rather than riding up under the label. Holds the row aligned even when the value is blank,
+    // as RMG is in the Add panel (deviation D).
+    min-height: $spacing-07;
+    margin: 0;
+    padding-inline-start: $spacing-05;
+  }
 }
 
 // Comments spans the grid so a two-row textarea is not squeezed into one narrow column.
