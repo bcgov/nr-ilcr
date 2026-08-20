@@ -40,7 +40,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     instead of three.
   - **Ticket:** [bcgov/nr-ilcr#314](https://github.com/bcgov/nr-ilcr/issues/314).
   - **Priority / env:** p2 - local seeded DB - Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to fix when capacity allows; QA re-verifies and closes this entry
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix when capacity allows; QA re-verifies and closes this entry
     then. The `@discovered-bug` test stays RED until the fix lands, at which point it goes green on its own and
     the tag comes off.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
@@ -87,7 +87,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     resolves **1**.
   - **Ticket:** [bcgov/nr-ilcr#321](https://github.com/bcgov/nr-ilcr/issues/321).
   - **Priority / env:** p3 - local seeded DB - Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to delete the eight dead attributes when capacity allows; QA
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to delete the eight dead attributes when capacity allows; QA
     re-verifies and closes this entry then. No test: nothing user-facing is broken, and asserting the
     currently-dead name would assert a behaviour nobody guarantees.
   - **Test:** none (the locator note lives in `pages/sch4/schedule4SubPage.ts`).
@@ -116,7 +116,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Ticket:** [bcgov/nr-ilcr#314](https://github.com/bcgov/nr-ilcr/issues/314) - the same ticket as BUG-1
     (same interaction), tracked there as a separate acceptance criterion.
   - **Priority / env:** p3 - local seeded DB - Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to fix when capacity allows; QA re-verifies and closes this entry
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix when capacity allows; QA re-verifies and closes this entry
     then. No test: no automated rule detects it (axe does not evaluate 1.4.11 for hover states), so this entry
     and the ticket are its only tracking.
   - **Test:** none - see Status.
@@ -153,7 +153,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     app already do, so this is two pages having drifted rather than a deliberate product decision.
   - **Ticket:** [bcgov/nr-ilcr#322](https://github.com/bcgov/nr-ilcr/issues/322).
   - **Priority / env:** p2 · local seeded DB · Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to add the `!editable` term on both pages when capacity allows; QA
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the `!editable` term on both pages when capacity allows; QA
     re-verifies and closes this entry then. The `@discovered-divergence` test already asserts the CORRECT
     behaviour (the button IS disabled), so it is RED today and goes green on its own when the fix lands, at
     which point its tag comes off. No test change is needed. Schedule 8 has no E2E coverage of its own yet, so
@@ -200,7 +200,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     because the notification shape itself is not coming back.
   - **Ticket:** [bcgov/nr-ilcr#326](https://github.com/bcgov/nr-ilcr/issues/326).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to surface the category label when capacity allows; QA re-verifies
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to surface the category label when capacity allows; QA re-verifies
     and closes this entry then. The `@discovered-divergence` test asserts the CORRECT behaviour, so it is RED
     today and goes green on its own when the fix lands, at which point its tag comes off. No test change is
     needed.
@@ -248,7 +248,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     requires it verbatim, and every other page already implements it. This is behaviour lost in the rebuild.
   - **Ticket:** [bcgov/nr-ilcr#324](https://github.com/bcgov/nr-ilcr/issues/324).
   - **Priority / env:** p1 · local seeded DB · Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to add the confirm on the four navigation paths when capacity
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the confirm on the four navigation paths when capacity
     allows; QA re-verifies and closes this entry then. All three `@discovered-divergence` tests assert the
     CORRECT behaviour (the prompt appears), so they are RED today and go green on their own when the fix lands,
     at which point their tags come off. No test change is needed.
@@ -272,13 +272,22 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     `3.00`. So the figure is right in the database and stale on screen.
   - **Why (technical):** `handleSave` re-seeds `panelMode` / `panelEditId` / `panelRevision` from the save
     response but never calls `setPanelPerUnit`, so the panel keeps the per-unit map it was opened with.
-  - **Is it a defect?** Reads as an oversight rather than a decision (the server response already carries the
-    new values), but BA/QA to decide.
-  - **Action:** **BA/QA to raise a Jira ticket.** Kept as a genuinely-failing `@discovered-divergence` test,
-    paired with a passing test that proves reopening shows the right figure — so the ticket's scope is clearly
-    "refresh the panel after save", not "the calculation is wrong".
-  - **Priority / env:** p1 · branch `test/schedule-4-e2e` · local seeded DB · commit `9632f7f`.
-  - **Status:** OPEN. Found 2026-08-17.
+  - **Is it a defect?** Yes — an oversight rather than a decision: the server response already carries the new
+    values, and the panel simply does not re-seed from them.
+  - **Already covered by an existing ticket, raised before this suite:**
+    [bcgov/nr-ilcr#291](https://github.com/bcgov/nr-ilcr/issues/291) — *"Automatic Recalculation for Schedule
+    1, 2, 3 and 4"*, which asks for legacy parity on recalculation during data entry. No new ticket needed.
+    **Scope note for whoever picks #291 up:** its Schedule 4 line reads "for 4 it is the location sub page",
+    whereas THIS defect is on the location PANEL's category grid (the `$/m³` column after a save). Same
+    recalculation theme, different surface — so check both, and do not treat a sub-page-only fix as closing
+    this entry.
+  - **Ticket:** [bcgov/nr-ilcr#291](https://github.com/bcgov/nr-ilcr/issues/291) (pre-existing).
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** OPEN — confirmed and triaged by raising a ticket (the pre-existing #291). Dev to fix when capacity allows; QA re-verifies and closes
+    this entry then. The `@discovered-divergence` test asserts the CORRECT behaviour, so it is RED today and
+    goes green on its own when the fix lands, at which point its tag comes off. It is paired with a passing
+    test proving that reopening shows the right figure, so the scope is "refresh the panel after save", not
+    "the calculation is wrong". Found 2026-08-17.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/nav-and-recompute.feature` (S01/S02,
     `@discovered-divergence`).
 
@@ -323,11 +332,22 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     `delete.feature` / `subpage-rows.feature` pin the app's wording verbatim.
   - **Why (technical):** the two legacy fragments (`confirmDeleteMsgPart1`/`Part2`) were merged into one
     client string in `index.tsx` / `SubPage.tsx`.
-  - **Is it a defect?** No — a deliberate tidy-up of a legacy two-part message.
-  - **Action:** none expected; noted for BA/QA completeness. ACCEPTED re-grounding: the tests are GREEN and
-    assert the app's wording.
-  - **Priority / env:** p3 · branch `test/schedule-4-e2e` · local seeded DB · commit `9632f7f`.
-  - **Status:** OPEN (awaiting BA/QA acknowledgement). Found 2026-08-17.
+  - **CLOSED 2026-08-20 — the app is right and legacy's comma was the outlier.** Legacy's own bundle carried
+    BOTH forms: `confirmDeleteMsg` = *"This will delete the current record. Do you want to continue?"* (full
+    stop, `messages.properties:31`) and the two-part `confirmDeleteMsgPart1`/`Part2` with the comma (`:33-34`).
+    Counting the users:
+      - **21 legacy pages used the FULL-STOP version** — Schedules 1, 1-Other-Costs, 2, 3 (+ both sub-pages),
+        5 (+ both sub-pages), 6, 7A, 7B, 8 (+ Additions-and-Deductions, + Detail), 9, 10, 11, **and all three
+        Schedule 4 SUB-pages** (`schedule4TowingTotal/TruckRehaul/OtherTransportation.xhtml`).
+      - **exactly ONE page used the comma version** — `schedule4.xhtml`, the Schedule 4 main page.
+    So legacy was inconsistent *within Schedule 4 itself*, and the comma appears in a single file out of 22.
+    The new app uses the full stop everywhere (`core/ConfirmDeleteModal/index.tsx:6` plus per-schedule
+    constants in Schedules 1/2/3/4/11), which matches legacy's overwhelming majority AND Schedule 4's own
+    sub-pages. Almost certainly a typo in that one legacy file rather than intended wording.
+  - **Is it a defect?** No. Deliberate, consistent, and closer to legacy intent than legacy's own outlier.
+  - **Action:** none. No ticket.
+  - **Priority / env:** p3 · local seeded DB · Chrome.
+  - **Status:** **CLOSED (not a defect).** Found 2026-08-17, closed 2026-08-20 on the evidence above.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/delete.feature` (S10, green).
 
 - **DIV-7 - Schedules 4 and 8 highlight the row being edited; the old system highlighted it nowhere.**
@@ -354,7 +374,7 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     persisted for as long as the record stayed open. No separate contrast fix is needed once the highlight goes.
   - **Ticket:** [bcgov/nr-ilcr#319](https://github.com/bcgov/nr-ilcr/issues/319).
   - **Priority / env:** p1 - local seeded DB - Chrome.
-  - **Status:** TRIAGED, ticket raised. Dev to remove the highlight when capacity allows; QA re-verifies and
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to remove the highlight when capacity allows; QA re-verifies and
     closes this entry then. Two `@discovered-divergence` accessibility tests are RED because of this highlight and go
     green together once it is removed, at which point their tags come off.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/accessibility.feature`
@@ -386,25 +406,72 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Status:** OPEN — `blocked` in coverage.md. A gate should treat this as **waived**, not failing.
   - **Test:** none today, by environment limitation rather than by choice.
 
-- **GAP-2 — ERR-003, the generic "something went wrong while saving" message, is not exercised.**
-  - **Why not:** the message text is whatever the service layer's exception resolves to, which the source
-    documents themselves record as `[UNKNOWN]`. Forcing a real server failure from a browser test needs the
-    request to be intercepted and failed at the browser edge (the technique Schedule 2 uses for its own
-    save-error slice). Schedule 4 has no source slice for it, so no scenario was invented.
-  - **Future action:** add one interception-based scenario if BA/QA want the failure path covered, mirroring
-    `features/sch2/uc-sch2-001-report-costs/save-error.feature`.
-  - **Status:** OPEN.
-  - **Test:** none — tracked as a `deferred` row in `coverage.md`.
+- **GAP-2 — Schedule 4's five error-fallback messages are untested (part of an app-wide gap).**
+  - **What's missing:** each of these is the string Schedule 4 shows when a request fails *and* the response
+    carries no `ProblemDetail.detail` — a gateway error, a dropped connection, an empty-bodied 500. None is
+    asserted at any level:
 
-- **GAP-3 — The "changed by another user" conflict (a stale save token) is not exercised.**
-  - **Why not:** the app refreshes its optimistic-lock token from every save response, so producing a stale
-    one needs two concurrent sessions on the same location — outside what a single-browser scenario can do
-    honestly. The API-level behaviour was verified by hand during authoring (a stale token returns HTTP 409
-    with *"This schedule was changed by another user. Please reload and try again."*), and the message is
-    pinned in the fixture so a UI scenario can be added cheaply later.
-  - **Future action:** cover with two browser contexts if BA/QA want the conflict path end-to-end.
-  - **Status:** OPEN.
-  - **Test:** none — tracked as a `deferred` row in `coverage.md`.
+    | site | string |
+    | --- | --- |
+    | `components/schedule4/index.tsx:356` | `Schedule could not be saved.` (ERR-003) |
+    | `components/schedule4/index.tsx:406` | `Unable to delete location.` |
+    | `components/schedule4/index.tsx:421` | `Unable to check status.` |
+    | `components/schedule4/SubPage.tsx:159`, `:203` | `Row could not be saved.` |
+    | `components/schedule4/SubPage.tsx:257` | `Unable to delete row.` |
+
+  - **Not dead code, and for the save one it is one untested ARM, not an untested branch.** The save handler is
+    `setSaveError(extractDetail(error) || 'Schedule could not be saved.')`, and its `detail` arm is covered at
+    BOTH levels: `duplicate-name.feature` `@S14` (409 ERR-002) and
+    `components/schedule4/__tests__/Schedule4.test.tsx:605`. Only the detail-less arm is unexercised. The other
+    four sites have no coverage on either arm.
+  - **The expected text is known, and ERR-003's is legacy's own.** Legacy rendered whatever key the exception
+    carried (`Schedule4MB.save()` → `catch (ILCSException e) { FacesUtil.addErrorMessage(e.getErrorCode()); }`),
+    which is why the source docs record ERR-003 as `[UNKNOWN]`. The app's fallback is `scheduleNotSavedErrorMsg`
+    verbatim (`messages.properties:67`). So the original reason for skipping this — an unknown expected string
+    — does not hold.
+  - **Is a test warranted? Yes — Vitest cases, NOT E2E scenarios.** These are pure client-side branches, and
+    the MSW setup beside the existing test at `Schedule4.test.tsx:605` already does the sibling arm; returning
+    `HttpResponse.json({}, { status: 500 })` pins each fallback in a few lines. E2E would need a
+    route-interception fixture and would prove less. Same call as `sch2` GAP-3.
+  - **App-wide, swept 2026-08-20 against `main` at `70270ca`:** 54 of the app's 73 error fallbacks are untested
+    across 19 components; Schedule 4's five are the largest single group. Schedule 6 is the only fully covered
+    component (4/4) and Schedule 8 covers 8 of 9 — those two are the pattern to copy. The app-wide inventory
+    lives in the ticket, not here, because it is not a Schedule 4 problem.
+  - **Where it belongs — NOT this suite.** Component tests on `components/schedule4` are Schedule 4 story
+    territory; this suite changes no files outside `frontend/e2e/`.
+  - **Ticket:** [bcgov/nr-ilcr#332](https://github.com/bcgov/nr-ilcr/issues/332) — the app-wide ticket, where
+    Schedule 4 is group 1 (with Schedule 11).
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to add the Vitest cases when capacity allows; QA re-verifies and
+    closes this entry when Schedule 4's five land. `deferred` in coverage.md.
+  - **Test:** none for these fallbacks. The save handler's `detail` arm is covered by `duplicate-name.feature`
+    and `Schedule4.test.tsx:605`.
+
+- **GAP-3 — CLOSED 2026-08-20: the stale-token conflict is now covered end-to-end.**
+  - **Test written:** `concurrency.feature` `@p1 @S02` — "Saving a location that another session already
+    changed is rejected, and their value survives". Opens the location panel (which captures its
+    `revisionCount`), changes the location through the API so the stored token moves on, then saves from the
+    browser: the PUT carries the stale token, the 409 detail renders verbatim, and **the other session's value
+    is asserted as the survivor** so a lost-update bug cannot pass.
+  - **Why it was worth writing even though an IT exists:** `Schedule4WriteIT:292` ("stale revisionCount -> 409,
+    no overwrite") proves the *server* rejects the stale token. It says nothing about what the *user* sees. If
+    the app swallowed the 409, or showed a generic failure and re-seeded the panel from its own state, a
+    licensee would believe their correction saved when it had not — and the colleague's figure would look like
+    theirs. That is the risk this covers, and the IT could not.
+  - **The earlier reason for deferring it was wrong.** This entry previously said producing a stale token
+    "needs two concurrent sessions on the same location — outside what a single-browser scenario can do
+    honestly". It does not: the panel copies `revisionCount` into React state when it opens
+    (`components/schedule4/index.tsx:277`), so ONE context plus one out-of-band API save stages the conflict.
+    `sch11` had already retracted the identical claim when it closed its own GAP-3 — that entry's note reads
+    "the earlier note claiming this needed two sessions overstated the cost". This is that same correction,
+    applied here.
+  - **Proven non-vacuous:** with the "another session changes…" step removed the scenario FAILS (the 409
+    message never appears) — checked 2026-08-20, so the assertion genuinely depends on the staged conflict.
+  - **Anchor:** `stale-edit` → **Mill: 9174 AOLSON-TEST - Year: 2021** (millId 25053). `sch2` owns that mill
+    but pins years 2016-2020, so the pair is free; Schedule 4 writes only category-"4" transportation rows,
+    which no other schedule derives a figure from.
+  - **Status:** CLOSED — `covered` in coverage.md. No ticket: nothing is defective, the coverage simply existed
+    at the wrong level.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/concurrency.feature` (S02, green).
 
 - **GAP-4 — The validation-error state is not swept by axe here, deliberately.**
   - **What's missing:** Schedule 4's accessibility sweeps cover nine renders (the location list, the New
@@ -428,10 +495,12 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     two that are not are DIV-7 and BUG-1, filed with measurements).
   - **Future action:** per that `deferred-work.md` entry — once the app-wide announcement fix lands, QA sweeps
     the validation-error state on every page that skipped it, including this one, and closes this gap.
-  - **Status:** OPEN.
+  - **Status:** OPEN — `deferred`, pending the app-wide announcement fix. Found 2026-08-17, re-confirmed 2026-08-20.
   - **Test:** none today, by filing convention rather than by oversight.
 
-**Spec gaps (the Gherkin and its source docs disagree with reality — missing scenarios, or scenarios whose premise never existed):**
+**Spec gaps (the Gherkin and its source docs disagree with reality — missing scenarios, or scenarios whose
+premise never existed). ALL FOUR ARE CLOSED as of 2026-08-20: the source artifacts were corrected, so the
+entries are kept only because their ids are cited elsewhere:**
 
 - **SPEC-1 — No scenario was ever written for editing a sub-page row in place, though the source documents list the control.**
   - **What's missing:** the technical sidecar's Control Reference documents the sub-page rows table as having
@@ -444,21 +513,46 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     the add-row form. We covered it anyway. A paperwork mismatch, not a bug.
   - **Future action:** a BA regenerates the UC-SCH4-001 slice set to include an "edit a sub-page row" slice
     (happy path + one out-of-range rejection).
-  - **Status:** OPEN. Found 2026-08-17.
+  - **CLOSED 2026-08-20 — the slice was written.** Added as
+    `_bmad-output/implementation-artifacts/tests/UC-SCH4-001/gherkin/UC-SCH4-001-S32.feature`
+    ("Correct a Sub-Page Row In Place"), grounded in the legacy control it documents: the per-row
+    `p:inputText`s inside `towingTotalDT` (`schedule4TowingTotal.xhtml:91-164` — `towingTotalDistance`,
+    `towingTotalVolume`, `towingTotalCost`, and the Description input at `maxlength="120"
+    required="true"`), each carrying the same converter/validator pair as the add-row form. It has two
+    scenarios, matching this entry's own future action: a happy-path in-place correction and an
+    out-of-range rejection that must not reach the database.
+  - **Status:** CLOSED 2026-08-20. Found 2026-08-17. The suite already covered the behaviour; the
+    paperwork now matches it.
   - **Test (covers it anyway):** `features/sch4/uc-sch4-001-report-transportation/subpage-rows.feature`
     ("Correct a row in place and save the sub-page" and "An out-of-range in-place edit blocks the sub-page
     save").
 
 - **SPEC-2 — Two story acceptance criteria describe count columns in the Existing Locations table that neither the old system nor the app has.**
   - **What's missing:** Story 10.5 AC1 (as built) and Story 10.7 AC1 both describe the Existing Locations list
-    as showing a *category count and the three sub-page counts*. The app's list has two columns — Location
-    Name and Actions — and the legacy table had one (`schedule4.xhtml:50-104`, column "Location Name"). The
-    counts that DO exist are the ones legacy had: they are interpolated into each sub-page link inside the
-    open location panel (CNT-001), e.g. "Towing Total (2):", and those are covered.
+    as showing a *category count and the three sub-page counts*. No such columns exist, in either system.
+  - **Re-checked against legacy 2026-08-20.** `existingLocationDT` (`schedule4.xhtml:50-104`) declares FOUR
+    `p:column`s: one "Location Name" and three "Action" variants, each `rendered` on a mutually exclusive
+    condition — `!disableReportEdits() and !isShowRecord()` (editable, no panel open),
+    `!disableReportEdits() and (showCurrentLocationDetails() or showNewLocationDetails())` (editable, panel
+    open) and `disableReportEdits()` (read-only). So legacy always painted exactly **two** columns: Location
+    Name + one Action. The app's list also has two — Location Name and Actions — so it matches legacy more
+    closely than an earlier draft of this entry said ("the legacy table had one"). Either way **neither system
+    has a count column**, which is the point.
+  - **The counts DO exist, but in the panel, exactly as legacy had them:** interpolated into each sub-page
+    link, e.g. `Towing Total (#{schedule4MB.numberOfTowingTotal}):`
+    (`schedule4ExistingLocation.xhtml:275/281`, and the same shape for Truck Rehaul at `:459/465` and Other
+    Transportation at `:1017/1023`). The app reproduces this as `` `${def.label} (${totals.count}):` ``
+    (CNT-001), and those are covered.
   - **The app is correct:** it matches legacy. It is the two story ACs that overstate the list's contents.
   - **Future action:** a BA corrects Story 10.5 AC1 / Story 10.7 AC1 to describe the counts where they
     actually live (the panel's sub-page links), so a future reader does not record this as missing coverage.
-  - **Status:** OPEN. Found 2026-08-17.
+  - **CLOSED 2026-08-20 — both ACs corrected.** `planning-artifacts/epics.md` Story 10.5 AC1 now reads
+    "the Existing Locations list renders Location Name with Edit/Copy/Delete actions (there are no count
+    columns in the list …)" and points at where the counts actually live (CNT-001, the panel's sub-page
+    links, citing legacy `schedule4ExistingLocation.xhtml:275/281`).
+    `implementation-artifacts/10-7-…-verification-for-schedule-4-….md` AC1 was corrected the same way.
+    Both now cite the legacy column layout (`schedule4.xhtml:50-104`) so the claim cannot drift back.
+  - **Status:** CLOSED 2026-08-20. Found 2026-08-17.
   - **Test (covers what exists):** `features/sch4/uc-sch4-001-report-transportation/update.feature`,
     `subpages.feature`, `subpage-rows.feature` (the `sub-page link "…" shows N rows` assertions).
 
@@ -497,7 +591,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Future action:** a BA corrects S29 in the UC-SCH4-001 slice set — either delete it or restate it as
     the app's (and legacy's) actual rule, Cost-only. A Jira ticket is needed ONLY if the ministry actually
     wants a distance check, which would be new behaviour rather than a fix.
-  - **Status:** OPEN. Found 2026-08-17, reclassified from DIV-6 on 2026-08-20.
+  - **CLOSED 2026-08-20 — S29 corrected.** `UC-SCH4-001-S29.feature` is now "Check Status Does NOT
+    Require a Distance", restated as the rule that exists (Cost only) with two scenarios: a location
+    with no distance categories passes, and the state the old premise described cannot be saved in the
+    first place (BR-04). The false premise is retained in the file header for traceability, with the
+    legacy citations that disprove it (`Schedule4CheckStatus.java:88-94` commented out,
+    `Schedule4MB.java:456` a dead read, `CheckStatusUtil.java:141-155` checking volume/cost only).
+  - **Status:** CLOSED 2026-08-20. Found 2026-08-17, reclassified from DIV-6 on 2026-08-20.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status.feature` (S29, green).
 
 - **SPEC-4 — Source scenario S30 requires a missing-Comments check that Schedule 4 never had (same shape as SPEC-3).**
@@ -528,7 +628,13 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
   - **Future action:** a BA corrects S30 in the UC-SCH4-001 slice set — delete it, or restate it as the
     conditional Schedule 7B rule it appears to have come from. A Jira ticket only if the ministry wants a
     Schedule 4 prompt, which would be new behaviour.
-  - **Status:** OPEN. Found 2026-08-17, reclassified from DIV-7 on 2026-08-20.
+  - **CLOSED 2026-08-20 — S30 corrected.** `UC-SCH4-001-S30.feature` is now "Comments Never Affect
+    Check Status", restated as the behaviour that exists, with the false premise and its disproof kept
+    in the header (`Schedule4CheckStatus.java:22` — the comments half is commented out inline). The
+    header also records where the premise most likely came from: Comments WERE a real check in legacy,
+    on Schedule 7B, conditional on culvert type "O" (`Schedule7bCheckStatus.java:16,32`,
+    `Schedule7bMB.java:137`) — a different screen, never a Schedule 4 rule.
+  - **Status:** CLOSED 2026-08-20. Found 2026-08-17, reclassified from DIV-7 on 2026-08-20.
   - **Test:** `features/sch4/uc-sch4-001-report-transportation/check-status.feature` (S30, green).
 
 **Verified — not a defect:**

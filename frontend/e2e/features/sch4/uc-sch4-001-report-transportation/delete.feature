@@ -6,8 +6,9 @@
 # NAV-004 wording, with the two legacy message PARTS joined into one sentence:
 #   legacy `confirmDeleteMsgPart1` + `confirmDeleteMsgPart2` = "This will delete the current record,"
 #   + "Do you want to continue?"  ->  "This will delete the current record. Do you want to continue?"
-# (comma replaced by a full stop). Recorded as a deliberate re-grounding in coverage.md rather than
-# asserted with the legacy comma, which no longer exists anywhere in the app.
+# (comma replaced by a full stop). Legacy carried BOTH punctuations in its own bundle and used the FULL
+# STOP on 21 of 22 pages — including all three Schedule 4 sub-pages; only schedule4.xhtml used the comma.
+# So the app matches legacy's majority and its own sub-pages; DIV-6 is CLOSED as not a defect.
 #
 # BR-08 proper: deleting a location removes the WHOLE FAMILY — the primary report, every distance-category
 # child, and every sub-page list row — so the S10 precondition seeds a location that has all three.

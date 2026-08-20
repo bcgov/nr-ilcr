@@ -1,6 +1,7 @@
-# UC-SCH4-001-S12 (NAV-001) and BR-05's post-save refresh — two DELIBERATELY RED divergences
+# UC-SCH4-001-S12 (NAV-001) and BR-05's post-save refresh — four DELIBERATELY RED divergences
 #
-# Both are filed in this UC's defects.md with an `ACTION: BA/QA → Jira`, and both were reproduced in a real
+# Both are filed in this UC's defects.md and TICKETED (DIV-3 → issue #324, DIV-4 → the pre-existing issue
+# #291), and both were reproduced in a real
 # browser on 2026-08-17 before being written as tests. Playwright isolates tests, so an honest red costs no
 # other coverage; run `npm run test:gate` for a "fresh failures only" pass.
 #
@@ -15,7 +16,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   So that I neither lose data by accident nor read stale numbers off the screen
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-3 — DELIBERATELY RED. defects.md DIV-3 → BA/QA/Jira.
+  # DIV-3 — DELIBERATELY RED. See this UC's defects.md (DIV-3) and issue #324.
   #
   # NAV-001 is not implemented. Leaving a dirty location panel discards the edit with NO warning:
   #   - legacy raised `confirmNavigationMsg` ("Any unsaved data will be lost…") from the top-level
@@ -33,7 +34,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   # subpages.feature), so this is a missing case rather than a missing feature.
   # ---------------------------------------------------------------------------------------------------
   @p1 @S12 @discovered-divergence
-  Scenario: Closing a dirty location panel warns before discarding [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 → BA/QA/Jira]
+  Scenario: Closing a dirty location panel warns before discarding [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 / issue #324]
     Given the Schedule 4 anchor "nav-dirty-panel" is an editable Draft with no locations
     And the Schedule 4 location "E2E Dirty Panel" is already saved with:
       | category          | distance | volume | cost |
@@ -47,7 +48,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     Then the Schedule 4 unsaved-changes confirmation asks "Any unsaved data will be lost. Are you sure you would like to continue?"
 
   @p2 @S12 @discovered-divergence
-  Scenario: Opening a new location over a dirty panel warns first [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 → BA/QA/Jira]
+  Scenario: Opening a new location over a dirty panel warns first [DISCOVERED DIVERGENCE — no NAV-001 confirm; defects.md DIV-3 / issue #324]
     Given the Schedule 4 anchor "nav-dirty-switch" is an editable Draft with no locations
     And the Schedule 4 location "E2E Dirty Switch" is already saved with:
       | category          | distance | volume | cost |
@@ -115,7 +116,8 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     Then the Schedule 4 "Lakeside Dry Dump" "cost" cell shows "1,000"
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-4 — DELIBERATELY RED. defects.md DIV-4 → BA/QA/Jira.
+  # DIV-4 — DELIBERATELY RED. See this UC's defects.md (DIV-4) and the pre-existing issue #291
+  # ("Automatic Recalculation for Schedule 1, 2, 3 and 4").
   #
   # The recomputed $/m³ is not shown on the panel that just saved. Both S01 and S02 assert it explicitly
   # ("the lakeSideDryDumpCostVolume field shows the recomputed / recalculated cost-per-volume"), and BR-05
@@ -129,7 +131,7 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   # So the figure is right in the database and stale on screen until the location is reopened.
   # ---------------------------------------------------------------------------------------------------
   @p1 @S01 @S02 @discovered-divergence
-  Scenario: The recomputed $/m³ appears on the panel that saved it [DISCOVERED DIVERGENCE — stale until reopened; defects.md DIV-4 → BA/QA/Jira]
+  Scenario: The recomputed $/m³ appears on the panel that saved it [DISCOVERED DIVERGENCE — stale until reopened; defects.md DIV-4 / issue #291]
     Given the Schedule 4 anchor "per-unit-after-save" is an editable Draft with no locations
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4

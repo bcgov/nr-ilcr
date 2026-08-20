@@ -59,7 +59,7 @@ See GAP-1.
 | Deleting one location leaves the others | BR-08 scoping | `findLocationName(id, mill, year)` | delete `@S10 @p1` | covered | — |
 | Delete a sub-page row; totals recompute | S11, BR-08, NAV-005 | `handleDeleteRow`→`DELETE .../rows/{id}` | subpage-rows `@S11 @p0` | covered | — |
 | Deleting the last row returns the table to empty + count 0 | S11 boundary | same | subpage-rows `@S11 @p1` | covered | — |
-| Edit a sub-page row IN PLACE, then Save | slices/technical Control Reference (per-row editable cells); NOT in any slice | `SubPage.tsx` `putRow`→`PUT .../rows/{id}` | subpage-rows `@S11 @p1` | covered | SPEC-1 |
+| Edit a sub-page row IN PLACE, then Save | slices/technical Control Reference (per-row editable cells); now also **S32** | `SubPage.tsx` `putRow`→`PUT .../rows/{id}` | subpage-rows `@S11 @p1` | covered | SPEC-1 (closed) |
 | Running totals across several rows incl. Cycle | S05, legacy footer | `SubPage.tsx` totals row | subpage-rows `@S05 @p1` | covered | — |
 | The group's grid row shows the rolled-up totals | CNT-001 + legacy rollup inputs | `panelSubTotals` + `renderSubPageRow` | subpages `@S03 @S05 @p0/@p1` | covered | — |
 | Sub-page link labels carry the live row count | CNT-001 | `` `${def.label} (${totals.count}):` `` | update/subpages/subpage-rows `@p0…@p2` | covered | — |
@@ -94,12 +94,12 @@ See GAP-1.
 | Sub-page Description required | S27 `[UNKNOWN]` | `validateSubPageRow` + `@NotBlank{missingRequiredFieldMsg}` | subpage-validation `@S27 @p1` outline | covered (message resolved) | — |
 | …the tighter sub-page band really is tighter than the grid's | S24's premise | two different validator tables | subpage-validation `@S24 @p1` | covered | — |
 | …those row bounds are INCLUSIVE | implied | `rangeError` | subpage-validation `@S24 @S25 @S26 @p2` | covered | — |
-| An out-of-range IN-PLACE row edit blocks the sub-page Save | S25 applied to the row cells | `handleSave` `rowInvalid` gate | subpage-rows `@S11 @S25 @p1` | covered | SPEC-1 |
+| An out-of-range IN-PLACE row edit blocks the sub-page Save | S25 applied to the row cells; now also **S32** | `handleSave` `rowInvalid` gate | subpage-rows `@S11 @S25 @p1` | covered | SPEC-1 (closed) |
 | Every rejection persists NOTHING | BR-02, S13–S27 | client gate; server 400 | every validation scenario (spy = 0 + read-back) | covered | — |
 | Location Name > 30 chars → server 400 | `@Size(max=30)` | unreachable from the UI (`maxLength={30}`) | happy-path `@S09 @p2` proves the input truncates | not-applicable (UI) | — |
 | Comments ≤ 3500 chars | slices Field Reference; `@Size(max=3500)` | `TextArea maxCount={COMMENTS_MAX}` | — | not-applicable | slices excluded it ("no distinct behaviour at the boundary"); the counter is cosmetic |
-| ERR-003 generic service error on save/delete | technical ERR-003 `[UNKNOWN]` | `extractDetail(error) \|\| 'Schedule could not be saved.'` | — | deferred | GAP-2 |
-| Stale optimistic-lock token → 409 | `scheduleRevisionConflictErrorMsg` | `bumpRevision` returns 0 → `StaleRevisionException` | — | deferred | GAP-3 |
+| ERR-003 and the other four Schedule 4 error fallbacks | technical ERR-003 `[UNKNOWN]`; legacy `scheduleNotSavedErrorMsg` (`messages.properties:67`) | 5 sites: `index.tsx:356` save, `:406` delete-location, `:421` check-status, `SubPage.tsx:159`/`:203` row-save, `:257` delete-row. The save handler's `detail` arm IS covered (duplicate-name S14 + `Schedule4.test.tsx:605`); no detail-less arm is | — | deferred | GAP-2 |
+| Stale optimistic-lock token → 409, and the other session's value survives | `scheduleRevisionConflictErrorMsg`; §Decision 3's optimistic lock | `bumpRevision` returns 0 → `StaleRevisionException` | concurrency `@S02 @p1` | covered | — |
 | ALT-001 browser `alert()` | technical ALT-001 | none — no `alert()` in the app | — | not-applicable | legacy had none either |
 | ASY-001 async/job | technical ASY-001 | none — all synchronous | — | not-applicable | legacy had none either |
 
@@ -116,8 +116,8 @@ See GAP-1.
 | A mill/year with no locations is vacuously MET | legacy AND-over-locations | `checkStatus` empty loop | check-status `@S28 @p2` | covered | — |
 | Check Status mutates nothing | AD-5 | `@Transactional(readOnly)`; no state change | implicit in every check-status scenario (read-backs unchanged) | covered | — |
 | …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | the page renders only the location name + "Value Required" | check-status `@S28 @discovered-divergence` | divergence | DIV-2 |
-| A missing DISTANCE fails Check Status | S29 (premise flagged as inferred) | NOT enforced by design (§Decision 2 — legacy's check is commented out) | check-status `@S29 @p1` covers the actual behaviour | covered (re-grounded) | SPEC-3 (log-only) |
-| Missing COMMENTS flagged as "Value Required" | S30 | NOT enforced by design (§Decision 3 — no bundle key exists) | check-status `@S30 @p1` covers the actual behaviour | covered (re-grounded) | SPEC-4 (log-only) |
+| Check Status does NOT require a Distance | **S29 as corrected 2026-08-20** (its original missing-Distance premise never existed anywhere) | not enforced — legacy's check is commented out (`Schedule4CheckStatus.java:88-94`) | check-status `@S29 @p1` | covered | SPEC-3 (closed) |
+| Comments never affect Check Status | **S30 as corrected 2026-08-20** (Schedule 4 never had that rule; legacy's was on 7B, conditional) | not enforced — commented out inline (`Schedule4CheckStatus.java:22`) | check-status `@S30 @p1` | covered | SPEC-4 (closed) |
 
 ## Guard states, read-only mode and chrome
 
@@ -134,9 +134,9 @@ See GAP-1.
 | STA-001 the sub-page loses its add-row form and per-row Delete | S18 + Story 10.6 AC5 | `editable &&` guards in `SubPage.tsx` | render-states `@S18 @p0` outline | covered | — |
 | STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | NOT disabled (`disabled={saving}` only) | render-states `@S18 @discovered-divergence` | divergence | DIV-1 |
 | The empty-list state | S01 precondition | `data.locations.length === 0` branch | render-states `@S01 @p2` | covered | — |
-| NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (log-only) |
+| NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (CLOSED, not a defect) |
 | NAV-005 row-delete confirm text | NAV-005 | `CONFIRM_DELETE_ROW` in `SubPage.tsx` | subpage-rows `@S11 @p0` | covered | — |
-| Existing Locations table lists category + sub-page COUNT COLUMNS | Story 10.5 AC1 / Story 10.7 AC1 | not rendered — and legacy had only a Location Name column (`schedule4.xhtml:50-104`) | counts covered where they exist (CNT-001, sub-page links) | not-applicable | SPEC-2 |
+| Existing Locations table lists category + sub-page COUNT COLUMNS | Story 10.5 AC1 / Story 10.7 AC1 — **both corrected 2026-08-20** | not rendered, and never was: legacy painted Location Name + one Action column (`schedule4.xhtml:50-104`) | counts covered where they exist (CNT-001, the panel's sub-page links) | not-applicable | SPEC-2 (closed) |
 | WCAG 2.1 AA on every Schedule 4 surface | NFR1, Story 10.7 AC2 | — | accessibility `@a11y` ×9 | covered (3 red) | DIV-7, BUG-1 |
 | WCAG 2.1 AA on the VALIDATION-ERROR state | NFR1, Story 10.7 AC2 | Carbon `TextInput` `invalid` wiring (app-wide) | — | deferred | GAP-4 |
 | Viewer/role-denied branch | BR-03 (actor lacks edit rights) | `permissions.hasPermission(auth,'EDIT_SCHEDULE')` — both roles currently grant it, and mock auth stamps one authority per process | — | blocked | GAP-1 |
@@ -154,15 +154,15 @@ count columns. That leaves **82 coverage-eligible rows**.
 |---|---|---|
 | **P0** | 100% | **100%** — 19 of 19 eligible P0 rows covered, 0 gaps. Every core journey (S01 create, S02 edit, S03/S04 sub-page entry, S07 copy, S10 delete, S11 row delete, S18 read-only ×2 codes, S28 Check Status) is covered by a passing or deliberately-red scenario. |
 | **P1** | ≥ 90% (floor 80%) | **100%** — 37 of 37 eligible P1-tagged rows covered, 0 gaps. |
-| **Overall** | ≥ 80% | **95.1%** — 78 of 82 eligible rows covered; 4 counted gaps, all named below. |
+| **Overall** | ≥ 80% | **96.3%** — 79 of 82 eligible rows covered; 3 counted gaps, all named below (GAP-3 closed 2026-08-20). |
 
-The four counted gaps (each filed in `defects.md`, none of them an app fault):
+The three counted gaps (each filed in `defects.md`, none of them an app fault). GAP-3 is listed too, as CLOSED, because its id is cited elsewhere:
 
 | Gap | Kind | Why it counts against coverage |
 |---|---|---|
 | GAP-1 | `blocked` | role-gated behaviour cannot be produced under single-role mock auth, and the two `ROLE_ACTIONS` sets do not yet diverge. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; owned by the cross-cutting deferral in `deferred-work.md`, so a gate should treat it as **waived**. |
-| GAP-2 | `deferred` | ERR-003's generic save-failure text is `[UNKNOWN]` in the source docs; no slice exists and none was invented. |
-| GAP-3 | `deferred` | the stale-save-token 409 needs two concurrent sessions; verified at the API by hand, not through the browser. |
+| GAP-2 | `deferred` | Schedule 4's five error-fallback strings (a failure carrying no `detail`) are unexercised. NOT dead code and not unknown text: ERR-003's string is legacy's own `scheduleNotSavedErrorMsg`, and the save handler's other arm is covered at both layers. Belongs in Vitest cases rather than E2E interception scenarios; part of an app-wide gap (54 of 73 fallbacks) tracked in issue #332, where Schedule 4 is group 1. |
+| GAP-3 | `covered` | CLOSED 2026-08-20 — the stale-token conflict is now covered by `concurrency.feature` `@p1 @S02` (the 409 renders verbatim AND the other session's value is asserted as the survivor). The earlier "needs two browser contexts" reason was wrong; one context plus one API save stages it. |
 | GAP-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (`deferred-work.md`, app-wide WCAG 4.1.2), so Schedule 4's error state is genuinely unswept. |
 
 `@discovered-divergence` / `@discovered-bug` reds COUNT as covered — they map to their requirement and are
@@ -173,7 +173,7 @@ rather than absorbed.
 
 | Run | Command | Result |
 |---|---|---|
-| Full suite | `npm test -- --grep @sch4` | **195 passed / 0 skipped / 9 deliberately-red** (8 `@discovered-divergence`, 1 `@discovered-bug`) of 204 — no unexplained red. Re-measured 2026-08-19. |
+| Full suite | `npm test -- --grep @sch4` | **197 passed / 0 skipped / 9 deliberately-red** of 206 (8 `@discovered-divergence`, 1 `@discovered-bug`) — no unexplained red. NOTE the total includes the `setup` project's 116 preflight assertions, which run as a dependency; Schedule 4's own scenarios are 90 of it. Re-measured 2026-08-20 after merging main. |
 | **The gate** | `npm run test:gate -- --grep @sch4` | **exit 0, 194 passed** — the known reds excluded |
 | DB left as found | anchor sweep after every run | **0 residue** across all 50 mutating anchors after every COMPLETED run, and after a run stopped gracefully (fixture teardown still runs). A run whose PROCESS is killed outright does leave residue — teardown never executes — which happened once during authoring and left 2 locations behind; `preflight/sch4-anchors.setup.ts` is the designed net for exactly that: it fails the next run naming the dirty anchors and telling you the exact `DELETE /api/v1/schedule4/locations?millId=&year=&id=` to run |
 | Cleanup blind spot | the full run INCLUDES the `@discovered-*` reds | their teardown was exercised too (the residue sweep above followed that run) |
