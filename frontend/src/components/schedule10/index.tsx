@@ -292,7 +292,10 @@ const Schedule10: FC = () => {
     // A missing lock token is a real state, not something to coerce: a fabricated 0 would silently
     // defeat the stale-edit check. Returning quietly was worse than the coercion, though — the user
     // pressed Save and nothing at all happened. Say so, using the reload text this case means.
-    if (!stored || stored.revisionCount == null) {
+    //
+    // The comparison stays LOOSE on purpose (R2): a revisionCount of 0 is a valid token, and
+    // `0 == null` is false, so it correctly falls through to the write.
+    if (stored?.revisionCount == null) {
       setMessage(null)
       setActionError(SCH10_MESSAGES.staleRecord)
       return
@@ -353,7 +356,7 @@ const Schedule10: FC = () => {
       return
     }
     const stored = page.roadDetails.find((detail) => detail.roadDetailId === openRoadId)
-    if (!stored || stored.revisionCount == null) {
+    if (stored?.revisionCount == null) {
       setMessage(null)
       setActionError(SCH10_MESSAGES.staleRecord)
       return
@@ -556,6 +559,12 @@ const Schedule10: FC = () => {
   const panelOpen = pagePanelMode !== 'closed'
   const openStoredPage = pages.find((page) => page.pageId === openPageId)
 
+  const pageModeWord = pagePanelMode === 'view' ? 'View' : 'Edit'
+  const pagePanelHeading =
+    pagePanelMode === 'new'
+      ? 'New Page'
+      : `${pageModeWord} Page — ${openStoredPage?.pageLabel ?? ''}`
+
   return (
     <div className="app-page schedule-page">
       {PAGE_HEADER}
@@ -636,11 +645,7 @@ const Schedule10: FC = () => {
         {panelOpen && (
           <Column sm={4} md={8} lg={16} className="schedule-10__section">
             <div className="schedule-10__panel">
-              <h3 className="schedule-10__heading">
-                {pagePanelMode === 'new'
-                  ? 'New Page'
-                  : `${pagePanelMode === 'view' ? 'View' : 'Edit'} Page — ${openStoredPage?.pageLabel ?? ''}`}
-              </h3>
+              <h3 className="schedule-10__heading">{pagePanelHeading}</h3>
               <PageFields
                 idPrefix={pagePanelMode === 'new' ? 'page-new' : `page-${String(openPageId ?? 0)}`}
                 form={pageForm}

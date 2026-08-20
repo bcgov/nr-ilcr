@@ -145,10 +145,12 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
     label: string,
     options: readonly CodeDescription[],
     opts: { readonly matchMode?: ComboMatchMode; readonly disabled?: boolean } = {},
-  ): ReactNode =>
-    readOnly ? (
-      readOnlyField(label, form[key] === '' ? '' : describe(options, form[key]))
-    ) : (
+  ): ReactNode => {
+    if (readOnly) {
+      const stored = form[key]
+      return readOnlyField(label, stored === '' ? '' : describe(options, stored))
+    }
+    return (
       <Field>
         <CodeComboBox
           id={id(key)}
@@ -163,11 +165,14 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
         />
       </Field>
     )
+  }
 
   // `N` and `D` both have their material forced to `NA`; `N` additionally has its dimensions and two
   // of its three costs zeroed, which `buildStabilizing` now sends rather than leaving to the server.
   const materialForced = ballastForcesMaterialNa(form.stBallastMethodCode)
   const figuresZeroed = ballastZeroesFigures(form.stBallastMethodCode)
+
+  const engineeringCostsValue = form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No'
 
   const endHaulRate = previewCostPerVolumePerLength(
     form.lessEndHaul,
@@ -244,10 +249,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
 
       <div className="schedule-10__fields">
         {readOnly ? (
-          readOnlyField(
-            'Includes Detailed Engineering Costs',
-            form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No',
-          )
+          readOnlyField('Includes Detailed Engineering Costs', engineeringCostsValue)
         ) : (
           <Field className="schedule-10__field--compact">
             <Select

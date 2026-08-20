@@ -419,102 +419,104 @@ export function validatePage(form: PageFormValues): PageErrors {
   return errors
 }
 
+/** Every road-detail field whose only rule is "must not be blank", with the server's own message. */
+const REQUIRED_ROAD_DETAIL_FIELDS: readonly (readonly [keyof RoadDetailFormValues, string])[] = [
+  ['roadLifetimeCode', SCH10_MESSAGES.roadTypeRequired],
+  ['becbiogeoCatalogueId', SCH10_MESSAGES.becZoneRequired],
+  ['relSoilMoistRgmClsCode', SCH10_MESSAGES.rsmrClassRequired],
+]
+
+/**
+ * Every bounded numeric on the road form, as (field, how to check it, bounds, message).
+ *
+ * `range` checks the PARSED value; `cost` additionally checks the ROUNDED one, because rounding is
+ * what actually reaches the wire (the 13.3 correction). Holding the rules as data rather than as five
+ * near-identical loops is what keeps this module readable — and it makes the odd ones out visible:
+ * `sideSlopePct` shares the percentage bounds but carries its own message, and the two length caps
+ * are deliberately asymmetric (see SUB_GRADE_LENGTH / STABILIZING_LENGTH).
+ */
+type NumericCheck = readonly [keyof RoadDetailFormValues, 'range' | 'cost', Bounds, string]
+
+const ROAD_DETAIL_NUMERICS: readonly NumericCheck[] = [
+  // Shoulder — percentage bounds, its own message.
+  ['sideSlopePct', 'range', PERCENTAGE, SCH10_MESSAGES.sideSlopeRange],
+
+  // Material composition.
+  ['solidRockPct', 'range', PERCENTAGE, SCH10_MESSAGES.percentageRange],
+  ['rippableRockPct', 'range', PERCENTAGE, SCH10_MESSAGES.percentageRange],
+  ['coarsePct', 'range', PERCENTAGE, SCH10_MESSAGES.percentageRange],
+  ['finePct', 'range', PERCENTAGE, SCH10_MESSAGES.percentageRange],
+  ['organicPct', 'range', PERCENTAGE, SCH10_MESSAGES.percentageRange],
+
+  // Dimensions.
+  ['sgLength', 'range', SUB_GRADE_LENGTH, SCH10_MESSAGES.rangeZeroToOneHundred],
+  ['sgSurfaceWidth', 'range', SURFACE_WIDTH, SCH10_MESSAGES.rangeZeroTo999Point9],
+  ['stLength', 'range', STABILIZING_LENGTH, SCH10_MESSAGES.rangeZeroTo999Point999],
+  ['stSurfaceWidth', 'range', SURFACE_WIDTH, SCH10_MESSAGES.rangeZeroTo999Point9],
+  ['stDepth', 'range', DEPTH, SCH10_MESSAGES.rangeZeroTo99Point9],
+  ['stDistanceToSource', 'range', DISTANCE_TO_SOURCE, SCH10_MESSAGES.rangeZeroTo999Point9],
+  ['endHaulDistance', 'range', HAUL_DISTANCE, SCH10_MESSAGES.rangeHaulDistance],
+  ['overlandDistance', 'range', HAUL_DISTANCE, SCH10_MESSAGES.rangeHaulDistance],
+
+  // Volumes.
+  ['endHaulVolume', 'cost', VOLUME, SCH10_MESSAGES.volumeRange],
+  ['overlandVolume', 'cost', VOLUME, SCH10_MESSAGES.volumeRange],
+
+  // Non-negative costs.
+  ['sgActualCost', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessBridges', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessCulverts', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessLandings', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessEndHaul', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessOverland', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['lessOtherEng', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+  ['stActualCost', 'cost', COST, SCH10_MESSAGES.costNonNegative],
+
+  // Transfers, which may be negative.
+  ['sgTtTransfer', 'cost', TRANSFER, SCH10_MESSAGES.costTransfer],
+  ['sgOtherTransfer', 'cost', TRANSFER, SCH10_MESSAGES.costTransfer],
+  ['stTtTransfer', 'cost', TRANSFER, SCH10_MESSAGES.costTransfer],
+  ['stOtherTransfer', 'cost', TRANSFER, SCH10_MESSAGES.costTransfer],
+]
+
+/**
+ * The road name: required, and capped at ROAD_NAME_MAX in BOTH characters and bytes.
+ *
+ * Blank and over-length answer with the SAME message, because that is what the server answers with —
+ * `invalidCodeValue` belongs to the code-backed controls and reads nonsensically beside a free-text
+ * name box ("A valid value must be selected from the list").
+ */
+const roadNameError = (form: RoadDetailFormValues): RoadDetailErrors => {
+  const roadName = form.roadName.trim()
+  const tooLong = roadName.length > ROAD_NAME_MAX || utf8Length(roadName) > ROAD_NAME_MAX
+  return roadName === '' || tooLong ? { roadName: SCH10_MESSAGES.roadNameRequired } : {}
+}
+
+/** Ballast method is required, and its `C` branch (which a BLANK code also lands in) needs a material. */
+const ballastErrors = (form: RoadDetailFormValues): RoadDetailErrors => {
+  if (form.stBallastMethodCode.trim() === '') {
+    return { stBallastMethodCode: SCH10_MESSAGES.ballastMethodRequired }
+  }
+  const needsMaterial =
+    ballastMaterialRequired(form.stBallastMethodCode) && form.stBallastMaterialCode.trim() === ''
+  return needsMaterial ? { stBallastMaterialCode: SCH10_MESSAGES.materialCodeTypeRequired } : {}
+}
+
 /** Advisory validation for one road detail. */
 export function validateRoadDetail(form: RoadDetailFormValues): RoadDetailErrors {
   const errors: RoadDetailErrors = {}
 
-  if (form.roadName.trim() === '') {
-    errors.roadName = SCH10_MESSAGES.roadNameRequired
-  } else if (
-    form.roadName.trim().length > ROAD_NAME_MAX ||
-    utf8Length(form.roadName.trim()) > ROAD_NAME_MAX
-  ) {
-    // The server rejects an over-length road name with the required-field text, not the off-list
-    // text — `invalidCodeValue` belongs to the code-backed controls and reads nonsensically on a
-    // free-text field ("A valid value must be selected from the list" beside a name box).
-    errors.roadName = SCH10_MESSAGES.roadNameRequired
-  }
-  if (form.roadLifetimeCode.trim() === '') {
-    errors.roadLifetimeCode = SCH10_MESSAGES.roadTypeRequired
-  }
-  if (form.becbiogeoCatalogueId.trim() === '') {
-    errors.becbiogeoCatalogueId = SCH10_MESSAGES.becZoneRequired
-  }
-  if (form.relSoilMoistRgmClsCode.trim() === '') {
-    errors.relSoilMoistRgmClsCode = SCH10_MESSAGES.rsmrClassRequired
-  }
-  if (form.stBallastMethodCode.trim() === '') {
-    errors.stBallastMethodCode = SCH10_MESSAGES.ballastMethodRequired
-  } else if (
-    ballastMaterialRequired(form.stBallastMethodCode) &&
-    form.stBallastMaterialCode.trim() === ''
-  ) {
-    errors.stBallastMaterialCode = SCH10_MESSAGES.materialCodeTypeRequired
-  }
+  Object.assign(errors, roadNameError(form), ballastErrors(form))
 
-  const sideSlope = optionalRange(form.sideSlopePct, PERCENTAGE, SCH10_MESSAGES.sideSlopeRange)
-  if (sideSlope) {
-    errors.sideSlopePct = sideSlope
-  }
-
-  const percentages = [
-    'solidRockPct',
-    'rippableRockPct',
-    'coarsePct',
-    'finePct',
-    'organicPct',
-  ] as const
-  for (const key of percentages) {
-    const issue = optionalRange(form[key], PERCENTAGE, SCH10_MESSAGES.percentageRange)
-    if (issue) {
-      errors[key] = issue
+  for (const [key, message] of REQUIRED_ROAD_DETAIL_FIELDS) {
+    if (form[key].trim() === '') {
+      errors[key] = message
     }
   }
 
-  const dimensions: [keyof RoadDetailFormValues, Bounds, string][] = [
-    ['sgLength', SUB_GRADE_LENGTH, SCH10_MESSAGES.rangeZeroToOneHundred],
-    ['sgSurfaceWidth', SURFACE_WIDTH, SCH10_MESSAGES.rangeZeroTo999Point9],
-    ['stLength', STABILIZING_LENGTH, SCH10_MESSAGES.rangeZeroTo999Point999],
-    ['stSurfaceWidth', SURFACE_WIDTH, SCH10_MESSAGES.rangeZeroTo999Point9],
-    ['stDepth', DEPTH, SCH10_MESSAGES.rangeZeroTo99Point9],
-    ['stDistanceToSource', DISTANCE_TO_SOURCE, SCH10_MESSAGES.rangeZeroTo999Point9],
-    ['endHaulDistance', HAUL_DISTANCE, SCH10_MESSAGES.rangeHaulDistance],
-    ['overlandDistance', HAUL_DISTANCE, SCH10_MESSAGES.rangeHaulDistance],
-  ]
-  for (const [key, bounds, message] of dimensions) {
-    const issue = optionalRange(form[key], bounds, message)
-    if (issue) {
-      errors[key] = issue
-    }
-  }
-
-  for (const key of ['endHaulVolume', 'overlandVolume'] as const) {
-    const issue = optionalCost(form[key], VOLUME, SCH10_MESSAGES.volumeRange)
-    if (issue) {
-      errors[key] = issue
-    }
-  }
-
-  const nonNegativeCosts = [
-    'sgActualCost',
-    'lessBridges',
-    'lessCulverts',
-    'lessLandings',
-    'lessEndHaul',
-    'lessOverland',
-    'lessOtherEng',
-    'stActualCost',
-  ] as const
-  for (const key of nonNegativeCosts) {
-    const issue = optionalCost(form[key], COST, SCH10_MESSAGES.costNonNegative)
-    if (issue) {
-      errors[key] = issue
-    }
-  }
-
-  const transfers = ['sgTtTransfer', 'sgOtherTransfer', 'stTtTransfer', 'stOtherTransfer'] as const
-  for (const key of transfers) {
-    const issue = optionalCost(form[key], TRANSFER, SCH10_MESSAGES.costTransfer)
+  for (const [key, kind, bounds, message] of ROAD_DETAIL_NUMERICS) {
+    const check = kind === 'cost' ? optionalCost : optionalRange
+    const issue = check(form[key], bounds, message)
     if (issue) {
       errors[key] = issue
     }

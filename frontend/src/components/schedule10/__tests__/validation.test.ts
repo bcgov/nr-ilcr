@@ -739,3 +739,47 @@ describe('fixes from the 2026-08-19 code review', () => {
     expect(buildRoadDetailBody(seeded)).not.toHaveProperty('becbiogeoLabel')
   })
 })
+
+describe('the numeric rule table stays complete (SonarQube refactor guard)', () => {
+  // validateRoadDetail was refactored from five near-identical loops into one declarative table to
+  // bring its cognitive complexity under the gate. The risk a table introduces is a SILENTLY DROPPED
+  // field -- it would simply stop being validated, with no error and no failing test.
+  //
+  // MASK_DIGITS is the independent list of every numeric on the road form (it exists to drive the
+  // display mask). The two sets must agree exactly: a numeric with a mask but no bounds check is an
+  // unvalidated field, and one with a check but no mask renders at whatever scale JSON.parse left.
+  test('every masked numeric is range-checked, and every checked field is masked', () => {
+    const form = emptyRoadDetailForm()
+    // A field is bounds-checked if some out-of-range value produces an error for it. 1e12 is outside
+    // every band in the module (the widest max is 9,999,999).
+    const checked = new Set(
+      Object.keys(MASK_DIGITS).filter(
+        (key) =>
+          validateRoadDetail({ ...form, [key]: '999999999999' })[
+            key as keyof RoadDetailFormValues
+          ] !== undefined,
+      ),
+    )
+    expect([...checked].sort()).toEqual(Object.keys(MASK_DIGITS).sort())
+  })
+
+  test('the negative-capable fields are exactly the transfers and the haul distances', () => {
+    const form = emptyRoadDetailForm()
+    const acceptsNegative = Object.keys(MASK_DIGITS).filter(
+      (key) =>
+        validateRoadDetail({ ...form, [key]: '-1' })[key as keyof RoadDetailFormValues] ===
+        undefined,
+    )
+    // Everything else is floored at 0. Losing a floor here is how a negative cost reaches the wire.
+    expect(acceptsNegative.sort()).toEqual(
+      [
+        'endHaulDistance',
+        'overlandDistance',
+        'sgOtherTransfer',
+        'sgTtTransfer',
+        'stOtherTransfer',
+        'stTtTransfer',
+      ].sort(),
+    )
+  })
+})

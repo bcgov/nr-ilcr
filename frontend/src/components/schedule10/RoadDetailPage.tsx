@@ -65,6 +65,11 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
   const controlsDisabled = !editable || saving
   const readOnly = panelMode === 'view'
 
+  const openLabel =
+    page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)?.roadDetailLabel ?? ''
+  const modeWord = readOnly ? 'View' : 'Edit'
+  const panelHeading = panelMode === 'new' ? 'New Road' : `${modeWord} Road — ${openLabel}`
+
   return (
     <>
       <div className="schedule-10__actions">
@@ -134,14 +139,7 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
       {panelMode !== 'closed' && (
         <section className="schedule-10__section">
           <div className="schedule-10__panel">
-            <h3 className="schedule-10__heading">
-              {panelMode === 'new'
-                ? 'New Road'
-                : `${readOnly ? 'View' : 'Edit'} Road — ${
-                    page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)
-                      ?.roadDetailLabel ?? ''
-                  }`}
-            </h3>
+            <h3 className="schedule-10__heading">{panelHeading}</h3>
             <RoadDetailFields
               idPrefix={panelMode === 'new' ? 'road-new' : `road-${String(openDetailId ?? 0)}`}
               form={form}
