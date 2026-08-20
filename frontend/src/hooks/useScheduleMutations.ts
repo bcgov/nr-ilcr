@@ -15,8 +15,8 @@ type UseScheduleMutationsOptions = {
 type MutationOptions<T> = {
   /** Applied only when the request resolves under the still-current context (see {@code run}). */
   readonly onSuccess: (data: T) => void
-  /** Shown only when the rejection carries no ProblemDetail detail of its own (AD-8). */
-  readonly fallback: string
+  /** Shown only when the rejection carries no ProblemDetail detail of its own (AD-8); {@code null} fails silently. */
+  readonly fallback: string | null
   /** Appended to the base path before the mill/year query, e.g. {@code '/records/12'} for a by-id write. */
   readonly suffix?: string
 }
