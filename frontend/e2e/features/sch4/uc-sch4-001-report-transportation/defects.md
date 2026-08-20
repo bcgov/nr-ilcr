@@ -121,6 +121,66 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
     and the ticket are its only tracking.
   - **Test:** none - see Status.
 
+- **BUG-4 — Once a category holds a saved value you cannot clear it back to empty; the save reports success and the old figure comes back (DATA LOSS).**
+  - **What's wrong:** enter a Volume or a Cost on a category in the Edit Location panel and save. Come back,
+    delete the value, and save again: *"Data saved successfully"* appears, but the old number is still stored
+    and reappears on reload. A reporter who entered a figure by mistake has no way to remove it — the only
+    escape is deleting the whole location and re-creating it.
+  - **The boundary matters (measured 2026-08-20):** a PARTIAL clear works, a FULL clear does not.
+      - Clear the Cost while the Volume stays → the category still has a value, so it is still sent, and the
+        null Cost persists correctly. **Works.**
+      - Clear the LAST value in that category → the whole category vanishes from the payload and the stored
+        row survives untouched. **Silently discarded.**
+    Confirmed for BOTH kinds. With two categories stored and one cleared, the captured PUT was
+    `[{"code":41,"volume":7,"cost":70,"distance":null}]` and the read-back still held
+    `40:vol=400,cost=800 | 41:vol=7,cost=70`. Clearing a distance category's Distance+Volume+Cost behaves the
+    same way — its child report is meant to be deleted (§Decision 1's write mirror) and is not.
+  - **Why (technical) — the same mistake at both layers:**
+      - **client** `components/schedule4/index.tsx:317` — `buildRequest` does `if (!anyPresent) return []`, so
+        a category with nothing left in it is omitted from the request entirely;
+      - **server** `Schedule4Service.saveLocation` — `for (CategoryInput category : request.categoriesOrEmpty())`
+        iterates ONLY what was sent, with no reconciliation against what is stored. Nothing nulls or deletes a
+        category that is absent.
+    So the client means "this is now empty" and the server hears "nothing to say about this one".
+  - **This is a REGRESSION from legacy, not a re-grounding.** Legacy wrote every category on every save —
+    `Schedule4DAO.java:639-653` calls `saveOrUpdateTransportationCostDetails` unconditionally for all 15 cost
+    items, passing each category's values straight from the form-bound record. For a row that already existed
+    it wrote the value through **including null** (`:666-676`); the "skip when empty" guard applied **only to
+    INSERTS** (`:679`) — i.e. do not create a row for an empty category. That distinction is exactly what the
+    rewrite lost: it now skips updates too.
+  - **Not role-dependent.** The omission happens in `buildRequest` and the service loop, neither of which
+    consults role, and no role check exists anywhere in the legacy save path either. (Legacy's role × status
+    matrix, `UserSessionMB.disableUserInput():458-481`, governed who could edit a Draft AT ALL — Draft +
+    LICENSEE only — which is the separate role gap in GAP-1. Whoever could edit could also clear.) Caveat: this
+    build renders no role switcher, so the claim rests on the code paths and captured payloads rather than a
+    second-role run.
+  - **Precedent:** [#260](https://github.com/bcgov/nr-ilcr/issues/260) — *"Five Schedule 1 volume fields can't
+    be cleared"*, CLOSED — is the identical root cause on Schedule 1: *"the backend treats 'field sent as null'
+    as 'field omitted, leave it alone' while the client uses null to mean 'the user emptied this box.'"* Worth
+    checking whether the Schedule 1 fix generalises here, and whether Schedules 3/5/8 share the pattern.
+  - **WHY THE SUITE MISSED IT — a vacuous assertion, and that is on QA.** `update.feature` already had
+    "Clearing a distance category removes it and leaves the rest of the location intact", and it PASSED. Its
+    assertion was the SUBSET step (`the stored Schedule 4 location … is:`), which builds its expectation from
+    `table.hashes()` and therefore compares only the categories the table lists. The table listed the survivor
+    (Lakeside Dry Dump) and never the category being cleared, so a surviving Truck Barge/Ferry was invisible
+    to it. The scenario asserted its own premise and not its conclusion. Remedied:
+      - new EXACT-set steps (`… has exactly these categories:` / `… has no stored categories`) that compare the
+        whole stored set, so an unexpected survivor fails;
+      - that scenario re-pointed at the exact step — it now fails, correctly;
+      - a new scenario covering the FIXED-category half AND the partial/full boundary in one journey, so a fix
+        cannot satisfy one half and regress the other.
+  - **Ticket:** [bcgov/nr-ilcr#335](https://github.com/bcgov/nr-ilcr/issues/335). (Not to be confused with
+    [#260](https://github.com/bcgov/nr-ilcr/issues/260), which is the CLOSED Schedule 1 precedent cited above.)
+  - **Priority / env:** **p0** (data integrity, and a previously-broken behaviour with a closed precedent) ·
+    local seeded DB · Chrome.
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to fix when capacity allows; QA
+    re-verifies and closes this entry then. Both `@discovered-bug` tests assert the CORRECT behaviour, so they
+    are RED today and go green on their own when the fix lands, at which point their tags come off. Found
+    2026-08-20 by the QA reviewer in manual testing, not by the suite.
+  - **Test:** `features/sch4/uc-sch4-001-report-transportation/update.feature` — "Clearing a distance category
+    removes it and leaves the rest of the location intact" and "Clearing a fixed category's amounts persists,
+    one field at a time and then entirely", both `@p0 @discovered-bug`.
+
 **Divergences:**
 
 - **DIV-1 — Check Status can still be run after the report has been submitted; the old system did not allow it.**

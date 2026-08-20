@@ -43,7 +43,7 @@ See GAP-1.
 | Edit a saved location's amount and re-save | S02, AF1 | `putLocation` with `id`+`revisionCount` | update `@S02 @p0` | covered | — |
 | Optimistic lock refreshed after a save (a 2nd save must not 409) | §Decision 3 (Story 10.2) | `handleSave` re-seeds `panelRevision` | update `@S02 @p1` | covered | — |
 | Rename moves the whole family (primary + distance children) | §Decision 2; `renameFamily` | `Schedule4Service.saveLocation` | update `@S02 @p1` | covered | — |
-| Clearing a distance category deletes its child report | §Decision 1 write mirror | `writeDistanceCategory` empty-branch | update `@S02 @p2` | covered | — |
+| Clearing a category to fully-empty must persist (distance child deleted; fixed amounts removed) | §Decision 1 write mirror; legacy `Schedule4DAO.java:639-653` wrote every category every save | NOT PERSISTED — `buildRequest` omits an empty category and `saveLocation` only iterates what was sent | update `@S02 @discovered-bug` ×2 | bug | BUG-4 |
 | A saved location survives a full reload | implied by BR-01 storage | `useScheduleDocument` re-GET | update `@S02 @p1` | covered | — |
 | Towing Total row from an UNSAVED new location (save-first) | S03, NAV-003 | `requestOpenSubPage`→`confirmNav`→`saveLocationReturningId` | subpages `@S03 @p0` | covered | — |
 | Towing Total row from a SAVED location (re-fetch, edits discarded) | S04, NAV-002 | `requestOpenSubPage` `kind:'existing'` | subpages `@S04 @p0` | covered | — |
@@ -173,7 +173,7 @@ rather than absorbed.
 
 | Run | Command | Result |
 |---|---|---|
-| Full suite | `npm test -- --grep @sch4` | **197 passed / 0 skipped / 9 deliberately-red** of 206 (8 `@discovered-divergence`, 1 `@discovered-bug`) — no unexplained red. NOTE the total includes the `setup` project's 116 preflight assertions, which run as a dependency; Schedule 4's own scenarios are 90 of it. Re-measured 2026-08-20 after merging main. |
+| Full suite | `npm test -- --grep @sch4` | **197 passed / 0 skipped / 11 deliberately-red** of 208 (8 `@discovered-divergence`, 3 `@discovered-bug`) — no unexplained red. Two of the reds are BUG-4, added 2026-08-20; one of them previously PASSED on a subset assertion that could not see the defect. NOTE the total includes the `setup` project's 117 preflight assertions, which run as a dependency. |
 | **The gate** | `npm run test:gate -- --grep @sch4` | **exit 0, 194 passed** — the known reds excluded |
 | DB left as found | anchor sweep after every run | **0 residue** across all 50 mutating anchors after every COMPLETED run, and after a run stopped gracefully (fixture teardown still runs). A run whose PROCESS is killed outright does leave residue — teardown never executes — which happened once during authoring and left 2 locations behind; `preflight/sch4-anchors.setup.ts` is the designed net for exactly that: it fails the next run naming the dirty anchors and telling you the exact `DELETE /api/v1/schedule4/locations?millId=&year=&id=` to run |
 | Cleanup blind spot | the full run INCLUDES the `@discovered-*` reds | their teardown was exercised too (the residue sweep above followed that run) |
@@ -187,6 +187,7 @@ The eight deliberate reds, each named in `defects.md` with an `ACTION: BA/QA →
 | check-status `@S28` | DIV-2 | the Check Status issue does not name the category |
 | nav-and-recompute `@S12` ×3 | DIV-3 | NAV-001 confirm is not implemented — panel Back, Add New Location, and sub-page Back |
 | nav-and-recompute `@S01 @S02` | DIV-4 | the recomputed $/m³ is stale until the location is reopened |
+| update `@S02` ×2 | BUG-4 | a category cleared to fully-empty is silently discarded (data loss) |
 | accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
 | accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
