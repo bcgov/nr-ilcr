@@ -123,7 +123,8 @@ public class Schedule9Service {
 
   /**
    * The number of Schedule 9 records for a mill/year — the reporting empty-schedule pre-check reads
-   * this through the service seam (Story 29.10) rather than reaching into {@code Schedule9Repository}.
+   * this through the service seam (Story 29.10) rather than reaching into {@code
+   * Schedule9Repository}.
    *
    * @param millId the validated mill id
    * @param year the validated reporting year

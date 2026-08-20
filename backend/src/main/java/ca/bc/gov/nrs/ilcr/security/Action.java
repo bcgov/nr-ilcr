@@ -18,8 +18,9 @@ public enum Action {
    */
   MAINTAIN_CODE_TABLES,
   /**
-   * Open a new reporting year (UC-RY-001) — the Administration ▸ Open Reporting Year surface. ADMIN-only,
-   * like {@link #MAINTAIN_CODE_TABLES}: a SUBMITTER hitting the open-year API is denied 403.
+   * Open a new reporting year (UC-RY-001) — the Administration ▸ Open Reporting Year surface.
+   * ADMIN-only, like {@link #MAINTAIN_CODE_TABLES}: a SUBMITTER hitting the open-year API is denied
+   * 403.
    */
   OPEN_REPORTING_YEAR,
   /**

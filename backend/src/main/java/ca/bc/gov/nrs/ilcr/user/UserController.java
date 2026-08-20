@@ -36,20 +36,22 @@ public class UserController implements UserApi {
   }
 
   private static CurrentUser toCurrentUser(Authentication authentication) {
-    List<String> roles = authentication.getAuthorities().stream()
-        .map(GrantedAuthority::getAuthority)
-        .map(Role::fromValue)
-        .filter(Objects::nonNull)
-        .map(Role::getRoleName)
-        .distinct()
-        .toList();
+    List<String> roles =
+        authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .map(Role::fromValue)
+            .filter(Objects::nonNull)
+            .map(Role::getRoleName)
+            .distinct()
+            .toList();
 
     if (authentication instanceof JwtAuthenticationToken jwtAuth) {
       Jwt jwt = jwtAuth.getToken();
-      String userGuid = StringUtils.firstNonBlank(
-          JwtPrincipalUtil.getIdpUserId(jwt), jwt.getSubject());
-      String displayName = StringUtils.firstNonBlank(
-          JwtPrincipalUtil.getDisplayName(jwt), JwtPrincipalUtil.getName(jwt), userGuid);
+      String userGuid =
+          StringUtils.firstNonBlank(JwtPrincipalUtil.getIdpUserId(jwt), jwt.getSubject());
+      String displayName =
+          StringUtils.firstNonBlank(
+              JwtPrincipalUtil.getDisplayName(jwt), JwtPrincipalUtil.getName(jwt), userGuid);
       return new CurrentUser(
           userGuid,
           displayName,

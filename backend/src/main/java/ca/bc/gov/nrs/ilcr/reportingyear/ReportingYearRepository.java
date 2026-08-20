@@ -10,12 +10,13 @@ import org.springframework.stereotype.Repository;
 /**
  * Reads and writes the legacy {@code THE} tables that opening a reporting year touches (UC-RY-001).
  * Per active mill, opening a year creates: one {@code ILCR_REPORTING_PERIOD} row (the year exists →
- * selectable on Home), one {@code ILCR_MILL_REPORT_STATUS} row (both tracks → {@code validateMillYearActive}
- * passes), and one {@code ILCR_REPORT_CATEGORY} row per schedule category (Draft, reportable-detail Y —
- * the delivery DB pre-seeds these on open, verified against the DEV database). {@code ILCR_REPORT_SUMMARY}
- * is NOT created here — it appears on first schedule save. Every VALUE is a bound named parameter; the
- * full audit quartet ({@code ENTRY_/UPDATE_USERID} + timestamps) and {@code REVISION_COUNT} are stamped
- * explicitly because all are NOT NULL in delivery (AD-11).
+ * selectable on Home), one {@code ILCR_MILL_REPORT_STATUS} row (both tracks → {@code
+ * validateMillYearActive} passes), and one {@code ILCR_REPORT_CATEGORY} row per schedule category
+ * (Draft, reportable-detail Y — the delivery DB pre-seeds these on open, verified against the DEV
+ * database). {@code ILCR_REPORT_SUMMARY} is NOT created here — it appears on first schedule save.
+ * Every VALUE is a bound named parameter; the full audit quartet ({@code ENTRY_/UPDATE_USERID} +
+ * timestamps) and {@code REVISION_COUNT} are stamped explicitly because all are NOT NULL in
+ * delivery (AD-11).
  */
 @Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -30,7 +31,8 @@ public class ReportingYearRepository {
   /** The highest opened reporting year, or {@code null} when none exist (first-time setup). */
   public Integer findMaxReportYear() {
     return jdbc.queryForObject(
-        "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD", new MapSqlParameterSource(),
+        "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD",
+        new MapSqlParameterSource(),
         Integer.class);
   }
 
@@ -38,23 +40,26 @@ public class ReportingYearRepository {
   public List<Integer> findOpenYears() {
     return jdbc.queryForList(
         "SELECT REPORT_YEAR FROM THE.ILCR_REPORTING_PERIOD ORDER BY REPORT_YEAR DESC",
-        new MapSqlParameterSource(), Integer.class);
+        new MapSqlParameterSource(),
+        Integer.class);
   }
 
   /**
-   * The ids of the active ({@code ACT}) mills — the whitelist that receives report-status rows for a
-   * new year (DL-22: closed mills are excluded). Mirrors {@code MillContextService.STATUS_ACTIVE}.
+   * The ids of the active ({@code ACT}) mills — the whitelist that receives report-status rows for
+   * a new year (DL-22: closed mills are excluded). Mirrors {@code
+   * MillContextService.STATUS_ACTIVE}.
    */
   public List<Long> findActiveMillIds() {
     return jdbc.queryForList(
         "SELECT ILCR_MILL_STATUS_XREF_ID FROM THE.ILCR_MILL_STATUS_XREF "
             + "WHERE ILCR_MILL_STATUS_CODE = 'ACT' ORDER BY ILCR_MILL_STATUS_XREF_ID",
-        new MapSqlParameterSource(), Long.class);
+        new MapSqlParameterSource(),
+        Long.class);
   }
 
   /**
-   * Insert the reporting period row for the new year: official start = the creation date, official end
-   * = December 31 of that year (BR-06). {@code ENTRY_/UPDATE_USERID}, both timestamps, and
+   * Insert the reporting period row for the new year: official start = the creation date, official
+   * end = December 31 of that year (BR-06). {@code ENTRY_/UPDATE_USERID}, both timestamps, and
    * {@code REVISION_COUNT} are all NOT NULL in delivery, so all are stamped explicitly.
    */
   public void insertReportingPeriod(int year, LocalDate start, LocalDate end, String user) {
@@ -77,7 +82,11 @@ public class ReportingYearRepository {
    * stamped explicitly.
    */
   public void insertMillReportStatus(
-      int year, long millId, String statusCode, String silvicultureCode, String completedInd,
+      int year,
+      long millId,
+      String statusCode,
+      String silvicultureCode,
+      String completedInd,
       String user) {
     jdbc.update(
         "INSERT INTO THE.ILCR_MILL_REPORT_STATUS "

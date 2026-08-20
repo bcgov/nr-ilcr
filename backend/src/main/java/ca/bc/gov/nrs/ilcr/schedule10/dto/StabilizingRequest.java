@@ -51,38 +51,12 @@ import java.math.BigDecimal;
  * @param otherTransfer the other transfer (optional, ±9,999,999); may be negative
  */
 public record StabilizingRequest(
-    @NotBlank(message = "{ballastMethodRequiredErrorMsg}")
-    @Size(max = 10, message = "{invalidCodeValueErrorMsg}")
-    String ballastMethodCode,
-
-    @Size(max = 10, message = "{invalidCodeValueErrorMsg}")
-    String ballastMaterialCode,
-
-    @DecimalMin(value = "0", message = "{rangeZeroTo999Point999ErrorMsg}")
-    @DecimalMax(value = "999.999", message = "{rangeZeroTo999Point999ErrorMsg}")
-    BigDecimal length,
-
-    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}")
-    @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}")
-    BigDecimal surfaceWidth,
-
-    @DecimalMin(value = "0", message = "{rangeZeroTo99Point9ErrorMsg}")
-    @DecimalMax(value = "99.9", message = "{rangeZeroTo99Point9ErrorMsg}")
-    BigDecimal depth,
-
-    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}")
-    @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}")
-    BigDecimal distanceToSource,
-
-    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}")
-    @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}")
-    Integer actualCost,
-
-    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}")
-    Integer ttTransfer,
-
-    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}")
-    Integer otherTransfer) {
-}
+    @NotBlank(message = "{ballastMethodRequiredErrorMsg}") @Size(max = 10, message = "{invalidCodeValueErrorMsg}") String ballastMethodCode,
+    @Size(max = 10, message = "{invalidCodeValueErrorMsg}") String ballastMaterialCode,
+    @DecimalMin(value = "0", message = "{rangeZeroTo999Point999ErrorMsg}") @DecimalMax(value = "999.999", message = "{rangeZeroTo999Point999ErrorMsg}") BigDecimal length,
+    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}") @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}") BigDecimal surfaceWidth,
+    @DecimalMin(value = "0", message = "{rangeZeroTo99Point9ErrorMsg}") @DecimalMax(value = "99.9", message = "{rangeZeroTo99Point9ErrorMsg}") BigDecimal depth,
+    @DecimalMin(value = "0", message = "{rangeZeroTo999Point9ErrorMsg}") @DecimalMax(value = "999.9", message = "{rangeZeroTo999Point9ErrorMsg}") BigDecimal distanceToSource,
+    @Min(value = 0, message = "{costValidatorSchedule9ErrorMsg}") @Max(value = 9999999, message = "{costValidatorSchedule9ErrorMsg}") Integer actualCost,
+    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}") @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}") Integer ttTransfer,
+    @Min(value = -9999999, message = "{costSize7ValidatorErrorMsg}") @Max(value = 9999999, message = "{costSize7ValidatorErrorMsg}") Integer otherTransfer) {}

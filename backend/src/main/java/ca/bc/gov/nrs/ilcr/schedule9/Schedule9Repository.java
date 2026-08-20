@@ -87,11 +87,12 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
 
   /**
    * How many category-{@code '9'} records a mill/year has — the empty-schedule pre-check for the
-   * report fill (Story 20.1/20.2). Mirrors {@link #findRecords}' WHERE without the code-list joins or
-   * projection, so the "is there anything to render?" decision costs one COUNT instead of
+   * report fill (Story 20.1/20.2). Mirrors {@link #findRecords}' WHERE without the code-list joins
+   * or projection, so the "is there anything to render?" decision costs one COUNT instead of
    * materializing (and discarding) the full row list the template's own query then re-runs.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.CONTRACTUAL_WORK_REPORT cwr
        WHERE cwr.ILCR_MILL_ID = :millId

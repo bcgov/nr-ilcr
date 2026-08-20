@@ -15,11 +15,12 @@ import org.springframework.data.domain.Sort.Order;
 public class PaginationUtil {
 
   /**
-   * Resolves the sort order based on the received sort, default sort field, and valid sortable fields.
+   * Resolves the sort order based on the received sort, default sort field, and valid sortable
+   * fields.
    *
-   * @param receivedSort     the requested Sort
+   * @param receivedSort the requested Sort
    * @param defaultSortField the default sort field
-   * @param sortableFields   a map of valid sortable fields to their database column names
+   * @param sortableFields a map of valid sortable fields to their database column names
    * @return the resolved Sort
    */
   public static Sort resolveSort(

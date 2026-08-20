@@ -12,8 +12,9 @@ import java.util.Locale;
  * with thousands separators and no decimals, and $-per-unit / volume figures keep two decimals.
  *
  * <p>Every {@link DecimalFormat} is pinned to {@link Locale#CANADA} symbols (matching Schedule 9's
- * {@code Schedule9Service}): the grouping/decimal separators must be a comma and a period regardless
- * of the JVM default locale, which a non-en container pod would otherwise flip (e.g. {@code 1.234,56}).
+ * {@code Schedule9Service}): the grouping/decimal separators must be a comma and a period
+ * regardless of the JVM default locale, which a non-en container pod would otherwise flip (e.g.
+ * {@code 1.234,56}).
  */
 final class SectionFormat {
 
@@ -23,8 +24,7 @@ final class SectionFormat {
   private static final DecimalFormatSymbols SYMBOLS =
       DecimalFormatSymbols.getInstance(Locale.CANADA);
 
-  private SectionFormat() {
-  }
+  private SectionFormat() {}
 
   /** A whole-dollar cost with thousands separators, or {@code "-"} when null. */
   static String money(Long value) {

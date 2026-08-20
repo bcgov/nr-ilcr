@@ -45,22 +45,23 @@ public interface ReportApi {
 
   /**
    * Download the selected schedules assembled into ONE bookmarked PDF for a mill and reporting year
-   * (Epic 20.2, combined Print Schedules). The {@link PrintRequest} body carries the twelve schedule
-   * flags + "all" + the three print options; the backend renders only the in-scope sections
-   * (5/6/7A/7B/9/11) in the fixed legacy order, one bookmark per rendered schedule (BR-08), skipping
-   * a selected schedule with no data (BR-09).
+   * (Epic 20.2, combined Print Schedules). The {@link PrintRequest} body carries the twelve
+   * schedule flags + "all" + the three print options; the backend renders only the in-scope
+   * sections (5/6/7A/7B/9/11) in the fixed legacy order, one bookmark per rendered schedule
+   * (BR-08), skipping a selected schedule with no data (BR-09).
    *
-   * <p>Guards run before any fill: missing/blank/non-numeric params → 400 (ERR-001);
-   * mill not active → 409 (ERR-002); no report-status context → 404 (ERR-003); then selection
-   * validation in the legacy order → 400 (ERR-002/003/004 verbatim). A selection where NO chosen
-   * schedule has data yields no PDF → 404 {@code Schedule not found.} (ERR-005). No
-   * {@code VIEW_SCHEDULE} → 403; anonymous → 401.
+   * <p>Guards run before any fill: missing/blank/non-numeric params → 400 (ERR-001); mill not
+   * active → 409 (ERR-002); no report-status context → 404 (ERR-003); then selection validation in
+   * the legacy order → 400 (ERR-002/003/004 verbatim). A selection where NO chosen schedule has
+   * data yields no PDF → 404 {@code Schedule not found.} (ERR-005). No {@code VIEW_SCHEDULE} → 403;
+   * anonymous → 401.
    *
    * @param millId the mill id (optional raw String)
    * @param year the reporting year (optional raw String)
    * @param request the print selection
    * @param authentication the caller (authorized for VIEW_SCHEDULE — print is read-only, BR-01)
-   * @return 200 with the combined PDF bytes ({@code application/pdf} + attachment Content-Disposition)
+   * @return 200 with the combined PDF bytes ({@code application/pdf} + attachment
+   *     Content-Disposition)
    */
   @PostMapping("/print")
   ResponseEntity<byte[]> printSchedules(

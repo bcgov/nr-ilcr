@@ -31,6 +31,13 @@ public class ReportController implements ReportApi {
   private final ReportService reportService;
   private final PrintService printService;
 
+  /**
+   * Constructs a new ReportController.
+   *
+   * @param millContextService the mill context service
+   * @param reportService the report service
+   * @param printService the print service
+   */
   public ReportController(
       MillContextService millContextService,
       ReportService reportService,
@@ -57,7 +64,8 @@ public class ReportController implements ReportApi {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<byte[]> printSchedules(
       String millId, String year, PrintRequest request, Authentication authentication) {
-    // Guard order: mill/year context first (400/404/409), THEN the selection ladder before any fill.
+    // Guard order: mill/year context first (400/404/409), THEN the selection ladder before any
+    // fill.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     validateSelection(request);
     byte[] pdf = printService.render(context, request);
@@ -68,10 +76,10 @@ public class ReportController implements ReportApi {
   }
 
   /**
-   * The legacy selection validation ladder in verbatim order (first-match-wins,
-   * {@code PrintSchedulesMB.print()}): ERR-002 when a content option is on but no schedule is
-   * selected; ERR-003 when a schedule is selected but neither content option is; ERR-004 when no
-   * print option at all is selected. Each throws a 400 carrying the verbatim legacy message (AD-8).
+   * The legacy selection validation ladder in verbatim order (first-match-wins, {@code
+   * PrintSchedulesMB.print()}): ERR-002 when a content option is on but no schedule is selected;
+   * ERR-003 when a schedule is selected but neither content option is; ERR-004 when no print option
+   * at all is selected. Each throws a 400 carrying the verbatim legacy message (AD-8).
    */
   private static void validateSelection(PrintRequest request) {
     if (request.anyContentOptionSelected() && !request.anyScheduleSelected()) {

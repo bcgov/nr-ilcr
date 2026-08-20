@@ -26,5 +26,4 @@ public record MaterialComposition(
     Integer coarsePct,
     Integer finePct,
     Integer organicPct,
-    Integer totalPct) {
-}
+    Integer totalPct) {}

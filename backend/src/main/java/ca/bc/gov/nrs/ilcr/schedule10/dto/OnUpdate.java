@@ -15,5 +15,4 @@ package ca.bc.gov.nrs.ilcr.schedule10.dto;
  * cross-schedule extraction of these markers is tracked as separate consolidation work, and
  * reaching across domain packages for it would couple two schedules that are otherwise independent.
  */
-public interface OnUpdate {
-}
+public interface OnUpdate {}
