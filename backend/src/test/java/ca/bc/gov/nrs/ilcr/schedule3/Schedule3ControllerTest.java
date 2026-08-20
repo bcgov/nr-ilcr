@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
@@ -113,10 +113,10 @@ class Schedule3ControllerTest {
 
   @Test
   void checkStatus_delegates_andReturnsServiceResult() {
-    CheckStatusResponse result = mock(CheckStatusResponse.class);
+    Schedule3CheckStatusResponse result = mock(Schedule3CheckStatusResponse.class);
     when(schedule3Service.checkSchedule3Status(MILL_ID, YEAR)).thenReturn(result);
 
-    ResponseEntity<CheckStatusResponse> response =
+    ResponseEntity<Schedule3CheckStatusResponse> response =
         controller.checkStatus(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());

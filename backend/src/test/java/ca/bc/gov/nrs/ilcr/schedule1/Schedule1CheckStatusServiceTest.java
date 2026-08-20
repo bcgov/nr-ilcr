@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -77,14 +77,14 @@ class Schedule1CheckStatusServiceTest {
     return rows;
   }
 
-  private boolean hasError(CheckStatusResponse r, String prefix) {
+  private boolean hasError(Schedule1CheckStatusResponse r, String prefix) {
     return r.errors().stream().map(MessageInfo::text).anyMatch(t -> t.startsWith(prefix));
   }
 
   @Test
   void allPresent_requirementsMet_withSuccessMessage() {
     stub(allPresent(), BigDecimal.ZERO, List.of()); // shared vol 0, no rows -> consistent
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(r.requirementsMet());
     assertTrue(r.errors().isEmpty());
     assertEquals("scheduleRequirementsMetMsg", r.message().key());
@@ -95,7 +95,7 @@ class Schedule1CheckStatusServiceTest {
     List<DetailRow> details = new ArrayList<>(allPresent());
     details.removeIf(d -> d.costItemCode() == 12); // code 12 entirely missing -> vol + cost errors
     stub(details, BigDecimal.ZERO, List.of());
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertFalse(r.requirementsMet());
     assertTrue(hasError(r, "Standing Tree to Loaded Truck - Volume:"));
     assertTrue(hasError(r, "Standing Tree to Loaded Truck - Cost:"));
@@ -107,7 +107,7 @@ class Schedule1CheckStatusServiceTest {
     details.removeIf(d -> d.costItemCode() == 13);
     details.add(new DetailRow(13, BigDecimal.ZERO, 0, null)); // zeros are present, not missing
     stub(details, BigDecimal.ZERO, List.of());
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertFalse(hasError(r, "Log Transportation -"));
   }
 
@@ -116,7 +116,7 @@ class Schedule1CheckStatusServiceTest {
     List<DetailRow> details = new ArrayList<>(allPresent());
     details.removeIf(d -> d.costItemCode() == 143);
     stub(details, BigDecimal.ZERO, List.of());
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(hasError(r, "Forest Management Administration - Volume:"));
     assertFalse(hasError(r, "Forest Management Administration - Cost:")); // volume-only
   }
@@ -125,7 +125,7 @@ class Schedule1CheckStatusServiceTest {
   void errorsAreInLegacyFieldOrder() {
     // Empty schedule -> every field missing; assert the legacy order (143 between 16 and 17, 144 after 18).
     stub(new ArrayList<>(), null, List.of());
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     List<String> texts = r.errors().stream().map(MessageInfo::text).toList();
     int forestMgmt = indexOfPrefix(texts, "Forest Management Administration - Volume");
     int stumpage = indexOfPrefix(texts, "Stumpage and Royalty - Volume");
@@ -147,14 +147,14 @@ class Schedule1CheckStatusServiceTest {
   @Test
   void otherCostsVolumeNull_error() {
     stub(allPresent(), null, List.of());
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(hasError(r, "Subtotal Other Costs (0) - Volume:"));
   }
 
   @Test
   void otherCostsVolumePresentButNoCost_error() {
     stub(allPresent(), new BigDecimal("100"), List.of()); // vol>0, subtotal cost 0
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(r.errors().stream()
         .anyMatch(m -> "sch1.subtotal.other.costs.costs.grearter.than.zero".equals(m.key())));
   }
@@ -163,7 +163,7 @@ class Schedule1CheckStatusServiceTest {
   void otherCostsCostPresentButNoVolume_error() {
     stub(allPresent(), BigDecimal.ZERO,
         List.of(new OtherCostDetailRow(1, "A", 5000, BigDecimal.ZERO))); // vol 0, cost>0
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(r.errors().stream()
         .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
   }
@@ -174,7 +174,7 @@ class Schedule1CheckStatusServiceTest {
     // present it must raise "Volume must be > 0 when Cost > 0" — not pass (as BigDecimal.signum would).
     stub(allPresent(), new BigDecimal("0.5"),
         List.of(new OtherCostDetailRow(1, "A", 5000, new BigDecimal("0.5"))));
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     assertTrue(r.errors().stream()
         .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
   }
@@ -184,7 +184,7 @@ class Schedule1CheckStatusServiceTest {
     stub(allPresent(), new BigDecimal("100"),
         List.of(new OtherCostDetailRow(1, "Has desc, no cost", null, new BigDecimal("100")),
             new OtherCostDetailRow(2, "Priced", 5000, new BigDecimal("100"))));
-    CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
+    Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     // vol>0 & subtotal cost>0 (5000) -> no consistency error; the null-cost row -> warning only.
     assertTrue(r.requirementsMet());
     assertEquals(1, r.warnings().size());

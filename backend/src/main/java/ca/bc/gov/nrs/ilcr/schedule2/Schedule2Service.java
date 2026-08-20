@@ -9,7 +9,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -386,7 +386,7 @@ public class Schedule2Service {
    * @return the outcome + one message key (text resolved by the controller)
    */
   @Transactional(readOnly = true)
-  public CheckStatusResponse checkStatus(long millId, int year) {
+  public Schedule2CheckStatusResponse checkStatus(long millId, int year) {
     // callerMayEdit is irrelevant to BR-07 (only the item-25 cost matters); pass false.
     Schedule2Response document = getSchedule2(millId, year, false);
     boolean met = document.purchasedLogCost().cost() != null;
@@ -396,7 +396,7 @@ public class Schedule2Service {
     // resolved bundle text ("<label>: Value Required"), mirroring legacy Schedule2MB:168 + Schedule 1
     // (Schedule1Service.valueRequired). The MET message needs no label prefix.
     String labelPrefix = met ? null : LABEL_PURCHASED_LOG_COST;
-    return new CheckStatusResponse(outcome, List.of(new MessageInfo(key, labelPrefix)));
+    return new Schedule2CheckStatusResponse(outcome, List.of(new MessageInfo(key, labelPrefix)));
   }
 
   // -------------------------------------------------------------------------------------------------

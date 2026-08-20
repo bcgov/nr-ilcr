@@ -8,7 +8,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import java.math.BigDecimal;
 import java.util.List;
@@ -60,7 +60,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent("D", Optional.of(new SummaryRow(1002, "c", 0)),
         List.of(new DetailRow(25, null, 500000), new DetailRow(26, new BigDecimal("2000"), 100000)));
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
     assertEquals(1, status.messages().size());
@@ -73,7 +73,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent("D", Optional.of(new SummaryRow(1028, "c", 3)),
         List.of(new DetailRow(26, new BigDecimal("500"), 25000)));
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals(1, status.messages().size());
@@ -85,7 +85,7 @@ class Schedule2CheckStatusServiceTest {
     // No category-"2" summary at all (unsaved) -> no item-25 cost -> ISSUES (never 404).
     stubCrossScheduleAbsent("D", Optional.empty(), List.of());
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals("missingRequiredFieldMsg", status.messages().get(0).key());
@@ -98,7 +98,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent("D", Optional.of(new SummaryRow(1002, "c", 0)),
         List.of(new DetailRow(25, null, 0)));
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
     assertEquals("scheduleRequirementsMetMsg", status.messages().get(0).key());
@@ -111,7 +111,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent("D", Optional.of(new SummaryRow(1002, "c", 0)),
         List.of(new DetailRow(25, null, null)));
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("ISSUES", status.outcome());
     assertEquals("missingRequiredFieldMsg", status.messages().get(0).key());
@@ -124,7 +124,7 @@ class Schedule2CheckStatusServiceTest {
     stubCrossScheduleAbsent("S", Optional.of(new SummaryRow(1002, "c", 4)),
         List.of(new DetailRow(25, null, 400000)));
 
-    CheckStatusResponse status = service.checkStatus(MILL, YEAR);
+    Schedule2CheckStatusResponse status = service.checkStatus(MILL, YEAR);
 
     assertEquals("MET", status.outcome());
   }

@@ -4,7 +4,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
@@ -619,7 +619,7 @@ public class Schedule1Service {
    * (missing mandatory fields + Other-Costs volume/cost consistency) block; the empty-cost row check is
    * a non-blocking warning. Verbatim messages composed server-side (AD-8), in legacy field order.
    */
-  public CheckStatusResponse checkSchedule1Status(long millId, int year) {
+  public Schedule1CheckStatusResponse checkSchedule1Status(long millId, int year) {
     SummaryRow summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY)
         .orElseThrow(ScheduleNotFoundException::new);
     List<DetailRow> details = repository.findDetails(summary.summaryId());
@@ -653,7 +653,7 @@ public class Schedule1Service {
     MessageInfo message = requirementsMet
         ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
         : null;
-    return new CheckStatusResponse(requirementsMet, errors, warnings, message);
+    return new Schedule1CheckStatusResponse(requirementsMet, errors, warnings, message);
   }
 
   /** First stored detail row per (non-Other) cost-item code; later duplicates are ignored. */

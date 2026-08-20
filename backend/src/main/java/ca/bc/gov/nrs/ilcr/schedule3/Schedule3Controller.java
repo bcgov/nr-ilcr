@@ -2,7 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3Api;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
@@ -83,7 +83,7 @@ public class Schedule3Controller implements Schedule3Api {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<CheckStatusResponse> checkStatus(
+  public ResponseEntity<Schedule3CheckStatusResponse> checkStatus(
       long millId, int year, Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
     return ResponseEntity.ok(schedule3Service.checkSchedule3Status(millId, year));

@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -110,14 +110,14 @@ class Schedule2ControllerTest {
 
   @Test
   void checkStatus_metOutcome_resolvesBareMessage_noLabelPrefix() {
-    CheckStatusResponse serviceResult = new CheckStatusResponse(
+    Schedule2CheckStatusResponse serviceResult = new Schedule2CheckStatusResponse(
         "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)));
     when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
     when(messageSource.getMessage(
         eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
         .thenReturn("All requirements for this schedule have been met");
 
-    ResponseEntity<CheckStatusResponse> response =
+    ResponseEntity<Schedule2CheckStatusResponse> response =
         controller.checkStatus(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -132,7 +132,7 @@ class Schedule2ControllerTest {
   void checkStatus_issuesOutcome_prefixesFieldLabelIntoText() {
     // The service carries the field label in MessageInfo.text; the controller prefixes it as
     // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
-    CheckStatusResponse serviceResult = new CheckStatusResponse(
+    Schedule2CheckStatusResponse serviceResult = new Schedule2CheckStatusResponse(
         "ISSUES",
         List.of(new MessageInfo("missingRequiredFieldMsg", "Purchased/Private Log Costs - Cost")));
     when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
@@ -140,7 +140,7 @@ class Schedule2ControllerTest {
         eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Value Required");
 
-    ResponseEntity<CheckStatusResponse> response =
+    ResponseEntity<Schedule2CheckStatusResponse> response =
         controller.checkStatus(MILL_ID, YEAR, authentication);
 
     assertEquals("ISSUES", response.getBody().outcome());

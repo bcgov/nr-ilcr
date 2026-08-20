@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,7 +81,7 @@ class Schedule3CheckStatusServiceTest {
         .thenReturn("All requirements for this schedule have been met");
   }
 
-  private static boolean hasError(CheckStatusResponse r, String key, String labelFragment) {
+  private static boolean hasError(Schedule3CheckStatusResponse r, String key, String labelFragment) {
     return r.errors().stream()
         .anyMatch(m -> m.key().equals(key) && m.text().contains(labelFragment));
   }
@@ -89,7 +89,7 @@ class Schedule3CheckStatusServiceTest {
   @Test
   void allPresentValid_requirementsMet() {
     stub("N", fullValid());
-    CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertTrue(result.requirementsMet());
     assertTrue(result.errors().isEmpty());
     assertEquals("scheduleRequirementsMetMsg", result.message().key());
@@ -98,7 +98,7 @@ class Schedule3CheckStatusServiceTest {
   @Test
   void emptyDocument_reportsMissingRequiredFields() {
     stub("N", List.of());
-    CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertFalse(result.requirementsMet());
     assertTrue(hasError(result, "missingRequiredFieldMsg", "Licenses, Fees, Insurance (Harvest Total $)"));
     assertTrue(hasError(result, "missingRequiredFieldMsg", "Annual Rents (Harvest Total $)"));
@@ -114,7 +114,7 @@ class Schedule3CheckStatusServiceTest {
     rows.add(cost(27, 100));    // Licenses harvest 100 < pop 500 → BR-03 violation
     rows.add(cost(125, 500));
     stub("N", rows);
-    CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertFalse(result.requirementsMet());
     assertTrue(hasError(result, "harvestNotGreaterThanPopErrorMsg",
         "Licenses, Fees, Insurance (Harvest Total $)"));
@@ -127,7 +127,7 @@ class Schedule3CheckStatusServiceTest {
     rows.add(cost(27, 100));    // harvest < pop, but override = "Y"
     rows.add(cost(125, 500));
     stub("Y", rows);
-    CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
+    Schedule3CheckStatusResponse result = service.checkSchedule3Status(MILL, YEAR);
     assertTrue(result.requirementsMet());  // BR-03 suppressed; everything else present
     assertFalse(hasError(result, "harvestNotGreaterThanPopErrorMsg",
         "Licenses, Fees, Insurance (Harvest Total $)"));
