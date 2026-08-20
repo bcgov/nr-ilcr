@@ -1,0 +1,169 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// Layout for the Schedule 10 page: a page-summary list with the page editor directly below it, then
+// a road list with the road editor below that. Shaped to the sibling Schedule 8 page — actions
+// flush left above the table, each editor in a bordered panel — so the two read as one family.
+
+.schedule-10__section {
+  margin-block-end: $spacing-06;
+
+  // Carbon tables default to table-layout: fixed; let columns size to content.
+  .cds--data-table {
+    table-layout: auto;
+  }
+
+  .cds--data-table td,
+  .cds--data-table th {
+    width: auto;
+    max-width: none;
+  }
+}
+
+.schedule-10__heading {
+  margin-block-end: $spacing-05;
+}
+
+.schedule-10__actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+// The editor sits in a bordered panel below the list it belongs to.
+.schedule-10__panel {
+  border: 1px solid var(--cds-border-subtle);
+  padding: $spacing-05;
+}
+
+.schedule-10__panel-actions {
+  display: flex;
+  gap: $spacing-03;
+  margin-block-start: $spacing-05;
+}
+
+.schedule-10__enter-road {
+  display: flex;
+  margin-block-start: $spacing-05;
+}
+
+.schedule-10__row-actions {
+  display: flex;
+  gap: $spacing-02;
+}
+
+// Highlight the row currently open in the editor below, so the pairing is visible at a glance.
+.schedule-10__row--editing td {
+  background-color: var(--cds-highlight);
+}
+
+// ---- Fields -----------------------------------------------------------------------------------
+
+// Fields flow across the panel and wrap, rather than stacking against a label column, so the panel
+// uses its width. Top-aligned so every field's label sits on one line and the inputs line up below.
+.schedule-10__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: $spacing-05;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-10__field {
+  min-width: 10rem;
+  flex: 1 1 12rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.schedule-10__field--wide {
+  flex-basis: 18rem;
+}
+
+.schedule-10__field--narrow {
+  flex: 0 0 8rem;
+}
+
+// A short-valued control (a Yes/No select) that would otherwise stretch to fill its row: sized to
+// the value it holds rather than to its longer label.
+.schedule-10__field--compact {
+  flex: 0 0 12rem;
+}
+
+// Match the Carbon input label (.cds--label) so a read-only field's label reads the same as the
+// editable labels beside it.
+.schedule-10__field-label {
+  display: block;
+  color: var(--cds-text-primary);
+  font-size: 0.75rem;
+  line-height: 1.33333;
+  margin-block-end: $spacing-03;
+}
+
+// A read-only value sits at the height of a Carbon input box so it lines up with its row-mates, and
+// carries the input's own text inset so the figures align horizontally.
+.schedule-10__field-value {
+  display: flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  padding-inline-start: 1rem;
+  font-size: 0.875rem;
+}
+
+// ---- The road-detail form ------------------------------------------------------------------
+
+// Three columns as in legacy: Road Information, Sub-Grade, Additional Stabilizing.
+.schedule-10__detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: $spacing-06;
+  row-gap: $spacing-06;
+  align-items: start;
+  margin-block-end: $spacing-06;
+
+  @media (max-width: 82rem) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 52rem) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.schedule-10__detail-column {
+  display: flex;
+  flex-direction: column;
+  row-gap: $spacing-05;
+  min-width: 0;
+
+  // Inside a column the fields stack, so each takes the column's full width.
+  .schedule-10__field {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.schedule-10__detail-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  padding-block-end: $spacing-02;
+  margin-block-end: $spacing-03;
+  border-block-end: 1px solid var(--cds-border-subtle);
+}
+
+.schedule-10__detail-subheading {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-block-start: $spacing-03;
+}
+
+.schedule-10__comments {
+  display: flex;
+  flex-direction: column;
+  row-gap: $spacing-03;
+  margin-block-end: $spacing-05;
+}
+
+.schedule-10__hint {
+  margin-block-start: $spacing-03;
+  font-size: 0.875rem;
+}

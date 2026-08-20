@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -327,6 +328,76 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         // LD-1/LD-2 removed both of these lists along with their fields.
         .andExpect(jsonPath("$.codeLists.asmCodes").doesNotExist())
         .andExpect(jsonPath("$.codeLists.soilMoistureCodes").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("the TSA and supply-block lists are served, year-filtered, and not transposed")
+  void tsaAndSupplyBlockLists_areServedAndYearFiltered() throws Exception {
+    // Both lists shipped with NO coverage at all: deleting either @Query body, or swapping the two
+    // toCodes(...) arguments in the assembler -- they are both List<CodeDescriptionDto>, so it
+    // compiles -- left the suite green. Each assertion below fails under one of those mutations.
+    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        // Present and populated, so deleting a @Query body reds this.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers").isArray())
+        .andExpect(jsonPath("$.codeLists.supplyBlocks").isArray())
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '01')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '16')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01A')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16G')]", hasSize(1)))
+        // The descriptions are what the control DISPLAYS, so they are part of the contract.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '01')].description",
+            contains("Arrow TSA")))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01A')].description",
+            contains("Arrow TSA Block A")))
+        // TRANSPOSITION GUARD: a TSA code must never appear in the block list, or the reverse. A
+        // swap of the two assembler arguments compiles and is caught only here.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '01A')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '16G')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16')]", hasSize(0)))
+        // V20260821 seeds '90','Retired TSA' expiring 2010-12-31 stating it exists "to pin that the
+        // year filter drops a code". Nothing pinned it until now: no stored 2021 page references
+        // '90', so neither leg of the predicate can rescue it.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '90')]", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName("an expired block a stored page references is rescued by the referenced-union leg")
+  void supplyBlocks_referencedUnionRescuesAnExpiredCode() throws Exception {
+    // The union leg on both queries had NO coverage: it can only rescue a code that HAS a row and
+    // fell outside the date window, and no fixture created that shape until V20260821 was corrected
+    // to seed '16Z' expired (see that file's CORRECTED note). Page 8904 references it, on mill 712.
+    mockMvc.perform(get(ENDPOINT).param("millId", "712").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        // Drop the `OR TSB_NUMBER_CODE IN (...)` leg and this goes to 0.
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16Z')]", hasSize(1)));
+
+    // Scoped to the MILL and the YEAR: mill 710 references no such block, so the expired code stays
+    // dropped there. Remove the date predicate and this goes to 1.
+    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16Z')]", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName("a code absent from its table entirely is not served, however many pages reference it")
+  void codeLists_cannotServeACodeWithNoRow() throws Exception {
+    // Page 8903 (mill 712) stores TSA '99' / TSB '99A', neither of which has a row in its code table.
+    // The union leg selects FROM the code table, so it cannot invent one. This is the contract
+    // boundary that makes the FRONTEND synthesise a stored code as its own option (review H2) — pinned
+    // here so nobody "fixes" the client by pointing at a backend guarantee that does not exist.
+    mockMvc.perform(get(ENDPOINT).param("millId", "712").param("year", "2021")
+            .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '99')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '99A')]", hasSize(0)))
+        // The page itself still lists, carrying its stored location verbatim.
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8903)].tsaNumber", contains("99")))
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8903)].tsbNumberCode", contains("99A")));
   }
 
   @Test
