@@ -357,7 +357,7 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '16G')]", hasSize(0)))
         .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01')]", hasSize(0)))
         .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16')]", hasSize(0)))
-        // V20260819 seeds '90','Retired TSA' expiring 2010-12-31 stating it exists "to pin that the
+        // V20260821 seeds '90','Retired TSA' expiring 2010-12-31 stating it exists "to pin that the
         // year filter drops a code". Nothing pinned it until now: no stored 2021 page references
         // '90', so neither leg of the predicate can rescue it.
         .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '90')]", hasSize(0)));
@@ -367,7 +367,7 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @DisplayName("an expired block a stored page references is rescued by the referenced-union leg")
   void supplyBlocks_referencedUnionRescuesAnExpiredCode() throws Exception {
     // The union leg on both queries had NO coverage: it can only rescue a code that HAS a row and
-    // fell outside the date window, and no fixture created that shape until V20260819 was corrected
+    // fell outside the date window, and no fixture created that shape until V20260821 was corrected
     // to seed '16Z' expired (see that file's CORRECTED note). Page 8904 references it, on mill 712.
     mockMvc.perform(get(ENDPOINT).param("millId", "712").param("year", "2021")
             .accept(MediaType.APPLICATION_JSON))
