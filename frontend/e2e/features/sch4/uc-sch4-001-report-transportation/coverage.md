@@ -22,10 +22,14 @@ extract contains **no Schedule 4 amounts at all** (1316 `ILCR_COST_REPORT_DETAIL
 40–55). That is a data gap, not an app defect.
 
 **Role/permission coverage:** `blocked`. `editable` is derived server-side from the caller's `EDIT_SCHEDULE`
-permission AND the Draft track (`Schedule4Controller` + `Schedule4Service.getSchedule4`), and the local mock
-auth grants ONE fixed admin-ish principal, so a "viewer is denied" branch cannot be produced from the test
-environment. The **Draft** half of that gate IS covered (S18, both non-Draft codes), and the endpoint-level
-`@PreAuthorize` guards are covered by the backend's own `Schedule4WriteAuthorizationIT`. See Coverage gap CG-1.
+permission AND the Draft track (`Schedule4Controller` + `Schedule4Service.getSchedule4`), and the E2E
+environment's mock auth stamps ONE authority per process, so a "viewer is denied" branch cannot be produced
+from a browser. It is also not yet a branch that exists: `SchedulePermissions.ROLE_ACTIONS` still grants
+`ILCR_ADMIN` and `ILCR_SUBMITTER` the same two actions. The **Draft** half of that gate IS covered (S18, both
+non-Draft codes), and the endpoint-level `@PreAuthorize` guards are covered by the backend's own
+`Schedule4WriteAuthorizationIT`. Owned by the cross-cutting deferral in `deferred-work.md` (role-gated
+behaviour under single-role mock auth) — QA returns to it once the role-specific behaviours are implemented.
+See GAP-1.
 
 ---
 
@@ -34,7 +38,7 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 | Source item | Source citation | App enforcement / render point | Scenario (tags) | Status | Gap/defect |
 |---|---|---|---|---|---|
 | Add a location with a fixed + a distance category; success message; $/m³ recomputed | S01, BR-05, BR-06 | `index.tsx` `putLocation`→`PUT /v1/schedule4/locations`; `Schedule4Service.saveLocation`; `perUnit` in `Schedule4Service.perUnit` | happy-path `@S01 @p0` | covered | — |
-| …the recomputed $/m³ shown on the panel that saved it | S01, S02 ("shows the recomputed cost-per-volume") | `handleSave` never re-seeds `panelPerUnit` | nav-and-recompute `@S01 @S02 @discovered-divergence` | divergence | Divergence #4 |
+| …the recomputed $/m³ shown on the panel that saved it | S01, S02 ("shows the recomputed cost-per-volume") | `handleSave` never re-seeds `panelPerUnit` | nav-and-recompute `@S01 @S02 @discovered-divergence` | divergence | DIV-4 |
 | Legacy grid row order (12 categories + 3 sub-page groups interleaved by cost-item code; dead 54 absent) | slices Field Reference; `subPageDefs.ts` | `GRID_ENTRIES` sort in `index.tsx` | happy-path `@S01 @p0` | covered | — |
 | Edit a saved location's amount and re-save | S02, AF1 | `putLocation` with `id`+`revisionCount` | update `@S02 @p0` | covered | — |
 | Optimistic lock refreshed after a save (a 2nd save must not 409) | §Decision 3 (Story 10.2) | `handleSave` re-seeds `panelRevision` | update `@S02 @p1` | covered | — |
@@ -55,11 +59,11 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 | Deleting one location leaves the others | BR-08 scoping | `findLocationName(id, mill, year)` | delete `@S10 @p1` | covered | — |
 | Delete a sub-page row; totals recompute | S11, BR-08, NAV-005 | `handleDeleteRow`→`DELETE .../rows/{id}` | subpage-rows `@S11 @p0` | covered | — |
 | Deleting the last row returns the table to empty + count 0 | S11 boundary | same | subpage-rows `@S11 @p1` | covered | — |
-| Edit a sub-page row IN PLACE, then Save | slices/technical Control Reference (per-row editable cells); NOT in any slice | `SubPage.tsx` `putRow`→`PUT .../rows/{id}` | subpage-rows `@S11 @p1` | covered | Spec gap SG-1 |
+| Edit a sub-page row IN PLACE, then Save | slices/technical Control Reference (per-row editable cells); NOT in any slice | `SubPage.tsx` `putRow`→`PUT .../rows/{id}` | subpage-rows `@S11 @p1` | covered | SPEC-1 |
 | Running totals across several rows incl. Cycle | S05, legacy footer | `SubPage.tsx` totals row | subpage-rows `@S05 @p1` | covered | — |
 | The group's grid row shows the rolled-up totals | CNT-001 + legacy rollup inputs | `panelSubTotals` + `renderSubPageRow` | subpages `@S03 @S05 @p0/@p1` | covered | — |
 | Sub-page link labels carry the live row count | CNT-001 | `` `${def.label} (${totals.count}):` `` | update/subpages/subpage-rows `@p0…@p2` | covered | — |
-| Warn before discarding a dirty panel (Close / Edit / Add New) | S12, NAV-001, epics.md Story 10.5 AC | NOT IMPLEMENTED (`closePanel`, `openNew`, `openEditOrView` switch unconditionally) | nav-and-recompute `@S12 @discovered-divergence` ×2 | divergence | Divergence #3 |
+| Warn before discarding unsaved input (panel Close / Edit / Add New, and each sub-page's Back) | S12, NAV-001, epics.md Story 10.5 AC | NOT IMPLEMENTED (`closePanel`, `openNew`, `openEditOrView` switch unconditionally; `SubPage.tsx` has no confirm at all) | nav-and-recompute `@S12 @discovered-divergence` ×3 | divergence | DIV-3 |
 | A discarded panel edit is never written | S12 consequence | no write path on close | nav-and-recompute `@S12 @p1` | covered | — |
 | Cancelling NAV-002 stays on the panel with the edit intact | NAV-002 dialog semantics | `setNavConfirm(null)` | subpages `@S04 @p2` | covered | — |
 | Column sort on a sub-page (3-state) | none — app-only affordance | `SubPage.tsx` `toggleSort` | subpage-rows `@p2` | covered | — |
@@ -73,7 +77,7 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 |---|---|---|---|---|---|
 | ERR-001 blank Location Name | S13, ERR-001, BR-02 | client `validateLocationForm` gate + server `@NotBlank{locationEmptyOrNull}` | validation `@S13 @p1`; whitespace-only `@S13 @p2` | covered | — |
 | ERR-002 duplicate name, case-insensitive | S14, ERR-002, BR-02 | `Schedule4Service` `nameExists` → 409 verbatim | duplicate-name `@S14 @p1` | covered | — |
-| …the name field is RESET to its prior value afterwards | ERR-002 trigger note | app KEEPS the entered value (Story 10.5 AC "entered values retained") | duplicate-name `@S14 @p1` (asserts as-built) | covered (re-grounded) | Divergence #5 (log-only) |
+| …the name field is RESET to its prior value afterwards | ERR-002 trigger note | app KEEPS the entered value (Story 10.5 AC "entered values retained") | duplicate-name `@S14 @p1` (asserts as-built) | covered (re-grounded) | DIV-5 (log-only) |
 | BR-02 excludes the location's own family (no-op / case-only self-rename allowed) | BR-02, `oldName` exclusion | `saveLocation` `oldName` | duplicate-name `@S14 @S02 @p1` | covered | — |
 | FLD-001 category Volume range [0, 9,999,999] | S19, FLD-001 | `validation.ts` VOLUME + `CategoryInput` `@DecimalMin/Max` | validation `@S19 @p1` outline (both ends) | covered | — |
 | FLD-002 category Cost range [-99,999,999, 99,999,999] | S20, FLD-002 | same | validation `@S20 @p1` outline (both ends) | covered | — |
@@ -90,12 +94,12 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 | Sub-page Description required | S27 `[UNKNOWN]` | `validateSubPageRow` + `@NotBlank{missingRequiredFieldMsg}` | subpage-validation `@S27 @p1` outline | covered (message resolved) | — |
 | …the tighter sub-page band really is tighter than the grid's | S24's premise | two different validator tables | subpage-validation `@S24 @p1` | covered | — |
 | …those row bounds are INCLUSIVE | implied | `rangeError` | subpage-validation `@S24 @S25 @S26 @p2` | covered | — |
-| An out-of-range IN-PLACE row edit blocks the sub-page Save | S25 applied to the row cells | `handleSave` `rowInvalid` gate | subpage-rows `@S11 @S25 @p1` | covered | Spec gap SG-1 |
+| An out-of-range IN-PLACE row edit blocks the sub-page Save | S25 applied to the row cells | `handleSave` `rowInvalid` gate | subpage-rows `@S11 @S25 @p1` | covered | SPEC-1 |
 | Every rejection persists NOTHING | BR-02, S13–S27 | client gate; server 400 | every validation scenario (spy = 0 + read-back) | covered | — |
 | Location Name > 30 chars → server 400 | `@Size(max=30)` | unreachable from the UI (`maxLength={30}`) | happy-path `@S09 @p2` proves the input truncates | not-applicable (UI) | — |
 | Comments ≤ 3500 chars | slices Field Reference; `@Size(max=3500)` | `TextArea maxCount={COMMENTS_MAX}` | — | not-applicable | slices excluded it ("no distinct behaviour at the boundary"); the counter is cosmetic |
-| ERR-003 generic service error on save/delete | technical ERR-003 `[UNKNOWN]` | `extractDetail(error) \|\| 'Schedule could not be saved.'` | — | deferred | CG-2 |
-| Stale optimistic-lock token → 409 | `scheduleRevisionConflictErrorMsg` | `bumpRevision` returns 0 → `StaleRevisionException` | — | deferred | CG-3 |
+| ERR-003 generic service error on save/delete | technical ERR-003 `[UNKNOWN]` | `extractDetail(error) \|\| 'Schedule could not be saved.'` | — | deferred | GAP-2 |
+| Stale optimistic-lock token → 409 | `scheduleRevisionConflictErrorMsg` | `bumpRevision` returns 0 → `StaleRevisionException` | — | deferred | GAP-3 |
 | ALT-001 browser `alert()` | technical ALT-001 | none — no `alert()` in the app | — | not-applicable | legacy had none either |
 | ASY-001 async/job | technical ASY-001 | none — all synchronous | — | not-applicable | legacy had none either |
 
@@ -111,9 +115,9 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 | Mixed per-location results in one response | S31 | per-location `LocationCheckResult` | check-status `@S31 @p1` | covered | — |
 | A mill/year with no locations is vacuously MET | legacy AND-over-locations | `checkStatus` empty loop | check-status `@S28 @p2` | covered | — |
 | Check Status mutates nothing | AD-5 | `@Transactional(readOnly)`; no state change | implicit in every check-status scenario (read-backs unchanged) | covered | — |
-| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | the page renders only the location name + "Value Required" | check-status `@S28 @discovered-divergence` | divergence | Divergence #2 |
-| A missing DISTANCE fails Check Status | S29 (premise flagged as inferred) | NOT enforced by design (§Decision 2 — legacy's check is commented out) | check-status `@S29 @p1` covers the actual behaviour | covered (re-grounded) | Divergence #6 (log-only) |
-| Missing COMMENTS flagged as "Value Required" | S30 | NOT enforced by design (§Decision 3 — no bundle key exists) | check-status `@S30 @p1` covers the actual behaviour | covered (re-grounded) | Divergence #7 (log-only) |
+| …the message NAMES the field that needs a value | EF3 (`"Location : <name> - <field> (Cost $) "`), §Decision 4 (`FieldIssue.code`) | the page renders only the location name + "Value Required" | check-status `@S28 @discovered-divergence` | divergence | DIV-2 |
+| A missing DISTANCE fails Check Status | S29 (premise flagged as inferred) | NOT enforced by design (§Decision 2 — legacy's check is commented out) | check-status `@S29 @p1` covers the actual behaviour | covered (re-grounded) | SPEC-3 (log-only) |
+| Missing COMMENTS flagged as "Value Required" | S30 | NOT enforced by design (§Decision 3 — no bundle key exists) | check-status `@S30 @p1` covers the actual behaviour | covered (re-grounded) | SPEC-4 (log-only) |
 
 ## Guard states, read-only mode and chrome
 
@@ -128,14 +132,14 @@ environment. The **Draft** half of that gate IS covered (S18, both non-Draft cod
 | STA-001 Copy/Delete disabled | S18, BR-03 | `disabled={!editable \|\| saving}` | render-states `@S18 @p0` outline | covered (mechanism re-grounded: disabled, not omitted) | — |
 | STA-001 the panel renders read-only (values as text, no inputs) | S18 | `readOnlyPanel` branches | render-states `@S18 @p0` outline | covered | — |
 | STA-001 the sub-page loses its add-row form and per-row Delete | S18 + Story 10.6 AC5 | `editable &&` guards in `SubPage.tsx` | render-states `@S18 @p0` outline | covered | — |
-| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | NOT disabled (`disabled={saving}` only) | render-states `@S18 @discovered-divergence` | divergence | Divergence #1 |
+| STA-001 Check Status disabled outside Draft | S18 (explicit), technical Control Reference `schedule4.xhtml:43` | NOT disabled (`disabled={saving}` only) | render-states `@S18 @discovered-divergence` | divergence | DIV-1 |
 | The empty-list state | S01 precondition | `data.locations.length === 0` branch | render-states `@S01 @p2` | covered | — |
-| NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | Divergence #8 (log-only) |
+| NAV-004 confirm text | NAV-004 (`confirmDeleteMsgPart1` + `Part2`) | `CONFIRM_DELETE` in `index.tsx` | delete `@S10 @p0` | covered (punctuation re-grounded) | DIV-6 (log-only) |
 | NAV-005 row-delete confirm text | NAV-005 | `CONFIRM_DELETE_ROW` in `SubPage.tsx` | subpage-rows `@S11 @p0` | covered | — |
-| Existing Locations table lists category + sub-page COUNT COLUMNS | Story 10.5 AC1 / Story 10.7 AC1 | not rendered — and legacy had only a Location Name column (`schedule4.xhtml:50-104`) | counts covered where they exist (CNT-001, sub-page links) | not-applicable | Spec gap SG-2 |
-| WCAG 2.1 AA on every Schedule 4 surface | NFR1, Story 10.7 AC2 | — | accessibility `@a11y` ×9 | covered (3 red) | Bug #1, Bug #2 |
-| WCAG 2.1 AA on the VALIDATION-ERROR state | NFR1, Story 10.7 AC2 | Carbon `TextInput` `invalid` wiring (app-wide) | — | deferred | CG-4 |
-| Viewer/role-denied branch | BR-03 (actor lacks edit rights) | `permissions.hasPermission(auth,'EDIT_SCHEDULE')` | — | blocked | CG-1 |
+| Existing Locations table lists category + sub-page COUNT COLUMNS | Story 10.5 AC1 / Story 10.7 AC1 | not rendered — and legacy had only a Location Name column (`schedule4.xhtml:50-104`) | counts covered where they exist (CNT-001, sub-page links) | not-applicable | SPEC-2 |
+| WCAG 2.1 AA on every Schedule 4 surface | NFR1, Story 10.7 AC2 | — | accessibility `@a11y` ×9 | covered (3 red) | DIV-7, BUG-1 |
+| WCAG 2.1 AA on the VALIDATION-ERROR state | NFR1, Story 10.7 AC2 | Carbon `TextInput` `invalid` wiring (app-wide) | — | deferred | GAP-4 |
+| Viewer/role-denied branch | BR-03 (actor lacks edit rights) | `permissions.hasPermission(auth,'EDIT_SCHEDULE')` — both roles currently grant it, and mock auth stamps one authority per process | — | blocked | GAP-1 |
 
 ---
 
@@ -156,10 +160,10 @@ The four counted gaps (each filed in `defects.md`, none of them an app fault):
 
 | Gap | Kind | Why it counts against coverage |
 |---|---|---|
-| CG-1 | `blocked` | the role-denied branch needs a user without `EDIT_SCHEDULE`; local mock auth grants one fixed principal. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; a gate should treat this as **waived**. |
-| CG-2 | `deferred` | ERR-003's generic save-failure text is `[UNKNOWN]` in the source docs; no slice exists and none was invented. |
-| CG-3 | `deferred` | the stale-save-token 409 needs two concurrent sessions; verified at the API by hand, not through the browser. |
-| CG-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (`deferred-work.md`, app-wide WCAG 4.1.2), so Schedule 4's error state is genuinely unswept. |
+| GAP-1 | `blocked` | role-gated behaviour cannot be produced under single-role mock auth, and the two `ROLE_ACTIONS` sets do not yet diverge. Endpoint enforcement is covered by the backend's `Schedule4WriteAuthorizationIT`; owned by the cross-cutting deferral in `deferred-work.md`, so a gate should treat it as **waived**. |
+| GAP-2 | `deferred` | ERR-003's generic save-failure text is `[UNKNOWN]` in the source docs; no slice exists and none was invented. |
+| GAP-3 | `deferred` | the stale-save-token 409 needs two concurrent sessions; verified at the API by hand, not through the browser. |
+| GAP-4 | `deferred` | the validation-error axe sweep is skipped by the project's cross-cutting convention (`deferred-work.md`, app-wide WCAG 4.1.2), so Schedule 4's error state is genuinely unswept. |
 
 `@discovered-divergence` / `@discovered-bug` reds COUNT as covered — they map to their requirement and are
 deliberately red (never forced green; the red is the signal). **Gate result: PASS**, with the four gaps named
@@ -169,7 +173,7 @@ rather than absorbed.
 
 | Run | Command | Result |
 |---|---|---|
-| Full suite | `npm test -- --grep @sch4` | **194 passed / 0 skipped / 8 deliberately-red** (5 `@discovered-divergence`, 3 `@discovered-bug`) — no unexplained red |
+| Full suite | `npm test -- --grep @sch4` | **195 passed / 0 skipped / 9 deliberately-red** (8 `@discovered-divergence`, 1 `@discovered-bug`) of 204 — no unexplained red. Re-measured 2026-08-19. |
 | **The gate** | `npm run test:gate -- --grep @sch4` | **exit 0, 194 passed** — the known reds excluded |
 | DB left as found | anchor sweep after every run | **0 residue** across all 50 mutating anchors after every COMPLETED run, and after a run stopped gracefully (fixture teardown still runs). A run whose PROCESS is killed outright does leave residue — teardown never executes — which happened once during authoring and left 2 locations behind; `preflight/sch4-anchors.setup.ts` is the designed net for exactly that: it fails the next run naming the dirty anchors and telling you the exact `DELETE /api/v1/schedule4/locations?millId=&year=&id=` to run |
 | Cleanup blind spot | the full run INCLUDES the `@discovered-*` reds | their teardown was exercised too (the residue sweep above followed that run) |
@@ -179,12 +183,12 @@ The eight deliberate reds, each named in `defects.md` with an `ACTION: BA/QA →
 
 | Red | Entry | What it tracks |
 |---|---|---|
-| render-states `@S18` | Divergence #1 | Check Status stays enabled outside Draft |
-| check-status `@S28` | Divergence #2 | the Check Status issue does not name the category |
-| nav-and-recompute `@S12` ×2 | Divergence #3 | NAV-001 dirty-panel confirm is not implemented |
-| nav-and-recompute `@S01 @S02` | Divergence #4 | the recomputed $/m³ is stale until the location is reopened |
-| accessibility ×2 | Bug #1 | the editing-row highlight fails contrast (3.81:1), Draft and View |
-| accessibility ×1 | Bug #2 | app-wide: a hovered table row fails contrast (3.78:1) |
+| render-states `@S18` | DIV-1 | Check Status stays enabled outside Draft |
+| check-status `@S28` | DIV-2 | the Check Status issue does not name the category |
+| nav-and-recompute `@S12` ×3 | DIV-3 | NAV-001 confirm is not implemented — panel Back, Add New Location, and sub-page Back |
+| nav-and-recompute `@S01 @S02` | DIV-4 | the recomputed $/m³ is stale until the location is reopened |
+| accessibility ×2 | DIV-7 | the editing-row highlight should not exist (legacy had none); it also fails contrast at 3.81:1, Draft and View |
+| accessibility ×1 | BUG-1 | app-wide: a hovered table row fails contrast (3.79:1) |
 
 > ⚠️ **Every mutating scenario owns its own (mill, year)** — 50 of them, listed in
 > `fixtures/sch4/schedule4-test-data.ts`'s anchor table, and `preflight/sch4-anchors.setup.ts` fails the run

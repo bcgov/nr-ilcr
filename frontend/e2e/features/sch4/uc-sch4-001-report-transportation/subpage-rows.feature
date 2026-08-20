@@ -5,7 +5,7 @@
 #   - IN-PLACE ROW EDIT is a SPEC GAP, not new behaviour: the legacy source enumerates the control (the
 #     sub-page dataTable's per-row editable Description/Distance/Volume/Cost cells — technical.md Control
 #     Reference, `schedule4TowingTotal.xhtml:91-164`) and the app implements it (PUT .../rows/{id}), but no
-#     slice was ever written for it. Covered here; logged as a Spec gap for the BA.
+#     slice was ever written for it. Covered here; logged as SPEC-1 for the BA.
 #   - COLUMN SORT is app-only chrome with no legacy counterpart. Covered lightly (@p2) because it is
 #     client-side logic over the rows the reporter is reading, and a broken sort silently misrepresents
 #     them.

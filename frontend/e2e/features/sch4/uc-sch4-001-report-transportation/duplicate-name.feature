@@ -5,11 +5,17 @@
 #      (`onLocationNameItemChange`) as well as on Save. The rewrite makes the SERVER authoritative: the
 #      save PUTs, and a case-insensitive collision comes back as 409 `locationAlreadyExists`, rendered
 #      verbatim in the error banner. Same message, same outcome, one fewer round trip while typing.
-#   2. WHAT HAPPENS TO THE FIELD afterwards. Legacy RESET the name field to its prior value (ERR-002's
-#      own trigger note says so). The rewrite deliberately KEEPS what the reporter typed — Story 10.5's
-#      "entered values retained on failure" AC — so the name can be corrected instead of retyped. Logged
-#      as DIV-5 (suspected-intentional-change, log-only) and asserted AS BUILT below, so a future change
-#      in either direction is caught rather than absorbed.
+#   2. WHAT HAPPENS TO THE FIELD afterwards. Legacy DISCARDED what the reporter typed, resetting the name
+#      to the PANEL's own prior value — which on a New Location panel is EMPTY, because
+#      `locationDescriptionOriginalVal` starts as "" and is only filled when a stored location is loaded
+#      (`TransportationReportType.java:86,123` vs `Schedule4DAO.java:142`). So in this scenario's flow
+#      legacy blanked the field and the name had to be retyped; on an Edit panel it silently reverted the
+#      rename instead. Legacy did it on the field's change listener as well as on Save
+#      (`Schedule4MB.java:249` and `:619`). The rewrite deliberately KEEPS the typed text — Story 10.5's
+#      "entered values retained on failure" AC — so only the case needs correcting. Logged as DIV-5
+#      (suspected-intentional-change, log-only) and asserted AS BUILT below, so a future change in either
+#      direction is caught rather than absorbed.
+#      NOTE it is NOT "the duplicate name is put back", which would be a no-op — see DIV-5 in defects.md.
 #
 # The case-insensitivity is exercised directly (the saved name differs only by case), which is why the
 # slice catalogue needed no separate casing slice.

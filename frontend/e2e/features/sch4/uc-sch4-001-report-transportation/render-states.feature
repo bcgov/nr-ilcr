@@ -111,18 +111,22 @@ Feature: Schedule 4 — guard states and read-only view
     And the Schedule 4 Check Status button is enabled
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-1 — DELIBERATELY RED. See this UC's defects.md (Divergence #1 → BA/QA → Jira).
+  # DIV-1 — DELIBERATELY RED. See this UC's defects.md (DIV-1) and issue #322.
+  #
+  # This asserts what SHOULD happen (the button is disabled), so it fails today and goes green on its own
+  # when the app is fixed — no test edit needed at that point, just drop the tag.
   #
   # Legacy disabled Check Status outside Draft: `schedule4.xhtml:43` binds
   # `disabled="#{schedule4MB.disableReportEdits()}"` on it, and the source Gherkin S18 asserts it
-  # explicitly ("the Check Status button (top) is disabled"). This app leaves it ENABLED — and both
-  # sibling schedules disable it (`schedule2/index.tsx:319` and `schedule11/index.tsx:881` each use
-  # `disabled={!editable || saving}`), so Schedule 4 is also the odd one out in its own codebase.
-  # Confirmed in the browser 2026-08-17 on the Submitted anchor: Add New Location disabled=true,
-  # Check Status disabled=false.
+  # explicitly ("the Check Status button (top) is disabled"). This app leaves it ENABLED, because
+  # `schedule4/index.tsx:821` uses `disabled={saving}` and omits the `!editable` term. Schedule 8
+  # (`schedule8/index.tsx:780`) has the same defect and legacy disabled it there too
+  # (`schedule8.xhtml:48`); the other 7 schedules all include `!editable`, so these two are the odd ones
+  # out in their own codebase. Confirmed in the browser 2026-08-17 on the Submitted anchor: Add New
+  # Location disabled=true, Check Status disabled=false.
   # ---------------------------------------------------------------------------------------------------
   @p2 @S18 @discovered-divergence
-  Scenario: Check Status is unavailable outside Draft [DISCOVERED DIVERGENCE — it stays enabled; defects.md Divergence #1 → BA/QA/Jira]
+  Scenario: Check Status is unavailable outside Draft [DISCOVERED DIVERGENCE — it stays enabled; defects.md DIV-1 / issue #322]
     Given the Schedule 4 read-only anchor "submitted"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4

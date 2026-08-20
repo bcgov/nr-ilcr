@@ -50,7 +50,7 @@ Then(
 );
 
 /**
- * Divergence #2 in this UC's defects.md — the legacy Check Status message NAMED the field a value was
+ * DIV-2 in this UC's defects.md — the legacy Check Status message NAMED the field a value was
  * required for (`"Location : <name> - Lakeside Dry Dump (Cost $) " + "Value Required"`), and the backend
  * still returns the cost-item `code` per issue for exactly that purpose (Story 10.4 §Decision 4). The
  * page drops it, so two missing categories on one location render as two identical "Value Required"

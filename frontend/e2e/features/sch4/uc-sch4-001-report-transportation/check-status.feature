@@ -9,11 +9,11 @@
 #   - S29 (a missing DISTANCE) — legacy's distance check is COMMENTED OUT (§Decision 2), and the slice
 #     catalogue itself flagged the premise as inferred from EF3's example text rather than a cited source
 #     line. So the app does NOT fail a location for a missing Distance. Covered here as the app's actual
-#     behaviour and logged as DIV-6 (suspected-intentional-change, log-only), NOT as a failing test:
+#     behaviour and logged as SPEC-3 (a SPEC gap: the rule never existed anywhere), NOT as a failing test:
 #     asserting the legacy-inferred rule would demand a check nobody has ever implemented.
 #   - S30 (missing COMMENTS) — same story (§Decision 3): the comment check is commented out in legacy and
 #     there is no comments-required key in the bundle at all, so Comments never block MET. Covered as
-#     actual behaviour, logged as DIV-7 (log-only).
+#     actual behaviour, logged as SPEC-4 (a SPEC gap, same shape as SPEC-3).
 #   - S31 (mixed results) is the real all-or-nothing rule: per-location messages appear together, and the
 #     whole-schedule banner appears ONLY when every location passes.
 #
@@ -103,7 +103,7 @@ Feature: Schedule 4 — Check Status reports each location's readiness
   # S29 re-grounded — a distance-based category with amounts but NO Distance cannot even be saved (BR-04
   # blocks it), and a fully-empty one is not stored at all, so there is no state in which a "missing
   # Distance" could fail Check Status. This scenario pins the consequence: a location whose distance
-  # categories are simply absent passes. See DIV-6.
+  # categories are simply absent passes. See SPEC-3.
   @p1 @S29
   Scenario: A location with no distance-based categories at all still passes Check Status
     Given the Schedule 4 anchor "check-distance" is an editable Draft with no locations
@@ -117,7 +117,7 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     And I should see the message "All requirements for this schedule have been met"
 
   # S30 re-grounded — Comments are a SOFT gate: absent comments never block MET, and no
-  # comments-required message exists in the bundle to render. See DIV-7.
+  # comments-required message exists in the bundle to render. See SPEC-4.
   @p1 @S30
   Scenario: A location with blank Comments still passes Check Status
     Given the Schedule 4 anchor "check-comments" is an editable Draft with no locations
@@ -144,7 +144,7 @@ Feature: Schedule 4 — Check Status reports each location's readiness
     Then I should see the message "All requirements for this schedule have been met"
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-2 — DELIBERATELY RED. See this UC's defects.md (Divergence #2 → BA/QA → Jira).
+  # DIV-2 — DELIBERATELY RED. See this UC's defects.md (DIV-2) and issue #326.
   #
   # Legacy named the field a value was required for: `addMessageCheckStatus()` built
   # "Location : <name> - <Field Name> (Cost $) " + "Value Required", and the rewrite's backend still
@@ -156,9 +156,16 @@ Feature: Schedule 4 — Check Status reports each location's readiness
   # JSF string: the notification shape was deliberately re-grounded (title = location, subtitle = message),
   # so pinning the old literal would demand a format nobody intends to restore. What is genuinely missing
   # is the field identity.
+  #
+  # SCHEDULE 4 IS THE ONLY PAGE THAT DROPS IT (swept 2026-08-19). Legacy named the field on every
+  # schedule (FacesUtil.addCheckStatusErrorMessage composed "<label>: <message>"), and every other
+  # schedule here still does — Schedules 1/2/3/5/11 compose the label into the message text server-side,
+  # and Schedule 8 returns the field separately (Schedule 4's exact shape) then renders it in the
+  # notification title (schedule8/CheckStatusResult.tsx:26). So the fix has an in-repo precedent: map
+  # issue.code through ALL_CATEGORIES in components/schedule4/validation.ts.
   # ---------------------------------------------------------------------------------------------------
   @p1 @S28 @discovered-divergence
-  Scenario: Check Status names which category needs a value [DISCOVERED DIVERGENCE — the field label is dropped; defects.md Divergence #2 → BA/QA/Jira]
+  Scenario: Check Status names which category needs a value [DISCOVERED DIVERGENCE — the field label is dropped; defects.md DIV-2 / issue #326]
     Given the Schedule 4 anchor "check-issue-label" is an editable Draft with no locations
     And the Schedule 4 location "E2E Two Gaps" is already saved with:
       | category          | distance | volume | cost |
