@@ -1307,6 +1307,59 @@ describe('regressions from the 2026-08-19 code review', () => {
     })
   })
 
+  test('review #325 — method N disables the figures it discards, but not TtT Transfer', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Before choosing N every figure is editable.
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+
+    for (const label of [
+      'Additional Stabilizing Length (km)',
+      'Additional Stabilizing Surface Width (m)',
+      'Depth (m)',
+      'Distance to Source (km)',
+      'Additional Stabilizing Actual Costs ($)',
+      'Additional Stabilizing Other Transfer ($)',
+    ]) {
+      expect(screen.getByLabelText(label)).toBeDisabled()
+    }
+    // The server keeps this one on the N branch, so entry here is still recorded.
+    expect(screen.getByLabelText('Additional Stabilizing TtT Transfer ($)')).toBeEnabled()
+  })
+
+  test('review #325 — method D disables only the material, leaving the figures editable', async () => {
+    server.use(
+      getHandler(
+        doc({
+          codeLists: {
+            ...doc().codeLists,
+            ballastMethods: [
+              { code: 'C', description: 'Crushed' },
+              { code: 'N', description: 'None' },
+              { code: 'D', description: 'Dirt' },
+            ],
+          },
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Dirt' }))
+
+    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+    // D stores its figures as submitted, so they must stay editable.
+    expect(screen.getByLabelText('Additional Stabilizing Length (km)')).toBeEnabled()
+    expect(screen.getByLabelText('Additional Stabilizing Actual Costs ($)')).toBeEnabled()
+  })
+
   test('M7 — a de-listed BEC classification renders its label, not its catalogue id', async () => {
     server.use(
       getHandler(

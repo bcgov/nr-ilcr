@@ -7,6 +7,7 @@ import CommaNumberInput from '@/components/core/CommaNumberInput'
 import { fmtCurrency, fmtWholeCost } from '@/utils/number'
 import type { MaskedField, RoadDetailErrors, RoadDetailFormValues } from './validation'
 import {
+  BALLAST_ZEROED_FIELDS,
   COMMENTS_MAX,
   ROAD_NAME_MAX,
   ballastForcesMaterialNa,
@@ -72,6 +73,18 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
 }) => {
   const id = (name: string) => `${idPrefix}-${name}`
 
+  // `N` and `D` both have their material forced to `NA`; `N` additionally has its dimensions and two
+  // of its three costs zeroed, which `buildStabilizing` sends rather than leaving to the server.
+  const materialForced = ballastForcesMaterialNa(form.stBallastMethodCode)
+  const figuresZeroed = ballastZeroesFigures(form.stBallastMethodCode)
+
+  // An input whose entry `N` discards is disabled, so the rule reads the same way everywhere: the
+  // material combo was already disabled in exactly this situation, and leaving these editable
+  // invited entry that Save would silently replace with zero. `stTtTransfer` is NOT in the set —
+  // the server keeps it on the `N` branch, so it stays editable.
+  const zeroedByBallast = (key: MaskedField): boolean =>
+    figuresZeroed && (BALLAST_ZEROED_FIELDS as readonly string[]).includes(key)
+
   // A stored classification may have been de-listed since it was saved, in which case it is absent
   // from the offerable list. Appending it keeps the field showing what the row actually holds instead
   // of appearing unselected — and it is appended with the row's OWN label, which the response carries
@@ -130,7 +143,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           labelText={labelWithUnit}
           autoComplete="off"
           value={form[key]}
-          disabled={disabled}
+          disabled={disabled || zeroedByBallast(key)}
           invalid={Boolean(errors[key])}
           invalidText={errors[key] ?? ''}
           onValueChange={(raw) => onChange(key, raw)}
@@ -166,11 +179,6 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       </Field>
     )
   }
-
-  // `N` and `D` both have their material forced to `NA`; `N` additionally has its dimensions and two
-  // of its three costs zeroed, which `buildStabilizing` now sends rather than leaving to the server.
-  const materialForced = ballastForcesMaterialNa(form.stBallastMethodCode)
-  const figuresZeroed = ballastZeroesFigures(form.stBallastMethodCode)
 
   const engineeringCostsValue = form.detailedEngineeringCostInd === 'Y' ? 'Yes' : 'No'
 
@@ -315,8 +323,9 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
         )}
       {!readOnly && figuresZeroed && (
         <p className="schedule-10__hint">
-          This Additional Stabilizing code stores its dimensions, actual cost and other transfer as
-          zero.
+          This Additional Stabilizing code stores its length, surface width, depth, distance to
+          source, actual cost and other transfer as zero, so those fields are disabled. TtT Transfer
+          is still recorded as entered.
         </p>
       )}
     </div>

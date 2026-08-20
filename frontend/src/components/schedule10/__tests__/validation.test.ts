@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
 import {
+  BALLAST_ZEROED_FIELDS,
   MASK_DIGITS,
   SCH10_MESSAGES,
   ballastForcesMaterialNa,
@@ -720,6 +721,69 @@ describe('fixes from the 2026-08-19 code review', () => {
       length: 3,
       actualCost: 5000,
     })
+  })
+
+  test('review #325 — method D forces the material to NA but keeps every figure', () => {
+    // The N mirroring originally covered only N, so D sent whatever material was picked before D was
+    // chosen and the server (Schedule10Service:557-560) silently replaced it with NA -- the exact
+    // echo mismatch the mirroring exists to prevent. D coerces the material ONLY; its figures are
+    // stored as submitted.
+    const form = {
+      ...base(),
+      stBallastMethodCode: 'D',
+      stBallastMaterialCode: 'GR',
+      stLength: '3',
+      stSurfaceWidth: '6.5',
+      stDepth: '0.3',
+      stDistanceToSource: '12.4',
+      stActualCost: '5000',
+      stTtTransfer: '750',
+      stOtherTransfer: '250',
+    }
+    expect(buildRoadDetailBody(form).stabilizing).toEqual({
+      ballastMethodCode: 'D',
+      ballastMaterialCode: 'NA',
+      length: 3,
+      surfaceWidth: 6.5,
+      depth: 0.3,
+      distanceToSource: 12.4,
+      actualCost: 5000,
+      ttTransfer: 750,
+      otherTransfer: 250,
+    })
+  })
+
+  test('review #325 — the zeroed-field set matches what the N branch actually sends', () => {
+    // BALLAST_ZEROED_FIELDS drives which inputs the form DISABLES. If it drifts from what
+    // buildStabilizing zeroes, the UI either disables a field that is still recorded or leaves one
+    // editable whose entry is discarded -- the bug this review caught, in the other direction.
+    const filled = {
+      ...base(),
+      stBallastMethodCode: 'N',
+      stLength: '3',
+      stSurfaceWidth: '6.5',
+      stDepth: '0.3',
+      stDistanceToSource: '12.4',
+      stActualCost: '5000',
+      stTtTransfer: '750',
+      stOtherTransfer: '250',
+    }
+    const sent = buildRoadDetailBody(filled).stabilizing as Record<string, unknown>
+    // Map each form key to the request field it lands in.
+    const requestField: Record<string, string> = {
+      stLength: 'length',
+      stSurfaceWidth: 'surfaceWidth',
+      stDepth: 'depth',
+      stDistanceToSource: 'distanceToSource',
+      stActualCost: 'actualCost',
+      stOtherTransfer: 'otherTransfer',
+      stTtTransfer: 'ttTransfer',
+    }
+    const zeroed = Object.keys(requestField).filter((key) => sent[requestField[key]] === 0)
+    expect(zeroed.sort()).toEqual([...BALLAST_ZEROED_FIELDS].sort())
+    // And the one deliberately left out is genuinely still carried.
+    expect(BALLAST_ZEROED_FIELDS).not.toContain('stTtTransfer')
+    expect(sent.ttTransfer).toBe(750)
   })
 
   test('P2 — both N and D force the material to NA in the UI', () => {

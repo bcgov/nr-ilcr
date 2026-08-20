@@ -188,6 +188,20 @@ export const ballastMaterialRequired = (methodCode: string): boolean => {
   return code === '' || code === 'C'
 }
 
+/**
+ * The Additional Stabilizing figures ballast method `N` stores as zero, so the form can disable
+ * exactly the inputs whose entry would be discarded. `stTtTransfer` is deliberately ABSENT: the
+ * server keeps it on the `N` branch, so it stays editable.
+ */
+export const BALLAST_ZEROED_FIELDS = [
+  'stLength',
+  'stSurfaceWidth',
+  'stDepth',
+  'stDistanceToSource',
+  'stActualCost',
+  'stOtherTransfer',
+] as const
+
 /** The material code the server substitutes on the `N` and `D` branches. */
 export const BALLAST_MATERIAL_NA = 'NA'
 
@@ -197,7 +211,11 @@ export const ballastForcesMaterialNa = (methodCode: string): boolean => {
   return code === 'N' || code === 'D'
 }
 
-/** Ballast method `N` is the branch whose dimensions and two costs the server forces to zero. */
+/**
+ * Ballast method `N` is the branch whose dimensions and two costs the server forces to zero. The
+ * MATERIAL is not this branch's business — `D` forces that too, so it goes through
+ * {@link ballastForcesMaterialNa}.
+ */
 export const ballastZeroesFigures = (methodCode: string): boolean =>
   methodCode.trim().toUpperCase() === 'N'
 
@@ -580,10 +598,19 @@ const buildSubGrade = (form: RoadDetailFormValues): SubGradeRequest => ({
  */
 const buildStabilizing = (form: RoadDetailFormValues): StabilizingRequest => {
   const method = form.stBallastMethodCode.trim()
+  // BOTH `N` and `D` have the material forced to `NA` server-side
+  // (`Schedule10Service.java:557-560`), so both must send it. Mirroring only `N` left `D` with the
+  // exact echo mismatch the mirroring exists to prevent: the combo is disabled on `D`, but the form
+  // still held whatever material was picked BEFORE `D` was chosen, and that value was sent and then
+  // silently replaced. Only the FIGURES are `N`-specific.
+  const ballastMaterialCode = ballastForcesMaterialNa(method)
+    ? BALLAST_MATERIAL_NA
+    : blankToNull(form.stBallastMaterialCode)
+
   if (ballastZeroesFigures(method)) {
     return {
       ballastMethodCode: method,
-      ballastMaterialCode: BALLAST_MATERIAL_NA,
+      ballastMaterialCode,
       length: 0,
       surfaceWidth: 0,
       depth: 0,
@@ -596,7 +623,7 @@ const buildStabilizing = (form: RoadDetailFormValues): StabilizingRequest => {
   }
   return {
     ballastMethodCode: method,
-    ballastMaterialCode: blankToNull(form.stBallastMaterialCode),
+    ballastMaterialCode,
     length: numberOrNull(form.stLength),
     surfaceWidth: numberOrNull(form.stSurfaceWidth),
     depth: numberOrNull(form.stDepth),
