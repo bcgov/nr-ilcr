@@ -680,23 +680,6 @@ const Schedule6: FC = () => {
     <div className="app-page">
       {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16} className="schedule-6__meta">
-          <dl className="schedule-6__summary">
-            <div className="schedule-6__field">
-              <dt>Mill</dt>
-              <dd>{data.millId}</dd>
-            </div>
-            <div className="schedule-6__field">
-              <dt>Reporting Year</dt>
-              <dd>{data.year}</dd>
-            </div>
-            <div className="schedule-6__field">
-              <dt>Status</dt>
-              <dd>{data.trackStatus ?? '—'}</dd>
-            </div>
-          </dl>
-        </Column>
-
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {actionError && (
           <NotificationColumn kind="error" title="Action failed" subtitle={actionError} />
