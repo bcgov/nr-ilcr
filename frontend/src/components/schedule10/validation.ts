@@ -14,7 +14,7 @@ import type {
   StabilizingRequest,
   SubGradeRequest,
 } from '@/interfaces/Schedule10Request'
-import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
+import type { CodeDescription, ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
 import { utf8Length } from '@/utils/forms'
 import { numStrFixed, parseDecimalInput, roundCost } from '@/utils/number'
 
@@ -26,6 +26,12 @@ export const TFL_SENTINEL = 'TFL'
 export const DIVISION_MAX = 20
 export const ROAD_NAME_MAX = 30
 export const COMMENTS_MAX = 3500
+/**
+ * The comments column is 4000 BYTES while the contract caps entry at 3500 CHARACTERS, so the two
+ * limits are not the same number. Checking bytes against 3500 blocked a legal save of any comment
+ * over 3500 bytes but under 3500 characters — i.e. anything with accents or dashes in it.
+ */
+export const COMMENTS_MAX_BYTES = 4000
 export const TFL_MAX = 2
 
 const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -68,6 +74,7 @@ export const SCH10_MESSAGES = {
   volumeRange: 'Entered volume must be between 0 and 9,999,999.',
   percentageRange: 'Entered percentage must be between 0 and 100.',
   sideSlopeRange: 'Side slope (%): percentage must be between 0 and 100.',
+  staleRecord: 'This schedule was changed by another user. Please reload and try again.',
 } as const
 
 /**
@@ -127,6 +134,13 @@ export type RoadDetailFormValues = {
   roadName: string
   roadLifetimeCode: string
   becbiogeoCatalogueId: string
+  /**
+   * The stored classification's own label, kept only so a DE-LISTED one still renders as text. The
+   * offerable list carries a label for everything it offers; a row whose classification has since
+   * been de-listed is absent from that list, and dropping this left the combo showing the raw
+   * catalogue id. Display only — never validated, never sent.
+   */
+  becbiogeoLabel: string
   relSoilMoistRgmClsCode: string
   sideSlopePct: string
   solidRockPct: string
@@ -174,6 +188,15 @@ export const ballastMaterialRequired = (methodCode: string): boolean => {
   return code === '' || code === 'C'
 }
 
+/** The material code the server substitutes on the `N` and `D` branches. */
+export const BALLAST_MATERIAL_NA = 'NA'
+
+/** True when the ballast method forces the material to `NA`: both `N` and `D` do. */
+export const ballastForcesMaterialNa = (methodCode: string): boolean => {
+  const code = methodCode.trim().toUpperCase()
+  return code === 'N' || code === 'D'
+}
+
 /** Ballast method `N` is the branch whose dimensions and two costs the server forces to zero. */
 export const ballastZeroesFigures = (methodCode: string): boolean =>
   methodCode.trim().toUpperCase() === 'N'
@@ -187,22 +210,36 @@ export const ballastZeroesFigures = (methodCode: string): boolean =>
  * pairs — a page on TSA `02` carrying block `01D` — because the TSA leg was never validated, and
  * narrowing them away would blank a field that does hold a value and silently drop it on the next
  * save. The narrowing governs what can be CHOSEN; it must not hide what is already there.
+ *
+ * That holds for a block absent from the CATALOGUE too, not just one off the chosen branch. Filtering
+ * the served list for the stored code yields nothing when the code was never served — delivery page
+ * 8904 stores TSB `16Z`, which no longer appears in the code table — and the field then renders blank
+ * over a value that is really there. The stored code is synthesised as its own option instead, showing
+ * the bare code because that is all the document carries about it.
  */
-export const supplyBlocksFor = <T extends { readonly code: string }>(
-  blocks: readonly T[],
+export const supplyBlocksFor = (
+  blocks: readonly CodeDescription[],
   tsaOrTfl: string,
   selectedCode = '',
-): T[] => {
+): CodeDescription[] => {
   const tsa = tsaOrTfl.trim()
   const selected = selectedCode.trim()
-  const stored = selected === '' ? [] : blocks.filter((block) => block.code === selected)
+  const stored: CodeDescription[] =
+    selected === ''
+      ? []
+      : [
+          blocks.find((block) => block.code === selected) ?? {
+            code: selected,
+            description: selected,
+          },
+        ]
 
   if (tsa === '' || isTflLocated(tsa)) {
     return stored
   }
 
   const offered = blocks.filter((block) => block.code.startsWith(tsa))
-  const missing = stored.filter((block) => !offered.includes(block))
+  const missing = stored.filter((block) => !offered.some((o) => o.code === block.code))
   return [...offered, ...missing]
 }
 
@@ -232,6 +269,7 @@ export const emptyRoadDetailForm = (): RoadDetailFormValues => ({
   roadName: '',
   roadLifetimeCode: '',
   becbiogeoCatalogueId: '',
+  becbiogeoLabel: '',
   relSoilMoistRgmClsCode: '',
   sideSlopePct: '',
   solidRockPct: '',
@@ -275,6 +313,7 @@ export const formFromRoadDetail = (detail: RoadDetail): RoadDetailFormValues => 
     detail.becClassification == null
       ? ''
       : String(detail.becClassification.biogeoclimaticCatalogueId),
+  becbiogeoLabel: detail.becClassification?.label ?? '',
   relSoilMoistRgmClsCode: detail.relSoilMoistRgmClsCode ?? '',
   sideSlopePct: numStrFixed(detail.sideSlopePct, MASK_DIGITS.sideSlopePct),
   solidRockPct: numStrFixed(detail.materialComposition.solidRockPct, MASK_DIGITS.solidRockPct),
@@ -365,8 +404,16 @@ export function validatePage(form: PageFormValues): PageErrors {
   }
 
   // The TFL number is only meaningful on its own branch; the other branch clears it before sending.
-  if (isTflLocated(form.tsaOrTfl) && form.tflNumberCode.trim().length > TFL_MAX) {
-    errors.tflNumberCode = SCH10_MESSAGES.tflInvalid
+  //
+  // The over-length check alone was dead code — the control carries maxLength={TFL_MAX}, so
+  // `length > TFL_MAX` can never be true from the keyboard. What DOES reach the server is a blank or
+  // non-numeric TFL on the TFL branch, which is exactly the doomed round trip this module exists to
+  // stop, so that is what is gated. Legacy's own field is a 2-digit numeric.
+  if (isTflLocated(form.tsaOrTfl)) {
+    const tfl = form.tflNumberCode.trim()
+    if (tfl === '' || tfl.length > TFL_MAX || !/^\d+$/.test(tfl)) {
+      errors.tflNumberCode = SCH10_MESSAGES.tflInvalid
+    }
   }
 
   return errors
@@ -382,7 +429,10 @@ export function validateRoadDetail(form: RoadDetailFormValues): RoadDetailErrors
     form.roadName.trim().length > ROAD_NAME_MAX ||
     utf8Length(form.roadName.trim()) > ROAD_NAME_MAX
   ) {
-    errors.roadName = SCH10_MESSAGES.invalidCodeValue
+    // The server rejects an over-length road name with the required-field text, not the off-list
+    // text — `invalidCodeValue` belongs to the code-backed controls and reads nonsensically on a
+    // free-text field ("A valid value must be selected from the list" beside a name box).
+    errors.roadName = SCH10_MESSAGES.roadNameRequired
   }
   if (form.roadLifetimeCode.trim() === '') {
     errors.roadLifetimeCode = SCH10_MESSAGES.roadTypeRequired
@@ -471,7 +521,7 @@ export function validateRoadDetail(form: RoadDetailFormValues): RoadDetailErrors
   }
 
   const comments = form.comments.trim()
-  if (comments.length > COMMENTS_MAX || utf8Length(comments) > COMMENTS_MAX) {
+  if (comments.length > COMMENTS_MAX || utf8Length(comments) > COMMENTS_MAX_BYTES) {
     errors.comments = SCH10_MESSAGES.commentsMaxLength
   }
 
@@ -517,17 +567,43 @@ const buildSubGrade = (form: RoadDetailFormValues): SubGradeRequest => ({
   lessEndHaul: costOrNull(form.lessEndHaul),
 })
 
-const buildStabilizing = (form: RoadDetailFormValues): StabilizingRequest => ({
-  ballastMethodCode: form.stBallastMethodCode.trim(),
-  ballastMaterialCode: blankToNull(form.stBallastMaterialCode),
-  length: numberOrNull(form.stLength),
-  surfaceWidth: numberOrNull(form.stSurfaceWidth),
-  depth: numberOrNull(form.stDepth),
-  distanceToSource: numberOrNull(form.stDistanceToSource),
-  actualCost: costOrNull(form.stActualCost),
-  ttTransfer: costOrNull(form.stTtTransfer),
-  otherTransfer: costOrNull(form.stOtherTransfer),
-})
+/**
+ * Additional Stabilizing, with ballast method `N` mirrored rather than left to the server.
+ *
+ * On `N` the server forces the four dimensions, `actualCost` and `otherTransfer` to zero and the
+ * material to `NA` — but NOT `ttTransfer`, which is stored as submitted. Sending what the reporter
+ * typed and letting the server silently overwrite it meant the echo differed from the form with no
+ * explanation; mirroring the coercion means the value the reporter sees is the value that persists.
+ * `D` coerces the material only, which is the server's own affair and is left to it.
+ */
+const buildStabilizing = (form: RoadDetailFormValues): StabilizingRequest => {
+  const method = form.stBallastMethodCode.trim()
+  if (ballastZeroesFigures(method)) {
+    return {
+      ballastMethodCode: method,
+      ballastMaterialCode: BALLAST_MATERIAL_NA,
+      length: 0,
+      surfaceWidth: 0,
+      depth: 0,
+      distanceToSource: 0,
+      actualCost: 0,
+      // Deliberately NOT zeroed — the server keeps this one on the `N` branch.
+      ttTransfer: costOrNull(form.stTtTransfer),
+      otherTransfer: 0,
+    }
+  }
+  return {
+    ballastMethodCode: method,
+    ballastMaterialCode: blankToNull(form.stBallastMaterialCode),
+    length: numberOrNull(form.stLength),
+    surfaceWidth: numberOrNull(form.stSurfaceWidth),
+    depth: numberOrNull(form.stDepth),
+    distanceToSource: numberOrNull(form.stDistanceToSource),
+    actualCost: costOrNull(form.stActualCost),
+    ttTransfer: costOrNull(form.stTtTransfer),
+    otherTransfer: costOrNull(form.stOtherTransfer),
+  }
+}
 
 const buildMaterial = (form: RoadDetailFormValues): MaterialCompositionRequest => ({
   solidRockPct: costOrNull(form.solidRockPct),

@@ -2,13 +2,16 @@ import type { FC, ReactNode } from 'react'
 import { Select, SelectItem, TextArea, TextInput } from '@carbon/react'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
 import CodeComboBox from '@/components/core/CodeComboBox'
+import type { ComboMatchMode } from '@/components/core/CodeComboBox'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import { fmtCurrency, fmtNumber } from '@/utils/number'
+import { fmtCurrency, fmtWholeCost } from '@/utils/number'
 import type { MaskedField, RoadDetailErrors, RoadDetailFormValues } from './validation'
 import {
   COMMENTS_MAX,
   ROAD_NAME_MAX,
+  ballastForcesMaterialNa,
   ballastMaterialRequired,
+  ballastZeroesFigures,
   previewCostPerVolumePerLength,
   previewMaterialTotal,
   previewStabilizingCostPerLength,
@@ -70,15 +73,20 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   const id = (name: string) => `${idPrefix}-${name}`
 
   // A stored classification may have been de-listed since it was saved, in which case it is absent
-  // from the offerable list. Appending it keeps the field showing what the row actually holds
-  // instead of appearing unselected.
+  // from the offerable list. Appending it keeps the field showing what the row actually holds instead
+  // of appearing unselected — and it is appended with the row's OWN label, which the response carries
+  // on `becClassification` even for a de-listed value. Falling back to the catalogue id put a bare
+  // number where every other option reads `SBSmk1`.
   const becOptions: CodeDescription[] = codeLists.becClassifications.map((bec) => ({
     code: String(bec.biogeoclimaticCatalogueId),
     description: bec.label ?? String(bec.biogeoclimaticCatalogueId),
   }))
   const selectedBec = form.becbiogeoCatalogueId
   if (selectedBec !== '' && !becOptions.some((option) => option.code === selectedBec)) {
-    becOptions.push({ code: selectedBec, description: selectedBec })
+    becOptions.push({
+      code: selectedBec,
+      description: form.becbiogeoLabel === '' ? selectedBec : form.becbiogeoLabel,
+    })
   }
 
   const describe = (options: readonly CodeDescription[], code: string): string =>
@@ -136,6 +144,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
     key: keyof RoadDetailFormValues,
     label: string,
     options: readonly CodeDescription[],
+    opts: { readonly matchMode?: ComboMatchMode; readonly disabled?: boolean } = {},
   ): ReactNode =>
     readOnly ? (
       readOnlyField(label, form[key] === '' ? '' : describe(options, form[key]))
@@ -146,13 +155,19 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           titleText={label}
           items={[...options]}
           selectedCode={form[key]}
-          disabled={disabled}
+          matchMode={opts.matchMode}
+          disabled={disabled || (opts.disabled ?? false)}
           invalid={Boolean(errors[key])}
           invalidText={errors[key]}
           onSelect={(code) => onChange(key, code)}
         />
       </Field>
     )
+
+  // `N` and `D` both have their material forced to `NA`; `N` additionally has its dimensions and two
+  // of its three costs zeroed, which `buildStabilizing` now sends rather than leaving to the server.
+  const materialForced = ballastForcesMaterialNa(form.stBallastMethodCode)
+  const figuresZeroed = ballastZeroesFigures(form.stBallastMethodCode)
 
   const endHaulRate = previewCostPerVolumePerLength(
     form.lessEndHaul,
@@ -173,7 +188,8 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           {combo('roadLifetimeCode', 'Road Type', codeLists.roadLifetimes)}
 
           <SubHeading>Moisture</SubHeading>
-          {combo('becbiogeoCatalogueId', 'BEC Zone', becOptions)}
+          {/* AC5: prefix match, not substring — typing `SBS` must not offer `ESSFmc`. */}
+          {combo('becbiogeoCatalogueId', 'BEC Zone', becOptions, { matchMode: 'prefix' })}
           {combo('relSoilMoistRgmClsCode', 'RSMR Class', codeLists.rsmrClasses)}
 
           <SubHeading>Shoulder</SubHeading>
@@ -196,14 +212,14 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           {numeric('sgActualCost', 'Sub-Grade Actual Cost', '$')}
           {numeric('sgTtTransfer', 'Sub-Grade TtT Transfer', '$')}
           {numeric('sgOtherTransfer', 'Sub-Grade Other Transfer', '$')}
-          <Derived label="Total Costs ($)" value={fmtCurrency(previewSubGradeTotalCosts(form))} />
+          <Derived label="Total Costs ($)" value={fmtWholeCost(previewSubGradeTotalCosts(form))} />
           {numeric('lessBridges', 'Less Bridges', '$')}
           {numeric('lessCulverts', 'Less Culverts', '$')}
           {numeric('lessLandings', 'Less Landings', '$')}
           {numeric('lessEndHaul', 'Less End Haul', '$')}
           {numeric('lessOverland', 'Less Overland', '$')}
           {numeric('lessOtherEng', 'Less OtherEng', '$')}
-          <Derived label="Total ($)" value={fmtCurrency(previewSubGradeTotal(form))} />
+          <Derived label="Total ($)" value={fmtWholeCost(previewSubGradeTotal(form))} />
           <Derived label="$/km" value={fmtCurrency(previewSubGradeCostPerLength(form))} />
         </Section>
 
@@ -211,13 +227,17 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           {combo('stBallastMethodCode', 'Ballast Method Code', codeLists.ballastMethods)}
           {numeric('stLength', 'Additional Stabilizing Length', 'km')}
           {numeric('stSurfaceWidth', 'Additional Stabilizing Surface Width', 'm')}
-          {combo('stBallastMaterialCode', 'Type', codeLists.ballastMaterials)}
+          {/* The server replaces the material with `NA` on both `N` and `D`, so offering a choice
+              here only invites one that will be discarded. */}
+          {combo('stBallastMaterialCode', 'Type', codeLists.ballastMaterials, {
+            disabled: materialForced,
+          })}
           {numeric('stDepth', 'Depth', 'm')}
           {numeric('stDistanceToSource', 'Distance to Source', 'km')}
           {numeric('stActualCost', 'Additional Stabilizing Actual Costs', '$')}
           {numeric('stTtTransfer', 'Additional Stabilizing TtT Transfer', '$')}
           {numeric('stOtherTransfer', 'Additional Stabilizing Other Transfer', '$')}
-          <Derived label="Total ($)" value={fmtCurrency(previewStabilizingTotal(form))} />
+          <Derived label="Total ($)" value={fmtWholeCost(previewStabilizingTotal(form))} />
           <Derived label="$/km" value={fmtCurrency(previewStabilizingCostPerLength(form))} />
         </Section>
       </div>
@@ -248,14 +268,14 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       <div className="schedule-10__fields">
         {numeric('endHaulDistance', 'End Haul Distance', 'km')}
         {numeric('endHaulVolume', 'End Haul Volume', 'm3')}
-        <Derived label="$/m3/km" value={fmtNumber(endHaulRate)} />
+        <Derived label="$/m3/km" value={fmtCurrency(endHaulRate)} />
       </div>
 
       <h4 className="schedule-10__detail-heading">Overland</h4>
       <div className="schedule-10__fields">
         {numeric('overlandDistance', 'Overland Distance', 'km')}
         {numeric('overlandVolume', 'Overland Volume', 'm3')}
-        <Derived label="$/m3/km" value={fmtNumber(overlandRate)} />
+        <Derived label="$/m3/km" value={fmtCurrency(overlandRate)} />
       </div>
 
       <div className="schedule-10__comments">
@@ -282,9 +302,19 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
         )}
       </div>
 
-      {!readOnly && ballastMaterialRequired(form.stBallastMethodCode) && (
+      {/* Only once a method is actually chosen: a BLANK code lands in the `C` branch server-side, so
+          `ballastMaterialRequired('')` is true and the hint fired on every untouched new road. */}
+      {!readOnly &&
+        form.stBallastMethodCode.trim() !== '' &&
+        ballastMaterialRequired(form.stBallastMethodCode) && (
+          <p className="schedule-10__hint">
+            A material Type is required for this Additional Stabilizing code.
+          </p>
+        )}
+      {!readOnly && figuresZeroed && (
         <p className="schedule-10__hint">
-          A material Type is required for this Additional Stabilizing code.
+          This Additional Stabilizing code stores its dimensions, actual cost and other transfer as
+          zero.
         </p>
       )}
     </div>

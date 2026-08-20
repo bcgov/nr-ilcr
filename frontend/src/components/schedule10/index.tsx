@@ -45,6 +45,7 @@ import type {
 } from './validation'
 import {
   MASK_DIGITS,
+  SCH10_MESSAGES,
   buildPageBody,
   buildRoadDetailBody,
   emptyPageForm,
@@ -64,6 +65,9 @@ const CHECK_STATUS_PATH = `${SCHEDULE10_PATH}/check-status`
 // Client-only chrome; every success and failure line renders from the API, never hardcoded.
 const EMPTY_LIST = 'No records found.'
 const NAV_UNSAVED = 'Any unsaved data will be lost. Are you sure you would like to continue?'
+
+/** Editing any of these invalidates the server-derived Road Group shown beside them. */
+const LOCATION_FIELDS = new Set<keyof PageFormValues>(['tsaOrTfl', 'supplyBlock', 'tflNumberCode'])
 
 const EMPTY_CODE_LISTS: Schedule10CodeLists = {
   forestRegions: [],
@@ -104,6 +108,7 @@ const Schedule10: FC = () => {
     actionError,
     checkResult,
     setMessage,
+    setActionError,
     setCheckResult,
     clearBanners,
     resetBanners,
@@ -120,6 +125,11 @@ const Schedule10: FC = () => {
   const [roadForm, setRoadForm] = useState<RoadDetailFormValues>(emptyRoadDetailForm)
   const [roadErrors, setRoadErrors] = useState<RoadDetailErrors>({})
 
+  // Set the moment the location is edited: the Road Group on screen was derived by the server from
+  // the location as STORED, so any edit makes it stale. Legacy recomputed it on every change; the
+  // document does not serve the mapping to do that, so it renders blank until the save echo returns
+  // the server's own value. AC6 permits blank; it does not permit a value that no longer matches.
+  const [roadGroupStale, setRoadGroupStale] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   // A pending level change, held while the unsaved-changes confirmation is open.
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null)
@@ -129,6 +139,7 @@ const Schedule10: FC = () => {
     setOpenPageId(null)
     setPageForm(emptyPageForm())
     setPageErrors({})
+    setRoadGroupStale(false)
   }, [])
 
   const closeRoadPanel = useCallback(() => {
@@ -183,13 +194,18 @@ const Schedule10: FC = () => {
       // Switching branches clears the half that no longer applies, so a stale value never reaches
       // the wire and the disabled control never shows a leftover.
       if (key === 'tsaOrTfl') {
+        const chosen = value.trim()
         if (isTflLocated(value)) {
           next.supplyBlock = ''
         } else {
           next.tflNumberCode = ''
-          // Supply blocks are narrowed to the chosen TSA, so a block from the previous TSA no
-          // longer belongs to the list it came from.
-          if (!prev.supplyBlock.startsWith(value.trim())) {
+          // Supply blocks are narrowed to the chosen TSA, so a block from the previous TSA no longer
+          // belongs to the list it came from. Only an actual CHANGE of TSA can orphan a block:
+          // re-selecting the same TSA must leave a stored cross-TSA pair (delivery holds them —
+          // TSA `02` carrying block `01D`) exactly as it was. Clearing the control entirely orphans
+          // any block, which `startsWith('')` would have let through since it is always true.
+          const tsaChanged = chosen !== prev.tsaOrTfl.trim()
+          if (chosen === '' || (tsaChanged && !prev.supplyBlock.startsWith(chosen))) {
             next.supplyBlock = ''
           }
         }
@@ -197,6 +213,12 @@ const Schedule10: FC = () => {
       return next
     })
     setPageErrors((prev) => clearFieldError(prev, key))
+    // A location edit invalidates the server-derived Road Group, and any page edit invalidates a
+    // check-status result the same way a road edit does (R5).
+    if (LOCATION_FIELDS.has(key)) {
+      setRoadGroupStale(true)
+    }
+    setCheckResult(null)
   }
 
   const setRoadField = (key: keyof RoadDetailFormValues, value: string) => {
@@ -233,6 +255,7 @@ const Schedule10: FC = () => {
     setOpenPageId(null)
     setPageForm(emptyPageForm())
     setPageErrors({})
+    setRoadGroupStale(false)
   }
 
   const openPage = (page: ConstructionPage, editable: boolean) => {
@@ -241,6 +264,7 @@ const Schedule10: FC = () => {
     setOpenPageId(page.pageId)
     setPageForm(formFromPage(page))
     setPageErrors({})
+    setRoadGroupStale(false)
   }
 
   const savePage = (pages: readonly ConstructionPage[]) => {
@@ -266,8 +290,11 @@ const Schedule10: FC = () => {
     }
     const stored = pages.find((page) => page.pageId === openPageId)
     // A missing lock token is a real state, not something to coerce: a fabricated 0 would silently
-    // defeat the stale-edit check.
+    // defeat the stale-edit check. Returning quietly was worse than the coercion, though — the user
+    // pressed Save and nothing at all happened. Say so, using the reload text this case means.
     if (!stored || stored.revisionCount == null) {
+      setMessage(null)
+      setActionError(SCH10_MESSAGES.staleRecord)
       return
     }
     run(
@@ -282,6 +309,8 @@ const Schedule10: FC = () => {
           const refreshed = doc.pages.find((page) => page.pageId === stored.pageId)
           if (refreshed) {
             setPageForm(formFromPage(refreshed))
+            // The echo carries the server's re-derived Road Group, so it is authoritative again.
+            setRoadGroupStale(false)
           }
         },
       },
@@ -325,6 +354,8 @@ const Schedule10: FC = () => {
     }
     const stored = page.roadDetails.find((detail) => detail.roadDetailId === openRoadId)
     if (!stored || stored.revisionCount == null) {
+      setMessage(null)
+      setActionError(SCH10_MESSAGES.staleRecord)
       return
     }
     run(
@@ -503,6 +534,10 @@ const Schedule10: FC = () => {
               onBack={() =>
                 guardLevelChange(roadPanelMode !== 'closed', roadPanelMode === 'view', () => {
                   closeRoadPanel()
+                  // A delete confirmation left open across a level change would still be mounted
+                  // over the page list, and its Yes would silently do nothing — confirmDelete needs
+                  // the road level's pageId.
+                  setDeleteTarget(null)
                   void navigate({ to: '/schedule-10', search: {}, replace: true })
                 })
               }
@@ -613,7 +648,7 @@ const Schedule10: FC = () => {
                 codeLists={codeLists}
                 disabled={controlsDisabled}
                 readOnly={pagePanelMode === 'view'}
-                roadGroup={openStoredPage?.roadGroup ?? null}
+                roadGroup={roadGroupStale ? null : (openStoredPage?.roadGroup ?? null)}
                 onChange={setPageField}
               />
 
@@ -625,6 +660,11 @@ const Schedule10: FC = () => {
                     kind="ghost"
                     onClick={() =>
                       guardLevelChange(true, pagePanelMode === 'view', () => {
+                        // Discard before navigating, exactly as the road level's Back does. Without
+                        // this the panel still holds the edit the user was told was lost, and coming
+                        // back and pressing Save writes it against a freshly re-read revisionCount,
+                        // so the optimistic lock passes and the discarded data persists.
+                        closePagePanel()
                         void navigate({
                           to: '/schedule-10',
                           search: { pageId: openStoredPage.pageId },
@@ -638,15 +678,15 @@ const Schedule10: FC = () => {
               )}
 
               <div className="schedule-10__panel-actions">
-                {pagePanelMode !== 'view' && (
-                  <Button
-                    kind="primary"
-                    disabled={controlsDisabled}
-                    onClick={() => savePage(pages)}
-                  >
-                    Save
-                  </Button>
-                )}
+                {/* AC11 and deviation 7: every write control stays RENDERED and disabled outside
+                    Draft, never removed from the DOM. `savePage` refuses a `view` panel anyway. */}
+                <Button
+                  kind="primary"
+                  disabled={controlsDisabled || pagePanelMode === 'view'}
+                  onClick={() => savePage(pages)}
+                >
+                  Save
+                </Button>
                 {/* Close discards silently, as legacy does — only the two level changes confirm. */}
                 <Button kind="secondary" onClick={closePagePanel}>
                   Close

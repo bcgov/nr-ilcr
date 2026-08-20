@@ -8,7 +8,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { getDefaultNormalizer, render, screen, waitFor } from '@/test-utils'
+import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
@@ -187,6 +187,18 @@ const openPagePanel = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
 }
 
+const fillMinimalRoad = async () => {
+  await userEvent.type(await screen.findByLabelText('Road Name'), 'Mainline C')
+  await userEvent.click(screen.getByRole('combobox', { name: 'Road Type' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'Permanent' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'BEC Zone' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'ICHdw1' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'RSMR Class' }))
+  await userEvent.click(await screen.findByRole('option', { name: '1 - Very Dry' }))
+  await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+  await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+}
+
 describe('rendering the document', () => {
   test('lists construction pages with their labels verbatim', async () => {
     renderSchedule10()
@@ -284,13 +296,38 @@ describe('the page panel', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeDisabled()
   })
 
-  test('renders a derived road group read-only, and blank when it is absent', async () => {
-    server.use(getHandler(doc({ pages: [page({ roadGroup: null })] })))
+  test('renders the derived road group read-only, not as an input', async () => {
     renderSchedule10()
     await openPagePanel()
     expect(await screen.findByText('Road Group')).toBeInTheDocument()
-    // An unmapped location is a saved state, not a failure.
-    expect(screen.queryByText(/road group.*(error|invalid)/i)).not.toBeInTheDocument()
+    expect(screen.getByText('11')).toBeInTheDocument()
+    // Derived values render as TEXT so a screen reader announces a value, not a dead control.
+    expect(screen.queryByLabelText('Road Group')).not.toBeInTheDocument()
+  })
+
+  test('renders an absent road group as blank, never as an error', async () => {
+    server.use(getHandler(doc({ pages: [page({ roadGroup: null })] })))
+    renderSchedule10()
+    await openPagePanel()
+    // An unmapped location is a saved state, not a failure: the em dash placeholder, no value.
+    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    expect(screen.queryByText('11')).not.toBeInTheDocument()
+  })
+
+  test('blanks the road group as soon as the location is edited', async () => {
+    // The group on screen was derived by the server from the location as STORED; editing the
+    // location makes it stale, and a stale group is worse than none (review M4).
+    renderSchedule10()
+    await openPagePanel()
+    expect(await screen.findByText('11')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('11')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Road Group')).toBeInTheDocument()
   })
 
   test('creates a page and sends the body with mill and year', async () => {
@@ -763,23 +800,580 @@ describe('read-only rendering outside Draft', () => {
     expect(screen.getByRole('button', { name: 'Check Status' })).toBeDisabled()
   })
 
-  test('View renders values as text with no Save', async () => {
+  test('View renders values as text and keeps Save rendered but disabled', async () => {
     server.use(getHandler(doc({ editable: false, trackStatus: 'S' })))
     renderSchedule10()
     await userEvent.click(await screen.findByRole('button', { name: 'View' }))
 
     expect(await screen.findByText('North Division')).toBeInTheDocument()
     expect(screen.queryByLabelText('Division')).not.toBeInTheDocument()
-    // Saving is the one action a read-only panel drops entirely; Close stays so the panel can be
-    // dismissed.
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    // AC11 and deviation 7: DISABLED, never removed. Removing it left a screen reader with no
+    // evidence the action exists, and contradicted the AC this page inherited from Story 12.3.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled()
+  })
+
+  test('keeps the road-level Save rendered but disabled', async () => {
+    server.use(getHandler(doc({ editable: false, trackStatus: 'S' })))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'View' }))
+
+    expect(await screen.findByText('Mainline A')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add Road' })).toBeDisabled()
   })
 
   test('leaves Back enabled at the road level', async () => {
     server.use(getHandler(doc({ editable: false, trackStatus: 'S' })))
     renderSchedule10('/schedule-10?pageId=8900')
     expect(await screen.findByRole('button', { name: 'Back' })).toBeEnabled()
+  })
+})
+
+describe('every endpoint carries the working context (guardrail R12)', () => {
+  // Guardrail R12: MSW matches a path regardless of its query string, so a handler that does not
+  // INSPECT request.url passes while the real backend 400s the write. Only 2 of the 9 endpoints were
+  // asserted; this pins all of them in one place so a dropped `&year=` cannot pass again.
+  const expectContext = (url: string | null) => {
+    expect(url).not.toBeNull()
+    const params = new global.URL(url as string).searchParams
+    expect(params.get('millId')).toBe(String(DEFAULT_MILL_ID))
+    expect(params.get('year')).toBe(String(DEFAULT_YEAR))
+  }
+
+  test('GET the document', async () => {
+    let seen: string | null = null
+    server.use(
+      http.get(URL, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await screen.findByText(page().pageLabel)
+    expectContext(seen)
+  })
+
+  test('POST a page', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post(PAGES_URL, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add New Page' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Region' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Northern Interior' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Arrow TSA' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('PUT a page', async () => {
+    let seen: string | null = null
+    server.use(
+      http.put(`${PAGES_URL}/8900`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await openPagePanel()
+    await screen.findByDisplayValue('North Division')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('POST a page copy', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post(`${PAGES_URL}/8900/copy`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('DELETE a page', async () => {
+    let seen: string | null = null
+    server.use(
+      http.delete(`${PAGES_URL}/8900`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc({ pages: [] }))
+      }),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Yes' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('POST a road detail', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post(`${PAGES_URL}/8900/road-details`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
+    await fillMinimalRoad()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('PUT a road detail', async () => {
+    let seen: string | null = null
+    server.use(
+      http.put(`${PAGES_URL}/8900/road-details/8910`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('DELETE a road detail', async () => {
+    let seen: string | null = null
+    server.use(
+      http.delete(`${PAGES_URL}/8900/road-details/8910`, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Yes' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+
+  test('POST check status', async () => {
+    let seen: string | null = null
+    server.use(
+      http.post(CHECK_URL, ({ request }) => {
+        seen = request.url
+        return HttpResponse.json({ outcome: 'MET', messages: [], pages: [] })
+      }),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+    await waitFor(() => {
+      expectContext(seen)
+    })
+  })
+})
+
+describe('regressions from the 2026-08-19 code review', () => {
+  test('H1 — the unsaved-changes confirmation actually discards the page edit', async () => {
+    // Confirming "Any unsaved data will be lost" then coming back must NOT find the edit still in
+    // the panel: Save would then write it against a freshly re-read revisionCount, so the lock
+    // passes and data the user was told was discarded is persisted.
+    renderSchedule10()
+    await openPagePanel()
+    const division = await screen.findByDisplayValue('North Division')
+    await userEvent.clear(division)
+    await userEvent.type(division, 'DISCARDED')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Enter Road Data (1)' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Yes' }))
+    await screen.findByRole('button', { name: 'Add Road' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await screen.findByText('Page Summary')
+    expect(screen.queryByDisplayValue('DISCARDED')).not.toBeInTheDocument()
+  })
+
+  test('H2 — a stored supply block absent from the catalogue still renders', async () => {
+    // Page 8904 of delivery stores TSB `16Z`, which the code table no longer serves. Filtering the
+    // SERVED list for it yielded [] and the field rendered blank over a real value.
+    server.use(getHandler(doc({ pages: [page({ tsaNumber: '16', tsbNumberCode: '16Z' })] })))
+    renderSchedule10()
+    await openPagePanel()
+    expect(await screen.findByDisplayValue('16Z')).toBeInTheDocument()
+  })
+
+  test('H3 — re-selecting the SAME TSA keeps a cross-TSA block', async () => {
+    // The clear was gated on the block not matching the TSA prefix, with no check that the TSA had
+    // changed, so merely touching the control dropped a stored cross-TSA pair.
+    let body: unknown = null
+    server.use(
+      getHandler(doc({ pages: [page({ tsaNumber: '16', tsbNumberCode: '01A' })] })),
+      http.put(`${PAGES_URL}/8900`, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await openPagePanel()
+    await screen.findByDisplayValue('Arrow TSA Block A')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'TSA or TFL' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Lakes TSA' }))
+    expect(screen.getByDisplayValue('Arrow TSA Block A')).toBeInTheDocument()
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+    await waitFor(() => {
+      expect(body).not.toBeNull()
+    })
+    expect(body).toMatchObject({ tsaOrTfl: '16', supplyBlock: '01A' })
+  })
+
+  test('H3 — clearing the TSA control orphans no supply block', async () => {
+    // `''.startsWith` is always true, so clearing the combo left a block with no TSA behind it.
+    renderSchedule10()
+    await openPagePanel()
+    await screen.findByDisplayValue('Arrow TSA Block A')
+
+    // Carbon's own clear affordance, which is the real path to `onSelect('')`; clearing the text
+    // alone leaves the selection intact and fires no change. Scoped to THIS combo — Region and
+    // Supply Block render an identical button.
+    const tsaCombo = screen.getByRole('combobox', { name: 'TSA or TFL' })
+    const clear = within(tsaCombo.closest('.cds--list-box__wrapper') as HTMLElement).getByRole(
+      'button',
+      { name: /clear selected item/i },
+    )
+    await userEvent.click(clear)
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue('Arrow TSA Block A')).not.toBeInTheDocument()
+    })
+  })
+
+  test('M1 — a page with no lock token says so instead of doing nothing', async () => {
+    const spy = vi.fn()
+    server.use(
+      getHandler(doc({ pages: [page({ revisionCount: null as unknown as number })] })),
+      http.put(`${PAGES_URL}/8900`, () => {
+        spy()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10()
+    await openPagePanel()
+    await screen.findByDisplayValue('North Division')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[0])
+
+    expect(
+      await screen.findByText(
+        'This schedule was changed by another user. Please reload and try again.',
+      ),
+    ).toBeInTheDocument()
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test('M11 — editing a page field clears a stale check-status result', async () => {
+    server.use(
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All requirements for this schedule have been met',
+            },
+          ],
+          pages: [],
+        }),
+      ),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+    await screen.findByText('All requirements for this schedule have been met')
+
+    await openPagePanel()
+    await userEvent.type(await screen.findByDisplayValue('North Division'), 'x')
+    await waitFor(() => {
+      expect(
+        screen.queryByText('All requirements for this schedule have been met'),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  test('M13 — a road detail is deleted after the confirmation', async () => {
+    const spy = vi.fn()
+    server.use(
+      http.delete(`${PAGES_URL}/8900/road-details/8910`, () => {
+        spy()
+        return HttpResponse.json({
+          ...doc({ pages: [page({ roadDetails: [], roadDetailCount: 0 })] }),
+          message: { key: 'k', text: 'Data deleted successfully' },
+        })
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    expect(
+      await screen.findByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledTimes(1)
+    })
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+  })
+
+  test('M13 — cancelling a road-detail delete issues no request', async () => {
+    const spy = vi.fn()
+    server.use(
+      http.delete(`${PAGES_URL}/8900/road-details/8910`, () => {
+        spy()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'No' }))
+
+    expect(spy).not.toHaveBeenCalled()
+    expect(screen.getByText('Road #1, Mainline A')).toBeInTheDocument()
+  })
+
+  test('L6 — leaving the road level dismisses an open delete confirmation', async () => {
+    // A confirmation left mounted across a level change sat over the page list, and its Yes did
+    // nothing at all: confirmDelete needs the road level's pageId.
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await screen.findByText('This will delete the current record. Do you want to continue?')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await screen.findByText('Page Summary')
+    expect(
+      screen.queryByText('This will delete the current record. Do you want to continue?'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('P1 — a road-detail issue names the road it belongs to', async () => {
+    // Trap 10: the backend prefixes roadName/subzone with the PAGE label only, so on a multi-road
+    // page the flattened line could not say which road was at fault.
+    server.use(
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'ISSUES',
+          messages: [],
+          pages: [
+            {
+              pageId: 8900,
+              pageNumber: 1,
+              pageLabel: page().pageLabel,
+              met: false,
+              issues: [],
+              roadDetails: [
+                {
+                  roadDetailId: 8910,
+                  rowNumber: 1,
+                  roadDetailLabel: 'Road #1, Mainline A',
+                  met: false,
+                  issues: [
+                    {
+                      field: 'roadName',
+                      message: {
+                        key: 'missingRequiredFieldMsg',
+                        text: 'Road Name: Value Required',
+                      },
+                    },
+                  ],
+                },
+                {
+                  roadDetailId: 8911,
+                  rowNumber: 2,
+                  roadDetailLabel: 'Road #2, Spur B',
+                  met: false,
+                  issues: [
+                    {
+                      field: 'subzone',
+                      message: { key: 'missingRequiredFieldMsg', text: 'Subzone: Value Required' },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    )
+    renderSchedule10()
+    await userEvent.click(await screen.findByRole('button', { name: 'Check Status' }))
+
+    expect(
+      await screen.findByText('Road #1, Mainline A: Road Name: Value Required'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Road #2, Spur B: Subzone: Value Required')).toBeInTheDocument()
+  })
+
+  test('P4 — the BEC autocomplete matches on a prefix, not a substring (AC5)', async () => {
+    server.use(
+      getHandler(
+        doc({
+          codeLists: {
+            ...doc().codeLists,
+            becClassifications: [
+              {
+                biogeoclimaticCatalogueId: 8801,
+                becZoneCode: 'ICH',
+                subzone: 'dw',
+                variant: '1',
+                phase: null,
+                label: 'ICHdw1',
+              },
+              {
+                biogeoclimaticCatalogueId: 8802,
+                becZoneCode: 'SBS',
+                subzone: 'mk',
+                variant: '1',
+                phase: null,
+                label: 'SBSmk1',
+              },
+              {
+                biogeoclimaticCatalogueId: 8803,
+                becZoneCode: 'ESSF',
+                subzone: 'wc',
+                variant: '3',
+                phase: null,
+                label: 'ESSFwcICH',
+              },
+            ],
+          },
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    const bec = await screen.findByRole('combobox', { name: 'BEC Zone' })
+    await userEvent.clear(bec)
+    await userEvent.type(bec, 'ICH')
+
+    expect(await screen.findByRole('option', { name: 'ICHdw1' })).toBeInTheDocument()
+    // A substring match would offer this too — the zone merely CONTAINS `ICH`.
+    expect(screen.queryByRole('option', { name: 'ESSFwcICH' })).not.toBeInTheDocument()
+  })
+
+  test('P2 — ballast method N disables Material Type and sends the coerced figures', async () => {
+    let body: unknown = null
+    server.use(
+      http.put(`${PAGES_URL}/8900/road-details/8910`, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(doc())
+      }),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'None' }))
+    expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(body).not.toBeNull()
+    })
+    // `ttTransfer` is deliberately NOT zeroed — the server keeps it on the `N` branch (Trap 8).
+    expect(body).toMatchObject({
+      stabilizing: {
+        ballastMethodCode: 'N',
+        ballastMaterialCode: 'NA',
+        length: 0,
+        surfaceWidth: 0,
+        depth: 0,
+        distanceToSource: 0,
+        actualCost: 0,
+        otherTransfer: 0,
+      },
+    })
+  })
+
+  test('M7 — a de-listed BEC classification renders its label, not its catalogue id', async () => {
+    server.use(
+      getHandler(
+        doc({
+          codeLists: { ...doc().codeLists, becClassifications: [] },
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    // The row's own becClassification carries the label even when the offerable list does not.
+    expect(await screen.findByDisplayValue('ICHdw1')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('8801')).not.toBeInTheDocument()
+  })
+
+  test('M12 — derived money cells follow the legacy masks', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+    // mask.int.7digits (#,###,##0) is a WHOLE-dollar mask: the integer totals carry no decimals.
+    expect(screen.getAllByText('150,000').length).toBeGreaterThan(0)
+    expect(screen.queryByText('150,000.00')).not.toBeInTheDocument()
+  })
+
+  test('L5 — the material hint stays quiet until a ballast method is chosen', async () => {
+    const hint = 'A material Type is required for this Additional Stabilizing code.'
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
+    await screen.findByRole('combobox', { name: 'Ballast Method Code' })
+    // A BLANK code lands in the `C` branch server-side, so the predicate is true for it — but the
+    // reporter has chosen nothing yet and has nothing to correct.
+    expect(screen.queryByText(hint)).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Ballast Method Code' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Crushed' }))
+    expect(await screen.findByText(hint)).toBeInTheDocument()
+  })
+
+  test('L9 — the road form meets the accessibility floor (AC15)', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByDisplayValue('Mainline A')
+
+    // Every input is reachable by its programmatic label, never by placeholder or position.
+    expect(screen.getByLabelText('Road Name')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sub-Grade Length (km)')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'BEC Zone' })).toBeInTheDocument()
+    // Both tables carry real header cells so a screen reader can navigate them.
+    expect(screen.getByRole('columnheader', { name: 'Roads' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Action' })).toBeInTheDocument()
+    // Derived totals are text, not disabled inputs, so they are announced as values.
+    expect(screen.queryByLabelText('Total ($)')).not.toBeInTheDocument()
+  })
+
+  test('L9 — an advisory error is bound to its field and clears as it is fixed', async () => {
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add Road' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const roadName = await screen.findByLabelText('Road Name')
+    expect(await screen.findByText('Road Name is required.')).toBeInTheDocument()
+    expect(roadName).toHaveAttribute('aria-invalid', 'true')
+
+    await userEvent.type(roadName, 'Mainline C')
+    await waitFor(() => {
+      expect(screen.queryByText('Road Name is required.')).not.toBeInTheDocument()
+    })
   })
 })
 

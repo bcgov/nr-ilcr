@@ -3,6 +3,7 @@ import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Respon
 import {
   MASK_DIGITS,
   SCH10_MESSAGES,
+  ballastForcesMaterialNa,
   ballastMaterialRequired,
   ballastZeroesFigures,
   buildPageBody,
@@ -228,10 +229,29 @@ describe('seeding a road-detail form through the display masks', () => {
     expect(form.comments).toBe('')
   })
 
-  test('every masked field has a declared decimal count', () => {
+  test('every masked field is a real form field, and every numeric form field is masked', () => {
+    // The original assertion checked the CONVERSE of its name — that each mask key exists on the
+    // form — which cannot catch the failure that matters: a numeric field with no declared mask,
+    // which then renders at whatever scale JSON.parse happened to leave (Trap 2).
     const form = emptyRoadDetailForm()
-    for (const key of Object.keys(MASK_DIGITS)) {
+    const masked = new Set<string>(Object.keys(MASK_DIGITS))
+    for (const key of masked) {
       expect(form).toHaveProperty(key)
+    }
+    // Every field the road form holds that is not one of these text/code fields must carry a mask.
+    const unmasked = new Set([
+      'roadName',
+      'roadLifetimeCode',
+      'becbiogeoCatalogueId',
+      'becbiogeoLabel',
+      'relSoilMoistRgmClsCode',
+      'stBallastMethodCode',
+      'stBallastMaterialCode',
+      'detailedEngineeringCostInd',
+      'comments',
+    ])
+    for (const key of Object.keys(form)) {
+      expect(masked.has(key) || unmasked.has(key)).toBe(true)
     }
   })
 })
@@ -339,6 +359,10 @@ describe('validateRoadDetail ranges, pinned at both bounds', () => {
       expect(validateRoadDetail({ ...base(), [key]: '-10000' })[key]).toBe(
         SCH10_MESSAGES.rangeHaulDistance,
       )
+      // The upper bound was unpinned: raising HAUL_DISTANCE.max left the suite green.
+      expect(validateRoadDetail({ ...base(), [key]: '10000' })[key]).toBe(
+        SCH10_MESSAGES.rangeHaulDistance,
+      )
     },
   )
 
@@ -362,6 +386,10 @@ describe('validateRoadDetail ranges, pinned at both bounds', () => {
     expect(validateRoadDetail({ ...base(), [key]: '-10000000' })[key]).toBe(
       SCH10_MESSAGES.costTransfer,
     )
+    // The upper bound was unpinned: raising TRANSFER.max left the suite green.
+    expect(validateRoadDetail({ ...base(), [key]: '10000000' })[key]).toBe(
+      SCH10_MESSAGES.costTransfer,
+    )
   })
 
   test.each(['endHaulVolume', 'overlandVolume'] as const)('%s is a bounded volume', (key) => {
@@ -370,13 +398,78 @@ describe('validateRoadDetail ranges, pinned at both bounds', () => {
     expect(validateRoadDetail({ ...base(), [key]: '10000000' })[key]).toBe(
       SCH10_MESSAGES.volumeRange,
     )
+    // The lower bound was unpinned: a volume is never negative.
+    expect(validateRoadDetail({ ...base(), [key]: '-1' })[key]).toBe(SCH10_MESSAGES.volumeRange)
   })
 
-  test.each(['solidRockPct', 'organicPct'] as const)('%s is a percentage', (key) => {
-    expect(validateRoadDetail({ ...base(), [key]: '0' })[key]).toBeUndefined()
-    expect(validateRoadDetail({ ...base(), [key]: '100' })[key]).toBeUndefined()
-    expect(validateRoadDetail({ ...base(), [key]: '101' })[key]).toBe(
-      SCH10_MESSAGES.percentageRange,
+  test.each(['solidRockPct', 'rippableRockPct', 'coarsePct', 'finePct', 'organicPct'] as const)(
+    '%s is a percentage pinned at both bounds',
+    (key) => {
+      expect(validateRoadDetail({ ...base(), [key]: '0' })[key]).toBeUndefined()
+      expect(validateRoadDetail({ ...base(), [key]: '100' })[key]).toBeUndefined()
+      expect(validateRoadDetail({ ...base(), [key]: '101' })[key]).toBe(
+        SCH10_MESSAGES.percentageRange,
+      )
+      // The lower bound was unpinned: a composition percentage is never negative.
+      expect(validateRoadDetail({ ...base(), [key]: '-1' })[key]).toBe(
+        SCH10_MESSAGES.percentageRange,
+      )
+    },
+  )
+
+  test('side slope is pinned at both bounds under its own message', () => {
+    expect(validateRoadDetail({ ...base(), sideSlopePct: '0' }).sideSlopePct).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), sideSlopePct: '100' }).sideSlopePct).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), sideSlopePct: '-1' }).sideSlopePct).toBe(
+      SCH10_MESSAGES.sideSlopeRange,
+    )
+  })
+
+  test('the surface widths and the remaining dimensions are pinned at both bounds', () => {
+    // `stSurfaceWidth` had no test of its own at all, despite being the field AC8 auto-copies into.
+    for (const key of ['sgSurfaceWidth', 'stSurfaceWidth'] as const) {
+      expect(validateRoadDetail({ ...base(), [key]: '0' })[key]).toBeUndefined()
+      expect(validateRoadDetail({ ...base(), [key]: '999.9' })[key]).toBeUndefined()
+      expect(validateRoadDetail({ ...base(), [key]: '1000' })[key]).toBe(
+        SCH10_MESSAGES.rangeZeroTo999Point9,
+      )
+      expect(validateRoadDetail({ ...base(), [key]: '-0.1' })[key]).toBe(
+        SCH10_MESSAGES.rangeZeroTo999Point9,
+      )
+    }
+    expect(validateRoadDetail({ ...base(), stDepth: '99.9' }).stDepth).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), stDepth: '100' }).stDepth).toBe(
+      SCH10_MESSAGES.rangeZeroTo99Point9,
+    )
+    expect(validateRoadDetail({ ...base(), stDepth: '-0.1' }).stDepth).toBe(
+      SCH10_MESSAGES.rangeZeroTo99Point9,
+    )
+    expect(
+      validateRoadDetail({ ...base(), stDistanceToSource: '999.9' }).stDistanceToSource,
+    ).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), stDistanceToSource: '1000' }).stDistanceToSource).toBe(
+      SCH10_MESSAGES.rangeZeroTo999Point9,
+    )
+    expect(validateRoadDetail({ ...base(), sgLength: '0' }).sgLength).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), sgLength: '100' }).sgLength).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), sgLength: '-0.1' }).sgLength).toBe(
+      SCH10_MESSAGES.rangeZeroToOneHundred,
+    )
+    expect(validateRoadDetail({ ...base(), stLength: '999.999' }).stLength).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), stLength: '1000' }).stLength).toBe(
+      SCH10_MESSAGES.rangeZeroTo999Point999,
+    )
+  })
+
+  test('caps the road name at 30 characters, under the required-field message', () => {
+    // ROAD_NAME_MAX was untested. The server answers an over-length name with the required text,
+    // not the off-list text (review M8).
+    expect(validateRoadDetail({ ...base(), roadName: 'x'.repeat(30) }).roadName).toBeUndefined()
+    expect(validateRoadDetail({ ...base(), roadName: 'x'.repeat(31) }).roadName).toBe(
+      SCH10_MESSAGES.roadNameRequired,
+    )
+    expect(validateRoadDetail({ ...base(), roadName: 'x'.repeat(31) }).roadName).not.toBe(
+      SCH10_MESSAGES.invalidCodeValue,
     )
   })
 
@@ -538,5 +631,111 @@ describe('derived previews', () => {
     expect(previewCostPerVolumePerLength('6000', '0', '2.5')).toBeNull()
     expect(previewCostPerVolumePerLength('6000', '1200', '')).toBeNull()
     expect(previewCostPerVolumePerLength('', '1200', '2.5')).toBeNull()
+  })
+})
+
+describe('fixes from the 2026-08-19 code review', () => {
+  const base = () => formFromRoadDetail(detail)
+
+  test('H2 — a supply block absent from the catalogue is synthesised as its own option', () => {
+    const served = [
+      { code: '01A', description: 'Arrow TSA Block A' },
+      { code: '16G', description: 'Lakes TSA Block G' },
+    ]
+    // Delivery page 8904 stores TSB `16Z`, which the code table no longer serves. Filtering the
+    // served list for it yielded [] and the field rendered blank over a real value.
+    const options = supplyBlocksFor(served, '16', '16Z')
+    expect(options.map((o) => o.code)).toContain('16Z')
+    expect(options.find((o) => o.code === '16Z')?.description).toBe('16Z')
+
+    // Same on the TFL/no-TSA branch, where only the stored option is offered at all.
+    expect(supplyBlocksFor(served, '', '16Z').map((o) => o.code)).toEqual(['16Z'])
+    expect(supplyBlocksFor(served, 'TFL', '16Z').map((o) => o.code)).toEqual(['16Z'])
+  })
+
+  test('H2 — a served block is not duplicated when it is also the stored one', () => {
+    const served = [{ code: '01A', description: 'Arrow TSA Block A' }]
+    expect(supplyBlocksFor(served, '01', '01A').map((o) => o.code)).toEqual(['01A'])
+  })
+
+  test('M5 — a blank or non-numeric TFL is rejected on the TFL branch', () => {
+    const tflForm = { ...emptyPageForm(), forestRegionCode: 'RNI', tsaOrTfl: 'TFL' }
+    // The old over-length check was unreachable behind maxLength={2}; what actually reached the
+    // server was a blank, which is the doomed round trip this module exists to stop.
+    expect(validatePage({ ...tflForm, tflNumberCode: '' }).tflNumberCode).toBe(
+      SCH10_MESSAGES.tflInvalid,
+    )
+    expect(validatePage({ ...tflForm, tflNumberCode: 'AB' }).tflNumberCode).toBe(
+      SCH10_MESSAGES.tflInvalid,
+    )
+    expect(validatePage({ ...tflForm, tflNumberCode: '08' }).tflNumberCode).toBeUndefined()
+    // On the TSA branch the field is cleared before sending, so it is never gated.
+    expect(
+      validatePage({ ...emptyPageForm(), forestRegionCode: 'RNI', tsaOrTfl: '01' }).tflNumberCode,
+    ).toBeUndefined()
+  })
+
+  test('M6 — comments cap at 3500 characters but 4000 BYTES', () => {
+    // The byte cap was checked against 3500, so any comment with accents or dashes in it was
+    // blocked well under the real limit. An em dash is 3 bytes.
+    const wide = '—'.repeat(1200) // 1200 chars, 3600 bytes
+    expect(validateRoadDetail({ ...base(), comments: wide }).comments).toBeUndefined()
+    // Over the BYTE cap, still under the character cap.
+    expect(validateRoadDetail({ ...base(), comments: '—'.repeat(1400) }).comments).toBe(
+      SCH10_MESSAGES.commentsMaxLength,
+    )
+  })
+
+  test('P2 — ballast method N sends the coerced figures, keeping ttTransfer', () => {
+    const form = {
+      ...base(),
+      stBallastMethodCode: 'N',
+      stBallastMaterialCode: 'GR',
+      stLength: '3',
+      stSurfaceWidth: '6.5',
+      stDepth: '0.3',
+      stDistanceToSource: '12.4',
+      stActualCost: '5000',
+      stTtTransfer: '750',
+      stOtherTransfer: '250',
+    }
+    expect(buildRoadDetailBody(form).stabilizing).toEqual({
+      ballastMethodCode: 'N',
+      ballastMaterialCode: 'NA',
+      length: 0,
+      surfaceWidth: 0,
+      depth: 0,
+      distanceToSource: 0,
+      actualCost: 0,
+      // Trap 8: the server does NOT zero this one on the `N` branch.
+      ttTransfer: 750,
+      otherTransfer: 0,
+    })
+  })
+
+  test('P2 — any other method sends what was entered', () => {
+    const form = { ...base(), stBallastMethodCode: 'C', stActualCost: '5000', stLength: '3' }
+    expect(buildRoadDetailBody(form).stabilizing).toMatchObject({
+      ballastMethodCode: 'C',
+      length: 3,
+      actualCost: 5000,
+    })
+  })
+
+  test('P2 — both N and D force the material to NA in the UI', () => {
+    expect(ballastForcesMaterialNa('N')).toBe(true)
+    expect(ballastForcesMaterialNa('D')).toBe(true)
+    expect(ballastForcesMaterialNa('C')).toBe(false)
+    expect(ballastForcesMaterialNa('')).toBe(false)
+    // Only `N` zeroes the figures.
+    expect(ballastZeroesFigures('N')).toBe(true)
+    expect(ballastZeroesFigures('D')).toBe(false)
+  })
+
+  test('M7 — the stored BEC label survives the round trip through the form', () => {
+    const seeded = formFromRoadDetail(detail)
+    expect(seeded.becbiogeoLabel).toBe('ICHdw1')
+    // Display only: it never reaches the wire.
+    expect(buildRoadDetailBody(seeded)).not.toHaveProperty('becbiogeoLabel')
   })
 })

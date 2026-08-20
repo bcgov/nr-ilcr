@@ -153,11 +153,10 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               onMask={onMask}
             />
             <div className="schedule-10__panel-actions">
-              {!readOnly && (
-                <Button kind="primary" disabled={controlsDisabled} onClick={onSave}>
-                  Save
-                </Button>
-              )}
+              {/* AC11 and deviation 7: rendered and disabled outside Draft, never removed. */}
+              <Button kind="primary" disabled={controlsDisabled || readOnly} onClick={onSave}>
+                Save
+              </Button>
               <Button kind="secondary" onClick={onCloseForm}>
                 Close
               </Button>
