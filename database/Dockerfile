@@ -10,7 +10,8 @@ FROM gvenzl/oracle-free:23.9-slim-faststart
 # database/openshift.deploy.yml. Look the value up per namespace with:
 #   oc get ns <plate>-tools -o jsonpath='{.metadata.annotations.openshift\.io/sa\.scc\.uid-range}'
 # (Same approach as nr-waste-plus legacydb.)
-ARG OPENSHIFT_UID=1010470000
+# This repo's tools namespace range is 1004950000/10000.
+ARG OPENSHIFT_UID=1004950000
 USER root
 RUN usermod -u ${OPENSHIFT_UID} oracle
 USER oracle
