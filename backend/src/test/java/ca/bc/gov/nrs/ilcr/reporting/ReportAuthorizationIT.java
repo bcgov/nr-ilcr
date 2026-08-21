@@ -82,8 +82,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz, streams the PDF")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc
-        .perform(
+    streamPdf(
             get(ENDPOINT)
                 .param("millId", SEEDED_MILL)
                 .param("year", SEEDED_YEAR)
@@ -96,8 +95,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz, streams the PDF")
   void admin_passesAuthorization() throws Exception {
-    mockMvc
-        .perform(
+    streamPdf(
             get(ENDPOINT)
                 .param("millId", SEEDED_MILL)
                 .param("year", SEEDED_YEAR)

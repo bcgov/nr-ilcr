@@ -15,7 +15,7 @@ import java.util.List;
  * @param warnings always empty for Schedule 3 (kept for envelope symmetry with Schedule 1)
  * @param message the "all requirements met" success message when {@code requirementsMet}, else null
  */
-public record CheckStatusResponse(
+public record Schedule3CheckStatusResponse(
     boolean requirementsMet,
     List<MessageInfo> errors,
     List<MessageInfo> warnings,

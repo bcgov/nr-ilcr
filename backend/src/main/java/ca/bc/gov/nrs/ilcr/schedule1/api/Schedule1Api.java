@@ -1,7 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule1.api;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import jakarta.validation.Valid;
@@ -80,6 +80,6 @@ public interface Schedule1Api {
    * @return 200 with the check-status result (errors, warnings, requirements-met + success message)
    */
   @PostMapping("/check-status")
-  ResponseEntity<CheckStatusResponse> checkStatus(
+  ResponseEntity<Schedule1CheckStatusResponse> checkStatus(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }

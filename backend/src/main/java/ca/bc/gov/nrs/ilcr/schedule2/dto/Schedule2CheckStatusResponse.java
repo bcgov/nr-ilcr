@@ -14,4 +14,4 @@ import java.util.List;
  * @param outcome {@code "MET"} or {@code "ISSUES"}
  * @param messages the user-facing message(s) for the outcome (key + resolved text)
  */
-public record CheckStatusResponse(String outcome, List<MessageInfo> messages) {}
+public record Schedule2CheckStatusResponse(String outcome, List<MessageInfo> messages) {}

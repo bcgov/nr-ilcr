@@ -16,6 +16,15 @@ spring:
       # deferred-work.md:180; turning the feature off closes it for every schedule at once rather
       # than leaving Schedule 5 the only safe one.
       accept-float-as-int: false
+  mvc:
+    async:
+      # Story 29.2 — report/print PDFs now stream via StreamingResponseBody, so the export runs under
+      # the async request clock. Set it EXPLICITLY (rather than inheriting the container default) so a
+      # slow or large "all schedules" render has a deliberate ceiling. On timeout Spring completes the
+      # response; for an already-committed streamed PDF that means a truncated body (logged at ERROR in
+      # ReportController) — so size this to the worst-case render, not tight. 120s covers a big combined
+      # print with headroom; raise via SPRING_MVC_ASYNC_REQUEST_TIMEOUT if a legitimate render exceeds it.
+      request-timeout: ${SPRING_MVC_ASYNC_REQUEST_TIMEOUT:120000}
   datasource:
     url: ${SPRING_DATASOURCE_URL:}
     username: ${SPRING_DATASOURCE_USERNAME:}
@@ -78,6 +87,23 @@ ilcr:
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:false}
     validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}
+  reporting:
+    # Story 29.2 — the Jasper swap-file virtualizer that spills report page objects to disk under a
+    # large or combined ("all schedules") fill, so the section object graph never pins the JVM heap.
+    virtualizer:
+      # swap-directory: where the per-render swap file lives. Empty → the JVM temp dir (java.io.tmpdir).
+      # In OpenShift the container root fs is read-only AND /tmp is a MEMORY-backed emptyDir, so the
+      # deploy sets ILCR_REPORTING_SWAP_DIR to a dedicated DISK-backed ephemeral volume (see
+      # backend/openshift.deploy.yml) — otherwise "spill to disk" would spill to RAM and defeat the
+      # whole point. The file is created eagerly per render and deleted when the render finishes.
+      swap-directory: ${ILCR_REPORTING_SWAP_DIR:}
+      # max-size: pages kept in memory before the least-recently-used ones page out to the swap file.
+      # A deliberate, conservative default (a page count, not a measured byte budget): high enough that
+      # an ordinary single-schedule print never pages out (avoiding swap churn on the common path), low
+      # enough to bound heap on a big combined print. Tune via ILCR_REPORTING_VIRTUALIZER_MAX_SIZE if
+      # profiling shows a real workload wants a different ceiling. (The spill path itself is proven by
+      # ReportVirtualizerSpillIT, which forces max-size=1.)
+      max-size: ${ILCR_REPORTING_VIRTUALIZER_MAX_SIZE:300}
 
 features:
   flags:

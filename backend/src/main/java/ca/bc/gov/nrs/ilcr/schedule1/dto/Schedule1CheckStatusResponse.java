@@ -14,7 +14,7 @@ import java.util.List;
  * @param warnings the non-blocking advisories (e.g. WRN-002 empty-cost row)
  * @param message the "all requirements met" success message when {@code requirementsMet}, else null
  */
-public record CheckStatusResponse(
+public record Schedule1CheckStatusResponse(
     boolean requirementsMet,
     List<MessageInfo> errors,
     List<MessageInfo> warnings,

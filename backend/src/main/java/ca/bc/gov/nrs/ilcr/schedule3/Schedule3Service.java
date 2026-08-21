@@ -10,13 +10,13 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.ThreeColumnTotal;
@@ -883,7 +883,7 @@ public class Schedule3Service {
    * Schedule3CheckStatus.isHarvestCostGreaterThanPopCost}). Verbatim labels/messages, legacy field
    * order (AD-8).
    */
-  public CheckStatusResponse checkSchedule3Status(long millId, int year) {
+  public Schedule3CheckStatusResponse checkSchedule3Status(long millId, int year) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
     List<DetailRow> details = repository.findDetails(summary.summaryId());
@@ -913,7 +913,7 @@ public class Schedule3Service {
         requirementsMet
             ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
             : null;
-    return new CheckStatusResponse(requirementsMet, errors, List.of(), message);
+    return new Schedule3CheckStatusResponse(requirementsMet, errors, List.of(), message);
   }
 
   /**
