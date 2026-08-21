@@ -151,6 +151,7 @@ public class PrintService {
       case SCHEDULE_7A -> request.schedule7a();
       case SCHEDULE_7B -> request.schedule7b();
       case SCHEDULE_9 -> request.schedule9();
+      case SCHEDULE_10 -> request.schedule10();
       case SCHEDULE_11 -> request.schedule11();
     };
   }
@@ -162,7 +163,7 @@ public class PrintService {
   private void logUnimplementedSelections(PrintRequest request) {
     boolean anyUnimplemented = request.allSchedules()
         || request.schedule1() || request.schedule2() || request.schedule3()
-        || request.schedule4() || request.schedule8() || request.schedule10()
+        || request.schedule4() || request.schedule8()
         || request.printMillInformationReport();
     if (anyUnimplemented) {
       // DEBUG, not INFO: the SPA (Story 20.3) disables the deferred schedules/options, so this is an
