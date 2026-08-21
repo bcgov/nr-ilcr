@@ -306,6 +306,28 @@ export const subN = (a: number | null, b: number | null): number | null => {
 }
 
 /**
+ * Null-tolerant sum: null ONLY when every operand is null, otherwise the sum of the non-null ones.
+ * The n-ary form of {@link addN} — legacy `CoreUtil.sumBigDecimalCosts` /
+ * `Schedule5Service.sumCosts` / `Schedule7aService.sum`. A total with no contributing value is null,
+ * never `0`, so the cell renders `—`.
+ *
+ * Distinct from {@link sumAsZero}, which returns `0` for an all-null input. Pick per figure from the
+ * service: Schedule 1's `subtotalCompanyLoggingCost` and Schedule 3's column subtotals seed at zero,
+ * whereas Schedule 5's camp totals and Schedule 7A's bridge totals stay blank.
+ */
+export const sumN = (...values: readonly (number | null)[]): number | null => {
+  let total = 0
+  let any = false
+  for (const value of values) {
+    if (value !== null) {
+      total += value
+      any = true
+    }
+  }
+  return any ? total : null
+}
+
+/**
  * Sum treating null as 0, returning 0 (not null) for an all-null input. The counterpart to
  * {@link addN}, for the specific figures the backend seeds at zero because legacy never showed them
  * blank — Schedule 1's `subtotalCompanyLoggingCost` and Schedule 3's column subtotals.

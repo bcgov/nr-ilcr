@@ -35,6 +35,7 @@ import {
   validateGeneralComments,
   validateRoadRecord,
 } from './validation'
+import { EMPTY_RATE_INPUTS, rateInputsOf, recordCostPerVolume, type RateInputs } from './derived'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success/error is
@@ -150,6 +151,8 @@ type RoadRecordFieldsProps = {
   readonly costPerVolume: string
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  /** Blur commit for the two fields the $ / m³ is computed from (defect #291). */
+  readonly onRateCommit: () => void
 }
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
@@ -161,6 +164,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   costPerVolume,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
 }) => {
   const tfl = isTfl(form.areaType)
   return (
@@ -212,6 +216,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.volume}
         onChange={(e) => onFieldChange('volume', e.target.value)}
+        onBlur={onRateCommit}
         invalid={Boolean(errors.volume)}
         invalidText={errors.volume}
       />
@@ -223,6 +228,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.cost}
         onChange={(e) => onFieldChange('cost', e.target.value)}
+        onBlur={onRateCommit}
         invalid={Boolean(errors.cost)}
         invalidText={errors.cost}
       />
@@ -255,8 +261,10 @@ type AddPanelProps = {
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
   readonly disabled: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  readonly onRateCommit: () => void
   readonly onSubmit: () => void
 }
 
@@ -264,8 +272,10 @@ const AddPanel: FC<AddPanelProps> = ({
   form,
   errors,
   disabled,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
   onSubmit,
 }) => (
   <section className="schedule-6__section" aria-label={ADD_PANEL_HEADING}>
@@ -275,12 +285,13 @@ const AddPanel: FC<AddPanelProps> = ({
       form={form}
       errors={errors}
       disabled={disabled}
-      // Both are derived server-side from the saved record; legacy re-derived them live over ajax,
-      // which AD-5 forbids re-implementing on the client (deviation D).
       rmg=""
-      costPerVolume=""
+      // The rate tracks the committed (blurred) volume/cost, as legacy's own `change` handler did
+      // (#291). `rmg` stays server-derived — see derived.ts for why it is not mirrored.
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
     <Button kind="primary" disabled={disabled} onClick={onSubmit}>
       Add Report
@@ -325,8 +336,10 @@ type RecordEditorProps = {
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
   readonly saving: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  readonly onRateCommit: () => void
   readonly onSave: () => void
   readonly onCancel: () => void
 }
@@ -336,8 +349,10 @@ const RecordEditor: FC<RecordEditorProps> = ({
   form,
   errors,
   saving,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
   onSave,
   onCancel,
 }) => (
@@ -347,11 +362,13 @@ const RecordEditor: FC<RecordEditorProps> = ({
       form={form}
       errors={errors}
       disabled={saving}
-      // The row's last server-derived values; they refresh on the save echo.
+      // `rmg` is the row's last server-derived value and refreshes on the save echo; the rate now
+      // tracks the committed (blurred) volume/cost, as legacy's own `change` handler did (#291).
       rmg={row.rmg ?? ''}
-      costPerVolume={ratioMask(row.costPerVolume)}
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
     <Button kind="primary" size="sm" disabled={saving} onClick={onSave}>
       Save
@@ -372,11 +389,15 @@ const Schedule6: FC = () => {
 
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState<RoadRecordFormValues>(emptyForm)
+  // The blur-committed volume/cost the $ / m³ mirror reads. Legacy refreshed the row's own rate on the
+  // field's own `change` handler, so the rate settles when focus leaves rather than per keystroke (#291).
+  const [addRate, setAddRate] = useState<RateInputs>(EMPTY_RATE_INPUTS)
   const [addErrors, setAddErrors] = useState<RoadRecordErrors>({})
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editRevision, setEditRevision] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<RoadRecordFormValues>(emptyForm)
+  const [editRate, setEditRate] = useState<RateInputs>(EMPTY_RATE_INPUTS)
   const [editErrors, setEditErrors] = useState<RoadRecordErrors>({})
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
@@ -390,10 +411,12 @@ const Schedule6: FC = () => {
     setCheckResult(null)
     setShowAdd(false)
     setAddForm(emptyForm())
+    setAddRate(EMPTY_RATE_INPUTS)
     setAddErrors({})
     setEditingId(null)
     setEditRevision(null)
     setEditForm(emptyForm())
+    setEditRate(EMPTY_RATE_INPUTS)
     setEditErrors({})
     setCommentsError(undefined)
   }, [])
@@ -485,6 +508,7 @@ const Schedule6: FC = () => {
         // add-is-save: inputs clear only on success, and the panel collapses — legacy's add() sets
         // showAddRoadReport = false before saving (Schedule6MB.java:203).
         setAddForm(emptyForm())
+        setAddRate(EMPTY_RATE_INPUTS)
         setShowAdd(false)
       },
       'Schedule could not be saved.',
@@ -498,6 +522,7 @@ const Schedule6: FC = () => {
     // silently bypasses the stale-edit check). `?? null` preserves a legitimate 0.
     setEditRevision(row.revisionCount ?? null)
     setEditForm(seedForm(row))
+    setEditRate(rateInputsOf(seedForm(row)))
     setEditErrors({})
   }
 
@@ -505,6 +530,7 @@ const Schedule6: FC = () => {
     setEditingId(null)
     setEditRevision(null)
     setEditForm(emptyForm())
+    setEditRate(EMPTY_RATE_INPUTS)
     setEditErrors({})
   }
 
@@ -739,6 +765,8 @@ const Schedule6: FC = () => {
                 setAddForm((prev) => applyAreaType(prev, value))
               }}
               onFieldChange={setAddField}
+              rateInputs={addRate}
+              onRateCommit={() => setAddRate(rateInputsOf(addForm))}
               onSubmit={handleAdd}
             />
           </Column>
@@ -768,6 +796,8 @@ const Schedule6: FC = () => {
                         setEditForm((prev) => applyAreaType(prev, value))
                       }}
                       onFieldChange={setEditField}
+                      rateInputs={editRate}
+                      onRateCommit={() => setEditRate(rateInputsOf(editForm))}
                       onSave={handleSaveEdit}
                       onCancel={cancelEdit}
                     />

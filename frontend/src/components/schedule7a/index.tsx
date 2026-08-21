@@ -25,6 +25,7 @@ import {
   roundCost,
   validateBridge,
 } from './validation'
+import { deriveBridgeTotals } from './derived'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success and
@@ -127,12 +128,17 @@ const Schedule7a: FC = () => {
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addForm, setAddForm] = useState<BridgeFormValues>(emptyBridgeForm)
   const [addErrors, setAddErrors] = useState<BridgeErrors>({})
+  // The blur-committed cost values the totals mirror reads. Legacy refreshed `totalCostMat` /
+  // `totalCostIns` / the grand total on each cost field's own `change` handler, so the totals settle
+  // when focus leaves rather than per keystroke (defect #291).
+  const [addCommitted, setAddCommitted] = useState<BridgeFormValues>(emptyBridgeForm)
 
   // Every row's editor is live at once (legacy parity), so form and error state are keyed by bridge.
   // An absent entry means "untouched": the row renders straight from the served bridge. Only edited
   // rows are held here, so a freshly applied document implicitly resets every one of them.
   const [rowForms, setRowForms] = useState<Record<number, BridgeFormValues>>({})
   const [rowErrors, setRowErrors] = useState<Record<number, BridgeErrors>>({})
+  const [rowCommitted, setRowCommitted] = useState<Record<number, BridgeFormValues>>({})
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   // Set only when Save needs to reveal a failing row; Carbon re-syncs an AccordionItem when its
@@ -146,6 +152,7 @@ const Schedule7a: FC = () => {
     resetBanners()
     setShowAddPanel(false)
     setAddForm(emptyBridgeForm())
+    setAddCommitted(emptyBridgeForm())
     setAddErrors({})
     setRowForms({})
     setRowErrors({})
@@ -194,7 +201,11 @@ const Schedule7a: FC = () => {
   const groupAddField = (key: CostField) => {
     setAddForm((prev) => {
       const grouped = groupInput(prev[key])
-      return grouped === prev[key] ? prev : { ...prev, [key]: grouped }
+      const next = grouped === prev[key] ? prev : { ...prev, [key]: grouped }
+      // Commit from the SAME updater, so the mirror's baseline holds the grouped string the field now
+      // shows rather than the pre-grouping value a separate read would have caught (#291).
+      setAddCommitted(next)
+      return next
     })
   }
 
@@ -202,10 +213,9 @@ const Schedule7a: FC = () => {
     setRowForms((prev) => {
       const current = prev[bridge.bridgeReportId] ?? formFromBridge(bridge)
       const grouped = groupInput(current[key])
-      if (grouped === current[key]) {
-        return prev
-      }
-      return { ...prev, [bridge.bridgeReportId]: { ...current, [key]: grouped } }
+      const next = grouped === current[key] ? current : { ...current, [key]: grouped }
+      setRowCommitted((committed) => ({ ...committed, [bridge.bridgeReportId]: next }))
+      return grouped === current[key] ? prev : { ...prev, [bridge.bridgeReportId]: next }
     })
   }
 
@@ -254,6 +264,7 @@ const Schedule7a: FC = () => {
           applyDocument(doc)
           // Inputs clear only on success (add-is-save).
           setAddForm(emptyBridgeForm())
+          setAddCommitted(emptyBridgeForm())
           setShowAddPanel(false)
         },
       },
@@ -422,6 +433,7 @@ const Schedule7a: FC = () => {
               // Closing discards the draft, so reopening starts clean rather than restoring
               // half-typed values and the red errors from a previous failed submit.
               setAddForm(emptyBridgeForm())
+              setAddCommitted(emptyBridgeForm())
               setAddErrors({})
               setShowAddPanel((open) => !open)
             }}
@@ -438,6 +450,9 @@ const Schedule7a: FC = () => {
               form={addForm}
               errors={addErrors}
               codeLists={codeLists}
+              // Previously omitted, so all four totals read blank while a new bridge was entered —
+              // the same "blank, not stale" shape as Schedule 4's copy mode (#291).
+              totals={deriveBridgeTotals(addCommitted)}
               disabled={controlsDisabled}
               onChange={setAddField}
               onGroup={groupAddField}
@@ -470,7 +485,11 @@ const Schedule7a: FC = () => {
                       errors={rowErrors[bridge.bridgeReportId] ?? {}}
                       codeLists={codeLists}
                       disabled={controlsDisabled}
-                      totals={bridge}
+                      totals={
+                        bridge.bridgeReportId in rowCommitted
+                          ? deriveBridgeTotals(rowCommitted[bridge.bridgeReportId])
+                          : bridge
+                      }
                       onChange={(key, value) => setRowField(bridge, key, value)}
                       onGroup={(key) => groupRowField(bridge, key)}
                     />
