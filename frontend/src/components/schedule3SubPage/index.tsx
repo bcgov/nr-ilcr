@@ -15,6 +15,7 @@ import {
 } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
 import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
+import { committedNum, isUnusableStrictEntry } from '@/utils/derivedMath'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
@@ -100,7 +101,11 @@ export interface Schedule3SubPageConfig<
   summaryItems: Schedule3SubPageSummaryItem<TDoc>[]
   /**
    * Optional display-only mirror for the Totals footer (defect #291): given the blur-committed row
-   * values, return one figure per `summaryItems` entry, in the same order. Present only on the pages
+   * values, return a figure per `summaryItems` entry KEYED BY that entry's `key` — not a positional
+   * list. The keyed contract is deliberate (see `schedule3OtherAcceptableCosts/derived.ts`, where
+   * `OtherAcceptableSubtotal` is "keyed so it cannot be mis-paired with the summary labels
+   * positionally"): a triple looked up by name cannot silently pair with the wrong label when a
+   * column is added or reordered. Present only on the pages
    * whose legacy footer refreshed during entry — Other Acceptable Costs, whose Total $ / PO&P $
    * handlers rendered `footerValues` (schedule3SubtotalOtherCosts.xhtml:74,83). The Included
    * Unacceptable page omits it: its only handler was `render="cost"`, with no derived target, so
@@ -162,8 +167,20 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   }, [editor.data])
 
   // Numeric view of a row's entered values, for the live-derived read-only columns (e.g. Crown $).
+  //
+  // `committedNum`, NOT `toNum` (PR #344 review): this must be the SAME parse the footer mirror uses
+  // (`deriveOtherAcceptableSubtotal` → `committedNum` → `parseDecimalInput`), or the two disagree on
+  // every form the lax parser accepts and the strict one rejects. `1e3` was the clearest case —
+  // `validateOtherAcceptable` passes it (`Number('1e3')` is 1000, in range), the row's Crown $ showed
+  // `1,000 − pop`, and the footer excluded the row entirely because `committedNum('1e3')` is null. Same
+  // for `0x10` → 16 and a mis-grouped `12,34` → 1234. That is the same self-contradiction the comment
+  // on `rowCells` says was ruled out — row Crowns of 700 and 400 under a Subtotal Crown of 900 —
+  // reached by a parser mismatch instead of a timing one.
+  //
+  // It also closes a smaller gap the review noted in passing: `toNum` has no finiteness guard, so
+  // `Infinity` rendered `∞` in Crown $. `committedNum` rejects it, and the wire never carried it.
   const numeric = (values: SubPageValues): Record<string, number | null> =>
-    Object.fromEntries(config.fields.map((f) => [f.key, toNum(values[f.key])]))
+    Object.fromEntries(config.fields.map((f) => [f.key, committedNum(values[f.key] ?? '')]))
 
   // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
   // editable field, AND each derived read-only column (e.g. Crown $) are sortable. See useRowSort for
@@ -219,14 +236,34 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 size="sm"
                 value={row.values[field.key] ?? ''}
                 onChange={(e) => setRowValue(row.key, field.key, e.target.value)}
-                // Re-group on blur only — regrouping mid-keystroke would fight the caret.
+                // Re-group on blur only — regrouping mid-keystroke would fight the caret. The
+                // re-group is cosmetic and unconditional (`groupInput` returns invalid text
+                // unchanged, so a typo stays on screen); only the COMMIT is gated below.
                 onBlur={() => {
                   const grouped = groupInput(row.values[field.key] ?? '')
                   setRowValue(row.key, field.key, grouped)
-                  // Commit the grouped string, so `committed` and the field hold the same text.
+                  // An invalid or unusable entry HOLDS its previous committed value (PR #344 review).
+                  // This is the rule `useCommittedValues` documents and every other surface already
+                  // followed — Schedule 4 reimplements the same guard. Without it an out-of-range
+                  // 999,999,999 in Total $ moved the footer to a figure the server can never produce.
+                  //
+                  // Validate HERE rather than reading `rowErrors`: that map is populated only by
+                  // `persist` (useEditableCostRows.ts:204), i.e. on a Save attempt, so it is still
+                  // empty during the entry this gate has to catch. `errs` below is right for the
+                  // field's `invalid` styling and wrong as a commit gate.
+                  const next = { ...row.values, [field.key]: grouped }
+                  const blurErrs = config.validate(row.description, next)
+                  if (blurErrs[field.key] !== undefined || isUnusableStrictEntry(grouped)) {
+                    return
+                  }
+                  // Merge onto the row's previous committed values rather than the live `row.values`,
+                  // so a blur advances only the field that blurred. Not a reachable bug today —
+                  // moving focus to another field blurs this one first — but it keeps the snapshot's
+                  // meaning exact rather than relying on focus ordering.
                   setCommitted((prev) => ({
                     ...prev,
-                    [row.key]: { ...row.values, [field.key]: grouped },
+                    // Commit the grouped string, so `committed` and the field hold the same text.
+                    [row.key]: { ...(prev[row.key] ?? row.values), [field.key]: grouped },
                   }))
                 }}
                 invalid={Boolean(errs[field.key])}
