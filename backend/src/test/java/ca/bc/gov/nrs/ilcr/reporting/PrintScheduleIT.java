@@ -28,13 +28,14 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
- * datasource (Schedule 9) and the schedule {@code *Service} DTOs (5/6/7A/7B/11), on the shared
- * seed: mill 517/2021 carries data for all six in-scope schedules (Schedule 11 added by V20260816).
- * The PDF text is asserted with pdfbox to prove each selected section's heading and a seeded value
- * rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the rendered
- * schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the deferred
- * mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409 context guards
- * are pinned here. Security is OFF (isolated from authz — {@link PrintAuthorizationIT}).
+ * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/5/6/7A/7B/11), on the shared
+ * seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule 1 added
+ * by Story 20.5, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each
+ * selected section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks)
+ * is asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty
+ * (BR-09), all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004
+ * selection ladder plus the 400/409 context guards are pinned here. Security is OFF (isolated from
+ * authz — {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -358,8 +359,10 @@ class PrintScheduleIT extends AbstractOracleIT {
   @Test
   @DisplayName("allSchedules=true -> 200 combined PDF with every in-scope section (BR-07)")
   void allSchedules_rendersEveryInScopeSection() throws Exception {
-    // BR-07: "all" expands to every schedule; only the six in-scope ones render. Mill 517/2021 has
-    // data in all six, so the combined PDF must carry all six section headings and bookmarks.
+    // BR-07: "all" expands to every schedule; only the in-scope ones render. Mill 517/2021 has data
+    // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
+    // combined
+    // PDF carries Schedule 1 (Story 20.5) FIRST, then 5/6/7A/7B/9/11 — Schedule 10 skipped (BR-09).
     String selection =
         """
         {"allSchedules":true,"printScheduleInformation":true}
@@ -377,20 +380,84 @@ class PrintScheduleIT extends AbstractOracleIT {
 
     byte[] pdf = result.getResponse().getContentAsByteArray();
     String text = extractText(pdf);
+    assertThat(text).contains("Schedule 1:  Average Cost of Logging");
     assertThat(text).contains("Schedule 5:  Camp and Access Expense");
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
+    // BR-08 fixed order: Schedule 1 sorts ahead of every other section.
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
+            ScheduleKey.SCHEDULE_1.bookmarkTitle(),
             ScheduleKey.SCHEDULE_5.bookmarkTitle(),
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
             ScheduleKey.SCHEDULE_9.bookmarkTitle(),
             ScheduleKey.SCHEDULE_11.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("Schedule 1 (Story 20.5): 514/2021 renders the statement + exactly one bookmark")
+  void schedule1_rendersWithOneBookmark() throws Exception {
+    // Mill 514/2021 carries the full Schedule 1 document. Selecting Schedule 1 alone must render
+    // its
+    // statement (heading, the fixed row labels including the longest ones, the Other Cost List
+    // header) with EXACTLY one top-level bookmark (BR-08).
+    String selection =
+        """
+        {"schedule1":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 1:  Average Cost of Logging");
+    assertThat(text).contains("Standing Tree to Loaded Truck:"); // a fixed line-item label
+    assertThat(text).contains("Forest Management Administration (Sch 3):"); // corrected legacy typo
+    // The longest label asserted in full — a clip would break this instead of shipping it
+    // truncated.
+    assertThat(text).contains("Total Company Logging Costs (Including total Silviculture Cost):");
+    assertThat(text).contains("Other Cost List:"); // the nested list header
+
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_1.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 515/2021 select 1, no summary -> 404 'Schedule not found.'")
+  void schedule1Only_noData_returns404() throws Exception {
+    // Mill 515/2021 has no Schedule 1 summary; getSchedule1 throws ScheduleNotFound, which the
+    // section dispatch translates to a null skip (BR-09) — a Schedule-1-only print is then
+    // all-empty,
+    // the legacy single-schedule outcome ERR-005.
+    String selection =
+        """
+        {"schedule1":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
   }
 
   @Test
