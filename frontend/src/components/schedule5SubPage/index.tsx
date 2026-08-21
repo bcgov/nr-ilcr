@@ -7,6 +7,7 @@ import type {
 } from '@/interfaces/Schedule5SubPage'
 import type { SubPageErrors } from './validation'
 import { useCallback, useEffect, useState } from 'react'
+import { deriveSubPageTotals, rowCostPerVolume } from './derived'
 import {
   Button,
   Column,
@@ -124,6 +125,9 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
   const [addForm, setAddForm] = useState<SubPageRowForm>(emptyAddForm)
   const [addErrors, setAddErrors] = useState<SubPageErrors>({})
   const [rows, setRows] = useState<readonly SubPageRowForm[]>([])
+  // The blur-committed copy the derived mirror reads. Legacy refreshed these figures on a row cost's
+  // own `change` handler, so they settle when focus leaves rather than per keystroke (defect #291).
+  const [committedRows, setCommittedRows] = useState<readonly SubPageRowForm[]>([])
   const [rowErrors, setRowErrors] = useState<SubPageErrors>({})
 
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<SubPageRowForm | null>(null)
@@ -141,6 +145,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
   const applyDocument = useCallback((payload: SubPageDocument) => {
     setDoc(payload)
     setRows(payload.rows.map(seedRow))
+    setCommittedRows(payload.rows.map(seedRow))
     setRowErrors({})
     setAddForm(emptyAddForm())
     setAddErrors({})
@@ -440,6 +445,16 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
     </div>
   )
 
+  // The footer triple: mirrored from the committed row costs while editable, the served figures
+  // otherwise (#291 AC7). The page-specific arithmetic lives in `deriveSubPageTotals`.
+  const footer = editable
+    ? deriveSubPageTotals(def.kind, committedRows, doc.associatedCampVolume)
+    : {
+        volume: doc.totals?.volume ?? null,
+        cost: doc.totals?.cost ?? null,
+        costPerVolume: doc.totals?.costPerVolume ?? null,
+      }
+
   const listTable = (
     <TableContainer title={def.listHeader}>
       <Table aria-label={def.listHeader}>
@@ -500,10 +515,20 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                     onChange={(event) => {
                       updateRow(index, 'cost', event.target.value)
                     }}
+                    onBlur={() => {
+                      setCommittedRows(rows)
+                    }}
                   />
                 </TableCell>
                 <TableCell className="schedule-5-sub-page__num">
-                  {fmtCostPerVolume(served?.costPerVolume)}
+                  {fmtCostPerVolume(
+                    editable
+                      ? rowCostPerVolume(
+                          committedRows[index] ?? row,
+                          doc.associatedCampVolume ?? served?.volume,
+                        )
+                      : served?.costPerVolume,
+                  )}
                 </TableCell>
                 <TableCell>
                   <Button
@@ -520,17 +545,17 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
               </TableRow>
             )
           })}
-          {/* The `Totals:` footer (:94 / :90). Server-derived — and note the two pages do NOT agree
-              on the volume: CAMP sums the row volumes, ACCESS reports the single camp volume
-              (deviation (C)). Nothing is summed here. */}
+          {/* The `Totals:` footer (:94 / :90). Mirrored from the committed row costs while editable
+              (defect #291) and rendered from the document otherwise. The two pages do NOT agree on
+              the volume: CAMP sums the row volumes, ACCESS reports the single camp volume
+              (deviation (C)) — `deriveSubPageTotals` keeps that difference, which is real, while
+              filling both derived cells on both pages, which legacy did inconsistently. */}
           <TableRow className="schedule-5-sub-page__totals">
             <TableCell>Totals:</TableCell>
+            <TableCell className="schedule-5-sub-page__num">{fmtVolume(footer.volume)}</TableCell>
+            <TableCell className="schedule-5-sub-page__num">{fmtCost(footer.cost)}</TableCell>
             <TableCell className="schedule-5-sub-page__num">
-              {fmtVolume(doc.totals?.volume)}
-            </TableCell>
-            <TableCell className="schedule-5-sub-page__num">{fmtCost(doc.totals?.cost)}</TableCell>
-            <TableCell className="schedule-5-sub-page__num">
-              {fmtCostPerVolume(doc.totals?.costPerVolume)}
+              {fmtCostPerVolume(footer.costPerVolume)}
             </TableCell>
             <TableCell />
           </TableRow>
