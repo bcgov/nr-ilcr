@@ -545,6 +545,10 @@ const Schedule6: FC = () => {
       return
     }
     clearBanners()
+    // A successful delete leaves this row's rowForms/rowErrors entry behind, orphaned -- deliberately
+    // not cleaned up here. Both the render loop and handleSave iterate `data.roadRecords`, so an entry
+    // with no matching row is never read or sent, and resetTransient bounds its lifetime to the
+    // current mill/year session (it clears on the next context change regardless).
     runMutation(
       // The recordId travels in the URL — never the 1-based ordinal shown in the accordion title,
       // which is display-only and does not identify the row server-side.
@@ -582,27 +586,32 @@ const Schedule6: FC = () => {
     // would silently bypass the stale-edit check for exactly this row -- a missing token must surface
     // as a client-owned error and the WHOLE save must stop (one transaction; partial send is worse
     // than no send).
-    const missingToken = data.roadRecords.some(
-      (row) => row.revisionCount === null || row.revisionCount === undefined,
-    )
-    if (missingToken) {
-      setActionError(ERR_MISSING_REVISION)
-      return
+    // Built in the SAME pass that checks the token (rather than a separate .map that would need a
+    // cast at the call site) -- a cast that depends on a guard six lines away having already run rots
+    // quietly once the two stop being read together.
+    const entries: Schedule6SaveRequest['records'] = []
+    for (const row of data.roadRecords) {
+      if (row.revisionCount === null || row.revisionCount === undefined) {
+        setActionError(ERR_MISSING_REVISION)
+        return
+      }
+      entries.push(buildSaveEntry(getRowForm(row), row.recordId, row.revisionCount))
     }
     const body: Schedule6SaveRequest = {
       generalComments: generalComments.trim() === '' ? null : generalComments,
       // EVERY served row travels, each with the revision token from the document it was seeded
       // from. An omitted row is a 400 -- the server refuses to guess what the user meant to leave
       // alone.
-      records: data.roadRecords.map((row) =>
-        buildSaveEntry(getRowForm(row), row.recordId, row.revisionCount as number),
-      ),
+      records: entries,
     }
     runMutation(
       apiService.getAxiosInstance().put<Schedule6Response>(`${SCHEDULE6_PATH}${query}`, body),
       (doc) => {
-        // Hazard 3: re-seed every row form from the echo, so no row can hold a stale revision token
-        // (or a since-corrected value) after a successful save.
+        // Re-seed every row form from the echo -- NOT for the revision token (RoadRecordFormValues
+        // carries no such field; the token always comes straight off `data.roadRecords`, fresh on
+        // every applyDocument). This adopts the server's canonical/normalised values (e.g. a trimmed
+        // or otherwise server-corrected entry) over whatever draft the user was looking at, so the
+        // screen matches what was actually stored.
         setRowForms(Object.fromEntries(doc.roadRecords.map((row) => [row.recordId, seedForm(row)])))
       },
       'Schedule could not be saved.',

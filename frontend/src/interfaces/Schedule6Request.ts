@@ -42,10 +42,11 @@ export interface Schedule6SaveRequest {
 }
 
 // POST /api/v1/schedule6/check-status body (Task 6): read-only, on-screen values only. No `recordId`,
-// no `revisionCount` — rows are identified by their PAYLOAD ORDINAL, so this reuses the exact
-// RoadRecordRequest shape (with its optional revisionCount simply never populated) that POST /records
-// already sends, rather than declaring a near-duplicate type.
+// no `revisionCount` — rows are identified by their PAYLOAD ORDINAL. `Omit<'revisionCount'>` rather
+// than reusing RoadRecordRequest as-is: the backend's CheckEntry has no revisionCount field at all, so
+// this makes it a TYPE ERROR to ever attach one here, instead of merely never populating an optional
+// field that would otherwise still be structurally legal.
 export interface Schedule6CheckRequest {
   readonly generalComments: string | null
-  readonly records: readonly RoadRecordRequest[]
+  readonly records: readonly Omit<RoadRecordRequest, 'revisionCount'>[]
 }

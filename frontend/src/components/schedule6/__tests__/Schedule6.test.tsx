@@ -656,6 +656,51 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
   })
 
+  // Hazard 3, pinned to its ACTUAL mechanism: RoadRecordFormValues carries no revisionCount field, so
+  // the re-seed cannot be "protecting a token" -- the token always comes straight off
+  // `data.roadRecords` (fresh on every applyDocument). What the re-seed does is adopt the server's
+  // canonical/normalised values over the draft. The echo below deliberately returns a volume AND a
+  // revisionCount the draft does not hold (2500/4, not the typed 2000/the served 3) -- if the re-seed
+  // were deleted, the row would keep showing '2000' and a second Save would send the STALE token 3.
+  test('re-seeds row forms from the save echo with the server’s canonical values (hazard 3)', async () => {
+    let secondBody: unknown
+    let calls = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(URL, async ({ request }) => {
+        calls += 1
+        if (calls === 1) {
+          return HttpResponse.json(
+            doc({ roadRecords: [{ ...tsaRecord, volume: 2500, revisionCount: 4 }] }),
+          )
+        }
+        secondBody = await request.json()
+        return HttpResponse.json(
+          doc({ roadRecords: [{ ...tsaRecord, volume: 2500, revisionCount: 4 }] }),
+        )
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.click(barSaveButtons()[0])
+
+    // The server's answer (2500), not the draft (2000), is what the row shows after the echo.
+    expect(await screen.findByLabelText('Volume m³')).toHaveValue('2500')
+
+    await user.click(barSaveButtons()[0])
+    await waitFor(() => expect(secondBody).toBeDefined())
+    // The second Save's token is the ECHOED 4, not the originally-served 3 -- proof the re-seed, not a
+    // stale draft, is what feeds the next save.
+    expect((secondBody as Schedule6SaveRequest).records[0]).toMatchObject({
+      revisionCount: 4,
+      volume: 2500,
+    })
+  })
+
   test('posts the on-screen values to check status, not the stored ones', async () => {
     let body: { records: { cost: number | null }[] } | undefined
     server.use(
@@ -678,13 +723,23 @@ describe('Schedule 6 page (Story 8.3)', () => {
   })
 
   test('leaves Check Status enabled while rows are dirty (no longer gated on dirtiness)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const put = vi.fn()
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(URL, () => {
+        put()
+        return HttpResponse.json(doc())
+      }),
+    )
     render(<Schedule6 />)
     const user = userEvent.setup()
 
     await user.clear(await screen.findByLabelText(/Cost \$/i))
     // Legacy gated it on disableReportEdits() only (schedule6.xhtml:226-229), never on dirtiness.
     expect(checkStatusButtons()[0]).toBeEnabled()
+    // The one genuine residue of retiring per-row Cancel: typing in a row alone (no Save click) must
+    // still issue no request.
+    expect(put).not.toHaveBeenCalled()
   })
 
   test('reseeds every row form when the mill/year context changes (hazard 2)', async () => {
