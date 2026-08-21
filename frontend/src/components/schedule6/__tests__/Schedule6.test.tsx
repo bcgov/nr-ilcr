@@ -656,12 +656,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
   })
 
-  // Hazard 3, pinned to its ACTUAL mechanism: RoadRecordFormValues carries no revisionCount field, so
-  // the re-seed cannot be "protecting a token" -- the token always comes straight off
-  // `data.roadRecords` (fresh on every applyDocument). What the re-seed does is adopt the server's
-  // canonical/normalised values over the draft. The echo below deliberately returns a volume AND a
-  // revisionCount the draft does not hold (2500/4, not the typed 2000/the served 3) -- if the re-seed
-  // were deleted, the row would keep showing '2000' and a second Save would send the STALE token 3.
+  // Hazard 3 is guarded by TWO independent mechanisms, and this test pins each to the assertion that
+  // actually exercises it (deleting either mechanism should fail exactly one of the two assertions
+  // below, not both):
+  //  - The revisionCount token comes straight off `data.roadRecords`, refreshed by applyDocument's
+  //    setData BEFORE the onSuccess callback where the re-seed runs (index.tsx :453-454 -> :497) --
+  //    so the token assertion guards applyDocument/setData, NOT the re-seed.
+  //  - RoadRecordFormValues carries no revisionCount field at all, so the re-seed was never "protecting
+  //    a token" -- what it actually does is adopt the server's canonical/normalised FORM VALUES (e.g.
+  //    volume) over the user's draft. The volume assertion is what genuinely pins the re-seed: delete
+  //    it and the row keeps showing the typed '2000' forever, because rowForms[9501] stays populated
+  //    and getRowForm never falls back to the document's own value.
+  // The echo deliberately returns a volume AND a revisionCount the draft does not hold (2500/4, not
+  // the typed 2000/the originally-served 3), so neither assertion can pass by coincidence.
   test('re-seeds row forms from the save echo with the server’s canonical values (hazard 3)', async () => {
     let secondBody: unknown
     let calls = 0
@@ -693,8 +700,12 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await user.click(barSaveButtons()[0])
     await waitFor(() => expect(secondBody).toBeDefined())
-    // The second Save's token is the ECHOED 4, not the originally-served 3 -- proof the re-seed, not a
-    // stale draft, is what feeds the next save.
+    // The second Save's token is the ECHOED 4, not the originally-served 3. This guards
+    // applyDocument/setData (index.tsx :453-454 -> :497), NOT the re-seed below: handleSave reads
+    // revisionCount off `data.roadRecords`, which applyDocument refreshes BEFORE the onSuccess
+    // callback where the re-seed runs -- so this assertion would still pass even with the re-seed
+    // deleted. It is the VOLUME assertion above that genuinely pins the re-seed: rowForms keeps
+    // showing the typed '2000' draft until something re-seeds it from the echo.
     expect((secondBody as Schedule6SaveRequest).records[0]).toMatchObject({
       revisionCount: 4,
       volume: 2500,
