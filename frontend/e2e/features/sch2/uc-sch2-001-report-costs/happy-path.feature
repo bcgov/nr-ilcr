@@ -42,16 +42,20 @@ Feature: Schedule 2 — enter and save purchased log costs and log sales
       | Less Log Sales volume    | 4                            |
       | Less Log Sales cost      | 1000                         |
       | comments                 | E2E happy path — Schedule 2  |
-    # DIVERGENCE FROM LEGACY, pinned deliberately (see defects.md DIV-1): legacy recomputed the derived
-    # figures on each field's own `f:ajax event="change"`, so the totals moved as you typed. Every derived
-    # value is now computed server-side and only refreshed by the save response (AD-5/AD-6), so BEFORE the
-    # save the table still shows the at-rest figures. Asserting that here means a future change in either
-    # direction is caught rather than silently absorbed.
+    # DIV-1 RESOLVED (#291, 2026-08-21): legacy recomputed the derived figures on each field's own
+    # `f:ajax event="change"`, so the totals moved as focus left a field. That behaviour is restored by a
+    # display-only client mirror (spine AD-5 amended), so BEFORE the save the table already shows the
+    # recalculated figures. The numbers below are deliberately IDENTICAL to the post-save block further
+    # down: pre-save they come from the mirror, post-save from the server echo, so this scenario is now a
+    # genuine mirror-vs-server agreement check — the AC5 "no jump on Save" guarantee, against a real
+    # backend. The carried Wood Overhead and Total Company Logging rows must NOT move (they belong to
+    # Schedules 3 and 1), which the unchanged rows in the post-save block still assert.
     Then the Schedule 2 document shows:
-      | row                             | volume | cost | perUnit |
-      | Subtotal:                       | 10     | 0    | 0.00    |
-      | Net Purchased/Private Log Cost: | 10     | 0    | 0.00    |
-      | Total Average Logging Costs:    | 20     | 10   | 0.50    |
+      | row                             | volume | cost   | perUnit  |
+      | Subtotal:                       | 10     | 50,000 | 5,000.00 |
+      | (less) Log Sales:               | 4      | 1,000  | 250.00   |
+      | Net Purchased/Private Log Cost: | 6      | 49,000 | 8,166.67 |
+      | Total Average Logging Costs:    | 16     | 49,010 | 3,063.13 |
     When I save Schedule 2
     Then I should see the message "Data saved successfully"
     # BR-06: subtotal, net purchased and total average are all recomputed server-side from the entered

@@ -107,14 +107,21 @@ at-rest state.
   - **Ticket:** [bcgov/nr-ilcr#291](https://github.com/bcgov/nr-ilcr/issues/291) — *"[BUGFIX]: Automatic
     Recalculation for Schedule 1, 2, 3 and 4."* Raised app-wide, not just for Schedule 2; the behaviour
     difference is explained in a comment on that issue.
-  - **Status:** OPEN — **with the dev.** The Schedule 2 dev will fix it when he gets a chance; QA confirms
-    and closes this status line afterwards. **If recalculation-on-blur is restored, `happy-path.feature`
-    will fail** — it currently pins the existing behaviour, so update that scenario as part of the fix
-    rather than treating it as a regression (noted on the issue too).
-  - **Test:** covered as the app behaves — `happy-path.feature` `@p0 @S01` asserts the at-rest figures are
-    still shown *after* entry and *before* the Save, then the recomputed figures after it, so a change in
-    either direction fails. No red, because this is traceable to a ratified architecture decision rather
-    than a suspected fault.
+  - **Status:** **RESOLVED 2026-08-21** — recalculation-on-blur restored across Schedules 1-4 on
+    `fix/bugfix-291-auto-recalculation`. Spine AD-5 was amended: the "computed server-side, never
+    accepted from a client" rule governs authority and persistence, and does not forbid a display-only
+    mirror that keeps read-only cells tracking entry before Save. The mirror lives in one `derived.ts`
+    per schedule, is never sent on a write, and is superseded by the server echo on every Save.
+    `happy-path.feature` was updated as this entry instructed — its pre-save block now carries the
+    recalculated figures, deliberately identical to the post-save block, so the scenario asserts
+    mirror-vs-server agreement against a real backend rather than pinning the divergence. Trigger was
+    on **blur**, not per keystroke, matching the legacy `f:ajax event="change"` handlers.
+    Record: `_bmad-output/implementation-artifacts/defect-291-automatic-recalculation-schedules-1-4.md`.
+  - **Test:** `happy-path.feature` `@p0 @S01` now asserts the RECALCULATED figures after entry and before
+    the Save, and the same figures again after it — so it fails if the mirror and the server ever
+    disagree, and fails again if recalculation-on-blur is removed. Frontend unit and RTL coverage sits in
+    `components/schedule{1,2,3,4}/__tests__/derived.test.ts` and each page's `#291` tests, with
+    expectations transcribed from the backend service tests.
 
 ---
 

@@ -54,6 +54,20 @@ const schedule1Doc = {
   forestMgmtAdminCost: 600000,
   lessSilvAdminCost: 150000,
   otherCosts: { volume: 8000, costSubtotal: 24000, perUnit: 3.0, count: 2 },
+  // The server's own derived figures for THIS document, so the mirror can be compared against them
+  // rather than against hand arithmetic in this file (code review 2026-08-21). Computed from
+  // Schedule1Service's formulas: subtotal = 50000 line-12 + 600000 FMA + 24000 other = 674000;
+  // total silviculture = 20000 actual - 150000 Sch3 admin (no accrued) = -130000; grand total = 544000;
+  // its rate = 544000 / 54321 crown = 10.01; less-silv-admin rate = 150000 / 55 = 2727.27. The 143/144
+  // and 140 rates are null because those volumes are absent from the fixture.
+  subtotalCompanyLoggingCost: 674000,
+  subtotalCompanyLoggingPerUnit: null,
+  totalSilvicultureCost: -130000,
+  totalSilviculturePerUnit: null,
+  totalCompanyLoggingCost: 544000,
+  totalCompanyLoggingPerUnit: 10.01,
+  forestMgmtAdminPerUnit: null,
+  lessSilvAdminPerUnit: 2727.27,
   warnings: [],
 }
 
@@ -100,6 +114,210 @@ const problemBody = (status: number, detail: string) =>
   })
 
 describe('Schedule1 editable page', () => {
+  // ---- Defect #291: derived figures track data entry, on blur, before Save. -----------------------
+
+  /** A cost-table row's cells as text: [label, volume, cost, $/m³]. */
+  const rowCells = (label: string | RegExp) => {
+    const tr = screen.getByText(label).closest('tr')
+    if (!tr) throw new Error(`no row for "${String(label)}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+  /** The read-only $/m³ cell of a cost-table row (index 3). */
+  const rate = (label: string | RegExp) => rowCells(label)[3]
+  /** The read-only cost cell (index 2). */
+  const costOf = (label: string | RegExp) => rowCells(label)[2]
+
+  const SUBTOTAL = 'Subtotal Company Logging Cost (no Silviculture)'
+  const GRAND_TOTAL = 'Total Company Logging Costs (Including total Silviculture Cost)'
+
+  test('typing alone moves nothing; blurring a logging cost recalculates the whole chain (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    // Seeded: 50000/1000 = 50.00. Subtotal = 50000 + 600000 FMA + 24000 other = 674000.
+    expect(rate('Standing Tree to Loaded Truck')).toBe('50.00')
+    expect(costOf(SUBTOTAL)).toBe('674,000')
+
+    await user.clear(cost)
+    await user.type(cost, '100000')
+    expect(rate('Standing Tree to Loaded Truck')).toBe('50.00') // not per keystroke
+    expect(costOf(SUBTOTAL)).toBe('674,000')
+
+    await user.tab()
+    expect(rate('Standing Tree to Loaded Truck')).toBe('100.00') // 100000/1000
+    expect(costOf(SUBTOTAL)).toBe('724,000') // 100000 + 600000 + 24000
+    // Grand total = subtotal + total silviculture (20000 − 150000 = −130000) = 594000,
+    // over the Sch 3 crown volume 54321 -> 10.93.
+    expect(costOf(GRAND_TOTAL)).toBe('594,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.93')
+  })
+
+  test("a volume blur recalculates that row's $/m³ only (#291)", async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Standing Tree to Loaded Truck volume')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.tab()
+
+    expect(rate('Standing Tree to Loaded Truck')).toBe('25.00') // 50000/2000
+    // A volume is not part of any cost total, so the subtotal is unchanged.
+    expect(costOf(SUBTOTAL)).toBe('674,000')
+  })
+
+  test("139's RATE is mirrored while its COST stays the Schedule 3 pull (#291)", async () => {
+    // Row 139's two halves come from different places, and the page treats them differently on
+    // purpose: the cost is pulled from Schedule 3 and nothing on this page feeds it, but the VOLUME is
+    // user-entered -- so `deriveSchedule1` computes a rate for 139 (derived.ts:98) even though it
+    // computes no cost for it. The mirror therefore supersedes 139's rate and must NOT touch its cost.
+    //
+    // Written after a SonarQube refactor of a three-deep ternary (2026-08-21) exposed that this
+    // opposite-precedence rule was pinned by no test: inverting it left all 268 green.
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const label = 'Less Silviculture Admin Costs'
+    // Served state: 150,000 pulled from Schedule 3 over the fixture's volume of 55.
+    expect(await screen.findByLabelText(`${label} volume`)).toHaveValue('55')
+    expect(rate(label)).toBe('2,727.27') // 150,000 / 55
+
+    const volume = screen.getByLabelText(`${label} volume`)
+    await user.clear(volume)
+    await user.type(volume, '60000')
+    await user.tab()
+
+    // The rate moved off the served figure -- the mirror owns it.
+    expect(rate(label)).toBe('2.50') // 150,000 / 60,000
+    // ...while the cost is still the Schedule 3 pull, untouched by the mirror.
+    expect(costOf(label)).toBe('150,000')
+  })
+
+  test('the Other Costs $/m³ tracks the volume entered on this page (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Subtotal Other Costs volume')
+    // Seeded: subtotal 24000 over volume 8000 = 3.00.
+    expect(rate(/^Subtotal Other Costs\(2\):$/)).toBe('3.00')
+
+    await user.clear(volume)
+    await user.type(volume, '6000')
+    await user.tab()
+    expect(rate(/^Subtotal Other Costs\(2\):$/)).toBe('4.00') // 24000/6000
+
+    // Clearing it blanks the rate rather than dividing by zero.
+    await user.clear(screen.getByLabelText('Subtotal Other Costs volume'))
+    await user.tab()
+    expect(rate(/^Subtotal Other Costs\(2\):$/)).toBe('—')
+  })
+
+  test('Total Silviculture keeps legacy null semantics as costs are entered (#291)', async () => {
+    // The pre-fill fixture has every volume set and every cost blank, with no Sch 3 admin pull, so
+    // Total Silviculture must read blank — not a negative admin cost.
+    server.use(http.get(URL, () => HttpResponse.json(prefillDoc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const label = 'Total Silviculture (As per Financial Statements)'
+    expect(await screen.findByText(label)).toBeInTheDocument()
+    expect(costOf(label)).toBe('—')
+
+    // Entering an Accrued cost alone is enough to produce a total (addition needs one operand).
+    const accrued = screen.getByLabelText('Accrued less Actual $ Spent cost')
+    await user.clear(accrued)
+    await user.type(accrued, '50000')
+    await user.tab()
+    expect(costOf(label)).toBe('50,000')
+  })
+
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    // A direct mirror-vs-server comparison with no edit involved: the fixture now carries the figures
+    // Schedule1Service computes for it, so a mirror that rounds or propagates nulls differently fails
+    // here. Schedule 1 is the page with the two easiest-to-conflate rules, and before the code review
+    // its fixture carried no derived fields at all — so every assertion was self-referential.
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    await screen.findByText('Standing Tree to Loaded Truck')
+
+    expect(costOf(SUBTOTAL)).toBe('674,000')
+    expect(costOf(GRAND_TOTAL)).toBe('544,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.01')
+    expect(rate('Standing Tree to Loaded Truck')).toBe('50.00')
+    expect(rate('Less Silviculture Admin Costs')).toBe('2,727.27') // 150000 / 55
+    expect(costOf('Total Silviculture (As per Financial Statements)')).toBe('-130,000')
+    expect(rate(/^Subtotal Other Costs\(2\):$/)).toBe('3.00')
+  })
+
+  test('the mirror equals the SERVER figures, before and after Save (#291 AC5)', async () => {
+    // Asserted against the echo's own derived fields, not against a snapshot of the pre-Save render:
+    // an editable page always renders the mirror, so comparing render-to-render compared the mirror
+    // with itself and passed even with a wrong echo (code review 2026-08-21).
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule1Doc)),
+      http.put(URL, () =>
+        HttpResponse.json({
+          ...schedule1Doc,
+          revisionCount: 4,
+          lineItems: [{ costItemCode: 12, volume: 1000, cost: 100000, perUnit: 100.0 }],
+          subtotalCompanyLoggingCost: 724000,
+          totalSilvicultureCost: -130000,
+          totalCompanyLoggingCost: 594000,
+          totalCompanyLoggingPerUnit: 10.93,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Standing Tree to Loaded Truck cost')
+    await user.clear(cost)
+    await user.type(cost, '100000')
+    await user.tab()
+
+    // The mirror must already agree with what the server will send: 100000 + 600000 + 24000 = 724000,
+    // grand total 724000 - 130000 = 594000, rate 594000 / 54321 = 10.93.
+    expect(costOf(SUBTOTAL)).toBe('724,000')
+    expect(costOf(GRAND_TOTAL)).toBe('594,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.93')
+
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    expect(costOf(SUBTOTAL)).toBe('724,000')
+    expect(costOf(GRAND_TOTAL)).toBe('594,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.93')
+  })
+
+  test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {
+    // A stored subtotal that deliberately disagrees with the line items: a recomputing view would show
+    // 674,000 instead of the server's own figure.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...schedule1Doc,
+          trackStatus: 'S',
+          editable: false,
+          subtotalCompanyLoggingCost: 999999,
+          subtotalCompanyLoggingPerUnit: 111.11,
+        }),
+      ),
+    )
+    render(<Schedule1 />)
+
+    expect(await screen.findByText(SUBTOTAL)).toBeInTheDocument()
+    expect(costOf(SUBTOTAL)).toBe('999,999')
+    expect(rate(SUBTOTAL)).toBe('111.11')
+  })
+
   test('editable:true renders an editable form; perUnit stays read-only (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)

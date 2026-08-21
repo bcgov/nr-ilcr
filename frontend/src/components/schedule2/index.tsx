@@ -21,7 +21,10 @@ import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import { enteredNum } from '@/utils/derivedMath'
+import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -112,6 +115,12 @@ const Schedule2: FC = () => {
       mapLoadError,
       onReset: resetBanners,
     })
+
+  // The blur-committed snapshot the derived mirror reads (defect #291). `form` still tracks every
+  // keystroke because it drives the inputs; `committed` only advances when a field loses focus, so the
+  // read-only figures settle once per field instead of churning mid-number — legacy's AJAX-on-blur
+  // behaviour. Re-seeds whenever `data` is replaced (load / Save echo / Delete reload).
+  const { committed, commit } = useCommittedValues(form, data)
 
   const handleSave = () => {
     // Re-entrancy guard: the top + bottom Save buttons can be double-clicked within one tick before
@@ -234,6 +243,20 @@ const Schedule2: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
+  // What the value rows render. While the schedule is editable, the figures that depend on entry come
+  // from the display-only mirror fed by the COMMITTED (blurred) values, so they track data entry the
+  // way legacy did; the Save echo then replaces the document and the mirror re-seeds from it. Outside
+  // Draft / in view mode there is no entry, so the document's own server-computed figures are rendered
+  // as-is (defect #291). `purchasedWoodOverhead` and `totalCompanyLogging` are wholly carried from
+  // Schedules 3 and 1 and always come from `data` — the mirror deliberately does not return them.
+  const figures = editable
+    ? deriveSchedule2(data, {
+        purchasedLogCostCost: enteredNum(committed[F_ITEM25_COST] ?? ''),
+        lessLogSalesVolume: enteredNum(committed[F_ITEM26_VOLUME] ?? ''),
+        lessLogSalesCost: enteredNum(committed[F_ITEM26_COST] ?? ''),
+      })
+    : data
+
   // An editable value cell: a caret-preserving comma-grouped input when the field is entered-by-user
   // and the schedule is editable, otherwise read-only text. Right-aligned so the entered numbers line
   // up with the read-only cells above/below. The hidden `labelText` is a terse, stable a11y name (the
@@ -247,6 +270,7 @@ const Schedule2: FC = () => {
         size="sm"
         value={form[fieldKey] ?? ''}
         onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
+        onBlur={() => commit(fieldKey, { invalid: Boolean(fieldErrors[fieldKey]) })}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />
@@ -270,7 +294,7 @@ const Schedule2: FC = () => {
       {editable
         ? inputCell(F_ITEM25_COST, 'Purchased Log Cost cost')
         : readOnlyCell(data.purchasedLogCost.cost)}
-      {perUnitCell(data.purchasedLogCost.perUnit)}
+      {perUnitCell(figures.purchasedLogCost.perUnit)}
     </TableRow>
   )
 
@@ -284,7 +308,7 @@ const Schedule2: FC = () => {
       {editable
         ? inputCell(F_ITEM26_COST, 'Less Log Sales cost')
         : readOnlyCell(data.lessLogSales.cost)}
-      {perUnitCell(data.lessLogSales.perUnit)}
+      {perUnitCell(figures.lessLogSales.perUnit)}
     </TableRow>
   )
 
@@ -356,11 +380,11 @@ const Schedule2: FC = () => {
               <TableBody>
                 {item25Row}
                 {derivedRow('Purchased/Private Wood Overhead:', data.purchasedWoodOverhead)}
-                {derivedRow('Subtotal:', data.subtotal, true)}
+                {derivedRow('Subtotal:', figures.subtotal, true)}
                 {item26Row}
-                {derivedRow('Net Purchased/Private Log Cost:', data.netPurchased, true)}
+                {derivedRow('Net Purchased/Private Log Cost:', figures.netPurchased, true)}
                 {derivedRow('Total Company Logging Costs(Sch 1):', data.totalCompanyLogging)}
-                {derivedRow('Total Average Logging Costs:', data.totalAverage, true)}
+                {derivedRow('Total Average Logging Costs:', figures.totalAverage, true)}
               </TableBody>
             </Table>
           </TableContainer>
