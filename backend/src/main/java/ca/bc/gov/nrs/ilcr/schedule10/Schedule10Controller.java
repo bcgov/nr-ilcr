@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule10.api.Schedule10Api;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.FieldIssue;

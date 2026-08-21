@@ -46,7 +46,7 @@ const SCHEDULES: {
   { key: 'schedule7b', label: 'Schedule 7B', renderable: true },
   { key: 'schedule8', label: 'Schedule 8', renderable: false },
   { key: 'schedule9', label: 'Schedule 9', renderable: true },
-  { key: 'schedule10', label: 'Schedule 10', renderable: false },
+  { key: 'schedule10', label: 'Schedule 10', renderable: true },
   { key: 'schedule11', label: 'Schedule 11', renderable: true },
 ]
 

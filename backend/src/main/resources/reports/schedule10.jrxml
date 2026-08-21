@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 10 (New Road Construction Costs) — JasperReports 7 template (AD-16, Epic 20.4). Bean-datasource
+  fill from Schedule10Service's DTO (the 20.2 data-feed decision): ONE row per road detail, carrying its
+  construction-page/project context, filled by Schedule10SectionMapper. Values arrive PRE-FORMATTED as
+  Strings. The legacy report is a FORM layout — one road detail per printed page, under a per-project header;
+  reproduced here by breaking to a new page before each road after the first (REPORT_COUNT > 1) and repeating
+  the project header on each road. Deliberately OMITS the LD-1/2/3 fields the legacy report showed (Moisture/
+  ASM Code, Soil Moisture Code, Boulder Area %) — the rebuilt Schedule 10 removed them (Story 20.4).
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule10" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <!-- The top-level PDF outline title for this section (BR-08), or null for no bookmark. -->
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+  <field name="pageNumber" class="java.lang.Integer"/>
+  <field name="rowNumber" class="java.lang.Integer"/>
+  <field name="roadDetailCount" class="java.lang.Integer"/>
+  <field name="division" class="java.lang.String"/>
+  <field name="period" class="java.lang.String"/>
+  <field name="region" class="java.lang.String"/>
+  <field name="tsaOrTfl" class="java.lang.String"/>
+  <field name="supplyBlock" class="java.lang.String"/>
+  <field name="tfl" class="java.lang.String"/>
+  <field name="roadGroup" class="java.lang.String"/>
+  <field name="roadName" class="java.lang.String"/>
+  <field name="roadType" class="java.lang.String"/>
+  <field name="biogeoVariant" class="java.lang.String"/>
+  <field name="rsmsClass" class="java.lang.String"/>
+  <field name="sideSlope" class="java.lang.String"/>
+  <field name="matSolidRock" class="java.lang.String"/>
+  <field name="matRippableRock" class="java.lang.String"/>
+  <field name="matCoarse" class="java.lang.String"/>
+  <field name="matFine" class="java.lang.String"/>
+  <field name="matOrganic" class="java.lang.String"/>
+  <field name="matTotal" class="java.lang.String"/>
+  <field name="sgLength" class="java.lang.String"/>
+  <field name="sgSurfaceWidth" class="java.lang.String"/>
+  <field name="sgActualCost" class="java.lang.String"/>
+  <field name="sgTtTransfer" class="java.lang.String"/>
+  <field name="sgOtherTransfer" class="java.lang.String"/>
+  <field name="sgTotalCosts" class="java.lang.String"/>
+  <field name="sgLessBridges" class="java.lang.String"/>
+  <field name="sgLessCulverts" class="java.lang.String"/>
+  <field name="sgLessLandings" class="java.lang.String"/>
+  <field name="sgLessEndHaul" class="java.lang.String"/>
+  <field name="sgLessOverland" class="java.lang.String"/>
+  <field name="sgLessOtherEng" class="java.lang.String"/>
+  <field name="sgTotal" class="java.lang.String"/>
+  <field name="sgCostPerLength" class="java.lang.String"/>
+  <field name="stCode" class="java.lang.String"/>
+  <field name="stLength" class="java.lang.String"/>
+  <field name="stSurfaceWidth" class="java.lang.String"/>
+  <field name="stType" class="java.lang.String"/>
+  <field name="stDepth" class="java.lang.String"/>
+  <field name="stDistanceToSource" class="java.lang.String"/>
+  <field name="stActualCost" class="java.lang.String"/>
+  <field name="stTtTransfer" class="java.lang.String"/>
+  <field name="stOtherTransfer" class="java.lang.String"/>
+  <field name="stTotal" class="java.lang.String"/>
+  <field name="stCostPerLength" class="java.lang.String"/>
+  <field name="includeDetailEng" class="java.lang.String"/>
+  <field name="endHaulDistance" class="java.lang.String"/>
+  <field name="endHaulVolume" class="java.lang.String"/>
+  <field name="endHaulPerUnit" class="java.lang.String"/>
+  <field name="overlandDistance" class="java.lang.String"/>
+  <field name="overlandVolume" class="java.lang.String"/>
+  <field name="overlandPerUnit" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <title height="16">
+    <!-- Bookmark anchor (see schedule6.jrxml): one top-level PDF outline entry named by bookmarkTitle,
+         suppressed when null; prints once at the section start. -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+  </title>
+  <pageHeader height="60">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+    <element kind="staticText" x="0" y="33" width="500" height="15">
+      <text><![CDATA[Schedule 10:  New Road Construction Costs]]></text>
+    </element>
+    <element kind="textField" x="0" y="45" width="500" height="15" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+    <element kind="staticText" x="602" y="33" width="200" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
+    <element kind="textField" x="602" y="45" width="200" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+      <expression><![CDATA[new java.util.Date()]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="340">
+      <!-- Each road detail begins on its own page (matching the legacy form report); the first road
+           follows the page header directly, so break only from the second road onward. -->
+      <element kind="break" type="Page" x="0" y="0" width="802" height="1">
+        <printWhenExpression><![CDATA[$V{REPORT_COUNT} > 1]]></printWhenExpression>
+      </element>
+      <!-- Project (construction page) header, repeated on each road. -->
+      <element kind="staticText" style="bold" x="0" y="4" width="90" height="15" hTextAlign="Right">
+        <text><![CDATA[Division:]]></text>
+      </element>
+      <element kind="textField" x="95" y="4" width="180" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{division}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="19" width="90" height="15" hTextAlign="Right">
+        <text><![CDATA[Period Surveyed:]]></text>
+      </element>
+      <element kind="textField" x="95" y="19" width="180" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{period}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="34" width="90" height="15" hTextAlign="Right">
+        <text><![CDATA[Region:]]></text>
+      </element>
+      <element kind="textField" x="95" y="34" width="180" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{region}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="430" y="4" width="110" height="15" hTextAlign="Right">
+        <text><![CDATA[TSA or TFL:]]></text>
+      </element>
+      <element kind="textField" x="545" y="4" width="257" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{tsaOrTfl}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="430" y="19" width="110" height="15" hTextAlign="Right">
+        <text><![CDATA[Supply Block:]]></text>
+      </element>
+      <element kind="textField" x="545" y="19" width="257" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{supplyBlock}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="430" y="34" width="110" height="15" hTextAlign="Right">
+        <text><![CDATA[TFL:]]></text>
+      </element>
+      <element kind="textField" x="545" y="34" width="257" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{tfl}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="430" y="49" width="110" height="15" hTextAlign="Right">
+        <text><![CDATA[Road Group:]]></text>
+      </element>
+      <element kind="textField" x="545" y="49" width="257" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{roadGroup}]]></expression>
+      </element>
+      <!-- Column titles. -->
+      <element kind="staticText" style="bold" x="0" y="70" width="260" height="15">
+        <text><![CDATA[Road Information]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="270" y="70" width="270" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Sub-Grade]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="550" y="70" width="252" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Additional Stabilizing]]></text>
+      </element>
+      <!-- Column 1: Road Information (the road-name identity always prints; the rest is body-gated). -->
+      <element kind="staticText" x="0" y="88" width="110" height="15">
+        <text><![CDATA[Road Name:]]></text>
+      </element>
+      <element kind="textField" x="115" y="88" width="145" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{roadName}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="103" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Road Type:]]></text>
+      </element>
+      <element kind="textField" x="115" y="103" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadType}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="118" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Biogeo/Subzone/Variant:]]></text>
+      </element>
+      <element kind="textField" x="115" y="118" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{biogeoVariant}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="133" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[RSMS Class:]]></text>
+      </element>
+      <element kind="textField" x="115" y="133" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{rsmsClass}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="148" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Side Slope:]]></text>
+      </element>
+      <element kind="textField" x="115" y="148" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{sideSlope}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="168" width="150" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Material Type]]></text>
+      </element>
+      <element kind="staticText" x="0" y="183" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Solid (Hard) Rock:]]></text>
+      </element>
+      <element kind="textField" x="115" y="183" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matSolidRock}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="198" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Rippable Rock:]]></text>
+      </element>
+      <element kind="textField" x="115" y="198" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matRippableRock}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="213" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Coarse:]]></text>
+      </element>
+      <element kind="textField" x="115" y="213" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matCoarse}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="228" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Fine:]]></text>
+      </element>
+      <element kind="textField" x="115" y="228" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matFine}]]></expression>
+      </element>
+      <element kind="staticText" x="0" y="243" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Organic:]]></text>
+      </element>
+      <element kind="textField" x="115" y="243" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matOrganic}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="258" width="110" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total:]]></text>
+      </element>
+      <element kind="textField" style="bold" x="115" y="258" width="145" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{matTotal}]]></expression>
+      </element>
+      <!-- Column 2: Sub-Grade (all body-gated). Labels left, values right-aligned. -->
+      <element kind="textField" x="270" y="88" width="270" height="222" blankWhenNull="true" textAdjust="StretchHeight">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[
+          "Length:  " + $F{sgLength} + "\n"
+          + "Surface Width:  " + $F{sgSurfaceWidth} + "\n"
+          + "Actual Cost($):  " + $F{sgActualCost} + "\n"
+          + "TtT Transfer($):  " + $F{sgTtTransfer} + "\n"
+          + "Other Transfer($):  " + $F{sgOtherTransfer} + "\n"
+          + "Total Costs($):  " + $F{sgTotalCosts} + "\n"
+          + "Less Bridges($):  " + $F{sgLessBridges} + "\n"
+          + "Less Culverts($):  " + $F{sgLessCulverts} + "\n"
+          + "Less Landings($):  " + $F{sgLessLandings} + "\n"
+          + "Less End Haul($):  " + $F{sgLessEndHaul} + "\n"
+          + "Less Overland($):  " + $F{sgLessOverland} + "\n"
+          + "Less OtherEng($):  " + $F{sgLessOtherEng} + "\n"
+          + "Total($):  " + $F{sgTotal} + "\n"
+          + "$/km:  " + $F{sgCostPerLength}
+        ]]></expression>
+      </element>
+      <!-- Column 3: Additional Stabilizing (all body-gated). -->
+      <element kind="textField" x="550" y="88" width="252" height="222" blankWhenNull="true" textAdjust="StretchHeight">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[
+          "Code:  " + $F{stCode} + "\n"
+          + "Length:  " + $F{stLength} + "\n"
+          + "Surface Width:  " + $F{stSurfaceWidth} + "\n"
+          + "Type:  " + $F{stType} + "\n"
+          + "Depth:  " + $F{stDepth} + "\n"
+          + "Distance to Source:  " + $F{stDistanceToSource} + "\n"
+          + "Actual Costs($):  " + $F{stActualCost} + "\n"
+          + "TtT Transfer($):  " + $F{stTtTransfer} + "\n"
+          + "Other Transfer($):  " + $F{stOtherTransfer} + "\n"
+          + "Total($):  " + $F{stTotal} + "\n"
+          + "$/km:  " + $F{stCostPerLength}
+        ]]></expression>
+      </element>
+      <!-- Include-detail-engineering flag + End Haul / Overland detail table (body-gated). -->
+      <element kind="textField" x="0" y="285" width="260" height="15" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA["Include Detail Engineering Costs:  " + $F{includeDetailEng}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="430" y="285" width="90" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Distance km]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="525" y="285" width="120" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Volume(m3)]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="650" y="285" width="120" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[$/m3/km]]></text>
+      </element>
+      <element kind="staticText" x="270" y="300" width="140" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[End Haul Details:]]></text>
+      </element>
+      <element kind="textField" x="430" y="300" width="90" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{endHaulDistance}]]></expression>
+      </element>
+      <element kind="textField" x="525" y="300" width="120" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{endHaulVolume}]]></expression>
+      </element>
+      <element kind="textField" x="650" y="300" width="120" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{endHaulPerUnit}]]></expression>
+      </element>
+      <element kind="staticText" x="270" y="315" width="140" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Overland Details:]]></text>
+      </element>
+      <element kind="textField" x="430" y="315" width="90" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{overlandDistance}]]></expression>
+      </element>
+      <element kind="textField" x="525" y="315" width="120" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{overlandVolume}]]></expression>
+      </element>
+      <element kind="textField" x="650" y="315" width="120" height="15" hTextAlign="Right" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{overlandPerUnit}]]></expression>
+      </element>
+      <!-- Comments (comment-gated), stretch. -->
+      <element kind="staticText" style="bold" x="0" y="308" width="90" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" x="0" y="323" width="260" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+      <!-- Ordinal Line (Page / Road numbers) -->
+      <element kind="textField" x="270" y="323" width="532" height="15" hTextAlign="Right">
+        <expression><![CDATA["Page " + $F{pageNumber} + " - Road " + $F{rowNumber} + " of " + $F{roadDetailCount}]]></expression>
+      </element>
+    </band>
+  </detail>
+</jasperReport>

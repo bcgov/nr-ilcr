@@ -181,6 +181,7 @@ public class PrintService {
           case SCHEDULE_7A -> request.schedule7a();
           case SCHEDULE_7B -> request.schedule7b();
           case SCHEDULE_9 -> request.schedule9();
+          case SCHEDULE_10 -> request.schedule10();
           case SCHEDULE_11 -> request.schedule11();
         };
   }
@@ -197,7 +198,6 @@ public class PrintService {
             || request.schedule3()
             || request.schedule4()
             || request.schedule8()
-            || request.schedule10()
             || request.printMillInformationReport();
     if (anyUnimplemented) {
       // DEBUG, not INFO: the SPA (Story 20.3) disables the deferred schedules/options, so this is
@@ -206,8 +206,8 @@ public class PrintService {
       // interim gap is documented; raise to DEBUG logging when diagnosing a caller that still sends
       // them.
       log.debug(
-          "Print selection includes schedules/options not yet implemented in Epic 20.2 "
-              + "(1/2/3/4/8/10 and/or the Mill Information report); those are skipped for now");
+          "Print selection includes schedules/options not yet implemented in Epic 20 "
+              + "(1/2/3/4/8 and/or the Mill Information report); those are skipped for now");
     }
   }
 }

@@ -460,6 +460,94 @@ class PrintScheduleIT extends AbstractOracleIT {
     verify(virtualizerFactory, atLeastOnce()).create();
   }
 
+  @Test
+  @DisplayName("Schedule 10 (Story 20.4): 710/2021 renders the section + exactly one bookmark")
+  void schedule10_rendersWithOneBookmark() throws Exception {
+    // Mill 710/2021 carries the rich Schedule 10 fixture (V20260817): 2 construction pages with
+    // road
+    // details, region RNI resolved to "Northern Interior". Selecting Schedule 10 alone must render
+    // its section (heading + real seeded values) and carry exactly its one top-level bookmark
+    // (BR-08).
+    String selection =
+        """
+        {"schedule10":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "710")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 10:  New Road Construction Costs");
+    assertThat(text).contains("Sch10 Rich Construction"); // mill title block (name-number)
+    assertThat(text).contains("North Division"); // page 8900 division
+    assertThat(text).contains("Northern Interior"); // region RNI resolved code -> label
+    assertThat(text).contains("Mainline A"); // road name (detail 8910)
+
+    // BR-08: a single-schedule print still carries exactly one top-level bookmark.
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_10.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("skip-empty (BR-09): 514/2021 select 5+10, 10 has no data -> 5 prints, 10 omitted")
+  void schedule10_skipEmpty_keepsTheRest() throws Exception {
+    // Mill 514/2021 has Schedule 5 camps but NO Schedule 10 construction pages (the Schedule 10
+    // fixtures are mills 710-716), so selecting both must print Schedule 5 and silently omit
+    // Schedule 10 (BR-09) — leaving exactly the Schedule 5 bookmark.
+    String selection =
+        """
+        {"schedule5":true,"schedule10":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 5:  Camp and Access Expense");
+    assertThat(text).contains("Cedar Flats Camp");
+    assertThat(text).doesNotContain("Schedule 10:  New Road Construction Costs");
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_5.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 715/2021 select 10, no pages -> 404 'Schedule not found.'")
+  void schedule10Only_noData_returns404() throws Exception {
+    // Mill 715/2021 is a valid active context with ZERO Schedule 10 pages; a Schedule-10-only print
+    // is then all-empty, the legacy single-schedule outcome (ERR-005), not a blank PDF.
+    String selection =
+        """
+        {"schedule10":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "715")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
+  }
+
   private static String extractText(byte[] pdf) throws Exception {
     try (PDDocument document = Loader.loadPDF(pdf)) {
       return new PDFTextStripper().getText(document);
