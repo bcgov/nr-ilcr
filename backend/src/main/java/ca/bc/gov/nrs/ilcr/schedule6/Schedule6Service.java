@@ -411,6 +411,67 @@ public class Schedule6Service {
   }
 
   /**
+   * Delete one Schedule 6 road record and return the recomputed document.
+   *
+   * <p>Ported from legacy {@code Schedule6MB.remove} :208-218 → {@code Schedule6DAO.saveSchedule}
+   * :288-310. Carries NO revision token: legacy's row Delete had none, matching the
+   * general-comments precedent (deviation (c2)). Draft-gated (deviation (a)).
+   *
+   * <p><strong>The BR-09 delete-side re-insert is load-bearing.</strong> The schedule-level general
+   * comment is stored replicated on every cat-6 row, so deleting the LAST road record would take
+   * the comment with it. Legacy guards exactly this case at {@code Schedule6DAO.java:297-309} by
+   * inserting a bare placeholder carrying the deleted row's comment. The row count and the comment
+   * are both read before the DELETE, because afterwards neither is recoverable.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param recordId the road record id to delete
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
+   *     editable})
+   * @param user the acting user id (audit columns on the re-inserted placeholder)
+   * @return the recomputed aggregate document
+   */
+  @Transactional
+  public Schedule6Response deleteRecord(
+      long millId, int year, int recordId, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    try {
+      // A placeholder is excluded from roadRecords[], so a client can never legitimately address
+      // one — 404 before the delete could remove the row holding the general comment.
+      if (isPlaceholderId(millId, year, recordId)) {
+        throw new RoadRecordNotFoundException();
+      }
+      RoadRecordRow target =
+          repository
+              .findRoadRecord(recordId, millId, year)
+              .orElseThrow(RoadRecordNotFoundException::new);
+      // Read before deleting: legacy decides the re-insert from the pre-delete list size
+      // (Schedule6DAO.java:297 evaluates getRoadMaintenanceReports().size() == 1).
+      boolean wasOnlyRow = repository.findRoadRecords(millId, year).size() == 1;
+      String survivingComment = target.generalComment();
+
+      repository.deleteCostDetailsFor(recordId);
+      if (repository.deleteRoadReport(recordId, millId, year) == 0) {
+        // Raced by a concurrent delete between the read above and here.
+        throw new RoadRecordNotFoundException();
+      }
+      if (wasOnlyRow && StringUtils.isNotBlank(survivingComment)) {
+        repository.insertPlaceholder(
+            repository.nextRoadReportId(), millId, year, survivingComment, user);
+      }
+    } catch (DataAccessException ex) {
+      log.warn(
+          "Schedule 6 delete failed for mill {} year {} record {} [{}]",
+          millId,
+          year,
+          recordId,
+          ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
    * The Draft gate for every write: the Schedules 1–10 track must be {@code D} (else 409). Keys on
    * {@code ILCR_MILL_REPORT_STATUS_CODE} via the existing {@code findTrackStatus} — never the
    * silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only

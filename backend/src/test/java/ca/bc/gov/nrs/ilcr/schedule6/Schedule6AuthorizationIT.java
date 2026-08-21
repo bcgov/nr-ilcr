@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -86,5 +88,21 @@ class Schedule6AuthorizationIT extends AbstractOracleIT {
                 .param("year", SEEDED_YEAR)
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful());
+  }
+
+  // Task 3: DELETE requires EDIT_SCHEDULE, not VIEW_SCHEDULE (AD-7) -- a VIEW-only caller must be
+  // rejected the same as the writes, never merely by naming the read permission above.
+  @Test
+  @DisplayName("DELETE /records/{id} with no group -> 403")
+  void deleteRoadRecord_noGroup_returns403() throws Exception {
+    mockMvc
+        .perform(
+            delete("/api/v1/schedule6/records/8358")
+                .with(csrf())
+                .param("millId", "666")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
 }

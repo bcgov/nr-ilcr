@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class Schedule6Controller implements Schedule6Api {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
+  private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
   // The verbatim legacy field segments (Schedule6MB.checkStatus() :155-172), keyed by the
   // FieldIssue.field names the service emits. Each carries its legacy leading AND trailing space.
@@ -167,6 +168,23 @@ public class Schedule6Controller implements Schedule6Api {
             .toList();
     return ResponseEntity.ok(
         new Schedule6CheckStatusResponse(raw.outcome(), scheduleMessages, records));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule6Response> deleteRoadRecord(
+      int recordId, String millId, String year, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    Schedule6Response doc =
+        schedule6Service.deleteRecord(
+            context.millId(),
+            context.year(),
+            recordId,
+            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            authentication.getName());
+    // Legacy's delete path resolved its own message key, not the save one
+    // (Schedule6MB.delete() :224-226 -> "dataDeletedSuccesfullyInfoMsg").
+    return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
   /**

@@ -463,4 +463,77 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
       @Param("tsbNumberCode") String tsbNumberCode,
       @Param("tflNumberCode") String tflNumberCode,
       @Param("user") String user);
+
+  // ===============================================================================================
+  // Delete path (Task 3) — one road record removed, with the BR-09 delete-side re-insert when it
+  // was the mill/year's last one. Same IDOR scope as every other write.
+  // ===============================================================================================
+
+  /**
+   * One road record by id, scoped to the mill/year/category. Used by the delete path, which must
+   * read the row's COMMENTS and know it exists BEFORE deleting anything — the BR-09 re-insert
+   * decision depends on a value that is gone once the DELETE runs.
+   */
+  @Query(
+      """
+      SELECT ROAD_MAINTENANCE_REPORT_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE,
+             COMMENTS, REVISION_COUNT
+        FROM THE.ROAD_MAINTENANCE_REPORT
+       WHERE ROAD_MAINTENANCE_REPORT_ID = :id
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '6'
+      """)
+  Optional<RoadMaintenanceReportEntity> findRoadReportEntity(
+      @Param("id") int id, @Param("millId") long millId, @Param("year") int year);
+
+  /** {@link #findRoadReportEntity} mapped to the service-facing {@link RoadRecordRow}. */
+  default Optional<RoadRecordRow> findRoadRecord(int id, long millId, int year) {
+    return findRoadReportEntity(id, millId, year)
+        .map(
+            e ->
+                new RoadRecordRow(
+                    e.roadMaintenanceReportId(),
+                    e.tsaNumber(),
+                    e.tsbNumberCode(),
+                    e.tflNumberCode(),
+                    e.comments(),
+                    e.revisionCount()));
+  }
+
+  /**
+   * Delete a road record's item-69 cost detail rows. Must run BEFORE the master delete: the detail
+   * carries {@code ROAD_MAINTENANCE_REPORT_ID} as an FK, so the master delete would raise ORA-02292
+   * with the child still present. Legacy relied on a Hibernate cascade ({@code
+   * Schedule6DAO.java:293}); the explicit statement is the AD-3 equivalent.
+   *
+   * @return rows affected — legitimately {@code 0}: real delivery cat-6 rows have NO item-69 detail
+   */
+  @Modifying
+  @Query(
+      """
+      DELETE FROM THE.ILCR_COST_REPORT_DETAIL
+       WHERE ROAD_MAINTENANCE_REPORT_ID = :recordId
+      """)
+  int deleteCostDetailsFor(@Param("recordId") int recordId);
+
+  /**
+   * Delete one road record. Unlike {@link #deletePlaceholder} this does NOT require the
+   * classification columns to be NULL — it deletes a REAL record — so the mill/year/category scope
+   * is the only thing standing between a crafted id and another mill's row (the Schedule 4 IDOR
+   * guard). No revision predicate: legacy's delete carried no optimistic-lock token ({@code
+   * Schedule6MB.remove} :208-218), and this endpoint is faithful to that.
+   *
+   * @return rows affected — {@code 0} when the id is absent or foreign (the service answers 404)
+   */
+  @Modifying
+  @Query(
+      """
+      DELETE FROM THE.ROAD_MAINTENANCE_REPORT
+       WHERE ROAD_MAINTENANCE_REPORT_ID = :id
+         AND ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+         AND ILCR_CATEGORY_ID = '6'
+      """)
+  int deleteRoadReport(@Param("id") int id, @Param("millId") long millId, @Param("year") int year);
 }

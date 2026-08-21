@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule6;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -98,6 +99,20 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("DELETE /records/{id} with no group -> 403 (Task 3)")
+  void deleteRecord_noGroup_returns403() throws Exception {
+    mockMvc
+        .perform(
+            delete(RECORDS + "/8358")
+                .with(csrf())
+                .param("millId", "666")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+  }
+
+  @Test
   @DisplayName("PUT /general-comments with no group -> 403")
   void saveGeneralComments_noGroup_returns403() throws Exception {
     mockMvc
@@ -167,6 +182,23 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  @DisplayName(
+      "ILCR_SUBMITTER holds EDIT_SCHEDULE -> DELETE authz passes (not 403); non-Draft gate -> 409"
+          + " (Task 3)")
+  void submitter_passesDeleteAuthorization() throws Exception {
+    // 662/2021 (status 'S') + its seeded record 8321: authz passes so the request is NOT 403, and
+    // the service's Draft gate rejects it 409 WITHOUT deleting anything -- no fixture churn.
+    mockMvc
+        .perform(
+            delete(RECORDS + "/8321")
+                .with(csrf())
+                .param("millId", "662")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isConflict());
   }
 }

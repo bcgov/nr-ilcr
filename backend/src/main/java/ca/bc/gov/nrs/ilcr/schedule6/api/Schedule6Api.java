@@ -10,6 +10,7 @@ import jakarta.validation.groups.Default;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,9 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 6 (Road Management Costs) API contract (controller + api-interface split, the
  * established idiom). The interface owns the request mapping and parameter contract; {@code
- * Schedule6Controller} implements it and adds authorization. There is deliberately NO DELETE: the
- * row-Delete control and the BR-09 delete-side re-insert are un-sliced by the UC (exclusion #1) —
- * fresh requirements are needed before one may exist.
+ * Schedule6Controller} implements it and adds authorization.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like Schedule 11, unlike Schedule
  * 1's typed params — because AC4 pins the verbatim legacy ERR-001 message for missing, blank, AND
@@ -125,6 +124,27 @@ public interface Schedule6Api {
    */
   @PostMapping("/check-status")
   ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Delete one Schedule 6 road record. Carries NO revision token — legacy's row Delete had none
+   * ({@code Schedule6MB.remove} :208-218), matching the general-comments precedent (deviation
+   * (c2)). When the deleted record was the mill/year's only road record AND carried a non-blank
+   * general comment, a bare placeholder row is re-inserted to preserve it (BR-09 delete side,
+   * {@code Schedule6DAO.java:297-309}). Draft-gated; an unknown, foreign, or placeholder id → 404;
+   * missing {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
+   *
+   * @param recordId the road record id ({@code ROAD_MAINTENANCE_REPORT_ID}) to delete
+   * @param millId the raw mill id param (validated by millcontext)
+   * @param year the raw reporting year param
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @DeleteMapping("/records/{recordId}")
+  ResponseEntity<Schedule6Response> deleteRoadRecord(
+      @PathVariable int recordId,
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
       Authentication authentication);
