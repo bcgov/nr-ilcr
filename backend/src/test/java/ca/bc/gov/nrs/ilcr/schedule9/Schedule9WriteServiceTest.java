@@ -13,8 +13,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
 import java.math.BigDecimal;
 import java.util.List;

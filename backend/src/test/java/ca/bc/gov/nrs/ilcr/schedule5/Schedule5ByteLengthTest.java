@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule5;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
 import jakarta.validation.ConstraintViolation;

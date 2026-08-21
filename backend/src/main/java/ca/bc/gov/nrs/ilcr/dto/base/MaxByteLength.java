@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.dto.base;
 
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import jakarta.validation.Constraint;
 import jakarta.validation.Payload;
 import java.lang.annotation.Documented;

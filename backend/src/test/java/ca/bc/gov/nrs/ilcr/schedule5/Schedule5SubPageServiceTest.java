@@ -10,7 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;

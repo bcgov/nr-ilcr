@@ -5,6 +5,9 @@ import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.isTotalComments;
 import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.resolvePop;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;

@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
 import ca.bc.gov.nrs.ilcr.exception.BusinessException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import org.springframework.http.HttpStatus;
 
 /**
