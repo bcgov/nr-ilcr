@@ -2,7 +2,11 @@ import type { FC } from 'react'
 import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
 import type { Schedule6CodeLists } from '@/interfaces/Schedule6Response'
-import type { GeneralCommentsRequest, RoadRecordRequest } from '@/interfaces/Schedule6Request'
+import type {
+  RoadRecordRequest,
+  Schedule6CheckRequest,
+  Schedule6SaveRequest,
+} from '@/interfaces/Schedule6Request'
 import type { RoadRecordErrors, RoadRecordFormValues } from './validation'
 import { useCallback, useState } from 'react'
 import {
@@ -20,7 +24,7 @@ import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import CodeComboBox from '@/components/core/CodeComboBox'
-import { describe, supplyBlocksFor } from '@/utils/codes'
+import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
@@ -58,8 +62,12 @@ const DELETE_BUTTON_LABEL = 'Delete'
 const DELETE_BUTTON_TITLE = 'Delete Road Maintenance Report'
 const SCHEDULE6_PATH = '/v1/schedule6'
 const RECORDS_PATH = `${SCHEDULE6_PATH}/records`
-const GENERAL_COMMENTS_PATH = `${SCHEDULE6_PATH}/general-comments`
 const CHECK_STATUS_PATH = `${SCHEDULE6_PATH}/check-status`
+// A missing revisionCount is a contract regression (8.1 always serves it) -- a coerced 0 would
+// silently bypass the stale-edit check, so this surfaces instead of sending anything (hazard 1,
+// ported from the retired handleSaveEdit guard).
+const ERR_MISSING_REVISION =
+  'This record cannot be saved because it is missing its revision token. Reload the page and try again.'
 
 // Legacy display masks, transcribed from the JSF converters (AD-5 no recompute — every value here is
 // server-computed and this only formats it). Those converters return "" for a null/non-BigDecimal
@@ -102,7 +110,12 @@ const isTfl = (areaType: string): boolean => areaType.trim() === TFL_AREA_TYPE
 const applyAreaType = (form: RoadRecordFormValues, areaType: string): RoadRecordFormValues =>
   isTfl(areaType) ? { ...form, areaType, supplyBlock: '' } : { ...form, areaType, tflNumber: '' }
 
-const buildBody = (form: RoadRecordFormValues, revisionCount?: number): RoadRecordRequest => {
+// Shared by the Add panel POST, the page-level Save PUT and Check Status: the same
+// parseDecimalInput/roundCost parse for all three, or a verdict could describe different numbers
+// than a save would store (step 4.6). Check-status entries are exactly this shape -- no recordId, no
+// revisionCount, rows identified by payload ordinal (Task 6) -- so buildCheckEntry is this function
+// under a name that says what it is used for at each call site.
+const buildBody = (form: RoadRecordFormValues): RoadRecordRequest => {
   const tfl = isTfl(form.areaType)
   const blank = (raw: string): string | null => (raw.trim() === '' ? null : raw.trim())
   return {
@@ -115,9 +128,23 @@ const buildBody = (form: RoadRecordFormValues, revisionCount?: number): RoadReco
     volume: parseDecimalInput(form.volume),
     cost: roundCost(parseDecimalInput(form.cost)),
     comments: form.comments.trim() === '' ? null : form.comments,
-    ...(revisionCount === undefined ? {} : { revisionCount }),
   }
 }
+
+const buildCheckEntry = buildBody
+
+// One row of the Save PUT: the parsed fields plus the identifiers the batch endpoint needs to place
+// and lock it. `revisionCount` is REQUIRED here (not the optional field on RoadRecordRequest) --
+// callers must resolve the hazard-1 guard before this is ever called.
+const buildSaveEntry = (
+  form: RoadRecordFormValues,
+  recordId: number,
+  revisionCount: number,
+): Schedule6SaveRequest['records'][number] => ({
+  ...buildBody(form),
+  recordId,
+  revisionCount,
+})
 
 const PAGE_HEADER = (
   <Grid fullWidth className="app-page__header">
@@ -302,53 +329,44 @@ const AddPanel: FC<AddPanelProps> = ({
   </section>
 )
 
-// A record's read-only display state inside its accordion row: the six legacy-labelled fields plus
-// Comments, and the Edit button that opens the editor.
-type RecordDisplayProps = {
+// A record's row inside its accordion: the six legacy-labelled fields (always live -- legacy rows
+// were always directly editable, schedule6.xhtml:248-431) plus the Delete button (Task 4).
+type RoadRecordRowProps = {
   readonly row: RoadRecord
+  readonly form: RoadRecordFormValues
+  readonly errors: RoadRecordErrors
   readonly codeLists: Schedule6CodeLists
-  readonly editDisabled: boolean
+  readonly disabled: boolean
   readonly deleteDisabled: boolean
-  readonly onEdit: () => void
+  readonly onAreaTypeChange: (value: string) => void
+  readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
   readonly onDelete: () => void
 }
 
-// TFL stores the literal 'TFL' in areaType, which is not a served code — describe() would otherwise
-// look it up against codeLists.tsaNumbers and fall back to the bare 'TFL' anyway (the sentinel is its
-// own description), but resolving it through areaTypeOptions keeps this row and the combo consistent.
-const RecordDisplay: FC<RecordDisplayProps> = ({
+const RoadRecordRow: FC<RoadRecordRowProps> = ({
   row,
+  form,
+  errors,
   codeLists,
-  editDisabled,
+  disabled,
   deleteDisabled,
-  onEdit,
+  onAreaTypeChange,
+  onFieldChange,
   onDelete,
 }) => (
   <>
-    <dl className="schedule-6__fields">
-      <FieldValue
-        label="TSA or TFL"
-        value={
-          row.areaType === null ? '' : describe(areaTypeOptions(codeLists.tsaNumbers), row.areaType)
-        }
-      />
-      <FieldValue label="TFL" value={row.tflNumber ?? ''} />
-      <FieldValue
-        label="Supply Block"
-        value={row.supplyBlock === null ? '' : describe(codeLists.supplyBlocks, row.supplyBlock)}
-      />
-      <FieldValue label="RMG" value={row.rmg ?? ''} />
-      <FieldValue label="Volume m³" value={volumeMask(row.volume)} numeric />
-      <FieldValue label="Cost $" value={moneyMask(row.cost)} numeric />
-      <FieldValue label="$ / m³" value={ratioMask(row.costPerVolume)} numeric />
-      <div className="schedule-6__field schedule-6__comments">
-        <dt>Comments</dt>
-        <dd>{row.comments ?? ''}</dd>
-      </div>
-    </dl>
-    <Button kind="ghost" size="sm" disabled={editDisabled} onClick={onEdit}>
-      Edit
-    </Button>
+    <RoadRecordFields
+      idPrefix={`row-${String(row.recordId)}`}
+      form={form}
+      errors={errors}
+      codeLists={codeLists}
+      disabled={disabled}
+      // The row's last server-derived values; they refresh on the save echo.
+      rmg={row.rmg ?? ''}
+      costPerVolume={ratioMask(row.costPerVolume)}
+      onAreaTypeChange={onAreaTypeChange}
+      onFieldChange={onFieldChange}
+    />
     <Button
       kind="danger--ghost"
       size="sm"
@@ -365,54 +383,6 @@ const RecordDisplay: FC<RecordDisplayProps> = ({
   </>
 )
 
-// A record's edit state. Legacy's rows were always directly editable and one page-wide Save posted
-// every record at once; 8.2 replaced that with a per-record PUT, so an explicit edit mode is the only
-// way to scope one PUT to one row and know which revision token it echoes (deviation C).
-type RecordEditorProps = {
-  readonly row: RoadRecord
-  readonly form: RoadRecordFormValues
-  readonly errors: RoadRecordErrors
-  readonly codeLists: Schedule6CodeLists
-  readonly saving: boolean
-  readonly onAreaTypeChange: (value: string) => void
-  readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
-  readonly onSave: () => void
-  readonly onCancel: () => void
-}
-
-const RecordEditor: FC<RecordEditorProps> = ({
-  row,
-  form,
-  errors,
-  codeLists,
-  saving,
-  onAreaTypeChange,
-  onFieldChange,
-  onSave,
-  onCancel,
-}) => (
-  <>
-    <RoadRecordFields
-      idPrefix={`edit-${String(row.recordId)}`}
-      form={form}
-      errors={errors}
-      codeLists={codeLists}
-      disabled={saving}
-      // The row's last server-derived values; they refresh on the save echo.
-      rmg={row.rmg ?? ''}
-      costPerVolume={ratioMask(row.costPerVolume)}
-      onAreaTypeChange={onAreaTypeChange}
-      onFieldChange={onFieldChange}
-    />
-    <Button kind="primary" size="sm" disabled={saving} onClick={onSave}>
-      Save
-    </Button>
-    <Button kind="ghost" size="sm" disabled={saving} onClick={onCancel}>
-      Cancel
-    </Button>
-  </>
-)
-
 const Schedule6: FC = () => {
   const { millId, year, contextMissing, isCurrent: contextStillCurrent } = useScheduleContextGuard()
 
@@ -425,10 +395,13 @@ const Schedule6: FC = () => {
   const [addForm, setAddForm] = useState<RoadRecordFormValues>(emptyForm)
   const [addErrors, setAddErrors] = useState<RoadRecordErrors>({})
 
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editRevision, setEditRevision] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<RoadRecordFormValues>(emptyForm)
-  const [editErrors, setEditErrors] = useState<RoadRecordErrors>({})
+  // One form per row, keyed by recordId. Legacy's rows were always directly editable and one
+  // page-wide Save posted every record at once (schedule6.xhtml:248-431, Schedule6MB.save); the
+  // shipped Edit button existed only to scope a per-record PUT, which no longer exists (correction 4,
+  // retiring deviation (C)). A row with no entry here falls back to the document's own values (see
+  // getRowForm) -- so a freshly-loaded or freshly-added row needs no explicit seed.
+  const [rowForms, setRowForms] = useState<Record<number, RoadRecordFormValues>>({})
+  const [rowErrors, setRowErrors] = useState<Record<number, RoadRecordErrors>>({})
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
 
@@ -437,8 +410,10 @@ const Schedule6: FC = () => {
   // mill/year — resetTransient below clears it on every context change.
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
-  // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
-  // so a context change can't strand an open editor, an open add panel or a stale banner.
+  // Clear all transient mutation + add/row state whenever a fresh document loads (mill/year change),
+  // so a context change can't strand an open add panel, a stale banner, or -- the hazard this design
+  // most invites, with N row forms instead of one -- a PREVIOUS mill's edits sitting over the new
+  // document. Without this, a row form only clears by being re-seeded (save echo) or never at all.
   const resetTransient = useCallback(() => {
     setSaving(false)
     setMessage(null)
@@ -447,10 +422,8 @@ const Schedule6: FC = () => {
     setShowAdd(false)
     setAddForm(emptyForm())
     setAddErrors({})
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
+    setRowForms({})
+    setRowErrors({})
     setCommentsError(undefined)
     setPendingDeleteId(null)
   }, [])
@@ -486,8 +459,23 @@ const Schedule6: FC = () => {
 
   const setAddField = (key: keyof RoadRecordFormValues, value: string) =>
     setAddForm((prev) => ({ ...prev, [key]: value }))
-  const setEditField = (key: keyof RoadRecordFormValues, value: string) =>
-    setEditForm((prev) => ({ ...prev, [key]: value }))
+
+  // The row's current on-screen values: whatever the user has typed, or the document's own values
+  // when the user hasn't touched this row yet (or the document just (re)loaded/echoed and cleared the
+  // map). This is what every read of a row's form -- render, Save, Check Status -- goes through, so
+  // the three can never disagree about what "on screen" means for a given row.
+  const getRowForm = (row: RoadRecord): RoadRecordFormValues =>
+    rowForms[row.recordId] ?? seedForm(row)
+
+  const updateRowForm = (
+    row: RoadRecord,
+    updater: (form: RoadRecordFormValues) => RoadRecordFormValues,
+  ) => {
+    setRowForms((prev) => ({
+      ...prev,
+      [row.recordId]: updater(prev[row.recordId] ?? seedForm(row)),
+    }))
+  }
 
   // Shared tail for the three DOCUMENT mutations (add, edit, general comment): apply on success, keep
   // entered values and surface the API's verbatim detail on failure, and release the in-flight lock —
@@ -548,55 +536,6 @@ const Schedule6: FC = () => {
     )
   }
 
-  const startEdit = (row: RoadRecord) => {
-    clearBanners()
-    setEditingId(row.recordId)
-    // revisionCount is read from the LOADED row — never hardcoded, never coerced to 0 (a coerced 0
-    // silently bypasses the stale-edit check). `?? null` preserves a legitimate 0.
-    setEditRevision(row.revisionCount ?? null)
-    setEditForm(seedForm(row))
-    setEditErrors({})
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
-  }
-
-  const handleSaveEdit = () => {
-    if (editingId === null || saving) {
-      return
-    }
-    clearBanners()
-    // Contract guard: 8.1 always serves revisionCount, but the type admits null/absent. A silent
-    // early-return would leave an enabled Save that does nothing and mask the contract regression —
-    // surface it instead (client-owned generic fallback, AD-8).
-    if (editRevision === null) {
-      setActionError(
-        'This record cannot be saved because it is missing its revision token. Reload the page and try again.',
-      )
-      return
-    }
-    const errors = validateRoadRecord(editForm)
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors)
-      return
-    }
-    setEditErrors({})
-    runMutation(
-      apiService
-        .getAxiosInstance()
-        .put<Schedule6Response>(
-          `${RECORDS_PATH}/${String(editingId)}${query}`,
-          buildBody(editForm, editRevision),
-        ),
-      () => cancelEdit(),
-      'Schedule could not be saved.',
-    )
-  }
-
   const handleConfirmDelete = () => {
     const recordId = pendingDeleteId
     // Close the dialog whether or not the delete actually proceeds — a stale `saving` guard below
@@ -617,27 +556,56 @@ const Schedule6: FC = () => {
     )
   }
 
-  const handleSaveComments = () => {
+  // Replaces handleSaveEdit + handleSaveComments: legacy's page-wide Save posted every record plus
+  // the general comment in one transaction (schedule6.xhtml:222-229/518-526, Schedule6MB.save), which
+  // Story 8.2 decomposed into per-record PUTs -- Task 5 restores the single endpoint, so this restores
+  // the single handler.
+  const handleSave = () => {
     if (!data || saving) {
       return
     }
     clearBanners()
-    const error = validateGeneralComments(generalComments)
-    if (error) {
-      setCommentsError(error)
+    const commentError = validateGeneralComments(generalComments)
+    const errors: Record<number, RoadRecordErrors> = {}
+    for (const row of data.roadRecords) {
+      const rowError = validateRoadRecord(getRowForm(row))
+      if (Object.keys(rowError).length > 0) {
+        errors[row.recordId] = rowError
+      }
+    }
+    setRowErrors(errors)
+    setCommentsError(commentError)
+    if (commentError || Object.keys(errors).length > 0) {
       return
     }
-    setCommentsError(undefined)
-    const body: GeneralCommentsRequest = {
-      // Blank clears the comment (BR-09 third branch).
+    // Hazard 1: 8.1 always serves revisionCount, but the type admits null/absent. Sending a coerced 0
+    // would silently bypass the stale-edit check for exactly this row -- a missing token must surface
+    // as a client-owned error and the WHOLE save must stop (one transaction; partial send is worse
+    // than no send).
+    const missingToken = data.roadRecords.some(
+      (row) => row.revisionCount === null || row.revisionCount === undefined,
+    )
+    if (missingToken) {
+      setActionError(ERR_MISSING_REVISION)
+      return
+    }
+    const body: Schedule6SaveRequest = {
       generalComments: generalComments.trim() === '' ? null : generalComments,
+      // EVERY served row travels, each with the revision token from the document it was seeded
+      // from. An omitted row is a 400 -- the server refuses to guess what the user meant to leave
+      // alone.
+      records: data.roadRecords.map((row) =>
+        buildSaveEntry(getRowForm(row), row.recordId, row.revisionCount as number),
+      ),
     }
     runMutation(
-      apiService
-        .getAxiosInstance()
-        .put<Schedule6Response>(`${GENERAL_COMMENTS_PATH}${query}`, body),
-      () => undefined,
-      'Comments could not be saved.',
+      apiService.getAxiosInstance().put<Schedule6Response>(`${SCHEDULE6_PATH}${query}`, body),
+      (doc) => {
+        // Hazard 3: re-seed every row form from the echo, so no row can hold a stale revision token
+        // (or a since-corrected value) after a successful save.
+        setRowForms(Object.fromEntries(doc.roadRecords.map((row) => [row.recordId, seedForm(row)])))
+      },
+      'Schedule could not be saved.',
     )
   }
 
@@ -649,9 +617,16 @@ const Schedule6: FC = () => {
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation — `saving` locks both ways. Read-only; mutates nothing.
     setSaving(true)
+    // Posts the ON-SCREEN values, not the stored ones (Task 6): legacy's Check Status was an
+    // ajax="false" full postback (schedule6.xhtml:226-229) that applied entered values to the model
+    // BEFORE evaluating, so the verdict always reflected the screen -- never gated on dirtiness.
+    const body: Schedule6CheckRequest = {
+      generalComments: generalComments.trim() === '' ? null : generalComments,
+      records: data.roadRecords.map((row) => buildCheckEntry(getRowForm(row))),
+    }
     apiService
       .getAxiosInstance()
-      .post<Schedule6CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`)
+      .post<Schedule6CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body)
       .then((response) => {
         if (contextStillCurrent()) {
           setCheckResult(response.data)
@@ -705,43 +680,29 @@ const Schedule6: FC = () => {
     return null
   }
 
-  // Server-authoritative (AD-9) — never derived from trackStatus or the role.
+  // Server-authoritative (AD-9) — never derived from trackStatus or the role. No `editing` term any
+  // more: every row is always live, so there is no separate "an editor is open" state to fold in.
   const editable = data.editable
-  const editing = editingId !== null
-  const entryLocked = !editable || saving || editing
-  // Deliberately NOT entryLocked: legacy gated Delete on disableReportEdits() only
-  // (schedule6.xhtml:436-437), which never considered whether some OTHER row's editor was open.
-  // entryLocked would make Delete unavailable across the whole page whenever any editor is open,
-  // which legacy never did.
+  const entryLocked = !editable || saving
+  // Deliberately the SAME as entryLocked now (not the historical distinction from a per-row editor):
+  // legacy gated Delete on disableReportEdits() only (schedule6.xhtml:436-437).
   const deleteDisabled = !editable || saving
-  // Legacy's Check Status was an ajax="false" full postback (schedule6.xhtml:226-229): JSF applied
-  // the on-screen values to the model BEFORE checkStatus() evaluated it, so the verdict always
-  // reflected the screen. The modern check reads only the DB, so it is disabled while unsaved
-  // entries are on screen (open row editor, or Add panel with entered values) — a verdict must
-  // never contradict visible unsaved input.
-  const addDirty = showAdd && Object.values(addForm).some((value) => value.trim() !== '')
 
   // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
   // (saveButton0/checkStatusButton0, schedule6.xhtml:222-229) and the same pair again below the
   // General Comment (saveButton1/checkStatusButton1, :518-526) — the same mirrored shape as
   // Schedules 1 and 3. `Add` rides the top bar only: it toggles the entry panel that sits directly
   // beneath it, and legacy's bottom bar carried no add control.
-  //
-  // Save is the General Comment PUT (deviation C): 8.2 decomposed legacy's page-wide save() into
-  // three endpoints, so the road records save themselves via Add Report and the per-row Save, and
-  // this is the only page-level write left. Placement changed here; nothing about what it sends did.
   const actionBar = (includeAdd: boolean) => (
     <Column sm={4} md={8} lg={16} className="schedule-6__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSaveComments}>
+      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
         Save
       </Button>
       {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
-          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
-      <Button
-        kind="tertiary"
-        disabled={!editable || saving || editing || addDirty}
-        onClick={handleCheckStatus}
-      >
+          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. Gated on THAT only: legacy
+          never disabled Check Status while unsaved input sat on screen (schedule6.xhtml:226-229), and
+          the modern body now posts the on-screen values itself instead of needing the DB to agree. */}
+      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
         Check Status
       </Button>
       {includeAdd && (
@@ -841,34 +802,23 @@ const Schedule6: FC = () => {
                   // lines key on — never recordId, which belongs only in the PUT URL and the key.
                   title={`Road Maintenance report Id: ${String(index + 1)}`}
                 >
-                  {editingId === row.recordId ? (
-                    <RecordEditor
-                      row={row}
-                      form={editForm}
-                      errors={editErrors}
-                      codeLists={data.codeLists}
-                      saving={saving}
-                      onAreaTypeChange={(value) => {
-                        setEditForm((prev) => applyAreaType(prev, value))
-                      }}
-                      onFieldChange={setEditField}
-                      onSave={handleSaveEdit}
-                      onCancel={cancelEdit}
-                    />
-                  ) : (
-                    <RecordDisplay
-                      row={row}
-                      codeLists={data.codeLists}
-                      editDisabled={entryLocked}
-                      deleteDisabled={deleteDisabled}
-                      onEdit={() => {
-                        startEdit(row)
-                      }}
-                      onDelete={() => {
-                        setPendingDeleteId(row.recordId)
-                      }}
-                    />
-                  )}
+                  <RoadRecordRow
+                    row={row}
+                    form={getRowForm(row)}
+                    errors={rowErrors[row.recordId] ?? {}}
+                    codeLists={data.codeLists}
+                    disabled={entryLocked}
+                    deleteDisabled={deleteDisabled}
+                    onAreaTypeChange={(value) => {
+                      updateRowForm(row, (prev) => applyAreaType(prev, value))
+                    }}
+                    onFieldChange={(key, value) => {
+                      updateRowForm(row, (prev) => ({ ...prev, [key]: value }))
+                    }}
+                    onDelete={() => {
+                      setPendingDeleteId(row.recordId)
+                    }}
+                  />
                 </AccordionItem>
               ))}
             </Accordion>

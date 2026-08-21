@@ -23,3 +23,29 @@ export interface GeneralCommentsRequest {
   // ≤3500; null/blank clears the comment (BR-09).
   readonly generalComments: string | null
 }
+
+// One row of the whole-document PUT (Task 5/Task 7 correction 4, retiring deviation (C)). Every field
+// RoadRecordRequest carries plus the two identifiers the batch endpoint needs to place and lock each
+// row: `recordId` so the server knows WHICH row, `revisionCount` so it can detect a concurrent edit.
+// Required (not optional) on both — an omitted row 400s, and a missing token must surface as a client
+// error rather than being coerced to a value that would silently bypass the stale-edit check.
+export interface RoadRecordEntry extends Omit<RoadRecordRequest, 'revisionCount'> {
+  readonly recordId: number
+  readonly revisionCount: number
+}
+
+// PUT /api/v1/schedule6 body (Task 5): the whole document in one transaction. EVERY served row must
+// be present — the server refuses to guess what the user meant to leave alone.
+export interface Schedule6SaveRequest {
+  readonly generalComments: string | null
+  readonly records: readonly RoadRecordEntry[]
+}
+
+// POST /api/v1/schedule6/check-status body (Task 6): read-only, on-screen values only. No `recordId`,
+// no `revisionCount` — rows are identified by their PAYLOAD ORDINAL, so this reuses the exact
+// RoadRecordRequest shape (with its optional revisionCount simply never populated) that POST /records
+// already sends, rather than declaring a near-duplicate type.
+export interface Schedule6CheckRequest {
+  readonly generalComments: string | null
+  readonly records: readonly RoadRecordRequest[]
+}

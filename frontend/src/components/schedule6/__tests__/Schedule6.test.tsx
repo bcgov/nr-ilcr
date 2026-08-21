@@ -17,12 +17,11 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn()
 import Schedule6 from '@/components/schedule6'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
-import type { RoadRecordRequest, GeneralCommentsRequest } from '@/interfaces/Schedule6Request'
+import type { RoadRecordRequest, Schedule6SaveRequest } from '@/interfaces/Schedule6Request'
 import type { RoadRecord } from '@/interfaces/Schedule6Response'
 
 const URL = 'http://localhost:3000/api/v1/schedule6'
 const RECORDS_URL = 'http://localhost:3000/api/v1/schedule6/records'
-const COMMENTS_URL = 'http://localhost:3000/api/v1/schedule6/general-comments'
 const CHECK_URL = 'http://localhost:3000/api/v1/schedule6/check-status'
 
 // A TSA record (areaType = the TSA code, supplyBlock set, tflNumber null — BR-02).
@@ -134,8 +133,7 @@ const commentsRegion = (): HTMLElement => screen.getByRole('region', { name: 'Ge
 
 // Save and Check Status render on BOTH action bars — above the records and below the General Comment
 // — mirroring legacy's saveButton0/saveButton1 pair, so every query is plural (the same convention
-// Schedules 1 and 3 use for their duplicated bars). `[0]` is the TOP bar in DOM order; a row
-// editor's own Save sorts after it, so indexing the first stays unambiguous with an editor open.
+// Schedules 1 and 3 use for their duplicated bars). `[0]` is the TOP bar in DOM order.
 const barSaveButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /^save$/i })
 const checkStatusButtons = (): HTMLElement[] =>
   screen.getAllByRole('button', { name: /check status/i })
@@ -152,6 +150,13 @@ const StaleRaceHarness = () => {
       <Schedule6 />
     </>
   )
+}
+
+// Task 7 hazard 2: with N row forms instead of one, a mill/year change surviving edit is the state
+// bug this per-row-map design most invites. Reuses the existing StaleRaceHarness's "change" button
+// rather than adding a second mechanism for the same context switch.
+async function switchContext(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /change/i }))
 }
 
 // Open the Add panel and fill the fields a valid TSA record needs.
@@ -204,6 +209,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(screen.queryByText(/Road Maintenance report Id: 9502/)).not.toBeInTheDocument()
   })
 
+  // Task 7 (correction 4): rows are editable on arrival, so the six entered fields are inputs, not
+  // text; only RMG and $/m³ stay read-only text (server-derived, AD-5). Converted from getByText to
+  // display-value assertions per the Task 7 instruction reversing Task 2's read-only-row guidance.
   test('an opened row shows the six legacy-labelled fields with rmg and $/m³ read-only (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule6 />)
@@ -225,21 +233,27 @@ describe('Schedule 6 page (Story 8.3)', () => {
       expect(within(panel).getByText(label)).toBeInTheDocument()
     }
     // Corrections 2/3: the row resolves the stored CODE to its DESCRIPTION, not the raw code.
-    expect(within(panel).getByText('Arrowsmith TSA')).toBeInTheDocument()
-    expect(within(panel).getByText('Arrowsmith Block B')).toBeInTheDocument()
+    expect(within(panel).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      'Arrowsmith TSA',
+    )
+    expect(within(panel).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
+      'Arrowsmith Block B',
+    )
+    // RMG and $/m³ are server-derived (AD-5) and stay read-only text.
     expect(within(panel).getByText('12')).toBeInTheDocument()
-    expect(within(panel).getByText('1,000')).toBeInTheDocument()
-    expect(within(panel).getByText('50,000')).toBeInTheDocument()
     expect(within(panel).getByText('50.00')).toBeInTheDocument()
-    expect(within(panel).getByText('Culvert replacement')).toBeInTheDocument()
-    // Display state renders values as text, never as editable inputs.
-    expect(within(panel).queryByRole('textbox')).not.toBeInTheDocument()
+    // Volume/Cost/Comments are live form inputs, seeded plainly (not grouped) from the row.
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    expect(within(panel).getByLabelText('Cost $')).toHaveValue('50000')
+    expect(within(panel).getByLabelText('Comments')).toHaveValue('Culvert replacement')
+    // Legacy rows were always directly editable (schedule6.xhtml:248-431) -- no read-only display
+    // state to fall back into, so the row's textboxes are present from the moment it opens.
+    expect(within(panel).getAllByRole('textbox').length).toBeGreaterThan(0)
   })
 
   // Corrections 2/3: legacy rendered both controls as a selectOneMenu over the code's DESCRIPTION
-  // (schedule6.xhtml:265-323); the row is still RecordDisplay's read-only <dl>/<dd> text at this point
-  // in the branch (RecordEditor/RecordDisplay are merged into one editable row only in a later task),
-  // so this asserts against rendered TEXT rather than a combo box's display value.
+  // (schedule6.xhtml:265-323). Task 7 collapses RecordDisplay/RecordEditor into one always-editable
+  // row, so this now asserts the combo box's DISPLAY VALUE rather than rendered text.
   test('a row resolves the stored code to its description, not the raw code (corrections 2/3)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule6 />)
@@ -249,10 +263,14 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const panel = rowPanel(1)
 
     // tsaRecord stores areaType '01' / supplyBlock '01B'.
-    expect(await within(panel).findByText('Arrowsmith TSA')).toBeInTheDocument()
-    expect(within(panel).getByText('Arrowsmith Block B')).toBeInTheDocument()
-    expect(within(panel).queryByText('01')).not.toBeInTheDocument()
-    expect(within(panel).queryByText('01B')).not.toBeInTheDocument()
+    expect(await within(panel).findByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      'Arrowsmith TSA',
+    )
+    expect(within(panel).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
+      'Arrowsmith Block B',
+    )
+    expect(within(panel).queryByDisplayValue('01')).not.toBeInTheDocument()
+    expect(within(panel).queryByDisplayValue('01B')).not.toBeInTheDocument()
   })
 
   test('offers the TFL sentinel first in the area-type options', async () => {
@@ -284,21 +302,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(options).toEqual(['Arrowsmith Block B'])
   })
 
-  test('edit mode shows the description for the stored code, not the raw code', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule6 />)
-    const user = userEvent.setup()
-
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-
-    expect(within(rowPanel(1)).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
-      'Arrowsmith TSA',
-    )
-    expect(within(rowPanel(1)).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
-      'Arrowsmith Block B',
-    )
-  })
+  // 'edit mode shows the description for the stored code, not the raw code' DELETED (Task 7): there is
+  // no edit mode any more -- a row's combo box always shows the description, which the rewritten
+  // 'a row resolves the stored code to its description' test above already covers without an Edit
+  // click.
 
   // Deviation (B) retired by task 4 (correction 1): DELETE now ships. Verbatim legacy copy from
   // messages.properties:31 and schedule6.xhtml:433-450.
@@ -372,10 +379,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(await screen.findByText('Schedule is not editable.')).toBeInTheDocument()
     // The row must still be there to retry against — a failed delete is not a silent data loss.
-    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1000')
   })
 
-  test('Delete is disabled when the schedule is not editable, but not when a row editor is open', async () => {
+  test('Delete is disabled when the schedule is not editable', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     render(<Schedule6 />)
 
@@ -384,21 +391,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     ).toBeDisabled()
   })
 
-  test('Delete stays enabled while another row is being edited (gated on editable/saving only)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
-    render(<Schedule6 />)
-    const user = userEvent.setup()
-
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-
-    // Deliberately not `entryLocked`: legacy gated Delete on disableReportEdits() only
-    // (schedule6.xhtml:436-437), never on another row's open editor.
-    const deleteButtons = screen.getAllByRole('button', { name: 'Delete Road Maintenance Report' })
-    deleteButtons.forEach((button) => {
-      expect(button).toBeEnabled()
-    })
-  })
+  // 'Delete stays enabled while another row is being edited' DELETED (Task 7): there is no longer a
+  // per-row "editor open" state for Delete to stay independent of -- every row is always live at once,
+  // so Delete's gating on editable/saving only is already exercised by the test above and by the
+  // editable:false test below.
 
   test('totals render the three server figures with the legacy masks (AC6)', async () => {
     server.use(
@@ -589,9 +585,18 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(panel).queryByText('12')).not.toBeInTheDocument()
   })
 
-  test('inline edit PUTs the row with ITS OWN revisionCount, including a falsy 0 (AC4)', async () => {
-    const captured: Record<number, RoadRecordRequest> = {}
-    let capturedUrl: string | null = null
+  test('has no Edit button and rows are editable on arrival', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    // Legacy rows were always directly editable under their bare field names
+    // (schedule6.xhtml:248-431); there was no edit mode to enter.
+    expect(await screen.findByDisplayValue('Arrowsmith TSA')).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+  })
+
+  test('saves every row and the general comment in one request, each row with its own token (AC4)', async () => {
+    let body: unknown
     // The echo returns the SAVED row (volume 2,000) rather than the pre-edit one, so the render
     // assertions below can prove the response document is applied to page state. An echo of the
     // unchanged record cannot: the success banner rides its own setter, so a dropped setData() would
@@ -599,9 +604,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const savedTsaRecord: RoadRecord = { ...tsaRecord, volume: 2000, costPerVolume: 25 }
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))),
-      http.put(`${RECORDS_URL}/:recordId`, async ({ request, params }) => {
-        captured[Number(params.recordId)] = (await request.json()) as RoadRecordRequest
-        capturedUrl = request.url
+      http.put(URL, async ({ request }) => {
+        body = await request.json()
         return HttpResponse.json(
           doc({
             roadRecords: [savedTsaRecord, tflRecord],
@@ -617,76 +621,88 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
     const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    // The PUT carries the mill/year request params the 8.2 endpoint requires.
-    const params = new window.URL(capturedUrl!).searchParams
-    expect(params.get('millId')).toBe('13050')
-    expect(params.get('year')).toBe('2017')
-    expect(captured[9501].revisionCount).toBe(3)
-    // The whole seeded body is pinned — a mis-seeded editor or mis-mapped body must fail here.
-    expect(captured[9501].areaType).toBe('01')
-    expect(captured[9501].supplyBlock).toBe('01B')
-    expect(captured[9501].tflNumber).toBeNull()
-    expect(captured[9501].volume).toBe(2000)
-    expect(captured[9501].cost).toBe(50000)
-    expect(captured[9501].comments).toBe('Culvert replacement')
-    // The echoed document replaces page state: the editor is torn down and the row re-renders the
-    // SAVED volume, not the pre-edit 1,000 — a save that only banners is a silent data-staleness bug.
-    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
-    expect(within(rowPanel(1)).getByText('2,000')).toBeInTheDocument()
-    expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
-
+    const saveBody = body as Schedule6SaveRequest
+    expect(saveBody.generalComments).toBe('Season summary')
+    // EVERY served row travels, each with its own revision token — an omitted row is a 400.
+    expect(saveBody.records).toHaveLength(2)
+    expect(saveBody.records[0]).toMatchObject({
+      recordId: 9501,
+      revisionCount: 3,
+      areaType: '01',
+      supplyBlock: '01B',
+      tflNumber: null,
+      volume: 2000,
+      cost: 50000,
+      comments: 'Culvert replacement',
+    })
     // Row 2's token is 0: it must travel as 0, never be dropped or coerced by a falsy check.
-    await user.click(within(rowPanel(2)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(2)).getByRole('button', { name: /^save$/i }))
-    await waitFor(() => expect(captured[9502]).toBeDefined())
-    expect(captured[9502].revisionCount).toBe(0)
-    expect(captured[9502].areaType).toBe('TFL')
-    expect(captured[9502].tflNumber).toBe('01')
-    expect(captured[9502].supplyBlock).toBeNull()
-    expect(captured[9502].comments).toBeNull()
+    expect(saveBody.records[1]).toMatchObject({
+      recordId: 9502,
+      revisionCount: 0,
+      areaType: 'TFL',
+      tflNumber: '01',
+      supplyBlock: null,
+      comments: null,
+    })
+    // The echoed document replaces page state: the row re-renders the SAVED volume, not the pre-edit
+    // 1,000 — a save that only banners is a silent data-staleness bug.
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
+    expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
   })
 
-  test('edit Cancel restores the display state and issues no request (AC4)', async () => {
-    const put = vi.fn()
+  test('posts the on-screen values to check status, not the stored ones', async () => {
+    let body: { records: { cost: number | null }[] } | undefined
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${RECORDS_URL}/9501`, () => {
-        put()
-        return HttpResponse.json(doc())
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as typeof body
+        return HttpResponse.json({ outcome: 'MET', messages: [], records: [] })
       }),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
-    await user.clear(volume)
-    await user.type(volume, '4321')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
-
-    expect(put).not.toHaveBeenCalled()
-    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
-    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
+    await user.clear(await screen.findByLabelText(/Cost \$/i))
+    await user.click(checkStatusButtons()[0])
+    await waitFor(() => {
+      expect(body).toBeDefined()
+    })
+    // The verdict must describe what the user is looking at, not what is stored.
+    expect(body?.records[0].cost).toBeNull()
   })
 
-  test('an open editor blocks the other rows’ Edit and the Add toggle (AC4)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
+  test('leaves Check Status enabled while rows are dirty (no longer gated on dirtiness)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule6 />)
     const user = userEvent.setup()
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    await user.clear(await screen.findByLabelText(/Cost \$/i))
+    // Legacy gated it on disableReportEdits() only (schedule6.xhtml:226-229), never on dirtiness.
+    expect(checkStatusButtons()[0]).toBeEnabled()
+  })
 
-    expect(within(rowPanel(2)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled()
+  test('reseeds every row form when the mill/year context changes (hazard 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<StaleRaceHarness />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText(/Cost \$/i)
+    await user.clear(cost)
+    await user.type(cost, '999')
+    expect(cost).toHaveValue('999')
+
+    server.use(http.get(URL, () => HttpResponse.json(otherContextDoc())))
+    await switchContext(user)
+
+    // With N row forms instead of one, a surviving edit is the state bug this design most invites.
+    expect(await screen.findByDisplayValue('111')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('999')).not.toBeInTheDocument()
   })
 
   test('Save and Check Status render on both bars, Add on the top one only (legacy saveButton0/1)', async () => {
@@ -709,14 +725,16 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
   })
 
-  test('the bottom bar’s Save fires the same General Comment PUT as the top one', async () => {
+  // Save is now ONE PUT of the whole document (Task 5/7, retiring deviation C): the general comment
+  // travels alongside every road record in a single transaction, rather than its own endpoint.
+  test('the bottom bar’s Save fires the same whole-document PUT as the top one', async () => {
     let calls = 0
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
+      http.put(URL, async ({ request }) => {
         calls += 1
-        captured = (await request.json()) as GeneralCommentsRequest
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(doc({ generalComments: 'Revised summary' }))
       }),
     )
@@ -734,16 +752,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await waitFor(() => {
       expect(calls).toBe(1)
     })
-    expect(captured).toEqual({ generalComments: 'Revised summary' })
+    expect(captured!.generalComments).toBe('Revised summary')
+    // The served row travels unchanged alongside the comment — an omitted row would 400.
+    expect(captured!.records).toHaveLength(1)
+    expect(captured!.records[0].recordId).toBe(9501)
   })
 
-  test('the General Comment saves independently via PUT /general-comments (AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+  test('the General Comment saves via the whole-document PUT (AC5)', async () => {
+    let captured: Schedule6SaveRequest | null = null
     let capturedUrl: string | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         capturedUrl = request.url
         return HttpResponse.json(
           doc({
@@ -763,7 +784,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(captured).toEqual({ generalComments: 'Revised summary' })
+    expect(captured!.generalComments).toBe('Revised summary')
     // The PUT carries the mill/year request params the 8.2 endpoint requires.
     const params = new window.URL(capturedUrl!).searchParams
     expect(params.get('millId')).toBe('13050')
@@ -771,11 +792,11 @@ describe('Schedule 6 page (Story 8.3)', () => {
   })
 
   test('the General Comment saves with zero road records (the BR-09 placeholder branch, AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [], generalComments: null }))),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(loneCommentDoc())
       }),
     )
@@ -788,14 +809,15 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured!.generalComments).toBe('First note')
+    expect(captured!.records).toEqual([])
   })
 
   test('blanking the General Comment sends null to clear it (BR-09, AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(doc({ generalComments: null }))
       }),
     )
@@ -875,7 +897,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled()
-    expect(within(rowPanel(1)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
+    expect(within(rowPanel(1)).getByRole('combobox', { name: /TSA or TFL/i })).toBeDisabled()
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toBeDisabled()
     const region = commentsRegion()
     expect(within(region).getByLabelText('General Comments')).toBeDisabled()
     // Both bars, not just the first: a read-only reporter must not find a live Save at either end.
@@ -886,8 +909,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     checkStatusButtons().forEach((button) => {
       expect(button).toBeDisabled()
     })
-    // Read-only still shows the data.
-    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
+    // Read-only (disabled) still shows the data.
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1000')
     expect(within(totalsRegion()).getByText('50,000')).toBeInTheDocument()
     expect(within(region).getByLabelText('General Comments')).toHaveValue('Season summary')
   })
@@ -1092,40 +1115,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(post).toHaveBeenCalledTimes(1)
   })
 
-  test('Check Status is disabled while unsaved entries are on screen (dirty gate)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule6 />)
-    const user = userEvent.setup()
+  // 'Check Status is disabled while unsaved entries are on screen (dirty gate)' DELETED (Task 7,
+  // correction 4): this rule is explicitly retired. Legacy's full postback applied on-screen values
+  // before evaluating and never disabled Check Status for dirtiness (schedule6.xhtml:226-229); the
+  // modern body now posts those on-screen values itself. Replaced by 'leaves Check Status enabled
+  // while rows are dirty' above.
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    const check = checkStatusButtons()[0]
-
-    // Legacy's full postback applied the on-screen values before evaluating; the modern check reads
-    // only the DB, so a verdict must never contradict visible unsaved input.
-    const panel = await openAddPanel(user)
-    expect(check).toBeEnabled() // open but empty — nothing unsaved yet
-    await selectAreaType(user, panel, 'Arrowsmith TSA')
-    expect(check).toBeDisabled()
-    // The combo's own clear control (Carbon's ListBoxSelection), not a raw TextInput clear — dirtying
-    // and un-dirtying a CodeComboBox goes through selection, not keystrokes.
-    await user.click(within(panel).getByRole('button', { name: 'Clear selected item' }))
-    expect(check).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: /^close$/i }))
-
-    // An open row editor is unsaved input from the first keystroke it might carry — disabled outright.
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    expect(check).toBeDisabled()
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
-    expect(check).toBeEnabled()
-  })
-
-  test('a row served without a revisionCount surfaces an error on Save, never a silent no-op (AC4)', async () => {
+  test('a row served without a revisionCount surfaces an error on Save, never a silent no-op (hazard 1, AC4)', async () => {
     const put = vi.fn()
     server.use(
       http.get(URL, () =>
         HttpResponse.json(doc({ roadRecords: [{ ...tsaRecord, revisionCount: null }] })),
       ),
-      http.put(`${RECORDS_URL}/9501`, () => {
+      http.put(URL, () => {
         put()
         return HttpResponse.json(doc())
       }),
@@ -1134,10 +1136,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
-    // 8.1 always serves the token, so this is a contract-regression surface: it must be VISIBLE.
+    // 8.1 always serves the token, so this is a contract-regression surface: it must be VISIBLE, and
+    // nothing may be sent -- a coerced 0 would silently bypass the stale-edit check for this row.
     expect(await screen.findByText(/missing its revision token/i)).toBeInTheDocument()
     expect(put).not.toHaveBeenCalled()
   })
@@ -1305,37 +1307,34 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
   })
 
-  test('an edit failure renders the detail verbatim and leaves the editor open (AC4 / AC10)', async () => {
+  test('a Save failure renders the API detail verbatim and retains every entered value (AC4 / AC10)', async () => {
     const detail = 'Entered RMG could not be resolved for the supplied Supply Block.'
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${RECORDS_URL}/9501`, () => problemBody(400, detail)),
+      http.put(URL, () => problemBody(400, detail)),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
     const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
-    // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
-    // it can be corrected, page state is not replaced, and no success banner appears alongside.
+    // The failure branch must not run onSuccess: the row keeps the rejected value so it can be
+    // corrected, page state is not replaced, and no success banner appears alongside.
     expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
-    await waitFor(() =>
-      expect(within(rowPanel(1)).getByRole('button', { name: /^save$/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(barSaveButtons()[0]).toBeEnabled())
   })
 
-  test('a General Comment failure falls back to its OWN message and keeps the text (AC5)', async () => {
+  test('a detail-less Save failure falls back to the generic Save message and keeps the comment (AC5)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.put(URL, () => new HttpResponse(null, { status: 500 })),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
@@ -1345,10 +1344,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.type(within(region).getByLabelText('General Comments'), 'Revised summary')
     await user.click(barSaveButtons()[0])
 
-    // The comment mutation owns a DIFFERENT fallback than the record mutations — sharing the record
-    // string here would misattribute which save failed.
-    expect(await screen.findByText('Comments could not be saved.')).toBeInTheDocument()
-    expect(screen.queryByText('Schedule could not be saved.')).not.toBeInTheDocument()
+    // handleSaveEdit/handleSaveComments are gone -- one Save, one fallback string.
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
     expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
       'Revised summary',
     )
@@ -1516,49 +1513,17 @@ describe('Schedule 6 page (Story 8.3)', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('a stale edit response (mill/year changed mid-flight) never applies (AC11)', async () => {
+  // The retired 'stale edit' and 'stale comment' tests collapse into one: Save is now a single
+  // whole-document PUT carrying both the row and the general comment, so there is only one save
+  // response left to guard against landing stale.
+  test('a stale Save response (mill/year changed mid-flight) never applies (AC11)', async () => {
     server.use(
       http.get(URL, ({ request }) =>
         request.url.includes('millId=999')
           ? HttpResponse.json(otherContextDoc())
           : HttpResponse.json(doc()),
       ),
-      http.put(`${RECORDS_URL}/9501`, async () => {
-        await delay(300)
-        return HttpResponse.json(
-          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
-        )
-      }),
-    )
-    render(
-      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
-        <StaleRaceHarness />
-      </MillYearProvider>,
-    )
-    const user = userEvent.setup()
-
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
-    await user.click(screen.getByRole('button', { name: /change/i }))
-
-    expect(await screen.findByText('Other mill record')).toBeInTheDocument()
-    // Let the stale PUT resolve. The edit branch carries the widest blast radius of the four: an
-    // unguarded response would banner a save the new mill never made AND overwrite its rows.
-    await delay(400)
-    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
-    expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
-    expect(screen.getByText('Other mill record')).toBeInTheDocument()
-  })
-
-  test('a stale comment response (mill/year changed mid-flight) never applies (AC11)', async () => {
-    server.use(
-      http.get(URL, ({ request }) =>
-        request.url.includes('millId=999')
-          ? HttpResponse.json(otherContextDoc())
-          : HttpResponse.json(doc()),
-      ),
-      http.put(COMMENTS_URL, async () => {
+      http.put(URL, async () => {
         await delay(300)
         return HttpResponse.json(
           doc({
@@ -1575,17 +1540,17 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    // Waits for the document to land before the save fires the race.
-    await waitFor(() => commentsRegion())
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(barSaveButtons()[0])
     await user.click(screen.getByRole('button', { name: /change/i }))
 
     expect(await screen.findByText('Other mill record')).toBeInTheDocument()
-    // The comment PUT returns the WHOLE document, so an unguarded stale response replaces the new
-    // mill's rows and comment with the old mill's — the fourth mutation, guarded like the other three.
+    // Let the stale PUT resolve. Save carries the widest blast radius: an unguarded response would
+    // banner a save the new mill never made AND overwrite both its rows and its general comment.
     await delay(400)
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
+    expect(screen.getByText('Other mill record')).toBeInTheDocument()
     expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
       'Other mill comment',
     )
@@ -1618,8 +1583,6 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    // Check first (the dirty gate disables the button once the Add panel holds a value), then dirty
-    // the Add panel so the context change has both a check result and an open panel to reset.
     await waitFor(() => expect(checkStatusButtons()[0]).toBeEnabled())
     await user.click(checkStatusButtons()[0])
     expect(
