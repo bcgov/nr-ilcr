@@ -152,6 +152,98 @@ afterEach(() => {
 })
 
 describe('Schedule 6 page (Story 8.3)', () => {
+  // ---- Defect #291: the record's $ / m³ tracks entry, on blur. ------------------------------------
+  //
+  // The fixture is self-consistent (50000/1000 = 50), so the load assertion below is a genuine
+  // mirror-vs-server comparison rather than the mirror measured against hand arithmetic in this file.
+
+  /** The `$ / m³` value inside a panel — the third FieldValue of the derived block. */
+  const rateIn = (panel: HTMLElement): string | null =>
+    within(panel).getByText('$ / m³').closest('div')?.textContent?.replace('$ / m³', '') ?? null
+
+  test('on load the edit form reproduces the served rate exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    expect(rateIn(rowPanel(1))).toBe('50.00') // 50,000 / 1,000, the served figure
+  })
+
+  test('typing alone leaves the rate alone; blurring the cost recalculates it (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '75000')
+    expect(rateIn(rowPanel(1))).toBe('50.00') // not per keystroke
+
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('75.00') // 75,000 / 1,000
+  })
+
+  test('blurring the volume recalculates the rate too (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('25.00') // 50,000 / 2,000
+
+    // Clearing it blanks the rate rather than dividing by zero.
+    await user.clear(within(rowPanel(1)).getByLabelText('Volume m³'))
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('') // the mask renders a blank, not an em dash
+  })
+
+  test('the footer totals do NOT move during entry — legacy left them until Save (#291)', async () => {
+    // The deliberate boundary: totalVol/totalCos/totalCal appear in NO legacy render or update
+    // target, so refreshing them from the document is already faithful and they are not mirrored.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    const totalsBefore = totalsRegion().textContent
+
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '999999')
+    await user.tab()
+
+    expect(rateIn(rowPanel(1))).toBe('1,000.00') // 999,999/1,000 = 999.999 -> scale 2 -> 1,000.00
+    expect(totalsRegion().textContent).toBe(totalsBefore) // the footer did not
+  })
+
+  test('the Add panel shows a rate as soon as both halves are committed (#291)', async () => {
+    // It previously passed a hardcoded blank, so a new record showed no rate until the first save.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    expect(rateIn(panel)).toBe('')
+
+    await user.type(within(panel).getByLabelText('Volume m³'), '1000')
+    await user.type(within(panel).getByLabelText('Cost $'), '50000')
+    await user.tab()
+    expect(rateIn(panel)).toBe('50.00')
+  })
+
   test('accordion titles use the 1-based ORDINAL, never recordId (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
     render(<Schedule6 />)
