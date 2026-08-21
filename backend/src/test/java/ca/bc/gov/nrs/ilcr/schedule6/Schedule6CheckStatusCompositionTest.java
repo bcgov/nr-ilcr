@@ -71,7 +71,7 @@ class Schedule6CheckStatusCompositionTest {
   }
 
   private List<String> composedTextsFor(int rowCounter, String... fields) {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule6CheckStatusResponse(
                 "ISSUES",
@@ -86,7 +86,7 @@ class Schedule6CheckStatusCompositionTest {
                             .map(Schedule6CheckStatusCompositionTest::issue)
                             .toList()))));
     Schedule6CheckStatusResponse body =
-        controller.checkStatus("664", "2021", mock(Authentication.class)).getBody();
+        controller.checkStatus("664", "2021", null, mock(Authentication.class)).getBody();
     return body.records().get(0).issues().stream().map(i -> i.message().text()).toList();
   }
 
@@ -119,7 +119,7 @@ class Schedule6CheckStatusCompositionTest {
         composedTextsFor(1000, Schedule6Service.FIELD_SUPPLY_BLOCK));
 
     // Same for the per-record met banner, whose {0} arg IS MessageFormat-interpolated.
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule6CheckStatusResponse(
                 "ISSUES",
@@ -134,7 +134,7 @@ class Schedule6CheckStatusCompositionTest {
     assertEquals(
         "All requirements for 1000 have been met.",
         controller
-            .checkStatus("664", "2021", mock(Authentication.class))
+            .checkStatus("664", "2021", null, mock(Authentication.class))
             .getBody()
             .records()
             .get(0)
@@ -145,7 +145,7 @@ class Schedule6CheckStatusCompositionTest {
   @Test
   @DisplayName("An unmapped field name fails loudly instead of rendering \"Road : 1null: ...\"")
   void unmappedField_throws() {
-    when(service.checkStatus(anyLong(), anyInt()))
+    when(service.checkStatus(anyLong(), anyInt(), any()))
         .thenReturn(
             new Schedule6CheckStatusResponse(
                 "ISSUES",
@@ -154,6 +154,6 @@ class Schedule6CheckStatusCompositionTest {
                     new RoadRecordCheckResult(9501, 1, false, null, List.of(issue("volume"))))));
     assertThrows(
         IllegalStateException.class,
-        () -> controller.checkStatus("664", "2021", mock(Authentication.class)));
+        () -> controller.checkStatus("664", "2021", null, mock(Authentication.class)));
   }
 }

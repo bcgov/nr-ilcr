@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule6.api;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
@@ -143,8 +144,16 @@ public interface Schedule6Api {
    * results, and the single schedule-level MET banner (with no per-record results) when everything
    * passes.
    *
+   * <p>{@code request} carries the on-screen values (Task 6): legacy's {@code ajax="false"}
+   * postback applied the screen to the model before evaluating ({@code Schedule6MB.checkStatus}
+   * :139-140), so the verdict must describe the screen, not the database. The body is OPTIONAL —
+   * TRANSITIONAL — because the shipped frontend does not send one yet; a body-less POST still
+   * evaluates the stored rows (Task 7 switches the frontend over; Task 8 makes the body required
+   * and removes the fallback).
+   *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
+   * @param request the on-screen values, or absent for the transitional stored-rows fallback
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -152,6 +161,7 @@ public interface Schedule6Api {
   ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      @RequestBody(required = false) Schedule6CheckRequest request,
       Authentication authentication);
 
   /**

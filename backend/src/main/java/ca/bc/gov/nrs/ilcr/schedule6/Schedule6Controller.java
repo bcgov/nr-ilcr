@@ -8,6 +8,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
@@ -146,11 +147,12 @@ public class Schedule6Controller implements Schedule6Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
-    // Read-only (AD-5): context guard first, then evaluate — mutates nothing.
+      String millId, String year, Schedule6CheckRequest request, Authentication authentication) {
+    // Read-only (AD-5): context guard first, then evaluate — mutates nothing. `request` may be
+    // null (the Task 6 transitional fallback) — Schedule6Service decides what that means.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule6CheckStatusResponse raw =
-        schedule6Service.checkStatus(context.millId(), context.year());
+        schedule6Service.checkStatus(context.millId(), context.year(), request);
     // Resolve every bundle key to verbatim text (AD-8): the schedule banner, each clean record's
     // met message (with its rowCounter as the {0} arg), and each composed "Value Required" line.
     List<MessageInfo> scheduleMessages =

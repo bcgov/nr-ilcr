@@ -12,6 +12,8 @@ import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import java.math.BigDecimal;
 import java.util.List;
@@ -133,7 +135,7 @@ class Schedule6CheckStatusServiceTest {
             new RoadRecordRow(8326, "03", "03B", null, "comment", 0)), // missing cost
         List.of(new CostDetailRow(8325, new BigDecimal("800"), 25000, null)));
 
-    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR);
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, null);
 
     assertEquals("ISSUES", response.outcome());
     assertTrue(response.messages().isEmpty());
@@ -162,7 +164,7 @@ class Schedule6CheckStatusServiceTest {
         List.of(new RoadRecordRow(8322, "01", "01B", null, null, 0)),
         List.of(new CostDetailRow(8322, null, 50000, null)));
 
-    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR);
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, null);
 
     assertEquals("MET", response.outcome());
     assertEquals(1, response.messages().size());
@@ -175,10 +177,10 @@ class Schedule6CheckStatusServiceTest {
   @DisplayName("Zero records and lone-comment (deviation (d)) are both the vacuous pass")
   void checkStatus_vacuousPasses() {
     stub(List.of(), List.of());
-    assertEquals("MET", service.checkStatus(MILL, YEAR).outcome());
+    assertEquals("MET", service.checkStatus(MILL, YEAR, null).outcome());
 
     stub(List.of(new RoadRecordRow(8324, null, null, null, "only a comment", 0)), List.of());
-    Schedule6CheckStatusResponse loneComment = service.checkStatus(MILL, YEAR);
+    Schedule6CheckStatusResponse loneComment = service.checkStatus(MILL, YEAR, null);
     assertEquals("MET", loneComment.outcome());
     assertTrue(loneComment.records().isEmpty());
   }
@@ -192,17 +194,73 @@ class Schedule6CheckStatusServiceTest {
         List.of(new RoadRecordRow(8329, " ", " ", "18", null, 0)),
         List.of(new CostDetailRow(8329, null, 100, null)));
 
-    assertEquals("MET", service.checkStatus(MILL, YEAR).outcome());
+    assertEquals("MET", service.checkStatus(MILL, YEAR, null).outcome());
   }
 
   @Test
   @DisplayName("Read-only: the check never touches a write repository method (mutates nothing)")
   void checkStatus_onlyReads() {
     stub(List.of(), List.of());
-    service.checkStatus(MILL, YEAR);
+    service.checkStatus(MILL, YEAR, null);
     verify(repository).findRoadRecords(MILL, YEAR);
     verify(repository).findCostDetails(MILL, YEAR);
     // Mockito verifies no OTHER interactions happened — any write call would fail here.
     org.mockito.Mockito.verifyNoMoreInteractions(repository);
+  }
+
+  // ---- Task 6: a non-null request evaluates the PAYLOAD, never the repository ------------------
+
+  @Test
+  @DisplayName(
+      "A non-null request never touches the repository at all — the verdict is built entirely "
+          + "from request.records(), not the stored rows (the whole point of Task 6)")
+  void checkStatus_withRequest_neverReadsTheRepository() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null, List.of(new CheckEntry("01", null, "01B", null, 5000, null)));
+
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals("MET", response.outcome());
+    org.mockito.Mockito.verifyNoInteractions(repository);
+  }
+
+  @Test
+  @DisplayName(
+      "The verdict reflects the SUBMITTED values: a payload row with a cleared cost is ISSUES "
+          + "even though the (unqueried) stored row would have had one")
+  void checkStatus_withRequest_evaluatesSubmittedValues() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null, List.of(new CheckEntry("01", null, "01B", null, null, null)));
+
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals("ISSUES", response.outcome());
+    assertEquals(1, response.records().size());
+    assertEquals(List.of("cost"), fields(response.records().get(0)));
+  }
+
+  @Test
+  @DisplayName(
+      "Payload rows have no recordId: the 1-based payload ordinal is served in BOTH recordId and "
+          + "rowCounter (the Task 6 recordId decision — see Schedule6CheckRequest's javadoc)")
+  void checkStatus_withRequest_recordIdIsThePayloadOrdinal() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null,
+            List.of(
+                new CheckEntry("01", null, "01B", null, null, null),
+                new CheckEntry("03", null, "03B", null, null, null)));
+
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals(2, response.records().size());
+    RoadRecordCheckResult first = response.records().get(0);
+    RoadRecordCheckResult second = response.records().get(1);
+    assertEquals(1, first.recordId());
+    assertEquals(1, first.rowCounter());
+    assertEquals(2, second.recordId());
+    assertEquals(2, second.rowCounter());
   }
 }

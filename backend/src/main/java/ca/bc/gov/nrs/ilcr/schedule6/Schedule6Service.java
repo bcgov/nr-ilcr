@@ -14,6 +14,8 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
@@ -745,24 +747,81 @@ public class Schedule6Service {
   // ===============================================================================================
 
   /**
-   * Check Status for Schedule 6 (S09–S11, S20, S21). Per stored record — placeholders excluded
-   * (deviation (d): legacy flags the invisible placeholder row) — in {@code
-   * ROAD_MAINTENANCE_REPORT_ID} order with 1-based {@code rowCounter}. A passing schedule returns
-   * the single MET banner and NO per-record results at all (the legacy pass branch never enters the
-   * loop); a failing one returns each record's issues plus the per-record met banner for clean
-   * records. The service emits bundle keys with null text; the controller composes/resolves (AD-8).
+   * Check Status for Schedule 6 (S09–S11, S20, S21). A passing schedule returns the single MET
+   * banner and NO per-record results at all (the legacy pass branch never enters the loop); a
+   * failing one returns each record's issues plus the per-record met banner for clean records. The
+   * service emits bundle keys with null text; the controller composes/resolves (AD-8).
+   *
+   * <p>{@code request} is the on-screen values (Task 6, {@code Schedule6MB.checkStatus} :139-140 —
+   * legacy's {@code ajax="false"} postback applied the screen to the model before evaluating, so
+   * the verdict always described the screen). When non-null, the candidates below come from {@code
+   * request.records()} in payload order and evaluate exactly that, nothing else.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
+   * @param request the on-screen values to evaluate, or {@code null} for the transitional fallback
    * @return the check-status result with key-only messages for the controller to resolve
    */
   @Transactional(readOnly = true)
-  public Schedule6CheckStatusResponse checkStatus(long millId, int year) {
-    List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
-    Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+  public Schedule6CheckStatusResponse checkStatus(
+      long millId, int year, Schedule6CheckRequest request) {
+    List<CheckCandidate> candidates =
+        request == null
+            // Transitional: a body-less POST still evaluates the stored rows so the shipped page
+            // keeps working while the frontend switches over (Task 7). Removed in Task 8 — a
+            // verdict that silently describes different data than the caller submitted is the bug
+            // this change fixes.
+            ? storedCandidates(millId, year)
+            : payloadCandidates(request);
 
     List<RoadRecordCheckResult> records = new ArrayList<>();
     boolean schedulePasses = true;
+    for (CheckCandidate candidate : candidates) {
+      List<FieldIssue> issues =
+          evaluateRecord(
+              candidate.areaType(),
+              candidate.tflNumber(),
+              candidate.supplyBlock(),
+              candidate.cost());
+      // The schedule-level pass ignores the area-type flag — the legacy isScheduleValid quirk,
+      // ported verbatim (unreachable in practice: FLD-001 blocks area-type-less writes).
+      schedulePasses =
+          schedulePasses
+              && recordPasses(
+                  candidate.areaType(),
+                  candidate.tflNumber(),
+                  candidate.supplyBlock(),
+                  candidate.cost());
+      boolean met = issues.isEmpty();
+      records.add(
+          new RoadRecordCheckResult(
+              candidate.recordId(),
+              candidate.rowCounter(),
+              met,
+              met ? new MessageInfo(MSG_ROAD_MET, null) : null,
+              issues));
+    }
+
+    if (schedulePasses) {
+      // Zero records (and lone-comment, via the placeholder exclusion) is a vacuous pass — the
+      // legacy loop never runs. The pass branch emits ONLY the schedule banner.
+      return new Schedule6CheckStatusResponse(
+          OUTCOME_MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
+    }
+    return new Schedule6CheckStatusResponse(OUTCOME_ISSUES, List.of(), records);
+  }
+
+  /**
+   * The stored-rows source (the transitional fallback) — placeholders excluded (deviation (d):
+   * legacy flags the invisible placeholder row), in {@code ROAD_MAINTENANCE_REPORT_ID} order with
+   * 1-based {@code rowCounter}. Identical derivation to the pre-Task-6 {@code checkStatus} body:
+   * only the data source changed, never the evaluation.
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
+    Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+
+    List<CheckCandidate> candidates = new ArrayList<>();
     int rowCounter = 0;
     for (RoadRecordRow row : rows) {
       if (isPlaceholder(row)) {
@@ -777,29 +836,49 @@ public class Schedule6Service {
       String areaType = tfl ? AREA_TYPE_TFL : tsaNumber;
       CostDetailRow detail = costByRecord.get(row.recordId());
       Integer cost = detail == null ? null : detail.cost();
-
-      List<FieldIssue> issues = evaluateRecord(areaType, tflNumberCode, tsbNumberCode, cost);
-      // The schedule-level pass ignores the area-type flag — the legacy isScheduleValid quirk,
-      // ported verbatim (unreachable in practice: FLD-001 blocks area-type-less writes).
-      schedulePasses = schedulePasses && recordPasses(areaType, tflNumberCode, tsbNumberCode, cost);
-      boolean met = issues.isEmpty();
-      records.add(
-          new RoadRecordCheckResult(
-              row.recordId(),
-              rowCounter,
-              met,
-              met ? new MessageInfo(MSG_ROAD_MET, null) : null,
-              issues));
+      candidates.add(
+          new CheckCandidate(
+              row.recordId(), rowCounter, areaType, tflNumberCode, tsbNumberCode, cost));
     }
-
-    if (schedulePasses) {
-      // Zero records (and lone-comment, via the placeholder exclusion) is a vacuous pass — the
-      // legacy loop never runs. The pass branch emits ONLY the schedule banner.
-      return new Schedule6CheckStatusResponse(
-          OUTCOME_MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
-    }
-    return new Schedule6CheckStatusResponse(OUTCOME_ISSUES, List.of(), records);
+    return candidates;
   }
+
+  /**
+   * The payload source (Task 6): one candidate per submitted row, in payload order. A payload row
+   * addresses no stored record, so it has no {@code recordId} — the 1-based ordinal is served in
+   * BOTH {@code recordId} and {@code rowCounter} (see the DTO javadoc + the Task 6 report's
+   * recordId decision: the frontend only ever uses {@code recordId} as a React list key, never to
+   * correlate a check result back to a stored row, so the ordinal is a legitimate, always-unique
+   * stand-in and keeps {@link RoadRecordCheckResult#recordId()} a non-null primitive).
+   */
+  private List<CheckCandidate> payloadCandidates(Schedule6CheckRequest request) {
+    List<CheckCandidate> candidates = new ArrayList<>();
+    int rowCounter = 0;
+    for (CheckEntry entry : request.records()) {
+      rowCounter++;
+      candidates.add(
+          new CheckCandidate(
+              rowCounter,
+              rowCounter,
+              entry.areaType(),
+              entry.tflNumber(),
+              entry.supplyBlock(),
+              entry.cost()));
+    }
+    return candidates;
+  }
+
+  /**
+   * One record's check-status inputs, source-agnostic (stored row or payload row) — the whole point
+   * of Task 6 is that {@link #evaluateRecord} and {@link #recordPasses} never need to know which.
+   */
+  private record CheckCandidate(
+      int recordId,
+      int rowCounter,
+      String areaType,
+      String tflNumber,
+      String supplyBlock,
+      Integer cost) {}
 
   /**
    * One record's missing-field findings in the verbatim legacy order — type, TFL/Supply Block, cost

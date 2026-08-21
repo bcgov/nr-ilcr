@@ -16,6 +16,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
@@ -162,6 +163,66 @@ class Schedule6CheckStatusIT extends AbstractOracleIT {
         .andExpect(status().isBadRequest())
         .andExpect(
             jsonPath("$.detail", is("Please Select Mill and Reporting Year in the Home Page. ")));
+  }
+
+  // ---- Task 6: the body is optional; when present, the verdict follows the SUBMITTED values -----
+
+  @Test
+  @DisplayName("the verdict reflects the SUBMITTED values, not the stored ones")
+  void evaluatesSubmittedValues() throws Exception {
+    // The stored row 8399 (mill 671/2020) has a cost. Submit the same row with cost cleared:
+    // legacy's ajax="false" postback applied the screen to the model before evaluating
+    // (Schedule6MB.checkStatus :139-140), so the verdict must follow the screen.
+    String body =
+        """
+        {"generalComments":null,
+         "records":[{"areaType":"Y9","supplyBlock":"Y9A","volume":10,"cost":null,
+                     "comments":null}]}
+        """;
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", "671")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome").value("ISSUES"))
+        .andExpect(
+            jsonPath("$.records[0].issues[?(@.field=='cost')].message.text")
+                .value("Road : 1 - TSA or TFL (Cost $) : Value Required"));
+  }
+
+  @Test
+  @DisplayName("check status persists nothing")
+  void persistsNothing() throws Exception {
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    String before =
+        jdbc.queryForObject(
+            "SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT "
+                + "WHERE ROAD_MAINTENANCE_REPORT_ID = 8399",
+            String.class);
+    String body =
+        """
+        {"generalComments":"typed but never saved",
+         "records":[{"areaType":"Y9","supplyBlock":"Y9A","volume":10,"cost":5,"comments":null}]}
+        """;
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", "671")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(csrf()))
+        .andExpect(status().isOk());
+    assertEquals(
+        before,
+        jdbc.queryForObject(
+            "SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT "
+                + "WHERE ROAD_MAINTENANCE_REPORT_ID = 8399",
+            String.class));
   }
 
   /**
