@@ -49,6 +49,7 @@ import {
   validateCamp,
 } from './validation'
 import { fmtCost, fmtCostPerVolume, fmtVolume } from './masks'
+import { categoryRate, deriveSchedule5, type Schedule5Derived } from './derived'
 import './index.scss'
 
 // Client-only chrome — every one of these is either confirm-dialog text or is rendered when NO
@@ -212,6 +213,8 @@ const CategoryGridRow: FC<{
   readonly row: Extract<GridRow, { kind: 'category' }>
   readonly values: { volume: string; cost: string }
   readonly served?: CategoryAmount
+  /** The `$/m³` to display: the mirror while editing, the served figure otherwise (#291). */
+  readonly rate: number | null | undefined
   readonly subPageCount: number
   readonly readOnly: boolean
   readonly errors: CampErrors
@@ -219,7 +222,18 @@ const CategoryGridRow: FC<{
   readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   /** Present only on the two Other … rows, and only once the camp can be navigated to. */
   readonly onOpenSubPage?: () => void
-}> = ({ row, values, served, subPageCount, readOnly, errors, onChange, onBlur, onOpenSubPage }) => {
+}> = ({
+  row,
+  values,
+  served,
+  rate,
+  subPageCount,
+  readOnly,
+  errors,
+  onChange,
+  onBlur,
+  onOpenSubPage,
+}) => {
   // The two Other … rows carry their live sub-page row count in the label itself.
   const label = row.subPageCount === undefined ? row.label : `${row.label} (${subPageCount}): `
   // The displayed label keeps legacy's trailing ": "; the accessible name drops it so a screen
@@ -268,7 +282,7 @@ const CategoryGridRow: FC<{
         />
       )}
       {row.hasVolume ? (
-        <TableCell className="schedule-5__num">{fmtCostPerVolume(served?.costPerVolume)}</TableCell>
+        <TableCell className="schedule-5__num">{fmtCostPerVolume(rate)}</TableCell>
       ) : (
         <AbsentCell />
       )}
@@ -298,10 +312,12 @@ const CategoryGrid: FC<{
   readonly served?: Camp
   readonly readOnly: boolean
   readonly errors: CampErrors
+  /** Null in read-only mode, where the served figures render untouched (#291 AC7). */
+  readonly derived: Schedule5Derived | null
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
   readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   readonly onOpenSubPage: (kind: SubPageKind) => void
-}> = ({ values, served, readOnly, errors, onChange, onBlur, onOpenSubPage }) => (
+}> = ({ values, served, readOnly, errors, derived, onChange, onBlur, onOpenSubPage }) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
       <TableBody>
@@ -332,7 +348,9 @@ const CategoryGrid: FC<{
               <DerivedGridRow
                 key={row.key}
                 label={row.label}
-                amount={served?.[row.key as DerivedKey]}
+                // The four derived rows track the committed entry while editable (#291); outside that
+                // there is no entry, so the served figures render as-is.
+                amount={derived ? derived[row.key] : served?.[row.key as DerivedKey]}
               />
             )
           }
@@ -342,6 +360,7 @@ const CategoryGrid: FC<{
               row={row}
               values={values.categories[row.key]}
               served={served?.[row.key]}
+              rate={categoryRate(row.key, derived, served?.[row.key])}
               subPageCount={row.subPageCount === undefined ? 0 : (served?.[row.subPageCount] ?? 0)}
               readOnly={readOnly}
               errors={errors}
@@ -480,6 +499,10 @@ const Schedule5: FC = () => {
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [form, setForm] = useState<CampFormValues>(emptyForm)
+  // The blur-committed copy the derived mirror reads. Legacy refreshed the camp's rates and its four
+  // totals on each field's own `change` handler (schedule5ExistingCamp.xhtml:110-111 define the two
+  // render lists), so the figures settle when focus leaves rather than per keystroke (defect #291).
+  const [committed, setCommitted] = useState<CampFormValues>(emptyForm)
   /**
    * Which fields are worth reporting on. Errors themselves are DERIVED at render from
    * `validateCamp` (the single rule source, the `schedule3/index.tsx:352` pattern); this set decides
@@ -514,6 +537,7 @@ const Schedule5: FC = () => {
     setCopyWarning(null)
     setPanelMode('closed')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -618,6 +642,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode(mode)
     setForm(seedForm(camp, true))
+    setCommitted(seedForm(camp, true))
     setBlurred(new Set())
     setPanelCampId(camp.campId)
     // THIS camp's own token, read from its row. A falsy 0 is a valid token — never coerce it.
@@ -628,6 +653,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('new')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -637,6 +663,7 @@ const Schedule5: FC = () => {
     clearBanners()
     setPanelMode('copy')
     setForm(seedForm(camp, false))
+    setCommitted(seedForm(camp, false))
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -661,6 +688,7 @@ const Schedule5: FC = () => {
   const closePanel = () => {
     setPanelMode('closed')
     setForm(emptyForm())
+    setCommitted(emptyForm())
     setBlurred(new Set())
     setPanelCampId(null)
     setPanelRevision(null)
@@ -673,6 +701,13 @@ const Schedule5: FC = () => {
   /** Blur is the commit point: a field's error appears only once the licensee has left it. */
   const markBlurred = (key: string) => {
     setBlurred((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }
+
+  // Commit the entry baseline when a descriptor field loses focus — the Associated Camp Volume is one
+  // of them, and it drives all four derived rows plus every category rate (#291).
+  const commitOnBlur = (key: string) => {
+    markBlurred(key)
+    setCommitted(form)
   }
 
   /**
@@ -764,6 +799,9 @@ const Schedule5: FC = () => {
 
   const handleCategoryBlur = (key: CategoryKey, half: 'volume' | 'cost') => {
     markBlurred(`${key}.${half}`)
+    // Commit the whole form, not just this half: BR-03 propagates the Associated Camp Volume into all
+    // eleven volume-bearing categories, so one field's blur can legitimately move every rate (#291).
+    setCommitted(form)
   }
 
   /**
@@ -786,6 +824,7 @@ const Schedule5: FC = () => {
     if (saved) {
       setPanelMode('edit')
       setForm(seedForm(saved, true))
+      setCommitted(seedForm(saved, true))
       setPanelCampId(saved.campId)
       setPanelRevision(saved.revisionCount)
       setBlurred(new Set())
@@ -1092,6 +1131,8 @@ const Schedule5: FC = () => {
   // figures as this one's and go stale the moment any amount is edited — and AD-5 forbids
   // recomputing them here. Left blank until the save echo brings the real ones back (deviation (O)).
   const derivedSource = panelMode === 'edit' || panelMode === 'view' ? servedCamp : undefined
+  // Null in view mode, where there is no entry and the served figures render untouched (#291 AC7).
+  const derived = readOnlyPanel ? null : deriveSchedule5(committed, derivedSource)
 
   const rowActions = (camp: Camp) => {
     if (!editable) {
@@ -1179,7 +1220,7 @@ const Schedule5: FC = () => {
         readOnly={readOnlyPanel}
         errors={errors}
         onFieldChange={setField}
-        onFieldBlur={markBlurred}
+        onFieldBlur={commitOnBlur}
         onIsolatedCampChange={handleIsolatedCampChange}
         onCampVolumeChange={handleCampVolumeChange}
       />
@@ -1188,6 +1229,7 @@ const Schedule5: FC = () => {
         onOpenSubPage={requestSubPage}
         values={form}
         served={derivedSource}
+        derived={derived}
         readOnly={readOnlyPanel}
         errors={errors}
         onChange={handleCategoryChange}
