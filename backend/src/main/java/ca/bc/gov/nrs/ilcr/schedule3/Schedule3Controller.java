@@ -1,9 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3Api;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;

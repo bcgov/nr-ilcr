@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule4.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 
 /**
  * One missing-field finding within a location's Check Status result (Story 4.4, S28/S31). {@code

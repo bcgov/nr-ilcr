@@ -1,9 +1,9 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
-import ca.bc.gov.nrs.ilcr.millcontext.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;

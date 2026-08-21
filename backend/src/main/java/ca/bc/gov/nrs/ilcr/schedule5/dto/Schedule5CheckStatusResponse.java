@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.List;
 
 /**
@@ -29,9 +29,9 @@ import java.util.List;
  * passing camps with their met message, failing ones with their {@code Value Required} lines.
  *
  * <p>There is no {@code severity} field. The shipped house message envelope is {@code
- * schedule1.dto.MessageInfo(key, text)} and nothing in the backend or frontend carries a severity
- * today; a client derives it from {@code outcome} and each camp's {@code requirementsMet}, which is
- * what keeps it from drifting out of sync with them (8.3's "severity follows the outcome, never
+ * dto.base.MessageInfo(key, text)} and nothing in the backend or frontend carries a severity today;
+ * a client derives it from {@code outcome} and each camp's {@code requirementsMet}, which is what
+ * keeps it from drifting out of sync with them (8.3's "severity follows the outcome, never
  * hardcoded" patch).
  *
  * @param outcome {@code "MET"} (every camp passes; zero camps is vacuously met) or {@code "ISSUES"}

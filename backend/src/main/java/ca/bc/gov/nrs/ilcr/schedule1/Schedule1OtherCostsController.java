@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.api.Schedule1OtherCostsApi;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;

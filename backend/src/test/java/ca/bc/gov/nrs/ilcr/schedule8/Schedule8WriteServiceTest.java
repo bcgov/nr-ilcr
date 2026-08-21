@@ -12,10 +12,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;

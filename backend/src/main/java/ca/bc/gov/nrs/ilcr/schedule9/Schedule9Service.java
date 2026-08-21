@@ -1,11 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.CostRow;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.RecordRow;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecord;

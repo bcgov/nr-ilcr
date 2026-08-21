@@ -19,8 +19,9 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.DETAI
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_DELETED;
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_SAVED;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;

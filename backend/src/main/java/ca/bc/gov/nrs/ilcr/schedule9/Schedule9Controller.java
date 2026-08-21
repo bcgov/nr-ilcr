@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule9;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule9.api.Schedule9Api;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;

@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule3;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3UnacceptableCostsApi;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
