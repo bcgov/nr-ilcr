@@ -405,7 +405,11 @@ const Schedule6: FC = () => {
    * failed conversion/validation and left the derived cell at its last valid figure; committing an
    * out-of-range or unparseable value instead drives the rate from something no Save can persist.
    */
-  const commitRate = (form: RoadRecordFormValues, apply: (next: RateInputs) => void): void => {
+  const commitRate = (
+    form: RoadRecordFormValues,
+    apply: (next: RateInputs) => void,
+    regroup?: (next: RoadRecordFormValues) => void,
+  ): void => {
     const errors = validateRoadRecord(form)
     if (errors.volume !== undefined || errors.cost !== undefined) {
       return
@@ -414,6 +418,12 @@ const Schedule6: FC = () => {
       return
     }
     apply(rateInputsOf(form))
+    // Re-group the FIELD on the same blur, AFTER the gate — legacy's handlers re-rendered the input
+    // alongside the rate (`render="vol cal …"` / `render="cos cal …"`, schedule6.xhtml:153,163,364,
+    // 383), which re-applied the converter mask. This was the only page whose blur moved a derived
+    // cell and left `50000` unmasked beside it (code review 2026-08-21). Regrouping before the gate
+    // replaced the form mid-validation and stopped the commit landing at all.
+    regroup?.({ ...form, volume: groupInput(form.volume), cost: groupInput(form.cost) })
   }
   const [editErrors, setEditErrors] = useState<RoadRecordErrors>({})
 
@@ -783,7 +793,7 @@ const Schedule6: FC = () => {
               }}
               onFieldChange={setAddField}
               rateInputs={addRate}
-              onRateCommit={() => commitRate(addForm, setAddRate)}
+              onRateCommit={() => commitRate(addForm, setAddRate, setAddForm)}
               onSubmit={handleAdd}
             />
           </Column>
@@ -814,7 +824,7 @@ const Schedule6: FC = () => {
                       }}
                       onFieldChange={setEditField}
                       rateInputs={editRate}
-                      onRateCommit={() => commitRate(editForm, setEditRate)}
+                      onRateCommit={() => commitRate(editForm, setEditRate, setEditForm)}
                       onSave={handleSaveEdit}
                       onCancel={cancelEdit}
                     />

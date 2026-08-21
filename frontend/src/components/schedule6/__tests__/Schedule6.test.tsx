@@ -226,7 +226,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.tab()
 
     expect(rateIn(rowPanel(1))).toBe('1,000.00') // 999,999/1,000 = 999.999 -> scale 2 -> 1,000.00
-    expect(totalsRegion().textContent).toBe(totalsBefore) // the footer did not
+    // Asserted against the LITERAL footer text, not against itself: comparing the region to a
+    // snapshot of itself also passed if the footer rendered nothing (code review 2026-08-21).
+    expect(totalsRegion().textContent).toBe(totalsBefore)
+    expect(totalsRegion().textContent).toContain('50,000') // the served total, unmoved
   })
 
   test('the Add panel shows a rate as soon as both halves are committed (#291)', async () => {

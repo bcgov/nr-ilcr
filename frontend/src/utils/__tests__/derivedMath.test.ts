@@ -1,5 +1,6 @@
 import {
   addN,
+  sumN,
   enteredNum,
   halfUp,
   isUnusableEntry,
@@ -123,6 +124,30 @@ describe('subN (CoreUtil.bigDecimalSubtraction)', () => {
 
   test('can go negative — the reason halfUp must not use Math.round', () => {
     expect(subN(200, 1000)).toBe(-800)
+  })
+})
+
+describe('sumN — null-tolerant, the counterpart to sumAsZero', () => {
+  test('sums the present operands', () => {
+    expect(sumN(100, 250)).toBe(350)
+    expect(sumN(100, null, 250)).toBe(350)
+  })
+
+  test('is null when EVERY operand is null — the whole point of the helper', () => {
+    // Where sumAsZero returns 0. Schedule 5's camp totals and Schedule 7A's bridge totals must stay
+    // BLANK on an empty form; Schedule 1's subtotal and Schedule 3's column subtotals must read 0.
+    expect(sumN(null, null)).toBeNull()
+    expect(sumN()).toBeNull()
+    expect(sumAsZero(null, null)).toBe(0) // the contrast, asserted side by side
+  })
+
+  test('a real zero operand contributes, and is not treated as absent', () => {
+    expect(sumN(0)).toBe(0)
+    expect(sumN(null, 0)).toBe(0)
+  })
+
+  test('handles negatives', () => {
+    expect(sumN(500, -800)).toBe(-300)
   })
 })
 

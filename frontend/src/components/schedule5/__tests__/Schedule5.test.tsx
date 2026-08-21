@@ -469,7 +469,7 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
     expect(within(grid).queryByRole('columnheader')).not.toBeInTheDocument()
   })
 
-  test('derived rows and $/m³ render server values with the legacy masks, never recomputed', async () => {
+  test('derived rows and $/m³ render with the legacy masks (the mirror reproduces the served figures)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
     const user = userEvent.setup()

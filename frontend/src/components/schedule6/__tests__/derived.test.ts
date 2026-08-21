@@ -5,6 +5,10 @@ import {
 } from '@/components/schedule6/derived'
 import type { RoadRecordFormValues } from '@/components/schedule6/validation'
 
+// The 50.00 / 75.00 / zero-volume / absent-volume cases are transcribed from `Schedule6ServiceTest`;
+// the scale-2, half-cent, grouped, negative and non-finite cases are client-only concerns computed
+// here (narrowed 2026-08-21 after code review).
+//
 // Expected figures transcribed from `Schedule6ServiceTest` — `tsaRecord_derivesRmgFromSupplyBlock`
 // (1000 / 50000 -> 50.00), `tflRecord_derivesRmgFromTfl` (400 / 30000 -> 75.00) and
 // `zeroOrAbsentVolume_costPerVolumeNull` — so the mirror is pinned to the server's own arithmetic

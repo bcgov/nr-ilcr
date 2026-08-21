@@ -3,7 +3,10 @@ import type { CampFormValues, CategoryKey } from '@/components/schedule5/validat
 import { categoryRate, deriveSchedule5 } from '@/components/schedule5/derived'
 import { CATEGORY_KEYS } from '@/components/schedule5/validation'
 
-// Every expected figure is transcribed from `Schedule5ServiceTest` — the `CampSubTotal`,
+// The cascade figures below are transcribed from `Schedule5ServiceTest`; the per-category rate cases
+// and the `categoryRate` block are client-only concerns computed here (narrowed 2026-08-21 after code
+// review, which found the blanket "every figure is transcribed" claim overstated the suite).
+// Transcribed from `Schedule5ServiceTest` — the `CampSubTotal`,
 // `campTotal` and `AccessTotals` nests — so the mirror is pinned to the server's own arithmetic
 // (defect #291 AC5). Item codes map to keys as: 56 catering, 58 wages, 59 depreciation, 60 general
 // camp, 61 recoveries, 62 other-camp rows, 63 crew transportation, 64/65/66/67 equip land/rail/air/
@@ -152,6 +155,27 @@ describe('Access Expense Total and Camp-and-Access', () => {
   test('both sides null -> Camp-and-Access is null, never 0', () => {
     const d = deriveSchedule5(form('120000', {}), served(null, null))
     expect(d.campAndAccessTotal.cost).toBeNull()
+  })
+})
+
+describe('the seam between the camp mirror and the sub-page mirror', () => {
+  test('a served Other cost of 0 makes the Sub-Total 0, not blank', () => {
+    // Schedule5ServiceTest `campSideAsymmetryYieldsZero`. The sub-page mirror is tested to PRODUCE
+    // that 0 (schedule5SubPage/derived.test.ts, the campSideServesZero case); this is the consuming
+    // side, which the code review found untested — sumN would otherwise be reached with all-null and
+    // return blank where the server returns 0.
+    const d = deriveSchedule5(
+      form('120000', {}),
+      served(0, null), // an item-62 list of cost-free rows: the server serves 0, not null
+    )
+    expect(d.campSubTotal.cost).toBe(0)
+    expect(d.campTotal.cost).toBe(0)
+    expect(d.campAndAccessTotal.cost).toBe(0)
+  })
+
+  test('a served Other cost of null leaves the Sub-Total blank', () => {
+    const d = deriveSchedule5(form('120000', {}), served(null, null))
+    expect(d.campSubTotal.cost).toBeNull()
   })
 })
 

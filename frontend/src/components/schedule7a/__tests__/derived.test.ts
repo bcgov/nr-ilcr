@@ -2,6 +2,10 @@ import type { BridgeFormValues } from '@/components/schedule7a/validation'
 import { deriveBridgeTotals } from '@/components/schedule7a/derived'
 import { emptyBridgeForm } from '@/components/schedule7a/validation'
 
+// The 8000/800/1200/12000, site-plan-only and partial-null cases are transcribed from
+// `Schedule7aServiceTest`; the zero-preserved, negative, grouped and non-finite cases are client-only
+// concerns computed here (narrowed 2026-08-21 after code review).
+//
 // Expected figures transcribed from `Schedule7aServiceTest` — `read_mapsBridgeAndDerivesTotals`,
 // `totals_nullWhenNoContributingCost` and `totals_partialNullAddition` — so the mirror is pinned to
 // the server's own arithmetic (defect #291 AC5).
@@ -98,6 +102,8 @@ describe('deriveBridgeTotals — entry forms', () => {
       form({ superstructureMaterialCost: 'Infinity', abutmentMaterialCost: '3000' }),
     )
     expect(totals.totalMaterial).toBe(3000)
-    expect(Number.isFinite(totals.grandTotal ?? 0)).toBe(true)
+    // Asserted as a VALUE: `Number.isFinite(x ?? 0)` passed on null and on any finite number, so it
+    // could not observe the leak it was placed to exclude (code review 2026-08-21).
+    expect(totals.grandTotal).toBe(3000)
   })
 })
