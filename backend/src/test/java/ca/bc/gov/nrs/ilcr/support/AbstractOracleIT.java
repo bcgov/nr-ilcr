@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.support;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +11,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.oracle.OracleContainer;
@@ -55,6 +60,22 @@ public abstract class AbstractOracleIT {
     this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
         .apply(springSecurity())
         .build();
+  }
+
+  /**
+   * Perform a request whose 200 response STREAMS its body via {@code StreamingResponseBody} (the
+   * report/print PDF endpoints, Story 29.2). A streaming controller returns after starting async
+   * processing, so the final response — status, headers, and PDF body — is only available after an
+   * async dispatch; this asserts async started, then dispatches and returns the {@link ResultActions}
+   * for the caller to chain its {@code andExpect(...)} on. Use it only for the success path: the
+   * 400/404/409 guards throw synchronously (before the body streams) and never start async, so those
+   * tests keep calling {@code mockMvc.perform(...)} directly.
+   */
+  protected ResultActions streamPdf(MockHttpServletRequestBuilder request) throws Exception {
+    MvcResult asyncResult = mockMvc.perform(request)
+        .andExpect(request().asyncStarted())
+        .andReturn();
+    return mockMvc.perform(asyncDispatch(asyncResult));
   }
 
   @DynamicPropertySource

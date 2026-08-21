@@ -4,6 +4,8 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import ca.bc.gov.nrs.ilcr.reporting.api.ReportApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * Print Schedule PDF endpoints (Epic 20). Authorizes by naming the action (AD-7) — {@code
@@ -28,6 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class ReportController implements ReportApi {
 
+  private static final Logger log = LoggerFactory.getLogger(ReportController.class);
+
   private final MillContextService millContextService;
   private final ReportService reportService;
   private final PrintService printService;
@@ -43,29 +48,56 @@ public class ReportController implements ReportApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<byte[]> getSchedule9Pdf(
+  public ResponseEntity<StreamingResponseBody> getSchedule9Pdf(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    byte[] pdf = reportService.renderSchedule9Pdf(context.millId(), context.year());
+    // Fill synchronously (may throw the empty-schedule 404) BEFORE the response is built; only the
+    // export streams, so a rejected render still produces a problem+json error, never a half-written PDF.
+    RenderedReport report = reportService.renderSchedule9(context.millId(), context.year());
     String filename = "schedule9_" + context.millId() + "_" + context.year() + ".pdf";
-    return ResponseEntity.ok()
-        .contentType(MediaType.APPLICATION_PDF)
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-        .body(pdf);
+    return pdfResponse(filename, context.millId(), context.year(), report);
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<byte[]> printSchedules(
+  public ResponseEntity<StreamingResponseBody> printSchedules(
       String millId, String year, PrintRequest request, Authentication authentication) {
     // Guard order: mill/year context first (400/404/409), THEN the selection ladder before any fill.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     validateSelection(request);
-    byte[] pdf = printService.render(context, request);
+    RenderedReport report = printService.render(context, request);
+    return pdfResponse("schedules_print.pdf", context.millId(), context.year(), report);
+  }
+
+  /**
+   * Stream a filled report as an {@code application/pdf} attachment. The {@link StreamingResponseBody}
+   * exports directly to the servlet output stream (no full-PDF {@code byte[]} on the heap, Story 29.2)
+   * and try-with-resources closes the {@link RenderedReport} on both success and failure, so the
+   * virtualizer's swap file is never leaked. The status + headers are set on the ResponseEntity here,
+   * before any byte is written, so the attachment filename and content type are always applied.
+   *
+   * <p>An export failure surfaces DIFFERENTLY from the pre-fill guards: by the time bytes are written
+   * the 200 + {@code application/pdf} headers are already committed, so no {@code @ExceptionHandler}
+   * can turn it into a {@code problem+json} — the client just gets a truncated PDF. It is therefore
+   * logged at ERROR with the mill/year (the only server-side signal ops can correlate with a user's
+   * "the PDF won't open") before being rethrown so the container aborts the response. The async render
+   * runs under {@code spring.mvc.async.request-timeout}; a timeout produces the same truncated shape.
+   */
+  private static ResponseEntity<StreamingResponseBody> pdfResponse(
+      String filename, long millId, int year, RenderedReport report) {
+    StreamingResponseBody body = out -> {
+      try (report) {
+        report.writeTo(out);
+      } catch (RuntimeException e) {
+        log.error("Report export failed after the response was committed for mill {} year {} ({}) — "
+            + "the client received a truncated PDF", millId, year, filename, e);
+        throw e;
+      }
+    };
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"schedules_print.pdf\"")
-        .body(pdf);
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+        .body(body);
   }
 
   /**

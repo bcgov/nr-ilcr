@@ -137,6 +137,11 @@ objects:
                   value: "true"
                 - name: ILCR_DATASOURCE_ENABLED
                   value: ${ILCR_DATASOURCE_ENABLED}
+                # Story 29.2 — point the Jasper report virtualizer's swap file at the dedicated
+                # DISK-backed ephemeral volume below, NOT java.io.tmpdir (/tmp here is a Memory-backed
+                # emptyDir, so spilling there would stay in RAM and defeat the heap relief).
+                - name: ILCR_REPORTING_SWAP_DIR
+                  value: /var/tmp/report-swap
                 - name: ORACLEDB_HOST
                   valueFrom:
                     secretKeyRef:
@@ -182,9 +187,13 @@ objects:
                 requests:
                   cpu: ${CPU_REQUEST}
                   memory: ${MEMORY_REQUEST}
-                  ephemeral-storage: "200Mi"
+                  ephemeral-storage: "256Mi"
                 limits:
                   memory: ${MEMORY_LIMIT}
+                  # Bound total ephemeral (node) storage: base image scratch + the 512Mi report-swap
+                  # volume below (Story 29.2). A print that would exceed this is evicted — a bounded,
+                  # observable failure — rather than filling node disk.
+                  ephemeral-storage: "1Gi"
               securityContext:
                 allowPrivilegeEscalation: false
                 runAsNonRoot: true
@@ -196,6 +205,8 @@ objects:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+                - name: report-swap
+                  mountPath: /var/tmp/report-swap
                 - name: api-cert
                   mountPath: /cert
               startupProbe:
@@ -221,6 +232,15 @@ objects:
               emptyDir:
                 medium: Memory
                 sizeLimit: 256Mi
+            # Story 29.2 — dedicated DISK-backed ephemeral volume for the Jasper report swap file.
+            # Deliberately NOT medium: Memory (unlike /tmp above): spilling large report page objects
+            # here relieves the JVM heap onto node ephemeral storage instead of RAM, which is the whole
+            # point of the virtualizer. Bounded by sizeLimit so a runaway print is evicted (a bounded,
+            # observable failure) rather than silently consuming node disk. Writable despite the
+            # read-only root filesystem because it is a mounted volume.
+            - name: report-swap
+              emptyDir:
+                sizeLimit: 512Mi
             # Oracle keystore written by the init container, read by the app
             - name: api-cert
               persistentVolumeClaim:

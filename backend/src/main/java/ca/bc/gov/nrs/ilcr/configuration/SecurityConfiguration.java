@@ -36,6 +36,18 @@ public class SecurityConfiguration {
     ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                // No .cors(...) is configured, and that omission is a DELIBERATE, documented decision
+                // (Story 29.14) — not an oversight. The browser talks to ONE origin: the Caddy edge
+                // (frontend/Caddyfile) serves the SPA and reverse-proxies /api* to this backend, so the
+                // SPA calls the API same-origin and no cross-origin browser request ever reaches it.
+                // Combined with the stateless bearer-JWT model — no ambient cookie the browser would
+                // attach cross-site, the same reasoning as the CSRF note above — the SAFE default for
+                // this threat model is NO CORS. There is deliberately no allowedOrigins("*")/
+                // allowCredentials surface here to get wrong. If the SPA is ever served from a DIFFERENT
+                // origin, terminate CORS at the gateway/Caddy route (preferred); only if the gateway
+                // cannot own it, add a tightly-scoped CorsConfigurationSource (named origin(s), explicit
+                // methods/headers, credentials only if actually needed) wired via http.cors(...) HERE —
+                // never a permissive wildcard, and never "*" combined with credentials.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->
