@@ -54,6 +54,20 @@ const schedule1Doc = {
   forestMgmtAdminCost: 600000,
   lessSilvAdminCost: 150000,
   otherCosts: { volume: 8000, costSubtotal: 24000, perUnit: 3.0, count: 2 },
+  // The server's own derived figures for THIS document, so the mirror can be compared against them
+  // rather than against hand arithmetic in this file (code review 2026-08-21). Computed from
+  // Schedule1Service's formulas: subtotal = 50000 line-12 + 600000 FMA + 24000 other = 674000;
+  // total silviculture = 20000 actual - 150000 Sch3 admin (no accrued) = -130000; grand total = 544000;
+  // its rate = 544000 / 54321 crown = 10.01; less-silv-admin rate = 150000 / 55 = 2727.27. The 143/144
+  // and 140 rates are null because those volumes are absent from the fixture.
+  subtotalCompanyLoggingCost: 674000,
+  subtotalCompanyLoggingPerUnit: null,
+  totalSilvicultureCost: -130000,
+  totalSilviculturePerUnit: null,
+  totalCompanyLoggingCost: 544000,
+  totalCompanyLoggingPerUnit: 10.01,
+  forestMgmtAdminPerUnit: null,
+  lessSilvAdminPerUnit: 2727.27,
   warnings: [],
 }
 
@@ -196,17 +210,36 @@ describe('Schedule1 editable page', () => {
     expect(costOf(label)).toBe('50,000')
   })
 
-  test('the figures do not JUMP when the Save echo lands — mirror equals server (#291 AC5)', async () => {
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    // A direct mirror-vs-server comparison with no edit involved: the fixture now carries the figures
+    // Schedule1Service computes for it, so a mirror that rounds or propagates nulls differently fails
+    // here. Schedule 1 is the page with the two easiest-to-conflate rules, and before the code review
+    // its fixture carried no derived fields at all — so every assertion was self-referential.
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    await screen.findByText('Standing Tree to Loaded Truck')
+
+    expect(costOf(SUBTOTAL)).toBe('674,000')
+    expect(costOf(GRAND_TOTAL)).toBe('544,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.01')
+    expect(rate('Standing Tree to Loaded Truck')).toBe('50.00')
+    expect(rate('Less Silviculture Admin Costs')).toBe('2,727.27') // 150000 / 55
+    expect(costOf('Total Silviculture (As per Financial Statements)')).toBe('-130,000')
+    expect(rate(/^Subtotal Other Costs\(2\):$/)).toBe('3.00')
+  })
+
+  test('the mirror equals the SERVER figures, before and after Save (#291 AC5)', async () => {
+    // Asserted against the echo's own derived fields, not against a snapshot of the pre-Save render:
+    // an editable page always renders the mirror, so comparing render-to-render compared the mirror
+    // with itself and passed even with a wrong echo (code review 2026-08-21).
     server.use(
       http.get(URL, () => HttpResponse.json(schedule1Doc)),
-      // The echo carries what Schedule1Service computes for a 100000 logging cost.
       http.put(URL, () =>
         HttpResponse.json({
           ...schedule1Doc,
           revisionCount: 4,
           lineItems: [{ costItemCode: 12, volume: 1000, cost: 100000, perUnit: 100.0 }],
           subtotalCompanyLoggingCost: 724000,
-          subtotalCompanyLoggingPerUnit: null,
           totalSilvicultureCost: -130000,
           totalCompanyLoggingCost: 594000,
           totalCompanyLoggingPerUnit: 10.93,
@@ -222,20 +255,18 @@ describe('Schedule1 editable page', () => {
     await user.type(cost, '100000')
     await user.tab()
 
-    const mirrored = {
-      line: rate('Standing Tree to Loaded Truck'),
-      subtotal: costOf(SUBTOTAL),
-      grandCost: costOf(GRAND_TOTAL),
-      grandRate: rate(GRAND_TOTAL),
-    }
+    // The mirror must already agree with what the server will send: 100000 + 600000 + 24000 = 724000,
+    // grand total 724000 - 130000 = 594000, rate 594000 / 54321 = 10.93.
+    expect(costOf(SUBTOTAL)).toBe('724,000')
+    expect(costOf(GRAND_TOTAL)).toBe('594,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.93')
 
     await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
-    expect(rate('Standing Tree to Loaded Truck')).toBe(mirrored.line)
-    expect(costOf(SUBTOTAL)).toBe(mirrored.subtotal)
-    expect(costOf(GRAND_TOTAL)).toBe(mirrored.grandCost)
-    expect(rate(GRAND_TOTAL)).toBe(mirrored.grandRate)
+    expect(costOf(SUBTOTAL)).toBe('724,000')
+    expect(costOf(GRAND_TOTAL)).toBe('594,000')
+    expect(rate(GRAND_TOTAL)).toBe('10.93')
   })
 
   test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {

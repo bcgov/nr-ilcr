@@ -83,6 +83,14 @@ describe('per-line crown', () => {
     expect(d.lines[37]).toEqual({ harvest: 150000, pop: 0, crown: 150000 })
   })
 
+  test('a "-0" harvest renders as 0, not "-0"', () => {
+    // `crownCost` is a bare subtraction, so it bypassed halfUp's own -0 guard: toNum('-0') is -0 and a
+    // harvest-only line forces PO&P to 0, giving -0, which fmtNumber renders as "-0" where the
+    // server's integer arithmetic gives 0 (code review 2026-08-21).
+    const d = deriveSchedule3(doc({}), enteredFromForm({ 'harvest-29': '-0' }))
+    expect(Object.is(d.lines[29].crown, 0)).toBe(true)
+  })
+
   test('a harvest-only line with no harvest keeps a null PO&P, not 0', () => {
     const d = deriveSchedule3(doc({}), enteredFromForm({}))
     expect(d.lines[29].pop).toBeNull()

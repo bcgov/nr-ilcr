@@ -75,6 +75,22 @@ describe('deriveSchedule1 — derivedTotals_foldInSchedule3AndLineItems', () => 
     expect(derived.totalCompanyLoggingPerUnit).toBe(187.5) // 750000 / 4000
   })
 
+  test('the pulled Schedule 3 admin costs divide by the volume entered here', () => {
+    // `lessSilvAdminPerUnit` (139) was asserted by neither the frontend nor the backend before the
+    // 2026-08-21 review, despite being newly mirror-driven: 150000 Sch3 pull / 55 entered volume.
+    const withAdminVolume = deriveSchedule1(
+      doc({
+        forestMgmtAdminCost: 600000,
+        lessSilvAdminCost: 150000,
+        otherCostsSubtotal: 0,
+        schedule3CrownVolume: null,
+      }),
+      enteredFromForm({ 'vol-139': '55', 'vol-143': '1000' }),
+    )
+    expect(withAdminVolume.perUnit[139]).toBe(2727.27) // 150000/55 at the legacy scale-2 rule
+    expect(withAdminVolume.perUnit[143]).toBe(600)
+  })
+
   test('the per-unit cells divide the right cost by the entered volume', () => {
     expect(derived.perUnit[143]).toBe(600) // 600000 / 1000
     expect(derived.perUnit[144]).toBe(325) // 650000 / 2000

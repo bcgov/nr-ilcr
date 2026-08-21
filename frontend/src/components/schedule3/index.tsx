@@ -338,10 +338,15 @@ const Schedule3: FC = () => {
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
           // Re-group the value, commit it to the derived mirror's baseline (#291), AND run the
-          // caller's own blur hook (the Annual Rents S111 alert).
+          // caller's own blur hook (the Annual Rents S111 alert). The GROUPED string is passed
+          // explicitly so `committed` and `form` hold the same text, and an invalid field holds its
+          // previous committed value rather than driving the cascade (code review 2026-08-21).
           onBlur={() => {
             groupField(fieldKey)
-            commit(fieldKey)
+            commit(fieldKey, {
+              value: groupInput(form[fieldKey] ?? ''),
+              invalid: Boolean(fieldErrors[fieldKey]),
+            })
             onBlur?.()
           }}
           invalid={Boolean(fieldErrors[fieldKey])}

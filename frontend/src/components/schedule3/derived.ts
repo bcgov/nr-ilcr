@@ -1,7 +1,13 @@
 import type Schedule3Response from '@/interfaces/Schedule3Response'
 import type { ThreeColumnTotal, TimberBlock } from '@/interfaces/Schedule3Response'
-import { addN, halfUp, perUnitLegacy, sumAsZero } from '@/utils/derivedMath'
-import { toNum } from '@/utils/number'
+import {
+  addN,
+  enteredNum,
+  perUnitLegacy,
+  scalingPopOf,
+  sumAsZero,
+  wholeDollars,
+} from '@/utils/derivedMath'
 import { ALL_LINE_CODES, HARVEST_POP_LINE_CODES } from '@/interfaces/Schedule3Request'
 
 /**
@@ -67,44 +73,24 @@ export function enteredFromForm(form: Readonly<Record<string, string>>): Schedul
   const harvest: Record<number, number | null> = {}
   const pop: Record<number, number | null> = {}
   for (const code of ALL_LINE_CODES) {
-    harvest[code] = toNum(form[`harvest-${code}`] ?? '')
-    pop[code] = HARVEST_POP.has(code) ? toNum(form[`pop-${code}`] ?? '') : null
+    harvest[code] = enteredNum(form[`harvest-${code}`] ?? '')
+    pop[code] = HARVEST_POP.has(code) ? enteredNum(form[`pop-${code}`] ?? '') : null
   }
   return {
     harvest,
     pop,
-    popTimberVolume: toNum(form['popTimberVolume'] ?? ''),
-    crownTimberVolume: toNum(form['crownTimberVolume'] ?? ''),
+    popTimberVolume: enteredNum(form['popTimberVolume'] ?? ''),
+    crownTimberVolume: enteredNum(form['crownTimberVolume'] ?? ''),
   }
 }
 
 /**
- * Legacy `Schedule3DO.getScalingExpense` via `Schedule3Constants.scalingPop`: PO&P =
- * round-to-whole-dollars((popTimberVolume ÷ overheadVolume) × scalingHarvest). Null when the harvest
- * or either volume is absent, or the overhead volume is zero.
- *
- * **Documented divergence:** the server rounds the ratio to scale 15 before multiplying. That step is
- * deliberately omitted here. A JS double already carries ~15–17 significant digits, so rounding it to
- * 15 decimal places adds no precision — while the `× 10¹⁵` it would take to do so risks exceeding
- * `Number.MAX_SAFE_INTEGER` and losing precision that the raw quotient keeps. Using the raw quotient
- * is therefore closer to the server's answer, not further from it. Only the final whole-dollar
- * rounding, which is what the figure actually displays, is reproduced exactly.
+ * Re-exported from {@link scalingPopOf} so this module stays the single place Schedule 3's mirror is
+ * read from. The ratio is taken at **scale 15 HALF_UP before the multiply**, exactly as
+ * `Schedule3Constants.scalingPop` does — the first implementation skipped that step and shipped a $1
+ * divergence that cascaded into nine cells (code review 2026-08-21).
  */
-export function scalingPop(
-  scalingHarvest: number | null,
-  popTimberVolume: number | null,
-  overheadVolume: number | null,
-): number | null {
-  if (
-    scalingHarvest === null ||
-    popTimberVolume === null ||
-    overheadVolume === null ||
-    overheadVolume === 0
-  ) {
-    return null
-  }
-  return halfUp((popTimberVolume / overheadVolume) * scalingHarvest, 0)
-}
+export const scalingPop = scalingPopOf
 
 /**
  * Recover the item-38 (sub-page) half of Included Unacceptable Costs from the loaded document, so the
@@ -136,7 +122,9 @@ function crownCost(harvest: number | null, pop: number | null): number | null {
   if (harvest === null || pop === null) {
     return null
   }
-  return harvest - pop
+  // `wholeDollars` both matches the server's integer COST column and normalises `-0` to `0`: a harvest
+  // of `-0` on a harvest-only line (PO&P forced to 0) otherwise rendered "-0" (code review 2026-08-21).
+  return wholeDollars(harvest - pop)
 }
 
 export function deriveSchedule3(
@@ -174,26 +162,26 @@ export function deriveSchedule3(
   )
   const subtotalPop = sumAsZero(otherPop, ...ALL_LINE_CODES.map((code) => lines[code].pop))
   const subtotalActualCosts: ThreeColumnTotal = {
-    harvest: subtotalHarvest,
-    pop: subtotalPop,
-    crown: subtotalHarvest - subtotalPop,
+    harvest: wholeDollars(subtotalHarvest),
+    pop: wholeDollars(subtotalPop),
+    crown: wholeDollars(subtotalHarvest - subtotalPop),
   }
 
   // --- Included Unacceptable Costs = item-38 rows + the Annual Rents harvest; PO&P forced 0. ------
   const unacceptableHarvest = unacceptableBase(doc) + (lines[CODE_ANNUAL_RENTS].harvest ?? 0)
   const includedUnacceptableCosts: ThreeColumnTotal = {
-    harvest: unacceptableHarvest,
+    harvest: wholeDollars(unacceptableHarvest),
     pop: 0,
-    crown: unacceptableHarvest, // pop 0 => crown = harvest
+    crown: wholeDollars(unacceptableHarvest), // pop 0 => crown = harvest
   }
 
   // --- Total Costs = Subtotal Actual − Included Unacceptable. -------------------------------------
   const totalHarvest = subtotalHarvest - unacceptableHarvest
-  const totalPop = subtotalPop - includedUnacceptableCosts.pop
+  const totalPop = subtotalPop - (includedUnacceptableCosts.pop ?? 0)
   const totalCosts: ThreeColumnTotal = {
-    harvest: totalHarvest,
-    pop: totalPop,
-    crown: totalHarvest - totalPop,
+    harvest: wholeDollars(totalHarvest),
+    pop: wholeDollars(totalPop),
+    crown: wholeDollars(totalHarvest - totalPop),
   }
 
   // --- Timber blocks: their costs are PUSHED DOWN from Total Costs; overhead sums the two. --------

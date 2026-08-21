@@ -1,8 +1,11 @@
 import {
   addN,
+  enteredNum,
   halfUp,
+  isUnusableEntry,
   perUnitLegacy,
   perUnitOf,
+  scalingPopOf,
   subN,
   sumAsZero,
   wholeDollars,
@@ -182,5 +185,111 @@ describe('perUnitLegacy (Schedules 1 and 3)', () => {
     expect(perUnitLegacy(null, 5000)).toBeNull()
     expect(perUnitLegacy(3075, null)).toBeNull()
     expect(perUnitLegacy(3075, 0)).toBeNull()
+  })
+})
+
+// ---- Code-review regressions (2026-08-21) -------------------------------------------------------
+// Every case below is a divergence from the Java BigDecimal path that the first implementation shipped
+// and the review caught. Each expected value was computed with an exact BigInt model of the server's
+// arithmetic, NOT with this module.
+
+describe('regression: rounding must happen in integer space, not double space', () => {
+  test('toFixed pre-rounding turned a near-tie into a false tie', () => {
+    // The old expansion-and-carry gave 1 and 3; HALF_UP on the true value gives 0 and 2.
+    expect(halfUp(0.4999999951, 0)).toBe(0)
+    expect(halfUp(2.499999995, 0)).toBe(2)
+  })
+
+  test('a one-cent divergence at ordinary magnitudes (Schedules 1 and 3)', () => {
+    // cost 41,956,411 / volume 40 = 1,048,910.275 exactly -> scale 2 HALF_UP -> .28, not .27
+    expect(perUnitLegacy(41956411, 40)).toBe(1048910.28)
+  })
+
+  test('the same at scale 4 (Schedules 2 and 4)', () => {
+    // cost 32,781,251 / volume 4,000 = 8,195.31275 exactly -> scale 4 HALF_UP -> .3128, not .3127
+    expect(perUnitOf(32781251, 4000)).toBe(8195.3128)
+  })
+
+  test('values at or above 1e21, where toFixed emits exponential notation', () => {
+    // The old positional parse read "2.5e+21" and returned 0.25.
+    expect(halfUp(2.5e21, 4)).toBe(2.5e21)
+    expect(halfUp(1e21, 2)).toBe(1e21)
+    // Reachable through the mirror: a huge cost over a tiny volume.
+    expect(perUnitLegacy(99999999, 0.00000000000001)).toBe(9.9999999e21)
+  })
+
+  test('the scale-10 intermediate no longer overflows MAX_SAFE_INTEGER', () => {
+    // A 7-digit quotient needs 17 significant digits at scale 10 — past what a double holds.
+    expect(perUnitLegacy(41956411, 4)).toBe(10489102.75)
+    expect(perUnitLegacy(99999999, 3)).toBe(33333333)
+  })
+
+  test('exact decimal halves still round up (the original 0.615 case)', () => {
+    expect(halfUp(3075 / 5000, 2)).toBe(0.62)
+    expect(perUnitLegacy(3075, 5000)).toBe(0.62)
+  })
+})
+
+describe('regression: scalingPopOf keeps the server scale-15 ratio step', () => {
+  test('the ratio rounding decides the .5 boundary', () => {
+    // popVol 5,000,000 / overhead 6,000,000 -> ratio 0.833333333333333 (scale 15) -> x 999,999
+    // = 833332.4999999997 -> 833,332. The raw quotient gives exactly 833332.5 -> 833,333.
+    expect(scalingPopOf(999999, 5000000, 6000000)).toBe(833332)
+    expect(scalingPopOf(3, 500000, 600000)).toBe(2)
+  })
+
+  test('a terminating ratio is unaffected (the pre-existing 0.5 cases)', () => {
+    expect(scalingPopOf(60000, 54321, 108642)).toBe(30000)
+    expect(scalingPopOf(3, 1000, 2000)).toBe(2) // 1.5 -> HALF_UP -> 2
+    expect(scalingPopOf(-3, 1000, 2000)).toBe(-2)
+  })
+
+  test('absent operands and a zero overhead volume stay blank', () => {
+    expect(scalingPopOf(null, 54321, 108642)).toBeNull()
+    expect(scalingPopOf(60000, null, 108642)).toBeNull()
+    expect(scalingPopOf(60000, 54321, null)).toBeNull()
+    expect(scalingPopOf(60000, 0, 0)).toBeNull()
+  })
+})
+
+describe('regression: non-finite values never reach a cell', () => {
+  test('enteredNum treats the values toNum lets through as absent', () => {
+    expect(enteredNum('Infinity')).toBeNull()
+    expect(enteredNum('-Infinity')).toBeNull()
+    expect(enteredNum('1e999')).toBeNull()
+    expect(enteredNum('NaN')).toBeNull()
+    // ...while ordinary entry still parses, grouped or not.
+    expect(enteredNum('1,234.5')).toBe(1234.5)
+    expect(enteredNum('')).toBeNull()
+  })
+
+  test('the perUnit helpers refuse non-finite operands', () => {
+    expect(perUnitOf(Infinity, 100)).toBeNull()
+    expect(perUnitOf(100, Infinity)).toBeNull()
+    expect(perUnitLegacy(Infinity, 100)).toBeNull()
+    expect(perUnitLegacy(NaN, 100)).toBeNull()
+  })
+})
+
+describe('regression: unusable entries must not advance the mirror baseline', () => {
+  test('non-blank but unparseable text is flagged', () => {
+    for (const raw of ['-', '.', '-.', '1.2.3', 'abc', 'Infinity']) {
+      expect(isUnusableEntry(raw)).toBe(true)
+    }
+  })
+
+  test('blank and valid values are not', () => {
+    for (const raw of ['', '   ', '0', '-0', '1,234', '12.5', '-500']) {
+      expect(isUnusableEntry(raw)).toBe(false)
+    }
+  })
+})
+
+describe('regression: fractional entry is coerced to whole dollars for display', () => {
+  test('wholeDollars rounds half away from zero at scale 0', () => {
+    expect(wholeDollars(100.6)).toBe(101)
+    expect(wholeDollars(100.5)).toBe(101)
+    expect(wholeDollars(-100.5)).toBe(-101)
+    expect(wholeDollars(100.4)).toBe(100)
   })
 })

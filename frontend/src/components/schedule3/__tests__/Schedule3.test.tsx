@@ -218,7 +218,10 @@ describe('Schedule3 editable page (AC1/AC2)', () => {
     expect(rowCells('Total Overhead')[3]).toBe('5.64')
   })
 
-  test('the figures do not JUMP when the Save echo lands — mirror equals server (#291 AC5)', async () => {
+  test('the mirror equals the SERVER figures, before and after Save (#291 AC5)', async () => {
+    // Asserted against the echo's own derived fields rather than a snapshot of the pre-Save render —
+    // an editable page always renders the mirror, so render-to-render compared the mirror with itself
+    // (code review 2026-08-21).
     server.use(
       http.get(URL, () => HttpResponse.json(consistentDoc)),
       http.put(URL, () =>
@@ -245,20 +248,25 @@ describe('Schedule3 editable page (AC1/AC2)', () => {
     await user.type(harvest, '900000')
     await user.tab()
 
-    const mirrored = {
-      subtotal: rowCells('Subtotal (Actual Costs)'),
-      totals: rowCells('Total Costs'),
-      crownTimber: rowCells('Crown Timber'),
-      overhead: rowCells('Total Overhead'),
+    // The mirror must already agree with the figures the echo will carry.
+    const expected = {
+      subtotal: ['Subtotal (Actual Costs)', '930,000', '300,000', '630,000'],
+      totals: ['Total Costs', '900,000', '300,000', '600,000'],
+      crownTimber: ['Crown Timber', 'Crown Timber Harvest Volume', '600,000', '11.05'],
+      overhead: ['Total Overhead', '108,642', '900,000', '8.28'],
     }
+    expect(rowCells('Subtotal (Actual Costs)')).toEqual(expected.subtotal)
+    expect(rowCells('Total Costs')).toEqual(expected.totals)
+    expect(rowCells('Crown Timber')).toEqual(expected.crownTimber)
+    expect(rowCells('Total Overhead')).toEqual(expected.overhead)
 
     await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
-    expect(rowCells('Subtotal (Actual Costs)')).toEqual(mirrored.subtotal)
-    expect(rowCells('Total Costs')).toEqual(mirrored.totals)
-    expect(rowCells('Crown Timber')).toEqual(mirrored.crownTimber)
-    expect(rowCells('Total Overhead')).toEqual(mirrored.overhead)
+    expect(rowCells('Subtotal (Actual Costs)')).toEqual(expected.subtotal)
+    expect(rowCells('Total Costs')).toEqual(expected.totals)
+    expect(rowCells('Crown Timber')).toEqual(expected.crownTimber)
+    expect(rowCells('Total Overhead')).toEqual(expected.overhead)
   })
 
   test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {

@@ -175,12 +175,20 @@ const Schedule1: FC = () => {
     })
   }
 
-  // A field's blur does two things now: re-group its display (as before) and commit its value to the
-  // derived mirror's baseline (defect #291). Grouping only adds separators, which `toNum` strips, so
-  // the order of the two is immaterial to the figures.
+  // A field's blur does two things: re-group its display (as before) and commit its value to the
+  // derived mirror's baseline (defect #291). The GROUPED string is handed to `commit` explicitly —
+  // `groupField` only queues its `setForm`, so reading the ref would give the pre-grouping value and
+  // leave `committed` and `form` holding different strings, defeating the unchanged-value skip
+  // (code review 2026-08-21). An invalid field holds its previous committed value.
   const commitField = (fieldKey: string) => () => {
     groupField(fieldKey)()
-    commit(fieldKey)
+    const grouped = groupInput(form[fieldKey] ?? '')
+    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
+    // early returns); same source of truth, and it only runs on blur.
+    commit(fieldKey, {
+      value: grouped,
+      invalid: Boolean(validateSchedule1(form)[fieldKey]),
+    })
   }
 
   const handleSave = () => {

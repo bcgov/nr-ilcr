@@ -1,6 +1,5 @@
 import type { CategoryForm } from './validation'
-import { perUnitOf } from '@/utils/derivedMath'
-import { toNum } from '@/utils/number'
+import { enteredNum, perUnitOf } from '@/utils/derivedMath'
 import { ALL_CATEGORIES } from './validation'
 
 /**
@@ -16,14 +15,16 @@ import { ALL_CATEGORIES } from './validation'
  * where the amounts are cloned but no server figure exists for them yet. Both follow from the same
  * missing mirror.
  *
- * Parses with {@link toNum} — the same parser `buildRequest` uses — so the rate on screen is computed
+ * Parses with {@link enteredNum} — `toNum` plus a finiteness guard, so `Infinity` cannot reach a cell — so the rate on screen is computed
  * from exactly the numbers a Save would send.
  */
 export function deriveCategoryPerUnits(categories: CategoryForm): Record<number, number | null> {
   const perUnit: Record<number, number | null> = {}
   for (const def of ALL_CATEGORIES) {
     const values = categories[def.code]
-    perUnit[def.code] = values ? perUnitOf(toNum(values.cost), toNum(values.volume)) : null
+    perUnit[def.code] = values
+      ? perUnitOf(enteredNum(values.cost), enteredNum(values.volume))
+      : null
   }
   return perUnit
 }

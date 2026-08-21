@@ -336,6 +336,47 @@ describe('Schedule4 page', () => {
     expect(rate('Truck Barge/Ferry')).toBe('50.00')
   })
 
+  test('the Save echo supersedes the mirror, and the rates agree (#291 AC5)', async () => {
+    // Schedule 4 had no AC5 test at all, and its panel was never re-seeded from the echo — so
+    // `deriveCategoryPerUnits(panelCommitted)` kept driving the column for the rest of the session
+    // (code review 2026-08-21). The echo below carries the server's own perUnit for the saved amounts.
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 150000, distance: null, perUnit: 75.0 },
+        { code: 47, kind: 'DISTANCE', volume: 500, cost: 25000, distance: 120.5, perUnit: 50.0 },
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json({
+          ...doc({ locations: [saved, emptyLanding] }),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '150000')
+    await userEvent.tab()
+    // The mirror must already agree with the rate the server will echo: 150000 / 2000 = 75.00.
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // The panel stays open in edit mode; the column now reflects the echo and still reads 75.00.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('150,000')
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+    expect(rate('Truck Barge/Ferry')).toBe('50.00')
+  })
+
   test('View mode renders the document $/m³ as-is — no client recomputation (#291 AC7)', async () => {
     // The stored perUnit deliberately disagrees with the stored pair: a recomputing view would show
     // 50.00 instead of the server's own figure.

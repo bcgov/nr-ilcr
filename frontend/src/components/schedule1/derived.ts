@@ -1,6 +1,5 @@
 import type Schedule1Response from '@/interfaces/Schedule1Response'
-import { addN, perUnitLegacy, subN, sumAsZero } from '@/utils/derivedMath'
-import { toNum } from '@/utils/number'
+import { addN, enteredNum, perUnitLegacy, subN, sumAsZero, wholeDollars } from '@/utils/derivedMath'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 
 /**
@@ -68,10 +67,10 @@ export function enteredFromForm(form: Readonly<Record<string, string>>): Schedul
     CODE_SUBTOTAL_COMPANY_LOGGING,
   ]
   for (const code of codes) {
-    volume[code] = toNum(form[`vol-${code}`] ?? '')
-    cost[code] = toNum(form[`cost-${code}`] ?? '')
+    volume[code] = enteredNum(form[`vol-${code}`] ?? '')
+    cost[code] = enteredNum(form[`cost-${code}`] ?? '')
   }
-  return { volume, cost, otherCostsVolume: toNum(form['otherCostsVolume'] ?? '') }
+  return { volume, cost, otherCostsVolume: enteredNum(form['otherCostsVolume'] ?? '') }
 }
 
 export function deriveSchedule1(
@@ -104,9 +103,14 @@ export function deriveSchedule1(
   // 140 Total Silviculture — legacy Schedule1MB.getTotalSilvCost: (Actual $ Spent − Sch3 silviculture
   // admin) + Accrued, with CoreUtil null-propagation, NOT null-as-0. The admin cost is subtracted only
   // when Actual is present, so a blank silviculture block stays blank instead of showing a negative.
-  const totalSilvicultureCost = addN(
-    subN(entered.cost[CODE_SILV_ACTUAL] ?? null, lessSilvAdminCost),
-    entered.cost[CODE_SILV_ACCRUED] ?? null,
+  // `wholeDollars` mirrors the server's Integer COST column, as Schedule 2's mirror already did: a
+  // fractional entry would otherwise show cents in a whole-dollar cell for a save the backend refuses
+  // (`accept-float-as-int: false`) — code review 2026-08-21.
+  const totalSilvicultureCost = wholeDollars(
+    addN(
+      subN(entered.cost[CODE_SILV_ACTUAL] ?? null, lessSilvAdminCost),
+      entered.cost[CODE_SILV_ACCRUED] ?? null,
+    ),
   )
   perUnit[CODE_SILV_TOTAL] = perUnitLegacy(
     totalSilvicultureCost,
@@ -115,10 +119,12 @@ export function deriveSchedule1(
 
   // 144 Subtotal Company Logging — the logging lines + Forest Mgmt Admin + Other Costs, nulls as 0.
   // Never blank in legacy (its Other-Costs term seeds at 0), hence sumAsZero rather than addN.
-  const subtotalCompanyLoggingCost = sumAsZero(
-    ...WRITABLE_LINE_ITEM_CODES.map((code) => entered.cost[code] ?? null),
-    forestMgmtAdminCost,
-    otherCostsSubtotal,
+  const subtotalCompanyLoggingCost = wholeDollars(
+    sumAsZero(
+      ...WRITABLE_LINE_ITEM_CODES.map((code) => entered.cost[code] ?? null),
+      forestMgmtAdminCost,
+      otherCostsSubtotal,
+    ),
   )
   perUnit[CODE_SUBTOTAL_COMPANY_LOGGING] = perUnitLegacy(
     subtotalCompanyLoggingCost,
@@ -128,7 +134,9 @@ export function deriveSchedule1(
   // Grand total = subtotal + total silviculture (null-propagating add; the subtotal is never null, so
   // a blank Total Silviculture leaves the grand total equal to the subtotal). Its $/m³ divides by the
   // Schedule 3 harvested crown-timber volume (item 119), NOT by an entered volume.
-  const totalCompanyLoggingCost = addN(subtotalCompanyLoggingCost, totalSilvicultureCost)
+  const totalCompanyLoggingCost = wholeDollars(
+    addN(subtotalCompanyLoggingCost, totalSilvicultureCost),
+  )
   const totalCompanyLoggingPerUnit = perUnitLegacy(totalCompanyLoggingCost, crownVolume)
 
   // Other Costs: the subtotal is owned by the sub-resource, but the shared volume is entered here.

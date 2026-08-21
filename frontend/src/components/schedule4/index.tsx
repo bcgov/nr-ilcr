@@ -34,6 +34,7 @@ import {
   validateLocationForm,
   type CategoryForm,
 } from './validation'
+import { isUnusableEntry } from '@/utils/derivedMath'
 import { deriveCategoryPerUnits } from './derived'
 import SubPage from './SubPage'
 import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
@@ -340,10 +341,20 @@ const Schedule4: FC = () => {
     }
 
   // Commit one category field (its `onBlur`), advancing the mirror's baseline for that field only.
+  // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
+  // something the server would refuse (ruled 2026-08-21 after code review).
   const commitCategoryField = (code: number, field: 'volume' | 'cost' | 'distance') => () => {
+    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
+    // early returns); same source of truth, and it only runs on blur.
+    const invalid = Boolean(
+      validateLocationForm(panelName, panelCategories).fieldErrors[`${code}-${field}`],
+    )
     setPanelCommitted((prev) => {
       const live = panelCategories[code] ?? { volume: '', cost: '', distance: '' }
       const committed = prev[code] ?? { volume: '', cost: '', distance: '' }
+      if (invalid || isUnusableEntry(live[field])) {
+        return prev
+      }
       if (committed[field] === live[field]) {
         return prev // tabbing through an untouched field must not re-render the grid
       }
@@ -415,7 +426,7 @@ const Schedule4: FC = () => {
     putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
-      // save doesn't 409. The panel form already holds the saved values, so nothing re-seeds.
+      // save doesn't 409.
       const saved =
         wasEdit && editId !== null
           ? document.locations.find((l) => l.id === editId)
@@ -424,6 +435,15 @@ const Schedule4: FC = () => {
         setPanelMode('edit')
         setPanelEditId(saved.id)
         setPanelRevision(saved.revisionCount ?? 0)
+        // Re-seed from the ECHO, not from the retained form. AD-5's amendment requires the server echo
+        // to supersede the mirror on every Save; without this the panel kept rendering
+        // `deriveCategoryPerUnits(panelCommitted)` for the rest of the session, so a category whose
+        // rate the mirror rounded differently would show one figure in the panel and another in the
+        // list row beneath it (code review 2026-08-21).
+        const echoed = seedCategoryForm(saved)
+        setPanelCategories(echoed.form)
+        setPanelCommitted(echoed.form)
+        setPanelPerUnit(echoed.perUnit)
       } else {
         setPanelMode('closed')
       }
@@ -688,7 +708,8 @@ const Schedule4: FC = () => {
 
   // ---- Category grid (inside the panel). ---------------------------------------------------------
   // Per-category $/m³ mirrored from the committed values, so the column tracks entry before Save
-  // (defect #291). View mode has no entry, so it keeps rendering the server's own figures (AC7).
+  // (defect #291). View mode has no entry, so it keeps rendering the server's own figures (AC7); after
+  // a Save the panel is re-seeded from the echo, so the mirror recomputes from the server's own values.
   const mirroredPerUnit = readOnlyPanel ? panelPerUnit : deriveCategoryPerUnits(panelCommitted)
 
   const renderCategoryRow = (def: CategoryDef) => (

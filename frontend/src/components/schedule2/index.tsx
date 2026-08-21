@@ -23,6 +23,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
@@ -250,9 +251,9 @@ const Schedule2: FC = () => {
   // Schedules 3 and 1 and always come from `data` — the mirror deliberately does not return them.
   const figures = editable
     ? deriveSchedule2(data, {
-        purchasedLogCostCost: toNum(committed[F_ITEM25_COST] ?? ''),
-        lessLogSalesVolume: toNum(committed[F_ITEM26_VOLUME] ?? ''),
-        lessLogSalesCost: toNum(committed[F_ITEM26_COST] ?? ''),
+        purchasedLogCostCost: enteredNum(committed[F_ITEM25_COST] ?? ''),
+        lessLogSalesVolume: enteredNum(committed[F_ITEM26_VOLUME] ?? ''),
+        lessLogSalesCost: enteredNum(committed[F_ITEM26_COST] ?? ''),
       })
     : data
 
@@ -269,7 +270,7 @@ const Schedule2: FC = () => {
         size="sm"
         value={form[fieldKey] ?? ''}
         onValueChange={(raw) => setForm((prev) => ({ ...prev, [fieldKey]: raw }))}
-        onBlur={() => commit(fieldKey)}
+        onBlur={() => commit(fieldKey, { invalid: Boolean(fieldErrors[fieldKey]) })}
         invalid={Boolean(fieldErrors[fieldKey])}
         invalidText={fieldErrors[fieldKey]}
       />

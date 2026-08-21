@@ -191,19 +191,26 @@ describe('Schedule2 page', () => {
     ])
   })
 
-  test('the figures do not JUMP when the Save echo lands — mirror equals server (#291 AC5)', async () => {
+  test('the mirror equals the SERVER figures, before and after Save (#291 AC5)', async () => {
+    // What Schedule2Service actually computes for cost 60000 against this document's carried figures.
+    // Asserting the rendered cells against THESE values — not against a snapshot of the render — is
+    // what makes this a mirror-vs-server comparison. The earlier version snapshotted the pre-Save
+    // render and compared it to the post-Save render; because an editable page always renders the
+    // mirror, that compared the mirror to itself and would have passed with 999999 in the echo
+    // (code review 2026-08-21).
+    const SERVER = {
+      subtotal: block(1000, 62000, 62.0),
+      netPurchased: block(800, 54000, 67.5),
+      totalAverage: block(2800, 144000, 51.4286),
+    }
     server.use(
       http.get(URL, () => HttpResponse.json(schedule2Doc)),
-      // The echo carries what Schedule2Service actually computes for cost 60000, so any disagreement
-      // between the mirror and the server shows up as a changed cell after Save.
       http.put(URL, () =>
         HttpResponse.json({
           ...schedule2Doc,
           revisionCount: 4,
           purchasedLogCost: block(1000, 60000, 60.0),
-          subtotal: block(1000, 62000, 62.0),
-          netPurchased: block(800, 54000, 67.5),
-          totalAverage: block(2800, 144000, 51.4286),
+          ...SERVER,
           message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
         }),
       ),
@@ -216,20 +223,46 @@ describe('Schedule2 page', () => {
     await user.type(cost, '60000')
     await user.tab()
 
-    // Snapshot what the MIRROR is showing, pre-Save.
-    const mirrored = {
-      subtotal: rowCells('Subtotal:'),
-      net: rowCells('Net Purchased/Private Log Cost:'),
-      average: rowCells('Total Average Logging Costs:'),
+    // The mirror must already agree with what the server will send.
+    const expected = {
+      subtotal: ['Subtotal:', '1,000', '62,000', '62.00'],
+      net: ['Net Purchased/Private Log Cost:', '800', '54,000', '67.50'],
+      average: ['Total Average Logging Costs:', '2,800', '144,000', '51.43'],
     }
+    expect(rowCells('Subtotal:')).toEqual(expected.subtotal)
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual(expected.net)
+    expect(rowCells('Total Average Logging Costs:')).toEqual(expected.average)
 
     await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
-    // Same figures, now sourced from the server echo.
-    expect(rowCells('Subtotal:')).toEqual(mirrored.subtotal)
-    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual(mirrored.net)
-    expect(rowCells('Total Average Logging Costs:')).toEqual(mirrored.average)
+    // ...and still agree once the echo has replaced the document.
+    expect(rowCells('Subtotal:')).toEqual(expected.subtotal)
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual(expected.net)
+    expect(rowCells('Total Average Logging Costs:')).toEqual(expected.average)
+  })
+
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    // The fixture is self-consistent (its stored derived values satisfy Schedule2Service's formulas),
+    // so this is a direct mirror-vs-server comparison with no edit involved: a mirror that rounds or
+    // propagates nulls differently from the service fails here.
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+    await screen.findByText('Purchased/Private Log Costs:')
+
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '52,000', '52.00'])
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual([
+      'Net Purchased/Private Log Cost:',
+      '800',
+      '44,000',
+      '55.00',
+    ])
+    expect(rowCells('Total Average Logging Costs:')).toEqual([
+      'Total Average Logging Costs:',
+      '2,800',
+      '134,000',
+      '47.86',
+    ])
   })
 
   test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {
