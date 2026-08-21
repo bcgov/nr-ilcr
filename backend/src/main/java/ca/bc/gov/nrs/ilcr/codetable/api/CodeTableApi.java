@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.codetable.api;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableEntry;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSaveResponse;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSummary;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -55,6 +56,6 @@ public interface CodeTableApi {
   @PutMapping("/{tableKey}/entries")
   ResponseEntity<CodeTableSaveResponse> saveEntry(
       @PathVariable String tableKey,
-      @RequestBody CodeTableEntry entry,
+      @Valid @RequestBody CodeTableEntry entry,
       Authentication authentication);
 }

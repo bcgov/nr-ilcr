@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.reporting.api;
 
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,10 +70,15 @@ public interface ReportApi {
    * @param authentication the caller (authorized for VIEW_SCHEDULE — print is read-only, BR-01)
    * @return 200 streaming the combined PDF ({@code application/pdf} + attachment Content-Disposition)
    */
+  // @Valid here is a forward-looking safeguard (Story 29.13): PrintRequest is today an all-Boolean
+  // record whose compact constructor defaults every omitted flag to false, so there is nothing to
+  // constrain and @Valid is a no-op. It is declared so that if a non-Boolean field is ever added to
+  // PrintRequest, adding a constraint to that field is all it takes to have it enforced — the wiring
+  // is already here. Do NOT add constraints to the Boolean flags.
   @PostMapping("/print")
   ResponseEntity<StreamingResponseBody> printSchedules(
       @RequestParam(required = false) String millId,
       @RequestParam(required = false) String year,
-      @RequestBody PrintRequest request,
+      @Valid @RequestBody PrintRequest request,
       Authentication authentication);
 }
