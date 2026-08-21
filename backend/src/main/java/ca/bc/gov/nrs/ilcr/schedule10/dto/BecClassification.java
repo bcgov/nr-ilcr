@@ -8,13 +8,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * <p>That choice is deliberate. LD-4 would reduce BEC Zone to base zone only, dropping subzone and
  * variant — but it is PROVISIONAL, pending the Ministry's updated list and source-table
  * confirmation, so this story builds to legacy (BR-07). Serving the components separately makes
- * that
- * later reduction a projection change rather than a breaking wire-format change.
+ * that later reduction a projection change rather than a breaking wire-format change.
  *
  * <p>{@code label} is the legacy concatenation {@code zone + subzone + variant + phase} with nulls
  * rendered as empty strings ({@code BiogeoclimaticCatalogue.getBiogeoSubZoneVariantPase} :208-212)
- * —
- * e.g. {@code "ICHdw1"}. It is provided so consumers need not re-implement the rule.
+ * — e.g. {@code "ICHdw1"}. It is provided so consumers need not re-implement the rule.
  *
  * <p>Note the legacy method name misspells "Phase" as "Pase"; the field here is spelled correctly
  * because it is not user-facing text.
@@ -33,5 +31,4 @@ public record BecClassification(
     String subzone,
     String variant,
     String phase,
-    String label) {
-}
+    String label) {}

@@ -26,10 +26,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>The authorized cases double as the production-context pin the standalone test cannot give:
  * resolution and the missing-key 404 run against Boot's auto-configured {@code MessageSource}
- * (default basename {@code messages}, {@code useCodeAsDefaultMessage=false}). A
- * {@code use-code-as-default-message=true} misconfiguration would defeat the missing-key guard —
- * the key would echo back as text instead of throwing — while the hand-built unit-test source
- * stayed green; here it fails the 404 case.
+ * (default basename {@code messages}, {@code useCodeAsDefaultMessage=false}). A {@code
+ * use-code-as-default-message=true} misconfiguration would defeat the missing-key guard — the key
+ * would echo back as text instead of throwing — while the hand-built unit-test source stayed green;
+ * here it fails the 404 case.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/messages — authorization on VIEW_SCHEDULE")
@@ -40,8 +40,7 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -52,9 +51,8 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(get(ENDPOINT).param("key", COPY_KEY).with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -62,9 +60,11 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ prefix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", COPY_KEY)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -72,23 +72,29 @@ class MessageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER -> 200 with the PRODUCTION MessageSource's resolved text")
   void submitter_resolvesThroughProductionBundle() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", COPY_KEY)
-            .param("arg", "Cedar Flats Camp")
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", COPY_KEY)
+                .param("arg", "Cedar Flats Camp")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.key").value(COPY_KEY))
-        .andExpect(jsonPath("$.text").value(
-            "To complete copy of Camp: Cedar Flats Camp, "
-                + "provide a new Camp Name and invoke save."));
+        .andExpect(
+            jsonPath("$.text")
+                .value(
+                    "To complete copy of Camp: Cedar Flats Camp, "
+                        + "provide a new Camp Name and invoke save."));
   }
 
   @Test
   @DisplayName("ILCR_ADMIN, unknown key -> 404 whose detail is the bundle text, never the key")
   void admin_unknownKey404sWithBundleDetail() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("key", "noSuchKeyAnywhere")
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("key", "noSuchKeyAnywhere")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail").value("Message not found."));
   }

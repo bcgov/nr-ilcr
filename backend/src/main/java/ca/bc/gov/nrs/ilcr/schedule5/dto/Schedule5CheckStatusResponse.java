@@ -40,7 +40,4 @@ import java.util.List;
  * @param camps the per-camp results in {@code CAMP_REPORT_ID} order — EMPTY when the outcome is MET
  */
 public record Schedule5CheckStatusResponse(
-    String outcome,
-    List<MessageInfo> messages,
-    List<CampCheckResult> camps) {
-}
+    String outcome, List<MessageInfo> messages, List<CampCheckResult> camps) {}

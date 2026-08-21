@@ -1,6 +1,5 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -14,12 +13,12 @@ import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
-import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.EntryAmount;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.LineItemInput;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.SilvicultureInput;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -43,14 +42,11 @@ class Schedule1WriteServiceTest {
   private static final int SUMMARY_ID = 1018;
   private static final String USER = "dev-submitter";
 
-  @Mock
-  private Schedule1Repository repository;
+  @Mock private Schedule1Repository repository;
 
-  @Mock
-  private Schedule3CostDerivation schedule3CostDerivation;
+  @Mock private Schedule3CostDerivation schedule3CostDerivation;
 
-  @InjectMocks
-  private Schedule1Service service;
+  @InjectMocks private Schedule1Service service;
 
   private Schedule1Request request(int revision, LineItemInput... items) {
     return new Schedule1Request(
@@ -62,8 +58,10 @@ class Schedule1WriteServiceTest {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
-    // saveSchedule1 reloads via getSchedule1 → no Schedule 3 sources needed for these write assertions.
-    lenient().when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+    // saveSchedule1 reloads via getSchedule1 → no Schedule 3 sources needed for these write
+    // assertions.
+    lenient()
+        .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
         .thenReturn(new Schedule1Sources(null, null, null));
   }
 
@@ -73,9 +71,7 @@ class Schedule1WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule1(
-        MILL, YEAR,
-        request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
-        true, USER);
+        MILL, YEAR, request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 12, new BigDecimal("2000"), 60000, USER);
     // the shared Other-Costs volume row (code 19) is written from otherCostsVolume
@@ -87,25 +83,36 @@ class Schedule1WriteServiceTest {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    // 143/144 VOLUME is user-entered (via the dedicated fields); their COST is pulled/derived and must
-    // never be written. A 143/144 sent through the lineItems channel is ignored (only 12–18 write there).
+    // 143/144 VOLUME is user-entered (via the dedicated fields); their COST is pulled/derived and
+    // must
+    // never be written. A 143/144 sent through the lineItems channel is ignored (only 12–18 write
+    // there).
     service.saveSchedule1(
-        MILL, YEAR,
-        new Schedule1Request(0, "c",
-            List.of(new LineItemInput(12, new BigDecimal("2000"), 60000),
+        MILL,
+        YEAR,
+        new Schedule1Request(
+            0,
+            "c",
+            List.of(
+                new LineItemInput(12, new BigDecimal("2000"), 60000),
                 new LineItemInput(144, new BigDecimal("5"), 999),
                 new LineItemInput(143, new BigDecimal("5"), 999)),
-            null, new BigDecimal("8000"),
-            new BigDecimal("111"), new BigDecimal("222")),
-        true, USER);
+            null,
+            new BigDecimal("8000"),
+            new BigDecimal("111"),
+            new BigDecimal("222")),
+        true,
+        USER);
 
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), eq(USER));
     // Volume-only writes for 143/144 (null cost), from the dedicated volume fields.
     verify(repository).upsertFixedDetail(SUMMARY_ID, 143, new BigDecimal("111"), null, USER);
     verify(repository).upsertFixedDetail(SUMMARY_ID, 144, new BigDecimal("222"), null, USER);
     // The lineItems-channel 143/144 cost (999) is never persisted.
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(143), any(), eq(999), anyString());
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(144), any(), eq(999), anyString());
+    verify(repository, never())
+        .upsertFixedDetail(eq(SUMMARY_ID), eq(143), any(), eq(999), anyString());
+    verify(repository, never())
+        .upsertFixedDetail(eq(SUMMARY_ID), eq(144), any(), eq(999), anyString());
   }
 
   @Test
@@ -114,14 +121,22 @@ class Schedule1WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule1(
-        MILL, YEAR,
-        new Schedule1Request(0, "c", List.of(), new SilvicultureInput(
-            new EntryAmount(new BigDecimal("100"), 500),
-            new EntryAmount(new BigDecimal("50"), 300),
-            new BigDecimal("77"),   // 139 volume
-            new BigDecimal("88")),  // 140 volume
-            new BigDecimal("8000"), null, null),
-        true, USER);
+        MILL,
+        YEAR,
+        new Schedule1Request(
+            0,
+            "c",
+            List.of(),
+            new SilvicultureInput(
+                new EntryAmount(new BigDecimal("100"), 500),
+                new EntryAmount(new BigDecimal("50"), 300),
+                new BigDecimal("77"), // 139 volume
+                new BigDecimal("88")), // 140 volume
+            new BigDecimal("8000"),
+            null,
+            null),
+        true,
+        USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 139, new BigDecimal("77"), null, USER);
     verify(repository).upsertFixedDetail(SUMMARY_ID, 140, new BigDecimal("88"), null, USER);
@@ -132,9 +147,15 @@ class Schedule1WriteServiceTest {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(0);
 
-    assertThrows(StaleRevisionException.class, () ->
-        service.saveSchedule1(MILL, YEAR,
-            request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER));
+    assertThrows(
+        StaleRevisionException.class,
+        () ->
+            service.saveSchedule1(
+                MILL,
+                YEAR,
+                request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+                true,
+                USER));
 
     verify(repository, never()).upsertFixedDetail(anyInt(), anyInt(), any(), any(), anyString());
   }
@@ -143,9 +164,15 @@ class Schedule1WriteServiceTest {
   void save_notDraft_throwsNotEditable_andNeverWrites() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () ->
-        service.saveSchedule1(MILL, YEAR,
-            request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.saveSchedule1(
+                MILL,
+                YEAR,
+                request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+                true,
+                USER));
 
     verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyString(), anyString());
   }
@@ -156,9 +183,15 @@ class Schedule1WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER)))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class, () ->
-        service.saveSchedule1(MILL, YEAR,
-            request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.saveSchedule1(
+                MILL,
+                YEAR,
+                request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+                true,
+                USER));
   }
 
   @Test
@@ -183,9 +216,15 @@ class Schedule1WriteServiceTest {
   void save_missingSummary_throwsNotFound() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotFoundException.class, () ->
-        service.saveSchedule1(MILL, YEAR,
-            request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER));
+    assertThrows(
+        ScheduleNotFoundException.class,
+        () ->
+            service.saveSchedule1(
+                MILL,
+                YEAR,
+                request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+                true,
+                USER));
   }
 
   @Test
@@ -195,11 +234,18 @@ class Schedule1WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule1(
-        MILL, YEAR,
-        new Schedule1Request(null, "c",
+        MILL,
+        YEAR,
+        new Schedule1Request(
+            null,
+            "c",
             List.of(new LineItemInput(12, new BigDecimal("2000"), 60000)),
-            null, new BigDecimal("8000"), null, null),
-        true, USER);
+            null,
+            new BigDecimal("8000"),
+            null,
+            null),
+        true,
+        USER);
 
     verify(repository).bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER));
   }
@@ -209,7 +255,9 @@ class Schedule1WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
-    doThrow(new DataIntegrityViolationException("boom")).when(repository).deleteSchedule(SUMMARY_ID);
+    doThrow(new DataIntegrityViolationException("boom"))
+        .when(repository)
+        .deleteSchedule(SUMMARY_ID);
 
     assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule1(MILL, YEAR));
   }
@@ -222,12 +270,15 @@ class Schedule1WriteServiceTest {
     // null lineItems and null silviculture skip those write branches entirely; only the shared
     // Other-Costs volume (code 19) is written.
     service.saveSchedule1(
-        MILL, YEAR,
+        MILL,
+        YEAR,
         new Schedule1Request(0, "c", null, null, new BigDecimal("8000"), null, null),
-        true, USER);
+        true,
+        USER);
 
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), eq(null), eq(USER));
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), anyString());
+    verify(repository, never())
+        .upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), anyString());
   }
 
   @Test
@@ -235,18 +286,26 @@ class Schedule1WriteServiceTest {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    // A non-writable line-item code (99) is skipped. The absent 1 / 2 entries write nothing, but the
+    // A non-writable line-item code (99) is skipped. The absent 1 / 2 entries write nothing, but
+    // the
     // five volume-only fields are a PUT of the entered set: null means the user emptied the box, so
     // each is written through as null to CLEAR the stored volume (never silently left untouched).
     service.saveSchedule1(
-        MILL, YEAR,
-        new Schedule1Request(0, "c",
+        MILL,
+        YEAR,
+        new Schedule1Request(
+            0,
+            "c",
             List.of(new LineItemInput(99, new BigDecimal("1"), 1)),
             new SilvicultureInput(null, null, null, null),
-            null, null, null),
-        true, USER);
+            null,
+            null,
+            null),
+        true,
+        USER);
 
-    verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(99), any(), any(), anyString());
+    verify(repository, never())
+        .upsertFixedDetail(eq(SUMMARY_ID), eq(99), any(), any(), anyString());
     verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(1), any(), any(), anyString());
     verify(repository, never()).upsertFixedDetail(eq(SUMMARY_ID), eq(2), any(), any(), anyString());
     verify(repository).upsertFixedDetail(SUMMARY_ID, 19, null, null, USER);
@@ -261,17 +320,27 @@ class Schedule1WriteServiceTest {
     stubDraftSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    // The reported bug: emptying any of the five volume-only boxes reported Save success but the old
-    // number came back on reload, because a null was read as "field omitted, leave it alone". Every one
-    // of them must reach the repository as a null write. The 1 / 2 volumes (sent inside a present entry)
+    // The reported bug: emptying any of the five volume-only boxes reported Save success but the
+    // old
+    // number came back on reload, because a null was read as "field omitted, leave it alone". Every
+    // one
+    // of them must reach the repository as a null write. The 1 / 2 volumes (sent inside a present
+    // entry)
     // clear the same way, so the whole cleared-row case is covered here.
     service.saveSchedule1(
-        MILL, YEAR,
-        new Schedule1Request(0, "c",
+        MILL,
+        YEAR,
+        new Schedule1Request(
+            0,
+            "c",
             List.of(new LineItemInput(12, null, null)),
-            new SilvicultureInput(new EntryAmount(null, null), new EntryAmount(null, null), null, null),
-            null, null, null),
-        true, USER);
+            new SilvicultureInput(
+                new EntryAmount(null, null), new EntryAmount(null, null), null, null),
+            null,
+            null,
+            null),
+        true,
+        USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 12, null, null, USER);
     verify(repository).upsertFixedDetail(SUMMARY_ID, 1, null, null, USER);

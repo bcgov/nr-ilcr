@@ -24,8 +24,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * Acceptable Costs and Included Unacceptable Costs. Security ON, authorities derived through the
  * production {@link CognitoGroupsJwtAuthenticationConverter}: GET requires VIEW_SCHEDULE (denied
  * without an ILCR group, allowed for ILCR_SUBMITTER); POST/PUT/DELETE require EDIT_SCHEDULE and are
- * denied 403 before any persistence. The behavior itself is proven security-off by
- * {@link Schedule3OtherAcceptableIT} / {@link Schedule3UnacceptableIT}.
+ * denied 403 before any persistence. The behavior itself is proven security-off by {@link
+ * Schedule3OtherAcceptableIT} / {@link Schedule3UnacceptableIT}.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Schedule 3 sub-resources — authorization (AD-7, Story 4.4)")
@@ -35,24 +35,27 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   private static final String MILL = "574";
   private static final String OTHER_ACCEPTABLE = "/api/v1/schedule3/other-acceptable-costs";
   private static final String UNACCEPTABLE = "/api/v1/schedule3/included-unacceptable-costs";
-  private static final String OA_BODY = """
+  private static final String OA_BODY =
+      """
       { "description": "Consulting", "total": 100, "pop": 50 }
       """;
-  private static final String UNACCEPT_BODY = """
+  private static final String UNACCEPT_BODY =
+      """
       { "description": "Penalty", "total": 100 }
       """;
   // Batch-save (collection PUT) bodies for the new sub-page save endpoints.
-  private static final String OA_SAVE_BODY = """
+  private static final String OA_SAVE_BODY =
+      """
       { "rows": [ { "id": 1, "description": "Consulting", "total": 100, "pop": 50 } ] }
       """;
-  private static final String UNACCEPT_SAVE_BODY = """
+  private static final String UNACCEPT_SAVE_BODY =
+      """
       { "rows": [ { "id": 1, "description": "Penalty", "total": 100 } ] }
       """;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -65,8 +68,12 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Other Acceptable GET without VIEW_SCHEDULE -> 403")
   void otherAcceptableGet_noPermission_returns403() throws Exception {
-    mockMvc.perform(get(OTHER_ACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(OTHER_ACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -74,17 +81,26 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Other Acceptable GET with ILCR_SUBMITTER -> passes authz (2xx)")
   void otherAcceptableGet_submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(OTHER_ACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(OTHER_ACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("Other Acceptable POST without EDIT_SCHEDULE -> 403")
   void otherAcceptablePost_noPermission_returns403() throws Exception {
-    mockMvc.perform(post(OTHER_ACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(OA_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(OTHER_ACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(OA_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -92,9 +108,14 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Other Acceptable PUT without EDIT_SCHEDULE -> 403")
   void otherAcceptablePut_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(OTHER_ACCEPTABLE + "/1").param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(OA_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(OTHER_ACCEPTABLE + "/1")
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(OA_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -102,8 +123,12 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Other Acceptable DELETE without EDIT_SCHEDULE -> 403")
   void otherAcceptableDelete_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete(OTHER_ACCEPTABLE + "/1").param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            delete(OTHER_ACCEPTABLE + "/1")
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -111,9 +136,14 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Other Acceptable batch PUT (save) without EDIT_SCHEDULE -> 403")
   void otherAcceptableBatchPut_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(OTHER_ACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(OA_SAVE_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(OTHER_ACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(OA_SAVE_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -123,8 +153,12 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Unacceptable GET without VIEW_SCHEDULE -> 403")
   void unacceptableGet_noPermission_returns403() throws Exception {
-    mockMvc.perform(get(UNACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(UNACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -132,17 +166,26 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Unacceptable GET with ILCR_SUBMITTER -> passes authz (2xx)")
   void unacceptableGet_submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(UNACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(UNACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("Unacceptable POST without EDIT_SCHEDULE -> 403")
   void unacceptablePost_noPermission_returns403() throws Exception {
-    mockMvc.perform(post(UNACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(UNACCEPT_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(UNACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(UNACCEPT_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -150,9 +193,14 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Unacceptable PUT without EDIT_SCHEDULE -> 403")
   void unacceptablePut_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(UNACCEPTABLE + "/1").param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(UNACCEPT_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(UNACCEPTABLE + "/1")
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(UNACCEPT_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -160,8 +208,12 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Unacceptable DELETE without EDIT_SCHEDULE -> 403")
   void unacceptableDelete_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete(UNACCEPTABLE + "/1").param("millId", MILL).param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            delete(UNACCEPTABLE + "/1")
+                .param("millId", MILL)
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -169,9 +221,14 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("Unacceptable batch PUT (save) without EDIT_SCHEDULE -> 403")
   void unacceptableBatchPut_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(UNACCEPTABLE).param("millId", MILL).param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(UNACCEPT_SAVE_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(UNACCEPTABLE)
+                .param("millId", MILL)
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(UNACCEPT_SAVE_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }

@@ -20,8 +20,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit test for the Schedule 8 Check Status evaluation (Story 14.6) — mocked repository. Covers the
- * all-met MET outcome and a representative ISSUES page (missing Contact + a sample with percent ≠ 100),
- * plus the read-only contract. End-to-end coverage of every rule is in {@link Schedule8CheckStatusIT}.
+ * all-met MET outcome and a representative ISSUES page (missing Contact + a sample with percent ≠
+ * 100), plus the read-only contract. End-to-end coverage of every rule is in {@link
+ * Schedule8CheckStatusIT}.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8CheckStatusServiceTest {
@@ -29,11 +30,9 @@ class Schedule8CheckStatusServiceTest {
   private static final long MILL = 600L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule8Repository repository;
+  @Mock private Schedule8Repository repository;
 
-  @InjectMocks
-  private Schedule8Service service;
+  @InjectMocks private Schedule8Service service;
 
   @BeforeEach
   void stubLabelMapsAndTrack() {
@@ -51,13 +50,34 @@ class Schedule8CheckStatusServiceTest {
   }
 
   private static TreeToTruckReportEntity page(String contact, String phone) {
-    return new TreeToTruckReportEntity(8970, "SC1", "R1", "BZ1", "TSA5", "B", null, null, "L600",
-        "Div", contact, phone, "c", 0);
+    return new TreeToTruckReportEntity(
+        8970, "SC1", "R1", "BZ1", "TSA5", "B", null, null, "L600", "Div", contact, phone, "c", 0);
   }
 
   private static TreeToTruckDetailReportEntity metSample() {
-    return new TreeToTruckDetailReportEntity(8971, 8970, "C", "CB", 100, 0, 0, 0, 0, 0,
-        null, null, null, null, null, "N", "N", null, 500, 0, new BigDecimal("20.00"), 0);
+    return new TreeToTruckDetailReportEntity(
+        8971,
+        8970,
+        "C",
+        "CB",
+        100,
+        0,
+        0,
+        0,
+        0,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "N",
+        "N",
+        null,
+        500,
+        0,
+        new BigDecimal("20.00"),
+        0);
   }
 
   @Test
@@ -76,38 +96,65 @@ class Schedule8CheckStatusServiceTest {
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(metSample()));
     Schedule8CheckStatusResponse result = service.checkStatus(MILL, YEAR);
     assertEquals("ISSUES", result.outcome());
-    assertTrue(result.pages().get(0).issues().stream()
-        .map(Schedule8CheckFieldIssue::field)
-        .anyMatch("Contact"::equals));
+    assertTrue(
+        result.pages().get(0).issues().stream()
+            .map(Schedule8CheckFieldIssue::field)
+            .anyMatch("Contact"::equals));
   }
 
   @Test
   void missingDivision_returnsIssuesWithDivisionFlag() {
-    // Division (10th field) blank → flagged (legacy Schedule8CheckStatus.validateTtTReport requires it).
-    TreeToTruckReportEntity noDivision = new TreeToTruckReportEntity(8970, "SC1", "R1", "BZ1", "TSA5",
-        "B", null, null, "L600", null, "Pat", "250", "c", 0);
+    // Division (10th field) blank → flagged (legacy Schedule8CheckStatus.validateTtTReport requires
+    // it).
+    TreeToTruckReportEntity noDivision =
+        new TreeToTruckReportEntity(
+            8970, "SC1", "R1", "BZ1", "TSA5", "B", null, null, "L600", null, "Pat", "250", "c", 0);
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(noDivision));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(metSample()));
     Schedule8CheckStatusResponse result = service.checkStatus(MILL, YEAR);
     assertEquals("ISSUES", result.outcome());
-    assertTrue(result.pages().get(0).issues().stream()
-        .map(Schedule8CheckFieldIssue::field)
-        .anyMatch("Division"::equals));
+    assertTrue(
+        result.pages().get(0).issues().stream()
+            .map(Schedule8CheckFieldIssue::field)
+            .anyMatch("Division"::equals));
   }
 
   @Test
   void percentNotHundred_flagsSkiddingYarding() {
-    // Sample with only 50% skidding -> percentTotal 50 != 100 -> flagged at Check Status (S16 half).
-    TreeToTruckDetailReportEntity sample = new TreeToTruckDetailReportEntity(8971, 8970, "C", "CB",
-        50, 0, 0, 0, 0, 0, null, null, null, null, null, "N", "N", null, 500, 0,
-        new BigDecimal("20.00"), 0);
+    // Sample with only 50% skidding -> percentTotal 50 != 100 -> flagged at Check Status (S16
+    // half).
+    TreeToTruckDetailReportEntity sample =
+        new TreeToTruckDetailReportEntity(
+            8971,
+            8970,
+            "C",
+            "CB",
+            50,
+            0,
+            0,
+            0,
+            0,
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "N",
+            "N",
+            null,
+            500,
+            0,
+            new BigDecimal("20.00"),
+            0);
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page("Pat", "250")));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample));
     Schedule8CheckStatusResponse result = service.checkStatus(MILL, YEAR);
     assertEquals("ISSUES", result.outcome());
-    assertTrue(result.pages().get(0).samples().get(0).issues().stream()
-        .map(Schedule8CheckFieldIssue::field)
-        .anyMatch("Skidding/Yarding"::equals));
+    assertTrue(
+        result.pages().get(0).samples().get(0).issues().stream()
+            .map(Schedule8CheckFieldIssue::field)
+            .anyMatch("Skidding/Yarding"::equals));
   }
 
   @Test

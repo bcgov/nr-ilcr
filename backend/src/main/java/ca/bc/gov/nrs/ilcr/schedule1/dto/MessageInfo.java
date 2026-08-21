@@ -7,5 +7,4 @@ package ca.bc.gov.nrs.ilcr.schedule1.dto;
  * @param key the legacy {@code messages.properties} key (e.g. {@code dataSavedSuccesfullyInfoMsg})
  * @param text the resolved verbatim message text (e.g. {@code Data saved successfully})
  */
-public record MessageInfo(String key, String text) {
-}
+public record MessageInfo(String key, String text) {}

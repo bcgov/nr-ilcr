@@ -7,9 +7,8 @@ package ca.bc.gov.nrs.ilcr.schedule11.dto;
  * the value shown on a saved row (legacy {@code getBiogeoSubZoneVariantPase()}). Backs the global
  * catalogue lookup — no mill/year scope.
  *
- * @param id the catalogue id ({@code BIOGEOCLIMATIC_CATALOGUE_ID}); the value submitted as
- *     {@code biogeoclimaticCatalogueId} on a resolved selection
+ * @param id the catalogue id ({@code BIOGEOCLIMATIC_CATALOGUE_ID}); the value submitted as {@code
+ *     biogeoclimaticCatalogueId} on a resolved selection
  * @param label the concatenated BEC label the field displays and filters on
  */
-public record BiogeoclimaticOption(long id, String label) {
-}
+public record BiogeoclimaticOption(long id, String label) {}

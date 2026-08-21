@@ -39,13 +39,14 @@ import org.springframework.stereotype.Service;
  * surfaces as a 500 on a report endpoint instead of crashing the application context at boot.
  *
  * <p>Two fill modes coexist (the recorded 20.2 data-feed decision):
+ *
  * <ul>
  *   <li><b>Schedule 9</b> keeps its embedded-SQL template, filled on a {@link Connection} borrowed
- *       from the single {@code @Primary} application {@link DataSource} (AD-2/DL-25).</li>
+ *       from the single {@code @Primary} application {@link DataSource} (AD-2/DL-25).
  *   <li><b>Schedules 5/6/7A/7B/11</b> are filled from a bean datasource mapped from each schedule's
  *       existing {@code *Service} DTO, so every derived total / $-per-unit / rmg / code-description
  *       is the tested service arithmetic rather than re-ported template SQL; these need no database
- *       connection at fill time (the data is already fetched).</li>
+ *       connection at fill time (the data is already fetched).
  * </ul>
  *
  * <p>Data-sensitivity (AD-11/NFR3): this service logs only mill/year/section keys/record counts —
@@ -66,20 +67,24 @@ public class ReportService {
   private final Schedule11Service schedule11Service;
   private final ReportVirtualizerFactory virtualizerFactory;
 
-  /** Compiled templates, built on first use and cached (boot-safe); keyed by {@link ScheduleKey}. */
+  /**
+   * Compiled templates, built on first use and cached (boot-safe); keyed by {@link ScheduleKey}.
+   */
   private final Map<ScheduleKey, JasperReport> compiledTemplates = new ConcurrentHashMap<>();
 
   /**
-   * @param dataSource the dedicated reporting datasource (Story 29.1) the Schedule 9 fill borrows from
-   *     — its own small pool, isolated from the {@code @Primary} transactional pool so a burst of report
-   *     renders cannot starve ordinary schedule requests (its connections are read-only as a hint, not
-   *     an enforced privilege)
+   * Constructs a new ReportService.
+   *
+   * @param dataSource the dedicated reporting datasource (Story 29.1) the Schedule 9 fill borrows
+   *     from — its own small pool, isolated from the {@code @Primary} transactional pool so a burst
+   *     of report renders cannot starve ordinary schedule requests (its connections are read-only
+   *     as a hint, not an enforced privilege)
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
    * @param schedule7bService the Schedule 7B read (bean-datasource feed)
-   * @param schedule9Service the Schedule 9 read seam, used for the empty-schedule pre-check (29.10 —
-   *     through the service, not the repository)
+   * @param schedule9Service the Schedule 9 read seam, used for the empty-schedule pre-check (29.10
+   *     — through the service, not the repository)
    * @param schedule11Service the Schedule 11 read (bean-datasource feed)
    * @param virtualizerFactory builds the per-render Jasper swap-file virtualizer (Story 29.2) so a
    *     large or combined fill spills page objects to disk instead of pinning them on the heap
@@ -118,11 +123,19 @@ public class ReportService {
     boolean ownershipTransferred = false;
     try {
       // Schedule 9 fills from its embedded-SQL template and carries its own title block, so the
-      // resolved bean-section title block is irrelevant here (passed null, ignored by fillSchedule9).
+      // resolved bean-section title block is irrelevant here (passed null, ignored by
+      // fillSchedule9).
       // Standalone Schedule 9 (20.1): no bookmark. A null bookmark title suppresses the section's
       // outline anchor, so this single-schedule PDF has no top-level bookmark at all.
-      JasperPrint print = fillSection(
-          ScheduleKey.SCHEDULE_9, millId, year, PrintOptions.showEverything(), null, null, virtualizer);
+      JasperPrint print =
+          fillSection(
+              ScheduleKey.SCHEDULE_9,
+              millId,
+              year,
+              PrintOptions.showEverything(),
+              null,
+              null,
+              virtualizer);
       if (print == null) {
         throw new ScheduleNotFoundException();
       }
@@ -146,7 +159,8 @@ public class ReportService {
    * @param key the schedule to render
    * @param millId the validated mill id
    * @param year the reporting year
-   * @param options the print options (schedule information / comments) passed through to the template
+   * @param options the print options (schedule information / comments) passed through to the
+   *     template
    * @param millTitleBlock the {@code name-number} title block resolved ONCE for the request and
    *     shared by every bean-section header (Schedule 9 supplies its own, so it is ignored there)
    * @param bookmarkTitle the top-level PDF outline title for this section, or {@code null} for none
@@ -155,26 +169,78 @@ public class ReportService {
    *     virtualizer so this section's page objects can spill to disk under a large fill
    * @return the filled {@link JasperPrint}, or {@code null} when the schedule has no data
    */
-  public JasperPrint fillSection(ScheduleKey key, long millId, int year, PrintOptions options,
-      String millTitleBlock, String bookmarkTitle, JRSwapFileVirtualizer virtualizer) {
+  public JasperPrint fillSection(
+      ScheduleKey key,
+      long millId,
+      int year,
+      PrintOptions options,
+      String millTitleBlock,
+      String bookmarkTitle,
+      JRSwapFileVirtualizer virtualizer) {
     return switch (key) {
-      case SCHEDULE_5 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
-          Schedule5SectionMapper.map(schedule5Service.getSchedule5(millId, year, false)), virtualizer);
-      case SCHEDULE_6 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
-          Schedule6SectionMapper.map(schedule6Service.getSchedule6(millId, year, false)), virtualizer);
-      case SCHEDULE_7A -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
-          Schedule7aSectionMapper.map(schedule7aService.getSchedule7a(millId, year, false)), virtualizer);
-      case SCHEDULE_7B -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
-          Schedule7bSectionMapper.map(schedule7bService.getSchedule7b(millId, year, false)), virtualizer);
-      case SCHEDULE_11 -> fillBean(key, millId, year, options, millTitleBlock, bookmarkTitle,
-          Schedule11SectionMapper.map(schedule11Service.getSchedule11(millId, year, false)), virtualizer);
+      case SCHEDULE_5 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule5SectionMapper.map(schedule5Service.getSchedule5(millId, year, false)),
+              virtualizer);
+      case SCHEDULE_6 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule6SectionMapper.map(schedule6Service.getSchedule6(millId, year, false)),
+              virtualizer);
+      case SCHEDULE_7A ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule7aSectionMapper.map(schedule7aService.getSchedule7a(millId, year, false)),
+              virtualizer);
+      case SCHEDULE_7B ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule7bSectionMapper.map(schedule7bService.getSchedule7b(millId, year, false)),
+              virtualizer);
+      case SCHEDULE_11 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule11SectionMapper.map(schedule11Service.getSchedule11(millId, year, false)),
+              virtualizer);
       case SCHEDULE_9 -> fillSchedule9(millId, year, options, bookmarkTitle, virtualizer);
     };
   }
 
   /** Bean-datasource fill: no rows → no section (null); else fill from the mapped section rows. */
-  private JasperPrint fillBean(ScheduleKey key, long millId, int year, PrintOptions options,
-      String millTitleBlock, String bookmarkTitle, SectionData section,
+  private JasperPrint fillBean(
+      ScheduleKey key,
+      long millId,
+      int year,
+      PrintOptions options,
+      String millTitleBlock,
+      String bookmarkTitle,
+      SectionData section,
       JRSwapFileVirtualizer virtualizer) {
     if (section == null || section.rows().isEmpty()) {
       return null;
@@ -182,8 +248,12 @@ public class ReportService {
     Map<String, Object> params = baseParams(millTitleBlock, year, options, bookmarkTitle);
     params.putAll(section.parameters());
     params.put(JRParameter.REPORT_VIRTUALIZER, virtualizer);
-    log.info("Rendering {} section for mill {} year {} ({} rows)",
-        key, millId, year, section.rows().size());
+    log.info(
+        "Rendering {} section for mill {} year {} ({} rows)",
+        key,
+        millId,
+        year,
+        section.rows().size());
     try {
       return JasperFillManager.fillReport(
           template(key), params, new JRMapCollectionDataSource(section.rows()));
@@ -193,15 +263,22 @@ public class ReportService {
   }
 
   /** Schedule 9's embedded-SQL connection fill (20.1). Empty → null so the combiner can skip it. */
-  private JasperPrint fillSchedule9(long millId, int year, PrintOptions options, String bookmarkTitle,
+  private JasperPrint fillSchedule9(
+      long millId,
+      int year,
+      PrintOptions options,
+      String bookmarkTitle,
       JRSwapFileVirtualizer virtualizer) {
-    // Count-only pre-check: the template's embedded SQL re-runs the full record query at fill time, so
-    // a findRecords().size() here would materialize (and throw away) that whole list just to test empty.
+    // Count-only pre-check: the template's embedded SQL re-runs the full record query at fill time,
+    // so
+    // a findRecords().size() here would materialize (and throw away) that whole list just to test
+    // empty.
     int recordCount = schedule9Service.countRecords(millId, year);
     if (recordCount == 0) {
       return null;
     }
-    log.info("Rendering SCHEDULE_9 section for mill {} year {} ({} records)", millId, year, recordCount);
+    log.info(
+        "Rendering SCHEDULE_9 section for mill {} year {} ({} records)", millId, year, recordCount);
     Map<String, Object> params = new HashMap<>();
     params.put("millId", millId);
     params.put("year", year);
@@ -240,7 +317,8 @@ public class ReportService {
    * Load the pre-compiled {@code .jasper} for a schedule from the classpath. Templates are compiled
    * from {@code .jrxml} to {@code .jasper} at BUILD time ({@code ReportPrecompiler}, run by
    * exec-maven-plugin with the build JDK), so the runtime — a JRE container without {@code javac} —
-   * never compiles a report. The {@code .jrxml} stays the source of truth; only the extension swaps.
+   * never compiles a report. The {@code .jrxml} stays the source of truth; only the extension
+   * swaps.
    */
   private static JasperReport load(ScheduleKey key) {
     String path = key.templatePath().replaceAll("\\.jrxml$", ".jasper");

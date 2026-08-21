@@ -57,7 +57,8 @@ class Schedule3OtherCostsControllerTest {
     OtherAcceptableDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule3Service.saveOtherAcceptable(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<OtherAcceptableDocument> response =

@@ -47,23 +47,28 @@ class FlywayMigrationVersionUniquenessTest {
     try (Stream<Path> entries = Files.list(MIGRATION_DIR)) {
       entries
           .map(path -> path.getFileName().toString())
-          .forEach(name -> {
-            Matcher matcher = VERSIONED.matcher(name);
-            if (matcher.matches()) {
-              filesByVersion.computeIfAbsent(matcher.group(1), key -> new ArrayList<>()).add(name);
-            }
-          });
+          .forEach(
+              name -> {
+                Matcher matcher = VERSIONED.matcher(name);
+                if (matcher.matches()) {
+                  filesByVersion
+                      .computeIfAbsent(matcher.group(1), key -> new ArrayList<>())
+                      .add(name);
+                }
+              });
     }
 
-    List<String> collisions = filesByVersion.entrySet().stream()
-        .filter(entry -> entry.getValue().size() > 1)
-        .map(entry -> "  V" + entry.getKey() + " -> " + entry.getValue())
-        .collect(Collectors.toList());
+    List<String> collisions =
+        filesByVersion.entrySet().stream()
+            .filter(entry -> entry.getValue().size() > 1)
+            .map(entry -> "  V" + entry.getKey() + " -> " + entry.getValue())
+            .collect(Collectors.toList());
 
     assertTrue(
         collisions.isEmpty(),
-        () -> "Duplicate Flyway migration versions (two branches grabbed the same V number — bump "
-            + "the newer one to the next free slot; see src/test/resources/db/README.md):\n"
-            + String.join("\n", collisions));
+        () ->
+            "Duplicate Flyway migration versions (two branches grabbed the same V number — bump "
+                + "the newer one to the next free slot; see src/test/resources/db/README.md):\n"
+                + String.join("\n", collisions));
   }
 }

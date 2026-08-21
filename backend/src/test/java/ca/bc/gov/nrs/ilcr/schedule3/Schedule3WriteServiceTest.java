@@ -19,7 +19,6 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request.CostLineInput;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
-import org.springframework.dao.DataAccessResourceFailureException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 /**
  * Unit test for the Schedule 3 write path (Story 4.2): save row-writing, override normalization,
@@ -42,45 +42,51 @@ class Schedule3WriteServiceTest {
   private static final int YEAR = 2021;
   private static final String USER = "tester";
 
-  @Mock
-  private Schedule3Repository repository;
+  @Mock private Schedule3Repository repository;
 
-  @Mock
-  private Schedule1Service schedule1Service;
+  @Mock private Schedule1Service schedule1Service;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule3Service service;
+  @InjectMocks private Schedule3Service service;
 
   private void stubDraft(BigDecimal persistedCrownVolume) {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
-    lenient().when(repository.findDetails(1040))
+    lenient()
+        .when(repository.findDetails(1040))
         .thenReturn(List.of(new DetailRow(119, persistedCrownVolume, null, null, null)));
-    lenient().when(repository.bumpRevision(anyInt(), anyInt(), any(), any(), anyString()))
+    lenient()
+        .when(repository.bumpRevision(anyInt(), anyInt(), any(), any(), anyString()))
         .thenReturn(1);
     lenient().when(messageSource.getMessage(anyString(), any(), any(), any())).thenReturn("text");
   }
 
-  private Schedule3Request request(String override, BigDecimal crownVolume, List<CostLineInput> lines) {
+  private Schedule3Request request(
+      String override, BigDecimal crownVolume, List<CostLineInput> lines) {
     return new Schedule3Request(0, "comment", override, lines, new BigDecimal("5000"), crownVolume);
   }
 
   @Test
   void save_writesHarvestAndPop_forPopLines_andHarvestOnly_for29_33_37() {
     stubDraft(new BigDecimal("5000"));
-    service.saveSchedule3(MILL, YEAR, request("N", new BigDecimal("5000"), List.of(
-        new CostLineInput(27, 1000, 400),   // pop line
-        new CostLineInput(29, 500, 999),    // Annual Rents — Harvest-only
-        new CostLineInput(33, 600, 999),    // Scaling — Harvest-only (no 131)
-        new CostLineInput(37, 700, 999))),  // Silviculture Admin — Harvest-only
-        true, USER);
+    service.saveSchedule3(
+        MILL,
+        YEAR,
+        request(
+            "N",
+            new BigDecimal("5000"),
+            List.of(
+                new CostLineInput(27, 1000, 400), // pop line
+                new CostLineInput(29, 500, 999), // Annual Rents — Harvest-only
+                new CostLineInput(33, 600, 999), // Scaling — Harvest-only (no 131)
+                new CostLineInput(37, 700, 999))), // Silviculture Admin — Harvest-only
+        true,
+        USER);
 
     verify(repository).upsertFixedDetailCost(1040, 27, 1000, USER);
-    verify(repository).upsertFixedDetailCost(1040, 125, 400, USER);  // Licenses PO&P written
+    verify(repository).upsertFixedDetailCost(1040, 125, 400, USER); // Licenses PO&P written
     verify(repository).upsertFixedDetailCost(1040, 29, 500, USER);
     verify(repository).upsertFixedDetailCost(1040, 33, 600, USER);
     verify(repository).upsertFixedDetailCost(1040, 37, 700, USER);
@@ -98,8 +104,9 @@ class Schedule3WriteServiceTest {
     verify(repository).bumpRevision(1040, 0, "comment", "Y", USER);
 
     stubDraft(new BigDecimal("5000"));
-    service.saveSchedule3(MILL, YEAR, request("anything", new BigDecimal("5000"), List.of()), true, USER);
-    verify(repository).bumpRevision(1040, 0, "comment", "N", USER);  // non-"Y" normalizes to "N"
+    service.saveSchedule3(
+        MILL, YEAR, request("anything", new BigDecimal("5000"), List.of()), true, USER);
+    verify(repository).bumpRevision(1040, 0, "comment", "N", USER); // non-"Y" normalizes to "N"
   }
 
   @Test
@@ -110,7 +117,8 @@ class Schedule3WriteServiceTest {
     lenient().when(repository.findDetails(1040)).thenReturn(List.of());
     when(repository.bumpRevision(anyInt(), anyInt(), any(), any(), anyString())).thenReturn(0);
     var req = request("N", new BigDecimal("5000"), List.of());
-    assertThrows(StaleRevisionException.class, () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
+    assertThrows(
+        StaleRevisionException.class, () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
   }
 
   @Test
@@ -118,15 +126,22 @@ class Schedule3WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
     var req = request("N", new BigDecimal("5000"), List.of());
     assertThrows(
-        ScheduleNotEditableException.class, () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
+        ScheduleNotEditableException.class,
+        () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
   }
 
   @Test
   void crownPush_whenChangedAndSchedule1Open_appliesAndWarnsWrn001() {
-    stubDraft(new BigDecimal("5000"));  // persisted crown = 5000
-    when(schedule1Service.applyCrownTimberVolume(eq(MILL), eq(YEAR), any(), eq(USER))).thenReturn(true);
-    Schedule3Response doc = service.saveSchedule3(
-        MILL, YEAR, request("N", new BigDecimal("7000"), List.of()), true, USER);  // changed → 7000
+    stubDraft(new BigDecimal("5000")); // persisted crown = 5000
+    when(schedule1Service.applyCrownTimberVolume(eq(MILL), eq(YEAR), any(), eq(USER)))
+        .thenReturn(true);
+    Schedule3Response doc =
+        service.saveSchedule3(
+            MILL,
+            YEAR,
+            request("N", new BigDecimal("7000"), List.of()),
+            true,
+            USER); // changed → 7000
     verify(schedule1Service).applyCrownTimberVolume(MILL, YEAR, new BigDecimal("7000"), USER);
     assertEquals(1, doc.warnings().size());
     assertEquals("crownVolumeChangeSchedule1", doc.warnings().get(0).key());
@@ -134,19 +149,23 @@ class Schedule3WriteServiceTest {
 
   @Test
   void crownPush_whenNotChanged_doesNotPushNorWarn() {
-    stubDraft(new BigDecimal("5000"));  // persisted crown = 5000
-    Schedule3Response doc = service.saveSchedule3(
-        MILL, YEAR, request("N", new BigDecimal("5000"), List.of()), true, USER);  // unchanged
-    verify(schedule1Service, never()).applyCrownTimberVolume(any(Long.class), anyInt(), any(), anyString());
+    stubDraft(new BigDecimal("5000")); // persisted crown = 5000
+    Schedule3Response doc =
+        service.saveSchedule3(
+            MILL, YEAR, request("N", new BigDecimal("5000"), List.of()), true, USER); // unchanged
+    verify(schedule1Service, never())
+        .applyCrownTimberVolume(any(Long.class), anyInt(), any(), anyString());
     assertTrue(doc.warnings().isEmpty());
   }
 
   @Test
   void crownPush_whenSchedule1NotOpen_warnsWrn002() {
     stubDraft(new BigDecimal("5000"));
-    when(schedule1Service.applyCrownTimberVolume(eq(MILL), eq(YEAR), any(), eq(USER))).thenReturn(false);
-    Schedule3Response doc = service.saveSchedule3(
-        MILL, YEAR, request("N", new BigDecimal("7000"), List.of()), true, USER);
+    when(schedule1Service.applyCrownTimberVolume(eq(MILL), eq(YEAR), any(), eq(USER)))
+        .thenReturn(false);
+    Schedule3Response doc =
+        service.saveSchedule3(
+            MILL, YEAR, request("N", new BigDecimal("7000"), List.of()), true, USER);
     assertEquals("crownVolumeNotSetSchedule1", doc.warnings().get(0).key());
   }
 
@@ -170,7 +189,9 @@ class Schedule3WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
-    doThrow(new DataAccessResourceFailureException("db down")).when(repository).deleteSchedule(1040);
+    doThrow(new DataAccessResourceFailureException("db down"))
+        .when(repository)
+        .deleteSchedule(1040);
     assertThrows(ScheduleNotDeletedException.class, () -> service.deleteSchedule3(MILL, YEAR));
   }
 
@@ -194,7 +215,6 @@ class Schedule3WriteServiceTest {
     when(repository.deleteSubPageRowById(anyInt(), anyInt(), anyInt()))
         .thenThrow(new DataAccessResourceFailureException("db down"));
     assertThrows(
-        ScheduleNotDeletedException.class,
-        () -> service.deleteUnacceptable(MILL, YEAR, 5, USER));
+        ScheduleNotDeletedException.class, () -> service.deleteUnacceptable(MILL, YEAR, 5, USER));
   }
 }

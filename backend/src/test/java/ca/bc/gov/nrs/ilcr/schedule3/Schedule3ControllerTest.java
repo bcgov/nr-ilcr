@@ -9,10 +9,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
@@ -28,11 +28,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for the three Schedule 3 controllers ({@link Schedule3Controller},
- * {@link Schedule3OtherCostsController}, {@link Schedule3UnacceptableCostsController}). Verifies the
- * category-"3" context guard ({@code validateScheduleViewable}), the server-derived {@code editable}
- * flag (from {@code EDIT_SCHEDULE}), service delegation, and verbatim success-message decoration on
- * the mutating responses (AD-8) — collaborators mocked, no Spring context. Mirrors
+ * Unit test for the three Schedule 3 controllers ({@link Schedule3Controller}, {@link
+ * Schedule3OtherCostsController}, {@link Schedule3UnacceptableCostsController}). Verifies the
+ * category-"3" context guard ({@code validateScheduleViewable}), the server-derived {@code
+ * editable} flag (from {@code EDIT_SCHEDULE}), service delegation, and verbatim success-message
+ * decoration on the mutating responses (AD-8) — collaborators mocked, no Spring context. Mirrors
  * {@code Schedule2ControllerTest}.
  */
 @ExtendWith(MockitoExtension.class)
@@ -43,29 +43,21 @@ class Schedule3ControllerTest {
   private static final String CATEGORY = "3";
   private static final String USER = "dev-admin";
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule3Service schedule3Service;
+  @Mock private Schedule3Service schedule3Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private org.springframework.context.MessageSource messageSource;
+  @Mock private org.springframework.context.MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule3Controller controller;
+  @InjectMocks private Schedule3Controller controller;
 
-  @InjectMocks
-  private Schedule3OtherCostsController otherCostsController;
+  @InjectMocks private Schedule3OtherCostsController otherCostsController;
 
-  @InjectMocks
-  private Schedule3UnacceptableCostsController unacceptableController;
+  @InjectMocks private Schedule3UnacceptableCostsController unacceptableController;
 
   // ---- main document ----------------------------------------------------------------------------
 

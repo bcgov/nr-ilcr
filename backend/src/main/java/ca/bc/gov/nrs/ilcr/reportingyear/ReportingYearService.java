@@ -18,14 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Opens a reporting year (UC-RY-001) — the annual-cycle trigger. In one transaction it creates the
  * reporting period and, for every active mill, the report-status row (both tracks, Draft) plus the
- * per-category records (11 categories, Draft, reportable-detail Y) the delivery DB pre-creates on open
- * (verified against DEV) — the rows the mill/year guards read. {@code ILCR_REPORT_SUMMARY} is left for
- * first schedule save. On any failure nothing commits (S08).
+ * per-category records (11 categories, Draft, reportable-detail Y) the delivery DB pre-creates on
+ * open (verified against DEV) — the rows the mill/year guards read. {@code ILCR_REPORT_SUMMARY} is
+ * left for first schedule save. On any failure nothing commits (S08).
  *
  * <p>Two entry paths (BR-05/BR-07): recurring ({@code max + 1}) when a year already exists, and
- * first-time setup (an administrator-selected year within {@code currentYear - 2 .. currentYear + 1})
- * when none does. Zero active mills blocks the recurring path (S03) but is allowed on first-time setup
- * (S07, recorded decision D-1) so the first year can be opened before any mill is activated.
+ * first-time setup (an administrator-selected year within {@code currentYear - 2 .. currentYear +
+ * 1}) when none does. Zero active mills blocks the recurring path (S03) but is allowed on
+ * first-time setup (S07, recorded decision D-1) so the first year can be opened before any mill is
+ * activated.
  */
 @Slf4j
 @Service
@@ -34,22 +35,30 @@ public class ReportingYearService {
 
   private static final String STATUS_DRAFT = "D";
   private static final String NOT_COMPLETED = "N";
-  // AC3: the recurring zero-active-mills path emits BOTH legacy messages verbatim — INF-001 and ERR-002.
+  // AC3: the recurring zero-active-mills path emits BOTH legacy messages verbatim — INF-001 and
+  // ERR-002.
   private static final String MSG_NO_ACTIVE_MILLS = "noActiveMillsForNewYearMsg";
   private static final String MSG_NO_REPORTING_PERIODS = "reportingPeriodNotFoundMsg";
   private static final int START_YEAR_LOOKBACK = 2;
   private static final int START_YEAR_LOOKAHEAD = 1;
-  // The 11 schedule categories the delivery DB pre-seeds per active mill on open (verified against DEV).
+  // The 11 schedule categories the delivery DB pre-seeds per active mill on open (verified against
+  // DEV).
   private static final List<String> CATEGORY_IDS =
       List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
 
   private final ReportingYearRepository repository;
   private final Clock clock;
 
+  /**
+   * Constructs a new ReportingYearService.
+   *
+   * @param repository the reporting year repository
+   */
   @Autowired
   public ReportingYearService(ReportingYearRepository repository) {
     // Anchor "current year" (BR-07 range + period start) to Pacific time: the app serves BC and its
-    // OpenShift containers run UTC, where systemDefaultZone would drift the year boundary near Jan 1.
+    // OpenShift containers run UTC, where systemDefaultZone would drift the year boundary near Jan
+    // 1.
     this(repository, Clock.system(ZoneId.of("America/Vancouver")));
   }
 
@@ -58,7 +67,10 @@ public class ReportingYearService {
     this.clock = clock;
   }
 
-  /** The state the admin page renders: open years, the recurring next year, and the first-time options. */
+  /**
+   * The state the admin page renders: open years, the recurring next year, and the first-time
+   * options.
+   */
   public ReportingYearAdminView view() {
     List<Integer> openYears = repository.findOpenYears();
     boolean firstTime = openYears.isEmpty();
@@ -68,10 +80,11 @@ public class ReportingYearService {
   }
 
   /**
-   * Open the next reporting year and initialize every active mill's report-status (both tracks, Draft).
+   * Open the next reporting year and initialize every active mill's report-status (both tracks,
+   * Draft).
    *
-   * @param requestedYear the administrator-selected starting year (first-time setup only; ignored on
-   *     the recurring path)
+   * @param requestedYear the administrator-selected starting year (first-time setup only; ignored
+   *     on the recurring path)
    * @param user the acting administrator (audit)
    * @return the year created and how many active mills were initialized
    */
@@ -94,8 +107,10 @@ public class ReportingYearService {
     try {
       repository.insertReportingPeriod(targetYear, today, LocalDate.of(targetYear, 12, 31), user);
     } catch (DataIntegrityViolationException concurrentOpen) {
-      // A concurrent open inserted this year's ILCR_REPORTING_PERIOD row first; lose the PK race as a
-      // clean 409 rather than a generic 500. (A serial max+1 never collides — this is the race guard.)
+      // A concurrent open inserted this year's ILCR_REPORTING_PERIOD row first; lose the PK race as
+      // a
+      // clean 409 rather than a generic 500. (A serial max+1 never collides — this is the race
+      // guard.)
       throw ReportingYearException.yearAlreadyOpen();
     }
     for (long millId : activeMillIds) {
@@ -106,8 +121,11 @@ public class ReportingYearService {
       }
     }
 
-    log.info("Reporting year opened: {} initialized {} active mill(s) by {}",
-        targetYear, activeMillIds.size(), user);
+    log.info(
+        "Reporting year opened: {} initialized {} active mill(s) by {}",
+        targetYear,
+        activeMillIds.size(),
+        user);
     return new OpenReportingYearResult(targetYear, activeMillIds.size());
   }
 
@@ -120,8 +138,8 @@ public class ReportingYearService {
 
   private List<Integer> selectableStartYears() {
     int current = LocalDate.now(clock).getYear();
-    return java.util.stream.IntStream
-        .rangeClosed(current - START_YEAR_LOOKBACK, current + START_YEAR_LOOKAHEAD)
+    return java.util.stream.IntStream.rangeClosed(
+            current - START_YEAR_LOOKBACK, current + START_YEAR_LOOKAHEAD)
         .boxed()
         .toList();
   }

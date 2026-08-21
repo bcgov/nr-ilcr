@@ -37,16 +37,16 @@ import org.springframework.transaction.annotation.Transactional;
  * keyed {@code ILCR_COST_REPORT_DETAIL} cost line) plus the per-record Check Status. {@code
  * costPerUnit} ($/Unit) is derived here and never accepted from a client.
  *
- * <p>{@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the 1–10 track is Draft, computed
- * here and server-authoritative (AD-9, S30). A non-Draft mill still lists every record.
+ * <p>{@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the 1–10 track is Draft,
+ * computed here and server-authoritative (AD-9, S30). A non-Draft mill still lists every record.
  *
  * <p><strong>The write half hardens what legacy left open.</strong> Legacy had no concurrency
- * control (it never incremented {@code REVISION_COUNT}), no server-side edit gate (only the disabled
- * buttons), and routed Save and Delete through one list transaction. Here each write is one
- * transaction whose first statement is the {@code FOR UPDATE} Draft gate, the optimistic lock keys on
- * the master's {@code REVISION_COUNT}, and Save/Delete are separate endpoints (recorded deviation).
- * The Save-vs-Check asymmetry — blank units/cost and a side slope of exactly 100 SAVE but Check flags
- * them — is preserved verbatim, not repaired. Costs/units are never logged (AD-11).
+ * control (it never incremented {@code REVISION_COUNT}), no server-side edit gate (only the
+ * disabled buttons), and routed Save and Delete through one list transaction. Here each write is
+ * one transaction whose first statement is the {@code FOR UPDATE} Draft gate, the optimistic lock
+ * keys on the master's {@code REVISION_COUNT}, and Save/Delete are separate endpoints (recorded
+ * deviation). The Save-vs-Check asymmetry — blank units/cost and a side slope of exactly 100 SAVE
+ * but Check flags them — is preserved verbatim, not repaired. Costs/units are never logged (AD-11).
  */
 @Service
 @Slf4j
@@ -91,7 +91,8 @@ public class Schedule9Service {
   private static final String MSG_INVALID_RANGE = "invalidRangeErrorMsg";
   private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
 
-  // Check-Status numeric bounds + the legacy DecimalFormat patterns fed to invalidRangeErrorMsg. The
+  // Check-Status numeric bounds + the legacy DecimalFormat patterns fed to invalidRangeErrorMsg.
+  // The
   // side-slope Check bound is 99 (not the Save bound 100) and units/cost are range-checked even
   // though blank — both halves of the preserved Save-vs-Check asymmetry.
   private static final double SIDE_SLOPE_CHECK_MAX = 99.0;
@@ -102,7 +103,8 @@ public class Schedule9Service {
   private static final String FORMAT_COST = "#,###,###";
 
   // The bounds are formatted with an EXPLICIT locale (comma grouping / period decimal), not the JVM
-  // default, so the composed range line matches the legacy delivery output regardless of the server's
+  // default, so the composed range line matches the legacy delivery output regardless of the
+  // server's
   // default locale — legacy's DecimalFormat happened to run on a comma-locale JVM.
   private static final DecimalFormatSymbols NUMBER_SYMBOLS =
       DecimalFormatSymbols.getInstance(Locale.CANADA);
@@ -121,7 +123,8 @@ public class Schedule9Service {
 
   /**
    * The number of Schedule 9 records for a mill/year — the reporting empty-schedule pre-check reads
-   * this through the service seam (Story 29.10) rather than reaching into {@code Schedule9Repository}.
+   * this through the service seam (Story 29.10) rather than reaching into {@code
+   * Schedule9Repository}.
    *
    * @param millId the validated mill id
    * @param year the validated reporting year
@@ -149,7 +152,8 @@ public class Schedule9Service {
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their Draft gate just proved (same transaction) rather than re-running the track query.
+   * {@code D} their Draft gate just proved (same transaction) rather than re-running the track
+   * query.
    */
   private Schedule9Response buildDocument(
       long millId, int year, String trackStatus, boolean callerMayEdit, boolean includeCodeLists) {
@@ -158,22 +162,32 @@ public class Schedule9Service {
     // One cost line per record; lowest ILCR_COST_REPORT_DETAIL_ID wins if delivery ever holds more
     // (no unique constraint on the FK) — the repository ORDER BY makes that deterministic, and the
     // write path's updateCostLine narrows to the same MIN row, so read and write agree.
-    Map<Integer, CostRow> costByRecord = repository.findCostLines(millId, year).stream()
-        .collect(Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
+    Map<Integer, CostRow> costByRecord =
+        repository.findCostLines(millId, year).stream()
+            .collect(
+                Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
 
-    List<ContractualWorkRecord> records = repository.findRecords(millId, year).stream()
-        .map(row -> toRecord(row, costByRecord.get(row.id())))
-        .toList();
+    List<ContractualWorkRecord> records =
+        repository.findRecords(millId, year).stream()
+            .map(row -> toRecord(row, costByRecord.get(row.id())))
+            .toList();
 
     return new Schedule9Response(
-        millId, year, trackStatus, editable, records, includeCodeLists ? repository.codeLists() : null, null);
+        millId,
+        year,
+        trackStatus,
+        editable,
+        records,
+        includeCodeLists ? repository.codeLists() : null,
+        null);
   }
 
   private static ContractualWorkRecord toRecord(RecordRow row, CostRow cost) {
     Integer costValue = cost == null ? null : cost.cost();
-    CodeDescriptionDto contractualItem = cost == null || cost.itemCode() == null
-        ? null
-        : new CodeDescriptionDto(String.valueOf(cost.itemCode()), cost.itemName());
+    CodeDescriptionDto contractualItem =
+        cost == null || cost.itemCode() == null
+            ? null
+            : new CodeDescriptionDto(String.valueOf(cost.itemCode()), cost.itemName());
     String itemDescription = cost == null ? null : cost.itemDescription();
 
     return new ContractualWorkRecord(
@@ -221,13 +235,17 @@ public class Schedule9Service {
    * @param millId the mill id (context already validated by the controller, AD-4)
    * @param year the reporting year
    * @param request the entered fields
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed editability)
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed
+   *     editability)
    * @param user the acting user id (audit columns)
    * @return the recomputed document, the new record included
    */
   @Transactional
   public Schedule9Response addRecord(
-      long millId, int year, ContractualWorkRecordRequest request, boolean callerMayEdit,
+      long millId,
+      int year,
+      ContractualWorkRecordRequest request,
+      boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
     validateWrite(request);
@@ -235,16 +253,26 @@ public class Schedule9Service {
     try {
       int recordId = repository.nextContractualWorkReportId();
       repository.insertRecord(
-          recordId, millId, year,
-          request.contractorId(), sideSlopeToStore(itemCode, request.sideSlopePct()),
-          request.numberOfUnits(), request.unitCode(),
+          recordId,
+          millId,
+          year,
+          request.contractorId(),
+          sideSlopeToStore(itemCode, request.sideSlopePct()),
+          request.numberOfUnits(),
+          request.unitCode(),
           unitDescriptionToStore(request.unitCode(), request.unitDescription()),
           request.sourceCode(),
           sourceDescriptionToStore(request.sourceCode(), request.sourceDescription()),
-          request.biogeoclimaticZone(), request.comments(), user);
+          request.biogeoclimaticZone(),
+          request.comments(),
+          user);
       repository.insertCostLine(
-          repository.nextCostDetailId(), recordId, itemCode, request.cost(),
-          itemDescriptionToStore(itemCode, request.itemDescription()), user);
+          repository.nextCostDetailId(),
+          recordId,
+          itemCode,
+          request.cost(),
+          itemDescriptionToStore(itemCode, request.itemDescription()),
+          user);
     } catch (DataAccessException ex) {
       logWriteFailure("add", millId, year, null, ex);
       throw new ScheduleNotSavedException();
@@ -253,9 +281,9 @@ public class Schedule9Service {
   }
 
   /**
-   * Edit one record in place and return the recomputed document (S02, S07). Optimistic-locked on the
-   * master's own {@code REVISION_COUNT}: a stale token → 409, an unknown or foreign id → 404. The
-   * cost line is updated as the child in the same transaction.
+   * Edit one record in place and return the recomputed document (S02, S07). Optimistic-locked on
+   * the master's own {@code REVISION_COUNT}: a stale token → 409, an unknown or foreign id → 404.
+   * The cost line is updated as the child in the same transaction.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -267,11 +295,16 @@ public class Schedule9Service {
    */
   @Transactional
   public Schedule9Response updateRecord(
-      long millId, int year, int recordId, ContractualWorkRecordRequest request,
-      boolean callerMayEdit, String user) {
+      long millId,
+      int year,
+      int recordId,
+      ContractualWorkRecordRequest request,
+      boolean callerMayEdit,
+      String user) {
     requireDraft(millId, year);
     // Defence in depth for the AR11 token: the API's OnUpdate group already rejects a null
-    // revisionCount as a clean 400, but this method unboxes it, so a direct caller that bypassed the
+    // revisionCount as a clean 400, but this method unboxes it, so a direct caller that bypassed
+    // the
     // group would otherwise NPE into a 500. Never a coerced 409 (the 2.1 lesson).
     if (request.revisionCount() == null) {
       throw new RevisionCountRequiredException();
@@ -279,14 +312,22 @@ public class Schedule9Service {
     validateWrite(request);
     int itemCode = request.contractualItemCode();
     try {
-      int updated = repository.updateRecord(
-          recordId, millId, year, request.revisionCount(),
-          request.contractorId(), sideSlopeToStore(itemCode, request.sideSlopePct()),
-          request.numberOfUnits(), request.unitCode(),
-          unitDescriptionToStore(request.unitCode(), request.unitDescription()),
-          request.sourceCode(),
-          sourceDescriptionToStore(request.sourceCode(), request.sourceDescription()),
-          request.biogeoclimaticZone(), request.comments(), user);
+      int updated =
+          repository.updateRecord(
+              recordId,
+              millId,
+              year,
+              request.revisionCount(),
+              request.contractorId(),
+              sideSlopeToStore(itemCode, request.sideSlopePct()),
+              request.numberOfUnits(),
+              request.unitCode(),
+              unitDescriptionToStore(request.unitCode(), request.unitDescription()),
+              request.sourceCode(),
+              sourceDescriptionToStore(request.sourceCode(), request.sourceDescription()),
+              request.biogeoclimaticZone(),
+              request.comments(),
+              user);
       if (updated == 0) {
         // Zero rows means the id is absent/foreign OR the token is stale; the guarded UPDATE cannot
         // tell which. Only the scoped probe can.
@@ -296,8 +337,11 @@ public class Schedule9Service {
         throw new StaleRevisionException();
       }
       repository.upsertCostLine(
-          recordId, itemCode, request.cost(),
-          itemDescriptionToStore(itemCode, request.itemDescription()), user);
+          recordId,
+          itemCode,
+          request.cost(),
+          itemDescriptionToStore(itemCode, request.itemDescription()),
+          user);
     } catch (DataAccessException ex) {
       logWriteFailure("update", millId, year, recordId, ex);
       throw new ScheduleNotSavedException();
@@ -307,9 +351,9 @@ public class Schedule9Service {
 
   /**
    * Delete one record and its cost line, then return the recomputed document (S10). Children go
-   * FIRST (the parent FK is {@code ON DELETE NO ACTION} in delivery). Carries no revision token, so a
-   * delete cannot be rejected as stale; the scoped existence probe runs first so a foreign or unknown
-   * id is a 404 before anything is removed.
+   * FIRST (the parent FK is {@code ON DELETE NO ACTION} in delivery). Carries no revision token, so
+   * a delete cannot be rejected as stale; the scoped existence probe runs first so a foreign or
+   * unknown id is a 404 before anything is removed.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -352,18 +396,18 @@ public class Schedule9Service {
 
   /**
    * The FLD-001 required check: one {@code javax.faces.component.UIInput.REQUIRED} line per missing
-   * field in screen order. Only the FIVE fields legacy marks {@code required="true"} in
-   * {@code schedule9.xhtml} are enforced — Company ID, Contractual Item, Unit Type, Biogeoclimatic
-   * Zone, Source. All missing fields report together on one 400 (the FieldValuesRequiredException
+   * field in screen order. Only the FIVE fields legacy marks {@code required="true"} in {@code
+   * schedule9.xhtml} are enforced — Company ID, Contractual Item, Unit Type, Biogeoclimatic Zone,
+   * Source. All missing fields report together on one 400 (the FieldValuesRequiredException
    * contract).
    *
    * <p><strong>The three "Other" descriptions are NOT required at Save</strong> — legacy leaves
    * {@code itemDescription} with no {@code required} attribute ({@code schedule9.xhtml:117}), marks
-   * {@code unitDescription} {@code required="false"} (:183), and guards {@code sourceDescription} with
-   * a MISSPELLED {@code require=} that JSF silently ignores (:253). So a blank "Other" description
-   * SAVES; the field is only conditionally STORED (nulled when its driver is not "Other"), never
-   * required. Dev Note (D) flagged exactly this typo to verify — confirmed at dev, and the epics'
-   * "required only when Other" reading of AC3 is the recorded deviation.
+   * {@code unitDescription} {@code required="false"} (:183), and guards {@code sourceDescription}
+   * with a MISSPELLED {@code require=} that JSF silently ignores (:253). So a blank "Other"
+   * description SAVES; the field is only conditionally STORED (nulled when its driver is not
+   * "Other"), never required. Dev Note (D) flagged exactly this typo to verify — confirmed at dev,
+   * and the epics' "required only when Other" reading of AC3 is the recorded deviation.
    */
   private static void validateRequired(ContractualWorkRecordRequest request) {
     List<String> missing = new ArrayList<>();
@@ -408,7 +452,8 @@ public class Schedule9Service {
     }
   }
 
-  // Conditional-null rules (BR-04): a dependent field is stored only while its driver enables it, so
+  // Conditional-null rules (BR-04): a dependent field is stored only while its driver enables it,
+  // so
   // changing the driver clears the dependent (legacy nulls them in the on-change setters).
 
   private static String itemDescriptionToStore(int itemCode, String itemDescription) {
@@ -417,8 +462,9 @@ public class Schedule9Service {
 
   private static Integer sideSlopeToStore(Integer itemCode, Integer sideSlopePct) {
     return itemCode != null
-        && (itemCode == ITEM_ROAD_DEACTIVATE_SEMI || itemCode == ITEM_ROAD_DEACTIVATE_PERM)
-        ? sideSlopePct : null;
+            && (itemCode == ITEM_ROAD_DEACTIVATE_SEMI || itemCode == ITEM_ROAD_DEACTIVATE_PERM)
+        ? sideSlopePct
+        : null;
   }
 
   private static String unitDescriptionToStore(String unitCode, String unitDescription) {
@@ -436,8 +482,9 @@ public class Schedule9Service {
   /**
    * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
    * AD-9). The {@code FOR UPDATE} lock is load-bearing — it holds the status for the whole
-   * transaction so a transition cannot slip between the gate and the write it guards. Never reads the
-   * silviculture track. The mill/year context (400/404/409) is already validated by the controller.
+   * transaction so a transition cannot slip between the gate and the write it guards. Never reads
+   * the silviculture track. The mill/year context (400/404/409) is already validated by the
+   * controller.
    */
   private void requireDraft(long millId, int year) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
@@ -449,16 +496,23 @@ public class Schedule9Service {
   /** Class name plus most-specific cause only — an ORA code carries no cost/unit values (AD-11). */
   private static void logWriteFailure(
       String op, long millId, int year, Integer recordId, DataAccessException ex) {
-    log.warn("Schedule 9 {} failed for mill {} year {} record {} [{}]: {}",
-        op, millId, year, recordId, ex.getClass().getSimpleName(),
+    log.warn(
+        "Schedule 9 {} failed for mill {} year {} record {} [{}]: {}",
+        op,
+        millId,
+        year,
+        recordId,
+        ex.getClass().getSimpleName(),
         NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
   }
 
   // ===============================================================================================
   // Check Status (Story 9.2, BR-08) — read-only, mutates nothing, NOT Draft-gated (VIEW_SCHEDULE
-  // only, so a Submitted mill can still be checked). Reproduces Schedule9CheckStatus.validateSchedule
+  // only, so a Submitted mill can still be checked). Reproduces
+  // Schedule9CheckStatus.validateSchedule
   // exactly: the eight fields, the 1-based row number in the title, the side-slope 0..99 bound, and
-  // the base validator's invalidRangeErrorMsg (NOT the per-field save messages) for a range failure.
+  // the base validator's invalidRangeErrorMsg (NOT the per-field save messages) for a range
+  // failure.
   // ===============================================================================================
 
   /**
@@ -472,8 +526,10 @@ public class Schedule9Service {
    */
   @Transactional(readOnly = true)
   public Schedule9CheckStatusResponse checkStatus(long millId, int year) {
-    Map<Integer, CostRow> costByRecord = repository.findCostLines(millId, year).stream()
-        .collect(Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
+    Map<Integer, CostRow> costByRecord =
+        repository.findCostLines(millId, year).stream()
+            .collect(
+                Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
     List<RecordRow> records = repository.findRecords(millId, year);
 
     List<MessageInfo> errors = new ArrayList<>();
@@ -490,8 +546,11 @@ public class Schedule9Service {
     return new Schedule9CheckStatusResponse(false, errors, null);
   }
 
-  /** The eight checks for one record, in legacy validateSchedule order, appended to {@code errors}. */
-  private void evaluateRecord(int rowNumber, RecordRow row, CostRow cost, List<MessageInfo> errors) {
+  /**
+   * The eight checks for one record, in legacy validateSchedule order, appended to {@code errors}.
+   */
+  private void evaluateRecord(
+      int rowNumber, RecordRow row, CostRow cost, List<MessageInfo> errors) {
     Integer itemCode = cost == null ? null : cost.itemCode();
 
     if (StringUtils.isBlank(row.contractorId())) {
@@ -500,17 +559,21 @@ public class Schedule9Service {
     if (itemCode == null) {
       errors.add(valueRequired(rowNumber, CHECK_CONTRACTUAL_ITEM));
     }
-    // Side Slope is checked ONLY when enabled (item 111/112); required-when-enabled AND range 0..99.
-    boolean sideSlopeEnabled = itemCode != null
-        && (itemCode == ITEM_ROAD_DEACTIVATE_SEMI || itemCode == ITEM_ROAD_DEACTIVATE_PERM);
+    // Side Slope is checked ONLY when enabled (item 111/112); required-when-enabled AND range
+    // 0..99.
+    boolean sideSlopeEnabled =
+        itemCode != null
+            && (itemCode == ITEM_ROAD_DEACTIVATE_SEMI || itemCode == ITEM_ROAD_DEACTIVATE_PERM);
     if (sideSlopeEnabled) {
       if (row.sideSlopePct() == null) {
         errors.add(valueRequired(rowNumber, CHECK_SIDE_SLOPE));
       } else if (outOfRange(row.sideSlopePct(), SIDE_SLOPE_CHECK_MAX)) {
-        errors.add(rangeError(rowNumber, CHECK_SIDE_SLOPE, SIDE_SLOPE_CHECK_MAX, FORMAT_SIDE_SLOPE));
+        errors.add(
+            rangeError(rowNumber, CHECK_SIDE_SLOPE, SIDE_SLOPE_CHECK_MAX, FORMAT_SIDE_SLOPE));
       }
     }
-    // Number of Units — always checked; blank is flagged (the Save-vs-Check gap), range 0..99,999.9.
+    // Number of Units — always checked; blank is flagged (the Save-vs-Check gap), range
+    // 0..99,999.9.
     if (row.numberOfUnits() == null) {
       errors.add(valueRequired(rowNumber, CHECK_NUMBER_OF_UNITS));
     } else if (outOfRange(row.numberOfUnits(), UNITS_MAX)) {
@@ -539,7 +602,9 @@ public class Schedule9Service {
     return d < 0.0 || d > max;
   }
 
-  /** {@code "Contractual Work Report Id : {row}{segment}: Value Required"} — the legacy composition. */
+  /**
+   * {@code "Contractual Work Report Id : {row}{segment}: Value Required"} — the legacy composition.
+   */
   private MessageInfo valueRequired(int rowNumber, String segment) {
     String text = CHECK_TITLE_PREFIX + rowNumber + segment + ": " + resolve(MSG_VALUE_REQUIRED);
     return new MessageInfo(MSG_VALUE_REQUIRED, text);
@@ -547,8 +612,9 @@ public class Schedule9Service {
 
   /**
    * The range line, byte-for-byte with legacy: title + {@code ": "} + {@code invalidRangeErrorMsg}
-   * resolved with the field's own bounds. Both bounds are formatted with the SAME pattern (the legacy
-   * base validator passes {@code lowerLimitFormat} for both), so the output matches the running app.
+   * resolved with the field's own bounds. Both bounds are formatted with the SAME pattern (the
+   * legacy base validator passes {@code lowerLimitFormat} for both), so the output matches the
+   * running app.
    */
   private MessageInfo rangeError(int rowNumber, String segment, double max, String pattern) {
     String lower = new DecimalFormat(pattern, NUMBER_SYMBOLS).format(0.0);

@@ -12,9 +12,9 @@ import java.util.List;
  * 7.1 Task 1): a dedicated master table {@code THE.CAMP_REPORT} (category {@code '5'}) whose
  * category amounts live as KEYED rows in the shared {@code THE.ILCR_COST_REPORT_DETAIL}, joined by
  * {@code CAMP_REPORT_ID} — items 56/58/59/60/61/63-67/141/142 are the fixed grid, 62/68 the
- * sub-page rows (counted here, itemized in 7.4). There is NO category-{@code '5'}
- * {@code ILCR_REPORT_SUMMARY} row (gate (ii): zero rows; summaries exist only for categories
- * 1/2/3), so Schedule 5 is summary-less like Schedules 4 and 6.
+ * sub-page rows (counted here, itemized in 7.4). There is NO category-{@code '5'} {@code
+ * ILCR_REPORT_SUMMARY} row (gate (ii): zero rows; summaries exist only for categories 1/2/3), so
+ * Schedule 5 is summary-less like Schedules 4 and 6.
  *
  * <p>{@code trackStatus} = {@code ILCR_MILL_REPORT_STATUS_CODE} — the Schedules 1-10 track, never
  * the silviculture track (AD-9). {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND
@@ -27,9 +27,9 @@ import java.util.List;
  * (b)). A valid, ACTIVE mill/year with no camps returns {@code camps: []}, never a 404 (deviation
  * (a)); 404 is reserved for a missing {@code ILCR_MILL_REPORT_STATUS} context row (ERR-005).
  *
- * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson
- * {@code non_null} omits it), carrying the resolved {@link MessageInfo} on the Story 7.2 save
- * echo — which is why {@link #withMessage} exists here now, so 7.2 needs no re-shape.
+ * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson {@code non_null}
+ * omits it), carrying the resolved {@link MessageInfo} on the Story 7.2 save echo — which is why
+ * {@link #withMessage} exists here now, so 7.2 needs no re-shape.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Schedule5Response(

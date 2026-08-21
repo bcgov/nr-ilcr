@@ -13,9 +13,9 @@ import org.springframework.stereotype.Component;
  * Central role &rarr; action map and the {@code @PreAuthorize} permission checker (AD-7).
  *
  * <p>Exposed as the Spring bean {@code permissions} so controllers authorize by naming an action:
- * {@code @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")}. No controller
- * references a role literal or a per-page boolean flag. This mirrors CSP's {@code PermissionService}
- * but ILCR's error contract and role set are its own.
+ * {@code @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")}. No
+ * controller references a role literal or a per-page boolean flag. This mirrors CSP's {@code
+ * PermissionService} but ILCR's error contract and role set are its own.
  */
 @Component("permissions")
 public class SchedulePermissions {
@@ -30,8 +30,11 @@ public class SchedulePermissions {
     ROLE_ACTIONS.put(
         Role.ADMIN,
         EnumSet.of(
-            Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE, Action.MAINTAIN_CODE_TABLES,
-            Action.OPEN_REPORTING_YEAR, Action.EDIT_HOME_CONTENT));
+            Action.VIEW_SCHEDULE,
+            Action.EDIT_SCHEDULE,
+            Action.MAINTAIN_CODE_TABLES,
+            Action.OPEN_REPORTING_YEAR,
+            Action.EDIT_HOME_CONTENT));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 

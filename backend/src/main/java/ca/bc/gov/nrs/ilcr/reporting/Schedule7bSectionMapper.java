@@ -10,23 +10,22 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Maps the Schedule 7B read document to the section datasource: one detail row per culvert, with the
- * Type resolved code&rarr;description from the document's own {@code codeLists} (legacy printed the
- * description) and the BR-05 total the service computed. The {@code culvertEntryTimestamp} legacy
- * field has no backend source and is omitted.
+ * Maps the Schedule 7B read document to the section datasource: one detail row per culvert, with
+ * the Type resolved code&rarr;description from the document's own {@code codeLists} (legacy printed
+ * the description) and the BR-05 total the service computed. The {@code culvertEntryTimestamp}
+ * legacy field has no backend source and is omitted.
  */
 final class Schedule7bSectionMapper {
 
-  private Schedule7bSectionMapper() {
-  }
+  private Schedule7bSectionMapper() {}
 
   static SectionData map(Schedule7bResponse response) {
     List<Culvert> culverts = response.culverts();
     if (culverts == null || culverts.isEmpty()) {
       return null;
     }
-    Map<String, String> types = descriptions(
-        response.codeLists() == null ? null : response.codeLists().culvertTypes());
+    Map<String, String> types =
+        descriptions(response.codeLists() == null ? null : response.codeLists().culvertTypes());
     List<Map<String, ?>> rows = new ArrayList<>(culverts.size());
     for (Culvert culvert : culverts) {
       rows.add(toRow(culvert, types));
@@ -61,8 +60,9 @@ final class Schedule7bSectionMapper {
     }
     return options.stream()
         .filter(option -> option.code() != null)
-        .collect(Collectors.toMap(
-            CodeDescriptionDto::code, Schedule7bSectionMapper::descriptionOf, (a, b) -> a));
+        .collect(
+            Collectors.toMap(
+                CodeDescriptionDto::code, Schedule7bSectionMapper::descriptionOf, (a, b) -> a));
   }
 
   private static String descriptionOf(CodeDescriptionDto option) {

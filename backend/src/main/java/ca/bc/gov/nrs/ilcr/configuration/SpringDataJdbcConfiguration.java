@@ -20,19 +20,18 @@ import org.springframework.data.jdbc.repository.config.AbstractJdbcConfiguration
 import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
 
 /**
- * Explicitly enables Spring Data JDBC (AD-3). This app hand-defines its datasource wiring in
- * {@link DataSourceConfiguration} rather than using Boot's defaults, so Boot's
- * {@code JdbcRepositoriesAutoConfiguration} does not activate; declaring the Spring Data JDBC
+ * Explicitly enables Spring Data JDBC (AD-3). This app hand-defines its datasource wiring in {@link
+ * DataSourceConfiguration} rather than using Boot's defaults, so Boot's {@code
+ * JdbcRepositoriesAutoConfiguration} does not activate; declaring the Spring Data JDBC
  * infrastructure here (via {@link AbstractJdbcConfiguration}: mapping context, converter, dialect,
- * aggregate template) plus {@link EnableJdbcRepositories} makes it deterministic. The Oracle dialect
- * is resolved from the live JDBC connection.
+ * aggregate template) plus {@link EnableJdbcRepositories} makes it deterministic. The Oracle
+ * dialect is resolved from the live JDBC connection.
  *
  * <p>Scoped to the repository packages so scanning only picks up the Spring Data repository
- * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link Schedule3Repository},
- * {@link Schedule4Repository}, {@link MillContextRepository}, {@link Schedule11Repository}). Gated
- * on the same
- * {@code ilcr.datasource.enabled} flag as the datasource so contexts without a datasource are
- * unaffected.
+ * interfaces ({@link Schedule1Repository}, {@link Schedule2Repository}, {@link
+ * Schedule3Repository}, {@link Schedule4Repository}, {@link MillContextRepository}, {@link
+ * Schedule11Repository}). Gated on the same {@code ilcr.datasource.enabled} flag as the datasource
+ * so contexts without a datasource are unaffected.
  */
 @Configuration
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -53,5 +52,4 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       MillContextRepository.class,
       MillUserProfileXrefRepository.class
     })
-public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {
-}
+public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {}

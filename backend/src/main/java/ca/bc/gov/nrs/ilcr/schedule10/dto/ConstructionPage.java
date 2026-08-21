@@ -7,12 +7,11 @@ import java.util.List;
  * One Schedule 10 construction page, owning its road-detail rows.
  *
  * <p>The details are <strong>nested</strong> rather than served as a flat sibling list keyed by
- * page
- * id — the page owns them, and flattening would push the grouping onto every consumer.
+ * page id — the page owns them, and flattening would push the grouping onto every consumer.
  *
  * @param pageId the {@code ROAD_CONSTRUCTION_REPRT_ID}
- * @param pageNumber positional 1-based number assigned on read; not stored
- *     ({@code Schedule10DAO:842-846})
+ * @param pageNumber positional 1-based number assigned on read; not stored ({@code
+ *     Schedule10DAO:842-846})
  * @param pageLabel the legacy summary-list label, reproduced byte-for-byte
  * @param forestRegionCode the region code
  * @param tsaNumber the TSA number, or absent on a TFL-located page (BR-05)
@@ -41,5 +40,4 @@ public record ConstructionPage(
     String constructionPeriod,
     int roadDetailCount,
     Integer revisionCount,
-    List<RoadDetail> roadDetails) {
-}
+    List<RoadDetail> roadDetails) {}

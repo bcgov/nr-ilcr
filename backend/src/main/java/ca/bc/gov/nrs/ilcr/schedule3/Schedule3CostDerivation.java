@@ -21,27 +21,29 @@ import org.springframework.stereotype.Component;
  * loaded Schedule 3 and computed {@code subtotalActualCosts.crownCost} live from the fixed lines
  * every render ({@code Schedule1MB.getForestManagementAdminCal} → {@code Schedule3DO
  * .getSubtotalActualCosts().getCrownCost()}). The rewrite briefly read cost-item ids 115/135 as if
- * they were persisted, but {@link Schedule3Service} (like legacy) only ever COMPUTES those subtotals
- * in memory — they are never written to {@code ILCR_COST_REPORT_DETAIL} — so the read always returned
- * null and Forest Management Administration cost surfaced as 0. This component re-derives the value
- * the same way {@link Schedule3Service#getSchedule3} does, so the two stay consistent (the shared
- * fixture on summary 1003 cross-checks them: {@code Schedule3DocumentIT.subtotalActualCosts.crown ==
- * Schedule1CrownPrefillIT.forestMgmtAdminCost}).
+ * they were persisted, but {@link Schedule3Service} (like legacy) only ever COMPUTES those
+ * subtotals in memory — they are never written to {@code ILCR_COST_REPORT_DETAIL} — so the read
+ * always returned null and Forest Management Administration cost surfaced as 0. This component
+ * re-derives the value the same way {@link Schedule3Service#getSchedule3} does, so the two stay
+ * consistent (the shared fixture on summary 1003 cross-checks them: {@code
+ * Schedule3DocumentIT.subtotalActualCosts.crown == Schedule1CrownPrefillIT.forestMgmtAdminCost}).
  *
- * <p>Kept as a separate component (not a method on {@link Schedule3Service}) because
- * {@code Schedule3Service} already depends on {@code Schedule1Service} for the BR-09 crown push;
- * having {@code Schedule1Service} depend back on {@code Schedule3Service} would be a cycle. This
- * component depends only on {@link Schedule3Repository}.
+ * <p>Kept as a separate component (not a method on {@link Schedule3Service}) because {@code
+ * Schedule3Service} already depends on {@code Schedule1Service} for the BR-09 crown push; having
+ * {@code Schedule1Service} depend back on {@code Schedule3Service} would be a cycle. This component
+ * depends only on {@link Schedule3Repository}.
  */
 @Component
 public class Schedule3CostDerivation {
 
   // The fixed admin-cost LINES, the LineSpec record, and the PO&P/other-acceptable derivation rules
-  // (resolvePop, isTotalComments) live in Schedule3Constants — the single source of truth shared with
+  // (resolvePop, isTotalComments) live in Schedule3Constants — the single source of truth shared
+  // with
   // Schedule3Service, so the two derive the Subtotal Actual Costs identically and can never drift.
-  private static final int CODE_SILV_ADMIN = Schedule3Constants.CODE_SILV_ADMIN; // BR-04 Less Silv Admin
-  private static final int CODE_POP_TIMBER = 118;      // PO&P Timber volume (Scaling ratio numerator)
-  private static final int CODE_CROWN_TIMBER = 119;    // BR-03 Crown Timber pre-fill source (volume)
+  private static final int CODE_SILV_ADMIN =
+      Schedule3Constants.CODE_SILV_ADMIN; // BR-04 Less Silv Admin
+  private static final int CODE_POP_TIMBER = 118; // PO&P Timber volume (Scaling ratio numerator)
+  private static final int CODE_CROWN_TIMBER = 119; // BR-03 Crown Timber pre-fill source (volume)
   private static final int CODE_OTHER_ACCEPTABLE = 124; // Other Acceptable Costs sub-page rows
 
   private final Schedule3Repository repository;
@@ -58,25 +60,30 @@ public class Schedule3CostDerivation {
    * @param silvicultureAdminCrownCost item-37 crown (PO&amp;P forced 0 ⇒ = its cost) — BR-04 Less
    *     Silviculture Admin cost; null when no item-37 row
    * @param forestMgmtAdminCrownCost the crown of Schedule 3's Subtotal Actual Costs (Σ fixed-line
-   *     Harvest − Σ PO&amp;P + Other Acceptable) — BR-04 Forest Management Administration cost; null
-   *     only when no Schedule 3 summary exists (0 when the summary exists but is empty)
+   *     Harvest − Σ PO&amp;P + Other Acceptable) — BR-04 Forest Management Administration cost;
+   *     null only when no Schedule 3 summary exists (0 when the summary exists but is empty)
    */
   public record Schedule1Sources(
       BigDecimal crownTimberVolume,
       Integer silvicultureAdminCrownCost,
-      Long forestMgmtAdminCrownCost) {
-  }
+      Long forestMgmtAdminCrownCost) {}
 
   private static final Schedule1Sources EMPTY = new Schedule1Sources(null, null, null);
 
-  /** Resolve the BR-03/BR-04 Schedule-3 sources for Schedule 1 (empty when no Schedule 3 summary). */
+  /**
+   * Resolve the BR-03/BR-04 Schedule-3 sources for Schedule 1 (empty when no Schedule 3 summary).
+   */
   public Schedule1Sources schedule1Sources(long millId, int year) {
-    return repository.findSummary(millId, year)
+    return repository
+        .findSummary(millId, year)
         .map(summary -> derive(repository.findDetails(summary.summaryId())))
         .orElse(EMPTY);
   }
 
-  /** Compute the sources from a summary's detail rows (mirrors {@link Schedule3Service#getSchedule3}). */
+  /**
+   * Compute the sources from a summary's detail rows (mirrors {@link
+   * Schedule3Service#getSchedule3}).
+   */
   private Schedule1Sources derive(List<DetailRow> details) {
     Map<Integer, DetailRow> byCode = new HashMap<>();
     List<DetailRow> acceptable = new ArrayList<>();
@@ -115,9 +122,7 @@ public class Schedule3CostDerivation {
     }
 
     return new Schedule1Sources(
-        crownTimberVolume,
-        costOf(byCode.get(CODE_SILV_ADMIN)),
-        harvest - pop);
+        crownTimberVolume, costOf(byCode.get(CODE_SILV_ADMIN)), harvest - pop);
   }
 
   /** Legacy {@code bigDecimalCostAddition}: null-tolerant (a null operand is treated as absent). */

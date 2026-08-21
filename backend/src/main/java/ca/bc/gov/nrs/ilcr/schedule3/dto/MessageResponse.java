@@ -7,5 +7,4 @@ package ca.bc.gov.nrs.ilcr.schedule3.dto;
  *
  * @param message the success message (key + verbatim text)
  */
-public record MessageResponse(MessageInfo message) {
-}
+public record MessageResponse(MessageInfo message) {}

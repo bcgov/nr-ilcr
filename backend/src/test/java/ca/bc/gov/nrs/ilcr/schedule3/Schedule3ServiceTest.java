@@ -23,8 +23,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit test for the Schedule 3 document assembly + server-side derivation cascade (AD-5/AD-6),
- * reproducing the legacy {@code Schedule3DO}/{@code CostType} getter arithmetic. Mocked repository —
- * no DB, no Spring.
+ * reproducing the legacy {@code Schedule3DO}/{@code CostType} getter arithmetic. Mocked repository
+ * — no DB, no Spring.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule3ServiceTest {
@@ -32,17 +32,13 @@ class Schedule3ServiceTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule3Repository repository;
+  @Mock private Schedule3Repository repository;
 
-  @Mock
-  private ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service schedule1Service;
+  @Mock private ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service schedule1Service;
 
-  @Mock
-  private org.springframework.context.MessageSource messageSource;
+  @Mock private org.springframework.context.MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule3Service service;
+  @InjectMocks private Schedule3Service service;
 
   /** A cost detail row (no comments). */
   private static DetailRow cost(int code, Integer amount) {
@@ -72,23 +68,23 @@ class Schedule3ServiceTest {
     rows.add(cost(125, 40000));
     rows.add(cost(28, 50000));
     rows.add(cost(126, 20000));
-    rows.add(cost(29, 30000));       // Annual Rents — Harvest-only
+    rows.add(cost(29, 30000)); // Annual Rents — Harvest-only
     rows.add(cost(30, 285000));
     rows.add(cost(128, 155000));
     rows.add(cost(31, 40000));
     rows.add(cost(129, 10000));
     rows.add(cost(32, 25000));
     rows.add(cost(130, 5000));
-    rows.add(cost(33, 60000));       // Scaling — PO&P derived
+    rows.add(cost(33, 60000)); // Scaling — PO&P derived
     rows.add(cost(34, 35000));
     rows.add(cost(132, 15000));
     rows.add(cost(35, 45000));
     rows.add(cost(133, 5000));
     rows.add(cost(36, 80000));
     rows.add(cost(134, 20000));
-    rows.add(cost(37, 150000));      // Silviculture Admin — Harvest-only (V5)
-    rows.add(volume(118, "54321"));  // PO&P Timber volume
-    rows.add(volume(119, "54321"));  // Crown Timber volume
+    rows.add(cost(37, 150000)); // Silviculture Admin — Harvest-only (V5)
+    rows.add(volume(118, "54321")); // PO&P Timber volume
+    rows.add(volume(119, "54321")); // Crown Timber volume
     return rows;
   }
 
@@ -113,7 +109,8 @@ class Schedule3ServiceTest {
 
   @Test
   void scalingPop_derivedFromTimberVolumeRatio() {
-    // ratio = popTimberVol / (popTimberVol + crownTimberVol) = 54321/108642 = 0.5; pop = 0.5 * 60000.
+    // ratio = popTimberVol / (popTimberVol + crownTimberVol) = 54321/108642 = 0.5; pop = 0.5 *
+    // 60000.
     stub("D", "N", List.of(cost(33, 60000), volume(118, "54321"), volume(119, "54321")));
     CostLine scaling = line(service.getSchedule3(MILL, YEAR, true), 33);
     assertEquals(60000, scaling.harvest());
@@ -126,12 +123,14 @@ class Schedule3ServiceTest {
     stub("D", "Y", fullDocument());
     Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
 
-    // Subtotal Actual = 900000 / 300000 (== the V5-stored 115/135). Totals are Long (overflow-safe).
+    // Subtotal Actual = 900000 / 300000 (== the V5-stored 115/135). Totals are Long
+    // (overflow-safe).
     assertEquals(900000L, doc.subtotalActualCosts().harvest().longValue());
     assertEquals(300000L, doc.subtotalActualCosts().pop().longValue());
     assertEquals(600000L, doc.subtotalActualCosts().crown().longValue());
 
-    // Included Unacceptable = Annual Rents harvest (no item-38 rows); PO&P forced 0, crown = harvest.
+    // Included Unacceptable = Annual Rents harvest (no item-38 rows); PO&P forced 0, crown =
+    // harvest.
     assertEquals(30000L, doc.includedUnacceptableCosts().harvest().longValue());
     assertEquals(0L, doc.includedUnacceptableCosts().pop().longValue());
     assertEquals(30000L, doc.includedUnacceptableCosts().crown().longValue());
@@ -156,14 +155,14 @@ class Schedule3ServiceTest {
     // Override read from summary LOCATION; counts.
     assertEquals("Y", doc.overrideHarvestTotalPop());
     assertEquals(0, doc.otherAcceptableCount());
-    assertEquals(1, doc.unacceptableCount());  // +1 for the non-zero Annual Rents harvest
+    assertEquals(1, doc.unacceptableCount()); // +1 for the non-zero Annual Rents harvest
   }
 
   @Test
   void unacceptableCount_addsItem38RowsPlusAnnualRents() {
     List<DetailRow> rows = new ArrayList<>();
-    rows.add(cost(29, 30000));                                   // Annual Rents present → +1
-    rows.add(new DetailRow(38, null, 1000, "Fine A", null));    // two item-38 rows
+    rows.add(cost(29, 30000)); // Annual Rents present → +1
+    rows.add(new DetailRow(38, null, 1000, "Fine A", null)); // two item-38 rows
     rows.add(new DetailRow(38, null, 2000, "Fine B", null));
     stub("D", "N", rows);
     Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
@@ -181,16 +180,17 @@ class Schedule3ServiceTest {
   @Test
   void otherAcceptableCosts_groupedByCommentsKey() {
     // Two groups (GRP1/GRP2), each a TOT row (harvest) + a POP row.
-    List<DetailRow> rows = List.of(
-        new DetailRow(124, null, 10000, "Fuel", "SCH3_2_TOT_GRP1"),
-        new DetailRow(124, null, 4000, "Fuel", "SCH3_2_POP_GRP1"),
-        new DetailRow(124, null, 6000, "Tools", "SCH3_2_TOT_GRP2"),
-        new DetailRow(124, null, 1000, "Tools", "SCH3_2_POP_GRP2"));
+    List<DetailRow> rows =
+        List.of(
+            new DetailRow(124, null, 10000, "Fuel", "SCH3_2_TOT_GRP1"),
+            new DetailRow(124, null, 4000, "Fuel", "SCH3_2_POP_GRP1"),
+            new DetailRow(124, null, 6000, "Tools", "SCH3_2_TOT_GRP2"),
+            new DetailRow(124, null, 1000, "Tools", "SCH3_2_POP_GRP2"));
     stub("D", "N", rows);
     Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
     assertEquals(2, doc.otherAcceptableCount());
-    assertEquals(16000L, doc.subtotalOtherCosts().harvest().longValue());   // 10000 + 6000
-    assertEquals(5000L, doc.subtotalOtherCosts().pop().longValue());        // 4000 + 1000
+    assertEquals(16000L, doc.subtotalOtherCosts().harvest().longValue()); // 10000 + 6000
+    assertEquals(5000L, doc.subtotalOtherCosts().pop().longValue()); // 4000 + 1000
     assertEquals(11000L, doc.subtotalOtherCosts().crown().longValue());
   }
 

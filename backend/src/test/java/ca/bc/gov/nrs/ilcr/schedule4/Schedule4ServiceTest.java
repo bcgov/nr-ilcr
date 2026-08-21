@@ -23,8 +23,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for the Schedule 4 read assembly + server-side derivation (AD-5/AD-6). Mocked repository
- * — no DB, no Spring. Covers grouping a FAMILY of TRANSPORTATION_REPORT rows (sharing
+ * Unit test for the Schedule 4 read assembly + server-side derivation (AD-5/AD-6). Mocked
+ * repository — no DB, no Spring. Covers grouping a FAMILY of TRANSPORTATION_REPORT rows (sharing
  * LOCATION_DESCRIPTION) into one location, in-scope category mapping, FIXED vs DISTANCE kind,
  * <b>per-category distance taken from each category's own report</b> (delivery-DB confirmed — two
  * distance categories on one location can differ), perUnit derivation, the missing-category-data
@@ -36,11 +36,9 @@ class Schedule4ServiceTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule4Repository repository;
+  @Mock private Schedule4Repository repository;
 
-  @InjectMocks
-  private Schedule4Service service;
+  @InjectMocks private Schedule4Service service;
 
   @BeforeEach
   void noSubPageRowsByDefault() {
@@ -50,7 +48,9 @@ class Schedule4ServiceTest {
   }
 
   private static void eq(String expected, BigDecimal actual) {
-    assertEquals(0, new BigDecimal(expected).compareTo(actual),
+    assertEquals(
+        0,
+        new BigDecimal(expected).compareTo(actual),
         () -> "expected " + expected + " but was " + actual);
   }
 
@@ -62,22 +62,32 @@ class Schedule4ServiceTest {
   }
 
   /**
-   * Two-location Draft fixture matching the V7 514/2021 numbers. "Harbour Dump" is a FAMILY: a primary
-   * report 7001 (distance null) with the fixed categories, plus report 7011 (distance 120.5) for
-   * category 47 and report 7012 (distance 88.5 — DIFFERENT) for category 52.
+   * Two-location Draft fixture matching the V7 514/2021 numbers. "Harbour Dump" is a FAMILY: a
+   * primary report 7001 (distance null) with the fixed categories, plus report 7011 (distance
+   * 120.5) for category 47 and report 7012 (distance 88.5 — DIFFERENT) for category 52.
    */
   private void stubTwoLocationDraft() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Harbour Dump", null, null, 0),                 // primary, no distance
-        new LocationRow(7011, "Harbour Dump", new BigDecimal("120.5"), null, 0), // 47's own report
-        new LocationRow(7012, "Harbour Dump", new BigDecimal("88.5"), null, 0),  // 52's own report
-        new LocationRow(7002, "Empty Landing", null, null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
-        new DetailRow(7001, 40, new BigDecimal("2000"), 100000), // fixed
-        new DetailRow(7001, 41, new BigDecimal("4000"), 60000),  // fixed
-        new DetailRow(7011, 47, new BigDecimal("500"), 25000),   // distance (own report 7011)
-        new DetailRow(7012, 52, new BigDecimal("300"), null)));  // distance (own report 7012), null cost
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(7001, "Harbour Dump", null, null, 0), // primary, no distance
+                new LocationRow(
+                    7011, "Harbour Dump", new BigDecimal("120.5"), null, 0), // 47's own report
+                new LocationRow(
+                    7012, "Harbour Dump", new BigDecimal("88.5"), null, 0), // 52's own report
+                new LocationRow(7002, "Empty Landing", null, null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new DetailRow(7001, 40, new BigDecimal("2000"), 100000), // fixed
+                new DetailRow(7001, 41, new BigDecimal("4000"), 60000), // fixed
+                new DetailRow(7011, 47, new BigDecimal("500"), 25000), // distance (own report 7011)
+                new DetailRow(
+                    7012,
+                    52,
+                    new BigDecimal("300"),
+                    null))); // distance (own report 7012), null cost
   }
 
   @Test
@@ -126,8 +136,8 @@ class Schedule4ServiceTest {
     stubTwoLocationDraft();
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
     CategoryAmount railHaul = categoryByCode(a, 52);
-    eq("300", railHaul.volume());  // present value shown
-    assertNull(railHaul.cost());   // missing cost
+    eq("300", railHaul.volume()); // present value shown
+    assertNull(railHaul.cost()); // missing cost
     assertNull(railHaul.perUnit()); // perUnit null when cost null
   }
 
@@ -150,10 +160,10 @@ class Schedule4ServiceTest {
   @Test
   void editable_falseWhenNotDraft_locationsStillListed() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7003, "Submitted Dump", null, null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
-        new DetailRow(7003, 42, new BigDecimal("1000"), 20000)));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(7003, "Submitted Dump", null, null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(List.of(new DetailRow(7003, 42, new BigDecimal("1000"), 20000)));
     Schedule4Response doc = service.getSchedule4(MILL, YEAR, true);
     assertFalse(doc.editable());
     assertEquals(1, doc.locations().size()); // still listed
@@ -169,10 +179,10 @@ class Schedule4ServiceTest {
   @Test
   void perUnit_nullWhenVolumeZero() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Zero Vol", null, null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
-        new DetailRow(7001, 40, BigDecimal.ZERO, 25000)));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(7001, "Zero Vol", null, null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(List.of(new DetailRow(7001, 40, BigDecimal.ZERO, 25000)));
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
     assertNull(categoryByCode(a, 40).perUnit());
   }
@@ -181,10 +191,10 @@ class Schedule4ServiceTest {
   void perUnit_roundsToScale4HalfUp_onNonTerminatingQuotient() {
     // 200000 / 30000 = 6.66666... -> scale-4 HALF_UP -> 6.6667.
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Round", null, null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
-        new DetailRow(7001, 40, new BigDecimal("30000"), 200000)));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(List.of(new LocationRow(7001, "Round", null, null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(List.of(new DetailRow(7001, 40, new BigDecimal("30000"), 200000)));
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
     assertEquals("6.6667", categoryByCode(a, 40).perUnit().toPlainString());
   }
@@ -192,16 +202,21 @@ class Schedule4ServiceTest {
   @Test
   void volumeAndDistance_normalizedToNaturalForm() {
     // Oracle NUMBER(18,4) returns scale-4 values (2000.0000, 120.5000). Normalize so a whole value
-    // serializes as an integer and a decimal drops trailing zeros — Schedule 1/2 wire-contract parity
+    // serializes as an integer and a decimal drops trailing zeros — Schedule 1/2 wire-contract
+    // parity
     // (compareTo is scale-insensitive and would not catch a 2000.0000 regression). Distance is
     // per-category (from category 47's own report 7011).
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of(
-        new LocationRow(7001, "Scale", null, null, 0),
-        new LocationRow(7011, "Scale", new BigDecimal("120.5000"), null, 0)));
-    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of(
-        new DetailRow(7001, 40, new BigDecimal("2000.0000"), 100000),
-        new DetailRow(7011, 47, new BigDecimal("500.0000"), 25000)));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(7001, "Scale", null, null, 0),
+                new LocationRow(7011, "Scale", new BigDecimal("120.5000"), null, 0)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new DetailRow(7001, 40, new BigDecimal("2000.0000"), 100000),
+                new DetailRow(7011, 47, new BigDecimal("500.0000"), 25000)));
     Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
     assertEquals("2000", categoryByCode(a, 40).volume().toPlainString());
     assertEquals("120.5", categoryByCode(a, 47).distance().toPlainString());

@@ -47,15 +47,14 @@ class Schedule8WriteServiceTest {
   private static final int SAMPLE = 9900;
   private static final int ROW = 7700;
 
-  @Mock
-  private Schedule8Repository repository;
+  @Mock private Schedule8Repository repository;
 
-  @InjectMocks
-  private Schedule8Service service;
+  @InjectMocks private Schedule8Service service;
 
   @BeforeEach
   void stubReadsForRecompute() {
-    // The write methods recompute the document at the end via getSchedule8 — default its reads empty.
+    // The write methods recompute the document at the end via getSchedule8 — default its reads
+    // empty.
     lenient().when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
@@ -77,20 +76,22 @@ class Schedule8WriteServiceTest {
   }
 
   private static Schedule8PageRequest pageEdit() {
-    return new Schedule8PageRequest(PAGE, 3, "LIC", "SC", "R", "BZ", "TSA5", null, "B", "Div",
-        "Contact", "250", "CP", "notes");
+    return new Schedule8PageRequest(
+        PAGE, 3, "LIC", "SC", "R", "BZ", "TSA5", null, "B", "Div", "Contact", "250", "CP", "notes");
   }
 
   private static Schedule8SampleRequest sample(Integer id, Integer rev) {
-    return new Schedule8SampleRequest(id, rev, "C", "CB", 40, 0, 0, 0, 0, 0, null, null, null, null,
-        null, null, null, null, null, null, null);
+    return new Schedule8SampleRequest(
+        id, rev, "C", "CB", 40, 0, 0, 0, 0, 0, null, null, null, null, null, null, null, null, null,
+        null, null);
   }
 
   private static Schedule8RateRequest rate(Integer id, Integer rev) {
     return new Schedule8RateRequest(id, rev, 47, new BigDecimal("10"), "CT", "desc");
   }
 
-  // ---- savePage edit + persistence-error branches ------------------------------------------------
+  // ---- savePage edit + persistence-error branches
+  // ------------------------------------------------
 
   @Test
   void savePage_edit_bumpsThenUpdatesFields() {
@@ -100,53 +101,91 @@ class Schedule8WriteServiceTest {
 
     service.savePage(MILL, YEAR, pageEdit(), true, USER);
 
-    verify(repository).updatePageFields(eq(PAGE), eq("SC"), eq("R"), eq("BZ"), eq("TSA5"), eq("B"),
-        any(), eq("CP"), eq("LIC"), eq("Div"), eq("Contact"), eq("250"), eq("notes"), eq(USER));
+    verify(repository)
+        .updatePageFields(
+            eq(PAGE),
+            eq("SC"),
+            eq("R"),
+            eq("BZ"),
+            eq("TSA5"),
+            eq("B"),
+            any(),
+            eq("CP"),
+            eq("LIC"),
+            eq("Div"),
+            eq("Contact"),
+            eq("250"),
+            eq("notes"),
+            eq(USER));
   }
 
   @Test
   void savePage_editForeignPage_throwsNotFound_noWrite() {
-    // H1 — the page id is not in this mill/year: must 404, never bump/overwrite (cross-context guard).
+    // H1 — the page id is not in this mill/year: must 404, never bump/overwrite (cross-context
+    // guard).
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(false);
 
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.savePage(MILL, YEAR, pageEdit(), true, USER));
 
     verify(repository, never()).bumpPageRevision(anyInt(), anyInt(), any());
-    verify(repository, never()).updatePageFields(anyInt(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any());
+    verify(repository, never())
+        .updatePageFields(
+            anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any());
   }
 
   @Test
   void savePage_tflPage_stampsTflSentinelIntoTsaNumber_andClearsSupplyBlock() {
     // H2 — a TFL page must persist TSA_NUMBER = "TFL" so Check Status routes to the TFL-# branch.
     draft();
-    when(repository.insertPage(anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any())).thenReturn(9100);
+    when(repository.insertPage(
+            anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any()))
+        .thenReturn(9100);
     Schedule8PageRequest tflCreate =
-        new Schedule8PageRequest(null, null, "LIC", "SC", "R", "BZ", null, "48", "IGNORED", "Div",
-            "Contact", "250", "CP", "notes");
+        new Schedule8PageRequest(
+            null, null, "LIC", "SC", "R", "BZ", null, "48", "IGNORED", "Div", "Contact", "250",
+            "CP", "notes");
 
     service.savePage(MILL, YEAR, tflCreate, true, USER);
 
-    // tsaNumber (arg 6, 0-based) = "TFL" sentinel; supplyBlock (arg 7) cleared; tflNumber (arg 8) "48".
-    verify(repository).insertPage(eq(MILL), eq(YEAR), eq("SC"), eq("R"), eq("BZ"), eq("TFL"),
-        isNull(), eq("48"), eq("CP"), eq("LIC"), eq("Div"), eq("Contact"), eq("250"), eq("notes"),
-        eq(USER));
+    // tsaNumber (arg 6, 0-based) = "TFL" sentinel; supplyBlock (arg 7) cleared; tflNumber (arg 8)
+    // "48".
+    verify(repository)
+        .insertPage(
+            eq(MILL),
+            eq(YEAR),
+            eq("SC"),
+            eq("R"),
+            eq("BZ"),
+            eq("TFL"),
+            isNull(),
+            eq("48"),
+            eq("CP"),
+            eq("LIC"),
+            eq("Div"),
+            eq("Contact"),
+            eq("250"),
+            eq("notes"),
+            eq(USER));
   }
 
   @Test
   void savePage_persistenceFailure_translatesToNotSaved() {
     draft();
-    when(repository.insertPage(anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any())).thenThrow(new DataIntegrityViolationException("x"));
+    when(repository.insertPage(
+            anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any()))
+        .thenThrow(new DataIntegrityViolationException("x"));
     Schedule8PageRequest create =
-        new Schedule8PageRequest(null, null, "LIC", "SC", "R", "BZ", "TSA5", null, "B", null, null,
-            null, null, null);
+        new Schedule8PageRequest(
+            null, null, "LIC", "SC", "R", "BZ", "TSA5", null, "B", null, null, null, null, null);
 
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.savePage(MILL, YEAR, create, true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class, () -> service.savePage(MILL, YEAR, create, true, USER));
   }
 
   @Test
@@ -158,14 +197,16 @@ class Schedule8WriteServiceTest {
     assertThrows(ScheduleNotSavedException.class, () -> service.deletePage(MILL, YEAR, PAGE));
   }
 
-  // ---- saveSample create / edit / guards ---------------------------------------------------------
+  // ---- saveSample create / edit / guards
+  // ---------------------------------------------------------
 
   @Test
   void saveSample_create_insertsThenBumpsRevision() {
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
-    when(repository.insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+    when(repository.insertSample(
+            anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(SAMPLE);
 
     service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER);
@@ -175,19 +216,23 @@ class Schedule8WriteServiceTest {
 
   @Test
   void saveSample_blankSkidType_defaultsToNa() {
-    // ILCR_SKID_TYPE_CODE is NOT NULL: a sample with no skid type (the request's skidTypeCode is null)
+    // ILCR_SKID_TYPE_CODE is NOT NULL: a sample with no skid type (the request's skidTypeCode is
+    // null)
     // must persist the "NA" code, not null — otherwise the insert hits ORA-01400 (legacy default).
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
-    when(repository.insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+    when(repository.insertSample(
+            anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any(), any(), any(), any(), any(), any()))
         .thenReturn(SAMPLE);
 
     service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER);
 
     // skidTypeCode is the 17th insertSample argument (0-based 16): defaulted to "NA".
-    verify(repository).insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), eq("NA"), any(), any(), any(), any());
+    verify(repository)
+        .insertSample(
+            anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any(), eq("NA"), any(), any(), any(), any());
   }
 
   @Test
@@ -199,15 +244,36 @@ class Schedule8WriteServiceTest {
 
     service.saveSample(MILL, YEAR, PAGE, sample(SAMPLE, 2), true, USER);
 
-    verify(repository).updateSampleFields(eq(SAMPLE), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
-        eq(USER));
+    verify(repository)
+        .updateSampleFields(
+            eq(SAMPLE),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            eq(USER));
   }
 
   @Test
   void saveSample_nonDraft_throwsNotEditable() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER));
   }
 
@@ -215,7 +281,8 @@ class Schedule8WriteServiceTest {
   void saveSample_unknownPage_throwsNotFound() {
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER));
   }
 
@@ -224,7 +291,8 @@ class Schedule8WriteServiceTest {
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
     when(repository.sampleExists(SAMPLE, PAGE)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveSample(MILL, YEAR, PAGE, sample(SAMPLE, 0), true, USER));
   }
 
@@ -234,7 +302,8 @@ class Schedule8WriteServiceTest {
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
     when(repository.sampleExists(SAMPLE, PAGE)).thenReturn(true);
     when(repository.bumpSampleRevision(SAMPLE, 9, USER)).thenReturn(0);
-    assertThrows(StaleRevisionException.class,
+    assertThrows(
+        StaleRevisionException.class,
         () -> service.saveSample(MILL, YEAR, PAGE, sample(SAMPLE, 9), true, USER));
   }
 
@@ -242,14 +311,17 @@ class Schedule8WriteServiceTest {
   void saveSample_persistenceFailure_translatesToNotSaved() {
     draft();
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
-    when(repository.insertSample(anyInt(), any(), any(), any(), any(), any(), any(), any(), any(),
-        any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+    when(repository.insertSample(
+            anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            any(), any(), any(), any(), any(), any(), any(), any(), any()))
         .thenThrow(new DataIntegrityViolationException("x"));
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.saveSample(MILL, YEAR, PAGE, sample(null, null), true, USER));
   }
 
-  // ---- deleteSample ------------------------------------------------------------------------------
+  // ---- deleteSample
+  // ------------------------------------------------------------------------------
 
   @Test
   void deleteSample_existing_cascades() {
@@ -278,11 +350,13 @@ class Schedule8WriteServiceTest {
     when(repository.pageExists(PAGE, MILL, YEAR)).thenReturn(true);
     when(repository.sampleExists(SAMPLE, PAGE)).thenReturn(true);
     doThrow(new DataIntegrityViolationException("x")).when(repository).deleteSample(SAMPLE);
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.deleteSample(MILL, YEAR, PAGE, SAMPLE, true));
   }
 
-  // ---- saveRate add / edit / guards --------------------------------------------------------------
+  // ---- saveRate add / edit / guards
+  // --------------------------------------------------------------
 
   @Test
   void saveRate_add_inserts() {
@@ -299,7 +373,8 @@ class Schedule8WriteServiceTest {
     draft();
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(ROW, SAMPLE)).thenReturn(true);
-    when(repository.updateRateRow(eq(ROW), eq(1), any(), any(), any(), any(), eq(USER))).thenReturn(1);
+    when(repository.updateRateRow(eq(ROW), eq(1), any(), any(), any(), any(), eq(USER)))
+        .thenReturn(1);
 
     service.saveRate(MILL, YEAR, SAMPLE, ROW, rate(ROW, 1), true, USER);
 
@@ -310,7 +385,8 @@ class Schedule8WriteServiceTest {
   void saveRate_unknownSample_throwsNotFound() {
     draft();
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, null, rate(null, null), true, USER));
   }
 
@@ -319,7 +395,8 @@ class Schedule8WriteServiceTest {
     draft();
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(ROW, SAMPLE)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, ROW, rate(ROW, 0), true, USER));
   }
 
@@ -328,8 +405,10 @@ class Schedule8WriteServiceTest {
     draft();
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(ROW, SAMPLE)).thenReturn(true);
-    when(repository.updateRateRow(eq(ROW), eq(4), any(), any(), any(), any(), eq(USER))).thenReturn(0);
-    assertThrows(StaleRevisionException.class,
+    when(repository.updateRateRow(eq(ROW), eq(4), any(), any(), any(), any(), eq(USER)))
+        .thenReturn(0);
+    assertThrows(
+        StaleRevisionException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, ROW, rate(ROW, 4), true, USER));
   }
 
@@ -339,11 +418,13 @@ class Schedule8WriteServiceTest {
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.insertRate(anyInt(), any(), any(), any(), any(), any()))
         .thenThrow(new DataIntegrityViolationException("x"));
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, null, rate(null, null), true, USER));
   }
 
-  // ---- deleteRate --------------------------------------------------------------------------------
+  // ---- deleteRate
+  // --------------------------------------------------------------------------------
 
   @Test
   void deleteRate_existing_deletesRow() {
@@ -362,11 +443,12 @@ class Schedule8WriteServiceTest {
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(ROW, SAMPLE)).thenReturn(true);
     doThrow(new DataIntegrityViolationException("x")).when(repository).deleteRateRow(ROW);
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.deleteRate(MILL, YEAR, SAMPLE, ROW, true));
+    assertThrows(
+        ScheduleNotSavedException.class, () -> service.deleteRate(MILL, YEAR, SAMPLE, ROW, true));
   }
 
-  // ---- Code-table validation (M1/M4) -------------------------------------------------------------
+  // ---- Code-table validation (M1/M4)
+  // -------------------------------------------------------------
 
   @Test
   void saveRate_unknownCostItem_throwsInvalidCode_noInsert() {
@@ -374,9 +456,11 @@ class Schedule8WriteServiceTest {
     // silently vanish from finalRate on read).
     draft();
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
-    Schedule8RateRequest bad = new Schedule8RateRequest(null, null, 999, new BigDecimal("10"), "CT", "d");
+    Schedule8RateRequest bad =
+        new Schedule8RateRequest(null, null, 999, new BigDecimal("10"), "CT", "d");
 
-    assertThrows(Schedule8InvalidCodeException.class,
+    assertThrows(
+        Schedule8InvalidCodeException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, null, bad, true, USER));
     verify(repository, never()).insertRate(anyInt(), any(), any(), any(), any(), any());
   }
@@ -385,10 +469,11 @@ class Schedule8WriteServiceTest {
   void savePage_unknownCode_throwsInvalidCode() {
     // Region "NOPE" is not in the reference table → 400 (rather than a DB FK 500 in prod).
     draft();
-    Schedule8PageRequest bad = new Schedule8PageRequest(null, null, "LIC", "SC", "NOPE", "BZ",
-        "TSA5", null, "B", null, null, null, null, null);
+    Schedule8PageRequest bad =
+        new Schedule8PageRequest(
+            null, null, "LIC", "SC", "NOPE", "BZ", "TSA5", null, "B", null, null, null, null, null);
 
-    assertThrows(Schedule8InvalidCodeException.class,
-        () -> service.savePage(MILL, YEAR, bad, true, USER));
+    assertThrows(
+        Schedule8InvalidCodeException.class, () -> service.savePage(MILL, YEAR, bad, true, USER));
   }
 }

@@ -22,9 +22,9 @@ import org.springframework.test.context.TestPropertySource;
  * {@code cat -A}: {@code …Home Page. $}); the other two do not. A test that trims would pass while
  * shipping the wrong bytes to the licensee.
  *
- * <p>Also pins {@code application/problem+json} (RFC 7807, AD-8) and the guard ORDER — legacy checks
- * session context before mill status, so a request that is both context-less and closed collapses to
- * ERR-001.
+ * <p>Also pins {@code application/problem+json} (RFC 7807, AD-8) and the guard ORDER — legacy
+ * checks session context before mill status, so a request that is both context-less and closed
+ * collapses to ERR-001.
  */
 @DisplayName("GET /api/v1/schedule10 — context guards")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -33,8 +33,7 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/schedule10";
 
   /** ERR-001. The trailing space is real and deliberate — do not trim it. */
-  private static final String ERR_001 =
-      "Please Select Mill and Reporting Year in the Home Page. ";
+  private static final String ERR_001 = "Please Select Mill and Reporting Year in the Home Page. ";
 
   /** ERR-002. */
   private static final String ERR_002 =
@@ -45,18 +44,20 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   private static final String ERR_003 = "Schedule not found.";
 
   @ParameterizedTest(name = "400 ERR-001 — millId=''{0}'' year=''{1}''")
-  @CsvSource(nullValues = "NULL", value = {
-      // missing
-      "NULL,  2021",
-      "710,   NULL",
-      "NULL,  NULL",
-      // blank
-      "'',    2021",
-      "710,   ''",
-      // non-numeric
-      "abc,   2021",
-      "710,   twenty",
-  })
+  @CsvSource(
+      nullValues = "NULL",
+      value = {
+        // missing
+        "NULL,  2021",
+        "710,   NULL",
+        "NULL,  NULL",
+        // blank
+        "'',    2021",
+        "710,   ''",
+        // non-numeric
+        "abc,   2021",
+        "710,   twenty",
+      })
   @DisplayName("all six bad-parameter shapes yield 400 with the verbatim ERR-001")
   void badParameters_yieldVerbatimErr001(String millId, String year) throws Exception {
     var request = get(ENDPOINT).accept(MediaType.APPLICATION_JSON);
@@ -67,7 +68,8 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
       request = request.param("year", year);
     }
 
-    mockMvc.perform(request)
+    mockMvc
+        .perform(request)
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", is(ERR_001)));
@@ -76,10 +78,12 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   @Test
   @DisplayName("ERR-001 keeps its trailing space byte-for-byte")
   void err001RetainsTrailingSpace() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("year", "2021").accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(get(ENDPOINT).param("year", "2021").accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isBadRequest())
         // Asserted as an exact string: the final character is a space.
-        .andExpect(jsonPath("$.detail", is("Please Select Mill and Reporting Year in the Home Page. ")))
+        .andExpect(
+            jsonPath("$.detail", is("Please Select Mill and Reporting Year in the Home Page. ")))
         .andExpect(jsonPath("$.detail", is(ERR_001)));
   }
 
@@ -87,8 +91,12 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   @DisplayName("409 ERR-002 — mill closed for the reporting year (BR-11)")
   void closedMill_yieldsVerbatimErr002() throws Exception {
     // Mill 516 is seeded CLS (closed) by V2.
-    mockMvc.perform(get(ENDPOINT).param("millId", "516").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "516")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", is(ERR_002)));
@@ -97,8 +105,12 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   @Test
   @DisplayName("404 ERR-003 — no ILCR_MILL_REPORT_STATUS context row")
   void missingContextRow_yieldsVerbatimErr003() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "999999").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "999999")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", is(ERR_003)));
@@ -109,7 +121,8 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   void err001TakesPrecedenceOverErr002() throws Exception {
     // No year param at all, against the closed mill 516. Legacy checks session context first, so
     // this must collapse to ERR-001/400 rather than ERR-002/409.
-    mockMvc.perform(get(ENDPOINT).param("millId", "516").accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(get(ENDPOINT).param("millId", "516").accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", is(ERR_001)));
   }
@@ -119,8 +132,12 @@ class Schedule10ContextGuardIT extends AbstractOracleIT {
   void emptyScheduleIsNotNotFound() throws Exception {
     // The 404 fires only on a missing context row, never on a valid context with no data
     // (deviation (a)). Mill 715 is active with a Draft context row and zero pages.
-    mockMvc.perform(get(ENDPOINT).param("millId", "715").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "715")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk());
   }
 }

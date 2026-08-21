@@ -38,20 +38,28 @@ class ReportSchedule9IT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/reports/schedule9";
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final String ERR_003 = "Please Select Mill and Reporting Year in the Home Page. ";
-  private static final String ERR_004 = "This Mill is not active for the current Reporting Year. "
-      + "Please select another mill from the Home Page.";
+  private static final String ERR_004 =
+      "This Mill is not active for the current Reporting Year. "
+          + "Please select another mill from the Home Page.";
   private static final String ERR_005 = "Schedule not found.";
 
   @Test
   @DisplayName("514/2021 Draft (3 records) -> 200 application/pdf, %PDF body, attachment header")
   void draftWithRecords_returnsPdf() throws Exception {
-    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_PDF))
-        .andExpect(status().isOk())
-        .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-        .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"schedule9_514_2021.pdf\""))
-        .andReturn();
+    MvcResult result =
+        streamPdf(
+                get(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(
+                header()
+                    .string(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"schedule9_514_2021.pdf\""))
+            .andReturn();
 
     byte[] body = result.getResponse().getContentAsByteArray();
     assertThat(body).isNotEmpty();
@@ -62,31 +70,44 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 Submitted (1 record) -> 200 PDF (editability does not gate printing, AC9)")
   void nonDraftWithRecords_returnsPdf() throws Exception {
-    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "517").param("year", "2021")
-            .accept(MediaType.APPLICATION_PDF))
-        .andExpect(status().isOk())
-        .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-        .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"schedule9_517_2021.pdf\""))
-        .andReturn();
+    MvcResult result =
+        streamPdf(
+                get(ENDPOINT)
+                    .param("millId", "517")
+                    .param("year", "2021")
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andExpect(
+                header()
+                    .string(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"schedule9_517_2021.pdf\""))
+            .andReturn();
 
     assertThat(new String(result.getResponse().getContentAsByteArray(), 0, 4)).isEqualTo("%PDF");
   }
 
   @Test
-  @DisplayName("514/2021 PDF text carries the heading, the mill title block, record data, and comments")
+  @DisplayName(
+      "514/2021 PDF text carries the heading, the mill title block, record data, and comments")
   void pdfText_carriesHeadingMillRecordAndComments() throws Exception {
-    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_PDF))
-        .andExpect(status().isOk())
-        .andReturn();
+    MvcResult result =
+        streamPdf(
+                get(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andReturn();
 
     String text;
     try (PDDocument document = Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
       text = new PDFTextStripper().getText(document);
     }
 
-    // Header (page header static text) and the THE.MILL title block (MILL_NAME || '-' || MILL_NUMBER).
+    // Header (page header static text) and the THE.MILL title block (MILL_NAME || '-' ||
+    // MILL_NUMBER).
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("AAA Milling");
     // Record 9101's contractual item (item 108 name) resolved through the embedded SQL joins.
@@ -99,8 +120,12 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("515/2021 Draft but no records -> 404 verbatim 'Schedule not found.' (AC5), no PDF")
   void draftWithNoRecords_returns404() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "515").param("year", "2021")
-            .accept(MediaType.APPLICATION_PDF))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail").value(ERR_005));
@@ -109,7 +134,8 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("no mill/year context -> 400 verbatim ERR-003 (trailing space), no render")
   void noContext_returns400() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("year", "2021").accept(MediaType.APPLICATION_PDF))
+    mockMvc
+        .perform(get(ENDPOINT).param("year", "2021").accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail").value(ERR_003));
@@ -118,8 +144,12 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("closed mill (516, CLS) -> 409 verbatim ERR-004 (BR-10 blocks viewing), no render")
   void inactiveMill_returns409() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "516").param("year", "2021")
-            .accept(MediaType.APPLICATION_PDF))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "516")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail").value(ERR_004));

@@ -14,21 +14,23 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 /**
- * Spring Data JDBC access to the legacy {@code THE} Schedule 8 (Tree to Truck) tables (AD-3, re-pinned
- * 2026-07-20): a {@code Repository} interface of explicit {@code @Query} named-param SQL returning
- * {@code @Table} record entities — no {@code JdbcClient}, no derived queries. Every derivation and the
- * transaction boundaries live in {@code Schedule8Service}.
+ * Spring Data JDBC access to the legacy {@code THE} Schedule 8 (Tree to Truck) tables (AD-3,
+ * re-pinned 2026-07-20): a {@code Repository} interface of explicit {@code @Query} named-param SQL
+ * returning {@code @Table} record entities — no {@code JdbcClient}, no derived queries. Every
+ * derivation and the transaction boundaries live in {@code Schedule8Service}.
  *
  * <p>Storage shape (delivery-DB confirmed 2026-07-22): a document is a three-level hierarchy —
  * category-{@code '8'} {@code TREE_TO_TRUCK_REPORT} pages → {@code TREE_TO_TRUCK_DETAIL_REPORT}
  * samples (by {@code TREE_TO_TRUCK_REPORT_ID}) → {@code TREE_TO_TRUCK_RATE_DETAIL} rate rows (by
- * {@code TREE_TO_TRUCK_DETAIL_REPORT_ID}). A rate row is an addition or a deduction by its cost item's
- * {@code ILCR_SUBCATEGORY_ID} (§Decision 1); the service splits them using {@link #costItemSubcategories()}.
+ * {@code TREE_TO_TRUCK_DETAIL_REPORT_ID}). A rate row is an addition or a deduction by its cost
+ * item's {@code ILCR_SUBCATEGORY_ID} (§Decision 1); the service splits them using {@link
+ * #costItemSubcategories()}.
  *
- * <p>The eight code FKs resolve to a {@code DESCRIPTION} label (§Decision 3): each {@code *Labels()}
- * default method loads its code table (via a {@code @Query} over a nested {@code @Table} code entity —
- * the ratified entity-mapping pattern, never a multi-column DTO projection) into a code→label map the
- * service applies. Following the Schedule 4 pattern, {@code @Query} returns entities/scalars only.
+ * <p>The eight code FKs resolve to a {@code DESCRIPTION} label (§Decision 3): each {@code
+ * *Labels()} default method loads its code table (via a {@code @Query} over a nested {@code @Table}
+ * code entity — the ratified entity-mapping pattern, never a multi-column DTO projection) into a
+ * code→label map the service applies. Following the Schedule 4 pattern, {@code @Query} returns
+ * entities/scalars only.
  */
 public interface Schedule8Repository extends Repository<TreeToTruckReportEntity, Integer> {
 
@@ -39,7 +41,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   // -------------------------------------------------------------------------------------------------
 
   /** The category-{@code '8'} page rows for a mill/year, ordered by id (legacy page order). */
-  @Query("""
+  @Query(
+      """
       SELECT TREE_TO_TRUCK_REPORT_ID, ILCR_SUPPORT_CENTRE_CODE, ILCR_FOREST_REGION_CODE, BEC_ZONE_CODE,
              TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, CUTTING_PERMIT_NUMBER, HARVEST_LICENSE_NUMBER,
              DIVISION_LOCATION, CONTACT_NAME, CONTACT_PHONE_NUMBER, COMMENTS, REVISION_COUNT
@@ -51,8 +54,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       """)
   List<TreeToTruckReportEntity> findPages(@Param("millId") long millId, @Param("year") int year);
 
-  /** Every sample under the mill/year's category-{@code '8'} pages, ordered by page then sample id. */
-  @Query("""
+  /**
+   * Every sample under the mill/year's category-{@code '8'} pages, ordered by page then sample id.
+   */
+  @Query(
+      """
       SELECT s.TREE_TO_TRUCK_DETAIL_REPORT_ID, s.TREE_TO_TRUCK_REPORT_ID, s.CONTRACTOR_ID, s.CUT_BLOCK,
              s.GROUND_BASE_PCT, s.GRAPPLE_PCT, s.SKYLINE_PCT, s.HIGHLEAD_PCT, s.HELICOPTER_PCT,
              s.OTHER_SKIDDING_PCT, s.SKYLINE_SLOPE_DISTANCE, s.SKYLINE_SUPPORT_NUMBER,
@@ -70,8 +76,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   List<TreeToTruckDetailReportEntity> findSamples(
       @Param("millId") long millId, @Param("year") int year);
 
-  /** Every rate row under the mill/year's category-{@code '8'} samples, ordered by sample then id. */
-  @Query("""
+  /**
+   * Every rate row under the mill/year's category-{@code '8'} samples, ordered by sample then id.
+   */
+  @Query(
+      """
       SELECT r.TREE_TO_TRUCK_RATE_DETAIL_ID, r.TREE_TO_TRUCK_DETAIL_REPORT_ID, r.ILCR_RATE_COST_TYPE_CODE,
              r.ILCR_REPORT_COST_ITEM_ID, r.ITEM_DESCRIPTION, r.COSTING_RATE, r.REVISION_COUNT
         FROM THE.TREE_TO_TRUCK_RATE_DETAIL r
@@ -88,10 +97,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       @Param("millId") long millId, @Param("year") int year);
 
   /**
-   * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year — NOT
-   * the silviculture track (AD-9). Empty when there is no report-status row.
+   * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
+   * NOT the silviculture track (AD-9). Empty when there is no report-status row.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -108,7 +118,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   int nextPageId();
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.TREE_TO_TRUCK_REPORT
           (TREE_TO_TRUCK_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            ILCR_SUPPORT_CENTRE_CODE, ILCR_FOREST_REGION_CODE, BEC_ZONE_CODE, TSA_NUMBER,
@@ -121,24 +132,61 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertPageRow(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("supportCentre") String supportCentre, @Param("region") String region,
-      @Param("becZone") String becZone, @Param("tsaNumber") String tsaNumber,
-      @Param("supplyBlock") String supplyBlock, @Param("tflNumber") String tflNumber,
-      @Param("cuttingPermit") String cuttingPermit, @Param("license") String license,
-      @Param("division") String division, @Param("contact") String contact,
-      @Param("phone") String phone, @Param("comments") String comments, @Param("user") String user);
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("supportCentre") String supportCentre,
+      @Param("region") String region,
+      @Param("becZone") String becZone,
+      @Param("tsaNumber") String tsaNumber,
+      @Param("supplyBlock") String supplyBlock,
+      @Param("tflNumber") String tflNumber,
+      @Param("cuttingPermit") String cuttingPermit,
+      @Param("license") String license,
+      @Param("division") String division,
+      @Param("contact") String contact,
+      @Param("phone") String phone,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
    * Insert a new category-{@code '8'} page at {@code REVISION_COUNT} 0 and return its generated id.
    * Sequence-then-insert (Spring Data JDBC {@code @Modifying} cannot return a generated key).
    */
-  default int insertPage(long millId, int year, String supportCentre, String region, String becZone,
-      String tsaNumber, String supplyBlock, String tflNumber, String cuttingPermit, String license,
-      String division, String contact, String phone, String comments, String user) {
+  default int insertPage(
+      long millId,
+      int year,
+      String supportCentre,
+      String region,
+      String becZone,
+      String tsaNumber,
+      String supplyBlock,
+      String tflNumber,
+      String cuttingPermit,
+      String license,
+      String division,
+      String contact,
+      String phone,
+      String comments,
+      String user) {
     int id = nextPageId();
-    insertPageRow(id, millId, year, supportCentre, region, becZone, tsaNumber, supplyBlock,
-        tflNumber, cuttingPermit, license, division, contact, phone, comments, user);
+    insertPageRow(
+        id,
+        millId,
+        year,
+        supportCentre,
+        region,
+        becZone,
+        tsaNumber,
+        supplyBlock,
+        tflNumber,
+        cuttingPermit,
+        license,
+        division,
+        contact,
+        phone,
+        comments,
+        user);
     return id;
   }
 
@@ -148,7 +196,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
    * {@code 0} when stale or the id is unknown (→ 409).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TREE_TO_TRUCK_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
@@ -157,12 +206,14 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
          AND REVISION_COUNT = :expectedRevision
       """)
   int bumpPageRevision(
-      @Param("id") int id, @Param("expectedRevision") int expectedRevision,
+      @Param("id") int id,
+      @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   /** Re-stamp a page's editable fields (audit updated); the revision is bumped separately. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TREE_TO_TRUCK_REPORT
          SET ILCR_SUPPORT_CENTRE_CODE = :supportCentre,
              ILCR_FOREST_REGION_CODE = :region,
@@ -181,15 +232,23 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
        WHERE TREE_TO_TRUCK_REPORT_ID = :id
       """)
   void updatePageFields(
-      @Param("id") int id, @Param("supportCentre") String supportCentre,
-      @Param("region") String region, @Param("becZone") String becZone,
-      @Param("tsaNumber") String tsaNumber, @Param("supplyBlock") String supplyBlock,
-      @Param("tflNumber") String tflNumber, @Param("cuttingPermit") String cuttingPermit,
-      @Param("license") String license, @Param("division") String division,
-      @Param("contact") String contact, @Param("phone") String phone,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("id") int id,
+      @Param("supportCentre") String supportCentre,
+      @Param("region") String region,
+      @Param("becZone") String becZone,
+      @Param("tsaNumber") String tsaNumber,
+      @Param("supplyBlock") String supplyBlock,
+      @Param("tflNumber") String tflNumber,
+      @Param("cuttingPermit") String cuttingPermit,
+      @Param("license") String license,
+      @Param("division") String division,
+      @Param("contact") String contact,
+      @Param("phone") String phone,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TREE_TO_TRUCK_REPORT
        WHERE TREE_TO_TRUCK_REPORT_ID = :id
@@ -205,7 +264,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   }
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.TREE_TO_TRUCK_RATE_DETAIL
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID IN (
              SELECT TREE_TO_TRUCK_DETAIL_REPORT_ID
@@ -230,7 +290,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   }
 
   // -------------------------------------------------------------------------------------------------
-  // Sample writes (Story 14.3) — @Modifying explicit SQL under a page; the service maps the request's
+  // Sample writes (Story 14.3) — @Modifying explicit SQL under a page; the service maps the
+  // request's
   // Booleans to the legacy Y/N indicator columns and owns the transaction boundary.
   // -------------------------------------------------------------------------------------------------
 
@@ -238,7 +299,8 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   int nextSampleId();
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.TREE_TO_TRUCK_DETAIL_REPORT
           (TREE_TO_TRUCK_DETAIL_REPORT_ID, TREE_TO_TRUCK_REPORT_ID, CONTRACTOR_ID, CUT_BLOCK,
            GROUND_BASE_PCT, GRAPPLE_PCT, SKYLINE_PCT, HIGHLEAD_PCT, HELICOPTER_PCT, OTHER_SKIDDING_PCT,
@@ -254,41 +316,87 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            :user, SYSTIMESTAMP)
       """)
   int insertSampleRow(
-      @Param("id") int id, @Param("pageId") int pageId, @Param("contractId") String contractId,
-      @Param("cutBlock") String cutBlock, @Param("groundBasePct") Integer groundBasePct,
-      @Param("grapplePct") Integer grapplePct, @Param("skylinePct") Integer skylinePct,
-      @Param("highleadPct") Integer highleadPct, @Param("helicopterPct") Integer helicopterPct,
+      @Param("id") int id,
+      @Param("pageId") int pageId,
+      @Param("contractId") String contractId,
+      @Param("cutBlock") String cutBlock,
+      @Param("groundBasePct") Integer groundBasePct,
+      @Param("grapplePct") Integer grapplePct,
+      @Param("skylinePct") Integer skylinePct,
+      @Param("highleadPct") Integer highleadPct,
+      @Param("helicopterPct") Integer helicopterPct,
       @Param("otherSkiddingPct") Integer otherSkiddingPct,
       @Param("skylineSlopeDistance") Integer skylineSlopeDistance,
       @Param("skylineSupportNumber") Integer skylineSupportNumber,
       @Param("supportAvgDistance") BigDecimal supportAvgDistance,
-      @Param("cycleTime") BigDecimal cycleTime, @Param("distance") BigDecimal distance,
-      @Param("waterDump") String waterDump, @Param("uphill") String uphill,
-      @Param("skidTypeCode") String skidTypeCode, @Param("coniferousVolume") Integer coniferousVolume,
-      @Param("deciduousVolume") Integer deciduousVolume, @Param("originalRate") BigDecimal originalRate,
+      @Param("cycleTime") BigDecimal cycleTime,
+      @Param("distance") BigDecimal distance,
+      @Param("waterDump") String waterDump,
+      @Param("uphill") String uphill,
+      @Param("skidTypeCode") String skidTypeCode,
+      @Param("coniferousVolume") Integer coniferousVolume,
+      @Param("deciduousVolume") Integer deciduousVolume,
+      @Param("originalRate") BigDecimal originalRate,
       @Param("user") String user);
 
   /** Insert a new sample under {@code pageId} at {@code REVISION_COUNT} 0 and return its id. */
-  default int insertSample(int pageId, String contractId, String cutBlock, Integer groundBasePct,
-      Integer grapplePct, Integer skylinePct, Integer highleadPct, Integer helicopterPct,
-      Integer otherSkiddingPct, Integer skylineSlopeDistance, Integer skylineSupportNumber,
-      BigDecimal supportAvgDistance, BigDecimal cycleTime, BigDecimal distance, String waterDump,
-      String uphill, String skidTypeCode, Integer coniferousVolume, Integer deciduousVolume,
-      BigDecimal originalRate, String user) {
+  default int insertSample(
+      int pageId,
+      String contractId,
+      String cutBlock,
+      Integer groundBasePct,
+      Integer grapplePct,
+      Integer skylinePct,
+      Integer highleadPct,
+      Integer helicopterPct,
+      Integer otherSkiddingPct,
+      Integer skylineSlopeDistance,
+      Integer skylineSupportNumber,
+      BigDecimal supportAvgDistance,
+      BigDecimal cycleTime,
+      BigDecimal distance,
+      String waterDump,
+      String uphill,
+      String skidTypeCode,
+      Integer coniferousVolume,
+      Integer deciduousVolume,
+      BigDecimal originalRate,
+      String user) {
     int id = nextSampleId();
-    insertSampleRow(id, pageId, contractId, cutBlock, groundBasePct, grapplePct, skylinePct,
-        highleadPct, helicopterPct, otherSkiddingPct, skylineSlopeDistance, skylineSupportNumber,
-        supportAvgDistance, cycleTime, distance, waterDump, uphill, skidTypeCode, coniferousVolume,
-        deciduousVolume, originalRate, user);
+    insertSampleRow(
+        id,
+        pageId,
+        contractId,
+        cutBlock,
+        groundBasePct,
+        grapplePct,
+        skylinePct,
+        highleadPct,
+        helicopterPct,
+        otherSkiddingPct,
+        skylineSlopeDistance,
+        skylineSupportNumber,
+        supportAvgDistance,
+        cycleTime,
+        distance,
+        waterDump,
+        uphill,
+        skidTypeCode,
+        coniferousVolume,
+        deciduousVolume,
+        originalRate,
+        user);
     return id;
   }
 
   /**
-   * Optimistic-lock bump of a sample: increments {@code REVISION_COUNT} + audit ONLY when the stored
-   * revision matches {@code expectedRevision}. Returns rows affected (0 = stale/unknown → 409).
+   * Optimistic-lock bump of a sample: increments {@code REVISION_COUNT} + audit ONLY when the
+   * stored revision matches {@code expectedRevision}. Returns rows affected (0 = stale/unknown →
+   * 409).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user,
@@ -297,11 +405,13 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
          AND REVISION_COUNT = :expectedRevision
       """)
   int bumpSampleRevision(
-      @Param("id") int id, @Param("expectedRevision") int expectedRevision,
+      @Param("id") int id,
+      @Param("expectedRevision") int expectedRevision,
       @Param("user") String user);
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TREE_TO_TRUCK_DETAIL_REPORT
          SET CONTRACTOR_ID = :contractId,
              CUT_BLOCK = :cutBlock,
@@ -327,21 +437,30 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
       """)
   void updateSampleFields(
-      @Param("id") int id, @Param("contractId") String contractId,
-      @Param("cutBlock") String cutBlock, @Param("groundBasePct") Integer groundBasePct,
-      @Param("grapplePct") Integer grapplePct, @Param("skylinePct") Integer skylinePct,
-      @Param("highleadPct") Integer highleadPct, @Param("helicopterPct") Integer helicopterPct,
+      @Param("id") int id,
+      @Param("contractId") String contractId,
+      @Param("cutBlock") String cutBlock,
+      @Param("groundBasePct") Integer groundBasePct,
+      @Param("grapplePct") Integer grapplePct,
+      @Param("skylinePct") Integer skylinePct,
+      @Param("highleadPct") Integer highleadPct,
+      @Param("helicopterPct") Integer helicopterPct,
       @Param("otherSkiddingPct") Integer otherSkiddingPct,
       @Param("skylineSlopeDistance") Integer skylineSlopeDistance,
       @Param("skylineSupportNumber") Integer skylineSupportNumber,
       @Param("supportAvgDistance") BigDecimal supportAvgDistance,
-      @Param("cycleTime") BigDecimal cycleTime, @Param("distance") BigDecimal distance,
-      @Param("waterDump") String waterDump, @Param("uphill") String uphill,
-      @Param("skidTypeCode") String skidTypeCode, @Param("coniferousVolume") Integer coniferousVolume,
-      @Param("deciduousVolume") Integer deciduousVolume, @Param("originalRate") BigDecimal originalRate,
+      @Param("cycleTime") BigDecimal cycleTime,
+      @Param("distance") BigDecimal distance,
+      @Param("waterDump") String waterDump,
+      @Param("uphill") String uphill,
+      @Param("skidTypeCode") String skidTypeCode,
+      @Param("coniferousVolume") Integer coniferousVolume,
+      @Param("deciduousVolume") Integer deciduousVolume,
+      @Param("originalRate") BigDecimal originalRate,
       @Param("user") String user);
 
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TREE_TO_TRUCK_DETAIL_REPORT
        WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :id
@@ -355,11 +474,13 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   }
 
   @Modifying
-  @Query("DELETE FROM THE.TREE_TO_TRUCK_RATE_DETAIL WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
+  @Query(
+      "DELETE FROM THE.TREE_TO_TRUCK_RATE_DETAIL WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
   int deleteSampleRateDetails(@Param("sampleId") int sampleId);
 
   @Modifying
-  @Query("DELETE FROM THE.TREE_TO_TRUCK_DETAIL_REPORT WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
+  @Query(
+      "DELETE FROM THE.TREE_TO_TRUCK_DETAIL_REPORT WHERE TREE_TO_TRUCK_DETAIL_REPORT_ID = :sampleId")
   int deleteSampleRow(@Param("sampleId") int sampleId);
 
   /** Cascade-delete a sample: its rate details, then the sample row (BR-05, S08). */
@@ -371,14 +492,16 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   // -------------------------------------------------------------------------------------------------
   // Rate-detail writes (Story 14.4) — @Modifying explicit SQL under a sample; the service owns the
   // transaction boundary. Addition vs deduction is not stored — the read derives it from the cost
-  // item's subcategory. Rate rows are created at REVISION_COUNT 0 (AC1); edits bump the row revision.
+  // item's subcategory. Rate rows are created at REVISION_COUNT 0 (AC1); edits bump the row
+  // revision.
   // -------------------------------------------------------------------------------------------------
 
   @Query("SELECT THE.TREE_TO_TRUCK_RATE_DETAIL_SEQ.NEXTVAL FROM DUAL")
   int nextRateId();
 
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.TREE_TO_TRUCK_RATE_DETAIL
           (TREE_TO_TRUCK_RATE_DETAIL_ID, TREE_TO_TRUCK_DETAIL_REPORT_ID, ILCR_RATE_COST_TYPE_CODE,
            ILCR_REPORT_COST_ITEM_ID, ITEM_DESCRIPTION, COSTING_RATE, REVISION_COUNT,
@@ -388,26 +511,38 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   int insertRateRow(
-      @Param("id") int id, @Param("sampleId") int sampleId,
-      @Param("costTypeCode") String costTypeCode, @Param("costItemCode") Integer costItemCode,
-      @Param("itemDescription") String itemDescription, @Param("costingRate") BigDecimal costingRate,
+      @Param("id") int id,
+      @Param("sampleId") int sampleId,
+      @Param("costTypeCode") String costTypeCode,
+      @Param("costItemCode") Integer costItemCode,
+      @Param("itemDescription") String itemDescription,
+      @Param("costingRate") BigDecimal costingRate,
       @Param("user") String user);
 
-  /** Insert a new rate-detail row under {@code sampleId} at {@code REVISION_COUNT} 0; returns its id. */
-  default int insertRate(int sampleId, String costTypeCode, Integer costItemCode,
-      String itemDescription, BigDecimal costingRate, String user) {
+  /**
+   * Insert a new rate-detail row under {@code sampleId} at {@code REVISION_COUNT} 0; returns its
+   * id.
+   */
+  default int insertRate(
+      int sampleId,
+      String costTypeCode,
+      Integer costItemCode,
+      String itemDescription,
+      BigDecimal costingRate,
+      String user) {
     int id = nextRateId();
     insertRateRow(id, sampleId, costTypeCode, costItemCode, itemDescription, costingRate, user);
     return id;
   }
 
   /**
-   * Optimistic-lock update of a rate row: re-stamps the fields and increments {@code REVISION_COUNT}
-   * ONLY when the stored revision matches {@code expectedRevision}. Returns rows affected (0 =
-   * stale/unknown → 409).
+   * Optimistic-lock update of a rate row: re-stamps the fields and increments {@code
+   * REVISION_COUNT} ONLY when the stored revision matches {@code expectedRevision}. Returns rows
+   * affected (0 = stale/unknown → 409).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.TREE_TO_TRUCK_RATE_DETAIL
          SET ILCR_RATE_COST_TYPE_CODE = :costTypeCode,
              ILCR_REPORT_COST_ITEM_ID = :costItemCode,
@@ -420,12 +555,16 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateRateRow(
-      @Param("id") int id, @Param("expectedRevision") int expectedRevision,
-      @Param("costTypeCode") String costTypeCode, @Param("costItemCode") Integer costItemCode,
-      @Param("itemDescription") String itemDescription, @Param("costingRate") BigDecimal costingRate,
+      @Param("id") int id,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("costTypeCode") String costTypeCode,
+      @Param("costItemCode") Integer costItemCode,
+      @Param("itemDescription") String itemDescription,
+      @Param("costingRate") BigDecimal costingRate,
       @Param("user") String user);
 
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TREE_TO_TRUCK_RATE_DETAIL
        WHERE TREE_TO_TRUCK_RATE_DETAIL_ID = :id
@@ -438,8 +577,12 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return countRate(id, sampleId) > 0;
   }
 
-  /** Whether {@code sampleId} is a sample under the mill/year's category-{@code '8'} pages (404 guard). */
-  @Query("""
+  /**
+   * Whether {@code sampleId} is a sample under the mill/year's category-{@code '8'} pages (404
+   * guard).
+   */
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.TREE_TO_TRUCK_DETAIL_REPORT s
         JOIN THE.TREE_TO_TRUCK_REPORT p
@@ -464,15 +607,17 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   // Addition/deduction split (§Decision 1) — cost item id → its ILCR_SUBCATEGORY_ID.
   // -------------------------------------------------------------------------------------------------
 
-  /** {@code ILCR_REPORT_COST_ITEM} projection: a category-{@code '8'} item, its name + subcategory. */
+  /**
+   * {@code ILCR_REPORT_COST_ITEM} projection: a category-{@code '8'} item, its name + subcategory.
+   */
   @Table(name = "ILCR_REPORT_COST_ITEM", schema = "THE")
   record CostItemRow(
       @Id @Column("ILCR_REPORT_COST_ITEM_ID") Integer id,
       @Column("ITEM_NAME") String itemName,
-      @Column("ILCR_SUBCATEGORY_ID") String subcategoryId) {
-  }
+      @Column("ILCR_SUBCATEGORY_ID") String subcategoryId) {}
 
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_REPORT_COST_ITEM_ID, ITEM_NAME, ILCR_SUBCATEGORY_ID
         FROM THE.ILCR_REPORT_COST_ITEM
        WHERE ILCR_CATEGORY_ID = '8'
@@ -480,7 +625,9 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
       """)
   List<CostItemRow> findCategory8CostItems();
 
-  /** Cost-item id → subcategory id for category {@code '8'} — the addition/deduction discriminator. */
+  /**
+   * Cost-item id → subcategory id for category {@code '8'} — the addition/deduction discriminator.
+   */
   default Map<Integer, String> costItemSubcategories() {
     Map<Integer, String> byId = new LinkedHashMap<>();
     for (CostItemRow row : findCategory8CostItems()) {
@@ -495,7 +642,9 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
   // this on the ratified Schedule 4 pattern.
   // -------------------------------------------------------------------------------------------------
 
-  /** A resolved code→label pair; every code entity below exposes it so one adapter builds the map. */
+  /**
+   * A resolved code→label pair; every code entity below exposes it so one adapter builds the map.
+   */
   interface CodeLabel {
     String code();
 
@@ -510,11 +659,12 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return byCode;
   }
 
+  /** Support Centre Code mapping. */
   @Table(name = "ILCR_SUPPORT_CENTRE_CODE", schema = "THE")
   record SupportCentreCode(
-      @Id @Column("ILCR_SUPPORT_CENTRE_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      @Id @Column("ILCR_SUPPORT_CENTRE_CODE") String code,
+      @Column("DESCRIPTION") String description)
+      implements CodeLabel {}
 
   @Query("SELECT ILCR_SUPPORT_CENTRE_CODE, DESCRIPTION FROM THE.ILCR_SUPPORT_CENTRE_CODE")
   List<SupportCentreCode> findSupportCentreCodes();
@@ -523,11 +673,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findSupportCentreCodes());
   }
 
+  /** Forest Region Code mapping. */
   @Table(name = "ILCR_FOREST_REGION_CODE", schema = "THE")
   record ForestRegionCode(
       @Id @Column("ILCR_FOREST_REGION_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT ILCR_FOREST_REGION_CODE, DESCRIPTION FROM THE.ILCR_FOREST_REGION_CODE")
   List<ForestRegionCode> findForestRegionCodes();
@@ -536,11 +686,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findForestRegionCodes());
   }
 
+  /** BEC Zone Code mapping. */
   @Table(name = "BEC_ZONE_CODE", schema = "THE")
   record BecZoneCode(
       @Id @Column("BEC_ZONE_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT BEC_ZONE_CODE, DESCRIPTION FROM THE.BEC_ZONE_CODE")
   List<BecZoneCode> findBecZoneCodes();
@@ -549,11 +699,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findBecZoneCodes());
   }
 
+  /** TSA Number Code mapping. */
   @Table(name = "TSA_NUMBER_CODE", schema = "THE")
   record TsaNumberCode(
       @Id @Column("TSA_NUMBER") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT TSA_NUMBER, DESCRIPTION FROM THE.TSA_NUMBER_CODE")
   List<TsaNumberCode> findTsaNumberCodes();
@@ -562,11 +712,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findTsaNumberCodes());
   }
 
+  /** TSB Number Code mapping. */
   @Table(name = "TSB_NUMBER_CODE", schema = "THE")
   record TsbNumberCode(
       @Id @Column("TSB_NUMBER_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT TSB_NUMBER_CODE, DESCRIPTION FROM THE.TSB_NUMBER_CODE")
   List<TsbNumberCode> findTsbNumberCodes();
@@ -575,11 +725,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findTsbNumberCodes());
   }
 
+  /** TFL Number Code mapping. */
   @Table(name = "TFL_NUMBER_CODE", schema = "THE")
   record TflNumberCode(
       @Id @Column("TFL_NUMBER") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT TFL_NUMBER, DESCRIPTION FROM THE.TFL_NUMBER_CODE")
   List<TflNumberCode> findTflNumberCodes();
@@ -588,11 +738,11 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findTflNumberCodes());
   }
 
+  /** Skid Type Code mapping. */
   @Table(name = "ILCR_SKID_TYPE_CODE", schema = "THE")
   record SkidTypeCode(
       @Id @Column("ILCR_SKID_TYPE_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      implements CodeLabel {}
 
   @Query("SELECT ILCR_SKID_TYPE_CODE, DESCRIPTION FROM THE.ILCR_SKID_TYPE_CODE")
   List<SkidTypeCode> findSkidTypeCodes();
@@ -601,11 +751,12 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     return asLabelMap(findSkidTypeCodes());
   }
 
+  /** Rate Cost Type Code mapping. */
   @Table(name = "ILCR_RATE_COST_TYPE_CODE", schema = "THE")
   record RateCostTypeCode(
-      @Id @Column("ILCR_RATE_COST_TYPE_CODE") String code, @Column("DESCRIPTION") String description)
-      implements CodeLabel {
-  }
+      @Id @Column("ILCR_RATE_COST_TYPE_CODE") String code,
+      @Column("DESCRIPTION") String description)
+      implements CodeLabel {}
 
   @Query("SELECT ILCR_RATE_COST_TYPE_CODE, DESCRIPTION FROM THE.ILCR_RATE_COST_TYPE_CODE")
   List<RateCostTypeCode> findRateCostTypeCodes();

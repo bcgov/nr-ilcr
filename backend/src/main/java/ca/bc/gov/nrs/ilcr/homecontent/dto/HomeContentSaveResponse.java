@@ -10,5 +10,5 @@ import java.util.List;
  * @param message the verbatim success text (SUC-001)
  * @param entries the three role messages after the save
  */
-public record HomeContentSaveResponse(String messageKey, String message, List<HomeContentEntry> entries) {
-}
+public record HomeContentSaveResponse(
+    String messageKey, String message, List<HomeContentEntry> entries) {}

@@ -37,23 +37,17 @@ class Schedule1OtherCostsControllerTest {
   private static final int YEAR = 2021;
   private static final String CATEGORY = "1";
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule1Service schedule1Service;
+  @Mock private Schedule1Service schedule1Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule1OtherCostsController controller;
+  @InjectMocks private Schedule1OtherCostsController controller;
 
   private OtherCostsDocument mockDocEchoingMessage() {
     OtherCostsDocument doc = mock(OtherCostsDocument.class);
@@ -81,7 +75,8 @@ class Schedule1OtherCostsControllerTest {
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule1Service.addOtherCost(MILL_ID, YEAR, request, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<OtherCostsDocument> response =
@@ -98,7 +93,8 @@ class Schedule1OtherCostsControllerTest {
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule1Service.updateOtherCost(MILL_ID, YEAR, 7, request, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<OtherCostsDocument> response =
@@ -117,7 +113,8 @@ class Schedule1OtherCostsControllerTest {
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule1Service.saveOtherCosts(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<OtherCostsDocument> response =
@@ -155,7 +152,7 @@ class Schedule1OtherCostsControllerTest {
     OtherCostsDocument doc = mockDocEchoingMessage();
     when(schedule1Service.deleteOtherCost(MILL_ID, YEAR, 7)).thenReturn(doc);
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");
 
     ResponseEntity<OtherCostsDocument> response =

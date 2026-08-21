@@ -65,8 +65,9 @@ public class GlobalExceptionHandler {
       log.debug("Business rule rejection [{}]: {}", ex.getStatus(), ex.getMessageKey());
     }
 
-    String detail = messageSource.getMessage(
-        ex.getMessageKey(), null, ex.getMessageKey(), LocaleContextHolder.getLocale());
+    String detail =
+        messageSource.getMessage(
+            ex.getMessageKey(), null, ex.getMessageKey(), LocaleContextHolder.getLocale());
 
     ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
     problem.setTitle(ex.getStatus().getReasonPhrase());
@@ -115,18 +116,22 @@ public class GlobalExceptionHandler {
     // Field names and constraint codes only — NEVER ex.getMessage(), which embeds "rejected value
     // [...]" for every field error (AD-11: no cost or comment data in logs). A rejected 20-culvert
     // batch used to write 20 rows of costs and comments here (PR #266 review).
-    log.warn("Validation failed on {}: {}", request.getRequestURI(),
+    log.warn(
+        "Validation failed on {}: {}",
+        request.getRequestURI(),
         ex.getBindingResult().getFieldErrors().stream()
             .map(error -> error.getField() + "/" + error.getCode())
             .collect(Collectors.joining(", ")));
 
-    var errors = ex.getBindingResult().getFieldErrors().stream()
-        .map(GlobalExceptionHandler::describeFieldError)
-        // Identical (row, message) pairs collapse rather than handing the reporter the same
-        // sentence twice. Two annotations sharing a key on one field is already prevented at source
-        // (MaxByteLength.charMax); this is the backstop for any other pairing.
-        .distinct()
-        .collect(Collectors.joining("; "));
+    var errors =
+        ex.getBindingResult().getFieldErrors().stream()
+            .map(GlobalExceptionHandler::describeFieldError)
+            // Identical (row, message) pairs collapse rather than handing the reporter the same
+            // sentence twice. Two annotations sharing a key on one field is already prevented at
+            // source
+            // (MaxByteLength.charMax); this is the backstop for any other pairing.
+            .distinct()
+            .collect(Collectors.joining("; "));
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
     problem.setTitle("Validation Failed");
@@ -150,9 +155,10 @@ public class GlobalExceptionHandler {
       ConstraintViolationException ex, HttpServletRequest request) {
     log.warn("Constraint violations: {}", ex.getMessage());
 
-    String detail = ex.getConstraintViolations().stream()
-        .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
-        .collect(Collectors.joining("; "));
+    String detail =
+        ex.getConstraintViolations().stream()
+            .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
+            .collect(Collectors.joining("; "));
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
     problem.setTitle("Validation Error");
@@ -172,22 +178,22 @@ public class GlobalExceptionHandler {
 
   /**
    * The ONE batch list whose rows carry the legacy {@code Id: n - } label: {@code culverts}, the
-   * list field of Schedule 7B's page-level Save ({@code CulvertSaveAllRequest}). Anchored at the path
-   * root, so it matches {@code culverts[6].culvert.installCost} and nothing nested deeper.
+   * list field of Schedule 7B's page-level Save ({@code CulvertSaveAllRequest}). Anchored at the
+   * path root, so it matches {@code culverts[6].culvert.installCost} and nothing nested deeper.
    *
    * <p><strong>Scoped to one list rather than "any indexed path"</strong> because the label is a
-   * legacy-fidelity detail of 7B's list form, not a house style. Every other batch body in the app is
-   * indexed too — {@code lineItems} (Schedules 1, 3), {@code rows} (Schedules 1, 3, 5),
-   * {@code categories} (Schedule 4) — and their legacy screens carry NO row label, so an unscoped
-   * prefix silently rewrote their 400 wording. Their own acceptance tests pin the bare sentence and
-   * went red the first time CI actually ran the ITs (PR #268: two Schedule 1, three Schedule 4, one
+   * legacy-fidelity detail of 7B's list form, not a house style. Every other batch body in the app
+   * is indexed too — {@code lineItems} (Schedules 1, 3), {@code rows} (Schedules 1, 3, 5), {@code
+   * categories} (Schedule 4) — and their legacy screens carry NO row label, so an unscoped prefix
+   * silently rewrote their 400 wording. Their own acceptance tests pin the bare sentence and went
+   * red the first time CI actually ran the ITs (PR #268: two Schedule 1, three Schedule 4, one
    * Schedule 5). Nothing caught it on {@code main}, whose Analysis job runs {@code verify} WITHOUT
    * {@code -Dskip.integration.tests=false} — the ITs are skipped there.
    *
-   * <p>Matching the path root rather than the binding's object name is deliberate: Spring derives the
-   * object name from the {@code @RequestBody} TYPE at runtime, but a hand-built {@link FieldError} in
-   * a unit test names it whatever it likes, so an object-name test would pass in production and
-   * silently do nothing under {@code GlobalExceptionHandlerTest}.
+   * <p>Matching the path root rather than the binding's object name is deliberate: Spring derives
+   * the object name from the {@code @RequestBody} TYPE at runtime, but a hand-built {@link
+   * FieldError} in a unit test names it whatever it likes, so an object-name test would pass in
+   * production and silently do nothing under {@code GlobalExceptionHandlerTest}.
    */
   private static final Pattern ROW_LABELLED_LIST = Pattern.compile("^culverts\\[");
 
@@ -197,19 +203,18 @@ public class GlobalExceptionHandler {
    *
    * <p>Without this, a page-level Save of N culverts whose row 7 carried an out-of-range install
    * cost answered with the bare sentence and no row identity, while the whole batch rolled back —
-   * leaving
-   * the reporter to find the offending row by inspection (PR #266 review). The prefix is the legacy
-   * list-row form: {@code validatorMessage="Id: #{obj.rowCounter} - #{msg.costValidatorErrorMsg}"}
-   * ({@code schedule7B.xhtml:436-437,455-456}). The Add form carried no prefix, and neither does a
-   * non-indexed path here, so the single-record POST/PUT wording is unchanged.
+   * leaving the reporter to find the offending row by inspection (PR #266 review). The prefix is
+   * the legacy list-row form: {@code validatorMessage="Id: #{obj.rowCounter} -
+   * #{msg.costValidatorErrorMsg}"} ({@code schedule7B.xhtml:436-437,455-456}). The Add form carried
+   * no prefix, and neither does a non-indexed path here, so the single-record POST/PUT wording is
+   * unchanged.
    *
    * <p><strong>The number is the 1-based batch index, which equals the legacy {@code rowCounter}
    * only because the batch endpoints take the WHOLE schedule in list order</strong> (an empty list
-   * is
-   * rejected, and the page sends every row). A client posting a subset would get its own position
-   * back, not the row's ordinal on screen. Resolving the true {@code rowCounter} needs domain state
-   * this handler deliberately has no access to; if a partial-batch caller ever appears, move the
-   * labelling into the schedule service.
+   * is rejected, and the page sends every row). A client posting a subset would get its own
+   * position back, not the row's ordinal on screen. Resolving the true {@code rowCounter} needs
+   * domain state this handler deliberately has no access to; if a partial-batch caller ever
+   * appears, move the labelling into the schedule service.
    */
   private static String describeFieldError(FieldError error) {
     String message = Objects.requireNonNullElse(error.getDefaultMessage(), "");
@@ -238,7 +243,8 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ProblemDetail> handleNotReadable(
       HttpMessageNotReadableException ex, HttpServletRequest request) {
     Throwable cause = ex.getMostSpecificCause();
-    log.warn("Unreadable request body: {}",
+    log.warn(
+        "Unreadable request body: {}",
         cause == null ? "unknown" : cause.getClass().getSimpleName());
 
     // A non-numeric value on a typed numeric field surfaces as a Jackson mismatch whose message
@@ -306,41 +312,37 @@ public class GlobalExceptionHandler {
 
   /**
    * Converter message keys scoped to {@code DeclaringType["property"]}, matched against the
-   * reference
-   * chain Jackson puts in its exception message (…{@code CulvertRequest["spanSize"]}).
+   * reference chain Jackson puts in its exception message (…{@code CulvertRequest["spanSize"]}).
    *
    * <p>Scoped by TYPE, not by bare property name (PR #266 review). Matching {@code "spanSize"}
    * alone worked only while that name was unique across every DTO in the app, and the guard for
-   * that lived
-   * in a comment — so the next request record to declare a {@code spanSize} would have silently
-   * inherited culvert wording with nothing failing. Keying on the owning type costs the same lookup
-   * and makes the constraint structural: a second declarer gets the type-based fallback until
-   * someone
-   * adds its own entry here, and a per-schedule {@code length} becomes expressible (7A's {@code
-   * BridgeRequest} declares one too, which is why the bare-name form had to leave {@code length}
-   * out
-   * entirely — see {@code deferred-work.md}).
+   * that lived in a comment — so the next request record to declare a {@code spanSize} would have
+   * silently inherited culvert wording with nothing failing. Keying on the owning type costs the
+   * same lookup and makes the constraint structural: a second declarer gets the type-based fallback
+   * until someone adds its own entry here, and a per-schedule {@code length} becomes expressible
+   * (7A's {@code BridgeRequest} declares one too, which is why the bare-name form had to leave
+   * {@code length} out entirely — see {@code deferred-work.md}).
    *
    * <p>The chain is matched as a substring, so it resolves the same for a single-record body
    * ({@code CulvertRequest["spanSize"]}) and for a batch entry, where Jackson prefixes the
-   * collection
-   * hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
+   * collection hops ({@code CulvertSaveAllRequest["culverts"]->…->CulvertRequest["spanSize"]}).
    */
-  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET = Map.ofEntries(
-      Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
-      Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
-      Map.entry("CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg"),
-      // Schedule 10 (code review 2026-08-18). Without these, every malformed Integer on a road
-      // detail — a percentage or a haul volume — fell through to the type default and told the
-      // reporter their COST was invalid.
-      Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
-      Map.entry("RoadDetailRequest[\"endHaulVolume\"]", VOLUME_CONVERTER),
-      Map.entry("RoadDetailRequest[\"overlandVolume\"]", VOLUME_CONVERTER),
-      Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", PERCENTAGE_CONVERTER),
-      Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", PERCENTAGE_CONVERTER),
-      Map.entry("MaterialCompositionRequest[\"coarsePct\"]", PERCENTAGE_CONVERTER),
-      Map.entry("MaterialCompositionRequest[\"finePct\"]", PERCENTAGE_CONVERTER),
-      Map.entry("MaterialCompositionRequest[\"organicPct\"]", PERCENTAGE_CONVERTER));
+  private static final Map<String, String> CONVERTER_KEYS_BY_TARGET =
+      Map.ofEntries(
+          Map.entry("CulvertRequest[\"spanSize\"]", "culvertSpanConverterErrorMsg"),
+          Map.entry("CulvertRequest[\"riseSize\"]", "culvertRiseConverterErrorMsg"),
+          Map.entry("CulvertRequest[\"culvertPieceCount\"]", "culvertPieceCountConverterErrorMsg"),
+          // Schedule 10 (code review 2026-08-18). Without these, every malformed Integer on a road
+          // detail — a percentage or a haul volume — fell through to the type default and told the
+          // reporter their COST was invalid.
+          Map.entry("RoadDetailRequest[\"sideSlopePct\"]", "sideSlopePercentageConverterErrorMsg"),
+          Map.entry("RoadDetailRequest[\"endHaulVolume\"]", VOLUME_CONVERTER),
+          Map.entry("RoadDetailRequest[\"overlandVolume\"]", VOLUME_CONVERTER),
+          Map.entry("MaterialCompositionRequest[\"solidRockPct\"]", PERCENTAGE_CONVERTER),
+          Map.entry("MaterialCompositionRequest[\"rippableRockPct\"]", PERCENTAGE_CONVERTER),
+          Map.entry("MaterialCompositionRequest[\"coarsePct\"]", PERCENTAGE_CONVERTER),
+          Map.entry("MaterialCompositionRequest[\"finePct\"]", PERCENTAGE_CONVERTER),
+          Map.entry("MaterialCompositionRequest[\"organicPct\"]", PERCENTAGE_CONVERTER));
 
   /**
    * Handles authorization denials from method security ({@code @PreAuthorize}). Without this
@@ -385,15 +387,18 @@ public class GlobalExceptionHandler {
       FieldValuesRequiredException ex, HttpServletRequest request) {
     log.debug("Required selection fields missing: {}", ex.getFieldLabels());
 
-    var messages = ex.getFieldLabels().stream()
-        .map(label -> new FieldMessage(
-            REQUIRED_FIELD_KEY,
-            messageSource.getMessage(
-                REQUIRED_FIELD_KEY,
-                new Object[] {label},
-                REQUIRED_FIELD_KEY,
-                LocaleContextHolder.getLocale())))
-        .toList();
+    var messages =
+        ex.getFieldLabels().stream()
+            .map(
+                label ->
+                    new FieldMessage(
+                        REQUIRED_FIELD_KEY,
+                        messageSource.getMessage(
+                            REQUIRED_FIELD_KEY,
+                            new Object[] {label},
+                            REQUIRED_FIELD_KEY,
+                            LocaleContextHolder.getLocale())))
+            .toList();
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
     problem.setTitle("Validation Failed");
@@ -407,10 +412,10 @@ public class GlobalExceptionHandler {
   }
 
   /**
-   * Handles a business rejection carrying MORE THAN ONE legacy message (AD-8) — resolves each key to
-   * its verbatim text and returns them together in the {@code messages} extension (same shape as the
-   * required-field handler), with the exception's status. Used e.g. by the reporting-year open when
-   * zero active mills exist (INF-001 + ERR-002 together).
+   * Handles a business rejection carrying MORE THAN ONE legacy message (AD-8) — resolves each key
+   * to its verbatim text and returns them together in the {@code messages} extension (same shape as
+   * the required-field handler), with the exception's status. Used e.g. by the reporting-year open
+   * when zero active mills exist (INF-001 + ERR-002 together).
    *
    * @param ex the exception carrying the ordered message keys and target status
    * @param request the current HTTP request
@@ -421,10 +426,14 @@ public class GlobalExceptionHandler {
       MultiMessageException ex, HttpServletRequest request) {
     log.info("Multi-message business rejection ({}): {}", ex.getStatus(), ex.getMessageKeys());
 
-    var messages = ex.getMessageKeys().stream()
-        .map(key -> new FieldMessage(
-            key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale())))
-        .toList();
+    var messages =
+        ex.getMessageKeys().stream()
+            .map(
+                key ->
+                    new FieldMessage(
+                        key,
+                        messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale())))
+            .toList();
 
     ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
     problem.setTitle(ex.getStatus().getReasonPhrase());
@@ -503,9 +512,10 @@ public class GlobalExceptionHandler {
       log.warn("ResponseStatusException: {}", ex.getMessage());
     }
 
-    String title = HttpStatus.resolve(status.value()) != null
-        ? HttpStatus.resolve(status.value()).getReasonPhrase()
-        : status.toString();
+    String title =
+        HttpStatus.resolve(status.value()) != null
+            ? HttpStatus.resolve(status.value()).getReasonPhrase()
+            : status.toString();
 
     ProblemDetail problem = ProblemDetail.forStatus(status);
     problem.setTitle(title);

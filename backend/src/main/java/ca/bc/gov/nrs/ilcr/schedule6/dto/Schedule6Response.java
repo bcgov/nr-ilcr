@@ -16,10 +16,10 @@ import java.util.List;
  * {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND {@code trackStatus == "D"},
  * computed server-side (AD-5/AD-9), never client-supplied — a non-Draft mill still lists records
  * ({@code editable:false}). {@code generalComments} is the single schedule-level comment (stored
- * replicated on every road-record row in legacy). {@code totalVolume}/{@code totalCost}/
- * {@code totalCostPerVolume} are DERIVED running totals (BR-07). A valid, active mill/year with no
- * road records returns {@code roadRecords: []} with zero totals and no general comment — never a
- * 404 (that is reserved for the mill/year context guard, ERR-003).
+ * replicated on every road-record row in legacy). {@code totalVolume}/{@code totalCost}/ {@code
+ * totalCostPerVolume} are DERIVED running totals (BR-07). A valid, active mill/year with no road
+ * records returns {@code roadRecords: []} with zero totals and no general comment — never a 404
+ * (that is reserved for the mill/year context guard, ERR-003).
  *
  * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson {@code non_null}
  * omits it), carrying the resolved {@link MessageInfo} on the Story 8.2 save echo.
@@ -40,7 +40,15 @@ public record Schedule6Response(
   /** A copy of this document carrying the given success message (for the save echo, AD-8). */
   public Schedule6Response withMessage(MessageInfo message) {
     return new Schedule6Response(
-        millId, year, trackStatus, editable, generalComments, roadRecords,
-        totalVolume, totalCost, totalCostPerVolume, message);
+        millId,
+        year,
+        trackStatus,
+        editable,
+        generalComments,
+        roadRecords,
+        totalVolume,
+        totalCost,
+        totalCostPerVolume,
+        message);
   }
 }

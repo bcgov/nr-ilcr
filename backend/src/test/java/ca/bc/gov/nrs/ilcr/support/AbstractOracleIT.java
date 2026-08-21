@@ -24,21 +24,22 @@ import org.testcontainers.oracle.OracleContainer;
  * Java API, and exposes a MockMvc wired through the Spring Security filter chain.
  *
  * <p>The container is started and migrated in a static block (once per JVM) rather than via
- * {@code @Container}/{@code @Testcontainers}, and Spring Boot's Flyway auto-run is disabled — Boot 4
- * split Flyway auto-configuration into a separate module the app deliberately does not depend on
+ * {@code @Container}/{@code @Testcontainers}, and Spring Boot's Flyway auto-run is disabled — Boot
+ * 4 split Flyway auto-configuration into a separate module the app deliberately does not depend on
  * (AD-2: no runtime DDL). Connecting as user {@code THE} makes {@code THE.<table>} resolve as the
  * current schema without needing CREATE USER privileges.
  *
  * <p>Spring Boot 4 also moved the servlet {@code @AutoConfigureMockMvc} slice; MockMvc is built
- * explicitly from the {@link WebApplicationContext} with {@code springSecurity()} applied so the real
- * authorization path is exercised (AD-7).
+ * explicitly from the {@link WebApplicationContext} with {@code springSecurity()} applied so the
+ * real authorization path is exercised (AD-7).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 public abstract class AbstractOracleIT {
 
-  static final OracleContainer ORACLE = new OracleContainer("gvenzl/oracle-free:23.9-slim-faststart")
-      .withUsername("THE")
-      .withPassword("THE");
+  static final OracleContainer ORACLE =
+      new OracleContainer("gvenzl/oracle-free:23.9-slim-faststart")
+          .withUsername("THE")
+          .withPassword("THE");
 
   static {
     ORACLE.start();
@@ -49,32 +50,29 @@ public abstract class AbstractOracleIT {
         .migrate();
   }
 
-  @Autowired
-  private WebApplicationContext webApplicationContext;
+  @Autowired private WebApplicationContext webApplicationContext;
 
   /** Shared MockMvc for subclasses, wired through the full Spring Security filter chain. */
   protected MockMvc mockMvc;
 
   @BeforeEach
   void setUpMockMvc() {
-    this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
-        .apply(springSecurity())
-        .build();
+    this.mockMvc =
+        MockMvcBuilders.webAppContextSetup(webApplicationContext).apply(springSecurity()).build();
   }
 
   /**
    * Perform a request whose 200 response STREAMS its body via {@code StreamingResponseBody} (the
    * report/print PDF endpoints, Story 29.2). A streaming controller returns after starting async
    * processing, so the final response — status, headers, and PDF body — is only available after an
-   * async dispatch; this asserts async started, then dispatches and returns the {@link ResultActions}
-   * for the caller to chain its {@code andExpect(...)} on. Use it only for the success path: the
-   * 400/404/409 guards throw synchronously (before the body streams) and never start async, so those
-   * tests keep calling {@code mockMvc.perform(...)} directly.
+   * async dispatch; this asserts async started, then dispatches and returns the {@link
+   * ResultActions} for the caller to chain its {@code andExpect(...)} on. Use it only for the
+   * success path: the 400/404/409 guards throw synchronously (before the body streams) and never
+   * start async, so those tests keep calling {@code mockMvc.perform(...)} directly.
    */
   protected ResultActions streamPdf(MockHttpServletRequestBuilder request) throws Exception {
-    MvcResult asyncResult = mockMvc.perform(request)
-        .andExpect(request().asyncStarted())
-        .andReturn();
+    MvcResult asyncResult =
+        mockMvc.perform(request).andExpect(request().asyncStarted()).andReturn();
     return mockMvc.perform(asyncDispatch(asyncResult));
   }
 

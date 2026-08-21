@@ -38,11 +38,9 @@ class HomeContentIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
-  @Autowired
-  private NamedParameterJdbcTemplate jdbc;
+  @Autowired private NamedParameterJdbcTemplate jdbc;
 
   private RequestPostProcessor groups(String... groups) {
     return jwt()
@@ -53,7 +51,8 @@ class HomeContentIT extends AbstractOracleIT {
   @Test
   @DisplayName("admin lists all three role messages")
   void admin_listsAllRoles() throws Exception {
-    mockMvc.perform(get(ENDPOINT).with(groups("ILCR_ADMIN")))
+    mockMvc
+        .perform(get(ENDPOINT).with(groups("ILCR_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(3))
         .andExpect(jsonPath("$[*].role", hasItem("LICENSEE")))
@@ -63,10 +62,15 @@ class HomeContentIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER is denied save — 403 (S13)")
   void submitter_saveForbidden() throws Exception {
-    String body = """
+    String body =
+        """
         {"licensee":"<p>L</p>","auditor":"<p>A</p>","administrator":"<p>Adm</p>"}""";
-    mockMvc.perform(put(ENDPOINT).with(groups("ILCR_SUBMITTER"))
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(groups("ILCR_SUBMITTER"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -74,7 +78,8 @@ class HomeContentIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER is denied the admin list — 403 (S13)")
   void submitter_listForbidden() throws Exception {
-    mockMvc.perform(get(ENDPOINT).with(groups("ILCR_SUBMITTER")))
+    mockMvc
+        .perform(get(ENDPOINT).with(groups("ILCR_SUBMITTER")))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -82,47 +87,62 @@ class HomeContentIT extends AbstractOracleIT {
   @Test
   @DisplayName("no ILCR group is denied the admin list — 403")
   void noGroup_listForbidden() throws Exception {
-    mockMvc.perform(get(ENDPOINT).with(groups()))
-        .andExpect(status().isForbidden());
+    mockMvc.perform(get(ENDPOINT).with(groups())).andExpect(status().isForbidden());
   }
 
   @Test
   @DisplayName("a blank editor is rejected 400 (FLD-001) and nothing is saved")
   void blankEditorRejected() throws Exception {
-    String body = """
+    String body =
+        """
         {"licensee":"<p></p>","auditor":"<p>A</p>","administrator":"<p>Adm</p>"}""";
-    mockMvc.perform(put(ENDPOINT).with(groups("ILCR_ADMIN"))
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(groups("ILCR_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", containsString("Licensee Welcome Message")));
   }
 
   @Test
-  @DisplayName("admin saves all three atomically (transform + audit); /mine reflects the caller role")
+  @DisplayName(
+      "admin saves all three atomically (transform + audit); /mine reflects the caller role")
   void admin_savesAndMineReflectsRole() throws Exception {
     // The admin message carries a tab to prove the legacy save-transform (tab -> two spaces).
-    String body = """
+    String body =
+        """
         {"licensee":"<p>LIC</p>","auditor":"<p>AUD</p>","administrator":"<p>AD\\tM</p>"}""";
-    mockMvc.perform(put(ENDPOINT).with(groups("ILCR_ADMIN"))
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(groups("ILCR_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message").value("Data saved successfully"));
 
-    // /mine returns the caller-role message: admin -> Administrator (transformed), submitter -> Licensee.
-    mockMvc.perform(get(ENDPOINT + "/mine").with(groups("ILCR_ADMIN")))
+    // /mine returns the caller-role message: admin -> Administrator (transformed), submitter ->
+    // Licensee.
+    mockMvc
+        .perform(get(ENDPOINT + "/mine").with(groups("ILCR_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.role").value("ADMIN"))
         .andExpect(jsonPath("$.messageText").value("<p>AD  M</p>"));
-    mockMvc.perform(get(ENDPOINT + "/mine").with(groups("ILCR_SUBMITTER")))
+    mockMvc
+        .perform(get(ENDPOINT + "/mine").with(groups("ILCR_SUBMITTER")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.role").value("LICENSEE"))
         .andExpect(jsonPath("$.messageText").value("<p>LIC</p>"));
 
     // Audit user stamped from the principal, not the seed's 'SEED'.
-    String updatedBy = jdbc.queryForObject(
-        "SELECT UPDATE_USERID FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = 'ADMIN'",
-        new MapSqlParameterSource(), String.class);
+    String updatedBy =
+        jdbc.queryForObject(
+            "SELECT UPDATE_USERID FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = 'ADMIN'",
+            new MapSqlParameterSource(),
+            String.class);
     assertThat(updatedBy).isNotNull().isNotEqualTo("SEED");
   }
 }

@@ -8,15 +8,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Builds a fresh {@link JRSwapFileVirtualizer} per report render (Story 29.2). A virtualizer lets the
- * Jasper fill spill page objects to a swap file on disk once more than {@code maxSize} pages are held
- * in memory, so a big "all schedules" print (or several concurrent prints) does not pin the whole
- * section object graph on the JVM heap.
+ * Builds a fresh {@link JRSwapFileVirtualizer} per report render (Story 29.2). A virtualizer lets
+ * the Jasper fill spill page objects to a swap file on disk once more than {@code maxSize} pages
+ * are held in memory, so a big "all schedules" print (or several concurrent prints) does not pin
+ * the whole section object graph on the JVM heap.
  *
  * <p>The swap directory and the in-memory page ceiling are configurable ({@code
  * ilcr.reporting.virtualizer.*}); an empty swap directory defaults to the JVM temp dir. The
- * virtualizer OWNS its swap file (swapOwner=true), so {@code cleanup()} deletes the on-disk file when
- * the render finishes (see {@link RenderedReport#close()}) — no swap-file leak on success or error.
+ * virtualizer OWNS its swap file (swapOwner=true), so {@code cleanup()} deletes the on-disk file
+ * when the render finishes (see {@link RenderedReport#close()}) — no swap-file leak on success or
+ * error.
  */
 @Component
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
@@ -40,9 +41,9 @@ class ReportVirtualizerFactory {
   }
 
   /**
-   * A new virtualizer backed by its own swap file in the configured directory. {@code maxSize} is the
-   * number of pages kept in memory before the least-recently-used ones are paged out to disk; the
-   * swap file grows in {@code blockSize}-byte blocks, {@code minGrowCount} at a time.
+   * A new virtualizer backed by its own swap file in the configured directory. {@code maxSize} is
+   * the number of pages kept in memory before the least-recently-used ones are paged out to disk;
+   * the swap file grows in {@code blockSize}-byte blocks, {@code minGrowCount} at a time.
    */
   JRSwapFileVirtualizer create() {
     JRSwapFile swapFile = new JRSwapFile(swapDirectory, blockSize, minGrowCount);

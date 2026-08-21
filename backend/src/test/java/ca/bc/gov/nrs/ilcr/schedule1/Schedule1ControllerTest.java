@@ -10,8 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -38,23 +38,17 @@ class Schedule1ControllerTest {
   private static final int YEAR = 2021;
   private static final String CATEGORY = "1";
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule1Service schedule1Service;
+  @Mock private Schedule1Service schedule1Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule1Controller controller;
+  @InjectMocks private Schedule1Controller controller;
 
   @Test
   void getSchedule1_validatesContext_derivesEditFlag_andReturnsDocument() {
@@ -79,7 +73,8 @@ class Schedule1ControllerTest {
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule1Service.saveSchedule1(MILL_ID, YEAR, request, true, "dev-admin"))
         .thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<Schedule1Response> response =
@@ -93,7 +88,7 @@ class Schedule1ControllerTest {
   @Test
   void deleteSchedule1_delegates_andReturnsDeletedMessage() {
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");
 
     ResponseEntity<MessageResponse> response =

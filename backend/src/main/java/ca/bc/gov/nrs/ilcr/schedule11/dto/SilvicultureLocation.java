@@ -4,16 +4,16 @@ import java.math.BigDecimal;
 
 /**
  * One Schedule 11 location row of the pinned Story 25.1 wire contract (AD-12). All derived figures
- * are computed server-side per BR-08 (AD-5); costs are whole-dollar integers
- * ({@code ILCR_COST_REPORT_DETAIL.COST} is {@code NUMBER(8,0)}). Clean camelCase, never JSF
- * control-id spellings.
+ * are computed server-side per BR-08 (AD-5); costs are whole-dollar integers ({@code
+ * ILCR_COST_REPORT_DETAIL.COST} is {@code NUMBER(8,0)}). Clean camelCase, never JSF control-id
+ * spellings.
  *
  * @param locationId the location id ({@code BASIC_SILVICULTURE_REPORT_ID})
  * @param location the location text (label "Location", max 30)
  * @param enhancedIndicator {@code ENHANCED_IND} {@code "Y"} → true (label "ES")
  * @param biogeoclimaticCatalogueId the BEC catalogue id the row references
- * @param becLabel legacy {@code getBiogeoSubZoneVariantPase()}: zone+subzone+variant+phase,
- *     nulls → {@code ""}; null only if the catalogue row is missing
+ * @param becLabel legacy {@code getBiogeoSubZoneVariantPase()}: zone+subzone+variant+phase, nulls →
+ *     {@code ""}; null only if the catalogue row is missing
  * @param netArea {@code REFORESTED_NET_AREA} (label "NAR (ha)")
  * @param actualCost item-24 cost (label "Actual Cost ($)"); null when absent
  * @param plannedCost item-23 cost (label "Planned Cost ($)"); null when absent
@@ -37,5 +37,4 @@ public record SilvicultureLocation(
     Integer totalCost,
     BigDecimal costPerNetArea,
     String comments,
-    Integer revisionCount) {
-}
+    Integer revisionCount) {}

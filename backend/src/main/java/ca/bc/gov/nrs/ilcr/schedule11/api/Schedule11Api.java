@@ -29,17 +29,17 @@ import org.springframework.web.bind.annotation.RequestParam;
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — unlike Schedule 1's typed params
  * — because AC3 pins the verbatim legacy ERR-001 message for missing, blank, AND non-numeric
  * values, which a typed required {@code @RequestParam} cannot produce (it yields the generic
- * missing-parameter/type-mismatch 400s). Parsing + the guard chain live in
- * {@code MillContextService} (AD-4).
+ * missing-parameter/type-mismatch 400s). Parsing + the guard chain live in {@code
+ * MillContextService} (AD-4).
  */
 @RequestMapping("/api/v1/schedule11")
 public interface Schedule11Api {
 
   /**
    * Get the Schedule 11 (Basic Silviculture) locations document for a mill and reporting year.
-   * Guards: missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no
-   * {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero locations is a valid 200); no
-   * {@code VIEW_SCHEDULE} → 403.
+   * Guards: missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no {@code
+   * ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero locations is a valid 200); no {@code
+   * VIEW_SCHEDULE} → 403.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -53,11 +53,12 @@ public interface Schedule11Api {
       Authentication authentication);
 
   /**
-   * Add one Schedule 11 location (S01/S02/S09). The location persists immediately and the recomputed
-   * document (footer totals refreshed, CNT-001) is echoed with a success {@code message}. Required
-   * fields Location/Enhanced/Biogeo/NAR; costs optional. Validation → 400; unresolvable biogeo → 400;
-   * duplicate biogeo/location key → 409; non-Draft silviculture track → 409; missing
-   * {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
+   * Add one Schedule 11 location (S01/S02/S09). The location persists immediately and the
+   * recomputed document (footer totals refreshed, CNT-001) is echoed with a success {@code
+   * message}. Required fields Location/Enhanced/Biogeo/NAR; costs optional. Validation → 400;
+   * unresolvable biogeo → 400; duplicate biogeo/location key → 409; non-Draft silviculture track →
+   * 409; missing {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409
+   * (ERR-001/003/002).
    *
    * @param millId the raw mill id param (validated by millcontext; verbatim ERR-001 on absence)
    * @param year the raw reporting year param (validated by millcontext)
@@ -73,9 +74,9 @@ public interface Schedule11Api {
       Authentication authentication);
 
   /**
-   * Edit one Schedule 11 location (S03). Same validation/gates as add; the body must carry the row's
-   * {@code revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
-   * unknown id → 404.
+   * Edit one Schedule 11 location (S03). Same validation/gates as add; the body must carry the
+   * row's {@code revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409;
+   * an unknown id → 404.
    *
    * @param id the location id ({@code BASIC_SILVICULTURE_REPORT_ID}) to edit
    * @param millId the raw mill id param
@@ -138,6 +139,5 @@ public interface Schedule11Api {
    */
   @GetMapping("/biogeoclimatic-catalogue")
   ResponseEntity<List<BiogeoclimaticOption>> searchBiogeoCatalogue(
-      @RequestParam(name = "q", required = false) String q,
-      Authentication authentication);
+      @RequestParam(name = "q", required = false) String q, Authentication authentication);
 }

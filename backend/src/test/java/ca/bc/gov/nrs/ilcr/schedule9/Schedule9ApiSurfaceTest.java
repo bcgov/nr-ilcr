@@ -26,69 +26,81 @@ import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-/**
- * The Schedule 9 API SURFACE — what the contract deliberately does NOT expose.
- */
+/** The Schedule 9 API SURFACE — what the contract deliberately does NOT expose. */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule 9 API surface — endpoint mappings (Story 9.2)")
 class Schedule9ApiSurfaceTest {
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule9Service schedule9Service;
+  @Mock private Schedule9Service schedule9Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUp() {
-    mockMvc = MockMvcBuilders.standaloneSetup(
-            new Schedule9Controller(
-                millContextService, schedule9Service, permissions, messageSource))
-        .build();
-    lenient().when(millContextService.validateMillYearActive(any(), any()))
+    mockMvc =
+        MockMvcBuilders.standaloneSetup(
+                new Schedule9Controller(
+                    millContextService, schedule9Service, permissions, messageSource))
+            .build();
+    lenient()
+        .when(millContextService.validateMillYearActive(any(), any()))
         .thenReturn(new MillYearContext(700L, 2021));
     lenient().when(authentication.getName()).thenReturn("SEED");
 
     Schedule9Response dummyResponse =
         new Schedule9Response(700L, 2021, "D", true, List.of(), null, null);
-    lenient().when(schedule9Service.addRecord(anyLong(), anyInt(), any(), anyBoolean(), any()))
+    lenient()
+        .when(schedule9Service.addRecord(anyLong(), anyInt(), any(), anyBoolean(), any()))
         .thenReturn(dummyResponse);
-    lenient().when(schedule9Service.updateRecord(anyLong(), anyInt(), anyInt(), any(), anyBoolean(), any()))
+    lenient()
+        .when(
+            schedule9Service.updateRecord(
+                anyLong(), anyInt(), anyInt(), any(), anyBoolean(), any()))
         .thenReturn(dummyResponse);
   }
 
   @Test
-  @DisplayName("POST /records/{id}/copy is NOT a route — copy is a client-side prefill, not a server call")
+  @DisplayName(
+      "POST /records/{id}/copy is NOT a route — copy is a client-side prefill, not a server call")
   void copyEndpointDoesNotExist() throws Exception {
-    mockMvc.perform(post("/api/v1/schedule9/records/9101/copy")
-            .param("millId", "700").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            post("/api/v1/schedule9/records/9101/copy")
+                .param("millId", "700")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isNotFound());
   }
 
   @Test
   @DisplayName("…and the 404 above is meaningful: the neighbouring routes ARE mapped")
   void theRealRoutesAreMapped() throws Exception {
-    mockMvc.perform(post("/api/v1/schedule9/records")
-            .principal(authentication)
-            .param("millId", "700").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            post("/api/v1/schedule9/records")
+                .principal(authentication)
+                .param("millId", "700")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isOk());
-    mockMvc.perform(put("/api/v1/schedule9/records/9101")
-            .principal(authentication)
-            .param("millId", "700").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content("{\"revisionCount\": 0}"))
+    mockMvc
+        .perform(
+            put("/api/v1/schedule9/records/9101")
+                .principal(authentication)
+                .param("millId", "700")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revisionCount\": 0}"))
         .andExpect(status().isOk());
   }
 }
