@@ -4,6 +4,7 @@ import { createBdd } from 'playwright-bdd';
 import { globalTest } from './global';
 import { sch1Test } from './sch1';
 import { sch2Test } from './sch2';
+import { sch4Test } from './sch4';
 import { sch11Test } from './sch11';
 import { secTest } from './sec';
 
@@ -29,11 +30,12 @@ import { secTest } from './sec';
  * residue) — then add it to `mergeTests` below. Put a fixture in `./global` ONLY if more than one
  * domain uses it; a `world` field goes in the `World` union there (grouped under its domain's comment).
  */
-export const test = mergeTests(globalTest, sch1Test, sch2Test, sch11Test, secTest);
+export const test = mergeTests(globalTest, sch1Test, sch2Test, sch4Test, sch11Test, secTest);
 
 export type { World } from './global';
 export type { OtherCostsCleanup } from './sch1';
 export type { Sch2Cleanup } from './sch2';
+export type { Sch4Cleanup } from './sch4';
 export type { Sch11Cleanup } from './sch11';
 
 export const { Given, When, Then } = createBdd(test);
