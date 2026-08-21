@@ -34,6 +34,7 @@ import {
   validateLocationForm,
   type CategoryForm,
 } from './validation'
+import { deriveCategoryPerUnits } from './derived'
 import SubPage from './SubPage'
 import { SUB_PAGE_DEFS, type SubPageDef } from './subPageDefs'
 import './index.scss'
@@ -112,7 +113,8 @@ const CategoryCell: FC<{
   readOnly: boolean
   invalidText?: string
   onValueChange: (raw: string) => void
-}> = ({ inputId, label, value, readOnly, invalidText, onValueChange }) => {
+  onCommit: () => void
+}> = ({ inputId, label, value, readOnly, invalidText, onValueChange, onCommit }) => {
   if (readOnly) {
     return (
       <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
@@ -127,6 +129,7 @@ const CategoryCell: FC<{
         size="sm"
         value={value}
         onValueChange={onValueChange}
+        onBlur={onCommit}
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
@@ -144,7 +147,8 @@ const CategoryRow: FC<{
   readOnly: boolean
   fieldErrors: Record<string, string>
   onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
-}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange }) => {
+  onFieldCommit: (code: number, field: CategoryField) => () => void
+}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
     <TableRow>
@@ -157,6 +161,7 @@ const CategoryRow: FC<{
           readOnly={readOnly}
           invalidText={fieldErrors[`${def.code}-distance`]}
           onValueChange={onFieldChange(def.code, 'distance')}
+          onCommit={onFieldCommit(def.code, 'distance')}
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -168,6 +173,7 @@ const CategoryRow: FC<{
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-volume`]}
         onValueChange={onFieldChange(def.code, 'volume')}
+        onCommit={onFieldCommit(def.code, 'volume')}
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -176,6 +182,7 @@ const CategoryRow: FC<{
         readOnly={readOnly}
         invalidText={fieldErrors[`${def.code}-cost`]}
         onValueChange={onFieldChange(def.code, 'cost')}
+        onCommit={onFieldCommit(def.code, 'cost')}
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
@@ -234,7 +241,13 @@ const Schedule4: FC = () => {
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [panelName, setPanelName] = useState('')
   const [panelCategories, setPanelCategories] = useState<CategoryForm>(() => emptyCategoryForm())
+  // The $/m³ captured from the server when the panel opened. Still the source in VIEW mode, where
+  // there is no entry to track (defect #291 AC7); the editable modes read the mirror below instead.
   const [panelPerUnit, setPanelPerUnit] = useState<Record<number, number | null>>({})
+  // The blur-committed copy of the category grid that feeds the mirror. Legacy recalculated when focus
+  // left the field, so `panelCategories` keeps every keystroke (it drives the inputs) and this only
+  // advances on blur — and on save dispatch, since what was sent is by definition committed.
+  const [panelCommitted, setPanelCommitted] = useState<CategoryForm>(() => emptyCategoryForm())
   const [panelEditId, setPanelEditId] = useState<number | null>(null)
   const [panelRevision, setPanelRevision] = useState<number | null>(null)
   const [panelComments, setPanelComments] = useState('')
@@ -279,6 +292,7 @@ const Schedule4: FC = () => {
     setPanelMode('new')
     setPanelName('')
     setPanelCategories(emptyCategoryForm())
+    setPanelCommitted(emptyCategoryForm())
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
@@ -291,6 +305,7 @@ const Schedule4: FC = () => {
     setPanelMode(mode)
     setPanelName(location.name)
     setPanelCategories(seeded.form)
+    setPanelCommitted(seeded.form)
     setPanelPerUnit(seeded.perUnit)
     setPanelEditId(location.id)
     setPanelRevision(location.revisionCount)
@@ -303,6 +318,9 @@ const Schedule4: FC = () => {
     setPanelMode('copy')
     setPanelName('') // name cleared — a copy must be given a new unique name (WRN-001)
     setPanelCategories(seeded.form)
+    // A copy clones the amounts, so their $/m³ is known immediately — the mirror shows it without
+    // waiting for a save, where `panelPerUnit` would have left the column blank.
+    setPanelCommitted(seeded.form)
     setPanelPerUnit({})
     setPanelEditId(null)
     setPanelRevision(null)
@@ -320,6 +338,18 @@ const Schedule4: FC = () => {
         [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
       }))
     }
+
+  // Commit one category field (its `onBlur`), advancing the mirror's baseline for that field only.
+  const commitCategoryField = (code: number, field: 'volume' | 'cost' | 'distance') => () => {
+    setPanelCommitted((prev) => {
+      const live = panelCategories[code] ?? { volume: '', cost: '', distance: '' }
+      const committed = prev[code] ?? { volume: '', cost: '', distance: '' }
+      if (committed[field] === live[field]) {
+        return prev // tabbing through an untouched field must not re-render the grid
+      }
+      return { ...prev, [code]: { ...committed, [field]: live[field] } }
+    })
+  }
 
   const buildRequest = (): Schedule4LocationRequest => ({
     id: panelMode === 'edit' ? panelEditId : null,
@@ -361,6 +391,9 @@ const Schedule4: FC = () => {
       return
     }
     clearMessages()
+    // What is being sent is committed by definition — this also covers a Save clicked from a field
+    // whose blur has not landed yet.
+    setPanelCommitted(panelCategories)
     save<Schedule4Response>(buildRequest(), {
       suffix: '/locations',
       fallback: 'Schedule could not be saved.',
@@ -654,15 +687,20 @@ const Schedule4: FC = () => {
   )
 
   // ---- Category grid (inside the panel). ---------------------------------------------------------
+  // Per-category $/m³ mirrored from the committed values, so the column tracks entry before Save
+  // (defect #291). View mode has no entry, so it keeps rendering the server's own figures (AC7).
+  const mirroredPerUnit = readOnlyPanel ? panelPerUnit : deriveCategoryPerUnits(panelCommitted)
+
   const renderCategoryRow = (def: CategoryDef) => (
     <CategoryRow
       key={def.code}
       def={def}
       values={panelCategories[def.code] ?? { volume: '', cost: '', distance: '' }}
-      perUnit={panelPerUnit[def.code]}
+      perUnit={mirroredPerUnit[def.code]}
       readOnly={readOnlyPanel}
       fieldErrors={fieldErrors}
       onFieldChange={setCategoryField}
+      onFieldCommit={commitCategoryField}
     />
   )
 
