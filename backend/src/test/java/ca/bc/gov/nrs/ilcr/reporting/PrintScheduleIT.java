@@ -430,6 +430,11 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 2:  Purchased/Private Log Costs & Sales");
     assertThat(text).contains("Sch2 Read Milling"); // mill title block (name-number)
     assertThat(text).contains("Net Purchased / Private Log Cost:"); // a fixed row label (body)
+    // The two longest labels asserted IN FULL: if the label column ever clips them, pdfbox won't
+    // find the whole string and this breaks — catching a truncated label rather than shipping it.
+    assertThat(text)
+        .contains("Purchased / Private Wood Overhead (Schedule 3, Woodlands Subtotal):");
+    assertThat(text).contains("Total Company Logging Costs (Including total Silviculture Cost):");
     assertThat(text).contains("500,000"); // purchased log cost (621 item 25)
 
     assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_2.bookmarkTitle());
