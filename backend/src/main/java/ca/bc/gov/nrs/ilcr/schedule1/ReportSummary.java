@@ -19,5 +19,4 @@ public record ReportSummary(
     @Column("ILCR_CATEGORY_ID") String categoryId,
     @Column("CROWN_VOLUME") Integer crownVolume,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

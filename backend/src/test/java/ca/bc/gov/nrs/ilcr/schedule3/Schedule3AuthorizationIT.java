@@ -17,9 +17,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance test for authorization on VIEW_SCHEDULE for GET /api/v1/schedule3 (AD-7). Security ON;
- * drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}, with authorities derived
- * through the production {@link CognitoGroupsJwtAuthenticationConverter}. Schedule 3 reuses the shared
- * schedule-generic actions — no new action keys (AD-7).
+ * drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}, with authorities
+ * derived through the production {@link CognitoGroupsJwtAuthenticationConverter}. Schedule 3 reuses
+ * the shared schedule-generic actions — no new action keys (AD-7).
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/schedule3 — authorization on VIEW_SCHEDULE (AD-7)")
@@ -29,8 +29,7 @@ class Schedule3AuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -41,10 +40,12 @@ class Schedule3AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -52,10 +53,12 @@ class Schedule3AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ suffix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -63,20 +66,24 @@ class Schedule3AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (2xx)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz (2xx)")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful());
   }
 }

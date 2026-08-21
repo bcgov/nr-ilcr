@@ -10,11 +10,10 @@ import java.util.List;
  * <p>There is no standalone {@code /codes} endpoint in this application — Schedule 7A set the
  * in-document precedent and Schedule 10 follows it.
  *
- * <p>Every list except {@code becClassifications} is year-filtered on
- * {@code EFFECTIVE_DATE <= 1-Jan-{year} <= EXPIRY_DATE}, reproducing legacy
- * {@code LookupCache.getCacheList} (:77-98). The BEC catalogue is deliberately NOT year-filtered
- * because {@code BiogeoclimaticCatalogue} does not extend {@code AbstractILCRCode} and so falls
- * through legacy's date filter entirely.
+ * <p>Every list except {@code becClassifications} is year-filtered on {@code EFFECTIVE_DATE <=
+ * 1-Jan-{year} <= EXPIRY_DATE}, reproducing legacy {@code LookupCache.getCacheList} (:77-98). The
+ * BEC catalogue is deliberately NOT year-filtered because {@code BiogeoclimaticCatalogue} does not
+ * extend {@code AbstractILCRCode} and so falls through legacy's date filter entirely.
  *
  * <p><strong>There are no ASM Code or Soil Moisture Code lists.</strong> LD-1/LD-2 remove both
  * fields, which also eliminates BR-06's runtime filtering of those two lists.
@@ -37,5 +36,4 @@ public record Schedule10CodeLists(
     List<CodeDescriptionDto> ballastMethods,
     List<CodeDescriptionDto> ballastMaterials,
     List<CodeDescriptionDto> rsmrClasses,
-    List<BecClassification> becClassifications) {
-}
+    List<BecClassification> becClassifications) {}

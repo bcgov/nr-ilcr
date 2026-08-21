@@ -17,13 +17,10 @@ import java.util.List;
  * and a MET schedule carries NO per-record results at all (the legacy pass branch never enters the
  * loop). The service emits bundle keys; the controller resolves the verbatim composed text (AD-8).
  *
- * @param outcome {@code "MET"} (every record passes; zero records is vacuously met) or
- *     {@code "ISSUES"}
+ * @param outcome {@code "MET"} (every record passes; zero records is vacuously met) or {@code
+ *     "ISSUES"}
  * @param messages the schedule-level message(s) — the MET banner when passing, empty otherwise
  * @param records the per-record results in {@code rowCounter} order — empty when the outcome is MET
  */
 public record Schedule6CheckStatusResponse(
-    String outcome,
-    List<MessageInfo> messages,
-    List<RoadRecordCheckResult> records) {
-}
+    String outcome, List<MessageInfo> messages, List<RoadRecordCheckResult> records) {}

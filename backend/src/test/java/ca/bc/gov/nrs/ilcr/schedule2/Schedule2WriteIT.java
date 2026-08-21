@@ -27,10 +27,10 @@ import org.springframework.test.jdbc.JdbcTestUtils;
  * behaviour from authz (the 403 case lives in {@link Schedule2WriteAuthorizationIT}, security ON).
  *
  * <p>Mutating tests use DEDICATED mills seeded by {@code V11} so they never clobber the read-only
- * Schedule 2 fixtures (621/517) the read *IT classes assert against (the container + data are shared
- * across the whole run): mill 622 / summary 1222 (update + stale + clear-null + delete), mill 623
- * (Submitted — non-Draft write gate), mill 515 (create-on-save, no summary). Cases read the revision
- * at runtime so they stay order-independent.
+ * Schedule 2 fixtures (621/517) the read *IT classes assert against (the container + data are
+ * shared across the whole run): mill 622 / summary 1222 (update + stale + clear-null + delete),
+ * mill 623 (Submitted — non-Draft write gate), mill 515 (create-on-save, no summary). Cases read
+ * the revision at runtime so they stay order-independent.
  */
 @DisplayName("PUT/DELETE /api/v1/schedule2 — write path (Story 3.2)")
 class Schedule2WriteIT extends AbstractOracleIT {
@@ -39,13 +39,13 @@ class Schedule2WriteIT extends AbstractOracleIT {
   private static final String SUMMARY = "THE.ILCR_REPORT_SUMMARY";
   private static final String DETAIL = "THE.ILCR_COST_REPORT_DETAIL";
 
-  @Autowired
-  private JdbcTemplate jdbcTemplate;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   private Integer revisionOf(long summaryId) {
     return jdbcTemplate.queryForObject(
         "SELECT REVISION_COUNT FROM " + SUMMARY + " WHERE ILCR_REPORT_SUMMARY_ID = ?",
-        Integer.class, summaryId);
+        Integer.class,
+        summaryId);
   }
 
   private static String body(Integer revisionCount, Integer cost25, Object vol26, Object cost26) {
@@ -57,23 +57,30 @@ class Schedule2WriteIT extends AbstractOracleIT {
           "lessLogSalesVolume": %s,
           "lessLogSalesCost": %s
         }
-        """.formatted(
+        """
+        .formatted(
             revisionCount == null ? "null" : revisionCount,
             cost25 == null ? "null" : cost25,
             vol26 == null ? "null" : vol26,
             cost26 == null ? "null" : cost26);
   }
 
-  // ---- S12 / update: persist + recompute echo + bump revision. -----------------------------------
+  // ---- S12 / update: persist + recompute echo + bump revision.
+  // -----------------------------------
 
   @Test
-  @DisplayName("update — 622 Draft PUT persists 25/26, bumps revision, echoes recomputed doc + save msg")
+  @DisplayName(
+      "update — 622 Draft PUT persists 25/26, bumps revision, echoes recomputed doc + save msg")
   void put_update_persistsRecomputesBumps() throws Exception {
     int before = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body(before, 500000, 2000, 100000))
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(before, 500000, 2000, 100000))
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(622)))
@@ -88,22 +95,32 @@ class Schedule2WriteIT extends AbstractOracleIT {
     assertEquals(before + 1, revisionOf(1222), "REVISION_COUNT must advance by exactly one");
   }
 
-  // ---- create-on-absent: no summary -> insert (rev 0 -> 1), never 404. ---------------------------
+  // ---- create-on-absent: no summary -> insert (rev 0 -> 1), never 404.
+  // ---------------------------
 
   @Test
-  @DisplayName("create — 515 Draft, no summary, revisionCount 0 -> new summary created, rev becomes 1")
+  @DisplayName(
+      "create — 515 Draft, no summary, revisionCount 0 -> new summary created, rev becomes 1")
   void put_createOnAbsent_insertsSummaryRevBecomesOne() throws Exception {
     // Precondition: no category-"2" summary for 515/2021.
-    assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
-        "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(
+            jdbcTemplate,
+            SUMMARY,
+            "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
         "precondition: 515 has no Schedule 2 summary");
 
     // An unsaved GET omits revisionCount; the client sends 0 (the freshly-inserted summary's rev).
     // revisionCount is @NotNull, so a literal null is a 400 — the create token is 0, not null.
-    mockMvc.perform(put(ENDPOINT).param("millId", "515").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body(0, 250000, 1000, 40000))
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(0, 250000, 1000, 40000))
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(1)))
         .andExpect(jsonPath("$.message.text", is("Data saved successfully")))
@@ -111,187 +128,271 @@ class Schedule2WriteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.lessLogSales.volume", is(1000)))
         .andExpect(jsonPath("$.lessLogSales.cost", is(40000)));
 
-    assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
-        "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
+    assertEquals(
+        1,
+        JdbcTestUtils.countRowsInTableWhere(
+            jdbcTemplate,
+            SUMMARY,
+            "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
         "a new category-2 summary must be created on save");
 
     // Restore 515's no-summary precondition on the shared container (AbstractOracleIT has no
     // per-test rollback): 515 is ALSO the no-summary read fixture for Schedule2DocumentIT /
     // Schedule2CheckStatusIT, so this created summary must not leak across IT classes. Undo it
     // through the production DELETE (515 is Draft, so the gate allows it) rather than raw SQL.
-    mockMvc.perform(delete(ENDPOINT).param("millId", "515").param("year", "2021"))
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "515").param("year", "2021"))
         .andExpect(status().isOk());
-    assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
-        "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(
+            jdbcTemplate,
+            SUMMARY,
+            "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '2'"),
         "cleanup: 515 must be restored to its no-summary state for the read ITs");
   }
 
-  // ---- clear-to-null: item 25 cost null persists as null. ----------------------------------------
+  // ---- clear-to-null: item 25 cost null persists as null.
+  // ----------------------------------------
 
   @Test
   @DisplayName("clear — 622 PUT with item 25 cost null clears the stored value to null")
   void put_clearItem25_persistsNull() throws Exception {
     int before = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body(before, null, 2000, 100000))
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(before, null, 2000, 100000))
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.purchasedLogCost.cost").doesNotExist()); // null omitted
 
-    assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, DETAIL,
-        "ILCR_REPORT_SUMMARY_ID = 1222 AND ILCR_REPORT_COST_ITEM_ID = 25 AND COST IS NULL"),
+    assertEquals(
+        1,
+        JdbcTestUtils.countRowsInTableWhere(
+            jdbcTemplate,
+            DETAIL,
+            "ILCR_REPORT_SUMMARY_ID = 1222 AND ILCR_REPORT_COST_ITEM_ID = 25 AND COST IS NULL"),
         "item 25 cost must be cleared to null");
   }
 
-  // ---- validation ranges -> 400 verbatim, nothing persisted. -------------------------------------
+  // ---- validation ranges -> 400 verbatim, nothing persisted.
+  // -------------------------------------
 
   @Test
   @DisplayName("item 25 cost > 99,999,999 -> 400 costValidatorErrorMsg, nothing persisted")
   void put_item25Over_returns400() throws Exception {
-    expect400NothingPersisted(body(revisionOf(1222), 100000000, 1000, 5000),
+    expect400NothingPersisted(
+        body(revisionOf(1222), 100000000, 1000, 5000),
         "Entered cost must be between -99,999,999 and 99,999,999.");
   }
 
   @Test
   @DisplayName("item 26 volume > 9,999,999 -> 400 volumeValidatorErrorMsg, nothing persisted")
   void put_item26VolumeOver_returns400() throws Exception {
-    expect400NothingPersisted(body(revisionOf(1222), 5000, 10000000, 5000),
+    expect400NothingPersisted(
+        body(revisionOf(1222), 5000, 10000000, 5000),
         "Entered volume must be between 0 and 9,999,999.");
   }
 
   @Test
   @DisplayName("item 26 volume < 0 -> 400 volumeValidatorErrorMsg (min is 0), nothing persisted")
   void put_item26VolumeNegative_returns400() throws Exception {
-    expect400NothingPersisted(body(revisionOf(1222), 5000, -1, 5000),
-        "Entered volume must be between 0 and 9,999,999.");
+    expect400NothingPersisted(
+        body(revisionOf(1222), 5000, -1, 5000), "Entered volume must be between 0 and 9,999,999.");
   }
 
   @Test
   @DisplayName("item 26 cost > 999,999,999 -> 400 costSize9ValidatorErrorMsg, nothing persisted")
   void put_item26CostOver_returns400() throws Exception {
-    expect400NothingPersisted(body(revisionOf(1222), 5000, 1000, 1000000000),
+    expect400NothingPersisted(
+        body(revisionOf(1222), 5000, 1000, 1000000000),
         "Entered cost must be between -999,999,999 and 999,999,999.");
   }
 
   @Test
-  @DisplayName("item 26 cost = 999,999,999 (widened costSize 9) PASSES; item 25 = 99,999,999 also OK")
+  @DisplayName(
+      "item 26 cost = 999,999,999 (widened costSize 9) PASSES; item 25 = 99,999,999 also OK")
   void put_widenedBoundaries_pass() throws Exception {
     int before = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body(before, 99999999, 1000, 999999999))
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(before, 99999999, 1000, 999999999))
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.purchasedLogCost.cost", is(99999999)))
         .andExpect(jsonPath("$.lessLogSales.cost", is(999999999)));
   }
 
   @Test
-  @DisplayName("S16: two fields out of range -> 400 returns BOTH verbatim messages, nothing persisted")
+  @DisplayName(
+      "S16: two fields out of range -> 400 returns BOTH verbatim messages, nothing persisted")
   void put_multipleFieldsOutOfRange_returnsAllMessages() throws Exception {
     // item 25 cost over its narrow ±99,999,999 range AND item 26 volume over 0–9,999,999 at once.
     int before = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body(before, 100000000, 10000000, 5000)))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(before, 100000000, 10000000, 5000)))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         // Both field errors are returned together (joined), not just the first (S16).
-        .andExpect(jsonPath("$.detail",
-            containsString("Entered cost must be between -99,999,999 and 99,999,999.")))
-        .andExpect(jsonPath("$.detail",
-            containsString("Entered volume must be between 0 and 9,999,999.")));
+        .andExpect(
+            jsonPath(
+                "$.detail",
+                containsString("Entered cost must be between -99,999,999 and 99,999,999.")))
+        .andExpect(
+            jsonPath(
+                "$.detail", containsString("Entered volume must be between 0 and 9,999,999.")));
     assertEquals(before, revisionOf(1222), "a rejected multi-error PUT must not persist anything");
   }
 
   @Test
   @DisplayName("missing revisionCount -> 400, nothing persisted")
   void put_missingRevisionCount_returns400() throws Exception {
-    expect400NothingPersisted("""
+    expect400NothingPersisted(
+        """
         { "comments": "x", "purchasedLogCostCost": 5000, "lessLogSalesVolume": 1000, "lessLogSalesCost": 5000 }
-        """, "revisionCount is required");
+        """,
+        "revisionCount is required");
   }
 
-  private void expect400NothingPersisted(String requestBody, String verbatimDetail) throws Exception {
+  private void expect400NothingPersisted(String requestBody, String verbatimDetail)
+      throws Exception {
     int before = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(requestBody))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(requestBody))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.detail", is(verbatimDetail)));
     assertEquals(before, revisionOf(1222), "a rejected PUT must not persist anything");
   }
 
-  // ---- non-Draft write gate -> 409 verbatim, no change. ------------------------------------------
+  // ---- non-Draft write gate -> 409 verbatim, no change.
+  // ------------------------------------------
 
   @Test
   @DisplayName("PUT against non-Draft (mill 623, track S) -> 409, no change")
   void put_nonDraft_returns409() throws Exception {
     int before = revisionOf(1223);
-    mockMvc.perform(put(ENDPOINT).param("millId", "623").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(before, 1, 1, 1)))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "623")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(before, 1, 1, 1)))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-        .andExpect(jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
+        .andExpect(
+            jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
     assertEquals(before, revisionOf(1223), "a gated PUT must not change data");
   }
 
   @Test
   @DisplayName("DELETE against non-Draft (mill 623, track S) -> 409, row survives")
   void delete_nonDraft_returns409() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "623").param("year", "2021"))
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "623").param("year", "2021"))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
-    assertEquals(1, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
-        "ILCR_REPORT_SUMMARY_ID = 1223"), "gated DELETE must not remove the row");
+        .andExpect(
+            jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
+    assertEquals(
+        1,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY, "ILCR_REPORT_SUMMARY_ID = 1223"),
+        "gated DELETE must not remove the row");
   }
 
-  // ---- optimistic concurrency. -------------------------------------------------------------------
+  // ---- optimistic concurrency.
+  // -------------------------------------------------------------------
 
   @Test
   @DisplayName("stale revisionCount -> 409; reload + retry with N+1 -> 200")
   void put_staleRevision_returns409_thenRetrySucceeds() throws Exception {
     int n = revisionOf(1222);
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(n, 500000, 2000, 100000)))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(n, 500000, 2000, 100000)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(n + 1)));
     // Second writer still holds the stale token N -> rejected, no overwrite.
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(n, 500000, 2000, 100000)))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(n, 500000, 2000, 100000)))
         .andExpect(status().isConflict())
-        .andExpect(jsonPath("$.detail",
-            is("This schedule was changed by another user. Please reload and try again.")));
+        .andExpect(
+            jsonPath(
+                "$.detail",
+                is("This schedule was changed by another user. Please reload and try again.")));
     assertEquals(n + 1, revisionOf(1222), "the stale PUT must not overwrite");
     // Reload the fresh token and retry -> succeeds.
-    mockMvc.perform(put(ENDPOINT).param("millId", "622").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body(n + 1, 500000, 2000, 100000)))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "622")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(n + 1, 500000, 2000, 100000)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.revisionCount", is(greaterThan(n + 1))));
   }
 
-  // ---- DELETE: removes summary + 25/26; idempotent on no summary. --------------------------------
+  // ---- DELETE: removes summary + 25/26; idempotent on no summary.
+  // --------------------------------
 
   @Test
-  @DisplayName("DELETE — 625 Draft removes summary + 25/26; re-GET is the empty editable doc; idempotent")
+  @DisplayName(
+      "DELETE — 625 Draft removes summary + 25/26; re-GET is the empty editable doc; idempotent")
   void delete_removesWholeSchedule() throws Exception {
     // Precondition: 625 has a summary + details.
-    mockMvc.perform(delete(ENDPOINT).param("millId", "625").param("year", "2021"))
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "625").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
-    assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY,
-        "ILCR_REPORT_SUMMARY_ID = 1225"), "summary row must be gone");
-    assertEquals(0, JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, DETAIL,
-        "ILCR_REPORT_SUMMARY_ID = 1225"), "all detail rows must be gone");
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY, "ILCR_REPORT_SUMMARY_ID = 1225"),
+        "summary row must be gone");
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, DETAIL, "ILCR_REPORT_SUMMARY_ID = 1225"),
+        "all detail rows must be gone");
     // Re-GET of a Schedule 2 with no summary is the empty editable document, NOT 404.
-    mockMvc.perform(get(ENDPOINT).param("millId", "625").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "625")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.revisionCount").doesNotExist());
     // Idempotent: a second DELETE on the now-empty schedule still returns 200 (never 404).
-    mockMvc.perform(delete(ENDPOINT).param("millId", "625").param("year", "2021"))
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "625").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
   }

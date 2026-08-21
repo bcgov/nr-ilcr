@@ -15,10 +15,10 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
 import java.util.ArrayList;
@@ -34,10 +34,10 @@ import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit test for the Schedule 3 sub-page logic (Story 4.4): item-124 TOT+PO&P group pairing/encoding,
- * next-group-number generation, 404 on an unknown id, the item-38 document, and the check-status
- * sub-page branches (missing description/total/PO&P + S12 Override suppression). Mocked repository —
- * no DB, no Spring.
+ * Unit test for the Schedule 3 sub-page logic (Story 4.4): item-124 TOT+PO&P group
+ * pairing/encoding, next-group-number generation, 404 on an unknown id, the item-38 document, and
+ * the check-status sub-page branches (missing description/total/PO&P + S12 Override suppression).
+ * Mocked repository — no DB, no Spring.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule3SubPageServiceTest {
@@ -61,7 +61,8 @@ class Schedule3SubPageServiceTest {
 
   private void stubDraft() {
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    lenient().when(repository.findSummary(MILL, YEAR))
+    lenient()
+        .when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, "N", "c", 0)));
   }
 
@@ -70,9 +71,11 @@ class Schedule3SubPageServiceTest {
   @Test
   void getOtherAcceptable_pairsGroupsAndDerivesCrownAndSubtotal() {
     stubDraft();
-    when(repository.findSubPageRows(SUMMARY, 124)).thenReturn(List.of(
-        tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2),
-        tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(
+            List.of(
+                tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2),
+                tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
     OtherAcceptableDocument doc = service.getOtherAcceptableDocument(MILL, YEAR, true);
 
@@ -92,7 +95,8 @@ class Schedule3SubPageServiceTest {
   void getOtherAcceptable_totWithoutPop_crownEqualsTotal() {
     stubDraft();
     // A group with a TOT row but no PO&P peer: legacy DescriptionCostType.getCrownCost
-    // (bigDecimalCostSubtraction) returns the Total itself when PO&P is blank — Crown = Total, NOT null.
+    // (bigDecimalCostSubtraction) returns the Total itself when PO&P is blank — Crown = Total, NOT
+    // null.
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1)));
 
@@ -127,8 +131,9 @@ class Schedule3SubPageServiceTest {
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
     OtherAcceptableRequest request = new OtherAcceptableRequest("X", 1, 0);
-    assertThrows(OtherCostNotFoundException.class, () ->
-        service.updateOtherAcceptable(MILL, YEAR, 999999, request, "user"));
+    assertThrows(
+        OtherCostNotFoundException.class,
+        () -> service.updateOtherAcceptable(MILL, YEAR, 999999, request, "user"));
   }
 
   @Test
@@ -137,8 +142,8 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
-    service.updateOtherAcceptable(MILL, YEAR, 5501,
-        new OtherAcceptableRequest("Updated", 1000, 400), "user");
+    service.updateOtherAcceptable(
+        MILL, YEAR, 5501, new OtherAcceptableRequest("Updated", 1000, 400), "user");
 
     verify(repository).updateSubPageRowById(5501, SUMMARY, 124, 1000, "Updated", "user");
     verify(repository)
@@ -149,14 +154,20 @@ class Schedule3SubPageServiceTest {
   void saveOtherAcceptable_reconcilesUpdateInsertAndDelete() {
     stubDraft();
     // Existing: GRP1 (Consulting, id 5501) + GRP2 (Travel, id 5503) → next group number is 3.
-    when(repository.findSubPageRows(SUMMARY, 124)).thenReturn(List.of(
-        tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1),
-        tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2)));
+    when(repository.findSubPageRows(SUMMARY, 124))
+        .thenReturn(
+            List.of(
+                tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1),
+                tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2)));
 
     // Request: update GRP1, insert a fresh group, and drop GRP2 (absent → delete).
-    service.saveOtherAcceptable(MILL, YEAR, List.of(
-        new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350),
-        new OtherAcceptableSaveRequest.Row(null, "Fresh", 900, 100)), "user");
+    service.saveOtherAcceptable(
+        MILL,
+        YEAR,
+        List.of(
+            new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350),
+            new OtherAcceptableSaveRequest.Row(null, "Fresh", 900, 100)),
+        "user");
 
     // Update GRP1 (TOT by id + PO&P peer by comments).
     verify(repository).updateSubPageRowById(5501, SUMMARY, 124, 850, "Consulting2", "user");
@@ -181,7 +192,8 @@ class Schedule3SubPageServiceTest {
 
     List<OtherAcceptableSaveRequest.Row> rows =
         List.of(new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350));
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
   }
 
@@ -191,10 +203,12 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
-    // A row references a TOT id that is not a group under this summary → conflict, not a silent insert.
+    // A row references a TOT id that is not a group under this summary → conflict, not a silent
+    // insert.
     List<OtherAcceptableSaveRequest.Row> rows =
         List.of(new OtherAcceptableSaveRequest.Row(999999, "Ghost", 1, 0));
-    assertThrows(OtherCostNotFoundException.class,
+    assertThrows(
+        OtherCostNotFoundException.class,
         () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
   }
 
@@ -222,7 +236,8 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 38))
         .thenReturn(List.of(new SubPageRow(5505, 250, "Penalty", null)));
     // Annual Rents (item 29) row present but its Harvest cost is null (not entered). Legacy renders
-    // this blank, since the annual-rents harvest total cost is nullable, so the read of the first cost
+    // this blank, since the annual-rents harvest total cost is nullable, so the read of the first
+    // cost
     // must yield null rather than throwing when the selected detail row maps to a null cost.
     when(repository.findDetails(SUMMARY))
         .thenReturn(List.of(new DetailRow(29, null, null, null, null)));
@@ -238,15 +253,21 @@ class Schedule3SubPageServiceTest {
   void saveUnacceptable_reconcilesUpdateInsertAndDelete() {
     stubDraft();
     // Existing item-38 rows 5505 + 5506; findDetails (Annual Rents) empty for the rebuilt doc.
-    when(repository.findSubPageRows(SUMMARY, 38)).thenReturn(List.of(
-        new SubPageRow(5505, 250, "Penalty", null),
-        new SubPageRow(5506, 100, "Old", null)));
+    when(repository.findSubPageRows(SUMMARY, 38))
+        .thenReturn(
+            List.of(
+                new SubPageRow(5505, 250, "Penalty", null),
+                new SubPageRow(5506, 100, "Old", null)));
     lenient().when(repository.findDetails(SUMMARY)).thenReturn(List.of());
 
     // Request: update 5505, insert a new row, and drop 5506 (absent → delete).
-    service.saveUnacceptable(MILL, YEAR, List.of(
-        new UnacceptableSaveRequest.Row(5505, "Penalty!", 260),
-        new UnacceptableSaveRequest.Row(null, "New", 500)), "user");
+    service.saveUnacceptable(
+        MILL,
+        YEAR,
+        List.of(
+            new UnacceptableSaveRequest.Row(5505, "Penalty!", 260),
+            new UnacceptableSaveRequest.Row(null, "New", 500)),
+        "user");
 
     verify(repository).updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user");
     verify(repository).insertSubPageRow(SUMMARY, 38, 500, "New", null, "user");
@@ -264,8 +285,8 @@ class Schedule3SubPageServiceTest {
 
     List<UnacceptableSaveRequest.Row> rows =
         List.of(new UnacceptableSaveRequest.Row(5505, "Penalty!", 260));
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+    assertThrows(
+        ScheduleNotSavedException.class, () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
   }
 
   @Test
@@ -277,8 +298,8 @@ class Schedule3SubPageServiceTest {
     // A row references a detail id that is not an item-38 row here → conflict, not a silent insert.
     List<UnacceptableSaveRequest.Row> rows =
         List.of(new UnacceptableSaveRequest.Row(999999, "Ghost", 1));
-    assertThrows(OtherCostNotFoundException.class,
-        () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+    assertThrows(
+        OtherCostNotFoundException.class, () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
   }
 
   // ---- Check-status sub-page branches ----
@@ -287,11 +308,20 @@ class Schedule3SubPageServiceTest {
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, override, "c", 0)));
     when(repository.findDetails(SUMMARY)).thenReturn(details);
-    lenient().when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
+    lenient()
+        .when(
+            messageSource.getMessage(
+                eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Value Required");
-    lenient().when(messageSource.getMessage(eq("harvestNotGreaterThanPopErrorMsg"), any(), any(), any(Locale.class)))
+    lenient()
+        .when(
+            messageSource.getMessage(
+                eq("harvestNotGreaterThanPopErrorMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Value must be greater than or equal to the corresponding PO&P Cost");
-    lenient().when(messageSource.getMessage(eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
+    lenient()
+        .when(
+            messageSource.getMessage(
+                eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
         .thenReturn("All requirements for this schedule have been met");
   }
 
@@ -299,7 +329,8 @@ class Schedule3SubPageServiceTest {
     return new DetailRow(124, null, cost, desc, comments);
   }
 
-  private static boolean hasError(Schedule3CheckStatusResponse r, String key, String labelFragment) {
+  private static boolean hasError(
+      Schedule3CheckStatusResponse r, String key, String labelFragment) {
     return r.errors().stream()
         .anyMatch(m -> m.key().equals(key) && m.text().contains(labelFragment));
   }
@@ -320,18 +351,21 @@ class Schedule3SubPageServiceTest {
 
   @Test
   void checkStatus_otherAcceptableHarvestLessThanPop_flaggedThenSuppressedByOverride() {
-    List<DetailRow> details = List.of(
-        oa(100, "Consulting", "SCH3_2_TOT_GRP1"),
-        oa(500, "Consulting", "SCH3_2_POP_GRP1"));
+    List<DetailRow> details =
+        List.of(oa(100, "Consulting", "SCH3_2_TOT_GRP1"), oa(500, "Consulting", "SCH3_2_POP_GRP1"));
     stubCheckStatus("N", new ArrayList<>(details));
     Schedule3CheckStatusResponse flagged = service.checkSchedule3Status(MILL, YEAR);
-    assertTrue(hasError(flagged, "harvestNotGreaterThanPopErrorMsg",
-        "Subtotal Other Costs (Harvest Total $)"));
+    assertTrue(
+        hasError(
+            flagged, "harvestNotGreaterThanPopErrorMsg", "Subtotal Other Costs (Harvest Total $)"));
 
     stubCheckStatus("Y", new ArrayList<>(details));
     Schedule3CheckStatusResponse suppressed = service.checkSchedule3Status(MILL, YEAR);
-    assertFalse(hasError(suppressed, "harvestNotGreaterThanPopErrorMsg",
-        "Subtotal Other Costs (Harvest Total $)"));
+    assertFalse(
+        hasError(
+            suppressed,
+            "harvestNotGreaterThanPopErrorMsg",
+            "Subtotal Other Costs (Harvest Total $)"));
   }
 
   @Test

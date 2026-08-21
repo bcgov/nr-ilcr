@@ -21,16 +21,16 @@ import org.springframework.security.core.Authentication;
 /**
  * Unit tests for {@link Schedule10Controller}'s one non-delegating decision: resolving the caller's
  * {@code EDIT_SCHEDULE} action into the {@code callerMayEdit} flag that {@link Schedule10Service}
- * combines with the Draft track status (AD-9 — the server is the sole authority for
- * {@code editable}).
+ * combines with the Draft track status (AD-9 — the server is the sole authority for {@code
+ * editable}).
  *
- * <p><strong>This layer cannot be covered by the integration tests.</strong>
- * {@code SchedulePermissions} grants {@code EDIT_SCHEDULE} to BOTH production groups, so no
- * principal reachable from {@code Schedule10AuthorizationIT} can produce {@code callerMayEdit =
- * false} — every caller that gets past {@code VIEW_SCHEDULE} also holds {@code EDIT_SCHEDULE}. And
- * {@code Schedule10ServiceTest} is handed the boolean directly, mocking the lookup away entirely.
- * Without this class, hardcoding {@code callerMayEdit = true}, or asking for {@code VIEW_SCHEDULE}
- * instead, passes the entire suite (code review 2026-08-17).
+ * <p><strong>This layer cannot be covered by the integration tests.</strong> {@code
+ * SchedulePermissions} grants {@code EDIT_SCHEDULE} to BOTH production groups, so no principal
+ * reachable from {@code Schedule10AuthorizationIT} can produce {@code callerMayEdit = false} —
+ * every caller that gets past {@code VIEW_SCHEDULE} also holds {@code EDIT_SCHEDULE}. And {@code
+ * Schedule10ServiceTest} is handed the boolean directly, mocking the lookup away entirely. Without
+ * this class, hardcoding {@code callerMayEdit = true}, or asking for {@code VIEW_SCHEDULE} instead,
+ * passes the entire suite (code review 2026-08-17).
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule10Controller — the editable permission lookup (AD-9)")
@@ -41,27 +41,22 @@ class Schedule10ControllerTest {
   private static final long MILL = 710L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule10Service schedule10Service;
+  @Mock private Schedule10Service schedule10Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
   private Schedule10Controller controller;
 
   @BeforeEach
   void setUp() {
-    controller = new Schedule10Controller(
-        millContextService, schedule10Service, permissions, messageSource);
+    controller =
+        new Schedule10Controller(millContextService, schedule10Service, permissions, messageSource);
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
         .thenReturn(new MillYearContext(MILL, YEAR));
   }

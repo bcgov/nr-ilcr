@@ -26,5 +26,4 @@ public record PageCheckResult(
     String pageLabel,
     boolean met,
     List<FieldIssue> issues,
-    List<RoadDetailCheckResult> roadDetails) {
-}
+    List<RoadDetailCheckResult> roadDetails) {}

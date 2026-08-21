@@ -11,8 +11,8 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,8 +27,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 
 /**
- * Unit test for BR-07 Check Status logic (Story 2.6). Mocked repository + MessageSource (returns the
- * bundle key so assertions test structure/keys/order; verbatim text is asserted by the IT). No DB.
+ * Unit test for BR-07 Check Status logic (Story 2.6). Mocked repository + MessageSource (returns
+ * the bundle key so assertions test structure/keys/order; verbatim text is asserted by the IT). No
+ * DB.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule1CheckStatusServiceTest {
@@ -41,18 +42,16 @@ class Schedule1CheckStatusServiceTest {
   private static final List<Integer> VOL_COST = List.of(12, 13, 14, 15, 16, 17, 18, 1, 2);
   private static final List<Integer> VOL_ONLY = List.of(143, 144, 139, 140);
 
-  @Mock
-  private Schedule1Repository repository;
+  @Mock private Schedule1Repository repository;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule1Service service;
+  @InjectMocks private Schedule1Service service;
 
   @BeforeEach
   void stubMessages() {
-    lenient().when(messageSource.getMessage(anyString(), any(), anyString(), any(Locale.class)))
+    lenient()
+        .when(messageSource.getMessage(anyString(), any(), anyString(), any(Locale.class)))
         .thenAnswer(i -> i.getArgument(0)); // return the key
   }
 
@@ -60,9 +59,12 @@ class Schedule1CheckStatusServiceTest {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, null, null, 0)));
     when(repository.findDetails(SUMMARY)).thenReturn(details);
-    lenient().when(repository.findSharedOtherCostsVolume(SUMMARY))
+    lenient()
+        .when(repository.findSharedOtherCostsVolume(SUMMARY))
         .thenReturn(Optional.ofNullable(sharedVol));
-    lenient().when(repository.findOtherCostRows(SUMMARY)).thenReturn(other == null ? List.of() : other);
+    lenient()
+        .when(repository.findOtherCostRows(SUMMARY))
+        .thenReturn(other == null ? List.of() : other);
   }
 
   /** Every mandatory field present (volume + cost where applicable); consistent Other Costs. */
@@ -123,7 +125,8 @@ class Schedule1CheckStatusServiceTest {
 
   @Test
   void errorsAreInLegacyFieldOrder() {
-    // Empty schedule -> every field missing; assert the legacy order (143 between 16 and 17, 144 after 18).
+    // Empty schedule -> every field missing; assert the legacy order (143 between 16 and 17, 144
+    // after 18).
     stub(new ArrayList<>(), null, List.of());
     Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     List<String> texts = r.errors().stream().map(MessageInfo::text).toList();
@@ -155,39 +158,51 @@ class Schedule1CheckStatusServiceTest {
   void otherCostsVolumePresentButNoCost_error() {
     stub(allPresent(), new BigDecimal("100"), List.of()); // vol>0, subtotal cost 0
     Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
-    assertTrue(r.errors().stream()
-        .anyMatch(m -> "sch1.subtotal.other.costs.costs.grearter.than.zero".equals(m.key())));
+    assertTrue(
+        r.errors().stream()
+            .anyMatch(m -> "sch1.subtotal.other.costs.costs.grearter.than.zero".equals(m.key())));
   }
 
   @Test
   void otherCostsCostPresentButNoVolume_error() {
-    stub(allPresent(), BigDecimal.ZERO,
+    stub(
+        allPresent(),
+        BigDecimal.ZERO,
         List.of(new OtherCostDetailRow(1, "A", 5000, BigDecimal.ZERO))); // vol 0, cost>0
     Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
-    assertTrue(r.errors().stream()
-        .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
+    assertTrue(
+        r.errors().stream()
+            .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
   }
 
   @Test
   void otherCostsFractionalVolumeBelowOne_treatedAsZero_matchesLegacyIntValue() {
     // Legacy compares subtotalVolume.intValue(); a shared volume of 0.5 reads as 0, so with a cost
-    // present it must raise "Volume must be > 0 when Cost > 0" — not pass (as BigDecimal.signum would).
-    stub(allPresent(), new BigDecimal("0.5"),
+    // present it must raise "Volume must be > 0 when Cost > 0" — not pass (as BigDecimal.signum
+    // would).
+    stub(
+        allPresent(),
+        new BigDecimal("0.5"),
         List.of(new OtherCostDetailRow(1, "A", 5000, new BigDecimal("0.5"))));
     Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
-    assertTrue(r.errors().stream()
-        .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
+    assertTrue(
+        r.errors().stream()
+            .anyMatch(m -> "sch1.subtotal.other.costs.volume.grearter.than.zero".equals(m.key())));
   }
 
   @Test
   void emptyCostRow_isWarningNotError() {
-    stub(allPresent(), new BigDecimal("100"),
-        List.of(new OtherCostDetailRow(1, "Has desc, no cost", null, new BigDecimal("100")),
+    stub(
+        allPresent(),
+        new BigDecimal("100"),
+        List.of(
+            new OtherCostDetailRow(1, "Has desc, no cost", null, new BigDecimal("100")),
             new OtherCostDetailRow(2, "Priced", 5000, new BigDecimal("100"))));
     Schedule1CheckStatusResponse r = service.checkSchedule1Status(MILL, YEAR);
     // vol>0 & subtotal cost>0 (5000) -> no consistency error; the null-cost row -> warning only.
     assertTrue(r.requirementsMet());
     assertEquals(1, r.warnings().size());
-    assertEquals("warning.schedule1.checkstatus.subtotalother.costEmpty", r.warnings().get(0).key());
+    assertEquals(
+        "warning.schedule1.checkstatus.subtotalother.costEmpty", r.warnings().get(0).key());
   }
 }

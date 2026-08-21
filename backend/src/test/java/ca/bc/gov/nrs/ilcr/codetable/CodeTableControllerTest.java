@@ -20,21 +20,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.security.core.Authentication;
 
-/** Unit test for the Table Maintenance controller (Story 24.3 / T3) — delegation + response shape. */
+/**
+ * Unit test for the Table Maintenance controller (Story 24.3 / T3) — delegation + response shape.
+ */
 @ExtendWith(MockitoExtension.class)
 class CodeTableControllerTest {
 
-  @Mock
-  private CodeTableService service;
+  @Mock private CodeTableService service;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private CodeTableController controller;
+  @InjectMocks private CodeTableController controller;
 
   @Test
   void listTables_returnsTheServiceList() {
@@ -57,7 +55,8 @@ class CodeTableControllerTest {
     CodeTableEntry entry = new CodeTableEntry("M3", "Cubic Metres", LocalDate.of(2020, 1, 1), null);
     when(authentication.getName()).thenReturn("alex.admin");
     when(service.save("UNIT_CODE", entry, "alex.admin")).thenReturn(UpsertResult.INSERTED);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
     when(service.entries("UNIT_CODE")).thenReturn(List.of(entry));
 

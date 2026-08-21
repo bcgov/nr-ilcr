@@ -32,5 +32,4 @@ public record Stabilizing(
     BigDecimal ttTransfer,
     BigDecimal otherTransfer,
     BigDecimal total,
-    BigDecimal costPerLength) {
-}
+    BigDecimal costPerLength) {}

@@ -26,7 +26,8 @@ class HomeContentServiceTest {
   private final HomeContentService service = new HomeContentService(repository);
 
   @Test
-  @DisplayName("save: applies the legacy transform (tab/newline/&nbsp;) and updates all three roles")
+  @DisplayName(
+      "save: applies the legacy transform (tab/newline/&nbsp;) and updates all three roles")
   void save_transformsAndUpdatesAll() {
     when(repository.updateMessage(anyString(), anyString(), eq(USER))).thenReturn(1);
 
@@ -42,8 +43,12 @@ class HomeContentServiceTest {
   @Test
   @DisplayName("save: a blank editor is rejected per-field (FLD-001), nothing saved")
   void save_blankEditorRejected() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.saveAll(new HomeContentSaveRequest("<p></p>", "<p>Aud</p>", "<p>Adm</p>"), USER));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class,
+            () ->
+                service.saveAll(
+                    new HomeContentSaveRequest("<p></p>", "<p>Aud</p>", "<p>Adm</p>"), USER));
 
     assertTrue(ex.getFieldLabels().contains("Licensee Welcome Message"));
     verify(repository, never()).updateMessage(anyString(), anyString(), anyString());
@@ -52,8 +57,10 @@ class HomeContentServiceTest {
   @Test
   @DisplayName("save: all blank editors are reported together")
   void save_allBlankReportedTogether() {
-    FieldValuesRequiredException ex = assertThrows(FieldValuesRequiredException.class,
-        () -> service.saveAll(new HomeContentSaveRequest("&nbsp;", "  ", "<p></p>"), USER));
+    FieldValuesRequiredException ex =
+        assertThrows(
+            FieldValuesRequiredException.class,
+            () -> service.saveAll(new HomeContentSaveRequest("&nbsp;", "  ", "<p></p>"), USER));
 
     assertEquals(3, ex.getFieldLabels().size());
     verify(repository, never()).updateMessage(anyString(), anyString(), anyString());
@@ -64,8 +71,12 @@ class HomeContentServiceTest {
   void save_tooLongRejected() {
     String huge = "<p>" + "x".repeat(4100) + "</p>";
 
-    HomeContentException ex = assertThrows(HomeContentException.class,
-        () -> service.saveAll(new HomeContentSaveRequest(huge, "<p>Aud</p>", "<p>Adm</p>"), USER));
+    HomeContentException ex =
+        assertThrows(
+            HomeContentException.class,
+            () ->
+                service.saveAll(
+                    new HomeContentSaveRequest(huge, "<p>Aud</p>", "<p>Adm</p>"), USER));
 
     assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
   }
@@ -75,8 +86,12 @@ class HomeContentServiceTest {
   void save_missingRowIsNotFound() {
     when(repository.updateMessage(anyString(), anyString(), eq(USER))).thenReturn(0);
 
-    HomeContentException ex = assertThrows(HomeContentException.class,
-        () -> service.saveAll(new HomeContentSaveRequest("<p>L</p>", "<p>A</p>", "<p>Adm</p>"), USER));
+    HomeContentException ex =
+        assertThrows(
+            HomeContentException.class,
+            () ->
+                service.saveAll(
+                    new HomeContentSaveRequest("<p>L</p>", "<p>A</p>", "<p>Adm</p>"), USER));
 
     assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
   }

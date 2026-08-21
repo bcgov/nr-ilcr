@@ -40,11 +40,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link Schedule8Controller}: the no-summary-required context guard
- * ({@code validateMillYearActive}), service delegation across the read / page / sample / rate write
+ * Unit test for {@link Schedule8Controller}: the no-summary-required context guard ({@code
+ * validateMillYearActive}), service delegation across the read / page / sample / rate write
  * endpoints, the server-derived {@code callerMayEdit} flag, the verbatim AD-8 saved/deleted message
- * decoration, and the check-status schedule/page/sample/issue key resolution — collaborators mocked,
- * no Spring context.
+ * decoration, and the check-status schedule/page/sample/issue key resolution — collaborators
+ * mocked, no Spring context.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8ControllerTest {
@@ -52,23 +52,17 @@ class Schedule8ControllerTest {
   private static final long MILL_ID = 546L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule8Service schedule8Service;
+  @Mock private Schedule8Service schedule8Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule8Controller controller;
+  @InjectMocks private Schedule8Controller controller;
 
   private void stubSaved(String key, String text) {
     when(messageSource.getMessage(eq(key), any(), any(), any(Locale.class))).thenReturn(text);
@@ -80,7 +74,8 @@ class Schedule8ControllerTest {
     when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
     when(schedule8Service.getSchedule8(MILL_ID, YEAR, false)).thenReturn(doc);
 
-    ResponseEntity<Schedule8Response> response = controller.getSchedule8(MILL_ID, YEAR, authentication);
+    ResponseEntity<Schedule8Response> response =
+        controller.getSchedule8(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
@@ -223,19 +218,26 @@ class Schedule8ControllerTest {
   void checkStatus_resolvesScheduleBanner_pageSample_andFieldIssueKeys() {
     // One failing page carrying a page-level field issue and one sample with its own issue, so the
     // schedule-level, per-page, and per-sample key→text resolution branches are all exercised.
-    Schedule8CheckStatusResponse raw = new Schedule8CheckStatusResponse(
-        "ISSUES",
-        List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
-        List.of(new Schedule8PageCheckResult(
-            8001,
-            false,
-            List.of(new Schedule8CheckFieldIssue("Contact",
-                new MessageInfo("missingRequiredFieldMsg", null))),
-            List.of(new Schedule8SampleCheckResult(
-                9001,
-                false,
-                List.of(new Schedule8CheckFieldIssue("Skidding/Yarding",
-                    new MessageInfo("skiddingYardingEqualsCentPercent", null))))))));
+    Schedule8CheckStatusResponse raw =
+        new Schedule8CheckStatusResponse(
+            "ISSUES",
+            List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
+            List.of(
+                new Schedule8PageCheckResult(
+                    8001,
+                    false,
+                    List.of(
+                        new Schedule8CheckFieldIssue(
+                            "Contact", new MessageInfo("missingRequiredFieldMsg", null))),
+                    List.of(
+                        new Schedule8SampleCheckResult(
+                            9001,
+                            false,
+                            List.of(
+                                new Schedule8CheckFieldIssue(
+                                    "Skidding/Yarding",
+                                    new MessageInfo(
+                                        "skiddingYardingEqualsCentPercent", null))))))));
     when(schedule8Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), isNull(), anyString(), any(Locale.class)))
         .thenReturn("resolved text");
@@ -255,8 +257,11 @@ class Schedule8ControllerTest {
 
   @Test
   void checkStatusPage_delegatesToSinglePageScope_andResolvesKeys() {
-    Schedule8CheckStatusResponse raw = new Schedule8CheckStatusResponse(
-        "MET", List.of(), List.of(new Schedule8PageCheckResult(8001, true, List.of(), List.of())));
+    Schedule8CheckStatusResponse raw =
+        new Schedule8CheckStatusResponse(
+            "MET",
+            List.of(),
+            List.of(new Schedule8PageCheckResult(8001, true, List.of(), List.of())));
     when(schedule8Service.checkStatusPage(MILL_ID, YEAR, 8001)).thenReturn(raw);
 
     ResponseEntity<Schedule8CheckStatusResponse> response =

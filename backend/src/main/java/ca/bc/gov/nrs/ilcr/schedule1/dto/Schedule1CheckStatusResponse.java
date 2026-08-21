@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * The Schedule 1 Check Status (BR-07) result (Story 2.6, AD-12) — read-only validation, no status
  * transition. {@code requirementsMet} is true iff {@code errors} is empty (warnings do not block).
- * Each {@code errors}/{@code warnings} entry carries the legacy bundle key plus the verbatim resolved
- * text (label-prefixed, AD-8). {@code message} is the SUC-003 success text when requirements are met,
- * else null.
+ * Each {@code errors}/{@code warnings} entry carries the legacy bundle key plus the verbatim
+ * resolved text (label-prefixed, AD-8). {@code message} is the SUC-003 success text when
+ * requirements are met, else null.
  *
  * @param requirementsMet whether the schedule passes (no errors)
  * @param errors the blocking missing-field / consistency messages (verbatim), in legacy field order
@@ -18,5 +18,4 @@ public record Schedule1CheckStatusResponse(
     boolean requirementsMet,
     List<MessageInfo> errors,
     List<MessageInfo> warnings,
-    MessageInfo message) {
-}
+    MessageInfo message) {}

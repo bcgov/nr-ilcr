@@ -2,9 +2,9 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule3.api.Schedule3Api;
-import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -17,9 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Schedule 3 endpoints. Authorizes by naming the {@code VIEW_SCHEDULE}/{@code EDIT_SCHEDULE} action
- * (AD-7), delegates all mill/year validation to {@link MillContextService} with category {@code "3"}
- * (AD-4), and never touches repositories directly (AD-1 layering). The read-only {@code editable} flag
- * is derived from the caller's {@code EDIT_SCHEDULE} permission, computed server-side (AD-5).
+ * (AD-7), delegates all mill/year validation to {@link MillContextService} with category {@code
+ * "3"} (AD-4), and never touches repositories directly (AD-1 layering). The read-only {@code
+ * editable} flag is derived from the caller's {@code EDIT_SCHEDULE} permission, computed
+ * server-side (AD-5).
  */
 @RestController
 public class Schedule3Controller implements Schedule3Api {
@@ -34,6 +35,14 @@ public class Schedule3Controller implements Schedule3Api {
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
+  /**
+   * Constructs the Schedule 3 controller.
+   *
+   * @param millContextService the mill context service
+   * @param schedule3Service the schedule 3 service
+   * @param permissions the schedule permissions evaluator
+   * @param messageSource the message source
+   */
   public Schedule3Controller(
       MillContextService millContextService,
       Schedule3Service schedule3Service,
@@ -45,7 +54,9 @@ public class Schedule3Controller implements Schedule3Api {
     this.messageSource = messageSource;
   }
 
-  /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
+  /**
+   * Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message.
+   */
   private MessageInfo message(String key) {
     return new MessageInfo(
         key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));

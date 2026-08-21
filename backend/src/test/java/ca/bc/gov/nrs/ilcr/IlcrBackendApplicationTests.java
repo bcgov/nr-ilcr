@@ -19,56 +19,42 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged
- * {@code application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke
- * test keeps that explicit. With the datasource off the
- * Spring Data JDBC repositories are absent; mocks stand in so the wiring loads. The real datasource +
- * Spring Data JDBC path is proven by the Testcontainers acceptance tests (*IT).
+ * No-DB context smoke test. Forces the Oracle datasource OFF (AD-2 intent): the merged {@code
+ * application.yml} defaults {@code ilcr.datasource.enabled} to {@code false}; this smoke test keeps
+ * that explicit. With the datasource off the Spring Data JDBC repositories are absent; mocks stand
+ * in so the wiring loads. The real datasource + Spring Data JDBC path is proven by the
+ * Testcontainers acceptance tests (*IT).
  */
 @SpringBootTest
 @TestPropertySource(properties = "ilcr.datasource.enabled=false")
 class IlcrBackendApplicationTests {
 
-  @MockitoBean
-  private Schedule1Repository schedule1Repository;
+  @MockitoBean private Schedule1Repository schedule1Repository;
 
-  @MockitoBean
-  private Schedule3Repository schedule3Repository;
+  @MockitoBean private Schedule3Repository schedule3Repository;
 
-  @MockitoBean
-  private MillContextRepository millContextRepository;
+  @MockitoBean private MillContextRepository millContextRepository;
 
-  @MockitoBean
-  private Schedule2Repository schedule2Repository;
+  @MockitoBean private Schedule2Repository schedule2Repository;
 
-  @MockitoBean
-  private Schedule4Repository schedule4Repository;
+  @MockitoBean private Schedule4Repository schedule4Repository;
 
-  @MockitoBean
-  private Schedule5Repository schedule5Repository;
+  @MockitoBean private Schedule5Repository schedule5Repository;
 
-  @MockitoBean
-  private Schedule6Repository schedule6Repository;
+  @MockitoBean private Schedule6Repository schedule6Repository;
 
-  @MockitoBean
-  private Schedule7aRepository schedule7aRepository;
+  @MockitoBean private Schedule7aRepository schedule7aRepository;
 
-  @MockitoBean
-  private Schedule7bRepository schedule7bRepository;
+  @MockitoBean private Schedule7bRepository schedule7bRepository;
 
-  @MockitoBean
-  private Schedule8Repository schedule8Repository;
+  @MockitoBean private Schedule8Repository schedule8Repository;
 
-  @MockitoBean
-  private Schedule9Repository schedule9Repository;
+  @MockitoBean private Schedule9Repository schedule9Repository;
 
-  @MockitoBean
-  private Schedule10Repository schedule10Repository;
+  @MockitoBean private Schedule10Repository schedule10Repository;
 
-  @MockitoBean
-  private Schedule11Repository schedule11Repository;
+  @MockitoBean private Schedule11Repository schedule11Repository;
 
   @Test
-  void contextLoads() {
-  }
+  void contextLoads() {}
 }

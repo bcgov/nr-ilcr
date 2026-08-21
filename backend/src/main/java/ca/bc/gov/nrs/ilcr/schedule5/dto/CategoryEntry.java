@@ -59,13 +59,5 @@ import java.math.BigDecimal;
  *     the service)
  */
 public record CategoryEntry(
-
-    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}")
-    @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}")
-    @Digits(integer = 8, fraction = 2, message = "{volumeValidatorErrorMsg}")
-    BigDecimal volume,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer cost) {
-}
+    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}") @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}") @Digits(integer = 8, fraction = 2, message = "{volumeValidatorErrorMsg}") BigDecimal volume,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer cost) {}

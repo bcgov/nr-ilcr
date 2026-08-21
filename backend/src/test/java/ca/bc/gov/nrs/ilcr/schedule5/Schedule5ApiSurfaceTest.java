@@ -1,17 +1,16 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
@@ -47,34 +46,35 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 @DisplayName("Schedule 5 API surface — no copy endpoint exists (AC4, deviation (B))")
 class Schedule5ApiSurfaceTest {
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule5Service schedule5Service;
+  @Mock private Schedule5Service schedule5Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUp() {
-    mockMvc = MockMvcBuilders.standaloneSetup(
-            new Schedule5Controller(
-                millContextService, schedule5Service, permissions, messageSource))
-        .build();
+    mockMvc =
+        MockMvcBuilders.standaloneSetup(
+                new Schedule5Controller(
+                    millContextService, schedule5Service, permissions, messageSource))
+            .build();
   }
 
   @Test
   @DisplayName("POST /camps/{id}/copy is NOT a route — copy is 7.3's prefill, not a server call")
   void copyEndpointDoesNotExist() throws Exception {
-    mockMvc.perform(post("/api/v1/schedule5/camps/8205/copy")
-            .param("millId", "670").param("year", "2022")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            post("/api/v1/schedule5/camps/8205/copy")
+                .param("millId", "670")
+                .param("year", "2022")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isNotFound());
   }
 
@@ -83,13 +83,21 @@ class Schedule5ApiSurfaceTest {
   void theRealRoutesAreMapped() throws Exception {
     // An empty body fails @Valid with 400 — anything but 404/405 proves the mapping exists, so the
     // copy probe's 404 is route absence rather than a mis-wired standalone setup.
-    mockMvc.perform(post("/api/v1/schedule5/camps")
-            .param("millId", "670").param("year", "2022")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            post("/api/v1/schedule5/camps")
+                .param("millId", "670")
+                .param("year", "2022")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isBadRequest());
-    mockMvc.perform(put("/api/v1/schedule5/camps/8205")
-            .param("millId", "670").param("year", "2022")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            put("/api/v1/schedule5/camps/8205")
+                .param("millId", "670")
+                .param("year", "2022")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isBadRequest());
   }
 
@@ -109,23 +117,38 @@ class Schedule5ApiSurfaceTest {
     SubPageDocument doc =
         new SubPageDocument(8700, "Reconcile Camp", null, true, List.of(), null, null);
     when(schedule5Service.saveSubPage(
-        anyLong(), anyInt(), anyInt(), any(), any(), anyBoolean(), any())).thenReturn(doc);
+            anyLong(), anyInt(), anyInt(), any(), any(), anyBoolean(), any()))
+        .thenReturn(doc);
     when(schedule5Service.deleteSubPageRow(
-        anyLong(), anyInt(), anyInt(), any(), anyInt(), anyBoolean())).thenReturn(doc);
+            anyLong(), anyInt(), anyInt(), any(), anyInt(), anyBoolean()))
+        .thenReturn(doc);
     // A principal is supplied because the save path reads authentication.getName() for the audit
     // columns; Spring resolves an Authentication parameter from request.getUserPrincipal(), which
     // standalone MockMvc leaves null unless it is set here.
     Authentication auth = new UsernamePasswordAuthenticationToken("tester", "n/a", List.of());
     for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
-      mockMvc.perform(get("/api/v1/schedule5/camps/8700/" + page)
-              .principal(auth).param("millId", "690").param("year", "2016"))
+      mockMvc
+          .perform(
+              get("/api/v1/schedule5/camps/8700/" + page)
+                  .principal(auth)
+                  .param("millId", "690")
+                  .param("year", "2016"))
           .andExpect(status().isOk());
-      mockMvc.perform(put("/api/v1/schedule5/camps/8700/" + page)
-              .principal(auth).param("millId", "690").param("year", "2016")
-              .contentType(MediaType.APPLICATION_JSON).content("{\"rows\":[]}"))
+      mockMvc
+          .perform(
+              put("/api/v1/schedule5/camps/8700/" + page)
+                  .principal(auth)
+                  .param("millId", "690")
+                  .param("year", "2016")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"rows\":[]}"))
           .andExpect(status().isOk());
-      mockMvc.perform(delete("/api/v1/schedule5/camps/8700/" + page + "/8722")
-              .principal(auth).param("millId", "690").param("year", "2016"))
+      mockMvc
+          .perform(
+              delete("/api/v1/schedule5/camps/8700/" + page + "/8722")
+                  .principal(auth)
+                  .param("millId", "690")
+                  .param("year", "2016"))
           .andExpect(status().isOk());
     }
   }
@@ -141,13 +164,21 @@ class Schedule5ApiSurfaceTest {
     // so Spring resolves the URL and rejects the VERB. A 404 here would actually mean the path
     // itself had gone missing, which is a different failure and is covered by the mapping test
     // above.
-    mockMvc.perform(post("/api/v1/schedule5/camps/8700/other-camp-expenses")
-            .param("millId", "690").param("year", "2016")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            post("/api/v1/schedule5/camps/8700/other-camp-expenses")
+                .param("millId", "690")
+                .param("year", "2016")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isMethodNotAllowed());
-    mockMvc.perform(patch("/api/v1/schedule5/camps/8700/other-camp-expenses/8722")
-            .param("millId", "690").param("year", "2016")
-            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+    mockMvc
+        .perform(
+            patch("/api/v1/schedule5/camps/8700/other-camp-expenses/8722")
+                .param("millId", "690")
+                .param("year", "2016")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
         .andExpect(status().isMethodNotAllowed());
   }
 
@@ -157,8 +188,11 @@ class Schedule5ApiSurfaceTest {
     // Both twins probed: asserting only the camp page would leave half the negative-space contract
     // unpinned (review patch, 2026-08-12).
     for (String page : new String[] {"other-camp-expenses", "other-access-expenses"}) {
-      mockMvc.perform(get("/api/v1/schedule5/camps/8700/" + page + "/8722/details")
-              .param("millId", "690").param("year", "2016"))
+      mockMvc
+          .perform(
+              get("/api/v1/schedule5/camps/8700/" + page + "/8722/details")
+                  .param("millId", "690")
+                  .param("year", "2016"))
           .andExpect(status().isNotFound());
     }
   }

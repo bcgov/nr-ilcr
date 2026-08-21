@@ -15,8 +15,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Schedule 3 Included Unacceptable Costs endpoints (Story 4.4). Mirrors
- * {@link Schedule3OtherCostsController}: authorizes by naming the action (AD-7), delegates mill/year
+ * Schedule 3 Included Unacceptable Costs endpoints (Story 4.4). Mirrors {@link
+ * Schedule3OtherCostsController}: authorizes by naming the action (AD-7), delegates mill/year
  * validation to {@link MillContextService} with category {@code "3"} (AD-4), and resolves success
  * messages verbatim from the bundle (AD-8).
  */
@@ -32,6 +32,14 @@ public class Schedule3UnacceptableCostsController implements Schedule3Unacceptab
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
+  /**
+   * Constructs the controller.
+   *
+   * @param millContextService the mill context service
+   * @param schedule3Service the schedule 3 service
+   * @param permissions the schedule permissions
+   * @param messageSource the message source
+   */
   public Schedule3UnacceptableCostsController(
       MillContextService millContextService,
       Schedule3Service schedule3Service,
@@ -54,8 +62,7 @@ public class Schedule3UnacceptableCostsController implements Schedule3Unacceptab
       long millId, int year, Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(
-        schedule3Service.getUnacceptableDocument(millId, year, callerMayEdit));
+    return ResponseEntity.ok(schedule3Service.getUnacceptableDocument(millId, year, callerMayEdit));
   }
 
   @Override
@@ -71,13 +78,17 @@ public class Schedule3UnacceptableCostsController implements Schedule3Unacceptab
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<UnacceptableDocument> saveUnacceptable(
-      long millId, int year, String intent, UnacceptableSaveRequest request,
+      long millId,
+      int year,
+      String intent,
+      UnacceptableSaveRequest request,
       Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_3_CATEGORY);
     UnacceptableDocument doc =
         schedule3Service.saveUnacceptable(millId, year, request.rows(), authentication.getName());
     // Persistence is identical for a save or a delete (legacy update()); only the message differs.
-    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
+    return ResponseEntity.ok(
+        doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override

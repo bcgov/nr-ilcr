@@ -10,15 +10,15 @@ import org.junit.jupiter.api.Test;
 /**
  * Pins the transcribed legacy arithmetic, with particular attention to null semantics.
  *
- * <p>This matters more than it looks, but not in the direction an earlier revision assumed. Schedule
- * 10 has ZERO cost lines in the real delivery database, so an all-absent substructure is the NORMAL
- * production shape — and legacy serves {@code 0.00} for it, because
- * {@code RoadConstructionReportDetailType.getCostValue} (:1160-1168) coerces each absent line to
- * zero before summing. Omitting the totals instead would regress 100% of production rows to blanks.
+ * <p>This matters more than it looks, but not in the direction an earlier revision assumed.
+ * Schedule 10 has ZERO cost lines in the real delivery database, so an all-absent substructure is
+ * the NORMAL production shape — and legacy serves {@code 0.00} for it, because {@code
+ * RoadConstructionReportDetailType.getCostValue} (:1160-1168) coerces each absent line to zero
+ * before summing. Omitting the totals instead would regress 100% of production rows to blanks.
  *
- * <p>The {@code sum}/{@code subtract}/{@code divide} primitives keep their faithful
- * {@code CoreUtil} null semantics and are tested here as such, but for Schedule 10 the
- * null-return branch of {@code sum} is unreachable — the coercion happens first.
+ * <p>The {@code sum}/{@code subtract}/{@code divide} primitives keep their faithful {@code
+ * CoreUtil} null semantics and are tested here as such, but for Schedule 10 the null-return branch
+ * of {@code sum} is unreachable — the coercion happens first.
  */
 class Schedule10AmountsTest {
 
@@ -118,8 +118,9 @@ class Schedule10AmountsTest {
     void pinnedSubGradeChain() {
       BigDecimal totalCosts =
           Schedule10Amounts.subGradeTotalCosts(bd("150000"), bd("-5000"), bd("2000"));
-      BigDecimal totalDeductions = Schedule10Amounts.subGradeTotalDeductions(
-          bd("1000"), bd("2000"), bd("3000"), bd("6000"), bd("4000"), bd("5000"));
+      BigDecimal totalDeductions =
+          Schedule10Amounts.subGradeTotalDeductions(
+              bd("1000"), bd("2000"), bd("3000"), bd("6000"), bd("4000"), bd("5000"));
       BigDecimal total = Schedule10Amounts.subGradeTotal(totalCosts, totalDeductions);
 
       assertThat(totalCosts).isEqualByComparingTo("147000");
@@ -170,8 +171,9 @@ class Schedule10AmountsTest {
       // The reverse shape — plausible as the first rows Story 11.2 writes. Under the old
       // null-propagating behaviour this served no total at all; legacy serves -21000.00.
       BigDecimal totalCosts = Schedule10Amounts.subGradeTotalCosts(null, null, null);
-      BigDecimal totalDeductions = Schedule10Amounts.subGradeTotalDeductions(
-          bd("1000"), bd("2000"), bd("3000"), bd("6000"), bd("4000"), bd("5000"));
+      BigDecimal totalDeductions =
+          Schedule10Amounts.subGradeTotalDeductions(
+              bd("1000"), bd("2000"), bd("3000"), bd("6000"), bd("4000"), bd("5000"));
       assertThat(Schedule10Amounts.subGradeTotal(totalCosts, totalDeductions))
           .isEqualByComparingTo("-21000");
     }

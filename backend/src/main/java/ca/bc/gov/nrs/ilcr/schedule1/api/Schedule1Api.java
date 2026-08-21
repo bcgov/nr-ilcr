@@ -1,7 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule1.api;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import jakarta.validation.Valid;
@@ -39,7 +39,8 @@ public interface Schedule1Api {
   /**
    * Save (create-or-update) the Schedule 1 entered fields for a mill/year and return the recomputed
    * document (Story 2.1, S01). Range validation on the request body returns 400; a non-Draft track
-   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns 403.
+   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns
+   * 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -61,16 +62,17 @@ public interface Schedule1Api {
    * @param millId the mill id (required)
    * @param year the reporting year (required)
    * @param authentication the caller (drives EDIT_SCHEDULE)
-   * @return 200 with the success {@code message} (SUC-002, AD-8) — supersedes the Story 2.1 pinned 204
+   * @return 200 with the success {@code message} (SUC-002, AD-8) — supersedes the Story 2.1 pinned
+   *     204
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule1(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Check Status (BR-07, Story 2.6): validate whether Schedule 1 meets all requirements. Read-only —
-   * no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown mill/year or
-   * no summary → 404; closed mill → 409.
+   * Check Status (BR-07, Story 2.6): validate whether Schedule 1 meets all requirements. Read-only
+   * — no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown mill/year
+   * or no summary → 404; closed mill → 409.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)

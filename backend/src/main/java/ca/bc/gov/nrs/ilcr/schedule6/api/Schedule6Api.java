@@ -20,26 +20,25 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Schedule 6 (Road Management Costs) API contract (controller + api-interface split, the
- * established idiom). The interface owns the request mapping and parameter contract;
- * {@code Schedule6Controller} implements it and adds authorization. There is deliberately NO
- * DELETE: the row-Delete control and the BR-09 delete-side re-insert are un-sliced by the UC
- * (exclusion #1) — fresh requirements are needed before one may exist.
+ * established idiom). The interface owns the request mapping and parameter contract; {@code
+ * Schedule6Controller} implements it and adds authorization. There is deliberately NO DELETE: the
+ * row-Delete control and the BR-09 delete-side re-insert are un-sliced by the UC (exclusion #1) —
+ * fresh requirements are needed before one may exist.
  *
- * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like Schedule 11, unlike
- * Schedule 1's typed params — because AC4 pins the verbatim legacy ERR-001 message for missing,
- * blank, AND
+ * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like Schedule 11, unlike Schedule
+ * 1's typed params — because AC4 pins the verbatim legacy ERR-001 message for missing, blank, AND
  * non-numeric values, which a typed required {@code @RequestParam} cannot produce (it yields the
- * generic missing-parameter / type-mismatch 400s). Parsing + the guard chain live in
- * {@code MillContextService} (AD-4).
+ * generic missing-parameter / type-mismatch 400s). Parsing + the guard chain live in {@code
+ * MillContextService} (AD-4).
  */
 @RequestMapping("/api/v1/schedule6")
 public interface Schedule6Api {
 
   /**
    * Get the Schedule 6 road-management-costs document for a mill and reporting year. Guards:
-   * missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no
-   * {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero road records is a valid 200); no
-   * {@code VIEW_SCHEDULE} → 403.
+   * missing/malformed params → 400 ERR-001; mill not active → 409 ERR-002; no {@code
+   * ILCR_MILL_REPORT_STATUS} row → 404 ERR-003 (zero road records is a valid 200); no {@code
+   * VIEW_SCHEDULE} → 403.
    *
    * @param millId the raw mill id param (validated by millcontext; may be absent/malformed)
    * @param year the raw reporting year param (validated by millcontext; may be absent/malformed)
@@ -73,9 +72,9 @@ public interface Schedule6Api {
       Authentication authentication);
 
   /**
-   * Edit one Schedule 6 road record (S19: switching the area type stores the new side and NULLs
-   * the other — BR-02). Same validation/gates as add; the body must carry the record's
-   * {@code revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
+   * Edit one Schedule 6 road record (S19: switching the area type stores the new side and NULLs the
+   * other — BR-02). Same validation/gates as add; the body must carry the record's {@code
+   * revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
    * unknown/foreign/placeholder id → 404.
    *
    * @param recordId the road record id ({@code ROAD_MAINTENANCE_REPORT_ID}) to edit

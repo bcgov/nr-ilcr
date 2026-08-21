@@ -27,19 +27,19 @@ import java.math.BigDecimal;
  * of {@code RoadGroupLookup} for the same reason (code review 2026-08-05).
  *
  * <p><b>Every {@code @Size} here is column fidelity, not decoration</b> (code review 2026-08-04):
- * an over-long value that reaches Oracle raises ORA-12899, which the service's
- * {@code catch (DataAccessException)} can only turn into a 500 — so each cap must match the column
- * the value lands in, verified against the delivery DB. {@code areaType} is capped at 3 for the
- * literal {@code "TFL"}; on the TSA branch the service additionally enforces &le;2 for
- * {@code TSA_NUMBER VARCHAR2(2)}. {@code supplyBlock} matches {@code TSB_NUMBER_CODE VARCHAR2(3)}.
- * {@code comments} is capped at <b>400</b> — the per-record comment is written to
- * {@code ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE)}, NOT to the 4000-wide
- * {@code ROAD_MAINTENANCE_REPORT.COMMENTS} the schedule-level general comment uses; the two are
- * different columns and only the general comment may carry the legacy UI's 3500. Legacy's own
- * add/edit textareas are {@code maxlength="3500"} ({@code schedule6.xhtml:180,410}) over a 400-wide
- * column, so legacy would fail there too — the frontend (8.3) must cap at 400, not 3500. Byte
- * semantics ({@code CHAR_USED='B'}): multibyte text can still overflow below 400 characters, which
- * this constraint does not catch.
+ * an over-long value that reaches Oracle raises ORA-12899, which the service's {@code catch
+ * (DataAccessException)} can only turn into a 500 — so each cap must match the column the value
+ * lands in, verified against the delivery DB. {@code areaType} is capped at 3 for the literal
+ * {@code "TFL"}; on the TSA branch the service additionally enforces &le;2 for {@code TSA_NUMBER
+ * VARCHAR2(2)}. {@code supplyBlock} matches {@code TSB_NUMBER_CODE VARCHAR2(3)}. {@code comments}
+ * is capped at <b>400</b> — the per-record comment is written to {@code
+ * ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE)}, NOT to the 4000-wide {@code
+ * ROAD_MAINTENANCE_REPORT.COMMENTS} the schedule-level general comment uses; the two are different
+ * columns and only the general comment may carry the legacy UI's 3500. Legacy's own add/edit
+ * textareas are {@code maxlength="3500"} ({@code schedule6.xhtml:180,410}) over a 400-wide column,
+ * so legacy would fail there too — the frontend (8.3) must cap at 400, not 3500. Byte semantics
+ * ({@code CHAR_USED='B'}): multibyte text can still overflow below 400 characters, which this
+ * constraint does not catch.
  *
  * <p>{@code volume} range is 0–9,999,999 (FLD-003); the {@code @Digits} fraction cap matches the
  * delivery {@code ILCR_COST_REPORT_DETAIL.VOLUME NUMBER(10,2)} (Task 1 gate (i)) so Oracle never
@@ -57,34 +57,16 @@ import java.math.BigDecimal;
  * @param supplyBlock the TSB code, &le;3 (applies iff {@code areaType != "TFL"}; otherwise cleared
  *     server-side; absent → flagged by Check Status, not by save)
  * @param volume the volume in m&sup3; (optional, 0–9,999,999, at most two decimals)
- * @param cost the whole-dollar cost (optional at save, &plusmn;99,999,999; required by
- *     Check Status)
+ * @param cost the whole-dollar cost (optional at save, &plusmn;99,999,999; required by Check
+ *     Status)
  * @param comments the per-record comment (optional, &le; 400 — the detail column's width)
  * @param revisionCount the optimistic-lock token echoed from the served record (required on UPDATE)
  */
 public record RoadRecordRequest(
-    @NotBlank(message = "{tsaOrTflRequiredErrorMsg}")
-    @Size(max = 3, message = "{invalidCodeValueErrorMsg}")
-    String areaType,
-
-    @Size(max = 2, message = "{tflNumberValidatorErrorMsg}")
-    String tflNumber,
-
-    @Size(max = 3, message = "{invalidCodeValueErrorMsg}")
-    String supplyBlock,
-
-    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}")
-    @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}")
-    @Digits(integer = 8, fraction = 2, message = "{volumeValidatorErrorMsg}")
-    BigDecimal volume,
-
-    @Min(value = -99999999, message = "{costValidatorErrorMsg}")
-    @Max(value = 99999999, message = "{costValidatorErrorMsg}")
-    Integer cost,
-
-    @Size(max = 400, message = "{roadCommentsMaxLengthErrorMsg}")
-    String comments,
-
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
-    Integer revisionCount) {
-}
+    @NotBlank(message = "{tsaOrTflRequiredErrorMsg}") @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String areaType,
+    @Size(max = 2, message = "{tflNumberValidatorErrorMsg}") String tflNumber,
+    @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String supplyBlock,
+    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}") @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}") @Digits(integer = 8, fraction = 2, message = "{volumeValidatorErrorMsg}") BigDecimal volume,
+    @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer cost,
+    @Size(max = 400, message = "{roadCommentsMaxLengthErrorMsg}") String comments,
+    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}

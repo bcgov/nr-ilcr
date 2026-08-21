@@ -31,8 +31,7 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -43,10 +42,12 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -54,10 +55,12 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ suffix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -65,34 +68,41 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (not 403)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz (not 403)")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().is2xxSuccessful());
   }
 
-  // ---- POST /check-status shares the VIEW_SCHEDULE gate (Story 4.4). -----------------------------
+  // ---- POST /check-status shares the VIEW_SCHEDULE gate (Story 4.4).
+  // -----------------------------
 
   private static final String CHECK_STATUS = "/api/v1/schedule4/check-status";
 
   @Test
   @DisplayName("no VIEW_SCHEDULE -> POST /check-status 403")
   void checkStatus_noPermission_returns403() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -100,10 +110,12 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER -> POST /check-status passes authz (not 403)")
   void checkStatus_submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(post(CHECK_STATUS)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 }

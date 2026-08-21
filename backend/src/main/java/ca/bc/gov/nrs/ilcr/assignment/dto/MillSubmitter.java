@@ -30,5 +30,4 @@ public record MillSubmitter(
     String status,
     LocalDate startDate,
     LocalDate endDate,
-    int revisionCount) {
-}
+    int revisionCount) {}

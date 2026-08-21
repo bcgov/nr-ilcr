@@ -31,7 +31,8 @@ class CognitoResourceServerConfigurationTest {
   }
 
   @Test
-  @DisplayName("fails closed (IllegalStateException) when security is on but the client id is unset")
+  @DisplayName(
+      "fails closed (IllegalStateException) when security is on but the client id is unset")
   void throwsWhenAudienceMissing() {
     assertThatThrownBy(() -> configuration.jwtDecoder(JWKS, ISSUER, "   "))
         .isInstanceOf(IllegalStateException.class)

@@ -15,9 +15,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit test — {@link RenderedReport} (Story 29.2): the streaming export writes a real PDF to the
- * given stream (never buffering a {@code byte[]} itself), and {@link RenderedReport#close()} disposes
- * the virtualizer so the caller's try-with-resources cleans the swap file on every path. A null
- * virtualizer (were one ever passed) must be tolerated. No Spring context or database.
+ * given stream (never buffering a {@code byte[]} itself), and {@link RenderedReport#close()}
+ * disposes the virtualizer so the caller's try-with-resources cleans the swap file on every path. A
+ * null virtualizer (were one ever passed) must be tolerated. No Spring context or database.
  */
 @DisplayName("RenderedReport — streaming export + swap cleanup")
 class RenderedReportTest {

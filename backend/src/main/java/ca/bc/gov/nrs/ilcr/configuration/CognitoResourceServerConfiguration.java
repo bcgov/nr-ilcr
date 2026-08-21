@@ -13,10 +13,10 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 /**
- * The FAM/Cognito {@link JwtDecoder}, active only when {@code ilcr.security.enabled=true}. Beyond the
- * default issuer and expiry checks it enforces the constraints the identity spike (Story 1.0)
- * settled: the bearer must be the Cognito <em>ID</em> token ({@code token_use=id}), and its
- * {@code aud} must be this app's client id.
+ * The FAM/Cognito {@link JwtDecoder}, active only when {@code ilcr.security.enabled=true}. Beyond
+ * the default issuer and expiry checks it enforces the constraints the identity spike (Story 1.0)
+ * settled: the bearer must be the Cognito <em>ID</em> token ({@code token_use=id}), and its {@code
+ * aud} must be this app's client id.
  *
  * <p>The client id ({@code COGNITO_CLIENT_ID} → {@code ilcr.security.cognito.allowed-audience}) is
  * <strong>mandatory</strong> when security is on: refusing to start beats silently accepting any
@@ -39,10 +39,11 @@ public class CognitoResourceServerConfiguration {
     }
 
     NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
-    decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-        JwtValidators.createDefaultWithIssuer(issuerUri),
-        new JwtClaimValidator<String>("token_use", "id"::equals),
-        new AudienceValidator(allowedAudience)));
+    decoder.setJwtValidator(
+        new DelegatingOAuth2TokenValidator<>(
+            JwtValidators.createDefaultWithIssuer(issuerUri),
+            new JwtClaimValidator<String>("token_use", "id"::equals),
+            new AudienceValidator(allowedAudience)));
     return decoder;
   }
 }

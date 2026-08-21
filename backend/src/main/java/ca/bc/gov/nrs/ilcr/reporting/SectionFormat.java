@@ -12,8 +12,9 @@ import java.util.Locale;
  * with thousands separators and no decimals, and $-per-unit / volume figures keep two decimals.
  *
  * <p>Every {@link DecimalFormat} is pinned to {@link Locale#CANADA} symbols (matching Schedule 9's
- * {@code Schedule9Service}): the grouping/decimal separators must be a comma and a period regardless
- * of the JVM default locale, which a non-en container pod would otherwise flip (e.g. {@code 1.234,56}).
+ * {@code Schedule9Service}): the grouping/decimal separators must be a comma and a period
+ * regardless of the JVM default locale, which a non-en container pod would otherwise flip (e.g.
+ * {@code 1.234,56}).
  */
 final class SectionFormat {
 
@@ -23,8 +24,7 @@ final class SectionFormat {
   private static final DecimalFormatSymbols SYMBOLS =
       DecimalFormatSymbols.getInstance(Locale.CANADA);
 
-  private SectionFormat() {
-  }
+  private SectionFormat() {}
 
   /** A whole-dollar cost with thousands separators, or {@code "-"} when null. */
   static String money(Long value) {
@@ -46,16 +46,18 @@ final class SectionFormat {
   }
 
   /**
-   * A measurement at its stored precision with a trailing unit (e.g. {@code 2.123 m}, {@code 1.1 km}),
-   * or a bare {@code "-"} (no unit) when null — matching the legacy Schedule 10 report, which drops the
-   * unit for an absent measure. Uses the value's own scale (not a fixed two decimals) so {@code 4.5}
-   * stays {@code 4.5} and {@code 1.500} stays {@code 1.500}.
+   * A measurement at its stored precision with a trailing unit (e.g. {@code 2.123 m}, {@code 1.1
+   * km}), or a bare {@code "-"} (no unit) when null — matching the legacy Schedule 10 report, which
+   * drops the unit for an absent measure. Uses the value's own scale (not a fixed two decimals) so
+   * {@code 4.5} stays {@code 4.5} and {@code 1.500} stays {@code 1.500}.
    */
   static String measure(BigDecimal value, String unit) {
     return value == null ? DASH : value.toPlainString() + " " + unit;
   }
 
-  /** A raw numeric figure at its stored precision (no unit, no grouping), or {@code "-"} when null. */
+  /**
+   * A raw numeric figure at its stored precision (no unit, no grouping), or {@code "-"} when null.
+   */
   static String plain(BigDecimal value) {
     return value == null ? DASH : value.toPlainString();
   }

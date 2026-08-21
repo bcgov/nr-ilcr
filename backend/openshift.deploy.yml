@@ -13,6 +13,11 @@ parameters:
   - name: IMAGE_TAG
     description: Image tag to use
     required: true
+  # PR deploys pass the immutable head SHA as IMAGE_TAG, so every push changes
+  # the pod spec and forces a rollout (the mutable PR-number tag would leave
+  # `oc apply` seeing an unchanged Deployment and keep serving the stale image
+  # despite imagePullPolicy: Always). Test deploys (merge.yml) use the
+  # PR-number tag, which is unique per merge, so the spec changes there too.
   - name: REGISTRY
     description: Container registry to import from
     value: ghcr.io
@@ -31,7 +36,7 @@ parameters:
   - name: CPU_REQUEST
     value: "30m"
   - name: MEMORY_REQUEST
-    value: "384Mi"
+    value: "256Mi"
   - name: MEMORY_LIMIT
     description: Container memory limit; the JVM heap sizes itself from this cgroup limit via MaxRAMPercentage (see backend/Dockerfile). Raised for the embedded JasperReports 7 engine (Batik/OpenPDF/fonts add classpath + metaspace + native AWT footprint) per AD-16 "size the reporting path's pod CPU/Mem".
     value: "1Gi"

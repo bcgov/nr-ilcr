@@ -19,23 +19,24 @@ import java.util.Map;
 /**
  * Maps the Schedule 10 (New Road Construction Costs) read document to the print section datasource:
  * ONE detail row per road detail (flattened across construction pages), each carrying BOTH the road
- * detail's own fields AND its construction-page/project context (division, period, region, TSA-or-TFL,
- * supply block, TFL, road group) plus the page/road ordinals — so {@code schedule10.jrxml} can group
- * by construction page (printing the project header once) and page-break per road detail, and the
- * footer can read {@code Page {pageNumber} - Road {rowNumber} of {roadDetailCount}} (the legacy form
- * layout). The service ({@code Schedule10Service}) has already derived the road group, the sub-grade /
- * stabilizing totals and $/km, and the material percentages — this mapper only formats and resolves
- * code → label for the header.
+ * detail's own fields AND its construction-page/project context (division, period, region,
+ * TSA-or-TFL, supply block, TFL, road group) plus the page/road ordinals — so {@code
+ * schedule10.jrxml} can group by construction page (printing the project header once) and
+ * page-break per road detail, and the footer can read {@code Page {pageNumber} - Road {rowNumber}
+ * of {roadDetailCount}} (the legacy form layout). The service ({@code Schedule10Service}) has
+ * already derived the road group, the sub-grade / stabilizing totals and $/km, and the material
+ * percentages — this mapper only formats and resolves code → label for the header.
  *
  * <p>Two deliberate deviations from the legacy report, both following the rebuilt Schedule 10 model
  * (Story 20.4 decisions):
+ *
  * <ul>
  *   <li>The LD-1/LD-2/LD-3 fields the legacy report showed — Moisture/ASM Code, Soil Moisture Code,
- *       and Boulder Area % — are OMITTED: the rebuilt Schedule 10 removed them by business direction
- *       and does not expose them on read, so the print does not show them either.</li>
- *   <li>End Haul / Overland {@code $/m3/km} is not carried by the read DTO, so it is computed here for
- *       display: {@code lessEndHaul / (volume × distance)} (and the overland pair), dashed when the
- *       volume or distance is absent/zero.</li>
+ *       and Boulder Area % — are OMITTED: the rebuilt Schedule 10 removed them by business
+ *       direction and does not expose them on read, so the print does not show them either.
+ *   <li>End Haul / Overland {@code $/m3/km} is not carried by the read DTO, so it is computed here
+ *       for display: {@code lessEndHaul / (volume × distance)} (and the overland pair), dashed when
+ *       the volume or distance is absent/zero.
  * </ul>
  */
 final class Schedule10SectionMapper {
@@ -43,8 +44,7 @@ final class Schedule10SectionMapper {
   /** The sentinel the frontend/legacy shows in the "TSA or TFL" field for a TFL-located page. */
   private static final String TFL_SENTINEL = "Tree Farm Licensee";
 
-  private Schedule10SectionMapper() {
-  }
+  private Schedule10SectionMapper() {}
 
   static SectionData map(Schedule10Response response) {
     if (response == null || response.pages() == null || response.pages().isEmpty()) {
@@ -75,29 +75,39 @@ final class Schedule10SectionMapper {
     row.put("roadDetailCount", page.roadDetailCount());
     row.put("division", SectionFormat.text(page.divisionName()));
     row.put("period", SectionFormat.text(page.constructionPeriod()));
-    row.put("region", describe(codeLists == null ? null : codeLists.forestRegions(),
-        page.forestRegionCode()));
-    row.put("tsaOrTfl", tflLocated
-        ? TFL_SENTINEL
-        : describe(codeLists == null ? null : codeLists.tsaNumbers(), page.tsaNumber()));
-    row.put("supplyBlock", tflLocated
-        ? ""
-        : describe(codeLists == null ? null : codeLists.supplyBlocks(), page.tsbNumberCode()));
+    row.put(
+        "region",
+        describe(codeLists == null ? null : codeLists.forestRegions(), page.forestRegionCode()));
+    row.put(
+        "tsaOrTfl",
+        tflLocated
+            ? TFL_SENTINEL
+            : describe(codeLists == null ? null : codeLists.tsaNumbers(), page.tsaNumber()));
+    row.put(
+        "supplyBlock",
+        tflLocated
+            ? ""
+            : describe(codeLists == null ? null : codeLists.supplyBlocks(), page.tsbNumberCode()));
     row.put("tfl", tflLocated ? SectionFormat.text(page.tflNumberCode()) : "");
     row.put("roadGroup", page.roadGroup() == null ? "" : page.roadGroup());
 
     // Road information.
     row.put("roadName", SectionFormat.text(detail.roadName()));
     row.put("roadType", SectionFormat.text(detail.roadLifetimeCode()));
-    row.put("biogeoVariant",
-        SectionFormat.text(detail.becClassification() == null ? null : detail.becClassification().label()));
+    row.put(
+        "biogeoVariant",
+        SectionFormat.text(
+            detail.becClassification() == null ? null : detail.becClassification().label()));
     row.put("rsmsClass", SectionFormat.text(detail.relSoilMoistRgmClsCode()));
     row.put("sideSlope", SectionFormat.integer(detail.sideSlopePct()));
 
     // Material composition percentages.
     MaterialComposition material = detail.materialComposition();
-    row.put("matSolidRock", SectionFormat.integer(material == null ? null : material.solidRockPct()));
-    row.put("matRippableRock", SectionFormat.integer(material == null ? null : material.rippableRockPct()));
+    row.put(
+        "matSolidRock", SectionFormat.integer(material == null ? null : material.solidRockPct()));
+    row.put(
+        "matRippableRock",
+        SectionFormat.integer(material == null ? null : material.rippableRockPct()));
     row.put("matCoarse", SectionFormat.integer(material == null ? null : material.coarsePct()));
     row.put("matFine", SectionFormat.integer(material == null ? null : material.finePct()));
     row.put("matOrganic", SectionFormat.integer(material == null ? null : material.organicPct()));
@@ -127,7 +137,9 @@ final class Schedule10SectionMapper {
     row.put("stSurfaceWidth", SectionFormat.measure(st == null ? null : st.surfaceWidth(), "m"));
     row.put("stType", SectionFormat.text(st == null ? null : st.ballastMaterialCode()));
     row.put("stDepth", SectionFormat.measure(st == null ? null : st.depth(), "m"));
-    row.put("stDistanceToSource", SectionFormat.measure(st == null ? null : st.distanceToSource(), "km"));
+    row.put(
+        "stDistanceToSource",
+        SectionFormat.measure(st == null ? null : st.distanceToSource(), "km"));
     row.put("stActualCost", SectionFormat.money(st == null ? null : st.actualCost()));
     row.put("stTtTransfer", SectionFormat.money(st == null ? null : st.ttTransfer()));
     row.put("stOtherTransfer", SectionFormat.money(st == null ? null : st.otherTransfer()));
@@ -138,12 +150,22 @@ final class Schedule10SectionMapper {
     row.put("includeDetailEng", SectionFormat.text(detail.detailedEngineeringCostInd()));
     row.put("endHaulDistance", SectionFormat.plain(detail.endHaulDistance()));
     row.put("endHaulVolume", SectionFormat.plain(detail.endHaulVolume()));
-    row.put("endHaulPerUnit", SectionFormat.decimal(
-        perM3PerKm(sg == null ? null : sg.lessEndHaul(), detail.endHaulVolume(), detail.endHaulDistance())));
+    row.put(
+        "endHaulPerUnit",
+        SectionFormat.decimal(
+            perM3PerKm(
+                sg == null ? null : sg.lessEndHaul(),
+                detail.endHaulVolume(),
+                detail.endHaulDistance())));
     row.put("overlandDistance", SectionFormat.plain(detail.overlandDistance()));
     row.put("overlandVolume", SectionFormat.plain(detail.overlandVolume()));
-    row.put("overlandPerUnit", SectionFormat.decimal(
-        perM3PerKm(sg == null ? null : sg.lessOverland(), detail.overlandVolume(), detail.overlandDistance())));
+    row.put(
+        "overlandPerUnit",
+        SectionFormat.decimal(
+            perM3PerKm(
+                sg == null ? null : sg.lessOverland(),
+                detail.overlandVolume(),
+                detail.overlandDistance())));
 
     row.put("comments", SectionFormat.text(detail.comments()));
     return row;
@@ -151,9 +173,10 @@ final class Schedule10SectionMapper {
 
   /**
    * The legacy {@code $/m3/km} for an end-haul / overland row: the deducted cost spread over the
-   * hauled volume-kilometres, {@code cost / (volume × distance)} at two decimals. Returns {@code null}
-   * (rendered as a dash) when the cost, volume, or distance is absent or the denominator is zero — so
-   * a road with no end-haul / overland leaves the column dashed, matching the legacy report.
+   * hauled volume-kilometres, {@code cost / (volume × distance)} at two decimals. Returns {@code
+   * null} (rendered as a dash) when the cost, volume, or distance is absent or the denominator is
+   * zero — so a road with no end-haul / overland leaves the column dashed, matching the legacy
+   * report.
    */
   private static BigDecimal perM3PerKm(BigDecimal cost, BigDecimal volume, BigDecimal distance) {
     if (cost == null || volume == null || distance == null) {
@@ -166,7 +189,10 @@ final class Schedule10SectionMapper {
     return cost.divide(denominator, 2, RoundingMode.HALF_UP);
   }
 
-  /** Resolve a code to its description via the code list, falling back to the raw code (never dashed). */
+  /**
+   * Resolve a code to its description via the code list, falling back to the raw code (never
+   * dashed).
+   */
   private static String describe(List<CodeDescriptionDto> options, String code) {
     if (code == null || code.isBlank()) {
       return "";

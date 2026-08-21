@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Subtotal Other Costs endpoints (Story 2.4). Mirrors {@link Schedule1Controller}: authorizes by
  * naming the action (AD-7), delegates mill/year validation to {@link MillContextService} (AD-4),
- * never touches repositories directly (AD-1), and resolves success messages verbatim from the bundle
- * (AD-8). The Draft write gate and derivation live in {@link Schedule1Service}.
+ * never touches repositories directly (AD-1), and resolves success messages verbatim from the
+ * bundle (AD-8). The Draft write gate and derivation live in {@link Schedule1Service}.
  */
 @RestController
 public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
@@ -32,6 +32,14 @@ public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
+  /**
+   * Constructs the Schedule 1 other costs controller.
+   *
+   * @param millContextService the mill context service
+   * @param schedule1Service the Schedule 1 service
+   * @param permissions the schedule permissions evaluator
+   * @param messageSource the message source
+   */
   public Schedule1OtherCostsController(
       MillContextService millContextService,
       Schedule1Service schedule1Service,
@@ -43,7 +51,9 @@ public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
     this.messageSource = messageSource;
   }
 
-  /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
+  /**
+   * Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message.
+   */
   private MessageInfo message(String key) {
     return new MessageInfo(
         key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
@@ -71,13 +81,17 @@ public class Schedule1OtherCostsController implements Schedule1OtherCostsApi {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<OtherCostsDocument> saveOtherCosts(
-      long millId, int year, String intent, OtherCostSaveRequest request,
+      long millId,
+      int year,
+      String intent,
+      OtherCostSaveRequest request,
       Authentication authentication) {
     millContextService.validateScheduleViewable(millId, year, SCHEDULE_1_CATEGORY);
     OtherCostsDocument doc =
         schedule1Service.saveOtherCosts(millId, year, request.rows(), authentication.getName());
     // Persistence is identical for a save or a delete (legacy update()); only the message differs.
-    return ResponseEntity.ok(doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
+    return ResponseEntity.ok(
+        doc.withMessage(message("delete".equals(intent) ? MSG_DELETED : MSG_SAVED)));
   }
 
   @Override

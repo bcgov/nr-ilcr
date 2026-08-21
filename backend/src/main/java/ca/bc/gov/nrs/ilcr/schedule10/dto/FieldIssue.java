@@ -13,5 +13,4 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
  * @param field the machine field name, stable for UI correlation
  * @param message the legacy bundle key and its composed, resolved text
  */
-public record FieldIssue(String field, MessageInfo message) {
-}
+public record FieldIssue(String field, MessageInfo message) {}
