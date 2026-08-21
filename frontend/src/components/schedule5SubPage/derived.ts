@@ -66,9 +66,11 @@ export function rowCostPerVolume(
 export function deriveSubPageTotals(
   kind: SubPageKind,
   rows: readonly SubPageRowForm[],
-  stampedVolume: number | null | undefined,
+  // Defaulted rather than normalised in the body (SonarQube 2026-08-21). Equivalent: a default fires
+  // only on `undefined`, and an explicitly-passed `null` already IS the value the body wants — so
+  // both the omitted and the null call paths land on `null`, as `?? null` did.
+  volume: number | null = null,
 ): SubPageTotals {
-  const volume = stampedVolume ?? null
   let cost = 0
   let contributed = false
   for (const row of rows) {

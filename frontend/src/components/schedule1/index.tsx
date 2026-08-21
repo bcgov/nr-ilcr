@@ -401,29 +401,37 @@ const Schedule1: FC = () => {
     )
   }
 
+  // 139's cost is pulled from Schedule 3 and stays served even mid-entry, because nothing on this
+  // page is an input to it; only 140's cost has a mirror. Extracted from a nested ternary (SonarQube
+  // 2026-08-21) -- worth doing, because the nesting hid that `derived` changes exactly ONE of these
+  // three branches.
+  const silvicultureCost = (code: number, item: LineItem | null): number | null | undefined => {
+    if (code === 139) return data.lessSilvAdminCost
+    if (code === 140) return derived ? derived.totalSilvicultureCost : data.totalSilvicultureCost
+    return item?.cost
+  }
+
+  // $/m³ = cost ÷ volume (139/140 fold in the Schedule 3 pulls). Mirrored while editable so it
+  // tracks entry; the document's server-computed figure otherwise (#291).
+  //
+  // NOTE the precedence is deliberately the OPPOSITE of `silvicultureCost` above: the mirror
+  // supersedes every row here, 139 and 140 included, because `deriveSchedule1` computes a rate for
+  // both (derived.ts:98,115) even though it computes a cost only for 140. Same two codes, different
+  // answer -- which is precisely what a three-deep ternary is bad at showing.
+  const silviculturePerUnit = (code: number, item: LineItem | null): number | null | undefined => {
+    if (derived) return derived.perUnit[code]
+    if (code === 139) return data.lessSilvAdminPerUnit
+    if (code === 140) return data.totalSilviculturePerUnit
+    return item?.perUnit
+  }
+
   const silvicultureRow = (row: (typeof SILV_ROWS)[number]) => {
     const item = data.silviculture[row.key]
     // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
     // pulled from Schedule 3, 140's is derived — both read-only.
     const writableCost = row.code === 1 || row.code === 2
-    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
-    const costValue =
-      row.code === 139
-        ? data.lessSilvAdminCost
-        : row.code === 140
-          ? derived
-            ? derived.totalSilvicultureCost
-            : data.totalSilvicultureCost
-          : item?.cost
-    // $/m³ = cost ÷ volume (139/140 fold in the Schedule 3 pulls). Mirrored while editable so it
-    // tracks entry; the document's server-computed figure otherwise (#291).
-    const perUnitValue = derived
-      ? derived.perUnit[row.code]
-      : row.code === 139
-        ? data.lessSilvAdminPerUnit
-        : row.code === 140
-          ? data.totalSilviculturePerUnit
-          : item?.perUnit
+    const costValue = silvicultureCost(row.code, item)
+    const perUnitValue = silviculturePerUnit(row.code, item)
     return (
       <TableRow key={row.code}>
         <TableCell>{row.label}</TableCell>

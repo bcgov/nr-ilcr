@@ -171,6 +171,34 @@ describe('Schedule1 editable page', () => {
     expect(costOf(SUBTOTAL)).toBe('674,000')
   })
 
+  test("139's RATE is mirrored while its COST stays the Schedule 3 pull (#291)", async () => {
+    // Row 139's two halves come from different places, and the page treats them differently on
+    // purpose: the cost is pulled from Schedule 3 and nothing on this page feeds it, but the VOLUME is
+    // user-entered -- so `deriveSchedule1` computes a rate for 139 (derived.ts:98) even though it
+    // computes no cost for it. The mirror therefore supersedes 139's rate and must NOT touch its cost.
+    //
+    // Written after a SonarQube refactor of a three-deep ternary (2026-08-21) exposed that this
+    // opposite-precedence rule was pinned by no test: inverting it left all 268 green.
+    server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    const label = 'Less Silviculture Admin Costs'
+    // Served state: 150,000 pulled from Schedule 3 over the fixture's volume of 55.
+    expect(await screen.findByLabelText(`${label} volume`)).toHaveValue('55')
+    expect(rate(label)).toBe('2,727.27') // 150,000 / 55
+
+    const volume = screen.getByLabelText(`${label} volume`)
+    await user.clear(volume)
+    await user.type(volume, '60000')
+    await user.tab()
+
+    // The rate moved off the served figure -- the mirror owns it.
+    expect(rate(label)).toBe('2.50') // 150,000 / 60,000
+    // ...while the cost is still the Schedule 3 pull, untouched by the mirror.
+    expect(costOf(label)).toBe('150,000')
+  })
+
   test('the Other Costs $/m³ tracks the volume entered on this page (#291)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule1Doc)))
     render(<Schedule1 />)
