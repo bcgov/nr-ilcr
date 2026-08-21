@@ -28,8 +28,8 @@ import java.time.LocalDate;
  * @param expiryDate last day the code is offered (inclusive); {@code null} = never expires
  */
 public record CodeTableEntry(
-    @NotBlank @Size(max = 20) String code,
-    @NotBlank @Size(max = 500) String description,
-    @NotNull LocalDate effectiveDate,
+    @NotBlank(message = "{codeRequiredErrorMsg}") @Size(max = 20) String code,
+    @NotBlank(message = "{descriptionRequiredErrorMsg}") @Size(max = 500) String description,
+    @NotNull(message = "{effectiveDateRequiredErrorMsg}") LocalDate effectiveDate,
     LocalDate expiryDate) {
 }

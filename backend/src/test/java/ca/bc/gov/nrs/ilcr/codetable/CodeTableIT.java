@@ -106,7 +106,8 @@ class CodeTableIT extends AbstractOracleIT {
             .contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-        .andExpect(jsonPath("$.title").value("Validation Failed"));
+        .andExpect(jsonPath("$.title").value("Validation Failed"))
+        .andExpect(jsonPath("$.detail").value("Code: Value is required."));
   }
 
   @Test
