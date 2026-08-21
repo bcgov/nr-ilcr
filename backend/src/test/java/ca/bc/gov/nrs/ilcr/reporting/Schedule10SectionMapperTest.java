@@ -85,23 +85,25 @@ class Schedule10SectionMapperTest {
     // Road information (measures keep stored scale; integers as text).
     assertThat(row)
         .containsEntry("roadName", "Main Line")
-        .containsEntry("roadType", "P")
+        .containsEntry("roadType", "Permanent")
         .containsEntry("biogeoVariant", "ICHdw1")
-        .containsEntry("rsmsClass", "3")
-        .containsEntry("sideSlope", "30")
-        .containsEntry("matSolidRock", "40")
-        .containsEntry("matTotal", "95");
+        .containsEntry("rsmsClass", "3 - Class 3")
+        .containsEntry("sideSlope", "30 %")
+        .containsEntry("matSolidRock", "40 %")
+        .containsEntry("matTotal", "95 %");
 
     // Sub-grade: BigDecimal costs render grouped, no decimals; $/km at two decimals.
     assertThat(row)
-        .containsEntry("sgLength", "4.5 m")
+        .containsEntry("sgLength", "4.5 km")
         .containsEntry("sgActualCost", "25,000")
         .containsEntry("sgTotal", "20,000")
         .containsEntry("sgCostPerLength", "1,234.50");
 
     // Additional stabilizing.
     assertThat(row)
-        .containsEntry("stCode", "C")
+        .containsEntry("stCode", "Continuous")
+        .containsEntry("stLength", "2.0 km")
+        .containsEntry("stType", "Gravel Material")
         .containsEntry("stDistanceToSource", "1.5 km")
         .containsEntry("stCostPerLength", "500.00");
 
@@ -263,10 +265,10 @@ class Schedule10SectionMapperTest {
         List.of(new CodeDescriptionDto("RCB", "Cariboo")),
         List.of(new CodeDescriptionDto("TSA07", "Cariboo TSA")),
         List.of(new CodeDescriptionDto("SB1", "Block 1")),
-        List.of(),
-        List.of(),
-        List.of(),
-        List.of(),
+        List.of(new CodeDescriptionDto("P", "Permanent")),
+        List.of(new CodeDescriptionDto("C", "Continuous")),
+        List.of(new CodeDescriptionDto("GRAVEL", "Gravel Material")),
+        List.of(new CodeDescriptionDto("3", "Class 3")),
         List.of());
   }
 

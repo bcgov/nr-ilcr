@@ -93,29 +93,34 @@ final class Schedule10SectionMapper {
 
     // Road information.
     row.put("roadName", SectionFormat.text(detail.roadName()));
-    row.put("roadType", SectionFormat.text(detail.roadLifetimeCode()));
+    row.put(
+        "roadType",
+        describe(codeLists == null ? null : codeLists.roadLifetimes(), detail.roadLifetimeCode()));
     row.put(
         "biogeoVariant",
         SectionFormat.text(
             detail.becClassification() == null ? null : detail.becClassification().label()));
-    row.put("rsmsClass", SectionFormat.text(detail.relSoilMoistRgmClsCode()));
-    row.put("sideSlope", SectionFormat.integer(detail.sideSlopePct()));
+    row.put(
+        "rsmsClass",
+        describeRsmr(
+            codeLists == null ? null : codeLists.rsmrClasses(), detail.relSoilMoistRgmClsCode()));
+    row.put("sideSlope", SectionFormat.percent(detail.sideSlopePct()));
 
     // Material composition percentages.
     MaterialComposition material = detail.materialComposition();
     row.put(
-        "matSolidRock", SectionFormat.integer(material == null ? null : material.solidRockPct()));
+        "matSolidRock", SectionFormat.percent(material == null ? null : material.solidRockPct()));
     row.put(
         "matRippableRock",
-        SectionFormat.integer(material == null ? null : material.rippableRockPct()));
-    row.put("matCoarse", SectionFormat.integer(material == null ? null : material.coarsePct()));
-    row.put("matFine", SectionFormat.integer(material == null ? null : material.finePct()));
-    row.put("matOrganic", SectionFormat.integer(material == null ? null : material.organicPct()));
-    row.put("matTotal", SectionFormat.integer(material == null ? null : material.totalPct()));
+        SectionFormat.percent(material == null ? null : material.rippableRockPct()));
+    row.put("matCoarse", SectionFormat.percent(material == null ? null : material.coarsePct()));
+    row.put("matFine", SectionFormat.percent(material == null ? null : material.finePct()));
+    row.put("matOrganic", SectionFormat.percent(material == null ? null : material.organicPct()));
+    row.put("matTotal", SectionFormat.percent(material == null ? null : material.totalPct()));
 
     // Sub-grade.
     SubGrade sg = detail.subGrade();
-    row.put("sgLength", SectionFormat.measure(sg == null ? null : sg.length(), "m"));
+    row.put("sgLength", SectionFormat.measure(sg == null ? null : sg.length(), "km"));
     row.put("sgSurfaceWidth", SectionFormat.measure(sg == null ? null : sg.surfaceWidth(), "m"));
     row.put("sgActualCost", SectionFormat.money(sg == null ? null : sg.actualCost()));
     row.put("sgTtTransfer", SectionFormat.money(sg == null ? null : sg.ttTransfer()));
@@ -132,10 +137,18 @@ final class Schedule10SectionMapper {
 
     // Additional stabilizing.
     Stabilizing st = detail.stabilizing();
-    row.put("stCode", SectionFormat.text(st == null ? null : st.ballastMethodCode()));
-    row.put("stLength", SectionFormat.measure(st == null ? null : st.length(), "m"));
+    row.put(
+        "stCode",
+        describe(
+            codeLists == null ? null : codeLists.ballastMethods(),
+            st == null ? null : st.ballastMethodCode()));
+    row.put("stLength", SectionFormat.measure(st == null ? null : st.length(), "km"));
     row.put("stSurfaceWidth", SectionFormat.measure(st == null ? null : st.surfaceWidth(), "m"));
-    row.put("stType", SectionFormat.text(st == null ? null : st.ballastMaterialCode()));
+    row.put(
+        "stType",
+        describe(
+            codeLists == null ? null : codeLists.ballastMaterials(),
+            st == null ? null : st.ballastMaterialCode()));
     row.put("stDepth", SectionFormat.measure(st == null ? null : st.depth(), "m"));
     row.put(
         "stDistanceToSource",
@@ -183,10 +196,25 @@ final class Schedule10SectionMapper {
       return null;
     }
     BigDecimal denominator = volume.multiply(distance);
-    if (denominator.signum() == 0) {
+    if (denominator.signum() <= 0) {
       return null;
     }
     return cost.divide(denominator, 2, RoundingMode.HALF_UP);
+  }
+
+  /** Resolve an RSMR class code to `{code} - {desc}` via the code list. */
+  private static String describeRsmr(List<CodeDescriptionDto> options, String code) {
+    if (code == null || code.isBlank()) {
+      return "-";
+    }
+    if (options != null) {
+      for (CodeDescriptionDto option : options) {
+        if (code.equals(option.code())) {
+          return code + " - " + option.description();
+        }
+      }
+    }
+    return code;
   }
 
   /**
@@ -195,7 +223,7 @@ final class Schedule10SectionMapper {
    */
   private static String describe(List<CodeDescriptionDto> options, String code) {
     if (code == null || code.isBlank()) {
-      return "";
+      return "-";
     }
     if (options != null) {
       for (CodeDescriptionDto option : options) {

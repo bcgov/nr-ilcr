@@ -72,6 +72,11 @@ final class SectionFormat {
     return value == null ? DASH : String.valueOf(value);
   }
 
+  /** A percentage text (e.g. {@code 45 %}), or {@code "-"} when null. */
+  static String percent(Integer value) {
+    return value == null ? DASH : value.toString() + " %";
+  }
+
   /** A stored text value verbatim, or {@code "-"} when null/blank. */
   static String text(String value) {
     return value == null || value.isBlank() ? DASH : value;

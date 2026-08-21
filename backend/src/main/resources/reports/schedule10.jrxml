@@ -202,7 +202,7 @@
       </element>
       <element kind="textField" x="115" y="148" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{sideSlope} + " %"]]></expression>
+        <expression><![CDATA[$F{sideSlope}]]></expression>
       </element>
       <element kind="staticText" style="bold" x="0" y="168" width="150" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -214,7 +214,7 @@
       </element>
       <element kind="textField" x="115" y="183" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matSolidRock} + " %"]]></expression>
+        <expression><![CDATA[$F{matSolidRock}]]></expression>
       </element>
       <element kind="staticText" x="0" y="198" width="110" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -222,7 +222,7 @@
       </element>
       <element kind="textField" x="115" y="198" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matRippableRock} + " %"]]></expression>
+        <expression><![CDATA[$F{matRippableRock}]]></expression>
       </element>
       <element kind="staticText" x="0" y="213" width="110" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -230,7 +230,7 @@
       </element>
       <element kind="textField" x="115" y="213" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matCoarse} + " %"]]></expression>
+        <expression><![CDATA[$F{matCoarse}]]></expression>
       </element>
       <element kind="staticText" x="0" y="228" width="110" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -238,7 +238,7 @@
       </element>
       <element kind="textField" x="115" y="228" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matFine} + " %"]]></expression>
+        <expression><![CDATA[$F{matFine}]]></expression>
       </element>
       <element kind="staticText" x="0" y="243" width="110" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -246,7 +246,7 @@
       </element>
       <element kind="textField" x="115" y="243" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matOrganic} + " %"]]></expression>
+        <expression><![CDATA[$F{matOrganic}]]></expression>
       </element>
       <element kind="staticText" style="bold" x="0" y="258" width="110" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
@@ -254,7 +254,7 @@
       </element>
       <element kind="textField" style="bold" x="115" y="258" width="145" height="15" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-        <expression><![CDATA[$F{matTotal} + " %"]]></expression>
+        <expression><![CDATA[$F{matTotal}]]></expression>
       </element>
       <!-- Column 2: Sub-Grade (all body-gated). Labels left, values right-aligned. -->
       <element kind="textField" x="270" y="88" width="270" height="222" blankWhenNull="true" textAdjust="StretchHeight">
@@ -351,11 +351,10 @@
         <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
         <expression><![CDATA[$F{comments}]]></expression>
       </element>
+      <!-- Ordinal Line (Page / Road numbers) -->
+      <element kind="textField" x="270" y="323" width="532" height="15" hTextAlign="Right">
+        <expression><![CDATA["Page " + $F{pageNumber} + " - Road " + $F{rowNumber} + " of " + $F{roadDetailCount}]]></expression>
+      </element>
     </band>
   </detail>
-  <pageFooter height="15">
-    <element kind="textField" x="0" y="0" width="802" height="15" hTextAlign="Right">
-      <expression><![CDATA["Page " + $F{pageNumber} + " - Road " + $F{rowNumber} + " of " + $F{roadDetailCount}]]></expression>
-    </element>
-  </pageFooter>
 </jasperReport>
