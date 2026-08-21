@@ -12,14 +12,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Content Editing service (Story 24.2 / UC-CNT-001): reads the three role messages, serves one role's
- * message for the Home render, and saves all three ATOMICALLY (A-3 — the legacy per-role
+ * Content Editing service (Story 24.2 / UC-CNT-001): reads the three role messages, serves one
+ * role's message for the Home render, and saves all three ATOMICALLY (A-3 — the legacy per-role
  * non-atomic save S09 is fixed: one transaction, all-or-nothing).
  *
- * <p>Each editor is required (FLD-001) — validated before any write so a rejection saves nothing, with
- * ALL blank editors reported together. On save the legacy transform is applied (tabs/newlines/{@code
- * &nbsp;}, D-3). Rich text is stored raw (legacy stored the WYSIWYG HTML unsanitized); the Home render
- * sanitizes with DOMPurify (defence-in-depth), so no server-side HTML rewrite happens here.
+ * <p>Each editor is required (FLD-001) — validated before any write so a rejection saves nothing,
+ * with ALL blank editors reported together. On save the legacy transform is applied
+ * (tabs/newlines/{@code &nbsp;}, D-3). Rich text is stored raw (legacy stored the WYSIWYG HTML
+ * unsanitized); the Home render sanitizes with DOMPurify (defence-in-depth), so no server-side HTML
+ * rewrite happens here.
  */
 @Slf4j
 @Service
@@ -52,18 +53,19 @@ public class HomeContentService {
   }
 
   /**
-   * Save all three role messages in one transaction (A-3). Validate every editor first (FLD-001, all
-   * blanks together), then transform + update each; any failure rolls the whole save back.
+   * Save all three role messages in one transaction (A-3). Validate every editor first (FLD-001,
+   * all blanks together), then transform + update each; any failure rolls the whole save back.
    *
    * @param request the three messages
    * @param user the acting administrator (audit)
    */
   @Transactional
   public void saveAll(HomeContentSaveRequest request, String user) {
-    List<RoleMessage> messages = List.of(
-        new RoleMessage(ROLE_LICENSEE, LABEL_LICENSEE, request.licensee()),
-        new RoleMessage(ROLE_AUDITOR, LABEL_AUDITOR, request.auditor()),
-        new RoleMessage(ROLE_ADMIN, LABEL_ADMIN, request.administrator()));
+    List<RoleMessage> messages =
+        List.of(
+            new RoleMessage(ROLE_LICENSEE, LABEL_LICENSEE, request.licensee()),
+            new RoleMessage(ROLE_AUDITOR, LABEL_AUDITOR, request.auditor()),
+            new RoleMessage(ROLE_ADMIN, LABEL_ADMIN, request.administrator()));
 
     List<String> blankLabels = new ArrayList<>();
     for (RoleMessage message : messages) {
@@ -78,7 +80,8 @@ public class HomeContentService {
     for (RoleMessage message : messages) {
       String transformed = transform(message.text());
       // Cap by BYTES: MESSAGE_TEXT is VARCHAR2(4000 BYTE), so multi-byte content (smart quotes,
-      // em dashes from paste) could pass a char-count check and then fail the insert with ORA-12899.
+      // em dashes from paste) could pass a char-count check and then fail the insert with
+      // ORA-12899.
       if (transformed.getBytes(StandardCharsets.UTF_8).length > MAX_MESSAGE_LENGTH) {
         throw HomeContentException.tooLong();
       }
@@ -98,11 +101,11 @@ public class HomeContentService {
   }
 
   /**
-   * Save-transform after {@code CoreUtil.replaceCharsForExtractFormat}: tab &rarr; two spaces, newline
-   * &rarr; one space. Legacy dropped {@code &nbsp;} entirely (CoreUtil.java:972), but the legacy
-   * PrimeFaces editor rarely emitted it; TipTap emits {@code &nbsp;} for leading/consecutive spaces,
-   * so dropping it would silently delete word breaks. We map it to a space instead (deliberate,
-   * editor-driven deviation from legacy).
+   * Save-transform after {@code CoreUtil.replaceCharsForExtractFormat}: tab &rarr; two spaces,
+   * newline &rarr; one space. Legacy dropped {@code &nbsp;} entirely (CoreUtil.java:972), but the
+   * legacy PrimeFaces editor rarely emitted it; TipTap emits {@code &nbsp;} for leading/consecutive
+   * spaces, so dropping it would silently delete word breaks. We map it to a space instead
+   * (deliberate, editor-driven deviation from legacy).
    */
   private static String transform(String text) {
     return text.replace("\t", "  ").replace("\n", " ").replace("&nbsp;", " ");

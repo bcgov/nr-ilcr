@@ -12,14 +12,15 @@ import net.sf.jasperreports.pdf.JRPdfExporter;
 /**
  * One filled report ready to export (Story 29.2): the filled sections plus the {@link
  * JRSwapFileVirtualizer} their fill spilled to. {@link #writeTo(OutputStream)} exports the sections
- * straight to a caller-supplied stream — the servlet output stream — so the PDF is never accumulated
- * as a {@code byte[]} on the heap; {@link #close()} disposes the virtualizer's swap file.
+ * straight to a caller-supplied stream — the servlet output stream — so the PDF is never
+ * accumulated as a {@code byte[]} on the heap; {@link #close()} disposes the virtualizer's swap
+ * file.
  *
- * <p>AutoCloseable so the streaming caller (the controller's {@code StreamingResponseBody}) cleans up
- * on BOTH success and failure: a render that throws mid-export must not leak a swap file. The fill
- * that produced these sections has already happened (and may have thrown the empty-schedule 404)
- * BEFORE this holder exists, so streaming and virtualization stay pure transport/memory concerns and
- * never move a business outcome after the response is committed.
+ * <p>AutoCloseable so the streaming caller (the controller's {@code StreamingResponseBody}) cleans
+ * up on BOTH success and failure: a render that throws mid-export must not leak a swap file. The
+ * fill that produced these sections has already happened (and may have thrown the empty-schedule
+ * 404) BEFORE this holder exists, so streaming and virtualization stay pure transport/memory
+ * concerns and never move a business outcome after the response is committed.
  */
 class RenderedReport implements AutoCloseable {
 
@@ -43,8 +44,8 @@ class RenderedReport implements AutoCloseable {
    *
    * <p>Streams rather than buffers: the exporter output wraps {@code out} directly, so a big "all
    * schedules" print never pins the whole PDF as a {@code byte[]} on the JVM heap. {@link
-   * SimpleOutputStreamExporterOutput} does not own {@code out} (it did not open it), so it leaves the
-   * servlet stream for the container to close.
+   * SimpleOutputStreamExporterOutput} does not own {@code out} (it did not open it), so it leaves
+   * the servlet stream for the container to close.
    */
   void writeTo(OutputStream out) {
     JRPdfExporter exporter = new JRPdfExporter();
@@ -60,8 +61,9 @@ class RenderedReport implements AutoCloseable {
   /**
    * Dispose the virtualizer, deleting its swap file. The streaming caller wraps this in
    * try-with-resources, so it runs on both the success and error paths and a swap file is never
-   * leaked. The virtualizer owns its swap file (swapOwner=true in {@link ReportVirtualizerFactory}),
-   * so {@code cleanup()} removes the on-disk file, not just the in-memory page cache.
+   * leaked. The virtualizer owns its swap file (swapOwner=true in {@link
+   * ReportVirtualizerFactory}), so {@code cleanup()} removes the on-disk file, not just the
+   * in-memory page cache.
    */
   @Override
   public void close() {

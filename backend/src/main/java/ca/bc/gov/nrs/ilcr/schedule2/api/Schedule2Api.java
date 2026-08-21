@@ -18,17 +18,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 2 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule2Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Covers GET (read),
- * PUT (save), DELETE, and POST /check-status (Story 3.2).
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Covers GET
+ * (read), PUT (save), DELETE, and POST /check-status (Story 3.2).
  */
 @RequestMapping("/api/v1/schedule2")
 public interface Schedule2Api {
 
   /**
    * Get the Schedule 2 aggregate document for a mill and reporting year. Context guards
-   * (400/404/409/403) are enforced by {@code MillContextService} + method security. Unlike
-   * Schedule 1, a valid, active mill/year with no saved Schedule 2 returns a 200 empty editable
-   * document — never a 404.
+   * (400/404/409/403) are enforced by {@code MillContextService} + method security. Unlike Schedule
+   * 1, a valid, active mill/year with no saved Schedule 2 returns a 200 empty editable document —
+   * never a 404.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -41,9 +41,10 @@ public interface Schedule2Api {
 
   /**
    * Save (create-or-update) the two entered Schedule 2 line items for a mill/year and return the
-   * recomputed document (Story 3.2, S12). Unlike Schedule 1, a mill/year with no saved Schedule 2 is
-   * created on save (never 404). Range validation on the request body returns 400; a non-Draft track
-   * returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE} returns 403.
+   * recomputed document (Story 3.2, S12). Unlike Schedule 1, a mill/year with no saved Schedule 2
+   * is created on save (never 404). Range validation on the request body returns 400; a non-Draft
+   * track returns 409; a stale {@code revisionCount} returns 409; missing {@code EDIT_SCHEDULE}
+   * returns 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -60,8 +61,8 @@ public interface Schedule2Api {
 
   /**
    * Delete the whole Schedule 2 (summary + items 25/26) for a mill/year (Story 3.2). Idempotent: a
-   * Draft mill with no summary returns 200 (never 404). Non-Draft track → 409; missing
-   * {@code EDIT_SCHEDULE} → 403.
+   * Draft mill with no summary returns 200 (never 404). Non-Draft track → 409; missing {@code
+   * EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -73,10 +74,10 @@ public interface Schedule2Api {
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year — read-only
-   * (AD-5), mutates nothing, no request body. Returns 200 {@code {outcome:"MET", ...}} when the
-   * server-assembled {@code purchasedLogCost.cost} (item 25) is present, else
-   * {@code {outcome:"ISSUES", ...}} (including an unsaved schedule with no summary — never 404). Same
+   * Evaluate the Schedule 2 completion requirement (BR-07, Check Status) for a mill/year —
+   * read-only (AD-5), mutates nothing, no request body. Returns 200 {@code {outcome:"MET", ...}}
+   * when the server-assembled {@code purchasedLogCost.cost} (item 25) is present, else {@code
+   * {outcome:"ISSUES", ...}} (including an unsaved schedule with no summary — never 404). Same
    * no-summary-required context guards as read/write: 400 (bad param) / 404 (unknown mill) / 409
    * (closed) / 403 (no VIEW_SCHEDULE).
    *

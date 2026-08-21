@@ -18,9 +18,9 @@ import org.springframework.stereotype.Component;
  * {@code @PreAuthorize} action checks work with a real FAM token.
  *
  * <p>Matching is CSP {@code groupMatchesRole} style but ILCR-app-scoped: a group grants a role when
- * it equals the role name (e.g. {@code ILCR_ADMIN}) or ends with {@code _ILCR_ADMIN} (e.g.
- * {@code NRS_ILCR_ADMIN}). A foreign group like {@code SOME_OTHER_APP_ADMIN} does NOT match — the
- * bare {@code _ADMIN} suffix is deliberately not accepted, to keep authorization app-scoped.
+ * it equals the role name (e.g. {@code ILCR_ADMIN}) or ends with {@code _ILCR_ADMIN} (e.g. {@code
+ * NRS_ILCR_ADMIN}). A foreign group like {@code SOME_OTHER_APP_ADMIN} does NOT match — the bare
+ * {@code _ADMIN} suffix is deliberately not accepted, to keep authorization app-scoped.
  */
 @Component
 public class CognitoGroupsJwtAuthenticationConverter
@@ -42,10 +42,11 @@ public class CognitoGroupsJwtAuthenticationConverter
 
   /**
    * The principal name — i.e. {@code authentication.getName()}, which every admin write stamps into
-   * the {@code ENTRY_/UPDATE_USERID VARCHAR2(30)} audit columns. FAM's {@code custom:idp_username} is
-   * sized for that (per the identity contract); without this the token name defaults to the {@code sub}
-   * (a ~36-char Cognito UUID), which overflows the column (ORA-12899) on every write in production.
-   * Falls back to the {@code sub} only when the claim is absent (defensive; never expected with FAM).
+   * the {@code ENTRY_/UPDATE_USERID VARCHAR2(30)} audit columns. FAM's {@code custom:idp_username}
+   * is sized for that (per the identity contract); without this the token name defaults to the
+   * {@code sub} (a ~36-char Cognito UUID), which overflows the column (ORA-12899) on every write in
+   * production. Falls back to the {@code sub} only when the claim is absent (defensive; never
+   * expected with FAM).
    */
   private static String auditUsername(Jwt jwt) {
     String username = jwt.getClaimAsString("custom:idp_username");

@@ -12,21 +12,20 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class RootControllerTest {
 
-    private MockMvc mockMvc;
+  private MockMvc mockMvc;
 
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders
-                .standaloneSetup(new RootController("test-version"))
-                .build();
-    }
+  @BeforeEach
+  void setUp() {
+    mockMvc = MockMvcBuilders.standaloneSetup(new RootController("test-version")).build();
+  }
 
-    @Test
-    void getInfoReturnsServiceStatus() throws Exception {
-        mockMvc.perform(get("/api"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name", is("nr-ilcr-backend")))
-                .andExpect(jsonPath("$.version", is("test-version")))
-                .andExpect(jsonPath("$.status", is("UP")));
-    }
+  @Test
+  void getInfoReturnsServiceStatus() throws Exception {
+    mockMvc
+        .perform(get("/api"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.name", is("nr-ilcr-backend")))
+        .andExpect(jsonPath("$.version", is("test-version")))
+        .andExpect(jsonPath("$.status", is("UP")));
+  }
 }

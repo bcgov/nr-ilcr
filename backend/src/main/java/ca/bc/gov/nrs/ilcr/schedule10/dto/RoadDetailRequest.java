@@ -60,76 +60,41 @@ public record RoadDetailRequest(
     // Both units, for the same reason as comments below: ROAD_NAME is VARCHAR2(30) with BYTE
     // semantics, so 30 accented or CJK characters clear @Size and then raise ORA-12899, which the
     // blanket DataAccessException catch can only surface as an opaque 500 (code review 2026-08-18).
-    @NotBlank(message = "{roadNameRequiredErrorMsg}")
-    @Size(max = 30, message = "{roadNameRequiredErrorMsg}")
-    @MaxByteLength(value = 30, charMax = 30, message = "{roadNameRequiredErrorMsg}")
-    String roadName,
+    @NotBlank(message = "{roadNameRequiredErrorMsg}") @Size(max = 30, message = "{roadNameRequiredErrorMsg}") @MaxByteLength(value = 30, charMax = 30, message = "{roadNameRequiredErrorMsg}")
+        String roadName,
 
     // The JSF template key is NOT used here. Bean Validation supplies no positional arguments, so
     // "{0}: Value is required." would reach the reporter with a literal {0} (code review
     // 2026-08-18). These keys carry legacy's resolved text, label included.
-    @NotBlank(message = "{roadTypeRequiredErrorMsg}")
-    @Size(max = 10, message = "{invalidCodeValueErrorMsg}")
-    String roadLifetimeCode,
-
-    @NotNull(message = "{becZoneRequiredErrorMsg}")
-    Integer becbiogeoCatalogueId,
-
-    @NotBlank(message = "{rsmrClassRequiredErrorMsg}")
-    @Size(max = 2, message = "{rsmrClassRequiredErrorMsg}")
-    String relSoilMoistRgmClsCode,
-
-    @Min(value = 0, message = "{sideSlopePercentageValidatorErrorMsg}")
-    @Max(value = 100, message = "{sideSlopePercentageValidatorErrorMsg}")
-    Integer sideSlopePct,
+    @NotBlank(message = "{roadTypeRequiredErrorMsg}") @Size(max = 10, message = "{invalidCodeValueErrorMsg}") String roadLifetimeCode,
+    @NotNull(message = "{becZoneRequiredErrorMsg}") Integer becbiogeoCatalogueId,
+    @NotBlank(message = "{rsmrClassRequiredErrorMsg}") @Size(max = 2, message = "{rsmrClassRequiredErrorMsg}") String relSoilMoistRgmClsCode,
+    @Min(value = 0, message = "{sideSlopePercentageValidatorErrorMsg}") @Max(value = 100, message = "{sideSlopePercentageValidatorErrorMsg}") Integer sideSlopePct,
 
     // Optional, and the service defaults a blank to "N". The column is NOT NULL, and legacy's
     // pageDtlECIncludeCosts is a two-item dropdown (No/N, Yes/Y) with no empty option and no
     // required flag — so legacy always submitted a value and its effective default was N. Requiring
     // it here would reject a body legacy's own screen could not have produced (code review
     // 2026-08-18: without the default this reached Oracle as ORA-01400 and surfaced as a 500).
-    @Pattern(regexp = "[YN]", message = "{invalidCodeValueErrorMsg}")
-    String detailedEngineeringCostInd,
-
-    @Valid
-    SubGradeRequest subGrade,
+    @Pattern(regexp = "[YN]", message = "{invalidCodeValueErrorMsg}") String detailedEngineeringCostInd,
+    @Valid SubGradeRequest subGrade,
 
     // @NotNull as well as @Valid: Bean Validation skips a null nested object, so without this a
     // client could omit the whole substructure and slip past the required ballast method code.
-    @NotNull(message = "{ballastMethodRequiredErrorMsg}")
-    @Valid
-    StabilizingRequest stabilizing,
-
-    @Valid
-    MaterialCompositionRequest materialComposition,
+    @NotNull(message = "{ballastMethodRequiredErrorMsg}") @Valid StabilizingRequest stabilizing,
+    @Valid MaterialCompositionRequest materialComposition,
 
     // The only dimensions legacy permits to go negative. Their Check Status rules are commented out
     // in legacy, so nothing downstream catches a negative rate either — reproduced deliberately.
-    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}")
-    BigDecimal endHaulDistance,
-
-    @Min(value = 0, message = "{volumeValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{volumeValidatorErrorMsg}")
-    Integer endHaulVolume,
-
-    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}")
-    @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}")
-    BigDecimal overlandDistance,
-
-    @Min(value = 0, message = "{volumeValidatorErrorMsg}")
-    @Max(value = 9999999, message = "{volumeValidatorErrorMsg}")
-    Integer overlandVolume,
+    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}") @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}") BigDecimal endHaulDistance,
+    @Min(value = 0, message = "{volumeValidatorErrorMsg}") @Max(value = 9999999, message = "{volumeValidatorErrorMsg}") Integer endHaulVolume,
+    @DecimalMin(value = "-9999.9", message = "{rangeHaulDistanceErrorMsg}") @DecimalMax(value = "9999.9", message = "{rangeHaulDistanceErrorMsg}") BigDecimal overlandDistance,
+    @Min(value = 0, message = "{volumeValidatorErrorMsg}") @Max(value = 9999999, message = "{volumeValidatorErrorMsg}") Integer overlandVolume,
 
     // Two units, both enforced. 3,500 CHARACTERS is the legacy textarea's own maxlength
     // (schedule10.xhtml:1681); 4,000 BYTES is the column's real width. @Size alone would let 3,500
     // accented or CJK characters through into a VARCHAR2(4000 BYTE) column, where Oracle raises
     // ORA-12899 and the blanket DataAccessException catch could only surface it as an opaque 500.
-    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}")
-    @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
-    String comments,
-
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
-    @Min(value = 0, message = "{revisionCountRequiredErrorMsg}")
-    Integer revisionCount) {
-}
+    @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") @MaxByteLength(value = 4000, charMax = 3500, message = "{commentsMaxLengthErrorMsg}")
+        String comments,
+    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") @Min(value = 0, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}

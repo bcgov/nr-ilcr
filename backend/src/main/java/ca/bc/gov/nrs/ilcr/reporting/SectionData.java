@@ -12,5 +12,4 @@ import java.util.Map;
  * @param rows one map per detail record, keyed by the template's field names
  * @param parameters section-level report parameters (footer totals, general comments)
  */
-public record SectionData(List<Map<String, ?>> rows, Map<String, Object> parameters) {
-}
+public record SectionData(List<Map<String, ?>> rows, Map<String, Object> parameters) {}

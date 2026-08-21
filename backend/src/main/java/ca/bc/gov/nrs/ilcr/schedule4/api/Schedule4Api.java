@@ -20,19 +20,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 4 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule4Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Adds the location
- * write path (Story 4.2): PUT (save create-or-edit) and DELETE. The sub-page lists (Towing/Truck
- * Rehaul/Other) and Check Status are later stories.
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Adds the
+ * location write path (Story 4.2): PUT (save create-or-edit) and DELETE. The sub-page lists
+ * (Towing/Truck Rehaul/Other) and Check Status are later stories.
  */
 @RequestMapping("/api/v1/schedule4")
 public interface Schedule4Api {
 
   /**
    * Get the Schedule 4 (Special Log Transportation Systems) read document for a mill and reporting
-   * year: the list of dump locations, each with its in-scope transportation-category amounts (9 fixed
-   * + 3 distance-based). Context guards (400/404/409/403) are enforced by {@code MillContextService} +
-   * method security. A valid, active mill/year with no {@code TRANSPORTATION_REPORT} rows for category
-   * {@code "4"} returns 200 with {@code locations: []} — never a 404.
+   * year: the list of dump locations, each with its in-scope transportation-category amounts (9
+   * fixed + 3 distance-based). Context guards (400/404/409/403) are enforced by {@code
+   * MillContextService} + method security. A valid, active mill/year with no {@code
+   * TRANSPORTATION_REPORT} rows for category {@code "4"} returns 200 with {@code locations: []} —
+   * never a 404.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -44,12 +45,12 @@ public interface Schedule4Api {
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Save (create-or-edit) one Schedule 4 location for a mill/year and return the recomputed document
-   * (Story 4.2, S01/S02/S07). {@code request.id()} null creates; present edits (rename-safe). A blank
-   * name → 400 ({@code locationEmptyOrNull}); a case-insensitive duplicate → 409
-   * ({@code locationAlreadyExists}); out-of-range amounts / BR-04 violations → 400; a non-Draft track
-   * → 409; a stale {@code revisionCount} → 409; missing {@code EDIT_SCHEDULE} → 403. Nothing persists
-   * on any failure.
+   * Save (create-or-edit) one Schedule 4 location for a mill/year and return the recomputed
+   * document (Story 4.2, S01/S02/S07). {@code request.id()} null creates; present edits
+   * (rename-safe). A blank name → 400 ({@code locationEmptyOrNull}); a case-insensitive duplicate →
+   * 409 ({@code locationAlreadyExists}); out-of-range amounts / BR-04 violations → 400; a non-Draft
+   * track → 409; a stale {@code revisionCount} → 409; missing {@code EDIT_SCHEDULE} → 403. Nothing
+   * persists on any failure.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -104,11 +105,11 @@ public interface Schedule4Api {
       Authentication authentication);
 
   /**
-   * Edit one existing sub-page list row (Towing/Truck Rehaul/Other) and return the recomputed document
-   * (Story 4.3, the edit counterpart of {@link #addSubPageRow}). {@code request.type} selects the code
-   * (43/46/55); {@code cycle} applies to Truck Rehaul only. Row range/description violations → 400; a
-   * non-Draft track → 409; an unknown {@code locationId} or a {@code rowId} not under that location →
-   * 404; missing {@code EDIT_SCHEDULE} → 403.
+   * Edit one existing sub-page list row (Towing/Truck Rehaul/Other) and return the recomputed
+   * document (Story 4.3, the edit counterpart of {@link #addSubPageRow}). {@code request.type}
+   * selects the code (43/46/55); {@code cycle} applies to Truck Rehaul only. Row range/description
+   * violations → 400; a non-Draft track → 409; an unknown {@code locationId} or a {@code rowId} not
+   * under that location → 404; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -148,11 +149,11 @@ public interface Schedule4Api {
       Authentication authentication);
 
   /**
-   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year — read-only
-   * (AD-5), mutates nothing, no request body (Story 4.4, S28–S31). Returns 200 with a per-location
-   * breakdown: {@code outcome = "MET"} only when every location's in-scope Costs are present, else
-   * {@code "ISSUES"} with per-field {@code Value Required} findings. Same no-summary-required context
-   * guards as the read: 400 / 404 / 409 / 403 ({@code VIEW_SCHEDULE}).
+   * Evaluate the Schedule 4 completion requirement (BR-07, Check Status) for a mill/year —
+   * read-only (AD-5), mutates nothing, no request body (Story 4.4, S28–S31). Returns 200 with a
+   * per-location breakdown: {@code outcome = "MET"} only when every location's in-scope Costs are
+   * present, else {@code "ISSUES"} with per-field {@code Value Required} findings. Same
+   * no-summary-required context guards as the read: 400 / 404 / 409 / 403 ({@code VIEW_SCHEDULE}).
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)

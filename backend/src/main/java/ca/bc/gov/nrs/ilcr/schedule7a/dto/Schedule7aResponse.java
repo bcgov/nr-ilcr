@@ -6,11 +6,11 @@ import java.util.List;
 /**
  * The Schedule 7A (Bridge Costs) aggregate document — the pinned Story 12.1 wire contract (AD-12).
  * {@code trackStatus} is the Schedules 1–10 track code ({@code ILCR_MILL_REPORT_STATUS_CODE}, BR-01
- * — Schedule 7A has no track of its own); {@code editable} is server-authoritative
- * ({@code EDIT_SCHEDULE} ∧ {@code trackStatus == "D"}). {@code bridges} is the ordered list of
- * stored bridges (empty is a valid document); {@code codeLists} carries the five dropdown option
- * lists. {@code message} is populated only on a mutating (Story 12.2) response echo — Jackson
- * {@code non_null} omits it on the GET, so the GET wire is unchanged.
+ * — Schedule 7A has no track of its own); {@code editable} is server-authoritative ({@code
+ * EDIT_SCHEDULE} ∧ {@code trackStatus == "D"}). {@code bridges} is the ordered list of stored
+ * bridges (empty is a valid document); {@code codeLists} carries the five dropdown option lists.
+ * {@code message} is populated only on a mutating (Story 12.2) response echo — Jackson {@code
+ * non_null} omits it on the GET, so the GET wire is unchanged.
  *
  * @param millId the mill id
  * @param year the reporting year

@@ -23,10 +23,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for the {@link Schedule4Repository} {@code default} mapper/compose methods — the entity→
- * service-record adapters and the sequence-insert / upsert / delete sequences. The {@code @Query}
- * abstract methods are mocked; each default is exercised via {@code thenCallRealMethod}. The SQL
- * itself is proven by the Testcontainers {@code *IT} suite; this locks the in-memory mapping/branching.
+ * Unit test for the {@link Schedule4Repository} {@code default} mapper/compose methods — the
+ * entity→ service-record adapters and the sequence-insert / upsert / delete sequences. The
+ * {@code @Query} abstract methods are mocked; each default is exercised via {@code
+ * thenCallRealMethod}. The SQL itself is proven by the Testcontainers {@code *IT} suite; this locks
+ * the in-memory mapping/branching.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4RepositoryMapperTest {
@@ -34,13 +35,12 @@ class Schedule4RepositoryMapperTest {
   private static final long MILL = 546L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule4Repository repo;
+  @Mock private Schedule4Repository repo;
 
   @Test
   void findLocations_mapsReportEntitiesToLocationRows() {
-    when(repo.findReportEntities(MILL, YEAR)).thenReturn(List.of(
-        new TransportationReportEntity(8001, "Dump A", null, null, null, 0)));
+    when(repo.findReportEntities(MILL, YEAR))
+        .thenReturn(List.of(new TransportationReportEntity(8001, "Dump A", null, null, null, 0)));
     when(repo.findLocations(MILL, YEAR)).thenCallRealMethod();
 
     List<LocationRow> rows = repo.findLocations(MILL, YEAR);
@@ -52,8 +52,9 @@ class Schedule4RepositoryMapperTest {
 
   @Test
   void findInScopeDetails_mapsDetailEntitiesToDetailRows() {
-    when(repo.findInScopeDetailEntities(MILL, YEAR)).thenReturn(List.of(
-        new CostReportDetailEntity(5001, 8001, 47, new BigDecimal("10"), 500, null)));
+    when(repo.findInScopeDetailEntities(MILL, YEAR))
+        .thenReturn(
+            List.of(new CostReportDetailEntity(5001, 8001, 47, new BigDecimal("10"), 500, null)));
     when(repo.findInScopeDetails(MILL, YEAR)).thenCallRealMethod();
 
     List<DetailRow> rows = repo.findInScopeDetails(MILL, YEAR);
@@ -66,11 +67,16 @@ class Schedule4RepositoryMapperTest {
 
   @Test
   void findSubPageRows_joinsReportContext_andToleratesMissingReport() {
-    when(repo.findReportEntities(MILL, YEAR)).thenReturn(List.of(
-        new TransportationReportEntity(8010, "Rehaul A", new BigDecimal("5"), 30, null, 0)));
-    when(repo.findSubPageDetailEntities(MILL, YEAR)).thenReturn(List.of(
-        new CostReportDetailEntity(5100, 8010, 46, new BigDecimal("2"), 200, "note"),
-        new CostReportDetailEntity(5101, 9999, 46, new BigDecimal("3"), 300, "orphan")));
+    when(repo.findReportEntities(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new TransportationReportEntity(
+                    8010, "Rehaul A", new BigDecimal("5"), 30, null, 0)));
+    when(repo.findSubPageDetailEntities(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new CostReportDetailEntity(5100, 8010, 46, new BigDecimal("2"), 200, "note"),
+                new CostReportDetailEntity(5101, 9999, 46, new BigDecimal("3"), 300, "orphan")));
     when(repo.findSubPageRows(MILL, YEAR)).thenCallRealMethod();
 
     List<SubPageRowRow> rows = repo.findSubPageRows(MILL, YEAR);

@@ -29,10 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
  * layering). The read-only {@code editable} flag is derived from the caller's {@code EDIT_SCHEDULE}
  * permission, computed server-side (AD-5).
  *
- * <p>The read (GET) never 404s on "no pages" — an opened active mill/year with no category-{@code '8'}
- * {@code TREE_TO_TRUCK_REPORT} rows returns a 200 empty list. It uses
- * {@link MillContextService#validateMillYearActive} (mill status only — no summary required), correct
- * for Schedule 8 (it has no {@code ILCR_REPORT_SUMMARY} row of its own).
+ * <p>The read (GET) never 404s on "no pages" — an opened active mill/year with no category-{@code
+ * '8'} {@code TREE_TO_TRUCK_REPORT} rows returns a 200 empty list. It uses {@link
+ * MillContextService#validateMillYearActive} (mill status only — no summary required), correct for
+ * Schedule 8 (it has no {@code ILCR_REPORT_SUMMARY} row of its own).
  */
 @RestController
 @RequiredArgsConstructor
@@ -48,8 +48,8 @@ public class Schedule8Controller implements Schedule8Api {
 
   /** Resolve a legacy bundle key to verbatim text (AD-8). */
   private MessageInfo message(String key) {
-    return new MessageInfo(key,
-        messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
+    return new MessageInfo(
+        key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -92,7 +92,10 @@ public class Schedule8Controller implements Schedule8Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> saveSample(
-      long millId, int year, int pageId, Schedule8SampleRequest request,
+      long millId,
+      int year,
+      int pageId,
+      Schedule8SampleRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
@@ -116,7 +119,10 @@ public class Schedule8Controller implements Schedule8Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> addRate(
-      long millId, int year, int sampleId, Schedule8RateRequest request,
+      long millId,
+      int year,
+      int sampleId,
+      Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
@@ -129,7 +135,11 @@ public class Schedule8Controller implements Schedule8Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule8Response> updateRate(
-      long millId, int year, int sampleId, int rowId, Schedule8RateRequest request,
+      long millId,
+      int year,
+      int sampleId,
+      int rowId,
+      Schedule8RateRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
@@ -170,16 +180,21 @@ public class Schedule8Controller implements Schedule8Api {
   /** Resolve every emitted bundle key in the Check Status result to its verbatim text (AD-8). */
   private Schedule8CheckStatusResponse resolve(Schedule8CheckStatusResponse raw) {
     List<MessageInfo> messages = raw.messages().stream().map(m -> message(m.key())).toList();
-    List<Schedule8PageCheckResult> pages = raw.pages().stream()
-        .map(page -> new Schedule8PageCheckResult(
-            page.id(),
-            page.met(),
-            resolveIssues(page.issues()),
-            page.samples().stream()
-                .map(sample -> new Schedule8SampleCheckResult(
-                    sample.id(), sample.met(), resolveIssues(sample.issues())))
-                .toList()))
-        .toList();
+    List<Schedule8PageCheckResult> pages =
+        raw.pages().stream()
+            .map(
+                page ->
+                    new Schedule8PageCheckResult(
+                        page.id(),
+                        page.met(),
+                        resolveIssues(page.issues()),
+                        page.samples().stream()
+                            .map(
+                                sample ->
+                                    new Schedule8SampleCheckResult(
+                                        sample.id(), sample.met(), resolveIssues(sample.issues())))
+                            .toList()))
+            .toList();
     return new Schedule8CheckStatusResponse(raw.outcome(), messages, pages);
   }
 

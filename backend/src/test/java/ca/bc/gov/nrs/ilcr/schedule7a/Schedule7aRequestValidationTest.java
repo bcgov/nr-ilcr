@@ -64,33 +64,88 @@ class Schedule7aRequestValidationTest {
   /** A complete, valid bridge; each test rebuilds it overriding the field under examination. */
   private static BridgeRequest valid() {
     return new BridgeRequest(
-        "North Fork Bridge", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        1000, 5000, 500, 800, 3000, 300, 400, 700, 200, 100, "Spans the north fork", 0);
+        "North Fork Bridge",
+        "2020-06",
+        "N",
+        "STL",
+        "WD",
+        "CONC",
+        "L100",
+        50,
+        new BigDecimal("5.0"),
+        new BigDecimal("20.0"),
+        new BigDecimal("4.0"),
+        12,
+        1000,
+        5000,
+        500,
+        800,
+        3000,
+        300,
+        400,
+        700,
+        200,
+        100,
+        "Spans the north fork",
+        0);
   }
 
   private static BridgeRequest withLocation(String locationName) {
     BridgeRequest v = valid();
     return new BridgeRequest(
-        locationName, v.builtDate(), v.constructionTypeCode(), v.superstructureTypeCode(),
-        v.deckTypeCode(), v.abutmentTypeCode(), v.loadRatingCode(), v.lifeSpan(),
-        v.abutmentHeight(), v.length(), v.width(), v.distance(),
-        v.sitePlanCost(), v.superstructureMaterialCost(), v.superstructureDeliverCost(),
-        v.superstructureInstallCost(), v.abutmentMaterialCost(), v.abutmentDeliverCost(),
-        v.abutmentInstallCost(), v.approachCost(), v.afterInstallCost(), v.otherCost(),
-        v.comments(), v.revisionCount());
+        locationName,
+        v.builtDate(),
+        v.constructionTypeCode(),
+        v.superstructureTypeCode(),
+        v.deckTypeCode(),
+        v.abutmentTypeCode(),
+        v.loadRatingCode(),
+        v.lifeSpan(),
+        v.abutmentHeight(),
+        v.length(),
+        v.width(),
+        v.distance(),
+        v.sitePlanCost(),
+        v.superstructureMaterialCost(),
+        v.superstructureDeliverCost(),
+        v.superstructureInstallCost(),
+        v.abutmentMaterialCost(),
+        v.abutmentDeliverCost(),
+        v.abutmentInstallCost(),
+        v.approachCost(),
+        v.afterInstallCost(),
+        v.otherCost(),
+        v.comments(),
+        v.revisionCount());
   }
 
   private static BridgeRequest withComments(String comments) {
     BridgeRequest v = valid();
     return new BridgeRequest(
-        v.locationName(), v.builtDate(), v.constructionTypeCode(), v.superstructureTypeCode(),
-        v.deckTypeCode(), v.abutmentTypeCode(), v.loadRatingCode(), v.lifeSpan(),
-        v.abutmentHeight(), v.length(), v.width(), v.distance(),
-        v.sitePlanCost(), v.superstructureMaterialCost(), v.superstructureDeliverCost(),
-        v.superstructureInstallCost(), v.abutmentMaterialCost(), v.abutmentDeliverCost(),
-        v.abutmentInstallCost(), v.approachCost(), v.afterInstallCost(), v.otherCost(),
-        comments, v.revisionCount());
+        v.locationName(),
+        v.builtDate(),
+        v.constructionTypeCode(),
+        v.superstructureTypeCode(),
+        v.deckTypeCode(),
+        v.abutmentTypeCode(),
+        v.loadRatingCode(),
+        v.lifeSpan(),
+        v.abutmentHeight(),
+        v.length(),
+        v.width(),
+        v.distance(),
+        v.sitePlanCost(),
+        v.superstructureMaterialCost(),
+        v.superstructureDeliverCost(),
+        v.superstructureInstallCost(),
+        v.abutmentMaterialCost(),
+        v.abutmentDeliverCost(),
+        v.abutmentInstallCost(),
+        v.approachCost(),
+        v.afterInstallCost(),
+        v.otherCost(),
+        comments,
+        v.revisionCount());
   }
 
   private Set<String> messagesFor(BridgeRequest request, Class<?>... groups) {
@@ -145,9 +200,10 @@ class Schedule7aRequestValidationTest {
   @Test
   @DisplayName("All TWELVE attribute fields are required (legacy required=\"true\")")
   void twelveRequiredFields() {
-    BridgeRequest empty = new BridgeRequest(
-        null, null, null, null, null, null, null, null, null, null, null, null,
-        1000, 5000, 500, 800, 3000, 300, 400, 700, 200, 100, "ok", 0);
+    BridgeRequest empty =
+        new BridgeRequest(
+            null, null, null, null, null, null, null, null, null, null, null, null, 1000, 5000, 500,
+            800, 3000, 300, 400, 700, 200, 100, "ok", 0);
     // One violation per missing field, and nothing else — the costs supplied above are fine.
     assertThat(validator.validate(empty, Default.class)).hasSize(12);
     assertThat(messagesFor(empty, Default.class)).containsExactly(REQUIRED);
@@ -156,10 +212,32 @@ class Schedule7aRequestValidationTest {
   @Test
   @DisplayName("The TEN costs are OPTIONAL at Save — only Check Status flags them (BR-08)")
   void costsAreOptional() {
-    BridgeRequest noCosts = new BridgeRequest(
-        "North Fork Bridge", "2020-06", "N", "STL", "WD", "CONC", "L100", 50,
-        new BigDecimal("5.0"), new BigDecimal("20.0"), new BigDecimal("4.0"), 12,
-        null, null, null, null, null, null, null, null, null, null, null, 0);
+    BridgeRequest noCosts =
+        new BridgeRequest(
+            "North Fork Bridge",
+            "2020-06",
+            "N",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            50,
+            new BigDecimal("5.0"),
+            new BigDecimal("20.0"),
+            new BigDecimal("4.0"),
+            12,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0);
     assertThat(messagesFor(noCosts, Default.class)).isEmpty();
   }
 
@@ -168,26 +246,71 @@ class Schedule7aRequestValidationTest {
   @Test
   @DisplayName("Measurement and cost ranges reject out-of-range values with their own message keys")
   void rangesUseDistinctMessageKeys() {
-    BridgeRequest outOfRange = new BridgeRequest(
-        "North Fork Bridge", "2020-06", "N", "STL", "WD", "CONC", "L100", 1000,
-        new BigDecimal("10000.0"), new BigDecimal("10000.0"), new BigDecimal("10000.0"), 10000,
-        100000000, null, null, null, null, null, null, null, null, null, "ok", 0);
-    assertThat(messagesFor(outOfRange, Default.class)).containsExactlyInAnyOrder(
-        "{lifeSpanValidatorErrorMsg}",
-        "{abutmentsHtValidatorErrorMsg}",
-        "{bridgeLengthValidatorErrorMsg}",
-        "{bridgeWidthValidatorErrorMsg}",
-        "{bridgeDistanceValidatorErrorMsg}",
-        "{costValidatorErrorMsg}");
+    BridgeRequest outOfRange =
+        new BridgeRequest(
+            "North Fork Bridge",
+            "2020-06",
+            "N",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            1000,
+            new BigDecimal("10000.0"),
+            new BigDecimal("10000.0"),
+            new BigDecimal("10000.0"),
+            10000,
+            100000000,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "ok",
+            0);
+    assertThat(messagesFor(outOfRange, Default.class))
+        .containsExactlyInAnyOrder(
+            "{lifeSpanValidatorErrorMsg}",
+            "{abutmentsHtValidatorErrorMsg}",
+            "{bridgeLengthValidatorErrorMsg}",
+            "{bridgeWidthValidatorErrorMsg}",
+            "{bridgeDistanceValidatorErrorMsg}",
+            "{costValidatorErrorMsg}");
   }
 
   @Test
   @DisplayName("Range boundaries are INCLUSIVE, and a negative cost is allowed (legacy)")
   void boundariesAreInclusive() {
-    BridgeRequest atBounds = new BridgeRequest(
-        "North Fork Bridge", "2020-06", "N", "STL", "WD", "CONC", "L100", 999,
-        new BigDecimal("9999.9"), new BigDecimal("9999.9"), new BigDecimal("9999.9"), 9999,
-        -99999999, 99999999, 0, 0, 0, 0, 0, 0, 0, 0, "ok", 0);
+    BridgeRequest atBounds =
+        new BridgeRequest(
+            "North Fork Bridge",
+            "2020-06",
+            "N",
+            "STL",
+            "WD",
+            "CONC",
+            "L100",
+            999,
+            new BigDecimal("9999.9"),
+            new BigDecimal("9999.9"),
+            new BigDecimal("9999.9"),
+            9999,
+            -99999999,
+            99999999,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "ok",
+            0);
     assertThat(messagesFor(atBounds, Default.class)).isEmpty();
   }
 
@@ -197,14 +320,32 @@ class Schedule7aRequestValidationTest {
   @DisplayName("revisionCount is required on UPDATE only, and ignored on create")
   void revisionCountGroupedOnUpdate() {
     BridgeRequest v = valid();
-    BridgeRequest noRevision = new BridgeRequest(
-        v.locationName(), v.builtDate(), v.constructionTypeCode(), v.superstructureTypeCode(),
-        v.deckTypeCode(), v.abutmentTypeCode(), v.loadRatingCode(), v.lifeSpan(),
-        v.abutmentHeight(), v.length(), v.width(), v.distance(),
-        v.sitePlanCost(), v.superstructureMaterialCost(), v.superstructureDeliverCost(),
-        v.superstructureInstallCost(), v.abutmentMaterialCost(), v.abutmentDeliverCost(),
-        v.abutmentInstallCost(), v.approachCost(), v.afterInstallCost(), v.otherCost(),
-        v.comments(), null);
+    BridgeRequest noRevision =
+        new BridgeRequest(
+            v.locationName(),
+            v.builtDate(),
+            v.constructionTypeCode(),
+            v.superstructureTypeCode(),
+            v.deckTypeCode(),
+            v.abutmentTypeCode(),
+            v.loadRatingCode(),
+            v.lifeSpan(),
+            v.abutmentHeight(),
+            v.length(),
+            v.width(),
+            v.distance(),
+            v.sitePlanCost(),
+            v.superstructureMaterialCost(),
+            v.superstructureDeliverCost(),
+            v.superstructureInstallCost(),
+            v.abutmentMaterialCost(),
+            v.abutmentDeliverCost(),
+            v.abutmentInstallCost(),
+            v.approachCost(),
+            v.afterInstallCost(),
+            v.otherCost(),
+            v.comments(),
+            null);
 
     assertThat(messagesFor(noRevision, Default.class)).isEmpty();
     assertThat(messagesFor(noRevision, Default.class, OnUpdate.class)).contains(REQUIRED);

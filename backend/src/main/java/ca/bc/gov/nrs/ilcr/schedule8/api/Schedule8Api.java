@@ -22,16 +22,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Schedule 8 API contract (controller + api-interface split, CSP idiom). The interface owns the
  * request mapping and parameter contract; {@code Schedule8Controller} implements it and adds
- * authorization. {@code millId} and {@code year} are required query params (AD-4). Story 14.1 is the
- * read; Story 14.2 adds the report-page write path (PUT save, DELETE cascade). Samples, rate details,
- * and Check Status are later stories (14.3/14.4/14.6).
+ * authorization. {@code millId} and {@code year} are required query params (AD-4). Story 14.1 is
+ * the read; Story 14.2 adds the report-page write path (PUT save, DELETE cascade). Samples, rate
+ * details, and Check Status are later stories (14.3/14.4/14.6).
  */
 @RequestMapping("/api/v1/schedule8")
 public interface Schedule8Api {
 
   /**
-   * Get the Schedule 8 (Tree to Truck / Special Skidding Costs) read document for a mill and reporting
-   * year: the three-level hierarchy of report pages, each with its samples, each with its
+   * Get the Schedule 8 (Tree to Truck / Special Skidding Costs) read document for a mill and
+   * reporting year: the three-level hierarchy of report pages, each with its samples, each with its
    * additions/deductions and server-computed rates and counts. Context guards (400/404/409/403) are
    * enforced by {@code MillContextService} + method security. A valid, active mill/year with no
    * category-{@code '8'} pages returns 200 with {@code pages: []} — never a 404.
@@ -46,10 +46,10 @@ public interface Schedule8Api {
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Get the reference-data option lists for the page-editor dropdowns (Support Centre / Region / BEC
-   * Zone / TSA / TFL / Supply Block) — each a code + its {@code DESCRIPTION} label. Global reference
-   * data (no mill/year scope); {@code VIEW_SCHEDULE} authorizes the read. Lets the editor render
-   * descriptions instead of raw codes.
+   * Get the reference-data option lists for the page-editor dropdowns (Support Centre / Region /
+   * BEC Zone / TSA / TFL / Supply Block) — each a code + its {@code DESCRIPTION} label. Global
+   * reference data (no mill/year scope); {@code VIEW_SCHEDULE} authorizes the read. Lets the editor
+   * render descriptions instead of raw codes.
    *
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
    * @return 200 with the six ordered option lists
@@ -60,10 +60,10 @@ public interface Schedule8Api {
   /**
    * Save (create-or-edit) one Schedule 8 report page for a mill/year and return the recomputed
    * document (Story 14.2, S01/S02/S04). {@code request.id()} null creates; present edits. A missing
-   * required field (License / Support Centre / Region / BEC Zone / TSA-or-TFL) → 400
-   * ({@code Value Required}); a non-Draft track → 409; a stale {@code revisionCount} → 409; missing
-   * {@code EDIT_SCHEDULE} → 403. Nothing persists on any failure. Copy (S02) arrives here as an
-   * ordinary create.
+   * required field (License / Support Centre / Region / BEC Zone / TSA-or-TFL) → 400 ({@code Value
+   * Required}); a non-Draft track → 409; a stale {@code revisionCount} → 409; missing {@code
+   * EDIT_SCHEDULE} → 403. Nothing persists on any failure. Copy (S02) arrives here as an ordinary
+   * create.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -79,9 +79,9 @@ public interface Schedule8Api {
       Authentication authentication);
 
   /**
-   * Delete one Schedule 8 report page (cascading its samples + all their rate details) for a mill/year,
-   * targeted by the page {@code id} (Story 14.2, S07 / BR-05). Idempotent: an unknown id returns 200
-   * (never 404). Non-Draft track → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * Delete one Schedule 8 report page (cascading its samples + all their rate details) for a
+   * mill/year, targeted by the page {@code id} (Story 14.2, S07 / BR-05). Idempotent: an unknown id
+   * returns 200 (never 404). Non-Draft track → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -100,8 +100,8 @@ public interface Schedule8Api {
    * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
    * S01/S03/S05). {@code request.id()} null creates; present edits. Contract ID missing → 400; an
    * individual % out of 0–100 or a skidding sum > 100 → 400 (a sum &lt; 100 saves); Helicopter-/
-   * Other-conditional fields missing → 400; volume/rate out of range → 400; unknown page/sample → 404;
-   * non-Draft → 409; stale {@code revisionCount} → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * Other-conditional fields missing → 400; volume/rate out of range → 400; unknown page/sample →
+   * 404; non-Draft → 409; stale {@code revisionCount} → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -120,8 +120,8 @@ public interface Schedule8Api {
 
   /**
    * Delete one sample (cascading its rate details) under a page and return the recomputed document
-   * (Story 14.3, S08 / BR-05). Idempotent: an unknown page/sample id returns 200 (never 404). Non-Draft
-   * → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * (Story 14.3, S08 / BR-05). Idempotent: an unknown page/sample id returns 200 (never 404).
+   * Non-Draft → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -140,9 +140,9 @@ public interface Schedule8Api {
 
   /**
    * Add one rate-detail row (an addition or a deduction — determined by the chosen cost item's
-   * subcategory) to a sample and return the recomputed document (Story 14.4, S01). Cost Item / costing
-   * rate / Cost Type required → else 400; costing rate out of 0..9,999,999.99 → 400; unknown sample →
-   * 404; non-Draft → 409; missing {@code EDIT_SCHEDULE} → 403.
+   * subcategory) to a sample and return the recomputed document (Story 14.4, S01). Cost Item /
+   * costing rate / Cost Type required → else 400; costing rate out of 0..9,999,999.99 → 400;
+   * unknown sample → 404; non-Draft → 409; missing {@code EDIT_SCHEDULE} → 403.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -161,7 +161,8 @@ public interface Schedule8Api {
 
   /**
    * Edit one rate-detail row inline (Story 14.4, S06). Same validation/guards as add; unknown row →
-   * 404; stale {@code revisionCount} → 409. The sample's totals + finalRate recompute in the response.
+   * 404; stale {@code revisionCount} → 409. The sample's totals + finalRate recompute in the
+   * response.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -201,10 +202,10 @@ public interface Schedule8Api {
       Authentication authentication);
 
   /**
-   * Check Status — all-pages sweep (Story 14.6, BR-07). Read-only (AD-5), mutates nothing, no request
-   * body. Returns 200 with a per-page → per-sample → per-field breakdown: {@code outcome = "MET"} only
-   * when every page (and its samples) passes, else {@code "ISSUES"}. Same no-summary context guards as
-   * the read (400/404/409/403, {@code VIEW_SCHEDULE}).
+   * Check Status — all-pages sweep (Story 14.6, BR-07). Read-only (AD-5), mutates nothing, no
+   * request body. Returns 200 with a per-page → per-sample → per-field breakdown: {@code outcome =
+   * "MET"} only when every page (and its samples) passes, else {@code "ISSUES"}. Same no-summary
+   * context guards as the read (400/404/409/403, {@code VIEW_SCHEDULE}).
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
@@ -216,8 +217,8 @@ public interface Schedule8Api {
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 
   /**
-   * Check Status — single page scope (Story 14.6, S14/BR-09). Read-only; validates only {@code pageId}'s
-   * samples. Same result shape as the sweep, scoped to the one page.
+   * Check Status — single page scope (Story 14.6, S14/BR-09). Read-only; validates only {@code
+   * pageId}'s samples. Same result shape as the sweep, scoped to the one page.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)

@@ -36,8 +36,7 @@ class Schedule10ServiceTest {
   private static final long MILL = 710L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule10Repository repository;
+  @Mock private Schedule10Repository repository;
 
   private Schedule10Service service;
 
@@ -58,17 +57,40 @@ class Schedule10ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
   }
 
-  private static RoadConstructionReportEntity page(
-      int id, String tsa, String tsb, String tfl) {
+  private static RoadConstructionReportEntity page(int id, String tsa, String tsb, String tfl) {
     return new RoadConstructionReportEntity(
         id, YEAR, MILL, "10", "2021-06", "North Division", "RNI", tsb, tsa, tfl, 0);
   }
 
   private static RoadConstructionReportDetailEntity detail(int id, int pageId, String name) {
     return new RoadConstructionReportDetailEntity(
-        id, pageId, name, null, "P", null, null, null, 8801, null, null,
-        new BigDecimal("12.500"), "N", null, null, null, null, "C", null, "GR",
-        new BigDecimal("3.000"), null, null, null, null, null, 0);
+        id,
+        pageId,
+        name,
+        null,
+        "P",
+        null,
+        null,
+        null,
+        8801,
+        null,
+        null,
+        new BigDecimal("12.500"),
+        "N",
+        null,
+        null,
+        null,
+        null,
+        "C",
+        null,
+        "GR",
+        new BigDecimal("3.000"),
+        null,
+        null,
+        null,
+        null,
+        null,
+        0);
   }
 
   @Nested
@@ -77,13 +99,13 @@ class Schedule10ServiceTest {
 
     @ParameterizedTest(name = "track={0}, callerMayEdit={1} -> editable={2}")
     @CsvSource({
-        "D,    true,  true",
-        "D,    false, false",
-        "S,    true,  false",
-        "S,    false, false",
-        "V,    true,  false",
-        "V,    false, false",
-        "O,    true,  false",
+      "D,    true,  true",
+      "D,    false, false",
+      "S,    true,  false",
+      "S,    false, false",
+      "V,    true,  false",
+      "V,    false, false",
+      "O,    true,  false",
     })
     void followsTrackStatusAndPermission(String track, boolean mayEdit, boolean expected) {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
@@ -109,20 +131,24 @@ class Schedule10ServiceTest {
     void nestsDetailsAndNumbersPositionally() {
       when(repository.findPages(MILL, YEAR))
           .thenReturn(List.of(page(8900, "01", "01A", null), page(8901, "16", "16G", null)));
-      when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of(
-          detail(8910, 8900, "Mainline A"),
-          detail(8911, 8900, "Spur B"),
-          detail(8912, 8901, "Regex Road")));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  detail(8910, 8900, "Mainline A"),
+                  detail(8911, 8900, "Spur B"),
+                  detail(8912, 8901, "Regex Road")));
 
       List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
 
       assertThat(pages).hasSize(2);
       assertThat(pages.get(0).pageNumber()).isEqualTo(1);
       assertThat(pages.get(0).roadDetailCount()).isEqualTo(2);
-      assertThat(pages.get(0).roadDetails()).extracting(RoadDetail::roadDetailId)
+      assertThat(pages.get(0).roadDetails())
+          .extracting(RoadDetail::roadDetailId)
           .containsExactly(8910, 8911);
       // rowNumber restarts at 1 on each page — it is positional within the page, not global.
-      assertThat(pages.get(0).roadDetails()).extracting(RoadDetail::rowNumber)
+      assertThat(pages.get(0).roadDetails())
+          .extracting(RoadDetail::rowNumber)
           .containsExactly(1, 2);
       assertThat(pages.get(1).pageNumber()).isEqualTo(2);
       assertThat(pages.get(1).roadDetails()).extracting(RoadDetail::rowNumber).containsExactly(1);
@@ -144,10 +170,12 @@ class Schedule10ServiceTest {
     @Test
     @DisplayName("Road Group is derived per page and blank when unmapped")
     void derivesRoadGroupPerPage() {
-      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(
-          page(8900, "01", "01A", null),   // -> "11"
-          page(8902, null, null, "08"),    // -> "10" via the TFL table
-          page(8903, "99", "99A", null))); // -> unmapped
+      when(repository.findPages(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  page(8900, "01", "01A", null), // -> "11"
+                  page(8902, null, null, "08"), // -> "10" via the TFL table
+                  page(8903, "99", "99A", null))); // -> unmapped
 
       List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
 
@@ -195,9 +223,11 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, new BigDecimal("100000")),
-          new CostLineRow(8910, 20, new BigDecimal("50000"))));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, new BigDecimal("100000")),
+                  new CostLineRow(8910, 20, new BigDecimal("50000"))));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -212,14 +242,17 @@ class Schedule10ServiceTest {
     @DisplayName("a duplicated cost is CORRECTABLE: resubmitting one value settles the read")
     void duplicateCostIsCorrectable() {
       // The point of last-row-wins rather than summing. The write path's UPDATE is unbounded, so a
-      // resubmitted figure lands on every duplicate row; with summing the read multiplied it back up
+      // resubmitted figure lands on every duplicate row; with summing the read multiplied it back
+      // up
       // and the value could never be corrected through the API. Both rows now carry 7000.
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, new BigDecimal("7000")),
-          new CostLineRow(8910, 20, new BigDecimal("7000"))));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, new BigDecimal("7000")),
+                  new CostLineRow(8910, 20, new BigDecimal("7000"))));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -235,9 +268,11 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, new BigDecimal("150000")),
-          new CostLineRow(8910, 99, new BigDecimal("777777"))));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, new BigDecimal("150000")),
+                  new CostLineRow(8910, 99, new BigDecimal("777777"))));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -258,9 +293,11 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, null),
-          new CostLineRow(8910, 22, new BigDecimal("40000"))));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, null),
+                  new CostLineRow(8910, 22, new BigDecimal("40000"))));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -278,9 +315,11 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, null),
-          new CostLineRow(8910, 20, new BigDecimal("150000"))));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, null),
+                  new CostLineRow(8910, 20, new BigDecimal("150000"))));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -296,9 +335,8 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, null),
-          new CostLineRow(8910, 20, null)));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(List.of(new CostLineRow(8910, 20, null), new CostLineRow(8910, 20, null)));
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -319,19 +357,21 @@ class Schedule10ServiceTest {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
       when(repository.findRoadDetails(MILL, YEAR))
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
-      when(repository.findCostLines(MILL, YEAR)).thenReturn(List.of(
-          new CostLineRow(8910, 20, new BigDecimal("150000")), // sub-grade actual   (sub 1)
-          new CostLineRow(8910, 3, new BigDecimal("-5000")),   // sub-grade TtT      (sub 1)
-          new CostLineRow(8910, 5, new BigDecimal("2000")),    // other TtT transfer (sub 3)
-          new CostLineRow(8910, 7, new BigDecimal("1000")),    // less bridges       (sub 1)
-          new CostLineRow(8910, 6, new BigDecimal("2000")),    // less culverts      (sub 1)
-          new CostLineRow(8910, 8, new BigDecimal("3000")),    // less landings      (sub 1)
-          new CostLineRow(8910, 11, new BigDecimal("4000")),   // less overland      (sub 1)
-          new CostLineRow(8910, 4, new BigDecimal("5000")),    // less other eng     (sub 3)
-          new CostLineRow(8910, 21, new BigDecimal("6000")),   // less end haul      (sub 1)
-          new CostLineRow(8910, 22, new BigDecimal("40000")),  // stabilizing actual (sub 2)
-          new CostLineRow(8910, 10, BigDecimal.ZERO),          // stabilizing TtT    (sub 2)
-          new CostLineRow(8910, 9, BigDecimal.ZERO)));         // stabilizing other  (sub 4)
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new CostLineRow(8910, 20, new BigDecimal("150000")), // sub-grade actual   (sub 1)
+                  new CostLineRow(8910, 3, new BigDecimal("-5000")), // sub-grade TtT      (sub 1)
+                  new CostLineRow(8910, 5, new BigDecimal("2000")), // other TtT transfer (sub 3)
+                  new CostLineRow(8910, 7, new BigDecimal("1000")), // less bridges       (sub 1)
+                  new CostLineRow(8910, 6, new BigDecimal("2000")), // less culverts      (sub 1)
+                  new CostLineRow(8910, 8, new BigDecimal("3000")), // less landings      (sub 1)
+                  new CostLineRow(8910, 11, new BigDecimal("4000")), // less overland      (sub 1)
+                  new CostLineRow(8910, 4, new BigDecimal("5000")), // less other eng     (sub 3)
+                  new CostLineRow(8910, 21, new BigDecimal("6000")), // less end haul      (sub 1)
+                  new CostLineRow(8910, 22, new BigDecimal("40000")), // stabilizing actual (sub 2)
+                  new CostLineRow(8910, 10, BigDecimal.ZERO), // stabilizing TtT    (sub 2)
+                  new CostLineRow(8910, 9, BigDecimal.ZERO))); // stabilizing other  (sub 4)
 
       RoadDetail detail =
           service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
@@ -361,8 +401,8 @@ class Schedule10ServiceTest {
     @DisplayName("cost lines never leak between road details")
     void costLinesDoNotLeakBetweenDetails() {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", null)));
-      when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of(
-          detail(8910, 8900, "Mainline A"), detail(8911, 8900, "Spur B")));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8910, 8900, "Mainline A"), detail(8911, 8900, "Spur B")));
       when(repository.findCostLines(MILL, YEAR))
           .thenReturn(List.of(new CostLineRow(8910, 20, new BigDecimal("150000"))));
 

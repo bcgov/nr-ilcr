@@ -29,9 +29,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link Schedule2Controller}. Verifies the no-summary-required context guard
- * ({@code validateMillYearActive}, the Schedule 2 divergence from Schedule 1), service delegation,
- * the server-derived {@code editable} flag, verbatim success-message decoration, and the check-status
+ * Unit test for {@link Schedule2Controller}. Verifies the no-summary-required context guard ({@code
+ * validateMillYearActive}, the Schedule 2 divergence from Schedule 1), service delegation, the
+ * server-derived {@code editable} flag, verbatim success-message decoration, and the check-status
  * field-label prefixing — collaborators mocked, no Spring context.
  */
 @ExtendWith(MockitoExtension.class)
@@ -40,23 +40,17 @@ class Schedule2ControllerTest {
   private static final long MILL_ID = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule2Service schedule2Service;
+  @Mock private Schedule2Service schedule2Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule2Controller controller;
+  @InjectMocks private Schedule2Controller controller;
 
   @Test
   void getSchedule2_validatesContext_derivesEditFlag_andReturnsDocument() {
@@ -82,7 +76,8 @@ class Schedule2ControllerTest {
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule2Service.saveSchedule2(MILL_ID, YEAR, request, true, "dev-admin"))
         .thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
 
     ResponseEntity<Schedule2Response> response =
@@ -96,7 +91,7 @@ class Schedule2ControllerTest {
   @Test
   void deleteSchedule2_delegates_andReturnsDeletedMessage() {
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
 
     ResponseEntity<MessageResponse> response =
@@ -110,11 +105,12 @@ class Schedule2ControllerTest {
 
   @Test
   void checkStatus_metOutcome_resolvesBareMessage_noLabelPrefix() {
-    Schedule2CheckStatusResponse serviceResult = new Schedule2CheckStatusResponse(
-        "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)));
+    Schedule2CheckStatusResponse serviceResult =
+        new Schedule2CheckStatusResponse(
+            "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)));
     when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
     when(messageSource.getMessage(
-        eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
+            eq("scheduleRequirementsMetMsg"), any(), any(), any(Locale.class)))
         .thenReturn("All requirements for this schedule have been met");
 
     ResponseEntity<Schedule2CheckStatusResponse> response =
@@ -132,12 +128,13 @@ class Schedule2ControllerTest {
   void checkStatus_issuesOutcome_prefixesFieldLabelIntoText() {
     // The service carries the field label in MessageInfo.text; the controller prefixes it as
     // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
-    Schedule2CheckStatusResponse serviceResult = new Schedule2CheckStatusResponse(
-        "ISSUES",
-        List.of(new MessageInfo("missingRequiredFieldMsg", "Purchased/Private Log Costs - Cost")));
+    Schedule2CheckStatusResponse serviceResult =
+        new Schedule2CheckStatusResponse(
+            "ISSUES",
+            List.of(
+                new MessageInfo("missingRequiredFieldMsg", "Purchased/Private Log Costs - Cost")));
     when(schedule2Service.checkStatus(MILL_ID, YEAR)).thenReturn(serviceResult);
-    when(messageSource.getMessage(
-        eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Value Required");
 
     ResponseEntity<Schedule2CheckStatusResponse> response =

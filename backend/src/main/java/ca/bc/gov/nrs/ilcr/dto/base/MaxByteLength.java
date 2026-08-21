@@ -18,10 +18,10 @@ import java.lang.annotation.Target;
  * and {@code CAMP_REPORT.COMMENTS} (4000). {@code @Size} measures Java characters, so a name of 30
  * accented or CJK characters satisfies it and then overflows a 30-BYTE column: Oracle raises
  * ORA-12899, the service can only map that {@code DataAccessException} to {@link
- * ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException ScheduleNotSavedException}, and the licensee gets an opaque 500 on an ordinary save. This
- * constraint turns that into a clean 400 at the same field. The character cap stays because it is
- * the LEGACY bound (the screen's own {@code maxlength}) and is the tighter one for ASCII input,
- * which is effectively all stored data today.
+ * ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException ScheduleNotSavedException}, and the
+ * licensee gets an opaque 500 on an ordinary save. This constraint turns that into a clean 400 at
+ * the same field. The character cap stays because it is the LEGACY bound (the screen's own {@code
+ * maxlength}) and is the tighter one for ASCII input, which is effectively all stored data today.
  *
  * <p><strong>Message.</strong> Each field reuses its existing per-field length key rather than
  * introducing a new one, so a byte violation and a character violation are indistinguishable to the

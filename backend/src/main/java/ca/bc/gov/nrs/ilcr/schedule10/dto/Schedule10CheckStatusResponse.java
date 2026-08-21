@@ -26,9 +26,7 @@ import java.util.List;
  * @param pages the per-page outcomes, populated only when {@code outcome} is {@code "ISSUES"}
  */
 public record Schedule10CheckStatusResponse(
-    String outcome,
-    List<MessageInfo> messages,
-    List<PageCheckResult> pages) {
+    String outcome, List<MessageInfo> messages, List<PageCheckResult> pages) {
 
   /** {@code outcome} when every checked requirement passes. */
   public static final String MET = "MET";

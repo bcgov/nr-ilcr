@@ -11,18 +11,18 @@ import java.util.List;
  *
  * <p>{@code campName} and {@code associatedCampVolume} are carried here so the sub-page renders its
  * heading and its always-disabled Volume input without a second call; legacy got them the same way,
- * by loading the whole Schedule 5 document and scanning it for the Flash-passed camp id
- * ({@code Schedule5CampExpensesMB.getCampDetails()}, {@code :125-133}).
+ * by loading the whole Schedule 5 document and scanning it for the Flash-passed camp id ({@code
+ * Schedule5CampExpensesMB.getCampDetails()}, {@code :125-133}).
  *
  * <p>{@code editable} is SERVER-authoritative (AD-9): {@code EDIT_SCHEDULE} AND a Draft 1–10 track,
  * never inferred from the role or the track status alone on the client.
  *
  * <p><strong>{@code totals} is NOT the camp panel's figure for the same category, and the two sides
- * compute it differently (deviation (C)).</strong> On the CAMP sub-page the footer volume is the SUM
- * of the row volumes — and because every row's volume was stamped with the same camp-level amount,
- * that sum is {@code n × campVolume} ({@code CoreUtil.sumDescriptionCostVolumeType}, {@code
- * :610-632}). On the ACCESS sub-page it is the SINGLE camp volume, because
- * {@code CampReportType.getOtherAccessExpensesTotal()} ({@code :460-464}) sums cost only and then
+ * compute it differently (deviation (C)).</strong> On the CAMP sub-page the footer volume is the
+ * SUM of the row volumes — and because every row's volume was stamped with the same camp-level
+ * amount, that sum is {@code n × campVolume} ({@code CoreUtil.sumDescriptionCostVolumeType}, {@code
+ * :610-632}). On the ACCESS sub-page it is the SINGLE camp volume, because {@code
+ * CampReportType.getOtherAccessExpensesTotal()} ({@code :460-464}) sums cost only and then
  * overwrites the total's volume outright. Each footer's {@code costPerVolume} inherits its own
  * denominator. The two look identical on screen and are not; both are ported verbatim and pinned by
  * a test each.

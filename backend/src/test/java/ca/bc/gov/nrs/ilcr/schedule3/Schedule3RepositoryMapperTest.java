@@ -22,11 +22,11 @@ import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit test for the {@link Schedule3Repository} {@code default} upsert/delete compose methods and the
- * three {@link org.springframework.jdbc.core.RowMapper} implementations. The default methods are driven
- * with a mocked repository (abstract {@code @Query} methods stubbed) and the mappers with a mocked
- * {@link ResultSet}, so no DB is needed — covering the logic that otherwise only the Oracle {@code *IT}s
- * exercise. Mirrors {@code Schedule2RepositoryMapperTest}.
+ * Unit test for the {@link Schedule3Repository} {@code default} upsert/delete compose methods and
+ * the three {@link org.springframework.jdbc.core.RowMapper} implementations. The default methods
+ * are driven with a mocked repository (abstract {@code @Query} methods stubbed) and the mappers
+ * with a mocked {@link ResultSet}, so no DB is needed — covering the logic that otherwise only the
+ * Oracle {@code *IT}s exercise. Mirrors {@code Schedule2RepositoryMapperTest}.
  */
 class Schedule3RepositoryMapperTest {
 

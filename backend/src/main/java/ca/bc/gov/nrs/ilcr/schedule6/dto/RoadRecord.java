@@ -10,11 +10,11 @@ import java.math.BigDecimal;
  * BR-02, mutually exclusive.
  *
  * <p>{@code rmg} (Resource Management Grouping) and {@code costPerVolume} ($/m&sup3;) are DERIVED
- * server-side (BR-04/BR-07) and read-only — never accepted from a client on write (8.2).
- * {@code revisionCount} is this row's own optimistic-lock token (each road record is independently
+ * server-side (BR-04/BR-07) and read-only — never accepted from a client on write (8.2). {@code
+ * revisionCount} is this row's own optimistic-lock token (each road record is independently
  * editable; there is no schedule-level summary row — the AR11 keying delta recorded in Story 8.1).
- * {@code costPerVolume} is null when volume is zero/absent (no divide-by-zero); Jackson
- * {@code non_null} omits every null field.
+ * {@code costPerVolume} is null when volume is zero/absent (no divide-by-zero); Jackson {@code
+ * non_null} omits every null field.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record RoadRecord(
@@ -27,5 +27,4 @@ public record RoadRecord(
     BigDecimal volume,
     Integer cost,
     BigDecimal costPerVolume,
-    String comments) {
-}
+    String comments) {}

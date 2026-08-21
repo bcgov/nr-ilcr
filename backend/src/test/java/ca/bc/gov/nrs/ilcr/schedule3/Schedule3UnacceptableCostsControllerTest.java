@@ -24,8 +24,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for the batch-save endpoint on {@link Schedule3UnacceptableCostsController}: validates the
- * mill/year context, delegates to the service, and picks the save vs delete message from {@code
+ * Unit test for the batch-save endpoint on {@link Schedule3UnacceptableCostsController}: validates
+ * the mill/year context, delegates to the service, and picks the save vs delete message from {@code
  * intent} (legacy parity). Collaborators mocked (no Spring, no {@code @PreAuthorize}).
  */
 @ExtendWith(MockitoExtension.class)
@@ -57,7 +57,8 @@ class Schedule3UnacceptableCostsControllerTest {
     UnacceptableDocument doc = mockDocEchoingMessage();
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule3Service.saveUnacceptable(MILL_ID, YEAR, rows, "dev-admin")).thenReturn(doc);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully.");
 
     ResponseEntity<UnacceptableDocument> response =

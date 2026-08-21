@@ -21,9 +21,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit test for the {@link Schedule2Repository} {@code default} mapper/compose methods — the
- * entity-to-DTO mapping, the MERGE-then-re-read create, and the update-or-insert upsert — driven with
- * a mocked repository (abstract {@code @Query} methods stubbed) so no DB is needed. Covers the logic
- * that otherwise only the Oracle {@code *IT}s exercise.
+ * entity-to-DTO mapping, the MERGE-then-re-read create, and the update-or-insert upsert — driven
+ * with a mocked repository (abstract {@code @Query} methods stubbed) so no DB is needed. Covers the
+ * logic that otherwise only the Oracle {@code *IT}s exercise.
  */
 class Schedule2RepositoryMapperTest {
 
@@ -53,9 +53,11 @@ class Schedule2RepositoryMapperTest {
 
   @Test
   void findDetails_mapsEntitiesToRows_preservingNulls() {
-    when(repo.findDetailEntities(42)).thenReturn(List.of(
-        new Schedule2DetailEntity(1001, 25, null, 500000),
-        new Schedule2DetailEntity(1002, 26, new BigDecimal("120"), 30000)));
+    when(repo.findDetailEntities(42))
+        .thenReturn(
+            List.of(
+                new Schedule2DetailEntity(1001, 25, null, 500000),
+                new Schedule2DetailEntity(1002, 26, new BigDecimal("120"), 30000)));
     when(repo.findDetails(42)).thenCallRealMethod();
 
     List<DetailRow> rows = repo.findDetails(42);
@@ -102,7 +104,8 @@ class Schedule2RepositoryMapperTest {
 
   @Test
   void upsertDetail_inserts_whenNoRowUpdated() {
-    when(repo.updateDetail(42, 26, new BigDecimal("1"), 10, "u")).thenReturn(0); // nothing to update
+    when(repo.updateDetail(42, 26, new BigDecimal("1"), 10, "u"))
+        .thenReturn(0); // nothing to update
     doCallRealMethod().when(repo).upsertDetail(42, 26, new BigDecimal("1"), 10, "u");
 
     repo.upsertDetail(42, 26, new BigDecimal("1"), 10, "u");

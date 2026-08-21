@@ -27,12 +27,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit tests for {@link Schedule7bController} — verifies each endpoint delegates mill/year validation
- * to {@code MillContextService}, resolves editability via {@code SchedulePermissions}, echoes the
- * correct verbatim success key on a mutation (including the delete branch that switches to the
- * empty-schedule message, AD-8), and passes the audit user through on writes. The authorization
- * annotations themselves are exercised by the {@code *IT} suite; here the method bodies run with the
- * collaborators mocked.
+ * Unit tests for {@link Schedule7bController} — verifies each endpoint delegates mill/year
+ * validation to {@code MillContextService}, resolves editability via {@code SchedulePermissions},
+ * echoes the correct verbatim success key on a mutation (including the delete branch that switches
+ * to the empty-schedule message, AD-8), and passes the audit user through on writes. The
+ * authorization annotations themselves are exercised by the {@code *IT} suite; here the method
+ * bodies run with the collaborators mocked.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule7bController — delegation, editability, success-message echo")
@@ -68,7 +68,9 @@ class Schedule7bControllerTest {
         .thenReturn(new MillYearContext(MILL, YEAR));
   }
 
-  /** Resolve any bundle key to its own key text, so the assertions pin the KEY the controller chose. */
+  /**
+   * Resolve any bundle key to its own key text, so the assertions pin the KEY the controller chose.
+   */
   private void echoKeys() {
     when(messageSource.getMessage(anyString(), any(), anyString(), any()))
         .thenAnswer(invocation -> invocation.getArgument(0));
@@ -141,8 +143,8 @@ class Schedule7bControllerTest {
     contextResolves();
     echoKeys();
     when(authentication.getName()).thenReturn("tester");
-    CulvertSaveAllRequest batch = new CulvertSaveAllRequest(
-        List.of(new CulvertSaveAllRequest.Item(7801L, request(0))));
+    CulvertSaveAllRequest batch =
+        new CulvertSaveAllRequest(List.of(new CulvertSaveAllRequest.Item(7801L, request(0))));
     when(schedule7bService.saveAllCulverts(MILL, YEAR, batch, true, "tester"))
         .thenReturn(doc(List.of(oneCulvert())));
 
@@ -177,7 +179,8 @@ class Schedule7bControllerTest {
         controller.deleteCulvert(7801L, MILL_PARAM, YEAR_PARAM, authentication);
 
     // Legacy Schedule7bMB.update() always emits the key it was passed; the empty-list swap to
-    // anyDataToSaveInfoMsg exists ONLY in Schedule7aMB.java:374 and that string appears nowhere else
+    // anyDataToSaveInfoMsg exists ONLY in Schedule7aMB.java:374 and that string appears nowhere
+    // else
     // in the legacy source. Emitting it here would tell a reporter data "was saved" on a delete.
     assertThat(response.getBody().message().key()).isEqualTo("dataDeletedSuccesfullyInfoMsg");
     assertThat(response.getBody().culverts()).isEmpty();
@@ -187,8 +190,7 @@ class Schedule7bControllerTest {
   @DisplayName("Check Status delegates context validation and returns the service result unchanged")
   void checkStatusDelegates() {
     contextResolves();
-    Schedule7bCheckStatusResponse result =
-        new Schedule7bCheckStatusResponse(true, List.of(), null);
+    Schedule7bCheckStatusResponse result = new Schedule7bCheckStatusResponse(true, List.of(), null);
     when(schedule7bService.checkStatus(MILL, YEAR)).thenReturn(result);
 
     ResponseEntity<Schedule7bCheckStatusResponse> response =

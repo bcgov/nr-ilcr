@@ -29,20 +29,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Assembles the Schedule 8 (Tree to Truck) read document from the three flat entity lists returned by
- * {@link Schedule8Repository} — pages, samples, and rate rows — into the pinned three-level hierarchy.
- * Every derived value ({@code percentTotal}, {@code actualHarvested}, {@code additionsTotal}/
- * {@code deductionsTotal}, {@code finalRate}, the counts, {@code editable}) is computed here
- * (AD-5/AD-6), never read from storage as a client-supplied figure and never accepted on write.
+ * Assembles the Schedule 8 (Tree to Truck) read document from the three flat entity lists returned
+ * by {@link Schedule8Repository} — pages, samples, and rate rows — into the pinned three-level
+ * hierarchy. Every derived value ({@code percentTotal}, {@code actualHarvested}, {@code
+ * additionsTotal}/ {@code deductionsTotal}, {@code finalRate}, the counts, {@code editable}) is
+ * computed here (AD-5/AD-6), never read from storage as a client-supplied figure and never accepted
+ * on write.
  *
  * <p>The mill/year context is validated by {@code MillContextService} in the controller before this
- * runs (AD-4). A valid, active mill/year with NO category-{@code '8'} pages is NOT a 404 — it yields a
- * 200 empty {@code pages: []} (mirrors Schedule 2/4; Schedule 8 has no {@code ILCR_REPORT_SUMMARY}
- * row of its own).
+ * runs (AD-4). A valid, active mill/year with NO category-{@code '8'} pages is NOT a 404 — it
+ * yields a 200 empty {@code pages: []} (mirrors Schedule 2/4; Schedule 8 has no {@code
+ * ILCR_REPORT_SUMMARY} row of its own).
  *
- * <p>Addition vs deduction is decided by each rate row's cost item subcategory (§Decision 1: {@code '1'}
- * /{@code '2'} = addition, {@code '3'}/{@code '4'} = deduction). The eight code FKs are resolved to
- * their {@code DESCRIPTION} labels (§Decision 3) from the repository's code→label maps.
+ * <p>Addition vs deduction is decided by each rate row's cost item subcategory (§Decision 1: {@code
+ * '1'} /{@code '2'} = addition, {@code '3'}/{@code '4'} = deduction). The eight code FKs are
+ * resolved to their {@code DESCRIPTION} labels (§Decision 3) from the repository's code→label maps.
  */
 @Service
 @Slf4j
@@ -50,14 +51,16 @@ public class Schedule8Service {
 
   private static final String STATUS_DRAFT = "D";
   private static final String IND_YES = "Y";
+
   /**
    * ILCR_SKID_TYPE_CODE is NOT NULL: a sample with no specific skid type (Other % is 0) stores the
-   * "NA" (Not Applicable) code, mirroring the legacy default — the sample rules already treat "NA" as
-   * "no skid type" for the Other-% requirement.
+   * "NA" (Not Applicable) code, mirroring the legacy default — the sample rules already treat "NA"
+   * as "no skid type" for the Other-% requirement.
    */
   private static final String SKID_TYPE_NOT_APPLICABLE = "NA";
 
-  // Check Status (Story 14.6) — bundle keys (controller resolves to verbatim text, AD-8) + outcomes.
+  // Check Status (Story 14.6) — bundle keys (controller resolves to verbatim text, AD-8) +
+  // outcomes.
   private static final String OUTCOME_MET = "MET";
   private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_REQUIRED = "missingRequiredFieldMsg";
@@ -65,12 +68,17 @@ public class Schedule8Service {
   private static final String MSG_HARVEST_ZERO = "invalidLowerRangeZeroErrorMsg";
   private static final String MSG_PERCENT_100 = "skiddingYardingEqualsCentPercent";
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
-  /** Legacy sentinel: {@code TSA_NUMBER == "TFL"} means the page uses a TFL (else a supply block). */
+
+  /**
+   * Legacy sentinel: {@code TSA_NUMBER == "TFL"} means the page uses a TFL (else a supply block).
+   */
   private static final String TFL_MARKER = "TFL";
+
   private static final int PERCENT_TOTAL = 100;
 
   /** Cost-item subcategories that mark a rate row as an addition (§Decision 1). */
   private static final Set<String> ADDITION_SUBCATEGORIES = Set.of("1", "2");
+
   /** Cost-item subcategories that mark a rate row as a deduction (§Decision 1). */
   private static final Set<String> DEDUCTION_SUBCATEGORIES = Set.of("3", "4");
 
@@ -91,7 +99,7 @@ public class Schedule8Service {
   @Transactional(readOnly = true)
   public Schedule8Response getSchedule8(long millId, int year, boolean callerMayEdit) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
     // Label maps + the addition/deduction discriminator, loaded once per read.
     Map<String, String> supportCentre = repository.supportCentreLabels();
@@ -111,24 +119,39 @@ public class Schedule8Service {
     }
     Map<Integer, List<Sample>> samplesByPage = new LinkedHashMap<>();
     for (TreeToTruckDetailReportEntity s : repository.findSamples(millId, year)) {
-      Sample sample = toSample(s, ratesBySample.getOrDefault(s.id(), List.of()), subcategories,
-          skidType, costType);
+      Sample sample =
+          toSample(
+              s, ratesBySample.getOrDefault(s.id(), List.of()), subcategories, skidType, costType);
       samplesByPage.computeIfAbsent(s.reportId(), k -> new ArrayList<>()).add(sample);
     }
 
     List<Page> pages = new ArrayList<>();
     for (TreeToTruckReportEntity p : repository.findPages(millId, year)) {
       List<Sample> samples = samplesByPage.getOrDefault(p.id(), List.of());
-      pages.add(new Page(
-          p.id(), p.revisionCount(), p.division(), p.license(), p.contact(), p.phone(),
-          p.cuttingPermit(),
-          p.supportCentre(), labelFor(supportCentre, p.supportCentre()),
-          p.region(), labelFor(region, p.region()),
-          p.becZone(), labelFor(becZone, p.becZone()),
-          p.tsaNumber(), labelFor(tsa, p.tsaNumber()),
-          p.tflNumber(), labelFor(tfl, p.tflNumber()),
-          p.supplyBlock(), labelFor(supplyBlock, p.supplyBlock()),
-          p.comments(), samples.size(), samples));
+      pages.add(
+          new Page(
+              p.id(),
+              p.revisionCount(),
+              p.division(),
+              p.license(),
+              p.contact(),
+              p.phone(),
+              p.cuttingPermit(),
+              p.supportCentre(),
+              labelFor(supportCentre, p.supportCentre()),
+              p.region(),
+              labelFor(region, p.region()),
+              p.becZone(),
+              labelFor(becZone, p.becZone()),
+              p.tsaNumber(),
+              labelFor(tsa, p.tsaNumber()),
+              p.tflNumber(),
+              labelFor(tfl, p.tflNumber()),
+              p.supplyBlock(),
+              labelFor(supplyBlock, p.supplyBlock()),
+              p.comments(),
+              samples.size(),
+              samples));
     }
 
     return new Schedule8Response(millId, year, trackStatus, editable, pages, null);
@@ -136,16 +159,18 @@ public class Schedule8Service {
 
   /**
    * Load the option lists for the page-editor dropdowns (Support Centre / Region / BEC Zone / TSA /
-   * TFL / Supply Block) from the {@code THE.*_CODE} tables — the same code→label maps the read uses,
-   * reshaped as ordered {@code code + description} pairs. Global (not mill/year scoped): the code
-   * tables are reference data. The UI adds the {@code "TFL"} marker to the TSA-or-TFL selector.
+   * TFL / Supply Block) from the {@code THE.*_CODE} tables — the same code→label maps the read
+   * uses, reshaped as ordered {@code code + description} pairs. Global (not mill/year scoped): the
+   * code tables are reference data. The UI adds the {@code "TFL"} marker to the TSA-or-TFL
+   * selector.
    *
    * @return the six option lists, each ordered as its code table returns rows
    */
   @Transactional(readOnly = true)
   public Schedule8Options getOptions() {
     // Category-8 cost items split by subcategory: additions ('1'/'2') vs deductions ('3'/'4') — the
-    // same discriminator the read uses (§Decision 1) — so each add-row form lists only its own items.
+    // same discriminator the read uses (§Decision 1) — so each add-row form lists only its own
+    // items.
     List<Schedule8Repository.CostItemRow> costItems = repository.findCategory8CostItems();
     return new Schedule8Options(
         toOptions(repository.supportCentreLabels()),
@@ -160,14 +185,19 @@ public class Schedule8Service {
         toOptions(repository.costTypeLabels()));
   }
 
-  /** Reshape a code→label map into an ordered list of {@code CodeOption} choices (insertion order). */
+  /**
+   * Reshape a code→label map into an ordered list of {@code CodeOption} choices (insertion order).
+   */
   private static List<Schedule8Options.CodeOption> toOptions(Map<String, String> labels) {
     return labels.entrySet().stream()
         .map(e -> new Schedule8Options.CodeOption(e.getKey(), e.getValue()))
         .toList();
   }
 
-  /** Cost items in the given subcategories, as {@code code(id) + description(name)} dropdown choices. */
+  /**
+   * Cost items in the given subcategories, as {@code code(id) + description(name)} dropdown
+   * choices.
+   */
   private static List<Schedule8Options.CodeOption> costItemOptions(
       List<Schedule8Repository.CostItemRow> items, Set<String> subcategories) {
     return items.stream()
@@ -177,14 +207,16 @@ public class Schedule8Service {
   }
 
   /**
-   * Save (create-or-edit) one Schedule 8 report page and return the recomputed document (Story 14.2,
-   * S01/S04). The mill/year context is validated in the controller (AD-4). Enforces the Draft gate
-   * (AD-9), per-page optimistic locking, and the TFL⇄supply-block mutual exclusion (S10/BR-03).
+   * Save (create-or-edit) one Schedule 8 report page and return the recomputed document (Story
+   * 14.2, S01/S04). The mill/year context is validated in the controller (AD-4). Enforces the Draft
+   * gate (AD-9), per-page optimistic locking, and the TFL⇄supply-block mutual exclusion
+   * (S10/BR-03).
    *
    * <p>{@code request.id()} null → CREATE (insert the page, revision 0→1); present → EDIT (bump the
-   * page revision, then re-stamp its fields). The whole method is one transaction: a persistence fault
-   * rolls back and surfaces as 500 ({@code scheduleNotSavedErrorMsg}), logging type-only (AD-11). The
-   * TFL-resolves-to-Road-Group check (S22) is deferred with the {@code RoadGroupUtil} port (14.1 §2).
+   * page revision, then re-stamp its fields). The whole method is one transaction: a persistence
+   * fault rolls back and surfaces as 500 ({@code scheduleNotSavedErrorMsg}), logging type-only
+   * (AD-11). The TFL-resolves-to-Road-Group check (S22) is deferred with the {@code RoadGroupUtil}
+   * port (14.1 §2).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -194,31 +226,42 @@ public class Schedule8Service {
    * @return the recomputed Schedule 8 document
    */
   @Transactional
-  public Schedule8Response savePage(long millId, int year, Schedule8PageRequest request,
-      boolean callerMayEdit, String user) {
+  public Schedule8Response savePage(
+      long millId, int year, Schedule8PageRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
-    // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block and
+    // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block
+    // and
     // vice-versa — normalized server-side so exactly one is ever stored.
     boolean usesTfl = isNotBlank(request.tflNumber());
-    String tflNumber = usesTfl ? request.tflNumber().trim() : null;
-    String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
-    // Stamp the legacy "TFL" sentinel into TSA_NUMBER when the page uses a TFL, so the write side and
-    // the Check Status discriminator (TSA_NUMBER == "TFL") agree — otherwise a TFL page saved through
+    final String tflNumber = usesTfl ? request.tflNumber().trim() : null;
+    final String supplyBlock = usesTfl ? null : trimToNull(request.supplyBlock());
+    // Stamp the legacy "TFL" sentinel into TSA_NUMBER when the page uses a TFL, so the write side
+    // and
+    // the Check Status discriminator (TSA_NUMBER == "TFL") agree — otherwise a TFL page saved
+    // through
     // this API lands in the Supply-Block-required branch and can never reach MET (H2).
-    String tsaNumber = usesTfl ? TFL_MARKER : trimToNull(request.tsaNumber());
+    final String tsaNumber = usesTfl ? TFL_MARKER : trimToNull(request.tsaNumber());
     // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
-    // deletePage). Without it, a Draft context could overwrite another mill/year's page by id (IDOR),
+    // deletePage). Without it, a Draft context could overwrite another mill/year's page by id
+    // (IDOR),
     // since EDIT_SCHEDULE is global and requireDraft only checks the URL mill/year.
     if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
       throw new ScheduleNotFoundException();
     }
-    // Reject unknown code-table values up front (400) rather than letting them hit a DB FK (500) — the    
-    // legacy autocomplete's "select from the list". Validate the request's own codes (not the stamped     
-    // TSA sentinel): when a TFL is used only the TFL # matters; otherwise the supply block / TSA do.      
+    // Reject unknown code-table values up front (400) rather than letting them hit a DB FK (500) —
+    // the
+    // legacy autocomplete's "select from the list". Validate the request's own codes (not the
+    // stamped
+    // TSA sentinel): when a TFL is used only the TFL # matters; otherwise the supply block / TSA
+    // do.
     // Validate trimmed values to be consistent with what is persisted (2).
-    requireKnownCode(repository.supportCentreLabels(), request.supportCentre() == null ? null : request.supportCentre().trim());
-    requireKnownCode(repository.regionLabels(), request.region() == null ? null : request.region().trim());
-    requireKnownCode(repository.becZoneLabels(), request.becZone() == null ? null : request.becZone().trim());
+    requireKnownCode(
+        repository.supportCentreLabels(),
+        request.supportCentre() == null ? null : request.supportCentre().trim());
+    requireKnownCode(
+        repository.regionLabels(), request.region() == null ? null : request.region().trim());
+    requireKnownCode(
+        repository.becZoneLabels(), request.becZone() == null ? null : request.becZone().trim());
     if (!usesTfl) {
       if (supplyBlock != null) {
         requireKnownCode(repository.supplyBlockLabels(), supplyBlock);
@@ -229,38 +272,65 @@ public class Schedule8Service {
     }
     try {
       if (request.id() == null) {
-        int id = repository.insertPage(millId, year, trimToNull(request.supportCentre()),
-            trimToNull(request.region()), trimToNull(request.becZone()), tsaNumber, supplyBlock,
-            tflNumber, trimToNull(request.cuttingPermit()), trimToNull(request.license()),
-            trimToNull(request.division()), trimToNull(request.contact()),
-            trimToNull(request.phone()), trimToNull(request.comments()), user);
+        int id =
+            repository.insertPage(
+                millId,
+                year,
+                trimToNull(request.supportCentre()),
+                trimToNull(request.region()),
+                trimToNull(request.becZone()),
+                tsaNumber,
+                supplyBlock,
+                tflNumber,
+                trimToNull(request.cuttingPermit()),
+                trimToNull(request.license()),
+                trimToNull(request.division()),
+                trimToNull(request.contact()),
+                trimToNull(request.phone()),
+                trimToNull(request.comments()),
+                user);
         repository.bumpPageRevision(id, 0, user); // 0 -> 1 (monotonic, mirrors Schedule 2/4)
       } else {
         int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
         if (repository.bumpPageRevision(request.id(), expectedRevision, user) == 0) {
           throw new StaleRevisionException();
         }
-        repository.updatePageFields(request.id(), trimToNull(request.supportCentre()),
-            trimToNull(request.region()), trimToNull(request.becZone()), tsaNumber, supplyBlock,
-            tflNumber, trimToNull(request.cuttingPermit()), trimToNull(request.license()),
-            trimToNull(request.division()), trimToNull(request.contact()),
-            trimToNull(request.phone()), trimToNull(request.comments()), user);
+        repository.updatePageFields(
+            request.id(),
+            trimToNull(request.supportCentre()),
+            trimToNull(request.region()),
+            trimToNull(request.becZone()),
+            tsaNumber,
+            supplyBlock,
+            tflNumber,
+            trimToNull(request.cuttingPermit()),
+            trimToNull(request.license()),
+            trimToNull(request.division()),
+            trimToNull(request.contact()),
+            trimToNull(request.phone()),
+            trimToNull(request.comments()),
+            user);
       }
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 page save failed for mill {} year {} [{}: {}]",
-          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+      log.warn(
+          "Schedule 8 page save failed for mill {} year {} [{}: {}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
   }
 
   /**
-   * Delete a whole Schedule 8 report page — the page, its samples, and all their rate details (BR-05,
-   * S07) — for a mill/year, targeted by the page {@code id}. Enforces the same Draft gate as save.
-   * Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a no-op that still
-   * returns success (never 404), mirroring Schedule 2/4. Context is validated in the controller (AD-4).
+   * Delete a whole Schedule 8 report page — the page, its samples, and all their rate details
+   * (BR-05, S07) — for a mill/year, targeted by the page {@code id}. Enforces the same Draft gate
+   * as save. Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a no-op
+   * that still returns success (never 404), mirroring Schedule 2/4. Context is validated in the
+   * controller (AD-4).
    *
    * @param millId the mill id
    * @param year the reporting year
@@ -275,18 +345,23 @@ public class Schedule8Service {
     try {
       repository.deletePage(id);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 page delete failed for mill {} year {} [{}: {}]",
-          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+      log.warn(
+          "Schedule 8 page delete failed for mill {} year {} [{}: {}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
   }
 
   /**
    * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
-   * S01/S05). Draft gate (AD-9), per-sample optimistic lock, unknown page/sample → 404. Field/cross-
-   * field validation (Contract ID, per-% 0–100, sum ≤ 100, Helicopter/Other conditionals, ranges) is
-   * on the request DTO; this method persists and recomputes. The Y/N indicator columns are written
-   * from the request's Booleans. One transaction; a persistence fault → 500 (type-only log, AD-11).
+   * S01/S05). Draft gate (AD-9), per-sample optimistic lock, unknown page/sample → 404.
+   * Field/cross- field validation (Contract ID, per-% 0–100, sum ≤ 100, Helicopter/Other
+   * conditionals, ranges) is on the request DTO; this method persists and recomputes. The Y/N
+   * indicator columns are written from the request's Booleans. One transaction; a persistence fault
+   * → 500 (type-only log, AD-11).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -297,8 +372,13 @@ public class Schedule8Service {
    * @return the recomputed Schedule 8 document
    */
   @Transactional
-  public Schedule8Response saveSample(long millId, int year, int pageId,
-      Schedule8SampleRequest request, boolean callerMayEdit, String user) {
+  public Schedule8Response saveSample(
+      long millId,
+      int year,
+      int pageId,
+      Schedule8SampleRequest request,
+      boolean callerMayEdit,
+      String user) {
     requireDraft(millId, year);
     if (!repository.pageExists(pageId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
@@ -306,7 +386,8 @@ public class Schedule8Service {
     if (request.skidTypeCode() != null) {
       requireKnownCode(repository.skidTypeLabels(), request.skidTypeCode().trim());
     }
-    // Skid type is NOT NULL in the DB; default a blank selection to the "NA" code (legacy behaviour).
+    // Skid type is NOT NULL in the DB; default a blank selection to the "NA" code (legacy
+    // behaviour).
     String skidType = trimToNull(request.skidTypeCode());
     if (skidType == null) {
       skidType = SKID_TYPE_NOT_APPLICABLE;
@@ -315,13 +396,29 @@ public class Schedule8Service {
     String waterDump = toIndicator(request.waterDumpDestination());
     try {
       if (request.id() == null) {
-        int id = repository.insertSample(pageId, trimToNull(request.contractId()),
-            trimToNull(request.cutBlock()), request.groundBasePct(), request.grapplePct(),
-            request.skylinePct(), request.highleadPct(), request.helicopterPct(),
-            request.otherSkiddingPct(), request.skylineSlopeDistance(),
-            request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
-            request.distance(), waterDump, uphill, skidType,
-            request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
+        int id =
+            repository.insertSample(
+                pageId,
+                trimToNull(request.contractId()),
+                trimToNull(request.cutBlock()),
+                request.groundBasePct(),
+                request.grapplePct(),
+                request.skylinePct(),
+                request.highleadPct(),
+                request.helicopterPct(),
+                request.otherSkiddingPct(),
+                request.skylineSlopeDistance(),
+                request.skylineSupportNumber(),
+                request.supportAvgDistance(),
+                request.cycleTime(),
+                request.distance(),
+                waterDump,
+                uphill,
+                skidType,
+                request.coniferousVolume(),
+                request.deciduousVolume(),
+                request.originalRate(),
+                user);
         repository.bumpSampleRevision(id, 0, user); // 0 -> 1
       } else {
         if (!repository.sampleExists(request.id(), pageId)) {
@@ -331,19 +428,38 @@ public class Schedule8Service {
         if (repository.bumpSampleRevision(request.id(), expectedRevision, user) == 0) {
           throw new StaleRevisionException();
         }
-        repository.updateSampleFields(request.id(), trimToNull(request.contractId()),
-            trimToNull(request.cutBlock()), request.groundBasePct(), request.grapplePct(),
-            request.skylinePct(), request.highleadPct(), request.helicopterPct(),
-            request.otherSkiddingPct(), request.skylineSlopeDistance(),
-            request.skylineSupportNumber(), request.supportAvgDistance(), request.cycleTime(),
-            request.distance(), waterDump, uphill, skidType,
-            request.coniferousVolume(), request.deciduousVolume(), request.originalRate(), user);
+        repository.updateSampleFields(
+            request.id(),
+            trimToNull(request.contractId()),
+            trimToNull(request.cutBlock()),
+            request.groundBasePct(),
+            request.grapplePct(),
+            request.skylinePct(),
+            request.highleadPct(),
+            request.helicopterPct(),
+            request.otherSkiddingPct(),
+            request.skylineSlopeDistance(),
+            request.skylineSupportNumber(),
+            request.supportAvgDistance(),
+            request.cycleTime(),
+            request.distance(),
+            waterDump,
+            uphill,
+            skidType,
+            request.coniferousVolume(),
+            request.deciduousVolume(),
+            request.originalRate(),
+            user);
       }
     } catch (StaleRevisionException | ScheduleNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 sample save failed for mill {} year {} [{}: {}]",
-          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+      log.warn(
+          "Schedule 8 sample save failed for mill {} year {} [{}: {}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
@@ -351,8 +467,8 @@ public class Schedule8Service {
 
   /**
    * Delete one sample (cascading its rate details) under a page and return the recomputed document
-   * (Story 14.3, S08 / BR-05). Draft gate (AD-9). Idempotent: an unknown page or sample id is a no-op
-   * success (never 404), mirroring Schedule 2/4 deletes.
+   * (Story 14.3, S08 / BR-05). Draft gate (AD-9). Idempotent: an unknown page or sample id is a
+   * no-op success (never 404), mirroring Schedule 2/4 deletes.
    *
    * @param millId the mill id
    * @param year the reporting year
@@ -369,8 +485,12 @@ public class Schedule8Service {
       try {
         repository.deleteSample(sampleId);
       } catch (DataAccessException ex) {
-        log.warn("Schedule 8 sample delete failed for mill {} year {} [{}: {}]",
-            millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+        log.warn(
+            "Schedule 8 sample delete failed for mill {} year {} [{}: {}]",
+            millId,
+            year,
+            ex.getClass().getSimpleName(),
+            ex.getMostSpecificCause().getMessage());
         throw new ScheduleNotSavedException();
       }
     }
@@ -379,10 +499,11 @@ public class Schedule8Service {
 
   /**
    * Add or edit one rate-detail row under a sample and return the recomputed document (Story 14.4,
-   * S01/S06). {@code request.id()} null → ADD (insert at revision 0); present → EDIT (optimistic-lock
-   * update). Whether the row is an addition or a deduction is derived on the read from its cost item's
-   * subcategory — not stored here. Draft gate (AD-9); unknown sample or (on edit) unknown row → 404;
-   * stale → 409; persistence fault → 500 (type-only log, AD-11). One transaction.
+   * S01/S06). {@code request.id()} null → ADD (insert at revision 0); present → EDIT
+   * (optimistic-lock update). Whether the row is an addition or a deduction is derived on the read
+   * from its cost item's subcategory — not stored here. Draft gate (AD-9); unknown sample or (on
+   * edit) unknown row → 404; stale → 409; persistence fault → 500 (type-only log, AD-11). One
+   * transaction.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -394,8 +515,14 @@ public class Schedule8Service {
    * @return the recomputed Schedule 8 document (the sample's totals + finalRate + counts update)
    */
   @Transactional
-  public Schedule8Response saveRate(long millId, int year, int sampleId, Integer rowId,
-      Schedule8RateRequest request, boolean callerMayEdit, String user) {
+  public Schedule8Response saveRate(
+      long millId,
+      int year,
+      int sampleId,
+      Integer rowId,
+      Schedule8RateRequest request,
+      boolean callerMayEdit,
+      String user) {
     requireDraft(millId, year);
     if (!repository.sampleInMillYear(sampleId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such sample under this mill/year
@@ -410,16 +537,27 @@ public class Schedule8Service {
     requireKnownCode(repository.costTypeLabels(), request.costTypeCode());
     try {
       if (rowId == null) {
-        repository.insertRate(sampleId, trimToNull(request.costTypeCode()), request.costItemCode(),
-            trimToNull(request.itemDescription()), request.costingRate(), user);
+        repository.insertRate(
+            sampleId,
+            trimToNull(request.costTypeCode()),
+            request.costItemCode(),
+            trimToNull(request.itemDescription()),
+            request.costingRate(),
+            user);
       } else {
         if (!repository.rateExists(rowId, sampleId)) {
           throw new ScheduleNotFoundException(); // 404 — row is not under this sample
         }
         int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
-        int updated = repository.updateRateRow(rowId, expectedRevision,
-            trimToNull(request.costTypeCode()), request.costItemCode(),
-            trimToNull(request.itemDescription()), request.costingRate(), user);
+        int updated =
+            repository.updateRateRow(
+                rowId,
+                expectedRevision,
+                trimToNull(request.costTypeCode()),
+                request.costItemCode(),
+                trimToNull(request.itemDescription()),
+                request.costingRate(),
+                user);
         if (updated == 0) {
           throw new StaleRevisionException();
         }
@@ -427,8 +565,12 @@ public class Schedule8Service {
     } catch (StaleRevisionException | ScheduleNotFoundException ex) {
       throw ex;
     } catch (DataAccessException ex) {
-      log.warn("Schedule 8 rate save failed for mill {} year {} [{}: {}]",
-          millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+      log.warn(
+          "Schedule 8 rate save failed for mill {} year {} [{}: {}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName(),
+          ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
     return getSchedule8(millId, year, callerMayEdit);
@@ -450,12 +592,17 @@ public class Schedule8Service {
   public Schedule8Response deleteRate(
       long millId, int year, int sampleId, int rowId, boolean callerMayEdit) {
     requireDraft(millId, year);
-    if (repository.sampleInMillYear(sampleId, millId, year) && repository.rateExists(rowId, sampleId)) {
+    if (repository.sampleInMillYear(sampleId, millId, year)
+        && repository.rateExists(rowId, sampleId)) {
       try {
         repository.deleteRateRow(rowId);
       } catch (DataAccessException ex) {
-        log.warn("Schedule 8 rate delete failed for mill {} year {} [{}: {}]",
-            millId, year, ex.getClass().getSimpleName(), ex.getMostSpecificCause().getMessage());
+        log.warn(
+            "Schedule 8 rate delete failed for mill {} year {} [{}: {}]",
+            millId,
+            year,
+            ex.getClass().getSimpleName(),
+            ex.getMostSpecificCause().getMessage());
         throw new ScheduleNotSavedException();
       }
     }
@@ -471,11 +618,11 @@ public class Schedule8Service {
   }
 
   /**
-   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for a mill/year — read-only
-   * (AD-5), mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read model and applies
-   * the Check-Status-only rules per page and sample. {@code outcome} is {@code MET} only when EVERY
-   * page (and its samples) passes. Emits bundle KEYS; the controller resolves verbatim text (AD-8). A
-   * mill/year with no pages is vacuously MET.
+   * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for a mill/year —
+   * read-only (AD-5), mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read
+   * model and applies the Check-Status-only rules per page and sample. {@code outcome} is {@code
+   * MET} only when EVERY page (and its samples) passes. Emits bundle KEYS; the controller resolves
+   * verbatim text (AD-8). A mill/year with no pages is vacuously MET.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -498,9 +645,10 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
-    List<Page> scoped = getSchedule8(millId, year, false).pages().stream()
-        .filter(p -> p.id() != null && p.id() == pageId)
-        .toList();
+    List<Page> scoped =
+        getSchedule8(millId, year, false).pages().stream()
+            .filter(p -> p.id() != null && p.id() == pageId)
+            .toList();
     return evaluate(scoped);
   }
 
@@ -560,7 +708,8 @@ public class Schedule8Service {
       issues.add(issue("Actual Harvested", MSG_HARVEST_ZERO));
     }
     requireField(issues, "Original TtT Rate", sample.originalRate());
-    // The exact-100 rule Save deliberately omits (14.3 §Decision) lives here (FLD-003, S16 check half).
+    // The exact-100 rule Save deliberately omits (14.3 §Decision) lives here (FLD-003, S16 check
+    // half).
     if (sample.percentTotal() == null || sample.percentTotal() != PERCENT_TOTAL) {
       issues.add(issue("Skidding/Yarding", MSG_PERCENT_100));
     }
@@ -607,17 +756,30 @@ public class Schedule8Service {
     return trimmed.isEmpty() ? null : trimmed;
   }
 
-  /** Map one sample entity + its rate rows to the wire {@link Sample}, splitting add/ded + computing. */
-  private Sample toSample(TreeToTruckDetailReportEntity s,
-      List<TreeToTruckRateDetailEntity> rateRows, Map<Integer, String> subcategories,
-      Map<String, String> skidType, Map<String, String> costType) {
+  /**
+   * Map one sample entity + its rate rows to the wire {@link Sample}, splitting add/ded +
+   * computing.
+   */
+  private Sample toSample(
+      TreeToTruckDetailReportEntity s,
+      List<TreeToTruckRateDetailEntity> rateRows,
+      Map<Integer, String> subcategories,
+      Map<String, String> skidType,
+      Map<String, String> costType) {
     List<RateRow> additions = new ArrayList<>();
     List<RateRow> deductions = new ArrayList<>();
     BigDecimal additionsTotal = BigDecimal.ZERO;
     BigDecimal deductionsTotal = BigDecimal.ZERO;
     for (TreeToTruckRateDetailEntity r : rateRows) {
-      RateRow row = new RateRow(r.id(), r.revisionCount(), r.costItemCode(), r.itemDescription(),
-          normalize(r.costingRate()), r.costTypeCode(), labelFor(costType, r.costTypeCode()));
+      RateRow row =
+          new RateRow(
+              r.id(),
+              r.revisionCount(),
+              r.costItemCode(),
+              r.itemDescription(),
+              normalize(r.costingRate()),
+              r.costTypeCode(),
+              labelFor(costType, r.costTypeCode()));
       switch (classifyRate(subcategories, r.costItemCode())) {
         case ADDITION -> {
           additions.add(row);
@@ -628,30 +790,62 @@ public class Schedule8Service {
           deductionsTotal = deductionsTotal.add(zeroIfNull(r.costingRate()));
         }
         // A rate row whose cost item is neither an addition nor a deduction is dropped from the
-        // roll-up. The write path now rejects such codes (Schedule8InvalidCodeException), so this can
+        // roll-up. The write path now rejects such codes (Schedule8InvalidCodeException), so this
+        // can
         // only surface for legacy/out-of-band data — log it rather than silently vanish the money.
-        default -> log.warn("Schedule 8 rate row {} has cost item {} with unclassifiable subcategory"
-            + " {} — excluded from additions/deductions", r.id(), r.costItemCode(),
-            labelFor(subcategories, r.costItemCode()));
+        default ->
+            log.warn(
+                "Schedule 8 rate row {} has cost item {} with unclassifiable subcategory"
+                    + " {} — excluded from additions/deductions",
+                r.id(),
+                r.costItemCode(),
+                labelFor(subcategories, r.costItemCode()));
       }
     }
     BigDecimal originalRate = zeroIfNull(s.originalRate());
     BigDecimal finalRate = originalRate.add(additionsTotal).subtract(deductionsTotal);
-    Integer percentTotal = sumInts(s.groundBasePct(), s.grapplePct(), s.skylinePct(), s.highleadPct(),
-        s.helicopterPct(), s.otherSkiddingPct());
+    Integer percentTotal =
+        sumInts(
+            s.groundBasePct(),
+            s.grapplePct(),
+            s.skylinePct(),
+            s.highleadPct(),
+            s.helicopterPct(),
+            s.otherSkiddingPct());
     Integer actualHarvested = sumInts(s.coniferousVolume(), s.deciduousVolume());
 
     return new Sample(
-        s.id(), s.revisionCount(), s.contractId(), s.cutBlock(),
-        s.groundBasePct(), s.grapplePct(), s.skylinePct(), s.highleadPct(), s.helicopterPct(),
-        s.otherSkiddingPct(), percentTotal,
-        s.skylineSlopeDistance(), s.skylineSupportNumber(), normalize(s.supportAverageDistance()),
-        normalize(s.distance()), normalize(s.cycleTime()),
-        IND_YES.equals(s.uphillDirectionInd()), IND_YES.equals(s.waterDumpDestinationInd()),
-        s.skidTypeCode(), labelFor(skidType, s.skidTypeCode()),
-        s.coniferousVolume(), s.deciduousVolume(), actualHarvested,
-        normalize(s.originalRate()), normalize(additionsTotal), normalize(deductionsTotal),
-        normalize(finalRate), additions.size(), deductions.size(), additions, deductions);
+        s.id(),
+        s.revisionCount(),
+        s.contractId(),
+        s.cutBlock(),
+        s.groundBasePct(),
+        s.grapplePct(),
+        s.skylinePct(),
+        s.highleadPct(),
+        s.helicopterPct(),
+        s.otherSkiddingPct(),
+        percentTotal,
+        s.skylineSlopeDistance(),
+        s.skylineSupportNumber(),
+        normalize(s.supportAverageDistance()),
+        normalize(s.distance()),
+        normalize(s.cycleTime()),
+        IND_YES.equals(s.uphillDirectionInd()),
+        IND_YES.equals(s.waterDumpDestinationInd()),
+        s.skidTypeCode(),
+        labelFor(skidType, s.skidTypeCode()),
+        s.coniferousVolume(),
+        s.deciduousVolume(),
+        actualHarvested,
+        normalize(s.originalRate()),
+        normalize(additionsTotal),
+        normalize(deductionsTotal),
+        normalize(finalRate),
+        additions.size(),
+        deductions.size(),
+        additions,
+        deductions);
   }
 
   private static BigDecimal zeroIfNull(BigDecimal value) {
@@ -659,15 +853,19 @@ public class Schedule8Service {
   }
 
   /**
-   * Null-safe code-table label lookup. Provides a defensive short-circuit for null keys (unentered values)
-   * to return a null label cleanly without probing the map (3).
+   * Null-safe code-table label lookup. Provides a defensive short-circuit for null keys (unentered
+   * values) to return a null label cleanly without probing the map (3).
    */
   private static <K> String labelFor(Map<K, String> labels, K code) {
     return code == null ? null : labels.get(code);
   }
 
   /** How a rate row's cost item classifies for the additions/deductions roll-up. */
-  private enum RateClass { ADDITION, DEDUCTION, UNKNOWN }
+  private enum RateClass {
+    ADDITION,
+    DEDUCTION,
+    UNKNOWN
+  }
 
   /**
    * Classify a rate row's cost item by its subcategory. {@code UNKNOWN} means the code is neither a
@@ -679,8 +877,10 @@ public class Schedule8Service {
     if (subcategory == null) {
       return RateClass.UNKNOWN;
     }
-    // Trim: ILCR_SUBCATEGORY_ID is a fixed-width column, so a stored value can carry padding whitespace
-    // ("1 ") that would otherwise fail the exact set match and silently drop the row from the roll-up.
+    // Trim: ILCR_SUBCATEGORY_ID is a fixed-width column, so a stored value can carry padding
+    // whitespace
+    // ("1 ") that would otherwise fail the exact set match and silently drop the row from the
+    // roll-up.
     subcategory = subcategory.trim();
     if (ADDITION_SUBCATEGORIES.contains(subcategory)) {
       return RateClass.ADDITION;
@@ -691,7 +891,9 @@ public class Schedule8Service {
     return RateClass.UNKNOWN;
   }
 
-  /** Sum of the given values treating null as 0; uses long accumulation for overflow protection (4). */  
+  /**
+   * Sum of the given values treating null as 0; uses long accumulation for overflow protection (4).
+   */
   private static Integer sumInts(Integer... values) {
     long total = 0L;
     for (Integer value : values) {

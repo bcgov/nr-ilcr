@@ -17,10 +17,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Acceptance test for authorization on VIEW_SCHEDULE (AD-7) for the Schedule 9 PDF endpoint. Security
- * ON; drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. Print is read-only
- * for every role (BR-01), so VIEW_SCHEDULE is the gate. Authorities derive through the PRODUCTION
- * {@link CognitoGroupsJwtAuthenticationConverter} (mirrors {@code Schedule9AuthorizationIT}).
+ * Acceptance test for authorization on VIEW_SCHEDULE (AD-7) for the Schedule 9 PDF endpoint.
+ * Security ON; drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. Print is
+ * read-only for every role (BR-01), so VIEW_SCHEDULE is the gate. Authorities derive through the
+ * PRODUCTION {@link CognitoGroupsJwtAuthenticationConverter} (mirrors {@code
+ * Schedule9AuthorizationIT}).
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("GET /api/v1/reports/schedule9 — authorization on VIEW_SCHEDULE (AD-7)")
@@ -32,8 +33,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -44,20 +44,24 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no token (anonymous) -> 401, the authentication boundary")
   void anonymous_returns401() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .accept(MediaType.APPLICATION_PDF))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isUnauthorized());
   }
 
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -65,10 +69,12 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("foreign group (no ILCR_ prefix) -> 403")
   void foreignGroup_returns403() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .with(jwtWithGroups(List.of("SOME_OTHER_APP_ADMIN"))))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -76,11 +82,12 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz, streams the PDF")
   void submitter_passesAuthorization() throws Exception {
-    streamPdf(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .accept(MediaType.APPLICATION_PDF)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    streamPdf(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_PDF)
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF));
   }
@@ -88,11 +95,12 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz, streams the PDF")
   void admin_passesAuthorization() throws Exception {
-    streamPdf(get(ENDPOINT)
-            .param("millId", SEEDED_MILL)
-            .param("year", SEEDED_YEAR)
-            .accept(MediaType.APPLICATION_PDF)
-            .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+    streamPdf(
+            get(ENDPOINT)
+                .param("millId", SEEDED_MILL)
+                .param("year", SEEDED_YEAR)
+                .accept(MediaType.APPLICATION_PDF)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF));
   }

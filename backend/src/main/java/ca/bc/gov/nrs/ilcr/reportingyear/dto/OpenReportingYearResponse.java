@@ -10,5 +10,5 @@ package ca.bc.gov.nrs.ilcr.reportingyear.dto;
  * @param messageKey the {@code messages.properties} key of the success message
  * @param message the verbatim success text (SUC-001)
  */
-public record OpenReportingYearResponse(int year, int millsInitialized, String messageKey, String message) {
-}
+public record OpenReportingYearResponse(
+    int year, int millsInitialized, String messageKey, String message) {}

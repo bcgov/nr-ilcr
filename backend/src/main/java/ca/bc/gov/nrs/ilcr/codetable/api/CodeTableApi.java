@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.codetable.api;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableEntry;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSaveResponse;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSummary;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -43,18 +44,19 @@ public interface CodeTableApi {
       @PathVariable String tableKey, Authentication authentication);
 
   /**
-   * Add or edit one entry (upsert: insert when the code is new, else update the matching row — BR-03).
-   * Required-field / date-range failures → 400 and nothing is saved (FLD-001..005); unknown table →
-   * 404. Returns the outcome, the verbatim success message, and the reloaded grid.
+   * Add or edit one entry (upsert: insert when the code is new, else update the matching row —
+   * BR-03). Required-field / date-range failures → 400 and nothing is saved (FLD-001..005); unknown
+   * table → 404. Returns the outcome, the verbatim success message, and the reloaded grid.
    *
    * @param tableKey the selected table's key
    * @param entry the code/description/effective/expiry to persist
-   * @param authentication the caller (must hold {@code MAINTAIN_CODE_TABLES}; drives the audit user)
+   * @param authentication the caller (must hold {@code MAINTAIN_CODE_TABLES}; drives the audit
+   *     user)
    * @return 200 with the save outcome + reloaded entries
    */
   @PutMapping("/{tableKey}/entries")
   ResponseEntity<CodeTableSaveResponse> saveEntry(
       @PathVariable String tableKey,
-      @RequestBody CodeTableEntry entry,
+      @Valid @RequestBody CodeTableEntry entry,
       Authentication authentication);
 }

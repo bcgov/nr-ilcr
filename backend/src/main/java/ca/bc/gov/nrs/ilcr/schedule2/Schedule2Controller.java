@@ -40,9 +40,12 @@ public class Schedule2Controller implements Schedule2Api {
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
 
-  /** Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message. */
+  /**
+   * Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message.
+   */
   private MessageInfo message(String key) {
-    return new MessageInfo(key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
+    return new MessageInfo(
+        key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
   @Override
@@ -62,7 +65,8 @@ public class Schedule2Controller implements Schedule2Api {
     millContextService.validateMillYearActive(millId, year);
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     String user = authentication.getName();
-    Schedule2Response saved = schedule2Service.saveSchedule2(millId, year, request, callerMayEdit, user);
+    Schedule2Response saved =
+        schedule2Service.saveSchedule2(millId, year, request, callerMayEdit, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -82,17 +86,20 @@ public class Schedule2Controller implements Schedule2Api {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
     Schedule2CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
-    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message. The
+    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message.
+    // The
     // service carries an optional field label in MessageInfo.text; when present it is prefixed as
     // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
-    List<MessageInfo> resolved = status.messages().stream()
-        .map(m -> {
-          MessageInfo base = message(m.key());
-          return m.text() == null
-              ? base
-              : new MessageInfo(base.key(), m.text() + ": " + base.text());
-        })
-        .toList();
+    List<MessageInfo> resolved =
+        status.messages().stream()
+            .map(
+                m -> {
+                  MessageInfo base = message(m.key());
+                  return m.text() == null
+                      ? base
+                      : new MessageInfo(base.key(), m.text() + ": " + base.text());
+                })
+            .toList();
     return ResponseEntity.ok(new Schedule2CheckStatusResponse(status.outcome(), resolved));
   }
 }

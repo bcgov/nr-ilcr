@@ -29,7 +29,4 @@ import java.util.List;
  *     requirements for this schedule have been met"}) when all pass, else null
  */
 public record Schedule7bCheckStatusResponse(
-    boolean requirementsMet,
-    List<MessageInfo> errors,
-    MessageInfo requirementsMetMessage) {
-}
+    boolean requirementsMet, List<MessageInfo> errors, MessageInfo requirementsMetMessage) {}

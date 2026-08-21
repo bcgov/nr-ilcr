@@ -19,8 +19,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Authorization on EDIT_SCHEDULE (AD-7) for the Schedule 4 location write verbs. Security ON; drives
- * the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without
+ * Authorization on EDIT_SCHEDULE (AD-7) for the Schedule 4 location write verbs. Security ON;
+ * drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without
  * EDIT_SCHEDULE must get 403 {@code problem+json} on both PUT and DELETE; a submitter passes authz.
  * Mirrors {@link ca.bc.gov.nrs.ilcr.schedule2.Schedule2WriteAuthorizationIT}. Uses the dedicated V8
  * mill 543 ("Authz Dump", primary id 8020, revision 0) so the hard-coded token can never be made
@@ -34,8 +34,7 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -43,7 +42,8 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
         .authorities(j -> CONVERTER.convert(j).getAuthorities());
   }
 
-  private static final String BODY = """
+  private static final String BODY =
+      """
       { "id": 8020, "revisionCount": 0, "name": "Authz Dump",
         "categories": [ { "code": 40, "volume": 100, "cost": 5000, "distance": null } ] }
       """;
@@ -51,9 +51,14 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> PUT 403 problem+json")
   void put_noPermission_returns403() throws Exception {
-    mockMvc.perform(put(ENDPOINT).param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -61,9 +66,13 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE (empty cognito:groups) -> DELETE 403 problem+json")
   void delete_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "543").param("year", "2021")
-            .param("id", "8020")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            delete(ENDPOINT)
+                .param("millId", "543")
+                .param("year", "2021")
+                .param("id", "8020")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -71,16 +80,23 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> PUT passes authz (not 403)")
   void put_submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(put(ENDPOINT).param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(BODY)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(BODY)
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
-  // ---- Sub-page row write verbs (Story 4.3) share the EDIT_SCHEDULE gate. -------------------------
+  // ---- Sub-page row write verbs (Story 4.3) share the EDIT_SCHEDULE gate.
+  // -------------------------
 
   private static final String ROWS = "/api/v1/schedule4/locations/8020/rows";
-  private static final String ROW_BODY = """
+  private static final String ROW_BODY =
+      """
       { "type": "TOWING", "description": "Authz row", "distance": 10.0, "volume": 50, "cost": 2000,
         "cycle": null }
       """;
@@ -88,9 +104,14 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE -> POST row 403 problem+json")
   void postRow_noPermission_returns403() throws Exception {
-    mockMvc.perform(post(ROWS).param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(ROWS)
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ROW_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -98,9 +119,12 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no EDIT_SCHEDULE -> DELETE row 403 problem+json")
   void deleteRow_noPermission_returns403() throws Exception {
-    mockMvc.perform(delete("/api/v1/schedule4/locations/8020/rows/999999")
-            .param("millId", "543").param("year", "2021")
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            delete("/api/v1/schedule4/locations/8020/rows/999999")
+                .param("millId", "543")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -108,19 +132,28 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER holds EDIT_SCHEDULE -> POST row passes authz (not 403)")
   void postRow_submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(post(ROWS).param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            post(ROWS)
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ROW_BODY)
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 
   @Test
   @DisplayName("no EDIT_SCHEDULE -> PUT row 403 problem+json")
   void putRow_noPermission_returns403() throws Exception {
-    mockMvc.perform(put("/api/v1/schedule4/locations/8020/rows/999999")
-            .param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            put("/api/v1/schedule4/locations/8020/rows/999999")
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ROW_BODY)
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -130,10 +163,14 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
   void putRow_submitter_passesAuthorization() throws Exception {
     // Submitter clears the EDIT_SCHEDULE gate; row 999999 is not a sub-page row of 8020, so the
     // request proceeds past authz to a 404 (never 403) — the authz contract this IT asserts.
-    mockMvc.perform(put("/api/v1/schedule4/locations/8020/rows/999999")
-            .param("millId", "543").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(ROW_BODY)
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            put("/api/v1/schedule4/locations/8020/rows/999999")
+                .param("millId", "543")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(ROW_BODY)
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isNotFound());
   }
 }

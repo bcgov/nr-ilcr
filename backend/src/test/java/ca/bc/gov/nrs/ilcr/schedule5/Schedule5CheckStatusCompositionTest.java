@@ -23,24 +23,24 @@ import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.security.core.Authentication;
 
 /**
- * The byte-exact check-status line composition, over ALL EIGHT legacy field segments and against the
- * REAL {@code messages.properties} bundle.
+ * The byte-exact check-status line composition, over ALL EIGHT legacy field segments and against
+ * the REAL {@code messages.properties} bundle.
  *
- * <p><strong>Why a dedicated class.</strong> {@link Schedule5CheckStatusIT}'s fixtures can only reach
- * six of the eight segments — the camp-name line needs a whitespace-only stored name and the four
- * sub-list lines need particular row shapes — and
- * {@link Schedule5CheckStatusServiceTest} deliberately asserts {@code null} text, because the service
- * emits keys and the controller resolves them. Schedule 6 shipped with two of its four segments
- * asserted NOWHERE until its own review caught it; this class is that lesson applied up front.
+ * <p><strong>Why a dedicated class.</strong> {@link Schedule5CheckStatusIT}'s fixtures can only
+ * reach six of the eight segments — the camp-name line needs a whitespace-only stored name and the
+ * four sub-list lines need particular row shapes — and {@link Schedule5CheckStatusServiceTest}
+ * deliberately asserts {@code null} text, because the service emits keys and the controller
+ * resolves them. Schedule 6 shipped with two of its four segments asserted NOWHERE until its own
+ * review caught it; this class is that lesson applied up front.
  *
  * <p><strong>The one-byte trap this class exists to catch.</strong> Schedule 5's segments carry a
- * leading space and NO trailing space, so every line reads
- * {@code "… - Camp name: Value Required"} — no space before the final colon. Schedule 6's carry BOTH,
- * so its lines read {@code "… - Supply Block : Value Required"}. The difference is in the legacy
- * source, not a typo: {@code FacesUtil.addCheckStatusErrorMessage} (:134) appends {@code ": "} to
- * whatever label it receives, and Schedule 5's callers
- * ({@code Schedule5MB.checkValidatedCurrentCamp():348-359, 425-436}) pass segments that stop at the
- * word. Copying Schedule 6's {@code FIELD_SEGMENTS} map wholesale gets all eight of these wrong.
+ * leading space and NO trailing space, so every line reads {@code "… - Camp name: Value Required"}
+ * — no space before the final colon. Schedule 6's carry BOTH, so its lines read {@code "… - Supply
+ * Block : Value Required"}. The difference is in the legacy source, not a typo: {@code
+ * FacesUtil.addCheckStatusErrorMessage} (:134) appends {@code ": "} to whatever label it receives,
+ * and Schedule 5's callers ({@code Schedule5MB.checkValidatedCurrentCamp():348-359, 425-436}) pass
+ * segments that stop at the word. Copying Schedule 6's {@code FIELD_SEGMENTS} map wholesale gets
+ * all eight of these wrong.
  */
 @DisplayName("Schedule5Controller — byte-exact check-status composition (all eight segments)")
 class Schedule5CheckStatusCompositionTest {
@@ -50,8 +50,9 @@ class Schedule5CheckStatusCompositionTest {
   private static final String CAMP = "Cedar Flats Camp";
 
   private final Schedule5Service service = mock(Schedule5Service.class);
-  private final Schedule5Controller controller = new Schedule5Controller(
-      millContext(), service, mock(SchedulePermissions.class), realBundle());
+  private final Schedule5Controller controller =
+      new Schedule5Controller(
+          millContext(), service, mock(SchedulePermissions.class), realBundle());
 
   private static MillContextService millContext() {
     MillContextService millContextService = mock(MillContextService.class);
@@ -73,12 +74,19 @@ class Schedule5CheckStatusCompositionTest {
   }
 
   private List<String> composedTextsFor(String campName, String... fields) {
-    when(service.checkStatus(anyLong(), anyInt())).thenReturn(new Schedule5CheckStatusResponse(
-        "ISSUES", List.of(),
-        List.of(new CampCheckResult(9501, campName, false,
-            List.of(fields).stream()
-                .map(Schedule5CheckStatusCompositionTest::finding)
-                .toList()))));
+    when(service.checkStatus(anyLong(), anyInt()))
+        .thenReturn(
+            new Schedule5CheckStatusResponse(
+                "ISSUES",
+                List.of(),
+                List.of(
+                    new CampCheckResult(
+                        9501,
+                        campName,
+                        false,
+                        List.of(fields).stream()
+                            .map(Schedule5CheckStatusCompositionTest::finding)
+                            .toList()))));
     Schedule5CheckStatusResponse body =
         controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
     return body.camps().get(0).messages().stream().map(CampCheckMessage::text).toList();
@@ -100,7 +108,8 @@ class Schedule5CheckStatusCompositionTest {
                 + "Value Required",
             "Camp Report Name : Cedar Flats Camp - Other Access Expense List (Cost $): "
                 + "Value Required"),
-        composedTextsFor(CAMP,
+        composedTextsFor(
+            CAMP,
             Schedule5Service.FIELD_CAMP_NAME,
             Schedule5Service.FIELD_ROAD_DISTANCE,
             Schedule5Service.FIELD_SIZE_OF_CAMP,
@@ -115,12 +124,14 @@ class Schedule5CheckStatusCompositionTest {
   @DisplayName("the label embeds the camp NAME, not an id — and a whitespace-only name verbatim")
   void campNameIsEmbeddedVerbatim() {
     // Legacy's addMessageCheckStatus takes the camp NAME as its `reportID` argument
-    // (Schedule5MB.java:338, 347) — unlike Schedule 6, which composes from a 1-based ordinal. A port
+    // (Schedule5MB.java:338, 347) — unlike Schedule 6, which composes from a 1-based ordinal. A
+    // port
     // that reached for campId would render "Camp Report Name : 9501 - …".
     //
     // The whitespace name is the ONLY way the camp-name condition is reachable from stored data:
     // CAMP_NAME is NOT NULL in delivery, so legacy's null branch is dead, while the test itself is
-    // TRIMMED (CoreUtil.isNullOrEmptyString(name, true)). The raw name goes into the line untouched.
+    // TRIMMED (CoreUtil.isNullOrEmptyString(name, true)). The raw name goes into the line
+    // untouched.
     // FIVE spaces after the colon, and that arithmetic is the assertion: one from the "Camp Report
     // Name : " prefix, three from the stored name, one leading the " - Camp name" segment. Getting
     // this wrong by a single space is exactly the failure mode this class guards.
@@ -132,16 +143,25 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("the per-camp met message interpolates the camp name as its {0} argument")
   void perCampMetMessage_interpolatesCampName() {
-    when(service.checkStatus(anyLong(), anyInt())).thenReturn(new Schedule5CheckStatusResponse(
-        "ISSUES", List.of(),
-        List.of(new CampCheckResult(9502, CAMP, true,
-            List.of(new CampCheckMessage("campRequirementsMetMsg", null, null))))));
+    when(service.checkStatus(anyLong(), anyInt()))
+        .thenReturn(
+            new Schedule5CheckStatusResponse(
+                "ISSUES",
+                List.of(),
+                List.of(
+                    new CampCheckResult(
+                        9502,
+                        CAMP,
+                        true,
+                        List.of(new CampCheckMessage("campRequirementsMetMsg", null, null))))));
 
     Schedule5CheckStatusResponse body =
         controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
 
-    // Verbatim legacy :40 — note the trailing period, which the SCHEDULE-level banner does not have.
-    assertEquals("All requirements for Cedar Flats Camp have been met.",
+    // Verbatim legacy :40 — note the trailing period, which the SCHEDULE-level banner does not
+    // have.
+    assertEquals(
+        "All requirements for Cedar Flats Camp have been met.",
         body.camps().get(0).messages().get(0).text());
     // A met message names no field, so `field` is absent from the JSON entirely (NON_NULL).
     assertEquals(null, body.camps().get(0).messages().get(0).field());
@@ -150,8 +170,10 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("the schedule-level banner resolves verbatim — and has NO trailing period")
   void scheduleBanner_resolvesVerbatim() {
-    when(service.checkStatus(anyLong(), anyInt())).thenReturn(new Schedule5CheckStatusResponse(
-        "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)), List.of()));
+    when(service.checkStatus(anyLong(), anyInt()))
+        .thenReturn(
+            new Schedule5CheckStatusResponse(
+                "MET", List.of(new MessageInfo("scheduleRequirementsMetMsg", null)), List.of()));
 
     Schedule5CheckStatusResponse body =
         controller.checkStatus("673", "2021", mock(Authentication.class)).getBody();
@@ -165,15 +187,20 @@ class Schedule5CheckStatusCompositionTest {
   @Test
   @DisplayName("an unmapped field name fails loudly instead of rendering \"…Campnull: …\"")
   void unmappedField_throws() {
-    when(service.checkStatus(anyLong(), anyInt())).thenReturn(new Schedule5CheckStatusResponse(
-        "ISSUES", List.of(),
-        List.of(new CampCheckResult(9501, CAMP, false, List.of(finding("isolatedCamp"))))));
+    when(service.checkStatus(anyLong(), anyInt()))
+        .thenReturn(
+            new Schedule5CheckStatusResponse(
+                "ISSUES",
+                List.of(),
+                List.of(new CampCheckResult(9501, CAMP, false, List.of(finding("isolatedCamp"))))));
 
     // Schedule5Service and Schedule5Controller.FIELD_SEGMENTS are the only two places these names
     // live, so a mismatch is a programming error — never client input. isolatedCamp is a real
-    // CampRequest field that check status deliberately does NOT test (deviation (E)), which makes it
+    // CampRequest field that check status deliberately does NOT test (deviation (E)), which makes
+    // it
     // the most likely name someone would wire in by mistake.
-    assertThrows(IllegalStateException.class,
+    assertThrows(
+        IllegalStateException.class,
         () -> controller.checkStatus("673", "2021", mock(Authentication.class)));
   }
 }

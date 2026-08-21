@@ -17,16 +17,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Repository IT for the generic code-table read/upsert (Story 24.3 / T2). Exercises the real SQL
- * against {@code THE.ILCR_UNIT_CODE} in the Testcontainer (seeded by V20260812). Write tests use their
- * own unique codes so they never mutate the seed rows and are order-independent.
+ * against {@code THE.ILCR_UNIT_CODE} in the Testcontainer (seeded by V20260812). Write tests use
+ * their own unique codes so they never mutate the seed rows and are order-independent.
  */
 @DisplayName("CodeTableRepository — generic read + upsert over THE.*_CODE (Story 24.3)")
 class CodeTableRepositoryIT extends AbstractOracleIT {
 
   private static final CodeTableRegistry UNIT = CodeTableRegistry.UNIT_CODE;
 
-  @Autowired
-  private CodeTableRepository repository;
+  @Autowired private CodeTableRepository repository;
 
   private CodeTableEntry entry(String code) {
     return repository.findEntries(UNIT).stream()
@@ -36,7 +35,8 @@ class CodeTableRepositoryIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("findEntries returns the seeded rows with description + effective/expiry, code-ordered")
+  @DisplayName(
+      "findEntries returns the seeded rows with description + effective/expiry, code-ordered")
   void findEntries_returnsSeededRows() {
     List<CodeTableEntry> all = repository.findEntries(UNIT);
     // Ordered by code: 'M3' sorts before 'TON'.
@@ -66,14 +66,14 @@ class CodeTableRepositoryIT extends AbstractOracleIT {
     assertEquals(UpsertResult.INSERTED, repository.upsert(UNIT, inserted));
     assertEquals("Board Feet", entry(code).description());
 
-    CodeTableEntry updated = new CodeTableEntry(
-        code, "Board Feet (revised)", LocalDate.of(2011, 6, 1), LocalDate.of(2030, 12, 31));
+    CodeTableEntry updated =
+        new CodeTableEntry(
+            code, "Board Feet (revised)", LocalDate.of(2011, 6, 1), LocalDate.of(2030, 12, 31));
     assertEquals(UpsertResult.UPDATED, repository.upsert(UNIT, updated));
 
     // Same code updated in place — one row, new description + dates.
-    long rowsForCode = repository.findEntries(UNIT).stream()
-        .filter(e -> code.equals(e.code()))
-        .count();
+    long rowsForCode =
+        repository.findEntries(UNIT).stream().filter(e -> code.equals(e.code())).count();
     assertEquals(1, rowsForCode);
     assertEquals("Board Feet (revised)", entry(code).description());
     assertEquals(LocalDate.of(2011, 6, 1), entry(code).effectiveDate());
@@ -85,7 +85,8 @@ class CodeTableRepositoryIT extends AbstractOracleIT {
   void contractual_isRejected() {
     CodeTableRegistry contractual = CodeTableRegistry.CONTRACTUAL_ITEM_CODE;
     assertThrows(IllegalArgumentException.class, () -> repository.findEntries(contractual));
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(
+        IllegalArgumentException.class,
         () -> repository.upsert(contractual, new CodeTableEntry("X", "x", null, null)));
   }
 }

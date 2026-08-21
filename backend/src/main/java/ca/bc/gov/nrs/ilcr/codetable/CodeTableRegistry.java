@@ -7,24 +7,26 @@ import java.util.Optional;
  * ported from legacy {@code Constants.codeTables} + {@code Constants.CodeTableColLengths}.
  *
  * <p>Each entry names the delivery {@code THE.<table>} plus its code column, the per-table code /
- * description length caps (BR-06), and whether it is the Contractual Item Codes special case (BR-08).
- * The enum is the ONLY source of table/column identifiers the generic repository interpolates into
- * SQL — the client selects a table by {@link #name() key}, which is validated against this enum, so
- * no caller-supplied string ever reaches a query (no injection surface).
+ * description length caps (BR-06), and whether it is the Contractual Item Codes special case
+ * (BR-08). The enum is the ONLY source of table/column identifiers the generic repository
+ * interpolates into SQL — the client selects a table by {@link #name() key}, which is validated
+ * against this enum, so no caller-supplied string ever reaches a query (no injection surface).
  *
- * <p>Naming is the ILCR convention: the code column is named the same as the table (confirmed for the
- * bridge tables read by {@code Schedule7aRepository}). Two irregular names are pinned verbatim:
+ * <p>Naming is the ILCR convention: the code column is named the same as the table (confirmed for
+ * the bridge tables read by {@code Schedule7aRepository}). Two irregular names are pinned verbatim:
  * {@code SUPPORT_CENTER} maps to {@code ILCR_SUPPORT_CENTRE_CODE} (British spelling in the DB), and
  * {@code ASM Codes} maps to {@code RELATIVE_SOIL_MOISTUR_RGM_CODE} with NO {@code ILCR_} prefix.
  * Per-table presence of the audit columns remains a Task-1 delivery-schema confirmation.
  */
 public enum CodeTableRegistry {
   BRIDGE_ABUTMENT_TYPE_CODE("Bridge Abutment Type Codes", "ILCR_BRIDGE_ABUTMENT_TYPE_CODE", 2, 120),
-  BRIDGE_CNSTRCTN_TYPE_CODE("Bridge Construction Type Codes", "ILCR_BRIDGE_CNSTRCTN_TYPE_CODE", 10,
-      120),
+  BRIDGE_CNSTRCTN_TYPE_CODE(
+      "Bridge Construction Type Codes", "ILCR_BRIDGE_CNSTRCTN_TYPE_CODE", 10, 120),
   BRIDGE_LOAD_RATING_CODE("Bridge Load Rating Codes", "ILCR_BRIDGE_LOAD_RATING_CODE", 10, 120),
   BRIDGE_SUPERSTRUCTR_CODE("Bridge Super Structure Codes", "ILCR_BRIDGE_SUPERSTRUCTR_CODE", 1, 120),
-  /** Special case (BR-08): maintained by description only, backed by the Schedule 9 cost-item list. */
+  /**
+   * Special case (BR-08): maintained by description only, backed by the Schedule 9 cost-item list.
+   */
   CONTRACTUAL_ITEM_CODE("Contractual Item Codes", null, 10, 500, true),
   CONTRACTUAL_SOURCE_CODE("Contractual Source Codes", "ILCR_CONTRACTUAL_SOURCE_CODE", 20, 120),
   CULVERT_TYPE_CODE("Culvert Type Codes", "ILCR_CULVERT_TYPE_CODE", 20, 120),
@@ -51,7 +53,11 @@ public enum CodeTableRegistry {
     this(label, table, codeMaxLength, descriptionMaxLength, false);
   }
 
-  CodeTableRegistry(String label, String table, int codeMaxLength, int descriptionMaxLength,
+  CodeTableRegistry(
+      String label,
+      String table,
+      int codeMaxLength,
+      int descriptionMaxLength,
       boolean contractual) {
     this.label = label;
     this.table = table;
@@ -75,7 +81,9 @@ public enum CodeTableRegistry {
     return table;
   }
 
-  /** The code column — same as the table name (ILCR convention), or {@code null} for Contractual. */
+  /**
+   * The code column — same as the table name (ILCR convention), or {@code null} for Contractual.
+   */
   public String codeColumn() {
     return table;
   }
@@ -93,7 +101,9 @@ public enum CodeTableRegistry {
     return contractual;
   }
 
-  /** Resolve a client-supplied table key against the whitelist; empty when it is not a known table. */
+  /**
+   * Resolve a client-supplied table key against the whitelist; empty when it is not a known table.
+   */
   public static Optional<CodeTableRegistry> byKey(String key) {
     if (key == null) {
       return Optional.empty();

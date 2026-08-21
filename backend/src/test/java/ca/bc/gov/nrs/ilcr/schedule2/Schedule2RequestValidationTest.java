@@ -16,10 +16,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Bean-Validation boundary test for {@link Schedule2Request} — proves the @Min/@Max/@DecimalMin/
- * @DecimalMax ranges are correct at the EXACT inclusive edge (an off-by-one would otherwise slip
- * through, since the IT suite only exercises far-out values). Pure Jakarta validation — no Spring,
- * no DB. Asserts on the offending property path, not the (bundle-key) message text.
+ * Bean-Validation boundary test for {@link Schedule2Request} — proves
+ * the @Min/@Max/@DecimalMin/ @DecimalMax ranges are correct at the EXACT inclusive edge (an
+ * off-by-one would otherwise slip through, since the IT suite only exercises far-out values). Pure
+ * Jakarta validation — no Spring, no DB. Asserts on the offending property path, not the
+ * (bundle-key) message text.
  */
 class Schedule2RequestValidationTest {
 
@@ -54,8 +55,7 @@ class Schedule2RequestValidationTest {
     // Exact inclusive edges must all PASS: item 25 ±99,999,999; item 26 vol 0 and 9,999,999;
     // item 26 cost ±999,999,999.
     assertTrue(invalidProps(req(-99999999, BigDecimal.ZERO, -999999999)).isEmpty());
-    assertTrue(invalidProps(
-        req(99999999, new BigDecimal("9999999"), 999999999)).isEmpty());
+    assertTrue(invalidProps(req(99999999, new BigDecimal("9999999"), 999999999)).isEmpty());
   }
 
   @Test
@@ -68,8 +68,8 @@ class Schedule2RequestValidationTest {
   void lessLogSalesVolume_outsideRange_isInvalid() {
     // min is 0 (NOT signed like Schedule 1) and max 9,999,999.
     assertEquals(Set.of("lessLogSalesVolume"), invalidProps(req(null, new BigDecimal("-1"), null)));
-    assertEquals(Set.of("lessLogSalesVolume"),
-        invalidProps(req(null, new BigDecimal("10000000"), null)));
+    assertEquals(
+        Set.of("lessLogSalesVolume"), invalidProps(req(null, new BigDecimal("10000000"), null)));
   }
 
   @Test

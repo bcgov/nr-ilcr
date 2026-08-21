@@ -3,8 +3,8 @@ package ca.bc.gov.nrs.ilcr.schedule7a.dto;
 import java.math.BigDecimal;
 
 /**
- * One Schedule 7A bridge on the served document (AD-12). Attribute, measurement, and cost fields are
- * the stored values; the four total fields are SERVER-COMPUTED (BR-06) from the costs and are
+ * One Schedule 7A bridge on the served document (AD-12). Attribute, measurement, and cost fields
+ * are the stored values; the four total fields are SERVER-COMPUTED (BR-06) from the costs and are
  * read-only — never stored, never client-supplied. Jackson serializes non-null only, so an absent
  * value (a blank optional cost, a total with no contributing costs) is omitted.
  *
@@ -74,5 +74,4 @@ public record Bridge(
     Integer totalDeliver,
     Integer totalInstall,
     Integer grandTotal,
-    int revisionCount) {
-}
+    int revisionCount) {}

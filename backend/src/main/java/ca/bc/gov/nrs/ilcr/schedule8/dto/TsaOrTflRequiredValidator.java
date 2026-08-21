@@ -5,8 +5,9 @@ import jakarta.validation.ConstraintValidatorContext;
 
 /**
  * Enforces {@link TsaOrTflRequired} (Story 14.2): a page must carry a TSA-or-TFL context — at least
- * one of {@code tsaNumber} / {@code tflNumber} non-blank. The violation is bound to {@code tsaNumber}
- * so the 400 ProblemDetail names the field, with the standard {@code Value Required} message.
+ * one of {@code tsaNumber} / {@code tflNumber} non-blank. The violation is bound to {@code
+ * tsaNumber} so the 400 ProblemDetail names the field, with the standard {@code Value Required}
+ * message.
  */
 public class TsaOrTflRequiredValidator
     implements ConstraintValidator<TsaOrTflRequired, Schedule8PageRequest> {
@@ -20,7 +21,8 @@ public class TsaOrTflRequiredValidator
       return true;
     }
     context.disableDefaultConstraintViolation();
-    context.buildConstraintViolationWithTemplate("{missingRequiredFieldMsg}")
+    context
+        .buildConstraintViolationWithTemplate("{missingRequiredFieldMsg}")
         .addPropertyNode("tsaNumber")
         .addConstraintViolation();
     return false;

@@ -17,7 +17,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,9 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
  * the per-bridge Check Status (Stories 12.1/12.2). The mill/year context is already validated by
  * {@code MillContextService} (AD-4) — an empty bridge list is a valid state, never re-checked here.
  * The track status is the Schedules 1–10 track code (BR-01/AD-9). All four bridge totals are
- * computed server-side (BR-06, AD-5/AD-6) from the legacy {@code BridgeReportType} arithmetic, never
- * read from storage nor accepted from a client. Costs/comments/location values are never logged
- * (AD-11).
+ * computed server-side (BR-06, AD-5/AD-6) from the legacy {@code BridgeReportType} arithmetic,
+ * never read from storage nor accepted from a client. Costs/comments/location values are never
+ * logged (AD-11).
  */
 @Service
 @Slf4j
@@ -90,13 +89,16 @@ public class Schedule7aService {
     return buildDocument(millId, year, trackStatus, callerMayEdit);
   }
 
-  /** Assemble the served document for a known track status (writes reuse it with their proven "D"). */
+  /**
+   * Assemble the served document for a known track status (writes reuse it with their proven "D").
+   */
   private Schedule7aResponse buildDocument(
       long millId, int year, String trackStatus, boolean callerMayEdit) {
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
 
     List<BridgeReportEntity> bridgeRows = repository.findBridges(millId, year);
-    Map<Long, Map<Integer, Integer>> costs = costsByBridge(repository.findCostDetails(millId, year));
+    Map<Long, Map<Integer, Integer>> costs =
+        costsByBridge(repository.findCostDetails(millId, year));
 
     List<Bridge> bridges = new ArrayList<>(bridgeRows.size());
     int rowCounter = 1;
@@ -108,9 +110,9 @@ public class Schedule7aService {
   }
 
   /**
-   * The five bridge code lists as offered for THIS reporting year. Legacy filtered every list to the
-   * codes effective on January 1 of the year ({@code LookupCache.getCacheList(year)}), so a retired
-   * code disappears from an older year's form rather than being offered indefinitely.
+   * The five bridge code lists as offered for THIS reporting year. Legacy filtered every list to
+   * the codes effective on January 1 of the year ({@code LookupCache.getCacheList(year)}), so a
+   * retired code disappears from an older year's form rather than being offered indefinitely.
    */
   private BridgeCodeLists codeLists(int year) {
     return new BridgeCodeLists(
@@ -127,10 +129,10 @@ public class Schedule7aService {
   // ===============================================================================================
 
   /**
-   * Add one bridge and return the recomputed document + the recalculated totals (S01/S02). Costs are
-   * optional, but every one of the ten detail rows is written either way — an absent cost stores a
-   * NULL row, never no row (see {@link #writeCosts}). Draft-gated; unknown code → 400; malformed
-   * date → 400.
+   * Add one bridge and return the recomputed document + the recalculated totals (S01/S02). Costs
+   * are optional, but every one of the ten detail rows is written either way — an absent cost
+   * stores a NULL row, never no row (see {@link #writeCosts}). Draft-gated; unknown code → 400;
+   * malformed date → 400.
    */
   @Transactional
   public Schedule7aResponse addBridge(
@@ -143,8 +145,11 @@ public class Schedule7aService {
       repository.insertBridge(toEntity(bridgeId, request, builtDate), millId, year, user);
       writeCosts(bridgeId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7A add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7A add failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -153,11 +158,16 @@ public class Schedule7aService {
   /**
    * Correct one existing bridge and return the recomputed document (S03). Optimistic-lock on the
    * row's {@code REVISION_COUNT}: a stale token → 409, an unknown id → 404. Cost edits upsert their
-   * row; clearing a cost stores NULL in place rather than removing the row (see {@link #writeCosts}).
+   * row; clearing a cost stores NULL in place rather than removing the row (see {@link
+   * #writeCosts}).
    */
   @Transactional
   public Schedule7aResponse updateBridge(
-      long millId, int year, long bridgeId, BridgeRequest request, boolean callerMayEdit,
+      long millId,
+      int year,
+      long bridgeId,
+      BridgeRequest request,
+      boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
     applyBridgeUpdate(millId, year, bridgeId, request, user, codeSets(year));
@@ -165,9 +175,9 @@ public class Schedule7aService {
   }
 
   /**
-   * Save EVERY bridge of the schedule in one transaction — the page-level Save (legacy
-   * {@code Schedule7aMB.save()} → {@code saveSchedule7a}, which persisted the whole schedule from a
-   * single button). Each entry goes through the same per-row path as {@link #updateBridge}, so the
+   * Save EVERY bridge of the schedule in one transaction — the page-level Save (legacy {@code
+   * Schedule7aMB.save()} → {@code saveSchedule7a}, which persisted the whole schedule from a single
+   * button). Each entry goes through the same per-row path as {@link #updateBridge}, so the
    * validation, optimistic lock and cost upsert/clear rules are identical.
    *
    * <p>Atomic by construction: one entry failing its Draft gate, revision check, code check or date
@@ -198,8 +208,8 @@ public class Schedule7aService {
 
   /**
    * Reject a batch naming the same bridge twice. Left to run, the second pass would meet the
-   * revision its own first pass had just bumped and surface as a 409 stale-edit — telling the caller
-   * someone else changed the row when the request was simply malformed.
+   * revision its own first pass had just bumped and surface as a 409 stale-edit — telling the
+   * caller someone else changed the row when the request was simply malformed.
    */
   private static void rejectDuplicateIds(BridgeSaveAllRequest request) {
     Set<Long> seen = new java.util.HashSet<>();
@@ -219,8 +229,9 @@ public class Schedule7aService {
     LocalDate builtDate = parseBuiltDate(request.builtDate());
     validateCodes(codes, request);
     try {
-      int updated = repository.updateBridge(
-          toEntity(bridgeId, request, builtDate), millId, year, request.revisionCount(), user);
+      int updated =
+          repository.updateBridge(
+              toEntity(bridgeId, request, builtDate), millId, year, request.revisionCount(), user);
       if (updated == 0) {
         // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate.
         if (repository.countBridge(bridgeId, millId, year) == 0) {
@@ -230,8 +241,11 @@ public class Schedule7aService {
       }
       writeCosts(bridgeId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7A update failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7A update failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
   }
@@ -244,8 +258,8 @@ public class Schedule7aService {
    * carries an FK from {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} without {@code ON DELETE
    * CASCADE}, so deleting the bridge while its ten cost rows still reference it raises ORA-02292
    * ("child record found") and the whole delete fails. The ownership/404 check therefore cannot be
-   * the parent delete's row count; it is a scoped {@code countBridge} taken BEFORE either delete, so
-   * another mill's id still removes nothing.
+   * the parent delete's row count; it is a scoped {@code countBridge} taken BEFORE either delete,
+   * so another mill's id still removes nothing.
    */
   @Transactional
   public Schedule7aResponse deleteBridge(
@@ -258,14 +272,18 @@ public class Schedule7aService {
       repository.deleteCostsForBridge(bridgeId);
       if (repository.deleteBridge(bridgeId, millId, year) == 0) {
         // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
-        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result is
+        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result
+        // is
         // discarded reported "Data deleted successfully" while the row survived — and here it would
         // have committed the cost deletes, so the row would re-render stripped of its costs.
         throw new BridgeNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7A delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7A delete failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -279,9 +297,21 @@ public class Schedule7aService {
    */
   private static BridgeReportEntity toEntity(long bridgeId, BridgeRequest r, LocalDate builtDate) {
     return new BridgeReportEntity(
-        bridgeId, r.locationName(), builtDate, r.lifeSpan(), r.abutmentHeight(), r.length(),
-        r.width(), r.distance(), r.constructionTypeCode(), r.superstructureTypeCode(),
-        r.deckTypeCode(), r.abutmentTypeCode(), r.loadRatingCode(), r.comments(), 0);
+        bridgeId,
+        r.locationName(),
+        builtDate,
+        r.lifeSpan(),
+        r.abutmentHeight(),
+        r.length(),
+        r.width(),
+        r.distance(),
+        r.constructionTypeCode(),
+        r.superstructureTypeCode(),
+        r.deckTypeCode(),
+        r.abutmentTypeCode(),
+        r.loadRatingCode(),
+        r.comments(),
+        0);
   }
 
   /**
@@ -295,8 +325,8 @@ public class Schedule7aService {
    * would have that cost permanently uneditable from the legacy screen: a reporter could type a
    * value there and legacy would silently discard it, having no row to update.
    *
-   * <p>Reads are unaffected either way — an absent key and a key mapped to null both resolve to
-   * "no cost" in {@code toBridge} and in Check Status.
+   * <p>Reads are unaffected either way — an absent key and a key mapped to null both resolve to "no
+   * cost" in {@code toBridge} and in Check Status.
    */
   private void writeCosts(long bridgeId, BridgeRequest r, String user) {
     writeCost(bridgeId, ITEM_SITE_PLAN, r.sitePlanCost(), user);
@@ -325,9 +355,12 @@ public class Schedule7aService {
   }
 
   /** The five code-value sets a write is validated against, read once for a reporting year. */
-  private record CodeSets(Set<String> construction, Set<String> superstructure, Set<String> deck,
-      Set<String> abutment, Set<String> loadRating) {
-  }
+  private record CodeSets(
+      Set<String> construction,
+      Set<String> superstructure,
+      Set<String> deck,
+      Set<String> abutment,
+      Set<String> loadRating) {}
 
   private CodeSets codeSets(int year) {
     return new CodeSets(
@@ -340,9 +373,9 @@ public class Schedule7aService {
 
   /**
    * Reject a code value that resolves to no {@code *_CODE} row EFFECTIVE for the reporting year
-   * (force-selection enforcement, S15). Year-scoped for the same reason the served lists are: legacy
-   * only ever offered the year's effective codes, so accepting one outside that window here would
-   * let a write store a value the form could never have produced.
+   * (force-selection enforcement, S15). Year-scoped for the same reason the served lists are:
+   * legacy only ever offered the year's effective codes, so accepting one outside that window here
+   * would let a write store a value the form could never have produced.
    */
   private static void validateCodes(CodeSets codes, BridgeRequest r) {
     if (!codes.construction().contains(r.constructionTypeCode())
@@ -354,9 +387,9 @@ public class Schedule7aService {
     }
   }
 
-  private static Set<String> codeSet(
-      List<ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto> options) {
-    return options.stream().map(ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto::code)
+  private static Set<String> codeSet(List<ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto> options) {
+    return options.stream()
+        .map(ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto::code)
         .collect(java.util.stream.Collectors.toSet());
   }
 
@@ -380,18 +413,19 @@ public class Schedule7aService {
   /**
    * Walk every stored bridge in the exact legacy field order ({@code Schedule7aMB.java:206-289}),
    * flagging each missing required value with {@code missingRequiredFieldMsg} = "Value Required".
-   * When at least one bridge fails, each bridge that passes gets an SUC-005 all-met line; when EVERY
-   * bridge passes the response carries the SUC-004 schedule-wide message alone and no per-bridge
-   * lines (legacy's per-bridge loop ran only in the schedule-failed branch).
+   * When at least one bridge fails, each bridge that passes gets an SUC-005 all-met line; when
+   * EVERY bridge passes the response carries the SUC-004 schedule-wide message alone and no
+   * per-bridge lines (legacy's per-bridge loop ran only in the schedule-failed branch).
    *
-   * <p>Recorded deviation: the legacy abutment-height check
-   * ({@code Schedule7aCheckStatus.java:23} {@code getBridgeAbutHtM().equals(null)}) never fires and
-   * NPEs on null; here it is implemented correctly as {@code abutmentHeight == null}.
+   * <p>Recorded deviation: the legacy abutment-height check ({@code Schedule7aCheckStatus.java:23}
+   * {@code getBridgeAbutHtM().equals(null)}) never fires and NPEs on null; here it is implemented
+   * correctly as {@code abutmentHeight == null}.
    */
   @Transactional(readOnly = true)
   public Schedule7aCheckStatusResponse checkStatus(long millId, int year) {
     List<BridgeReportEntity> bridgeRows = repository.findBridges(millId, year);
-    Map<Long, Map<Integer, Integer>> costs = costsByBridge(repository.findCostDetails(millId, year));
+    Map<Long, Map<Integer, Integer>> costs =
+        costsByBridge(repository.findCostDetails(millId, year));
 
     List<MessageInfo> errors = new ArrayList<>();
     List<Integer> passingRows = new ArrayList<>();
@@ -414,24 +448,25 @@ public class Schedule7aService {
 
     // The per-bridge all-met lines are emitted ONLY when the schedule as a whole failed. Legacy put
     // the whole per-bridge loop in the else branch of its schedule-passed test
-    // (Schedule7aMB.java:197-296), so a fully complete schedule showed the ONE schedule-wide line and
+    // (Schedule7aMB.java:197-296), so a fully complete schedule showed the ONE schedule-wide line
+    // and
     // nothing per bridge — emitting both would stack N+1 success banners where legacy showed one.
-    List<MessageInfo> bridgeMessages = allMet
-        ? List.of()
-        : passingRows.stream()
-            .map(counter -> new MessageInfo(MSG_BRIDGE_MET, bridgeMetText(counter)))
-            .toList();
+    List<MessageInfo> bridgeMessages =
+        allMet
+            ? List.of()
+            : passingRows.stream()
+                .map(counter -> new MessageInfo(MSG_BRIDGE_MET, bridgeMetText(counter)))
+                .toList();
 
-    MessageInfo requirementsMetMessage = allMet
-        ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
-        : null;
-    return new Schedule7aCheckStatusResponse(allMet, errors, bridgeMessages, requirementsMetMessage);
+    MessageInfo requirementsMetMessage =
+        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET)) : null;
+    return new Schedule7aCheckStatusResponse(
+        allMet, errors, bridgeMessages, requirementsMetMessage);
   }
 
   /** One required-value check: the "is this value missing?" test paired with its verbatim label. */
   private record RequiredCheck(
-      BiPredicate<BridgeReportEntity, Map<Integer, Integer>> missing, String label) {
-  }
+      BiPredicate<BridgeReportEntity, Map<Integer, Integer>> missing, String label) {}
 
   /** A required-attribute check on the bridge row itself. */
   private static RequiredCheck attrCheck(Predicate<BridgeReportEntity> missing, String label) {
@@ -446,30 +481,34 @@ public class Schedule7aService {
   /**
    * The 17 Check-Status required values in the exact legacy order with the verbatim legacy labels
    * ({@code Schedule7aMB.java:206-289}), as an ordered table so {@link #missingLabels} stays a flat
-   * walk rather than 17 branches. The abutment-height entry is a recorded deviation: legacy
-   * {@code getBridgeAbutHtM().equals(null)} never flags and NPEs; here it is a correct null check.
+   * walk rather than 17 branches. The abutment-height entry is a recorded deviation: legacy {@code
+   * getBridgeAbutHtM().equals(null)} never flags and NPEs; here it is a correct null check.
    */
-  private static final List<RequiredCheck> REQUIRED_CHECKS = List.of(
-      attrCheck(r -> r.locationName() == null || r.locationName().isBlank(),
-          " - Name / Location of Bridge "),
-      attrCheck(r -> r.builtDate() == null, " - Built Date "),
-      attrCheck(r -> r.lifeSpan() == null, " - Expected Life Span "),
-      attrCheck(r -> r.abutmentHeight() == null, " - Abutments heigth value "),
-      attrCheck(r -> r.length() == null, " - Length (m) "),
-      attrCheck(r -> r.deckWidth() == null, " - Width (m) "),
-      attrCheck(r -> r.distance() == null, " - Distance (km) "),
-      costCheck(ITEM_SS_MATERIAL, " - Superstructure - Materil Cost "),
-      costCheck(ITEM_SS_DELIVER, " - Superstructure - Deliver Cost "),
-      costCheck(ITEM_SS_INSTALL, " - Superstructure - Install Cost "),
-      costCheck(ITEM_ABUT_MATERIAL, " - Abutments Material Cost "),
-      costCheck(ITEM_ABUT_DELIVER, " - Abutments Deliver Cost "),
-      costCheck(ITEM_ABUT_INSTALL, " - Abutments Install Cost "),
-      costCheck(ITEM_SITE_PLAN, " - Site Plan / Gen. Arr.  Cost "),
-      costCheck(ITEM_APPROACH, " - Approach works Cost "),
-      costCheck(ITEM_AFTER_INSTALL, " - Certification After install Cost "),
-      costCheck(ITEM_OTHER, " - Other Costs "));
+  private static final List<RequiredCheck> REQUIRED_CHECKS =
+      List.of(
+          attrCheck(
+              r -> r.locationName() == null || r.locationName().isBlank(),
+              " - Name / Location of Bridge "),
+          attrCheck(r -> r.builtDate() == null, " - Built Date "),
+          attrCheck(r -> r.lifeSpan() == null, " - Expected Life Span "),
+          attrCheck(r -> r.abutmentHeight() == null, " - Abutments heigth value "),
+          attrCheck(r -> r.length() == null, " - Length (m) "),
+          attrCheck(r -> r.deckWidth() == null, " - Width (m) "),
+          attrCheck(r -> r.distance() == null, " - Distance (km) "),
+          costCheck(ITEM_SS_MATERIAL, " - Superstructure - Materil Cost "),
+          costCheck(ITEM_SS_DELIVER, " - Superstructure - Deliver Cost "),
+          costCheck(ITEM_SS_INSTALL, " - Superstructure - Install Cost "),
+          costCheck(ITEM_ABUT_MATERIAL, " - Abutments Material Cost "),
+          costCheck(ITEM_ABUT_DELIVER, " - Abutments Deliver Cost "),
+          costCheck(ITEM_ABUT_INSTALL, " - Abutments Install Cost "),
+          costCheck(ITEM_SITE_PLAN, " - Site Plan / Gen. Arr.  Cost "),
+          costCheck(ITEM_APPROACH, " - Approach works Cost "),
+          costCheck(ITEM_AFTER_INSTALL, " - Certification After install Cost "),
+          costCheck(ITEM_OTHER, " - Other Costs "));
 
-  /** The missing required-field labels for one bridge, in the exact legacy order (verbatim text). */
+  /**
+   * The missing required-field labels for one bridge, in the exact legacy order (verbatim text).
+   */
   private static List<String> missingLabels(BridgeReportEntity row, Map<Integer, Integer> cost) {
     List<String> missing = new ArrayList<>();
     for (RequiredCheck check : REQUIRED_CHECKS) {
@@ -483,12 +522,12 @@ public class Schedule7aService {
   /**
    * {@code "Bridge Report Id : {rowCounter}{label}: Value Required"} — the legacy composition.
    *
-   * <p>The {@code ": "} is NOT part of the label: legacy built the label as
-   * {@code "Bridge Report Id : " + rowCounter + fieldMissing} ({@code Schedule7aMB.java:191}) and
-   * handed it to {@code FacesUtil.addCheckStatusErrorMessage}, which appends {@code ": "} before the
-   * bundle text for EVERY schedule ({@code util/FacesUtil.java:134}). The labels already end in a
-   * space, so the rendered line reads {@code "... - Length (m) : Value Required"} — the same shape
-   * Schedule 7B composes ({@code Schedule7bService.missingText}).
+   * <p>The {@code ": "} is NOT part of the label: legacy built the label as {@code "Bridge Report
+   * Id : " + rowCounter + fieldMissing} ({@code Schedule7aMB.java:191}) and handed it to {@code
+   * FacesUtil.addCheckStatusErrorMessage}, which appends {@code ": "} before the bundle text for
+   * EVERY schedule ({@code util/FacesUtil.java:134}). The labels already end in a space, so the
+   * rendered line reads {@code "... - Length (m) : Value Required"} — the same shape Schedule 7B
+   * composes ({@code Schedule7bService.missingText}).
    */
   private String missingText(int rowCounter, String label) {
     return "Bridge Report Id : " + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
@@ -511,7 +550,8 @@ public class Schedule7aService {
   private static Map<Long, Map<Integer, Integer>> costsByBridge(List<BridgeCostEntity> rows) {
     Map<Long, Map<Integer, Integer>> byBridge = new HashMap<>();
     for (BridgeCostEntity row : rows) {
-      byBridge.computeIfAbsent(row.bridgeReportId(), k -> new HashMap<>())
+      byBridge
+          .computeIfAbsent(row.bridgeReportId(), k -> new HashMap<>())
           .put(row.costItemId(), row.cost());
     }
     return byBridge;
@@ -533,17 +573,40 @@ public class Schedule7aService {
     Integer totalMaterial = add(ssMaterial, abutMaterial);
     Integer totalDeliver = add(ssDeliver, abutDeliver);
     Integer totalInstall = add(ssInstall, abutInstall);
-    Integer grandTotal = sum(sitePlan, totalMaterial, totalDeliver, totalInstall,
-        approach, afterInstall, other);
+    Integer grandTotal =
+        sum(sitePlan, totalMaterial, totalDeliver, totalInstall, approach, afterInstall, other);
 
     return new Bridge(
-        row.bridgeReportId(), rowCounter, row.locationName(), formatBuiltDate(row.builtDate()),
-        row.constructionTypeCode(), row.superstructureTypeCode(), row.deckTypeCode(),
-        row.abutmentTypeCode(), row.loadRatingCode(), row.lifeSpan(), oneDecimal(row.abutmentHeight()),
-        oneDecimal(row.length()), oneDecimal(row.deckWidth()), row.distance(),
-        sitePlan, ssMaterial, ssDeliver, ssInstall, abutMaterial, abutDeliver, abutInstall,
-        approach, afterInstall, other, row.comments(),
-        totalMaterial, totalDeliver, totalInstall, grandTotal, row.revisionCount());
+        row.bridgeReportId(),
+        rowCounter,
+        row.locationName(),
+        formatBuiltDate(row.builtDate()),
+        row.constructionTypeCode(),
+        row.superstructureTypeCode(),
+        row.deckTypeCode(),
+        row.abutmentTypeCode(),
+        row.loadRatingCode(),
+        row.lifeSpan(),
+        oneDecimal(row.abutmentHeight()),
+        oneDecimal(row.length()),
+        oneDecimal(row.deckWidth()),
+        row.distance(),
+        sitePlan,
+        ssMaterial,
+        ssDeliver,
+        ssInstall,
+        abutMaterial,
+        abutDeliver,
+        abutInstall,
+        approach,
+        afterInstall,
+        other,
+        row.comments(),
+        totalMaterial,
+        totalDeliver,
+        totalInstall,
+        grandTotal,
+        row.revisionCount());
   }
 
   private static String formatBuiltDate(LocalDate date) {
@@ -561,8 +624,8 @@ public class Schedule7aService {
 
   /**
    * Legacy {@code CoreUtil.bigDecimalCostAddition}: null-tolerant addition of two whole-dollar
-   * costs. null+null=null, null+x=x. Each operand is bounded by the ±99,999,999 validation, so their
-   * sum stays in {@code int} range.
+   * costs. null+null=null, null+x=x. Each operand is bounded by the ±99,999,999 validation, so
+   * their sum stays in {@code int} range.
    */
   private static Integer add(Integer a, Integer b) {
     if (a == null && b == null) {
@@ -578,11 +641,11 @@ public class Schedule7aService {
   }
 
   /**
-   * Legacy {@code CoreUtil.sumBigDecimalCosts}: null-tolerant sum of the grand-total operands. Nulls
-   * are skipped; a sum with no non-null operand is null (never 0). Accumulates in {@code long} — the
-   * grand total of seven ±99,999,999 terms can exceed {@code Integer.MAX_VALUE} — then narrows to
-   * {@code Integer} (the DB {@code COST} range on any single item makes the realistic total fit, and
-   * this matches the legacy {@code BigDecimal} width for the derived figure).
+   * Legacy {@code CoreUtil.sumBigDecimalCosts}: null-tolerant sum of the grand-total operands.
+   * Nulls are skipped; a sum with no non-null operand is null (never 0). Accumulates in {@code
+   * long} — the grand total of seven ±99,999,999 terms can exceed {@code Integer.MAX_VALUE} — then
+   * narrows to {@code Integer} (the DB {@code COST} range on any single item makes the realistic
+   * total fit, and this matches the legacy {@code BigDecimal} width for the derived figure).
    */
   private static Integer sum(Integer... values) {
     boolean any = false;

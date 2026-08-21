@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 import ca.bc.gov.nrs.ilcr.exception.BusinessException;
-import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import org.springframework.http.HttpStatus;
 
 /**

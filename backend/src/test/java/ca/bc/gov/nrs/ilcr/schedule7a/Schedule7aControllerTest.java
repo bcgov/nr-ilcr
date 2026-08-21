@@ -43,19 +43,54 @@ class Schedule7aControllerTest {
   @InjectMocks private Schedule7aController controller;
 
   private static Schedule7aResponse doc(List<Bridge> bridges) {
-    return new Schedule7aResponse(514L, 2021, "D", true, bridges,
-        new BridgeCodeLists(List.of(), List.of(), List.of(), List.of(), List.of()), null);
+    return new Schedule7aResponse(
+        514L,
+        2021,
+        "D",
+        true,
+        bridges,
+        new BridgeCodeLists(List.of(), List.of(), List.of(), List.of(), List.of()),
+        null);
   }
 
   private static Bridge oneBridge() {
-    return new Bridge(1L, 1, "North Fork", "2020-06", "N", "STL", "WD", "CONC", "L100",
-        null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null, null, 0);
+    return new Bridge(
+        1L,
+        1,
+        "North Fork",
+        "2020-06",
+        "N",
+        "STL",
+        "WD",
+        "CONC",
+        "L100",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0);
   }
 
   private static BridgeRequest anyRequest() {
-    return new BridgeRequest(null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null, null, null, null, null, null, null, null, null, null);
+    return new BridgeRequest(
+        null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, null, null, null);
   }
 
   @Test
@@ -112,9 +147,11 @@ class Schedule7aControllerTest {
     when(millContextService.validateMillYearActive("514", "2021"))
         .thenReturn(new MillYearContext(514L, 2021));
     when(authentication.getName()).thenReturn("submitter");
-    BridgeSaveAllRequest request = new BridgeSaveAllRequest(
-        List.of(new BridgeSaveAllRequest.Item(7601L, anyRequest()),
-            new BridgeSaveAllRequest.Item(7602L, anyRequest())));
+    BridgeSaveAllRequest request =
+        new BridgeSaveAllRequest(
+            List.of(
+                new BridgeSaveAllRequest.Item(7601L, anyRequest()),
+                new BridgeSaveAllRequest.Item(7602L, anyRequest())));
     when(schedule7aService.saveAllBridges(514L, 2021, request, true, "submitter"))
         .thenReturn(doc(List.of(oneBridge())));
 

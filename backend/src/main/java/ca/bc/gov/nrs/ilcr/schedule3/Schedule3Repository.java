@@ -15,9 +15,9 @@ import org.springframework.jdbc.core.RowMapper;
 /**
  * Reads the stored Schedule 3 (Forest Management Administration Costs) from the legacy {@code THE}
  * tables (AD-3: Spring Data JDBC — a repository interface over the shared {@link ReportSummary}
- * aggregate root, explicit {@code @Query} named-parameter SQL projecting into the row records below).
- * SQL only — all derivation (crown = harvest &minus; pop, subtotals/totals, timber costs, overhead)
- * lives in {@link Schedule3Service} (AD-6); entities never cross the service boundary.
+ * aggregate root, explicit {@code @Query} named-parameter SQL projecting into the row records
+ * below). SQL only — all derivation (crown = harvest &minus; pop, subtotals/totals, timber costs,
+ * overhead) lives in {@link Schedule3Service} (AD-6); entities never cross the service boundary.
  *
  * <p>Registered for scanning in {@code SpringDataJdbcConfiguration.@EnableJdbcRepositories}. The
  * write path (upsert / delete / Crown Timber push) arrives with Story 4.2.
@@ -28,49 +28,59 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   String COMMENTS_COLUMN = "COMMENTS";
 
   /**
-   * Summary-level fields for a Schedule 3 report. {@code location} carries the legacy
-   * Override Harvest/Total PO&amp;P indicator ({@code Schedule3DAO} reads it from
-   * {@code ILCR_REPORT_SUMMARY.LOCATION}). {@code revisionCount} is the optimistic-lock token.
+   * Summary-level fields for a Schedule 3 report. {@code location} carries the legacy Override
+   * Harvest/Total PO&amp;P indicator ({@code Schedule3DAO} reads it from {@code
+   * ILCR_REPORT_SUMMARY.LOCATION}). {@code revisionCount} is the optimistic-lock token.
    */
-  record SummaryRow(Integer summaryId, String location, String comments, Integer revisionCount) {
-  }
+  record SummaryRow(Integer summaryId, String location, String comments, Integer revisionCount) {}
 
   /** One cost-report-detail row (with {@code comments}, needed for the item-124 group keys). */
-  record DetailRow(Integer costItemCode, BigDecimal volume, Integer cost, String itemDescription,
-      String comments) {
-  }
+  record DetailRow(
+      Integer costItemCode,
+      BigDecimal volume,
+      Integer cost,
+      String itemDescription,
+      String comments) {}
 
   /**
    * One sub-page (item 124 / 38) detail row keyed by its detail id (Story 4.4). {@code comments}
    * carries the item-124 {@code SCH3_2_<TYPE>_<GRP>} group encoding; null for item-38 rows.
    */
-  record SubPageRow(Integer detailId, Integer cost, String itemDescription, String comments) {
-  }
+  record SubPageRow(Integer detailId, Integer cost, String itemDescription, String comments) {}
 
-  /** The Schedule 3 (category {@code "3"}) report summary for a mill/year, or empty if none exists. */
-  @Query(value = """
+  /**
+   * The Schedule 3 (category {@code "3"}) report summary for a mill/year, or empty if none exists.
+   */
+  @Query(
+      value =
+          """
       SELECT ILCR_REPORT_SUMMARY_ID, LOCATION, COMMENTS, REVISION_COUNT
         FROM THE.ILCR_REPORT_SUMMARY
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
          AND ILCR_CATEGORY_ID = '3'
-      """, rowMapperClass = SummaryRowMapper.class)
+      """,
+      rowMapperClass = SummaryRowMapper.class)
   Optional<SummaryRow> findSummary(@Param("millId") long millId, @Param("year") int year);
 
   /** All cost-report-detail rows for a summary, ordered by detail id (first-row-per-code wins). */
-  @Query(value = """
+  @Query(
+      value =
+          """
       SELECT ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, COMMENTS
         FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
        ORDER BY ILCR_COST_REPORT_DETAIL_ID
-      """, rowMapperClass = DetailRowMapper.class)
+      """,
+      rowMapperClass = DetailRowMapper.class)
   List<DetailRow> findDetails(@Param("summaryId") int summaryId);
 
   /**
    * The Schedules 1–10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
    * NOT the silviculture track (AD-9). Drives {@code editable} (Draft-only).
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -81,7 +91,8 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   // ---------------------------------------------------------------------------------------------
   // Write path (Story 4.2) — dumb SQL; the transaction boundary + rules live in Schedule3Service.
   // Cost rows (11 fixed lines) carry COST (VOLUME null); the two timber rows (118/119) carry VOLUME
-  // (COST null). All fixed/timber rows have a NULL ITEM_DESCRIPTION (sub-page rows 124/38 differ and
+  // (COST null). All fixed/timber rows have a NULL ITEM_DESCRIPTION (sub-page rows 124/38 differ
+  // and
   // are owned by Story 4.4). Upsert = update-in-place then insert (preserves audit continuity).
   // ---------------------------------------------------------------------------------------------
 
@@ -93,7 +104,8 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
    * @return rows affected — {@code 1} on success, {@code 0} when the revision is stale (→ 409)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              COMMENTS = :comments,
@@ -104,8 +116,10 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
          AND REVISION_COUNT = :expectedRevision
       """)
   int bumpRevision(
-      @Param("summaryId") int summaryId, @Param("expectedRevision") int expectedRevision,
-      @Param("comments") String comments, @Param("override") String override,
+      @Param("summaryId") int summaryId,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("comments") String comments,
+      @Param("override") String override,
       @Param("user") String user);
 
   /** Upsert a fixed-line COST row (NULL description); the cost columns only. */
@@ -117,7 +131,8 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
 
   /** Update-in-place half of {@link #upsertFixedDetailCost}; {@code 0} rows when absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
@@ -125,16 +140,19 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
          AND ITEM_DESCRIPTION IS NULL
       """)
   int updateFixedDetailCost(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
-   * Insert half of {@link #upsertFixedDetailCost} (NULL description, NULL volume). Sets
-   * {@code REVISION_COUNT = 0} — the column is NOT NULL with no DB default (legacy sets it explicitly),
-   * so omitting it raises ORA-01400.
+   * Insert half of {@link #upsertFixedDetailCost} (NULL description, NULL volume). Sets {@code
+   * REVISION_COUNT = 0} — the column is NOT NULL with no DB default (legacy sets it explicitly), so
+   * omitting it raises ORA-01400.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -144,8 +162,10 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            NULL, :cost, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertFixedDetailCost(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("cost") Integer cost, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /** Upsert a timber VOLUME row (items 118/119; NULL description, NULL cost). */
   default void upsertVolume(int summaryId, int costItemCode, BigDecimal volume, String user) {
@@ -156,7 +176,8 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
 
   /** Update-in-place half of {@link #upsertVolume}; {@code 0} rows when absent. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume, UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
@@ -164,12 +185,17 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
          AND ITEM_DESCRIPTION IS NULL
       """)
   int updateVolume(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") BigDecimal volume, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") BigDecimal volume,
+      @Param("user") String user);
 
-  /** Insert half of {@link #upsertVolume} (NULL description, NULL cost); {@code REVISION_COUNT = 0}. */
+  /**
+   * Insert half of {@link #upsertVolume} (NULL description, NULL cost); {@code REVISION_COUNT = 0}.
+   */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -179,12 +205,14 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            :volume, NULL, NULL, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertVolume(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("volume") BigDecimal volume, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("volume") BigDecimal volume,
+      @Param("user") String user);
 
   /**
-   * Delete the whole Schedule 3 row family (all detail rows for the summary, then the summary row) —
-   * S08 whole-schedule delete.
+   * Delete the whole Schedule 3 row family (all detail rows for the summary, then the summary row)
+   * — S08 whole-schedule delete.
    */
   default void deleteSchedule(int summaryId) {
     deleteDetailsBySummary(summaryId);
@@ -207,23 +235,28 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   // ---------------------------------------------------------------------------------------------
 
   /** All sub-page detail rows for a summary + cost item (124 or 38), ordered by detail id. */
-  @Query(value = """
+  @Query(
+      value =
+          """
       SELECT ILCR_COST_REPORT_DETAIL_ID, COST, ITEM_DESCRIPTION, COMMENTS
         FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
        ORDER BY ILCR_COST_REPORT_DETAIL_ID
-      """, rowMapperClass = SubPageRowMapper.class)
+      """,
+      rowMapperClass = SubPageRowMapper.class)
   List<SubPageRow> findSubPageRows(
       @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode);
 
   /**
-   * Unconditionally bump the summary revision (Story 4.4). The {@code UPDATE} takes a row lock on the
-   * summary, serializing concurrent Other-Acceptable group inserts so two racing adds cannot mint the
-   * same {@code SCH3_2_*_GRP{n}} key; it also invalidates any stale main-page optimistic-lock token.
+   * Unconditionally bump the summary revision (Story 4.4). The {@code UPDATE} takes a row lock on
+   * the summary, serializing concurrent Other-Acceptable group inserts so two racing adds cannot
+   * mint the same {@code SCH3_2_*_GRP{n}} key; it also invalidates any stale main-page
+   * optimistic-lock token.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_REPORT_SUMMARY
          SET REVISION_COUNT = REVISION_COUNT + 1,
              UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
@@ -232,11 +265,12 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
   void touchSummary(@Param("summaryId") int summaryId, @Param("user") String user);
 
   /**
-   * Insert one sub-page row (COST + description + optional group {@code comments}; NULL volume). Sets
-   * {@code REVISION_COUNT = 0} (NOT NULL, no DB default — see {@link #insertFixedDetailCost}).
+   * Insert one sub-page row (COST + description + optional group {@code comments}; NULL volume).
+   * Sets {@code REVISION_COUNT = 0} (NOT NULL, no DB default — see {@link #insertFixedDetailCost}).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, COMMENTS, REVISION_COUNT,
@@ -246,13 +280,19 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
            NULL, :cost, :description, :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertSubPageRow(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("cost") Integer cost, @Param("description") String description,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
-  /** Update a sub-page row's COST + description by detail id (guarded to this summary + cost item). */
+  /**
+   * Update a sub-page row's COST + description by detail id (guarded to this summary + cost item).
+   */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost, ITEM_DESCRIPTION = :description,
              UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
@@ -261,13 +301,17 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
       """)
   int updateSubPageRowById(
-      @Param("detailId") int detailId, @Param("summaryId") int summaryId,
-      @Param("costItemCode") int costItemCode, @Param("cost") Integer cost,
-      @Param("description") String description, @Param("user") String user);
+      @Param("detailId") int detailId,
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
+      @Param("user") String user);
 
   /** Update the PO&amp;P peer of an item-124 group by its exact group {@code comments}. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost, ITEM_DESCRIPTION = :description,
              UPDATE_USERID = :user, UPDATE_TIMESTAMP = SYSTIMESTAMP
@@ -276,32 +320,42 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
          AND COMMENTS = :comments
       """)
   int updateSubPageRowByComments(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
-      @Param("cost") Integer cost, @Param("description") String description,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
-  /** Delete a sub-page row by detail id (guarded to this summary + cost item); {@code 0} when absent. */
+  /**
+   * Delete a sub-page row by detail id (guarded to this summary + cost item); {@code 0} when
+   * absent.
+   */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_COST_REPORT_DETAIL_ID = :detailId
          AND ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
       """)
   int deleteSubPageRowById(
-      @Param("detailId") int detailId, @Param("summaryId") int summaryId,
+      @Param("detailId") int detailId,
+      @Param("summaryId") int summaryId,
       @Param("costItemCode") int costItemCode);
 
   /** Delete the PO&amp;P peer of an item-124 group by its exact group {@code comments}. */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_REPORT_SUMMARY_ID = :summaryId
          AND ILCR_REPORT_COST_ITEM_ID = :costItemCode
          AND COMMENTS = :comments
       """)
   void deleteSubPageRowByComments(
-      @Param("summaryId") int summaryId, @Param("costItemCode") int costItemCode,
+      @Param("summaryId") int summaryId,
+      @Param("costItemCode") int costItemCode,
       @Param("comments") String comments);
 
   // ---------------------------------------------------------------------------------------------
