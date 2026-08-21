@@ -14,9 +14,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckFieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;

@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule2.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 
 /**
  * The Schedule 2 (Purchased/Private Log Costs) aggregate document (AD-5, AD-12) — the pinned GET

@@ -1,12 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
-
-import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
 
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;

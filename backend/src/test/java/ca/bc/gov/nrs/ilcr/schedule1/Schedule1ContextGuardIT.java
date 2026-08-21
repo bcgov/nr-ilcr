@@ -1,15 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
-import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 
 /**
  * RED-PHASE ATDD SCAFFOLD — Story 1.1 (AD-10, AD-4, AD-8). Slices S19/S20/S21 + valid pass-through.

@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule7a.api.Schedule7aApi;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;

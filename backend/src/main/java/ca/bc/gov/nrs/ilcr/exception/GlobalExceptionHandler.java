@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.exception;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.net.URI;

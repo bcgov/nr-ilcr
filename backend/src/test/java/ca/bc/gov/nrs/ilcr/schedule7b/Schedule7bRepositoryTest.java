@@ -16,8 +16,8 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 
 /**
  * Unit tests for the executable Java on {@link Schedule7bRepository} — its {@code default} methods.

@@ -19,7 +19,6 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request.CostLineInput;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
-import org.springframework.dao.DataAccessResourceFailureException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 /**
  * Unit test for the Schedule 3 write path (Story 4.2): save row-writing, override normalization,

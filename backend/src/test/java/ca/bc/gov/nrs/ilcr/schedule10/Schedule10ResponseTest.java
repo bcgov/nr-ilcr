@@ -2,7 +2,7 @@ package ca.bc.gov.nrs.ilcr.schedule10;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.BecClassificationRow;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
