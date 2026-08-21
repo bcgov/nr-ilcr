@@ -1,5 +1,5 @@
 import type { SubPageKind, SubPageRowForm } from '@/interfaces/Schedule5SubPage'
-import { enteredNum, perUnitLegacy } from '@/utils/derivedMath'
+import { committedNum, perUnitLegacy, wholeDollars } from '@/utils/derivedMath'
 
 /**
  * The Schedule 5 sub-pages' DISPLAY-ONLY derived-figure mirror (defect #291).
@@ -56,7 +56,7 @@ export function rowCostPerVolume(
   row: SubPageRowForm,
   stampedVolume: number | null | undefined,
 ): number | null {
-  return perUnitLegacy(enteredNum(row.cost), stampedVolume ?? null)
+  return perUnitLegacy(wholeDollars(committedNum(row.cost)), stampedVolume ?? null)
 }
 
 export function deriveSubPageTotals(
@@ -68,7 +68,7 @@ export function deriveSubPageTotals(
   let cost = 0
   let contributed = false
   for (const row of rows) {
-    const entered = enteredNum(row.cost)
+    const entered = wholeDollars(committedNum(row.cost))
     if (entered !== null) {
       cost += entered
       contributed = true

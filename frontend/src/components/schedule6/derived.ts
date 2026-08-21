@@ -1,5 +1,5 @@
 import type { RoadRecordFormValues } from './validation'
-import { enteredNum, perUnitLegacy } from '@/utils/derivedMath'
+import { committedNum, perUnitLegacy, wholeDollars } from '@/utils/derivedMath'
 
 /**
  * Schedule 6's DISPLAY-ONLY derived-figure mirror (defect #291).
@@ -29,7 +29,9 @@ export function recordCostPerVolume(values: {
   readonly volume: string
   readonly cost: string
 }): number | null {
-  return perUnitLegacy(enteredNum(values.cost), enteredNum(values.volume))
+  // `committedNum` + `wholeDollars` match `buildBody`'s roundCost(parseDecimalInput(...)) exactly, so
+  // a fractional or lax-parsed entry cannot show a rate the Save would change (code review 2026-08-21).
+  return perUnitLegacy(wholeDollars(committedNum(values.cost)), committedNum(values.volume))
 }
 
 /** The two committed fields the rate is computed from — the rest of the form cannot affect it. */

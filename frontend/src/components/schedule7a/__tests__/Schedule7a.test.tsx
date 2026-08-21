@@ -282,6 +282,56 @@ describe('Schedule 7A page', () => {
     expect(totalIn(addPanel, 'Grand Total ($)')).toBe('5,000')
   })
 
+  test('the Save echo supersedes the row mirror — totals follow the server (#291 AC5)', async () => {
+    // The invariant the whole design rests on, and the one no test in this batch asserted: after a
+    // Save the derived cells must come from the echo, not from the pre-save client snapshot. Proven
+    // broken by the code review — `rowCommitted` was never cleared, so the input reverted to the
+    // echoed value while the total kept the stale mirror, permanently.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      // The echo re-serves the ORIGINAL bridge, as a server that rejected or normalized the entry
+      // would: the totals must snap back to 8,000 / 12,000.
+      http.put(BRIDGES_URL, () => HttpResponse.json(doc())),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.clear(material)
+    await user.type(material, '7000')
+    await user.tab()
+    expect(totalIn(panel, 'Material')).toBe('10,000') // the mirror, pre-Save
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)).toHaveValue('5,000')
+    })
+    // The field reverted to the echo; the total must have too.
+    expect(totalIn(panel, 'Material')).toBe('8,000')
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('12,000')
+  })
+
+  test('a blur that changes nothing does not hand an untouched row to the mirror (#291 AC7)', async () => {
+    // Legacy fired on `change`; a tab-through is not a change. Without this guard a stray Tab replaced
+    // the served totals with a client recomputation, bypassing the AC7 test below.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [{ ...northFork, grandTotal: 999999 }] })),
+      ),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.click(material)
+    await user.tab()
+
+    expect(totalIn(bridgeContainer(7001), 'Grand Total ($)')).toBe('999,999')
+  })
+
   test('an untouched row keeps the served totals — no client recomputation (#291 AC7)', async () => {
     // A stored grand total that disagrees with its own components: until the reporter commits a cost,
     // the row must show the server's figure, not a recomputed one.

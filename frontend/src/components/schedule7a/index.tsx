@@ -26,6 +26,7 @@ import {
   validateBridge,
 } from './validation'
 import { deriveBridgeTotals } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success and
@@ -140,6 +141,20 @@ const Schedule7a: FC = () => {
   const [rowErrors, setRowErrors] = useState<Record<number, BridgeErrors>>({})
   const [rowCommitted, setRowCommitted] = useState<Record<number, BridgeFormValues>>({})
 
+  /**
+   * Advance a totals baseline only from an entry the Save could carry (ruled 2026-08-21): a value the
+   * page reports invalid, or one the strict wire parser rejects, holds the previous figures.
+   */
+  const commitBridge = (form: BridgeFormValues, apply: (next: BridgeFormValues) => void): void => {
+    const errors = validateBridge(form)
+    const bad = COST_FIELDS.some(
+      (field) => errors[field] !== undefined || isUnusableStrictEntry(form[field]),
+    )
+    if (!bad) {
+      apply(form)
+    }
+  }
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   // Set only when Save needs to reveal a failing row; Carbon re-syncs an AccordionItem when its
   // `open` prop CHANGES, so this expands that row without taking over the user's own toggling.
@@ -155,6 +170,7 @@ const Schedule7a: FC = () => {
     setAddCommitted(emptyBridgeForm())
     setAddErrors({})
     setRowForms({})
+    setRowCommitted({})
     setRowErrors({})
     setConfirmDeleteId(null)
     setExpandedId(null)
@@ -198,24 +214,39 @@ const Schedule7a: FC = () => {
 
   // Re-group a money field after the user leaves it ("12000" → "12,000"). A no-op when already
   // grouped, so it cannot loop through a re-render.
+  /**
+   * Re-group a money field on blur and commit it to the mirror's baseline (#291).
+   *
+   * Computed OUTSIDE the state updater (code review 2026-08-21): dispatching `setAddCommitted` from
+   * inside `setAddForm`'s updater made the updater impure — React invokes it during render, may
+   * double-invoke it under StrictMode, and may run it on a render it then discards — and it fired even
+   * on the `return prev` bail-out path. The commit is gated the same way every other page's is.
+   */
   const groupAddField = (key: CostField) => {
-    setAddForm((prev) => {
-      const grouped = groupInput(prev[key])
-      const next = grouped === prev[key] ? prev : { ...prev, [key]: grouped }
-      // Commit from the SAME updater, so the mirror's baseline holds the grouped string the field now
-      // shows rather than the pre-grouping value a separate read would have caught (#291).
-      setAddCommitted(next)
-      return next
-    })
+    const grouped = groupInput(addForm[key])
+    const next = grouped === addForm[key] ? addForm : { ...addForm, [key]: grouped }
+    setAddForm(next)
+    commitBridge(next, setAddCommitted)
   }
 
   const groupRowField = (bridge: Bridge, key: CostField) => {
-    setRowForms((prev) => {
-      const current = prev[bridge.bridgeReportId] ?? formFromBridge(bridge)
-      const grouped = groupInput(current[key])
-      const next = grouped === current[key] ? current : { ...current, [key]: grouped }
-      setRowCommitted((committed) => ({ ...committed, [bridge.bridgeReportId]: next }))
-      return grouped === current[key] ? prev : { ...prev, [bridge.bridgeReportId]: next }
+    const untouched = !(bridge.bridgeReportId in rowForms)
+    const current = rowForms[bridge.bridgeReportId] ?? formFromBridge(bridge)
+    const grouped = groupInput(current[key])
+    const changed = grouped !== current[key]
+    // A blur that changed nothing on a row the reporter never edited must NOT hand that row to the
+    // mirror: legacy fired on `change`, and a tab-through is not a change. Without this a stray Tab
+    // silently replaced the served totals with a client recomputation — bypassing this page's own AC7
+    // test (code review 2026-08-21).
+    if (untouched && !changed) {
+      return
+    }
+    const next = changed ? { ...current, [key]: grouped } : current
+    if (changed) {
+      setRowForms((prev) => ({ ...prev, [bridge.bridgeReportId]: next }))
+    }
+    commitBridge(next, (committed) => {
+      setRowCommitted((prev) => ({ ...prev, [bridge.bridgeReportId]: committed }))
     })
   }
 
@@ -332,6 +363,7 @@ const Schedule7a: FC = () => {
         // Every row was just persisted, so no editor holds unsaved work — dropping the lot returns
         // them all to "untouched" and re-derives them from the echoed document.
         setRowForms({})
+        setRowCommitted({})
         setRowErrors({})
       },
     })

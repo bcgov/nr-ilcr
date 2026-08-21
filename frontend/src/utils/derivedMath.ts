@@ -1,4 +1,4 @@
-import { toNum } from '@/utils/number'
+import { parseDecimalInput, toNum } from '@/utils/number'
 
 /**
  * Arithmetic primitives for the DISPLAY-ONLY derived-figure mirrors (defect #291, bcgov/nr-ilcr#291).
@@ -267,6 +267,23 @@ export const enteredNum = (raw: string): number | null => {
 }
 
 /**
+ * Parse a committed form string the way the WIRE parses it: `parseDecimalInput` plus a finiteness
+ * guard. Use this on any page whose `buildRequest`/`buildBody` uses `parseDecimalInput` — Schedules 5,
+ * 5's sub-pages, 6, 7A and the Schedule 3 sub-pages.
+ *
+ * The distinction is not cosmetic (code review 2026-08-21). `toNum` is documented as accepting
+ * "JS-only forms legacy never allowed" — `'1e3'` → 1000, `'.5'` → 0.5, `'0x10'` → 16, mis-grouped
+ * `'12,34'` → 1234 — every one of which the strict parser rejects as null. A mirror built on the lax
+ * parser therefore displays figures the Save can never persist, while validation blocks the write and
+ * the reporter has no way to reconcile the two. Schedules 1-4 use `toNum` on BOTH sides, so
+ * {@link enteredNum} is correct there and only there.
+ */
+export const committedNum = (raw: string): number | null => {
+  const value = parseDecimalInput(raw)
+  return value !== null && Number.isFinite(value) ? value : null
+}
+
+/**
  * True when a committed string is non-blank yet unusable as a number — unparseable (`'-'`, `'.'`,
  * `'1.2.3'`) or non-finite. Such a value must not advance the mirror's baseline: committing it would
  * silently drop that line out of every total, where legacy's failed round-trip left the last valid
@@ -274,6 +291,14 @@ export const enteredNum = (raw: string): number | null => {
  */
 export const isUnusableEntry = (raw: string): boolean =>
   raw.trim() !== '' && enteredNum(raw) === null
+
+/**
+ * The strict counterpart of {@link isUnusableEntry}, for the pages whose wire uses
+ * `parseDecimalInput`: true when a non-blank entry is not a value the Save could carry. Catches the
+ * lax-parser forms (`'1e3'`, `'0x10'`, `'12,34'`) that {@link isUnusableEntry} lets through.
+ */
+export const isUnusableStrictEntry = (raw: string): boolean =>
+  raw.trim() !== '' && committedNum(raw) === null
 
 /**
  * Legacy `CoreUtil.bigDecimalAddition`: null ONLY when both operands are null, otherwise the non-null

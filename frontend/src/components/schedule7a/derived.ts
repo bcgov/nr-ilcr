@@ -1,5 +1,5 @@
 import type { BridgeFormValues } from './validation'
-import { addN, enteredNum, sumN } from '@/utils/derivedMath'
+import { addN, committedNum, sumN, wholeDollars } from '@/utils/derivedMath'
 
 /**
  * Schedule 7A's DISPLAY-ONLY derived-figure mirror (defect #291).
@@ -37,19 +37,31 @@ export interface Schedule7aTotals {
 }
 
 export function deriveBridgeTotals(form: BridgeFormValues): Schedule7aTotals {
-  const cost = (key: keyof BridgeFormValues): number | null => enteredNum(form[key] ?? '')
+  // `committedNum` (the strict wire parser) and `wholeDollars` together keep the mirror on the same
+  // numbers the Save carries: `buildBody` sends `roundCost(parseDecimalInput(...))`, so a lax parse or
+  // an unrounded sum guarantees a jump on the echo (code review 2026-08-21).
+  const cost = (key: keyof BridgeFormValues): number | null =>
+    wholeDollars(committedNum(form[key] ?? ''))
 
-  const totalMaterial = addN(cost('superstructureMaterialCost'), cost('abutmentMaterialCost'))
-  const totalDeliver = addN(cost('superstructureDeliverCost'), cost('abutmentDeliverCost'))
-  const totalInstall = addN(cost('superstructureInstallCost'), cost('abutmentInstallCost'))
-  const grandTotal = sumN(
-    cost('sitePlanCost'),
-    totalMaterial,
-    totalDeliver,
-    totalInstall,
-    cost('approachCost'),
-    cost('afterInstallCost'),
-    cost('otherCost'),
+  const totalMaterial = wholeDollars(
+    addN(cost('superstructureMaterialCost'), cost('abutmentMaterialCost')),
+  )
+  const totalDeliver = wholeDollars(
+    addN(cost('superstructureDeliverCost'), cost('abutmentDeliverCost')),
+  )
+  const totalInstall = wholeDollars(
+    addN(cost('superstructureInstallCost'), cost('abutmentInstallCost')),
+  )
+  const grandTotal = wholeDollars(
+    sumN(
+      cost('sitePlanCost'),
+      totalMaterial,
+      totalDeliver,
+      totalInstall,
+      cost('approachCost'),
+      cost('afterInstallCost'),
+      cost('otherCost'),
+    ),
   )
 
   return { totalMaterial, totalDeliver, totalInstall, grandTotal }

@@ -36,6 +36,7 @@ import {
   validateRoadRecord,
 } from './validation'
 import { EMPTY_RATE_INPUTS, rateInputsOf, recordCostPerVolume, type RateInputs } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success/error is
@@ -398,6 +399,22 @@ const Schedule6: FC = () => {
   const [editRevision, setEditRevision] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<RoadRecordFormValues>(emptyForm)
   const [editRate, setEditRate] = useState<RateInputs>(EMPTY_RATE_INPUTS)
+
+  /**
+   * Advance a rate baseline only from a usable, valid entry (ruled 2026-08-21). Legacy's round-trip
+   * failed conversion/validation and left the derived cell at its last valid figure; committing an
+   * out-of-range or unparseable value instead drives the rate from something no Save can persist.
+   */
+  const commitRate = (form: RoadRecordFormValues, apply: (next: RateInputs) => void): void => {
+    const errors = validateRoadRecord(form)
+    if (errors.volume !== undefined || errors.cost !== undefined) {
+      return
+    }
+    if (isUnusableStrictEntry(form.volume) || isUnusableStrictEntry(form.cost)) {
+      return
+    }
+    apply(rateInputsOf(form))
+  }
   const [editErrors, setEditErrors] = useState<RoadRecordErrors>({})
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
@@ -766,7 +783,7 @@ const Schedule6: FC = () => {
               }}
               onFieldChange={setAddField}
               rateInputs={addRate}
-              onRateCommit={() => setAddRate(rateInputsOf(addForm))}
+              onRateCommit={() => commitRate(addForm, setAddRate)}
               onSubmit={handleAdd}
             />
           </Column>
@@ -797,7 +814,7 @@ const Schedule6: FC = () => {
                       }}
                       onFieldChange={setEditField}
                       rateInputs={editRate}
-                      onRateCommit={() => setEditRate(rateInputsOf(editForm))}
+                      onRateCommit={() => commitRate(editForm, setEditRate)}
                       onSave={handleSaveEdit}
                       onCancel={cancelEdit}
                     />

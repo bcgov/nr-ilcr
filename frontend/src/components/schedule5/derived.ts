@@ -1,6 +1,6 @@
 import type { Camp, CategoryAmount } from '@/interfaces/Schedule5Response'
 import type { CampFormValues, CategoryKey } from './validation'
-import { addN, enteredNum, perUnitLegacy, subN, sumN } from '@/utils/derivedMath'
+import { addN, committedNum, perUnitLegacy, subN, sumN, wholeDollars } from '@/utils/derivedMath'
 
 /**
  * Schedule 5's DISPLAY-ONLY derived-figure mirror (defect #291).
@@ -78,8 +78,11 @@ export interface Schedule5Derived {
 }
 
 export function deriveSchedule5(values: CampFormValues, served?: Camp): Schedule5Derived {
-  const campVolume = enteredNum(values.associatedCampVolume)
-  const cost = (key: CategoryKey): number | null => enteredNum(values.categories[key].cost)
+  const campVolume = committedNum(values.associatedCampVolume)
+  // `committedNum` + `wholeDollars` match `buildRequest`'s roundCost(parseDecimalInput(...)), so the
+  // mirror sums the same integers the server will (code review 2026-08-21).
+  const cost = (key: CategoryKey): number | null =>
+    wholeDollars(committedNum(values.categories[key].cost))
 
   // Sub-page-owned costs: constants while the panel is open (the sub-resource is their only writer).
   const otherCampCost = served?.otherCampExpenses?.cost ?? null
@@ -87,7 +90,7 @@ export function deriveSchedule5(values: CampFormValues, served?: Camp): Schedule
 
   const perUnit: Partial<Record<CategoryKey, number | null>> = {}
   for (const key of MIRRORED_RATE_KEYS) {
-    perUnit[key] = perUnitLegacy(cost(key), enteredNum(values.categories[key].volume))
+    perUnit[key] = perUnitLegacy(cost(key), committedNum(values.categories[key].volume))
   }
 
   // (1) Sub-Total over EXACTLY five costs — Recoveries excluded (CampReportType.java:335-347).
@@ -118,7 +121,7 @@ export function deriveSchedule5(values: CampFormValues, served?: Camp): Schedule
 
   const derived = (amount: number | null): DerivedAmount => ({
     volume: campVolume,
-    cost: amount,
+    cost: wholeDollars(amount),
     costPerVolume: perUnitLegacy(amount, campVolume),
   })
 
