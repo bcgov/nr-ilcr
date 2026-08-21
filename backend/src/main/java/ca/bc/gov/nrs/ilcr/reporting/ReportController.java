@@ -4,6 +4,8 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import ca.bc.gov.nrs.ilcr.reporting.api.ReportApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,8 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class ReportController implements ReportApi {
 
+  private static final Logger log = LoggerFactory.getLogger(ReportController.class);
+
   private final MillContextService millContextService;
   private final ReportService reportService;
   private final PrintService printService;
@@ -51,7 +55,7 @@ public class ReportController implements ReportApi {
     // export streams, so a rejected render still produces a problem+json error, never a half-written PDF.
     RenderedReport report = reportService.renderSchedule9(context.millId(), context.year());
     String filename = "schedule9_" + context.millId() + "_" + context.year() + ".pdf";
-    return pdfResponse(filename, report);
+    return pdfResponse(filename, context.millId(), context.year(), report);
   }
 
   @Override
@@ -62,7 +66,7 @@ public class ReportController implements ReportApi {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     validateSelection(request);
     RenderedReport report = printService.render(context, request);
-    return pdfResponse("schedules_print.pdf", report);
+    return pdfResponse("schedules_print.pdf", context.millId(), context.year(), report);
   }
 
   /**
@@ -71,12 +75,23 @@ public class ReportController implements ReportApi {
    * and try-with-resources closes the {@link RenderedReport} on both success and failure, so the
    * virtualizer's swap file is never leaked. The status + headers are set on the ResponseEntity here,
    * before any byte is written, so the attachment filename and content type are always applied.
+   *
+   * <p>An export failure surfaces DIFFERENTLY from the pre-fill guards: by the time bytes are written
+   * the 200 + {@code application/pdf} headers are already committed, so no {@code @ExceptionHandler}
+   * can turn it into a {@code problem+json} — the client just gets a truncated PDF. It is therefore
+   * logged at ERROR with the mill/year (the only server-side signal ops can correlate with a user's
+   * "the PDF won't open") before being rethrown so the container aborts the response. The async render
+   * runs under {@code spring.mvc.async.request-timeout}; a timeout produces the same truncated shape.
    */
   private static ResponseEntity<StreamingResponseBody> pdfResponse(
-      String filename, RenderedReport report) {
+      String filename, long millId, int year, RenderedReport report) {
     StreamingResponseBody body = out -> {
       try (report) {
         report.writeTo(out);
+      } catch (RuntimeException e) {
+        log.error("Report export failed after the response was committed for mill {} year {} ({}) — "
+            + "the client received a truncated PDF", millId, year, filename, e);
+        throw e;
       }
     };
     return ResponseEntity.ok()
