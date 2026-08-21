@@ -9,15 +9,14 @@ import java.util.Map;
 
 /**
  * Maps the Schedule 5 read document to the section datasource: ONE row per camp (the legacy S17
- * fan-out — one section per camp), each carrying the camp descriptors, the twelve category costs and
- * the four derived totals PRE-FORMATTED (the service already computed every total, $/m&sup3; and
- * sub-page aggregate with the exact legacy null rules). Costs render as whole dollars; a null total
- * stays {@code "-"} rather than collapsing to {@code 0}.
+ * fan-out — one section per camp), each carrying the camp descriptors, the twelve category costs
+ * and the four derived totals PRE-FORMATTED (the service already computed every total, $/m&sup3;
+ * and sub-page aggregate with the exact legacy null rules). Costs render as whole dollars; a null
+ * total stays {@code "-"} rather than collapsing to {@code 0}.
  */
 final class Schedule5SectionMapper {
 
-  private Schedule5SectionMapper() {
-  }
+  private Schedule5SectionMapper() {}
 
   static SectionData map(Schedule5Response response) {
     List<Camp> camps = response.camps();

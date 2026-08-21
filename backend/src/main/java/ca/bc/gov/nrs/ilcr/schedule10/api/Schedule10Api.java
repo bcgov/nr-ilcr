@@ -30,8 +30,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings, not typed required params, because
  * the contract pins the verbatim legacy ERR-001 message for missing, blank AND non-numeric values —
  * which a typed required {@code @RequestParam} cannot produce (it yields the generic
- * missing-parameter and type-mismatch 400s instead). Parsing and the guard chain live in
- * {@code MillContextService} (AD-4).
+ * missing-parameter and type-mismatch 400s instead). Parsing and the guard chain live in {@code
+ * MillContextService} (AD-4).
  */
 @RequestMapping("/api/v1/schedule10")
 public interface Schedule10Api {
@@ -40,9 +40,9 @@ public interface Schedule10Api {
    * Get the Schedule 10 road-construction document for a mill and reporting year.
    *
    * <p>Each page carries a system-derived read-only Road Group (BR-04); an unmapped
-   * TSA/supply-block
-   * or TFL combination serves a blank Road Group without error (S12). Each page also carries the
-   * road-detail count backing the legacy {@code Enter Road Data ({count})} link text (CNT-001).
+   * TSA/supply-block or TFL combination serves a blank Road Group without error (S12). Each page
+   * also carries the road-detail count backing the legacy {@code Enter Road Data ({count})} link
+   * text (CNT-001).
    *
    * <p>Guards: missing/blank/non-numeric params → 400 ERR-001; mill not active for the year → 409
    * ERR-002; no {@code ILCR_MILL_REPORT_STATUS} row → 404 ERR-003; no {@code VIEW_SCHEDULE} → 403.

@@ -21,10 +21,10 @@ import {
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
-import { extractDetail } from '@/utils/error'
+import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { getRouteApi } from '@tanstack/react-router'
-import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -184,8 +184,30 @@ const CategoryRow: FC<{
 }
 
 const Schedule4: FC = () => {
-  const { millId, year } = useMillYear()
-  const contextMissing = millId === null || year === null
+  const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
+
+  // Save (PUT) / delete / check-status all run through the shared hook's guarded run() (Story 29.6):
+  // a stale in-flight write can no longer repaint a newly-switched mill/year. `saving` is the single
+  // in-flight lock for every write (it also gates Check Status).
+  const {
+    saving,
+    message: saveMessage,
+    actionError: saveError,
+    checkResult,
+    setMessage: setSaveMessage,
+    setActionError: setSaveError,
+    setCheckResult,
+    clearBanners,
+    resetBanners,
+    save,
+    checkStatus,
+    run,
+  } = useScheduleMutations<Schedule4CheckStatusResponse>({
+    path: '/v1/schedule4',
+    millId,
+    year,
+    isCurrent,
+  })
 
   // Sub-page level from the URL (loc = location id, sub = sub-page type); navigate updates it.
   const search = scheduleRoute.useSearch()
@@ -205,11 +227,9 @@ const Schedule4: FC = () => {
     }
   }, [contextKey, navigate, search.loc, search.sub])
 
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  // Copy nudge (WRN-001) is a page-local warning banner with no request behind it, so it stays here
+  // rather than in the shared mutations hook (which owns success/error/check banners).
   const [warnMessage, setWarnMessage] = useState<string | null>(null)
-  const [checkResult, setCheckResult] = useState<Schedule4CheckStatusResponse | null>(null)
 
   const [panelMode, setPanelMode] = useState<PanelMode>('closed')
   const [panelName, setPanelName] = useState('')
@@ -226,14 +246,13 @@ const Schedule4: FC = () => {
   } | null>(null)
 
   // Clear the transient mutation notifications + close the panel whenever a fresh document loads
-  // (mill/year change), mirroring the Schedule 1/2 onReset.
+  // (mill/year change), mirroring Schedule 9's resetTransient: resetBanners() drops the hook-owned
+  // banners + lock, then we clear the page-local warn banner and reset panel state.
   const resetTransient = useCallback(() => {
-    setSaveMessage(null)
-    setSaveError(null)
+    resetBanners()
     setWarnMessage(null)
-    setCheckResult(null)
     setPanelMode('closed')
-  }, [])
+  }, [resetBanners])
 
   // Shared load-on-context-change concern (Schedule 1/2 idiom): owns data/errorDetail/isLoading,
   // resets on mill/year change, and ignores a stale response. Schedule 4's writable state is the
@@ -248,11 +267,11 @@ const Schedule4: FC = () => {
     onReset: resetTransient,
   })
 
+  // Drop every banner before an action: the hook-owned success/error/check banners plus the
+  // page-local copy nudge.
   const clearMessages = () => {
-    setSaveMessage(null)
-    setSaveError(null)
+    clearBanners()
     setWarnMessage(null)
-    setCheckResult(null)
   }
 
   const openNew = () => {
@@ -326,52 +345,48 @@ const Schedule4: FC = () => {
     }),
   })
 
-  // Validate + PUT the location panel (create or edit). Resolves to the saved document on success, or
-  // null on validation failure / API error (panel stays open with its entered values). Shared by the
-  // Save button (handleSave) and the save-before-subpage flow (saveLocationReturningId).
-  const putLocation = (): Promise<Schedule4Response | null> => {
+  // Validate + PUT the location panel (create or edit) through the shared hook's guarded save(). The
+  // by-id write is expressed by the body's id/revisionCount (not a path segment), so the URL is just
+  // the fixed `/locations` suffix. Applies the echoed document on success, then hands it to the
+  // caller's `afterSave` (re-open the saved record / open a sub-page) — all inside the guarded
+  // onSuccess so a stale response can no longer run those side effects. Validation failure / API
+  // error keeps the panel open with its entered values (handled by the hook's error banner).
+  const putLocation = (afterSave: (doc: Schedule4Response) => void): void => {
     const validation = validateLocationForm(panelName, panelCategories)
     if (!isLocationFormValid(validation)) {
       // Generic banner; the specific verbatim messages (ERR-001, ranges, BR-04) show inline on the
       // fields so they are not duplicated.
       setSaveMessage(null)
       setSaveError('Please correct the highlighted fields before saving.')
-      return Promise.resolve(null)
+      return
     }
-    setSaving(true)
     clearMessages()
-    return apiService
-      .getAxiosInstance()
-      .put<Schedule4Response>(
-        `/v1/schedule4/locations?millId=${millId}&year=${year}`,
-        buildRequest(),
-      )
-      .then((response) => {
-        setData(response.data)
-        setSaveMessage(response.data.message?.text ?? null)
-        return response.data
-      })
-      .catch((error: unknown) => {
-        // Keep the panel open + entered values; surface the API's verbatim detail (ERR-001/ERR-002…).
-        setSaveError(extractDetail(error) || 'Schedule could not be saved.')
-        return null
-      })
-      .finally(() => setSaving(false))
+    save<Schedule4Response>(buildRequest(), {
+      suffix: '/locations',
+      fallback: 'Schedule could not be saved.',
+      onSuccess: (doc) => {
+        setData(doc)
+        setSaveMessage(doc.message?.text ?? null)
+        afterSave(doc)
+      },
+    })
   }
 
   const handleSave = () => {
     if (saving || panelMode === 'closed' || panelMode === 'view') return
-    void putLocation().then((document) => {
-      if (!document) return
+    // Snapshot the dispatch-time panel context: onSuccess resolves later, so read edit-vs-create and
+    // the entered name off these rather than the (possibly changed) live state.
+    const wasEdit = panelMode === 'edit'
+    const editId = panelEditId
+    const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
+    putLocation((document) => {
       // Stay on the saved record (don't close): re-open it in edit mode — found by id when editing, by
       // (unique) name after a new/copy create — refreshing the optimistic-lock token so a follow-up
       // save doesn't 409. The panel form already holds the saved values, so nothing re-seeds.
       const saved =
-        panelMode === 'edit' && panelEditId !== null
-          ? document.locations.find((l) => l.id === panelEditId)
-          : document.locations.find(
-              (l) => (l.name ?? '').toLowerCase() === panelName.trim().toLowerCase(),
-            )
+        wasEdit && editId !== null
+          ? document.locations.find((l) => l.id === editId)
+          : document.locations.find((l) => l.id != null && !prevIds.has(l.id))
       if (saved && saved.id != null) {
         setPanelMode('edit')
         setPanelEditId(saved.id)
@@ -386,40 +401,45 @@ const Schedule4: FC = () => {
     if (saving || !confirmDelete) return
     const target = confirmDelete
     setConfirmDelete(null)
-    setSaving(true)
     clearMessages()
-    apiService
-      .getAxiosInstance()
-      .delete<{ message?: { text?: string } }>(
-        `/v1/schedule4/locations?millId=${millId}&year=${year}&id=${target.id}`,
-      )
-      .then((response) => {
-        setSaveMessage(response.data?.message?.text ?? null)
-        setPanelMode('closed')
-        // Re-read the document so the list reflects the removed family (delete returns only a message).
-        return apiService
-          .getAxiosInstance()
-          .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`)
-          .then((reload) => setData(reload.data))
-      })
-      .catch((error: unknown) => {
-        setSaveError(extractDetail(error) || 'Unable to delete location.')
-      })
-      .finally(() => setSaving(false))
+    // Delete returns only a message; the DELETE runs through the hook's guarded run() so a stale
+    // response can't repaint a switched context. The target id is a query param (not a path segment),
+    // which the hook's fixed `?millId&year` query can't express, so the request is built here with the
+    // verbatim URL (AC7: URL unchanged). onSuccess then re-GETs the document — PRESERVED as-is — so
+    // the list reflects the removed family.
+    run<{ message?: { text?: string } }>(
+      apiService
+        .getAxiosInstance()
+        .delete<{ message?: { text?: string } }>(
+          `/v1/schedule4/locations?millId=${millId}&year=${year}&id=${target.id}`,
+        ),
+      {
+        fallback: 'Unable to delete location.',
+        onSuccess: (resp) => {
+          setSaveMessage(resp?.message?.text ?? null)
+          setPanelMode('closed')
+          // Re-read the document so the list reflects the removed family (delete returns only a message).
+          run(
+            apiService
+              .getAxiosInstance()
+              .get<Schedule4Response>(`/v1/schedule4?millId=${millId}&year=${year}`),
+            {
+              fallback: 'Deleted, but the list could not be refreshed.',
+              onSuccess: (data) => setData(data),
+            },
+          )
+        },
+      },
+    )
   }
 
   const handleCheckStatus = () => {
     if (saving) return
-    setSaving(true) // gate re-entrancy: disables the button and blocks overlapping check-status posts
     clearMessages()
-    apiService
-      .getAxiosInstance()
-      .post<Schedule4CheckStatusResponse>(
-        `/v1/schedule4/check-status?millId=${millId}&year=${year}`,
-      )
-      .then((response) => setCheckResult(response.data))
-      .catch((error: unknown) => setSaveError(extractDetail(error) || 'Unable to check status.'))
-      .finally(() => setSaving(false))
+    checkStatus<Schedule4CheckStatusResponse>({
+      fallback: 'Unable to check status.',
+      onSuccess: setCheckResult,
+    })
   }
 
   // ---- Sub-page navigation (Story 10.6). ---------------------------------------------------------
@@ -431,11 +451,15 @@ const Schedule4: FC = () => {
     void navigate({ to: '/schedule-4', search: { loc: locationId, sub: def.type } })
   }
 
-  // Save the panel (create path) and return the new location's id, or null on validation/API failure.
-  const saveLocationReturningId = (): Promise<number | null> =>
-    putLocation().then((document) =>
-      document ? (document.locations.find((l) => l.name === panelName.trim())?.id ?? null) : null,
-    )
+  // Save the panel (create path) and open the sub-page for the new location — the create → save-first
+  // (NAV-003) flow. Runs the post-save lookup inside putLocation's guarded onSuccess.
+  const saveLocationThenOpen = (def: SubPageDef) => {
+    const prevIds = new Set(data?.locations.map((l) => l.id) ?? [])
+    putLocation((document) => {
+      const id = document.locations.find((l) => l.id != null && !prevIds.has(l.id))?.id ?? null
+      if (id !== null) openSubPage(def, id)
+    })
+  }
 
   // From the panel: a saved location opens the sub-page after NAV-002 (edits discarded); an unsaved
   // NEW/COPY location opens after NAV-003 (save first); a read-only View opens directly.
@@ -456,9 +480,7 @@ const Schedule4: FC = () => {
     if (kind === 'existing' && panelEditId !== null) {
       openSubPage(def, panelEditId) // discard panel edits, open the sub-page
     } else {
-      void saveLocationReturningId().then((id) => {
-        if (id !== null) openSubPage(def, id)
-      })
+      saveLocationThenOpen(def)
     }
   }
 

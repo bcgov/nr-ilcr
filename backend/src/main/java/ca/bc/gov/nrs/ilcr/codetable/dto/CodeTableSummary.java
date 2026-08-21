@@ -9,5 +9,4 @@ package ca.bc.gov.nrs.ilcr.codetable.dto;
  * @param descriptionMaxLength per-table description length cap
  */
 public record CodeTableSummary(
-    String key, String label, int codeMaxLength, int descriptionMaxLength) {
-}
+    String key, String label, int codeMaxLength, int descriptionMaxLength) {}

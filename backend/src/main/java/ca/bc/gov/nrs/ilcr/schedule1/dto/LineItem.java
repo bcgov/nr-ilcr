@@ -7,9 +7,4 @@ import java.math.BigDecimal;
  * ($/m³) is derived server-side and is read-only; {@code cost} is whole dollars, {@code volume} may
  * be fractional.
  */
-public record LineItem(
-    Integer costItemCode,
-    BigDecimal volume,
-    Integer cost,
-    BigDecimal perUnit) {
-}
+public record LineItem(Integer costItemCode, BigDecimal volume, Integer cost, BigDecimal perUnit) {}

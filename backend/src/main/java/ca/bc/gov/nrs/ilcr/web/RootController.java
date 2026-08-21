@@ -5,18 +5,19 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Controller for root path and application information. */
 @RestController
 @RequestMapping("/api")
 public class RootController {
 
-    private final String version;
+  private final String version;
 
-    public RootController(@Value("${ilcr.version:0.0.1-SNAPSHOT}") String version) {
-        this.version = version;
-    }
+  public RootController(@Value("${ilcr.version:0.0.1-SNAPSHOT}") String version) {
+    this.version = version;
+  }
 
-    @GetMapping
-    public AppInfoResponse getInfo() {
-        return new AppInfoResponse("nr-ilcr-backend", version, "UP");
-    }
+  @GetMapping
+  public AppInfoResponse getInfo() {
+    return new AppInfoResponse("nr-ilcr-backend", version, "UP");
+  }
 }

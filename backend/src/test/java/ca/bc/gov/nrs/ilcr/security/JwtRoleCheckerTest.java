@@ -16,8 +16,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
- * Unit test for the SpEL role/idp checks used from {@code @PreAuthorize}. Drives the
- * {@link SecurityContextHolder} directly — no Spring context, no DB.
+ * Unit test for the SpEL role/idp checks used from {@code @PreAuthorize}. Drives the {@link
+ * SecurityContextHolder} directly — no Spring context, no DB.
  */
 class JwtRoleCheckerTest {
 
@@ -30,9 +30,7 @@ class JwtRoleCheckerTest {
 
   /** Seed the context with an authenticated principal carrying the given authorities. */
   private void authenticateWith(String... authorities) {
-    var granted = List.of(authorities).stream()
-        .map(SimpleGrantedAuthority::new)
-        .toList();
+    var granted = List.of(authorities).stream().map(SimpleGrantedAuthority::new).toList();
     var token = new UsernamePasswordAuthenticationToken("user", "N/A", granted);
     SecurityContextHolder.getContext().setAuthentication(token);
   }
@@ -120,47 +118,49 @@ class JwtRoleCheckerTest {
 
   @Test
   void hasIdpProvider_byString_matchesClaim() {
-    SecurityContextHolder.getContext().setAuthentication(
-        new JwtAuthenticationToken(jwtWithProvider("idir"),
-            List.of(new SimpleGrantedAuthority("SUBMITTER"))));
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new JwtAuthenticationToken(
+                jwtWithProvider("idir"), List.of(new SimpleGrantedAuthority("SUBMITTER"))));
     assertTrue(checker.hasIdpProvider("idir"));
   }
 
   @Test
   void hasIdpProvider_byString_differentProvider_returnsFalse() {
-    SecurityContextHolder.getContext().setAuthentication(
-        new JwtAuthenticationToken(jwtWithProvider("idir"),
-            List.of(new SimpleGrantedAuthority("SUBMITTER"))));
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new JwtAuthenticationToken(
+                jwtWithProvider("idir"), List.of(new SimpleGrantedAuthority("SUBMITTER"))));
     assertFalse(checker.hasIdpProvider("bceid"));
   }
 
   @Test
   void hasIdpProvider_byString_unknownClaim_returnsFalse() {
     // fromClaim returns empty -> short-circuits before touching the JWT.
-    SecurityContextHolder.getContext().setAuthentication(
-        new JwtAuthenticationToken(jwtWithProvider("idir"),
-            List.of(new SimpleGrantedAuthority("SUBMITTER"))));
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new JwtAuthenticationToken(
+                jwtWithProvider("idir"), List.of(new SimpleGrantedAuthority("SUBMITTER"))));
     assertFalse(checker.hasIdpProvider("not-a-provider"));
   }
 
   @Test
   void hasIdpProvider_byEnum_matches() {
-    SecurityContextHolder.getContext().setAuthentication(
-        new JwtAuthenticationToken(jwtWithProvider("idir"),
-            List.of(new SimpleGrantedAuthority("SUBMITTER"))));
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new JwtAuthenticationToken(
+                jwtWithProvider("idir"), List.of(new SimpleGrantedAuthority("SUBMITTER"))));
     assertTrue(checker.hasIdpProvider(IdentityProvider.IDIR));
   }
 
   @Test
   void hasIdpProvider_noAuthentication_throwsIllegalState() {
-    assertThrows(IllegalStateException.class,
-        () -> checker.hasIdpProvider(IdentityProvider.IDIR));
+    assertThrows(IllegalStateException.class, () -> checker.hasIdpProvider(IdentityProvider.IDIR));
   }
 
   @Test
   void hasIdpProvider_principalNotAJwt_throwsIllegalState() {
     authenticateWith("SUBMITTER");
-    assertThrows(IllegalStateException.class,
-        () -> checker.hasIdpProvider(IdentityProvider.IDIR));
+    assertThrows(IllegalStateException.class, () -> checker.hasIdpProvider(IdentityProvider.IDIR));
   }
 }

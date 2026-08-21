@@ -25,8 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class Schedule1RepositoryRowMapperTest {
 
-  @Mock
-  private ResultSet rs;
+  @Mock private ResultSet rs;
 
   @Test
   void summaryRowMapper_mapsColumns_andNullNumberBecomesNull() throws Exception {

@@ -36,20 +36,15 @@ class Schedule9ControllerTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule9Service schedule9Service;
+  @Mock private Schedule9Service schedule9Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
   private Schedule9Controller controller;
 

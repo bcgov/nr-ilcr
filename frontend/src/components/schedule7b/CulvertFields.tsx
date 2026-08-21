@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
 import type { CulvertCodeLists, CulvertCodeOption } from '@/interfaces/Schedule7bResponse'
+import { numStrGroup } from '@/utils/number'
 import type { CulvertErrors, CulvertFormValues, CostField, MaskedField } from './validation'
 import { COMMENTS_MAX_LENGTH, previewTotalCost } from './validation'
 
@@ -11,10 +12,9 @@ import { COMMENTS_MAX_LENGTH, previewTotalCost } from './validation'
 // is erratic ("Span (mm)" beside "Rise(mm)" and "Length(m)"), and the team asked for the space
 // everywhere, so the wording is legacy's but the gap is ours.
 
-// A total renders through a mask, never a recompute of a served figure. A null total means "no
-// contributing costs" and must render BLANK — showing "0" would assert a figure the data lacks.
-const money = (value: number | null | undefined): string =>
-  value === null || value === undefined ? '' : value.toLocaleString('en-US')
+// A total renders through the shared en-CA numStrGroup (Story 29.8 — one app locale, no local en-US
+// copy), never a recompute of a served figure. A null total means "no contributing costs" and must
+// render BLANK — numStrGroup returns '' on null, so "0" (a figure the data lacks) is never shown.
 
 type Props = {
   readonly idPrefix: string
@@ -138,7 +138,7 @@ const CulvertFields: FC<Props> = ({
           <div className="schedule-7b__total">
             <span className="schedule-7b__total-label">Total costs ($)</span>
             <span className="schedule-7b__total-value">
-              {money(serverTotal === undefined ? previewTotalCost(form) : serverTotal)}
+              {numStrGroup(serverTotal === undefined ? previewTotalCost(form) : serverTotal)}
             </span>
           </div>
         </div>

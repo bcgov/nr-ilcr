@@ -50,11 +50,9 @@ class Schedule6WriteServiceTest {
   private static final int YEAR = 2021;
   private static final String USER = "tester";
 
-  @Mock
-  private Schedule6Repository repository;
+  @Mock private Schedule6Repository repository;
 
-  @InjectMocks
-  private Schedule6Service service;
+  @InjectMocks private Schedule6Service service;
 
   private void stubDraft() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
@@ -76,8 +74,8 @@ class Schedule6WriteServiceTest {
   void tflWrite_clearsTsaColumns() {
     stubDraft();
     service.addRecord(MILL, YEAR, request("TFL", "18", "01B", null), true, USER);
-    verify(repository).insertRoadReport(
-        eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq("18"), eq(USER));
+    verify(repository)
+        .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq("18"), eq(USER));
   }
 
   @Test
@@ -86,18 +84,19 @@ class Schedule6WriteServiceTest {
     stubDraft();
     service.addRecord(MILL, YEAR, request("01", "18", "01B", null), true, USER);
     // tflNumber was supplied in the request — the counterpart-clear must drop it.
-    verify(repository).insertRoadReport(
-        eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
+    verify(repository)
+        .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
   }
 
   @Test
-  @DisplayName("BR-02 is case-sensitive: only the exact literal \"TFL\" routes to the TFL side — "
-      + "any other area type is stored as a TSA code")
+  @DisplayName(
+      "BR-02 is case-sensitive: only the exact literal \"TFL\" routes to the TFL side — "
+          + "any other area type is stored as a TSA code")
   void nonLiteralAreaType_isTsaSide() {
     stubDraft();
     service.addRecord(MILL, YEAR, request("tf", null, "01B", null), true, USER);
-    verify(repository).insertRoadReport(
-        eq(9501), eq(MILL), eq(YEAR), eq("tf"), eq("01B"), isNull(), eq(USER));
+    verify(repository)
+        .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("tf"), eq("01B"), isNull(), eq(USER));
   }
 
   // ---- BR-03 TFL alias + validation matrix ------------------------------------------------------
@@ -108,8 +107,8 @@ class Schedule6WriteServiceTest {
   void tflAlias_normalizedOntoStoredValue(String entered, String stored) {
     stubDraft();
     service.addRecord(MILL, YEAR, request("TFL", entered, null, null), true, USER);
-    verify(repository).insertRoadReport(
-        eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq(stored), eq(USER));
+    verify(repository)
+        .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq(stored), eq(USER));
   }
 
   @ParameterizedTest(name = "\"{0}\" -> 400 FLD-002")
@@ -117,25 +116,28 @@ class Schedule6WriteServiceTest {
   @DisplayName("BR-03: a TFL number that resolves no RMG -> InvalidTflNumberException, no write")
   void invalidTfl_rejected(String tflNumber) {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    assertThrows(InvalidTflNumberException.class,
+    assertThrows(
+        InvalidTflNumberException.class,
         () -> service.addRecord(MILL, YEAR, request("TFL", tflNumber, null, null), true, USER));
-    verify(repository, never()).insertRoadReport(
-        anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
   }
 
   @Test
   @DisplayName("BR-03: a TFL record with the number missing entirely -> InvalidTflNumberException")
   void missingTfl_rejected() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    assertThrows(InvalidTflNumberException.class,
+    assertThrows(
+        InvalidTflNumberException.class,
         () -> service.addRecord(MILL, YEAR, request("TFL", null, null, null), true, USER));
   }
 
   // ---- BR-09 branch selection on add ------------------------------------------------------------
 
   @Test
-  @DisplayName("BR-09: the lone placeholder is CLAIMED (classification onto that row + its detail); "
-      + "no fresh insert, no new id drawn")
+  @DisplayName(
+      "BR-09: the lone placeholder is CLAIMED (classification onto that row + its detail); "
+          + "no fresh insert, no new id drawn")
   void addRecord_claimsLonePlaceholder() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
@@ -147,8 +149,8 @@ class Schedule6WriteServiceTest {
 
     verify(repository).claimPlaceholder(8331, MILL, YEAR, "01", "01B", null, USER);
     verify(repository).upsertCostDetail(8331, new BigDecimal("100"), 5000, "rc", USER);
-    verify(repository, never()).insertRoadReport(
-        anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
     verify(repository, never()).nextRoadReportId();
   }
 
@@ -164,30 +166,32 @@ class Schedule6WriteServiceTest {
 
     service.addRecord(MILL, YEAR, request("01", null, "01B", null), true, USER);
 
-    verify(repository).insertRoadReport(
-        eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
+    verify(repository)
+        .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
   }
 
   @Test
-  @DisplayName("BR-09: with real records present a fresh insert runs, then its detail — in order. "
-      + "The general comment is NOT threaded through Java: insertRoadReport sources it in SQL so a "
-      + "concurrent general-comments save cannot be reverted, so the replication invariant itself is "
-      + "proven by Schedule6GeneralCommentsIT.addRecord_carriesCurrentGeneralComment, not here")
+  @DisplayName(
+      "BR-09: with real records present a fresh insert runs, then its detail — in order. "
+          + "The general comment is NOT threaded through Java: insertRoadReport sources it in SQL so a "
+          + "concurrent general-comments save cannot be reverted, so the replication invariant itself is "
+          + "proven by Schedule6GeneralCommentsIT.addRecord_carriesCurrentGeneralComment, not here")
   void addRecord_insertsThenDetail_inOrder() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findRoadRecords(MILL, YEAR)).thenReturn(List.of(
-        new RoadRecordRow(8334, "01", "01B", null, "the shared comment", 0)));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "the shared comment", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     when(repository.nextRoadReportId()).thenReturn(9502);
 
     service.addRecord(MILL, YEAR, request("03", null, "03B", null), true, USER);
 
     InOrder order = inOrder(repository);
-    order.verify(repository).insertRoadReport(
-        eq(9502), eq(MILL), eq(YEAR), eq("03"), eq("03B"), isNull(), eq(USER));
+    order
+        .verify(repository)
+        .insertRoadReport(eq(9502), eq(MILL), eq(YEAR), eq("03"), eq("03B"), isNull(), eq(USER));
     order.verify(repository).upsertCostDetail(9502, new BigDecimal("100"), 5000, "rc", USER);
-    verify(repository, never()).claimPlaceholder(
-        anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .claimPlaceholder(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
   }
 
   // ---- Edit: 404-vs-409 disambiguation + detail upsert ------------------------------------------
@@ -208,17 +212,20 @@ class Schedule6WriteServiceTest {
   }
 
   @Test
-  @DisplayName("AR11: 0 rows + id absent -> 404; 0 rows + id present -> 409 stale; nothing upserted")
+  @DisplayName(
+      "AR11: 0 rows + id absent -> 404; 0 rows + id present -> 409 stale; nothing upserted")
   void updateRecord_disambiguates404From409() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.updateRoadReport(79999, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(0);
     when(repository.countRoadRecord(79999, MILL, YEAR)).thenReturn(0);
-    assertThrows(RoadRecordNotFoundException.class,
+    assertThrows(
+        RoadRecordNotFoundException.class,
         () -> service.updateRecord(MILL, YEAR, 79999, request("01", null, "01B", 0), true, USER));
 
     when(repository.updateRoadReport(8336, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(0);
     when(repository.countRoadRecord(8336, MILL, YEAR)).thenReturn(1);
-    assertThrows(StaleRevisionException.class,
+    assertThrows(
+        StaleRevisionException.class,
         () -> service.updateRecord(MILL, YEAR, 8336, request("01", null, "01B", 0), true, USER));
 
     verify(repository, never()).upsertCostDetail(anyInt(), any(), any(), any(), anyString());
@@ -226,40 +233,48 @@ class Schedule6WriteServiceTest {
 
   @ParameterizedTest(name = "placeholder classification [{0}] -> 404")
   @ValueSource(strings = {"NULL", "BLANK"})
-  @DisplayName("AR11: a placeholder id is 404 BEFORE the update — never converted into a record; "
-      + "the guard is trim-aware, so a WHITESPACE-classification placeholder is caught too "
-      + "(the IS NULL-only SQL predicate this replaced let that row through)")
+  @DisplayName(
+      "AR11: a placeholder id is 404 BEFORE the update — never converted into a record; "
+          + "the guard is trim-aware, so a WHITESPACE-classification placeholder is caught too "
+          + "(the IS NULL-only SQL predicate this replaced let that row through)")
   void updateRecord_placeholderId_is404(String shape) {
     String blank = "NULL".equals(shape) ? null : " ";
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8330, blank, blank, blank, "lone", 0)));
-    assertThrows(RoadRecordNotFoundException.class,
+    assertThrows(
+        RoadRecordNotFoundException.class,
         () -> service.updateRecord(MILL, YEAR, 8330, request("01", null, "01B", 0), true, USER));
-    verify(repository, never()).updateRoadReport(
-        anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .updateRoadReport(
+            anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
   }
 
   @Test
-  @DisplayName("AR11 defence in depth: a null revisionCount reaching the service is a clean 400 "
-      + "(RevisionCountRequiredException), never an NPE and never a coerced 409")
+  @DisplayName(
+      "AR11 defence in depth: a null revisionCount reaching the service is a clean 400 "
+          + "(RevisionCountRequiredException), never an NPE and never a coerced 409")
   void updateRecord_nullRevisionCount_is400() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    assertThrows(RevisionCountRequiredException.class,
+    assertThrows(
+        RevisionCountRequiredException.class,
         () -> service.updateRecord(MILL, YEAR, 8336, request("01", null, "01B", null), true, USER));
-    verify(repository, never()).updateRoadReport(
-        anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .updateRoadReport(
+            anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
   }
 
   @Test
-  @DisplayName("A TSA area type wider than TSA_NUMBER VARCHAR2(2) is a clean 400, not an ORA-12899 "
-      + "500 — the DTO's @Size(max=3) exists for the \"TFL\" literal, so 3 chars reach here")
+  @DisplayName(
+      "A TSA area type wider than TSA_NUMBER VARCHAR2(2) is a clean 400, not an ORA-12899 "
+          + "500 — the DTO's @Size(max=3) exists for the \"TFL\" literal, so 3 chars reach here")
   void tsaAreaTypeTooWide_is400() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    assertThrows(InvalidClassificationCodeException.class,
+    assertThrows(
+        InvalidClassificationCodeException.class,
         () -> service.addRecord(MILL, YEAR, request("999", null, "01B", null), true, USER));
-    verify(repository, never()).insertRoadReport(
-        anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
   }
 
   // ---- General-comment branch selection ---------------------------------------------------------
@@ -268,14 +283,15 @@ class Schedule6WriteServiceTest {
   @DisplayName("BR-09: rows exist -> updateAllComments (replication); no placeholder ops")
   void saveComments_withRows_replicates() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findRoadRecords(MILL, YEAR)).thenReturn(List.of(
-        new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
     service.saveGeneralComments(MILL, YEAR, new GeneralCommentsRequest("new text"), true, USER);
 
     verify(repository).updateAllComments(MILL, YEAR, "new text", USER);
-    verify(repository, never()).insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
+    verify(repository, never())
+        .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
     verify(repository, never()).deletePlaceholder(anyInt(), anyLong(), anyInt());
   }
 
@@ -306,14 +322,16 @@ class Schedule6WriteServiceTest {
     verify(repository).deletePlaceholder(8330, MILL, YEAR);
 
     service.saveGeneralComments(MILL, YEAR, new GeneralCommentsRequest(null), true, USER);
-    verify(repository, never()).insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
+    verify(repository, never())
+        .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
     verify(repository, never()).updateAllComments(anyLong(), anyInt(), any(), anyString());
   }
 
   @Test
-  @DisplayName("BR-09: a delete that matches NOTHING (whitespace classification the IS NULL SQL "
-      + "cannot see, or a placeholder claimed by a concurrent add) falls back to clearing COMMENTS "
-      + "in place — never a silent no-op behind \"Data saved successfully\"")
+  @DisplayName(
+      "BR-09: a delete that matches NOTHING (whitespace classification the IS NULL SQL "
+          + "cannot see, or a placeholder claimed by a concurrent add) falls back to clearing COMMENTS "
+          + "in place — never a silent no-op behind \"Data saved successfully\"")
   void saveComments_deleteMatchesNothing_fallsBackToClear() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))
@@ -328,12 +346,13 @@ class Schedule6WriteServiceTest {
   }
 
   @Test
-  @DisplayName("BR-09: records + blank comment -> the clear replicates NULL onto every row "
-      + "(not a placeholder delete)")
+  @DisplayName(
+      "BR-09: records + blank comment -> the clear replicates NULL onto every row "
+          + "(not a placeholder delete)")
   void saveComments_recordsPlusBlank_replicatesNull() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(repository.findRoadRecords(MILL, YEAR)).thenReturn(List.of(
-        new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenReturn(List.of(new RoadRecordRow(8334, "01", "01B", null, "old", 0)));
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
 
     service.saveGeneralComments(MILL, YEAR, new GeneralCommentsRequest(""), true, USER);
@@ -349,14 +368,17 @@ class Schedule6WriteServiceTest {
   @DisplayName("Deviation (a): every write requires the 1-10 track Draft")
   void nonDraftTrack_rejectsAllWrites(String track) {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.addRecord(MILL, YEAR, request("01", null, "01B", null), true, USER));
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.updateRecord(MILL, YEAR, 8336, request("01", null, "01B", 0), true, USER));
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.saveGeneralComments(MILL, YEAR, new GeneralCommentsRequest("x"), true, USER));
-    verify(repository, never()).insertRoadReport(
-        anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+    verify(repository, never())
+        .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
     verify(repository, never()).updateAllComments(anyLong(), anyInt(), any(), anyString());
   }
 
@@ -364,7 +386,8 @@ class Schedule6WriteServiceTest {
   @DisplayName("A missing track-status row can never be Draft -> 409")
   void missingTrackStatus_rejects() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
-    assertThrows(ScheduleNotEditableException.class,
+    assertThrows(
+        ScheduleNotEditableException.class,
         () -> service.addRecord(MILL, YEAR, request("01", null, "01B", null), true, USER));
   }
 
@@ -374,8 +397,10 @@ class Schedule6WriteServiceTest {
     stubDraft();
     when(repository.findRoadRecords(MILL, YEAR))
         .thenThrow(new DataAccessResourceFailureException("boom"));
-    ScheduleNotSavedException ex = assertThrows(ScheduleNotSavedException.class,
-        () -> service.addRecord(MILL, YEAR, request("01", null, "01B", null), true, USER));
+    ScheduleNotSavedException ex =
+        assertThrows(
+            ScheduleNotSavedException.class,
+            () -> service.addRecord(MILL, YEAR, request("01", null, "01B", null), true, USER));
     assertEquals("scheduleNotSavedErrorMsg", ex.getMessageKey());
   }
 }

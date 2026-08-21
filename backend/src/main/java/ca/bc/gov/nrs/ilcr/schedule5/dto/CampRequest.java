@@ -40,9 +40,9 @@ import java.math.BigDecimal;
  * delivery data sits EXACTLY on 999999.9). {@code sizeOfCamp} is 1–999 on {@code CAMP_SIZE_CAPACITY
  * NUMBER(3)}; {@code associatedCampVolume} is 0–9,999,999 on {@code ASSOCIATED_CAMP_VOLUME
  * NUMBER(7)} with {@code fraction = 0}, so a fractional volume is REJECTED rather than truncated
- * the way legacy's {@code intValue()} truncates it ({@code Schedule5DAO.java:376}). Each {@code
- * @Digits} integer cap is one wider than its magnitude bound so an over-range value trips exactly
- * one constraint.
+ * the way legacy's {@code intValue()} truncates it ({@code Schedule5DAO.java:376}). Each
+ * {@code @Digits} integer cap is one wider than its magnitude bound so an over-range value trips
+ * exactly one constraint.
  *
  * <p>{@code campName} and {@code isolatedCamp} are the only required fields (BR-02/BR-05, FLD-001).
  * FLD-001 has NO legacy text — it was the JSF container default, never overridden ({@code
@@ -59,14 +59,14 @@ import java.math.BigDecimal;
  * screen cap, and the longest real stored comment is exactly 3500 (Task 1 gate (vii)).
  *
  * <p><strong>Two units, both enforced.</strong> {@code campName} and {@code comments} each carry a
- * {@code @Size} CHARACTER cap and a {@link MaxByteLength} BYTE cap, because the legacy bound and the
- * column bound are measured differently and neither implies the other. The character caps are the
- * legacy screen's (30 / 3500); the byte caps are the columns' own widths (30 / 4000), confirmed
+ * {@code @Size} CHARACTER cap and a {@link MaxByteLength} BYTE cap, because the legacy bound and
+ * the column bound are measured differently and neither implies the other. The character caps are
+ * the legacy screen's (30 / 3500); the byte caps are the columns' own widths (30 / 4000), confirmed
  * {@code CHAR_USED = 'B'} on an {@code AL32UTF8} database. {@code campName} is the sharp case — the
  * two limits are both 30, so a SINGLE multibyte character overflows a name the character cap
  * accepts; without the byte cap that is ORA-12899 → {@code ScheduleNotSavedException} → an opaque
- * 500 on an ordinary save. {@code comments} has 500 bytes of headroom, so it only bites above roughly
- * 1.15 bytes per character. The gap was previously recorded as unguarded ({@code
+ * 500 on an ordinary save. {@code comments} has 500 bytes of headroom, so it only bites above
+ * roughly 1.15 bytes per character. The gap was previously recorded as unguarded ({@code
  * deferred-work.md}, Schedule 6/11 comments share it); Schedule 5 now closes its own half.
  *
  * @param campName the camp name — required, non-blank after trim, &le; 30 chars AND &le; 30 UTF-8
@@ -95,33 +95,14 @@ import java.math.BigDecimal;
  *     UPDATE only ({@link OnUpdate}), ignored on create
  */
 public record CampRequest(
-
-    @NotBlank(message = "{campNameRequiredErrorMsg}")
-    @Size(max = 30, message = "{campNameMaxLengthErrorMsg}")
-    @MaxByteLength(value = 30, charMax = 30, message = "{campNameMaxLengthErrorMsg}")
-    String campName,
-
-    @DecimalMin(value = "0.0", message = "{distanceValidatorErrorMsg}")
-    @DecimalMax(value = "999999.9", message = "{distanceValidatorErrorMsg}")
-    @Digits(integer = 7, fraction = 2, message = "{distanceValidatorErrorMsg}")
-    BigDecimal roadDistanceToOperatingArea,
-
-    @Min(value = 1, message = "{numberOfPersonsValidatorErrorMsg}")
-    @Max(value = 999, message = "{numberOfPersonsValidatorErrorMsg}")
-    Integer sizeOfCamp,
-
-    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}")
-    @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}")
-    @Digits(integer = 8, fraction = 0, message = "{volumeValidatorErrorMsg}")
-    BigDecimal associatedCampVolume,
-
-    @NotNull(message = "{isolatedCampRequiredErrorMsg}")
-    Boolean isolatedCamp,
-
-    @Size(max = 3500, message = "{campCommentsMaxLengthErrorMsg}")
-    @MaxByteLength(value = 4000, charMax = 3500, message = "{campCommentsMaxLengthErrorMsg}")
-    String comments,
-
+    @NotBlank(message = "{campNameRequiredErrorMsg}") @Size(max = 30, message = "{campNameMaxLengthErrorMsg}") @MaxByteLength(value = 30, charMax = 30, message = "{campNameMaxLengthErrorMsg}")
+        String campName,
+    @DecimalMin(value = "0.0", message = "{distanceValidatorErrorMsg}") @DecimalMax(value = "999999.9", message = "{distanceValidatorErrorMsg}") @Digits(integer = 7, fraction = 2, message = "{distanceValidatorErrorMsg}") BigDecimal roadDistanceToOperatingArea,
+    @Min(value = 1, message = "{numberOfPersonsValidatorErrorMsg}") @Max(value = 999, message = "{numberOfPersonsValidatorErrorMsg}") Integer sizeOfCamp,
+    @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}") @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}") @Digits(integer = 8, fraction = 0, message = "{volumeValidatorErrorMsg}") BigDecimal associatedCampVolume,
+    @NotNull(message = "{isolatedCampRequiredErrorMsg}") Boolean isolatedCamp,
+    @Size(max = 3500, message = "{campCommentsMaxLengthErrorMsg}") @MaxByteLength(value = 4000, charMax = 3500, message = "{campCommentsMaxLengthErrorMsg}")
+        String comments,
     @Valid CategoryEntry cateringAndFood,
     @Valid CategoryEntry wagesAndBenefits,
     @Valid CategoryEntry depreciationLease,
@@ -134,7 +115,4 @@ public record CampRequest(
     @Valid CategoryEntry equipAndSuppliesAir,
     @Valid CategoryEntry equipAndSuppliesWater,
     @Valid CategoryEntry otherAccessExpenses,
-
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}")
-    Integer revisionCount) {
-}
+    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}

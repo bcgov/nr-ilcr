@@ -19,9 +19,9 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <ul>
  *   <li><strong>The detail query's mill/year/category predicates.</strong> The seed's decoy detail
  *       rows (8436 on a wrong-YEAR camp, 8437 on a wrong-CATEGORY camp) hang off camps the service
- *       never looks up, so {@code Schedule5Service} discards them by construction: deleting
- *       {@code AND c.REPORT_YEAR} and {@code AND c.ILCR_CATEGORY_ID} from the query leaves every
- *       endpoint assertion green. Only a direct read can tell.
+ *       never looks up, so {@code Schedule5Service} discards them by construction: deleting {@code
+ *       AND c.REPORT_YEAR} and {@code AND c.ILCR_CATEGORY_ID} from the query leaves every endpoint
+ *       assertion green. Only a direct read can tell.
  *   <li><strong>The detail ORDER BY.</strong> Deviation (f)'s "lowest detail id wins" is entirely
  *       the repository's doing — the service uses {@code putIfAbsent} and never compares ids.
  *       Removing the {@code ORDER BY} would leave the endpoint tests passing for incidental
@@ -42,15 +42,13 @@ class Schedule5RepositoryIT extends AbstractOracleIT {
   /** Mill 661 carries status rows for 2019-2024 — the only multi-year fixture in the seed. */
   private static final long MULTI_YEAR_MILL = 661L;
 
-  @Autowired
-  private Schedule5Repository repository;
+  @Autowired private Schedule5Repository repository;
 
   @Test
   @DisplayName("findCostDetails returns ONLY the mill/year/category-'5' rows — decoys excluded")
   void detailQueryExcludesWrongYearAndWrongCategoryRows() {
-    List<Integer> detailIds = repository.findCostDetails(MILL, YEAR).stream()
-        .map(DetailRow::detailId)
-        .toList();
+    List<Integer> detailIds =
+        repository.findCostDetails(MILL, YEAR).stream().map(DetailRow::detailId).toList();
 
     // 8436 hangs off camp 8406 (same mill, year 2020) and 8437 off camp 8407 (same mill/year,
     // category '4'). 8435 belongs to mill 517. None may appear.
@@ -61,30 +59,51 @@ class Schedule5RepositoryIT extends AbstractOracleIT {
   @Test
   @DisplayName("findCostDetails orders by CAMP_REPORT_ID first, then ILCR_COST_REPORT_DETAIL_ID")
   void detailQueryOrdersByCampThenDetailId() {
-    List<Integer> detailIds = repository.findCostDetails(MILL, YEAR).stream()
-        .map(DetailRow::detailId)
-        .toList();
+    List<Integer> detailIds =
+        repository.findCostDetails(MILL, YEAR).stream().map(DetailRow::detailId).toList();
 
     // Camp-major, then detail id. Note 8438 (camp 8404) precedes 8433/8434 (camp 8405) even though
     // its id is higher — a flat detail-id sort would fail here, and so would no sort at all.
-    assertThat(detailIds).containsExactly(
-        // camp 8401
-        8411, 8412, 8413, 8414, 8415, 8416, 8417, 8418, 8419,
-        8420, 8421, 8422, 8423, 8424, 8425, 8426, 8427, 8428,
-        // camp 8403 (8402 has no detail rows)
-        8430,
-        // camp 8404
-        8431, 8432, 8438,
-        // camp 8405
-        8433, 8434);
+    assertThat(detailIds)
+        .containsExactly(
+            // camp 8401
+            8411,
+            8412,
+            8413,
+            8414,
+            8415,
+            8416,
+            8417,
+            8418,
+            8419,
+            8420,
+            8421,
+            8422,
+            8423,
+            8424,
+            8425,
+            8426,
+            8427,
+            8428,
+            // camp 8403 (8402 has no detail rows)
+            8430,
+            // camp 8404
+            8431,
+            8432,
+            8438,
+            // camp 8405
+            8433,
+            8434);
   }
 
   @Test
   @DisplayName("findCostDetails puts the duplicate item-56 row AFTER the one that must win")
   void duplicateRowArrivesAfterTheWinner() {
-    List<DetailRow> item56 = repository.findCostDetails(MILL, YEAR).stream()
-        .filter(row -> row.campId() == 8401 && row.costItemId() != null && row.costItemId() == 56)
-        .toList();
+    List<DetailRow> item56 =
+        repository.findCostDetails(MILL, YEAR).stream()
+            .filter(
+                row -> row.campId() == 8401 && row.costItemId() != null && row.costItemId() == 56)
+            .toList();
 
     // This is the ordering half of deviation (f). The service keeps whichever of these arrives
     // first; the contract says that must be 8411 (cost 480000), not 8428 (cost 777777).
@@ -96,9 +115,7 @@ class Schedule5RepositoryIT extends AbstractOracleIT {
   @Test
   @DisplayName("findCamps returns category-'5' camps for the mill/year in CAMP_REPORT_ID order")
   void campQueryFiltersAndOrders() {
-    List<Integer> campIds = repository.findCamps(MILL, YEAR).stream()
-        .map(CampRow::campId)
-        .toList();
+    List<Integer> campIds = repository.findCamps(MILL, YEAR).stream().map(CampRow::campId).toList();
 
     // 8406 (year 2020) and 8407 (category '4') are excluded; the seed inserts out of id order.
     assertThat(campIds).containsExactly(8401, 8402, 8403, 8404, 8405);

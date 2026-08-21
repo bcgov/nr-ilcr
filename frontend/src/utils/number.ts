@@ -24,6 +24,17 @@ export const fmtCurrency = (value: number | null | undefined): string =>
     : value.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /**
+ * Display a whole-dollar figure the way the legacy `mask.int.7digits` (`#,###,##0`) converter did:
+ * grouped, no decimals. Em dash when null/undefined. Use for the derived INTEGER totals — the money
+ * columns whose scale is 0 — where {@link fmtCurrency}'s two decimals invent a precision the column
+ * does not hold. Rates (`mask.bigDecimal.7digits2decimals`) still go through {@link fmtCurrency}.
+ */
+export const fmtWholeCost = (value: number | null | undefined): string =>
+  value === null || value === undefined
+    ? '—'
+    : value.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+/**
  * Drop the thousands separators a grouped form string carries (e.g. "1,234.5" → "1234.5"), so it can
  * be parsed. The editable numeric fields DISPLAY grouped values (see {@link groupInput}), and legacy
  * accepted grouped typing too, so every parse of a form string must go through this first —
@@ -88,7 +99,8 @@ export const numStr = (value: number | null | undefined): string =>
  * forms legacy never allowed ('1e2', '0x10', 'Infinity'). Returns null when blank or not a valid
  * decimal in this strict format.
  *
- * Schedules 6 and 11 still carry their own copies; converge them here in the consistency PR.
+ * The single source: Schedules 6 and 11 import this (their identical local copies were removed in
+ * the Story 29.8 consolidation).
  */
 const DECIMAL_INPUT = /^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/
 export const parseDecimalInput = (raw: string): number | null => {
@@ -129,7 +141,7 @@ export const numStrGroup = (value: number | null | undefined): string => groupIn
 export const numStrFixed = (value: number | null | undefined, fractionDigits: number): string =>
   value === null || value === undefined
     ? ''
-    : value.toLocaleString('en-US', {
+    : value.toLocaleString('en-CA', {
         minimumFractionDigits: fractionDigits,
         maximumFractionDigits: fractionDigits,
       })

@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
-/** Unit test for the whitelisted code-table registry (Story 24.3 / UC-CODE-001, BR-01/BR-06/BR-08). */
+/**
+ * Unit test for the whitelisted code-table registry (Story 24.3 / UC-CODE-001, BR-01/BR-06/BR-08).
+ */
 class CodeTableRegistryTest {
 
   @Test
@@ -31,9 +33,8 @@ class CodeTableRegistryTest {
 
   @Test
   void contractual_item_codes_is_the_sole_special_case_with_no_backing_code_table() {
-    long contractualCount = Arrays.stream(CodeTableRegistry.values())
-        .filter(CodeTableRegistry::contractual)
-        .count();
+    long contractualCount =
+        Arrays.stream(CodeTableRegistry.values()).filter(CodeTableRegistry::contractual).count();
     assertEquals(1, contractualCount);
     CodeTableRegistry contractual = CodeTableRegistry.CONTRACTUAL_ITEM_CODE;
     assertTrue(contractual.contractual());
@@ -45,8 +46,8 @@ class CodeTableRegistryTest {
   void pins_the_two_irregular_delivery_table_names() {
     // British spelling in the DB, and no ILCR_ prefix on the ASM table — both easy to get wrong.
     assertEquals("ILCR_SUPPORT_CENTRE_CODE", CodeTableRegistry.SUPPORT_CENTER_CODE.table());
-    assertEquals("RELATIVE_SOIL_MOISTUR_RGM_CODE",
-        CodeTableRegistry.RELATIVE_SOIL_MOISTUR_RGM_CODE.table());
+    assertEquals(
+        "RELATIVE_SOIL_MOISTUR_RGM_CODE", CodeTableRegistry.RELATIVE_SOIL_MOISTUR_RGM_CODE.table());
   }
 
   @Test

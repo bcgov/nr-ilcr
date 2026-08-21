@@ -16,9 +16,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Authorization on VIEW_SCHEDULE (AD-7) for POST check-status. Security ON; drives the real
- * {@code oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without VIEW_SCHEDULE must
- * get 403 {@code problem+json}; a submitter/admin passes authz. Mirrors {@link Schedule2AuthorizationIT}.
+ * Authorization on VIEW_SCHEDULE (AD-7) for POST check-status. Security ON; drives the real {@code
+ * oauth2ResourceServer} chain + {@code @PreAuthorize}. A principal without VIEW_SCHEDULE must get
+ * 403 {@code problem+json}; a submitter/admin passes authz. Mirrors {@link
+ * Schedule2AuthorizationIT}.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("POST /api/v1/schedule2/check-status — authorization on VIEW_SCHEDULE (AD-7)")
@@ -30,8 +31,7 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
   private RequestPostProcessor jwtWithGroups(List<String> groups) {
     return jwt()
@@ -42,10 +42,12 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("no VIEW_SCHEDULE (empty cognito:groups) -> 403 problem+json")
   void noPermission_returns403() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of())))
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -53,10 +55,12 @@ class Schedule2CheckStatusAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (not 403)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
-            .param("millId", String.valueOf(SEEDED_MILL))
-            .param("year", String.valueOf(SEEDED_YEAR))
-            .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", String.valueOf(SEEDED_MILL))
+                .param("year", String.valueOf(SEEDED_YEAR))
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().is2xxSuccessful());
   }
 }

@@ -18,17 +18,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Bean-Validation contract for {@link CulvertRequest}, at the constraint layer rather than over HTTP.
+ * Bean-Validation contract for {@link CulvertRequest}, at the constraint layer rather than over
+ * HTTP.
  *
- * <p>Covers the boundaries the write ITs cannot reach cheaply, and pins three fixes that a plausible
- * "tidy-up" would undo: that a length carrying extra decimals is ACCEPTED (rounded on write, not
- * rejected), that span and rise report DISTINGUISHABLE messages, and that a negative
+ * <p>Covers the boundaries the write ITs cannot reach cheaply, and pins three fixes that a
+ * plausible "tidy-up" would undo: that a length carrying extra decimals is ACCEPTED (rounded on
+ * write, not rejected), that span and rise report DISTINGUISHABLE messages, and that a negative
  * {@code revisionCount} is a validation failure rather than a phantom 409. Runs under surefire.
  *
  * <p>Messages are asserted as bundle KEY templates ({@code {someKey}}) — this validator is built
  * standalone, without the Spring {@code MessageSource} that resolves them in production, so the raw
- * template is what surfaces. That is deliberate: it pins which KEY each field uses, which is the thing
- * that can silently regress.
+ * template is what surfaces. That is deliberate: it pins which KEY each field uses, which is the
+ * thing that can silently regress.
  */
 @DisplayName("CulvertRequest — validation constraints (ranges, scale, byte cap, lock token)")
 class Schedule7bRequestValidationTest {
@@ -49,7 +50,11 @@ class Schedule7bRequestValidationTest {
 
   /** A valid culvert; each test overrides just the field under examination. */
   private static CulvertRequest request(
-      Integer span, Integer rise, BigDecimal length, Integer pieces, String comments,
+      Integer span,
+      Integer rise,
+      BigDecimal length,
+      Integer pieces,
+      String comments,
       Integer revision) {
     return new CulvertRequest("R", span, rise, length, pieces, 4000, 1500, comments, revision);
   }
@@ -71,13 +76,16 @@ class Schedule7bRequestValidationTest {
     assertThat(messagesFor(valid(), Default.class, OnUpdate.class)).isEmpty();
   }
 
-  // ----- length: scale is NOT a constraint (regression guard for the @Digits trap) ----------------
+  // ----- length: scale is NOT a constraint (regression guard for the @Digits trap)
+  // ----------------
 
   @Test
   @DisplayName("A length with a trailing zero is ACCEPTED — 12.50 is the same number as 12.5")
   void trailingZeroLengthIsAccepted() {
-    // The bug this guards: @Digits(fraction = 1) reads BigDecimal.scale(), so 12.50 failed while the
-    // identical 12.5 passed — and the message returned was the RANGE message, for a value inside the
+    // The bug this guards: @Digits(fraction = 1) reads BigDecimal.scale(), so 12.50 failed while
+    // the
+    // identical 12.5 passed — and the message returned was the RANGE message, for a value inside
+    // the
     // range. Any client formatting to two decimals could not save a culvert at all.
     assertThat(messagesFor(request(1200, 900, new BigDecimal("12.50"), 3, "ok", 0), Default.class))
         .isEmpty();
@@ -99,15 +107,18 @@ class Schedule7bRequestValidationTest {
   void lengthRangeIsEnforced() {
     assertThat(messagesFor(request(1200, 900, new BigDecimal("0.0"), 3, "ok", 0), Default.class))
         .isEmpty();
-    assertThat(messagesFor(request(1200, 900, new BigDecimal("999999.9"), 3, "ok", 0), Default.class))
+    assertThat(
+            messagesFor(request(1200, 900, new BigDecimal("999999.9"), 3, "ok", 0), Default.class))
         .isEmpty();
-    assertThat(messagesFor(request(1200, 900, new BigDecimal("1000000.0"), 3, "ok", 0), Default.class))
+    assertThat(
+            messagesFor(request(1200, 900, new BigDecimal("1000000.0"), 3, "ok", 0), Default.class))
         .containsExactly("{culvertLengthValidatorErrorMsg}");
     assertThat(messagesFor(request(1200, 900, new BigDecimal("-0.1"), 3, "ok", 0), Default.class))
         .containsExactly("{culvertLengthValidatorErrorMsg}");
   }
 
-  // ----- span and rise must be distinguishable ----------------------------------------------------
+  // ----- span and rise must be distinguishable
+  // ----------------------------------------------------
 
   @Test
   @DisplayName("Span and rise report DIFFERENT keys, so a failed save names the field that failed")
@@ -116,7 +127,8 @@ class Schedule7bRequestValidationTest {
         .containsExactly("{culvertSpanValidatorErrorMsg}");
     assertThat(messagesFor(request(1200, 10000000, null, 3, "ok", 0), Default.class))
         .containsExactly("{culvertRiseValidatorErrorMsg}");
-    // Both wrong at once: two distinct messages, not one repeated. The 400 detail is a bare join with
+    // Both wrong at once: two distinct messages, not one repeated. The 400 detail is a bare join
+    // with
     // no field names, so sharing a key left the reporter unable to tell which dimension failed.
     assertThat(messagesFor(request(-1, 10000000, null, 3, "ok", 0), Default.class))
         .containsExactlyInAnyOrder(
@@ -131,7 +143,8 @@ class Schedule7bRequestValidationTest {
         .containsExactly("{culvertSpanValidatorErrorMsg}");
   }
 
-  // ----- piece count ------------------------------------------------------------------------------
+  // ----- piece count
+  // ------------------------------------------------------------------------------
 
   @Test
   @DisplayName("Piece count is required and bounded 1-9,999 — 0 is below the floor")
@@ -145,12 +158,14 @@ class Schedule7bRequestValidationTest {
   }
 
   @Test
-  @DisplayName("Span, rise, length and comments are all OPTIONAL at save (only type + pieces required)")
+  @DisplayName(
+      "Span, rise, length and comments are all OPTIONAL at save (only type + pieces required)")
   void onlyTypeAndPieceCountAreRequired() {
     assertThat(messagesFor(request(null, null, null, 3, null, 0), Default.class)).isEmpty();
   }
 
-  // ----- comments: characters AND bytes -----------------------------------------------------------
+  // ----- comments: characters AND bytes
+  // -----------------------------------------------------------
 
   @Test
   @DisplayName("3,500 ASCII comment characters are accepted; 3,501 are not")
@@ -179,7 +194,7 @@ class Schedule7bRequestValidationTest {
   @Test
   @DisplayName("A multibyte comment that fits BOTH caps is accepted")
   void multibyteCommentWithinBothCapsIsAccepted() {
-    String twoByteChars = "é".repeat(1500);  // 1,500 chars / 3,000 bytes
+    String twoByteChars = "é".repeat(1500); // 1,500 chars / 3,000 bytes
     assertThat(messagesFor(request(1200, 900, null, 3, twoByteChars, 0), Default.class)).isEmpty();
   }
 
@@ -188,8 +203,8 @@ class Schedule7bRequestValidationTest {
   void oversizedAsciiCommentReportsOneMessage() {
     // The character and byte caps share a key, so charMax makes the byte validator defer whenever
     // @Size already failed — otherwise the handler's "; " join produced the message twice.
-    assertThat(validator.validate(
-        request(1200, 900, null, 3, "x".repeat(5000), 0), Default.class)).hasSize(1);
+    assertThat(validator.validate(request(1200, 900, null, 3, "x".repeat(5000), 0), Default.class))
+        .hasSize(1);
   }
 
   // ----- revisionCount ---------------------------------------------------------------------------
@@ -216,8 +231,9 @@ class Schedule7bRequestValidationTest {
   @Test
   @DisplayName("A blank culvert type is rejected as a required field")
   void typeIsRequired() {
-    assertThat(validator.validate(
-        new CulvertRequest("", 1200, 900, null, 3, 4000, 1500, "ok", 0), Default.class))
+    assertThat(
+            validator.validate(
+                new CulvertRequest("", 1200, 900, null, 3, 4000, 1500, "ok", 0), Default.class))
         .extracting(ConstraintViolation::getMessage)
         .containsExactly("{missingRequiredFieldMsg}");
   }
@@ -225,11 +241,15 @@ class Schedule7bRequestValidationTest {
   @Test
   @DisplayName("Cost band endpoints hold at ±99,999,999")
   void costBandEndpoints() {
-    assertThat(validator.validate(
-        new CulvertRequest("R", null, null, null, 3, 99999999, -99999999, null, 0), Default.class))
+    assertThat(
+            validator.validate(
+                new CulvertRequest("R", null, null, null, 3, 99999999, -99999999, null, 0),
+                Default.class))
         .isEmpty();
-    assertThat(validator.validate(
-        new CulvertRequest("R", null, null, null, 3, 100000000, 1500, null, 0), Default.class))
+    assertThat(
+            validator.validate(
+                new CulvertRequest("R", null, null, null, 3, 100000000, 1500, null, 0),
+                Default.class))
         .extracting(ConstraintViolation::getMessage)
         .containsExactly("{costValidatorErrorMsg}");
   }

@@ -29,17 +29,16 @@ class Schedule10ResponseTest {
       // components (trackStatus/editable, or pages/codeLists) compiles cleanly and would surface
       // in Story 11.2 as a save-echo that silently flips editable or drops the pages — where it
       // would look like an 11.2 bug rather than an 11.1 one.
-      ConstructionPage page = new ConstructionPage(
-          8900, 1, "Page 1", "RNI", "01", "01A", null, "11", "North", "2021-06", 0, 0, List.of());
+      ConstructionPage page =
+          new ConstructionPage(
+              8900, 1, "Page 1", "RNI", "01", "01A", null, "11", "North", "2021-06", 0, 0,
+              List.of());
       Schedule10Response original =
           new Schedule10Response(710L, 2021, "D", true, List.of(page), null, null);
 
       Schedule10Response copy = original.withMessage(new MessageInfo("k", "text"));
 
-      assertThat(copy)
-          .usingRecursiveComparison()
-          .ignoringFields("message")
-          .isEqualTo(original);
+      assertThat(copy).usingRecursiveComparison().ignoringFields("message").isEqualTo(original);
       assertThat(copy.message()).isNotNull();
       assertThat(copy.message().key()).isEqualTo("k");
       // The original must be untouched — it is a record, but the copy is hand-written.

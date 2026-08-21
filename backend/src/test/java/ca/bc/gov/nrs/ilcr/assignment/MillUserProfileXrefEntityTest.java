@@ -19,9 +19,20 @@ class MillUserProfileXrefEntityTest {
     LocalDate start = LocalDate.of(2026, 8, 4);
     LocalDateTime ts = LocalDateTime.of(2026, 8, 4, 9, 0);
 
-    MillUserProfileXrefEntity e = new MillUserProfileXrefEntity(
-        7L, "B29C746A6BAF45B9844EE2E2984CA472", 514L, "Pascucci, Greg WLRS:EX", "GRPASCUC",
-        start, null, 0, "GRPASCUC", ts, "GRPASCUC", ts);
+    MillUserProfileXrefEntity e =
+        new MillUserProfileXrefEntity(
+            7L,
+            "B29C746A6BAF45B9844EE2E2984CA472",
+            514L,
+            "Pascucci, Greg WLRS:EX",
+            "GRPASCUC",
+            start,
+            null,
+            0,
+            "GRPASCUC",
+            ts,
+            "GRPASCUC",
+            ts);
 
     assertEquals(7L, e.id());
     assertEquals("B29C746A6BAF45B9844EE2E2984CA472", e.userGuid());

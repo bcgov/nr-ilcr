@@ -6,8 +6,8 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * Spring Data JDBC row shape for a Schedule 8 report page ({@code THE.TREE_TO_TRUCK_REPORT}, AD-3).
- * The aggregate type for {@link Schedule8Repository}. Code fields are surfaced as their stored values
- * (label/Road-Group derivation deferred — Story 14.1 §Decisions 2/3).
+ * The aggregate type for {@link Schedule8Repository}. Code fields are surfaced as their stored
+ * values (label/Road-Group derivation deferred — Story 14.1 §Decisions 2/3).
  */
 @Table(name = "TREE_TO_TRUCK_REPORT", schema = "THE")
 public record TreeToTruckReportEntity(
@@ -24,5 +24,4 @@ public record TreeToTruckReportEntity(
     @Column("CONTACT_NAME") String contact,
     @Column("CONTACT_PHONE_NUMBER") String phone,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") Integer revisionCount) {
-}
+    @Column("REVISION_COUNT") Integer revisionCount) {}

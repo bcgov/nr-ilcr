@@ -20,8 +20,8 @@ import org.springframework.test.context.TestPropertySource;
  * story (AC6). GET /api/v1/schedule9 contractual-work record list.
  *
  * <p>Security is pinned OFF explicitly (Story 8.1's lesson) so the mock {@code ILCR_SUBMITTER}
- * principal applies and these isolate document assembly from authz (covered by
- * {@link Schedule9AuthorizationIT}). {@code editable:true} on the Draft context is therefore the
+ * principal applies and these isolate document assembly from authz (covered by {@link
+ * Schedule9AuthorizationIT}). {@code editable:true} on the Draft context is therefore the
  * caller-holds-EDIT_SCHEDULE AND Draft branch; the FALSE branch is proven on 517/2021 below and in
  * {@code Schedule9ServiceTest}.
  *
@@ -39,8 +39,12 @@ class Schedule9DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 Draft — three records served in id order (AC1), decoys excluded")
   void draftContext_servesRecordsInIdOrder() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(514)))
@@ -61,26 +65,34 @@ class Schedule9DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.codeLists.contractualItems[0].code", is("108")))
         .andExpect(jsonPath("$.codeLists.contractualItems[0].description", is("Cattleguard")))
         .andExpect(jsonPath("$.codeLists.contractualItems[6].code", is("114")))
-        // Assert BOTH halves so a code/description swap in the query is caught (the code lands in the
+        // Assert BOTH halves so a code/description swap in the query is caught (the code lands in
+        // the
         // code slot, the label in the description slot) — not just that some code is present.
         .andExpect(jsonPath("$.codeLists.unitTypes[*].code", hasItem("M3")))
         .andExpect(jsonPath("$.codeLists.unitTypes[*].description", hasItem("Cubic Metres")))
         .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].code", hasItem("BZ1")))
-        .andExpect(jsonPath("$.codeLists.biogeoclimaticZones[*].description", hasItem("BEC Zone One")))
+        .andExpect(
+            jsonPath("$.codeLists.biogeoclimaticZones[*].description", hasItem("BEC Zone One")))
         .andExpect(jsonPath("$.codeLists.sources[*].code", hasItem("A")))
         .andExpect(jsonPath("$.codeLists.sources[*].description", hasItem("Actual Cost")))
         .andExpect(jsonPath("$.message").doesNotExist());
   }
 
   @Test
-  @DisplayName("record 9101 — every field served as stored, code descriptions resolved, $/Unit 50.00")
+  @DisplayName(
+      "record 9101 — every field served as stored, code descriptions resolved, $/Unit 50.00")
   void fullyPopulatedRecord_servesEveryFigure() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.records[0].revisionCount", is(0)))
         .andExpect(jsonPath("$.records[0].contractorId", is("CTR-001")))
-        // Contractual Item = the 108–114 code + its ILCR_REPORT_COST_ITEM name (from the cost line).
+        // Contractual Item = the 108–114 code + its ILCR_REPORT_COST_ITEM name (from the cost
+        // line).
         .andExpect(jsonPath("$.records[0].contractualItem.code", is("108")))
         .andExpect(jsonPath("$.records[0].contractualItem.description", is("Cattleguard")))
         // Unit Type + BEC + Source codes resolved to their reference-table descriptions in SQL.
@@ -110,8 +122,12 @@ class Schedule9DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("record 9102 — zero units: $/Unit is null (S14) even though a cost is stored (AC2)")
   void zeroUnitsRecord_omitsCostPerUnit() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.records[1].id", is(9102)))
         .andExpect(jsonPath("$.records[1].contractualItem.code", is("109")))
@@ -126,11 +142,16 @@ class Schedule9DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("record 9103 — the three conditional 'Other' descriptions served verbatim")
   void otherItemRecord_servesConditionalDescriptions() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.records[2].id", is(9103)))
-        // revisionCount is the per-record optimistic-lock token (Story 9.2). 9103's CONTRACTUAL_WORK
+        // revisionCount is the per-record optimistic-lock token (Story 9.2). 9103's
+        // CONTRACTUAL_WORK
         // _REPORT row is rev 2 while its cost-detail line is rev 0, so this pins that the token is
         // read from the record master, not the cost line.
         .andExpect(jsonPath("$.records[2].revisionCount", is(2)))
@@ -152,8 +173,12 @@ class Schedule9DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("515/2021 — ACT with a status row but no records -> 200 with records: [] (AC5)")
   void activeMillWithNoRecords_returns200Empty() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "515").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.millId", is(515)))
         .andExpect(jsonPath("$.trackStatus", is("D")))
@@ -165,8 +190,12 @@ class Schedule9DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 Submitted — full record list, editable:false (AC4, S30 authority)")
   void nonDraftContext_listsRecordsReadOnly() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "517").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         // The server is the sole authority: EDIT_SCHEDULE alone is not enough on a non-Draft track.

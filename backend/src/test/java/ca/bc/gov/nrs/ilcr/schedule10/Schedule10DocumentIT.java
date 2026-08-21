@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -20,9 +21,9 @@ import org.springframework.test.context.TestPropertySource;
  * <p>Security OFF so the mock {@code ILCR_SUBMITTER} principal applies, isolating document assembly
  * from authorization (covered by {@link Schedule10AuthorizationIT}).
  *
- * <p>Asserts the pinned wire contract against the V20260817 seed with EXACT numbers, not shapes. The
- * seed's decoy rows make these assertions also pin the query's mill / year / category-{@code '10'}
- * filters.
+ * <p>Asserts the pinned wire contract against the V20260817 seed with EXACT numbers, not shapes.
+ * The seed's decoy rows make these assertions also pin the query's mill / year / category-{@code
+ * '10'} filters.
  */
 @DisplayName("GET /api/v1/schedule10 — construction pages (Schedule 10 read)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -33,8 +34,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("710/2021 Draft — two pages, nested details, derived Road Group and counts")
   void draftContext_servesPinnedDocument() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(710)))
@@ -55,8 +60,9 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].constructionPeriod", is("2021-06")))
         .andExpect(jsonPath("$.pages[0].roadDetailCount", is(2)))
         // The legacy label, byte-for-byte — note NO space after "TFL:" and "-" for the absent TFL.
-        .andExpect(jsonPath("$.pages[0].pageLabel",
-            is("Page 1, Period: 2021-06, TSA: 01, SB: 01A, TFL:-")))
+        .andExpect(
+            jsonPath(
+                "$.pages[0].pageLabel", is("Page 1, Period: 2021-06, TSA: 01, SB: 01A, TFL:-")))
         .andExpect(jsonPath("$.pages[0].roadDetails", hasSize(2)))
 
         // --- Page 8901: TSA "16" + TSB "16G" -> regex [G-Pg-p] -> Road Group "6" ---
@@ -69,8 +75,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("cost lines reassemble into the sub-grade and stabilizing substructures (BR-08)")
   void reassemblesCostSubstructures() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // Detail 8910 is the only row in the whole delivery-shaped fixture set WITH cost lines.
         .andExpect(jsonPath("$.pages[0].roadDetails[0].roadDetailId", is(8910)))
@@ -116,7 +126,8 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         // RIPPABLE before SOLID while the DTO takes solid first, so a swap is a plausible slip that
         // the total alone cannot catch (10+20+40+20+10 and 20+10+40+10+20 both make 100).
         .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.solidRockPct", is(10)))
-        .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.rippableRockPct", is(20)))
+        .andExpect(
+            jsonPath("$.pages[0].roadDetails[0].materialComposition.rippableRockPct", is(20)))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.coarsePct", is(30)))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.finePct", is(25)))
         .andExpect(jsonPath("$.pages[0].roadDetails[0].materialComposition.organicPct", is(15)))
@@ -152,15 +163,23 @@ class Schedule10DocumentIT extends AbstractOracleIT {
     // Catalogue row 8803 (ESSFwc4a) exists but is deliberately absent from the xref. Detail 8940
     // stores it. This is the ONLY fixture exercising the referenced-BEC fallback — without it the
     // whole second query and its merge could be deleted with nothing failing.
-    mockMvc.perform(get(ENDPOINT).param("millId", "711").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "711")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // The stored classification resolves and renders in full ...
-        .andExpect(jsonPath("$.pages[0].roadDetails[?(@.roadDetailId == 8940)].becClassification.label",
-            hasItem("ESSFwc4a")))
+        .andExpect(
+            jsonPath(
+                "$.pages[0].roadDetails[?(@.roadDetailId == 8940)].becClassification.label",
+                hasItem("ESSFwc4a")))
         // ... while the offerable dropdown still withholds it (the surviving BR-06 gate).
-        .andExpect(jsonPath(
-            "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8803)]", hasSize(0)));
+        .andExpect(
+            jsonPath(
+                "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8803)]",
+                hasSize(0)));
   }
 
   @Test
@@ -169,8 +188,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
     // Mill 710 also owns page 8908 (year 2020) and page 8909 (category '99'). Both must be
     // excluded. Previously every seeded page was 2021 + '10', so either predicate could be dropped
     // from findPages/findRoadDetails/findCostLines with the suite still green.
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages", hasSize(2)))
         .andExpect(jsonPath("$.pages[?(@.pageId == 8908)]", hasSize(0)))
@@ -186,8 +209,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
     // renders each individual cost blank while counting it as zero in the totals, because
     // getCostValue (:1160-1168) coerces before summing. Serving absent totals here would regress
     // 100% of production data to blanks where the legacy screen shows $0.00.
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages[0].roadDetails[1].roadDetailId", is(8911)))
         .andExpect(jsonPath("$.pages[0].roadDetails[1].rowNumber", is(2)))
@@ -217,8 +244,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("TFL-located page derives from the TFL table (BR-05 mutual exclusion)")
   void tflLocatedPage_derivesFromTflTable() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "711").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "711")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages", hasSize(1)))
         .andExpect(jsonPath("$.pages[0].pageId", is(8902)))
@@ -230,8 +261,9 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].tsbNumberCode").doesNotExist())
         // Legacy does NOT null-guard TSA in the label, so a TFL page renders the literal "null".
         // Reproduced verbatim (deviation (l)) — this asserts the defect on purpose.
-        .andExpect(jsonPath("$.pages[0].pageLabel",
-            is("Page 1, Period: 2021-05, TSA: null, SB: -, TFL:08")));
+        .andExpect(
+            jsonPath(
+                "$.pages[0].pageLabel", is("Page 1, Period: 2021-05, TSA: null, SB: -, TFL:08")));
   }
 
   @Test
@@ -239,8 +271,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   void unmappedCombination_servesBlankRoadGroupWithoutError() throws Exception {
     // Mill 712: page 8903 has TSA "99" (absent from the switch -> default -> null) and page 8904
     // has TSA "16" + TSB "16Z" (matches a case, but no inner branch -> "" ). Both must serve blank.
-    mockMvc.perform(get(ENDPOINT).param("millId", "712").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "712")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages", hasSize(2)))
         .andExpect(jsonPath("$.pages[0].pageId", is(8903)))
@@ -251,8 +287,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].roadDetailCount", is(1)));
 
     // Mill 713: an unmapped TFL takes the third legacy path (default -> null).
-    mockMvc.perform(get(ENDPOINT).param("millId", "713").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "713")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages[0].tflNumberCode", is("77")))
         .andExpect(jsonPath("$.pages[0].roadGroup").doesNotExist());
@@ -261,8 +301,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("a page with no road details serves count 0 and an empty list (CNT-001)")
   void pageWithNoDetails_servesZeroCount() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "714").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "714")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages", hasSize(1)))
         .andExpect(jsonPath("$.pages[0].pageId", is(8906)))
@@ -274,8 +318,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("a valid active context with zero pages is 200 empty, not 404 (deviation (a))")
   void noPages_isTwoHundredEmpty() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "715").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "715")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.millId", is(715)))
         .andExpect(jsonPath("$.trackStatus", is("D")))
@@ -287,8 +335,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("a non-Draft track lists its data with editable:false (S31 / BR-02)")
   void nonDraftTrack_listsDataButIsNotEditable() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "716").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "716")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         // The caller holds EDIT_SCHEDULE, but the track is not Draft — the server decides.
@@ -302,8 +354,12 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("code lists are year-filtered and exclude the three LD-removed lists")
   void codeLists_areYearFilteredAndOmitRemovedFields() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // Content filters, not hasSize: these are SHARED code tables, so a future story seeding one
         // more ballast material would red a size assertion for a reason unrelated to Schedule 10.
@@ -330,10 +386,106 @@ class Schedule10DocumentIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("the TSA and supply-block lists are served, year-filtered, and not transposed")
+  void tsaAndSupplyBlockLists_areServedAndYearFiltered() throws Exception {
+    // Both lists shipped with NO coverage at all: deleting either @Query body, or swapping the two
+    // toCodes(...) arguments in the assembler -- they are both List<CodeDescriptionDto>, so it
+    // compiles -- left the suite green. Each assertion below fails under one of those mutations.
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        // Present and populated, so deleting a @Query body reds this.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers").isArray())
+        .andExpect(jsonPath("$.codeLists.supplyBlocks").isArray())
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '01')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '16')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01A')]", hasSize(1)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16G')]", hasSize(1)))
+        // The descriptions are what the control DISPLAYS, so they are part of the contract.
+        .andExpect(
+            jsonPath(
+                "$.codeLists.tsaNumbers[?(@.code == '01')].description", contains("Arrow TSA")))
+        .andExpect(
+            jsonPath(
+                "$.codeLists.supplyBlocks[?(@.code == '01A')].description",
+                contains("Arrow TSA Block A")))
+        // TRANSPOSITION GUARD: a TSA code must never appear in the block list, or the reverse. A
+        // swap of the two assembler arguments compiles and is caught only here.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '01A')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '16G')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '01')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16')]", hasSize(0)))
+        // V20260821 seeds '90','Retired TSA' expiring 2010-12-31 stating it exists "to pin that the
+        // year filter drops a code". Nothing pinned it until now: no stored 2021 page references
+        // '90', so neither leg of the predicate can rescue it.
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '90')]", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName("an expired block a stored page references is rescued by the referenced-union leg")
+  void supplyBlocks_referencedUnionRescuesAnExpiredCode() throws Exception {
+    // The union leg on both queries had NO coverage: it can only rescue a code that HAS a row and
+    // fell outside the date window, and no fixture created that shape until V20260821 was corrected
+    // to seed '16Z' expired (see that file's CORRECTED note). Page 8904 references it, on mill 712.
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "712")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        // Drop the `OR TSB_NUMBER_CODE IN (...)` leg and this goes to 0.
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16Z')]", hasSize(1)));
+
+    // Scoped to the MILL and the YEAR: mill 710 references no such block, so the expired code stays
+    // dropped there. Remove the date predicate and this goes to 1.
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '16Z')]", hasSize(0)));
+  }
+
+  @Test
+  @DisplayName(
+      "a code absent from its table entirely is not served, however many pages reference it")
+  void codeLists_cannotServeACodeWithNoRow() throws Exception {
+    // Page 8903 (mill 712) stores TSA '99' / TSB '99A', neither of which has a row in its code
+    // table.
+    // The union leg selects FROM the code table, so it cannot invent one. This is the contract
+    // boundary that makes the FRONTEND synthesise a stored code as its own option (review H2) —
+    // pinned
+    // here so nobody "fixes" the client by pointing at a backend guarantee that does not exist.
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "712")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.codeLists.tsaNumbers[?(@.code == '99')]", hasSize(0)))
+        .andExpect(jsonPath("$.codeLists.supplyBlocks[?(@.code == '99A')]", hasSize(0)))
+        // The page itself still lists, carrying its stored location verbatim.
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8903)].tsaNumber", contains("99")))
+        .andExpect(jsonPath("$.pages[?(@.pageId == 8903)].tsbNumberCode", contains("99A")));
+  }
+
+  @Test
   @DisplayName("BEC is served structurally, gated by the surviving BR-06 xref (deviation (e))")
   void becIsStructuralAndXrefGated() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // Structural components plus the legacy concatenated label.
         .andExpect(jsonPath("$.pages[0].roadDetails[0].becClassification.becZoneCode", is("ICH")))
@@ -343,30 +495,43 @@ class Schedule10DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].roadDetails[0].becClassification.label", is("ICHdw1")))
         // 8803 (ESSFwc4a) exists in BIOGEOCLIMATIC_CATALOGUE but is NOT in the xref, so the gate
         // must exclude it. Serving the unfiltered catalogue would be an unflagged behaviour change.
-        .andExpect(jsonPath(
-            "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8803)]", hasSize(0)))
-        .andExpect(jsonPath(
-            "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8801)]", hasSize(1)));
+        .andExpect(
+            jsonPath(
+                "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8803)]",
+                hasSize(0)))
+        .andExpect(
+            jsonPath(
+                "$.codeLists.becClassifications[?(@.biogeoclimaticCatalogueId == 8801)]",
+                hasSize(1)));
   }
 
   @Test
   @DisplayName("the three LD-removed fields never appear in a response")
   void removedFieldsAreAbsent() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "710").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "710")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.pages[0].roadDetails[0].asmCode").doesNotExist())
         .andExpect(jsonPath("$.pages[0].roadDetails[0].soilMoistureCode").doesNotExist())
         .andExpect(jsonPath("$.pages[0].roadDetails[0].boulderAreaPct").doesNotExist())
-        .andExpect(jsonPath(
-            "$.pages[0].roadDetails[0].materialComposition.boulderAreaPct").doesNotExist());
+        .andExpect(
+            jsonPath("$.pages[0].roadDetails[0].materialComposition.boulderAreaPct")
+                .doesNotExist());
   }
 
   @Test
   @DisplayName("another mill's pages never leak into this document")
   void doesNotLeakOtherMillsPages() throws Exception {
-    mockMvc.perform(get(ENDPOINT).param("millId", "714").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "714")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         // Mill 714 owns exactly one page; mills 710-713 and 716 own others in the same year.
         .andExpect(jsonPath("$.pages", hasSize(1)))

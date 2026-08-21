@@ -22,11 +22,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit tests for the {@code default}/mapping logic in {@link Schedule7aRepository} — the
- * {@code *_CODE} row → {@code CodeDescriptionDto} option mapping ({@code schedule8} idiom) and the
- * {@code upsertCost} update-in-place-else-insert branch. The {@code @Query} SQL itself is proven
- * against Oracle in the {@code *IT} suite; here the real default methods run over a mocked
- * repository so the pure Java is covered without a database.
+ * Unit tests for the {@code default}/mapping logic in {@link Schedule7aRepository} — the {@code
+ * *_CODE} row → {@code CodeDescriptionDto} option mapping ({@code schedule8} idiom) and the {@code
+ * upsertCost} update-in-place-else-insert branch. The {@code @Query} SQL itself is proven against
+ * Oracle in the {@code *IT} suite; here the real default methods run over a mocked repository so
+ * the pure Java is covered without a database.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule7aRepository — code-option mapping and upsertCost branch")
@@ -42,20 +42,23 @@ class Schedule7aRepositoryTest {
     doCallRealMethod().when(repository).deckTypeOptions(anyInt());
     doCallRealMethod().when(repository).abutmentTypeOptions(anyInt());
     doCallRealMethod().when(repository).loadRatingOptions(anyInt());
-    when(repository.findConstructionTypeCodes(any())).thenReturn(List.of(
-        new ConstructionTypeCode("N", "New"), new ConstructionTypeCode("U", "Used")));
+    when(repository.findConstructionTypeCodes(any()))
+        .thenReturn(
+            List.of(new ConstructionTypeCode("N", "New"), new ConstructionTypeCode("U", "Used")));
     when(repository.findSuperstructureTypeCodes(any()))
         .thenReturn(List.of(new SuperstructureTypeCode("STL", "Steel")));
     when(repository.findDeckTypeCodes(any())).thenReturn(List.of(new DeckTypeCode("WD", "Wood")));
     when(repository.findAbutmentTypeCodes(any()))
         .thenReturn(List.of(new AbutmentTypeCode("CONC", "Concrete")));
-    when(repository.findLoadRatingCodes(any())).thenReturn(List.of(new LoadRatingCode("L100", "L-100")));
+    when(repository.findLoadRatingCodes(any()))
+        .thenReturn(List.of(new LoadRatingCode("L100", "L-100")));
 
     assertThat(repository.constructionTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("N", "New"), new CodeDescriptionDto("U", "Used"));
     assertThat(repository.superstructureTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("STL", "Steel"));
-    assertThat(repository.deckTypeOptions(2021)).containsExactly(new CodeDescriptionDto("WD", "Wood"));
+    assertThat(repository.deckTypeOptions(2021))
+        .containsExactly(new CodeDescriptionDto("WD", "Wood"));
     assertThat(repository.abutmentTypeOptions(2021))
         .containsExactly(new CodeDescriptionDto("CONC", "Concrete"));
     assertThat(repository.loadRatingOptions(2021))
@@ -72,9 +75,13 @@ class Schedule7aRepositoryTest {
 
     verify(repository).updateCost(7601L, 70, 500, "user");
     verify(repository, never()).nextCostDetailId();
-    verify(repository, never()).insertCost(org.mockito.ArgumentMatchers.anyLong(),
-        org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyInt(),
-        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    verify(repository, never())
+        .insertCost(
+            org.mockito.ArgumentMatchers.anyLong(),
+            org.mockito.ArgumentMatchers.anyLong(),
+            org.mockito.ArgumentMatchers.anyInt(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
   }
 
   @Test

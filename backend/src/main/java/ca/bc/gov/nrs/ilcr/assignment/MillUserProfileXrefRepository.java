@@ -11,21 +11,22 @@ import org.springframework.data.repository.query.Param;
  * named-parameter SQL). SQL only — decisions live in the service; entities never cross the service
  * boundary (the service maps them to the {@code MillSubmitter} DTO in Story 2.2).
  *
- * <p>Story 2.1 scaffolds the read side; the assign/end write methods and the mill-join enrichment are
- * added in Story 2.2. These reads are exercised (red) by Story 2.2's tests.
+ * <p>Story 2.1 scaffolds the read side; the assign/end write methods and the mill-join enrichment
+ * are added in Story 2.2. These reads are exercised (red) by Story 2.2's tests.
  */
 @org.springframework.stereotype.Repository
-public interface MillUserProfileXrefRepository
-    extends Repository<MillUserProfileXrefEntity, Long> {
+public interface MillUserProfileXrefRepository extends Repository<MillUserProfileXrefEntity, Long> {
 
   /**
-   * All assignment rows for a mill — active (END_DATE null) and ended — most-recently-started first.
-   * The service filters/derives status and joins {@code THE.MILL} for the mill number/name (2.2).
+   * All assignment rows for a mill — active (END_DATE null) and ended — most-recently-started
+   * first. The service filters/derives status and joins {@code THE.MILL} for the mill number/name
+   * (2.2).
    *
    * @param millId the {@code ILCR_MILL_ID}
    * @return the mill's assignment rows
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_USER_PROFILE_XREF_ID, USER_GUID, ILCR_MILL_ID, USER_DISPLAY_NAME, IDP_USERNAME,
              START_DATE, END_DATE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID,
              UPDATE_TIMESTAMP
@@ -36,12 +37,14 @@ public interface MillUserProfileXrefRepository
   List<MillUserProfileXrefEntity> findByMill(@Param("millId") long millId);
 
   /**
-   * All assignment rows for a submitter (by FAM {@code custom:idp_user_id}) — the user-centric read.
+   * All assignment rows for a submitter (by FAM {@code custom:idp_user_id}) — the user-centric
+   * read.
    *
    * @param userGuid the FAM user GUID ({@code USER_GUID})
    * @return the submitter's assignment rows
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_USER_PROFILE_XREF_ID, USER_GUID, ILCR_MILL_ID, USER_DISPLAY_NAME, IDP_USERNAME,
              START_DATE, END_DATE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID,
              UPDATE_TIMESTAMP

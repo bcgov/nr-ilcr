@@ -29,8 +29,12 @@ type UseScheduleBannersResult<TCheckResult> = {
 }
 
 type RunOptions<T> = {
-  /** Shown only when the rejection carries no ProblemDetail detail of its own (AD-8). */
-  readonly fallback: string
+  /**
+   * Shown only when the rejection carries no ProblemDetail detail of its own (AD-8). Pass {@code null}
+   * to fail SILENTLY — leave no banner at all — for a resolve whose absence is self-explanatory (e.g.
+   * Schedule 5's copy hint: a blank name in an obviously-new panel already carries the instruction).
+   */
+  readonly fallback: string | null
   readonly onSuccess: (data: T) => void
 }
 
@@ -69,7 +73,8 @@ export const useScheduleBanners = <TCheckResult>(
         }
       })
       .catch((error: unknown) => {
-        if (isCurrent()) {
+        // fallback === null → fail silently (no banner); see RunOptions.fallback.
+        if (isCurrent() && fallback !== null) {
           failed(error, fallback)
         }
       })

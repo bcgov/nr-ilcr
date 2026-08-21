@@ -13,10 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 /**
- * Acceptance test — Story 4.1 (AD-5, AD-10, AD-12). GET /api/v1/schedule3 200 aggregate document with
- * the three-column model and all server-computed derived values. Security OFF (mock ILCR_SUBMITTER),
- * so this isolates document assembly from authz (covered by {@link Schedule3AuthorizationIT}). Seeded
- * by V8 on summary 1003 (514/2021).
+ * Acceptance test — Story 4.1 (AD-5, AD-10, AD-12). GET /api/v1/schedule3 200 aggregate document
+ * with the three-column model and all server-computed derived values. Security OFF (mock
+ * ILCR_SUBMITTER), so this isolates document assembly from authz (covered by {@link
+ * Schedule3AuthorizationIT}). Seeded by V8 on summary 1003 (514/2021).
  */
 @DisplayName("GET /api/v1/schedule3 — aggregate document (Story 4.1)")
 class Schedule3DocumentIT extends AbstractOracleIT {
@@ -24,12 +24,15 @@ class Schedule3DocumentIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/schedule3";
 
   @Test
-  @DisplayName("514/2021 Draft — full pinned three-column document with server-computed derived values")
+  @DisplayName(
+      "514/2021 Draft — full pinned three-column document with server-computed derived values")
   void draftContext_returnsPinnedDocument() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "514")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "514")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(514)))
@@ -37,7 +40,7 @@ class Schedule3DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.revisionCount", is(0)))
-        .andExpect(jsonPath("$.overrideHarvestTotalPop", is("Y")))   // read from summary LOCATION
+        .andExpect(jsonPath("$.overrideHarvestTotalPop", is("Y"))) // read from summary LOCATION
         .andExpect(jsonPath("$.comments", is("Seed Schedule 3 comment for 514/2021")))
         // Licenses (27): harvest 100000 / PO&P 40000 -> crown 60000.
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 27)].harvest", contains(100000)))
@@ -68,7 +71,8 @@ class Schedule3DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.totalOverhead.volume", is(108642)))
         .andExpect(jsonPath("$.totalOverhead.cost", is(870000)))
         .andExpect(jsonPath("$.totalOverhead.perUnit", is(8.01)))
-        // Sub-page counts (CNT-001): no acceptable rows; unacceptable = 0 rows + 1 for Annual Rents.
+        // Sub-page counts (CNT-001): no acceptable rows; unacceptable = 0 rows + 1 for Annual
+        // Rents.
         .andExpect(jsonPath("$.otherAcceptableCount", is(0)))
         .andExpect(jsonPath("$.unacceptableCount", is(1)))
         .andExpect(jsonPath("$.message").doesNotExist());
@@ -77,10 +81,12 @@ class Schedule3DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 non-Draft — trackStatus S, editable false")
   void nonDraftContext_notEditable() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "517")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         .andExpect(jsonPath("$.editable", is(false)));

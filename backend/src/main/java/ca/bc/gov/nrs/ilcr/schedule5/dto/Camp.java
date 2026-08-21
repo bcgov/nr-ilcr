@@ -13,12 +13,12 @@ import java.math.BigDecimal;
  * (legacy enumerates them at {@code Schedule5MB.java:248-261}); {@code recoveries} is the
  * volume-less twelfth and serializes as {@code {"cost": n}} alone.
  *
- * <p><strong>Derived, never stored.</strong> {@code campSubTotal}, {@code campTotal},
- * {@code accessExpenseTotal}, {@code campAndAccessTotal}, every {@code costPerVolume}, both counts,
- * and the {@code cost} halves of {@code otherCampExpenses}/{@code otherAccessExpenses} (the item-62
- * / item-68 row sums) are all computed server-side per BR-04 and must be ignored or rejected on
- * write (7.2). {@code campTotal = campSubTotal - recoveries} (BR-04/S09): Recoveries is stored
- * positive and SUBTRACTED, and a negative Recoveries therefore increases the total — never clamped.
+ * <p><strong>Derived, never stored.</strong> {@code campSubTotal}, {@code campTotal}, {@code
+ * accessExpenseTotal}, {@code campAndAccessTotal}, every {@code costPerVolume}, both counts, and
+ * the {@code cost} halves of {@code otherCampExpenses}/{@code otherAccessExpenses} (the item-62 /
+ * item-68 row sums) are all computed server-side per BR-04 and must be ignored or rejected on write
+ * (7.2). {@code campTotal = campSubTotal - recoveries} (BR-04/S09): Recoveries is stored positive
+ * and SUBTRACTED, and a negative Recoveries therefore increases the total — never clamped.
  *
  * <p>{@code revisionCount} is this camp's own optimistic-lock token. Schedule 5 has no
  * category-{@code '5'} {@code ILCR_REPORT_SUMMARY} row (delivery-confirmed, Story 7.1 Task 1 gate
@@ -61,5 +61,4 @@ public record Camp(
     CategoryAmount accessExpenseTotal,
     CategoryAmount campAndAccessTotal,
     int otherCampExpenseCount,
-    int otherAccessExpenseCount) {
-}
+    int otherAccessExpenseCount) {}

@@ -31,9 +31,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for {@link Schedule5Service} — the full derivation matrix, with no Spring and no
- * database. Every expected value is hand-derived from the legacy arithmetic
- * ({@code CampReportType} + {@code CoreUtil}) rather than from a run, so a change in served figures
- * shows up as a failure rather than as a quietly updated expectation.
+ * database. Every expected value is hand-derived from the legacy arithmetic ({@code CampReportType}
+ * + {@code CoreUtil}) rather than from a run, so a change in served figures shows up as a failure
+ * rather than as a quietly updated expectation.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule5Service — server-side derivation (BR-04, AD-5)")
@@ -43,8 +43,7 @@ class Schedule5ServiceTest {
   private static final int YEAR = 2021;
   private static final int CAMP = 8401;
 
-  @Mock
-  private Schedule5Repository repository;
+  @Mock private Schedule5Repository repository;
 
   private Schedule5Service service;
 
@@ -58,8 +57,8 @@ class Schedule5ServiceTest {
   // -----------------------------------------------------------------------------------------
 
   private static CampRow camp(BigDecimal associatedVolume) {
-    return new CampRow(CAMP, "Test Camp", new BigDecimal("10.00"), 40, associatedVolume, "N",
-        "comment", 0);
+    return new CampRow(
+        CAMP, "Test Camp", new BigDecimal("10.00"), 40, associatedVolume, "N", "comment", 0);
   }
 
   private static DetailRow detail(int detailId, int itemId, BigDecimal volume, Integer cost) {
@@ -68,9 +67,9 @@ class Schedule5ServiceTest {
 
   /**
    * A detail row carrying an {@code ITEM_DESCRIPTION}. Story 7.2 added the column to the read query
-   * because Check Status's fifth and seventh conditions flag any item-62/68 row whose description is
-   * null or empty; the served document still does not expose it (itemizing those rows is 7.4's), so
-   * every derivation test above is unaffected and passes null.
+   * because Check Status's fifth and seventh conditions flag any item-62/68 row whose description
+   * is null or empty; the served document still does not expose it (itemizing those rows is 7.4's),
+   * so every derivation test above is unaffected and passes null.
    */
   private static DetailRow detail(
       int detailId, int itemId, BigDecimal volume, Integer cost, String itemDescription) {
@@ -94,15 +93,18 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("sums exactly the five camp-expense costs and derives $/m3")
     void sumsFiveComponents() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          detail(2, 58, VOL_120K, 960000),
-          detail(3, 59, VOL_120K, 120000),
-          detail(4, 60, VOL_120K, 60000),
-          detail(5, 141, VOL_120K, null),
-          detail(6, 62, null, 24000),
-          // Recoveries must NOT be part of the Sub-Total.
-          detail(7, 61, null, 44000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 56, VOL_120K, 480000),
+                  detail(2, 58, VOL_120K, 960000),
+                  detail(3, 59, VOL_120K, 120000),
+                  detail(4, 60, VOL_120K, 60000),
+                  detail(5, 141, VOL_120K, null),
+                  detail(6, 62, null, 24000),
+                  // Recoveries must NOT be part of the Sub-Total.
+                  detail(7, 61, null, 44000)));
 
       assertThat(served.campSubTotal().cost()).isEqualTo(1_644_000L);
       assertThat(served.campSubTotal().costPerVolume()).isEqualByComparingTo("13.70");
@@ -126,32 +128,36 @@ class Schedule5ServiceTest {
       // number that column can never store, so it proved the long widening against a scenario
       // the schema forbids while leaving the reachable case untested. Five real max-width rows
       // sum to 499,999,995 — which still fits an int, so push it over with the sub-page cost.
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 99_999_999),
-          detail(2, 58, VOL_120K, 99_999_999),
-          detail(3, 59, VOL_120K, 99_999_999),
-          detail(4, 60, VOL_120K, 99_999_999),
-          detail(5, 141, VOL_120K, null),
-          // Twenty-five sub-page rows at max width: the item-62 list is unbounded, so this is the
-          // realistic route past Integer.MAX_VALUE (2,147,483,647) on stored-shaped data.
-          detail(6, 62, null, 99_999_999),
-          detail(7, 62, null, 99_999_999),
-          detail(8, 62, null, 99_999_999),
-          detail(9, 62, null, 99_999_999),
-          detail(10, 62, null, 99_999_999),
-          detail(11, 62, null, 99_999_999),
-          detail(12, 62, null, 99_999_999),
-          detail(13, 62, null, 99_999_999),
-          detail(14, 62, null, 99_999_999),
-          detail(15, 62, null, 99_999_999),
-          detail(16, 62, null, 99_999_999),
-          detail(17, 62, null, 99_999_999),
-          detail(18, 62, null, 99_999_999),
-          detail(19, 62, null, 99_999_999),
-          detail(20, 62, null, 99_999_999),
-          detail(21, 62, null, 99_999_999),
-          detail(22, 62, null, 99_999_999),
-          detail(23, 62, null, 99_999_999)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 56, VOL_120K, 99_999_999),
+                  detail(2, 58, VOL_120K, 99_999_999),
+                  detail(3, 59, VOL_120K, 99_999_999),
+                  detail(4, 60, VOL_120K, 99_999_999),
+                  detail(5, 141, VOL_120K, null),
+                  // Twenty-five sub-page rows at max width: the item-62 list is unbounded, so this
+                  // is the
+                  // realistic route past Integer.MAX_VALUE (2,147,483,647) on stored-shaped data.
+                  detail(6, 62, null, 99_999_999),
+                  detail(7, 62, null, 99_999_999),
+                  detail(8, 62, null, 99_999_999),
+                  detail(9, 62, null, 99_999_999),
+                  detail(10, 62, null, 99_999_999),
+                  detail(11, 62, null, 99_999_999),
+                  detail(12, 62, null, 99_999_999),
+                  detail(13, 62, null, 99_999_999),
+                  detail(14, 62, null, 99_999_999),
+                  detail(15, 62, null, 99_999_999),
+                  detail(16, 62, null, 99_999_999),
+                  detail(17, 62, null, 99_999_999),
+                  detail(18, 62, null, 99_999_999),
+                  detail(19, 62, null, 99_999_999),
+                  detail(20, 62, null, 99_999_999),
+                  detail(21, 62, null, 99_999_999),
+                  detail(22, 62, null, 99_999_999),
+                  detail(23, 62, null, 99_999_999)));
 
       // 4 fixed + 18 sub-page rows = 22 x 99,999,999 = 2,199,999,978 > Integer.MAX_VALUE.
       assertThat(served.campSubTotal().cost()).isEqualTo(2_199_999_978L);
@@ -165,9 +171,9 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("subtracts Recoveries from Sub-Total")
     void subtractsRecoveries() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          detail(2, 61, null, 44000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K), List.of(detail(1, 56, VOL_120K, 480000), detail(2, 61, null, 44000)));
 
       assertThat(served.campTotal().cost()).isEqualTo(436_000L);
     }
@@ -192,9 +198,10 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("Recoveries exceeding Sub-Total gives a NEGATIVE total — never clamped")
     void negativeTotalIsNotClamped() {
-      Camp served = serveCamp(camp(new BigDecimal("10000")), List.of(
-          detail(1, 56, new BigDecimal("10000"), 30000),
-          detail(2, 61, null, 50000)));
+      Camp served =
+          serveCamp(
+              camp(new BigDecimal("10000")),
+              List.of(detail(1, 56, new BigDecimal("10000"), 30000), detail(2, 61, null, 50000)));
 
       assertThat(served.campTotal().cost()).isEqualTo(-20_000L);
       assertThat(served.campTotal().costPerVolume()).isEqualByComparingTo("-2.00");
@@ -206,9 +213,10 @@ class Schedule5ServiceTest {
       // Legacy getCampTotal() reads the campSubTotal FIELD, populated only as a side effect of a
       // prior getCampSubTotal() call. A port that skipped that ordering would serve null here while
       // Sub-Total itself looked correct — and campAndAccessTotal would collapse to Access alone.
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          detail(2, 63, VOL_120K, 180000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(detail(1, 56, VOL_120K, 480000), detail(2, 63, VOL_120K, 180000)));
 
       assertThat(served.campSubTotal().cost()).isEqualTo(480_000L);
       assertThat(served.campTotal().cost()).isEqualTo(480_000L);
@@ -225,14 +233,17 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("sums exactly the six access costs")
     void sumsSixComponents() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 63, VOL_120K, 180000),
-          detail(2, 64, VOL_120K, 90000),
-          detail(3, 65, VOL_120K, 0),
-          detail(4, 66, VOL_120K, 12000),
-          detail(5, 67, VOL_120K, 6000),
-          detail(6, 142, VOL_120K, null),
-          detail(7, 68, null, 3000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 63, VOL_120K, 180000),
+                  detail(2, 64, VOL_120K, 90000),
+                  detail(3, 65, VOL_120K, 0),
+                  detail(4, 66, VOL_120K, 12000),
+                  detail(5, 67, VOL_120K, 6000),
+                  detail(6, 142, VOL_120K, null),
+                  detail(7, 68, null, 3000)));
 
       assertThat(served.accessExpenseTotal().cost()).isEqualTo(291_000L);
       assertThat(served.accessExpenseTotal().costPerVolume()).isEqualByComparingTo("2.43");
@@ -295,8 +306,8 @@ class Schedule5ServiceTest {
     @DisplayName("rounds HALF_UP at scale 2 after dividing at scale 10")
     void roundsHalfUpAtScaleTwo() {
       // 1000/3 = 333.3333333333 -> 333.33
-      Camp served = serveCamp(camp(new BigDecimal("3")), List.of(
-          detail(1, 56, new BigDecimal("3"), 1000)));
+      Camp served =
+          serveCamp(camp(new BigDecimal("3")), List.of(detail(1, 56, new BigDecimal("3"), 1000)));
 
       assertThat(served.cateringAndFood().costPerVolume()).isEqualByComparingTo("333.33");
     }
@@ -309,11 +320,14 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("cost is the row sum; volume is the STORED item-141 amount, not a sum")
     void aggregatesCostAndKeepsStoredVolume() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 141, VOL_120K, null),
-          detail(2, 62, null, 10000),
-          detail(3, 62, null, 10000),
-          detail(4, 62, null, 4000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 141, VOL_120K, null),
+                  detail(2, 62, null, 10000),
+                  detail(3, 62, null, 10000),
+                  detail(4, 62, null, 4000)));
 
       assertThat(served.otherCampExpenses().cost()).isEqualTo(24_000L);
       assertThat(served.otherCampExpenses().volume()).isEqualByComparingTo(VOL_120K);
@@ -322,11 +336,14 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("$/m3 is PER-TERM rounded, not the ratio of sums")
     void perTermRoundingNotRatioOfSums() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 141, VOL_120K, null),
-          detail(2, 62, null, 10000),
-          detail(3, 62, null, 10000),
-          detail(4, 62, null, 4000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 141, VOL_120K, null),
+                  detail(2, 62, null, 10000),
+                  detail(3, 62, null, 10000),
+                  detail(4, 62, null, 4000)));
 
       // 0.08 + 0.08 + 0.03 = 0.19; the ratio-of-sums shortcut would give 24000/120000 = 0.20.
       assertThat(served.otherCampExpenses().costPerVolume()).isEqualByComparingTo("0.19");
@@ -335,10 +352,13 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("counts are raw row counts — rows with null description AND null cost still count")
     void countsIncludeEmptyRows() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 62, null, 10000),
-          detail(2, 62, null, null),
-          detail(3, 68, null, null)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 62, null, 10000),
+                  detail(2, 62, null, null),
+                  detail(3, 68, null, null)));
 
       assertThat(served.otherCampExpenseCount()).isEqualTo(2);
       assertThat(served.otherAccessExpenseCount()).isEqualTo(1);
@@ -362,9 +382,9 @@ class Schedule5ServiceTest {
       // non-null VOLUME, and getOtherCampExpensesList() stamps every row's volume with the
       // camp-level item-141 volume before summing. Legacy-faithful and deliberately asymmetric with
       // the access side below; that 0 then propagates into Camp Sub-Total.
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 141, VOL_120K, null),
-          detail(2, 62, null, null)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K), List.of(detail(1, 141, VOL_120K, null), detail(2, 62, null, null)));
 
       assertThat(served.otherCampExpenses().cost()).isEqualTo(0L);
       assertThat(served.campSubTotal().cost()).isEqualTo(0L);
@@ -373,9 +393,9 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("ACCESS side: the mirror-image case yields null (cost-only helper)")
     void accessSideAsymmetryYieldsNull() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 142, VOL_120K, null),
-          detail(2, 68, null, null)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K), List.of(detail(1, 142, VOL_120K, null), detail(2, 68, null, null)));
 
       assertThat(served.otherAccessExpenses().cost()).isNull();
       assertThat(served.accessExpenseTotal().cost()).isNull();
@@ -404,9 +424,10 @@ class Schedule5ServiceTest {
       // cannot tell the two apart and would pass even if the repository's ORDER BY were deleted.
       // Asserting the higher id wins when it arrives first documents the real division of
       // responsibility; Schedule5RepositoryIT pins the ordering half against the database.
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(20, 56, VOL_120K, 777777),
-          detail(10, 56, VOL_120K, 480000)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(detail(20, 56, VOL_120K, 777777), detail(10, 56, VOL_120K, 480000)));
 
       assertThat(served.cateringAndFood().cost()).isEqualTo(777_777L);
       assertThat(served.campSubTotal().cost()).isEqualTo(777_777L);
@@ -415,9 +436,10 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("in repository order (ascending id) the LOWEST detail id wins — deviation (f)")
     void duplicateItemLowestIdWinsInRepositoryOrder() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(10, 56, VOL_120K, 480000),
-          detail(20, 56, VOL_120K, 777777)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(detail(10, 56, VOL_120K, 480000), detail(20, 56, VOL_120K, 777777)));
 
       assertThat(served.cateringAndFood().cost()).isEqualTo(480_000L);
       assertThat(served.campSubTotal().cost()).isEqualTo(480_000L);
@@ -430,9 +452,12 @@ class Schedule5ServiceTest {
       // snapshot does not. Before this, DetailRow narrowed the id to a primitive int, so a null
       // unboxed into an NPE inside the repository mapper and 500'd the WHOLE document — the one
       // unrecognized id that crashed instead of degrading.
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          new DetailRow(2, CAMP, null, VOL_120K, 999999, null)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(
+                  detail(1, 56, VOL_120K, 480000),
+                  new DetailRow(2, CAMP, null, VOL_120K, 999999, null)));
 
       assertThat(served.campSubTotal().cost()).isEqualTo(480_000L);
       assertThat(served.campAndAccessTotal().cost()).isEqualTo(480_000L);
@@ -441,9 +466,10 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("unregistered/undispatched item (57) is dropped and reaches no total")
     void unknownItemIsDropped() {
-      Camp served = serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          detail(2, 57, VOL_120K, 999999)));
+      Camp served =
+          serveCamp(
+              camp(VOL_120K),
+              List.of(detail(1, 56, VOL_120K, 480000), detail(2, 57, VOL_120K, 999999)));
 
       assertThat(served.campSubTotal().cost()).isEqualTo(480_000L);
       assertThat(served.campAndAccessTotal().cost()).isEqualTo(480_000L);
@@ -482,10 +508,12 @@ class Schedule5ServiceTest {
     // Story 7.2 DEMOTED two of the three to DEBUG (deviation (O)): the duplicate and unknown-item
     // lines report properties of stored DATA, not events, and 7.2's writes make them reachable for
     // the first time — at WARN they would turn one malformed camp into permanent per-request noise
-    // (deferred-work.md:246). The NULL-item-id line stays at WARN because the delivery column is NOT
+    // (deferred-work.md:246). The NULL-item-id line stays at WARN because the delivery column is
+    // NOT
     // NULL, so it signals a genuine schema anomaly rather than ordinary bad data.
     //
-    // The assertions therefore pin the LEVEL as well as the text: a silent re-promotion to WARN, or a
+    // The assertions therefore pin the LEVEL as well as the text: a silent re-promotion to WARN, or
+    // a
     // demotion of the NULL-id line, now fails here instead of being discovered in production logs.
 
     private CapturingAppender appender;
@@ -531,9 +559,9 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("a duplicate single-row item logs at DEBUG, naming the kept and ignored detail id")
     void duplicateItemWarns() {
-      serveCamp(camp(VOL_120K), List.of(
-          detail(10, 56, VOL_120K, 480000),
-          detail(20, 56, VOL_120K, 777777)));
+      serveCamp(
+          camp(VOL_120K),
+          List.of(detail(10, 56, VOL_120K, 480000), detail(20, 56, VOL_120K, 777777)));
 
       assertThat(debugMessages()).hasSize(1);
       assertThat(debugMessages().getFirst())
@@ -577,17 +605,16 @@ class Schedule5ServiceTest {
     @Test
     @DisplayName("a clean camp logs nothing at either level — this is signal, not noise")
     void cleanCampIsSilent() {
-      serveCamp(camp(VOL_120K), List.of(
-          detail(1, 56, VOL_120K, 480000),
-          detail(2, 58, VOL_120K, 960000)));
+      serveCamp(
+          camp(VOL_120K),
+          List.of(detail(1, 56, VOL_120K, 480000), detail(2, 58, VOL_120K, 960000)));
 
       assertThat(warnings()).isEmpty();
       assertThat(debugMessages()).isEmpty();
     }
 
     /** One captured log event, so the assertions can pin the level as well as the text. */
-    private record CapturedEvent(Level level, String message) {
-    }
+    private record CapturedEvent(Level level, String message) {}
 
     /** Collects DEBUG and WARN events so the assertions above can read them back. */
     private static final class CapturingAppender extends AbstractAppender {
@@ -681,24 +708,28 @@ class Schedule5ServiceTest {
     // would silently pull a dead item's cost into Sub-Total. The only runtime signal is a log
     // line. This drives one row per registered id at a distinct cost and asserts where each
     // landed, so either mistake fails here.
-    Camp served = serveCamp(camp(VOL_120K), List.of(
-        detail(1, 56, VOL_120K, 1),
-        detail(2, 58, VOL_120K, 2),
-        detail(3, 59, VOL_120K, 4),
-        detail(4, 60, VOL_120K, 8),
-        detail(5, 61, VOL_120K, 16),
-        detail(6, 63, VOL_120K, 32),
-        detail(7, 64, VOL_120K, 64),
-        detail(8, 65, VOL_120K, 128),
-        detail(9, 66, VOL_120K, 256),
-        detail(10, 67, VOL_120K, 512),
-        detail(11, 141, VOL_120K, null),
-        detail(12, 142, VOL_120K, null),
-        detail(13, 62, null, 1024),
-        detail(14, 68, null, 2048),
-        // 57 is REGISTERED in delivery but has no legacy dispatch branch, so it must fall through
-        // to the unknown-item drop and reach no total.
-        detail(15, 57, VOL_120K, 1_000_000)));
+    Camp served =
+        serveCamp(
+            camp(VOL_120K),
+            List.of(
+                detail(1, 56, VOL_120K, 1),
+                detail(2, 58, VOL_120K, 2),
+                detail(3, 59, VOL_120K, 4),
+                detail(4, 60, VOL_120K, 8),
+                detail(5, 61, VOL_120K, 16),
+                detail(6, 63, VOL_120K, 32),
+                detail(7, 64, VOL_120K, 64),
+                detail(8, 65, VOL_120K, 128),
+                detail(9, 66, VOL_120K, 256),
+                detail(10, 67, VOL_120K, 512),
+                detail(11, 141, VOL_120K, null),
+                detail(12, 142, VOL_120K, null),
+                detail(13, 62, null, 1024),
+                detail(14, 68, null, 2048),
+                // 57 is REGISTERED in delivery but has no legacy dispatch branch, so it must fall
+                // through
+                // to the unknown-item drop and reach no total.
+                detail(15, 57, VOL_120K, 1_000_000)));
 
     assertThat(served.cateringAndFood().cost()).isEqualTo(1L);
     assertThat(served.wagesAndBenefits().cost()).isEqualTo(2L);

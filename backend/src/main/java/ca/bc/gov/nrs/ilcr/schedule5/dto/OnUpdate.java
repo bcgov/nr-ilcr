@@ -15,5 +15,4 @@ package ca.bc.gov.nrs.ilcr.schedule5.dto;
  * importing a sibling schedule's marker here would couple two domains for the sake of an empty
  * interface.
  */
-public interface OnUpdate {
-}
+public interface OnUpdate {}

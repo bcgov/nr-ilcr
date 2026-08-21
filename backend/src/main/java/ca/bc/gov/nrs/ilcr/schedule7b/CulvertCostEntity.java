@@ -24,5 +24,4 @@ public record CulvertCostEntity(
     @Id @Column("ILCR_COST_REPORT_DETAIL_ID") long costDetailId,
     @Column("CULVERT_REPORT_ID") long culvertReportId,
     @Column("ILCR_REPORT_COST_ITEM_ID") int costItemId,
-    @Column("COST") Integer cost) {
-}
+    @Column("COST") Integer cost) {}
