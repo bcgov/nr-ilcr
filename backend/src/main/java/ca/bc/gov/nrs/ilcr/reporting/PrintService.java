@@ -18,13 +18,13 @@ import org.springframework.stereotype.Service;
 /**
  * Orchestrates the combined Print Schedules PDF (Epic 20.2). Given a validated mill/year context
  * and a {@link PrintRequest}, it fills each SELECTED in-scope schedule section in the FIXED legacy
- * order (5 → 6 → 7A → 7B → 9 → 11, the {@link ScheduleKey} declaration order), SKIPS any section
- * with no data (BR-09 skip-empty), and exports the accumulated sections to ONE bookmarked PDF
- * (BR-08) — one top-level bookmark per rendered schedule. When no selected content yields any data
- * the result is all-empty and no PDF is produced: {@link ScheduleNotFoundException} (→ 404
+ * order (2 → 5 → 6 → 7A → 7B → 9 → 10 → 11, the {@link ScheduleKey} declaration order), SKIPS any
+ * section with no data (BR-09 skip-empty), and exports the accumulated sections to ONE bookmarked
+ * PDF (BR-08) — one top-level bookmark per rendered schedule. When no selected content yields any
+ * data the result is all-empty and no PDF is produced: {@link ScheduleNotFoundException} (→ 404
  * ERR-005).
  *
- * <p>Selected-but-unimplemented schedules (1/2/3/8/10) and the mill-information-report option are
+ * <p>Selected-but-unimplemented schedules (1/3/8) and the mill-information-report option are
  * accepted for forward-compatibility but produce no section yet — they are skipped-with-a-log
  * (documented interim gap) until their story lands. Selection VALIDATION (ERR-002/003/004) is the
  * controller's responsibility and runs before this.
@@ -176,6 +176,7 @@ public class PrintService {
     }
     return key ->
         switch (key) {
+          case SCHEDULE_2 -> request.schedule2();
           case SCHEDULE_5 -> request.schedule5();
           case SCHEDULE_6 -> request.schedule6();
           case SCHEDULE_7A -> request.schedule7a();
@@ -194,7 +195,6 @@ public class PrintService {
     boolean anyUnimplemented =
         request.allSchedules()
             || request.schedule1()
-            || request.schedule2()
             || request.schedule3()
             || request.schedule4()
             || request.schedule8()
@@ -207,7 +207,7 @@ public class PrintService {
       // them.
       log.debug(
           "Print selection includes schedules/options not yet implemented in Epic 20 "
-              + "(1/2/3/4/8 and/or the Mill Information report); those are skipped for now");
+              + "(1/3/4/8 and/or the Mill Information report); those are skipped for now");
     }
   }
 }
