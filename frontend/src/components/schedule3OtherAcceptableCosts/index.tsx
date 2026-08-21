@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import type { OtherAcceptableRow, OtherAcceptableDocument } from '@/interfaces/Schedule3OtherCosts'
 import Schedule3SubPage, { type Schedule3SubPageConfig } from '@/components/schedule3SubPage'
-import { enteredNum, sumAsZero } from '@/utils/derivedMath'
+import { deriveOtherAcceptableSubtotal } from './derived'
 import { validateOtherAcceptable, DESCRIPTION_MAX_LENGTH } from './validation'
 
 const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument> = {
@@ -29,20 +29,11 @@ const config: Schedule3SubPageConfig<OtherAcceptableRow, OtherAcceptableDocument
     },
   ],
   summaryItems: [
-    { label: 'Subtotal Total $', value: (doc) => doc.subtotal?.harvest },
-    { label: 'Subtotal PO&P $', value: (doc) => doc.subtotal?.pop },
-    { label: 'Subtotal Crown $', value: (doc) => doc.subtotal?.crown },
+    { key: 'harvest', label: 'Subtotal Total $', value: (doc) => doc.subtotal?.harvest },
+    { key: 'pop', label: 'Subtotal PO&P $', value: (doc) => doc.subtotal?.pop },
+    { key: 'crown', label: 'Subtotal Crown $', value: (doc) => doc.subtotal?.crown },
   ],
-  // Display-only footer mirror (defect #291), transcribed from
-  // `Schedule3Service.subtotalOtherCosts`: the TOT rows sum into Harvest and their PO&P peers into
-  // PO&P, nulls as 0, and Crown is the difference. Legacy refreshed this footer on a row's Total $ or
-  // PO&P $ change (`update="otherCrownTabel footerValues"`,
-  // schedule3SubtotalOtherCosts.xhtml:74,83). Returned in `summaryItems` order.
-  deriveSummary: (rows) => {
-    const harvest = sumAsZero(...rows.map((values) => enteredNum(values.total ?? '')))
-    const pop = sumAsZero(...rows.map((values) => enteredNum(values.pop ?? '')))
-    return [harvest, pop, harvest - pop]
-  },
+  deriveSummary: deriveOtherAcceptableSubtotal,
   rows: (doc) => doc.rows ?? [],
   validate: (description, values) => validateOtherAcceptable(description, values.total, values.pop),
 }

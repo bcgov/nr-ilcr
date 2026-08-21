@@ -60,6 +60,14 @@ export interface Schedule3SubPageColumn {
 
 /** One summary figure rendered under the table (last-saved; refreshes on Save). */
 export interface Schedule3SubPageSummaryItem<TDoc extends Schedule3SubPageDoc> {
+  /**
+   * Stable key the footer mirror is looked up by. Keyed rather than positional (code review
+   * 2026-08-21): indexing a returned array against `summaryItems` couples the two across a config
+   * boundary with `noUncheckedIndexedAccess` off, so a short or reordered array mis-pairs figures with
+   * labels with no type error — the same invisible-to-tsc shape as the inert-mirror bug this file
+   * already records.
+   */
+  key: string
   label: string
   value: (doc: TDoc) => number | null
 }
@@ -98,7 +106,7 @@ export interface Schedule3SubPageConfig<
    * Unacceptable page omits it: its only handler was `render="cost"`, with no derived target, so
    * leaving that footer to the Save echo is faithful.
    */
-  deriveSummary?: (rows: readonly SubPageValues[]) => readonly (number | null)[]
+  deriveSummary?: (rows: readonly SubPageValues[]) => Readonly<Record<string, number | null>>
   rows: (doc: TDoc) => TRow[]
   validate: (description: string, values: SubPageValues) => SubPageErrors
 }
@@ -170,8 +178,21 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     ),
   })
 
+  /**
+   * A row's committed values, falling back to its LIVE values when it has never been committed — only
+   * true of a row appended locally by `handleAdd` before its PUT lands. Falling back to `{}` made the
+   * footer silently omit a row visibly sitting in the grid (code review 2026-08-21, proven by probe
+   * with a delayed PUT).
+   */
+  const committedFor = (row: EditRow): SubPageValues => committed[row.key] ?? row.values
+
   const rowCells = (row: EditRow, editable: boolean) => {
-    const nums = numeric(row.values)
+    // The derived read-only columns read the COMMITTED values, so every derived cell on the page
+    // settles on ONE event — matching legacy's single `update="otherCrownTabel footerValues"`
+    // (schedule3SubtotalOtherCosts.xhtml:74,83) and the ratified blur trigger. Deriving Crown from the
+    // live values while the footer moved on blur made the page contradict itself mid-typing: row
+    // Crowns of 700 and 400 under a Subtotal Crown of 900 (ruled 2026-08-21).
+    const nums = numeric(committedFor(row))
     const errs = rowErrors[row.key] ?? {}
     if (editable) {
       return (
@@ -265,7 +286,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
         // non-existent `editor.editable` silently disabled the mirror entirely.
         const mirroredSummary =
           config.deriveSummary && editable
-            ? config.deriveSummary(rows.map((row) => committed[row.key] ?? {}))
+            ? config.deriveSummary(rows.map((row) => committedFor(row)))
             : null
         // Description + numeric (field + readonly) columns + optional Action column — empty-state colSpan.
         const totalColumns = 1 + config.fields.length + readonlyColumns.length + (editable ? 1 : 0)
@@ -382,9 +403,11 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                             figures, refreshed after Save (legacy recomputed on save). */}
                       <TableRow className="schedule-3-sub__totals">
                         <TableCell>Totals</TableCell>
-                        {config.summaryItems.map((item, index) => (
+                        {config.summaryItems.map((item) => (
                           <TableCell key={item.label} className="schedule-3__num">
-                            {fmtNumber(mirroredSummary ? mirroredSummary[index] : item.value(data))}
+                            {fmtNumber(
+                              mirroredSummary ? mirroredSummary[item.key] : item.value(data),
+                            )}
                           </TableCell>
                         ))}
                         {editable && <TableCell />}

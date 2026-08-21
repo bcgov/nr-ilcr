@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { vi } from 'vitest'
-import { http, HttpResponse } from 'msw'
-import { render, screen, within } from '@/test-utils'
+import { delay, http, HttpResponse } from 'msw'
+import { render, screen, within, waitFor } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -101,6 +101,31 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     expect(footerCells()).toEqual(['600', '500', '100'])
   })
 
+  test('a locally added row counts toward the footer while its PUT is in flight (#291)', async () => {
+    // PROVEN by the code review: the footer fell back to `{}` for a row appended before its PUT
+    // landed, so it silently omitted a row visibly sitting in the grid. It now falls back to the
+    // row's live values.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc)),
+      http.put(URL, async () => {
+        await delay(50)
+        return HttpResponse.json(doc)
+      }),
+    )
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByDisplayValue('Consulting')
+
+    await user.type(screen.getByLabelText('Description'), 'Consulting 2')
+    await user.type(screen.getByLabelText('Total $'), '900')
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    // While the request is in flight the appended row is on screen, so the footer must count it.
+    await waitFor(() => {
+      expect(footerCells()).toEqual(['2,300', '500', '1,800'])
+    })
+  })
+
   test('lists groups as editable inputs with live-derived crown + subtotal + add form', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<OtherAcceptableCostsPage />)
@@ -116,17 +141,25 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     expect(screen.getByLabelText('PO&P $')).toBeInTheDocument()
   })
 
-  test('crown recomputes live as the row is edited (before Save)', async () => {
+  test('crown recomputes on BLUR as the row is edited (before Save)', async () => {
+    // UPDATED 2026-08-21 (ruled after code review): Crown used to recompute per keystroke while the
+    // Totals footer moved on blur, so the page contradicted itself mid-typing — row Crowns of 700 and
+    // 400 under a Subtotal Crown of 900. Legacy drove both from ONE handler
+    // (`update="otherCrownTabel footerValues"`), so every derived cell here now settles on the same
+    // event. The pre-Save recomputation this test exists to pin is intact; only its timing moved.
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<OtherAcceptableCostsPage />)
     const user = userEvent.setup()
 
     await screen.findByDisplayValue('Consulting')
-    const row = rowOf('Consulting')
-    const total = within(row).getByLabelText('Edit total')
+    const total = within(rowOf('Consulting')).getByLabelText('Edit total')
     await user.clear(total)
     await user.type(total, '1000')
-    expect(within(row).getByText('700')).toBeInTheDocument() // 1000 − 300
+    // Not yet — the row is mid-edit and uncommitted.
+    expect(within(rowOf('Consulting')).getByText('500')).toBeInTheDocument()
+
+    await user.tab()
+    expect(within(rowOf('Consulting')).getByText('700')).toBeInTheDocument() // 1000 − 300
   })
 
   test('Add persists the whole set immediately (legacy), sending the new group with a null id', async () => {
