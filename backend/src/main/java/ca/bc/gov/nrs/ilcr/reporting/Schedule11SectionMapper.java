@@ -23,7 +23,8 @@ final class Schedule11SectionMapper {
     if (locations == null || locations.isEmpty()) {
       return null;
     }
-    final List<Map<String, ?>> rows = locations.stream().map(Schedule11SectionMapper::toRow).toList();
+    final List<Map<String, ?>> rows =
+        locations.stream().map(Schedule11SectionMapper::toRow).toList();
 
     SilvicultureTotals totals = response.totals();
     Map<String, Object> params = new HashMap<>();
