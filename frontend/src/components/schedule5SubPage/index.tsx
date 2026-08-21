@@ -8,6 +8,7 @@ import type {
 import type { SubPageErrors } from './validation'
 import { useCallback, useEffect, useState } from 'react'
 import { deriveSubPageTotals, rowCostPerVolume } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import {
   Button,
   Column,
@@ -108,7 +109,7 @@ export interface Schedule5SubPageProps {
  * One Schedule 5 expense sub-page — the itemized Other Camp (item 62) or Other Access (item 68)
  * rows for a single camp (S04, S07, S10, S21, S22, S23).
  *
- * <p>Nothing is computed here. The footer totals, every $/m³ and every row volume arrive derived
+ * <p>The footer and the row rates are mirrored here while editable (#291); everything else is served. The footer totals, every $/m³ and every row volume arrive derived
  * from the server (AD-5); this file contains no `reduce` over costs and no division.
  */
 const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) => {
@@ -316,12 +317,15 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
       'Unable to delete the expense.',
       (payload) => {
         applyDocument(payload)
-        setRows(
-          payload.rows.map(seedRow).map((seeded) => {
-            const draft = drafts.get(seeded.rowId)
-            return draft ? { ...seeded, description: draft.description, cost: draft.cost } : seeded
-          }),
-        )
+        // Merge the surviving drafts into BOTH lists. Applying them to `rows` alone left the edited
+        // cost in the input while the footer and every rate reverted to served values, until the next
+        // blur (code review 2026-08-21, proven by probe).
+        const merged = payload.rows.map(seedRow).map((seeded) => {
+          const draft = drafts.get(seeded.rowId)
+          return draft ? { ...seeded, description: draft.description, cost: draft.cost } : seeded
+        })
+        setRows(merged)
+        setCommittedRows(merged)
       },
     )
   }
@@ -447,8 +451,30 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
 
   // The footer triple: mirrored from the committed row costs while editable, the served figures
   // otherwise (#291 AC7). The page-specific arithmetic lives in `deriveSubPageTotals`.
+  // ONE binding for the stamped volume. Three spellings of it were in this table — the volume cell,
+  // the row rate and the footer each resolved it differently — where the service derives every one of
+  // them from a single `stampedVolume` (code review 2026-08-21).
+  const stampedVolume = doc.associatedCampVolume ?? null
+
+  /**
+   * The committed snapshot for one row, matched by `rowId` rather than by array index (code review
+   * 2026-08-21). Index pairing against an `rowId`-keyed list silently mispairs the moment the two
+   * arrays differ in length or order, and the old `?? row` fallback substituted the LIVE row, which
+   * reintroduced per-keystroke churn for exactly that row.
+   */
+  const committedRowFor = (row: SubPageRowForm): SubPageRowForm =>
+    committedRows.find((candidate) => candidate.rowId === row.rowId) ?? { ...row, cost: '' }
+
+  /** Advance the baseline only from entries the Save could carry (ruled 2026-08-21). */
+  const commitRows = () => {
+    if (rows.some((row) => isUnusableStrictEntry(row.cost))) {
+      return
+    }
+    setCommittedRows(rows)
+  }
+
   const footer = editable
-    ? deriveSubPageTotals(def.kind, committedRows, doc.associatedCampVolume)
+    ? deriveSubPageTotals(def.kind, committedRows, stampedVolume)
     : {
         volume: doc.totals?.volume ?? null,
         cost: doc.totals?.cost ?? null,
@@ -516,17 +542,14 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                       updateRow(index, 'cost', event.target.value)
                     }}
                     onBlur={() => {
-                      setCommittedRows(rows)
+                      commitRows()
                     }}
                   />
                 </TableCell>
                 <TableCell className="schedule-5-sub-page__num">
                   {fmtCostPerVolume(
                     editable
-                      ? rowCostPerVolume(
-                          committedRows[index] ?? row,
-                          doc.associatedCampVolume ?? served?.volume,
-                        )
+                      ? rowCostPerVolume(committedRowFor(row), stampedVolume)
                       : served?.costPerVolume,
                   )}
                 </TableCell>

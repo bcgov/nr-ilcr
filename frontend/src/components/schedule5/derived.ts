@@ -137,14 +137,40 @@ export function deriveSchedule5(values: CampFormValues, served?: Camp): Schedule
 /**
  * The rate to render for one category row: the mirror for the nine fully-entered categories, the
  * served figure for the two per-term Other rows (see the module note) and for read-only mode.
+ *
+ * **The two Other rows go BLANK once their denominator moves** (ruled 2026-08-21 after code review).
+ * BR-03 rewrites their VOLUME cell from the Associated Camp Volume while their rate stays served, so
+ * with the shipped fixture a camp volume of 60,000 left the row reading 60,000 / 24,000 / 0.31 — a row
+ * no arithmetic reconciles, since 0.31 came from the served 80,000. A blank cell is honest; a figure
+ * computed against a denominator no longer on screen is not, and the per-term formula
+ * (`costPerVolumePerTerm`) cannot be reproduced client-side to replace it.
  */
 export function categoryRate(
   key: CategoryKey,
   derived: Schedule5Derived | null,
   served?: CategoryAmount,
+  campVolumeMoved = false,
 ): number | null | undefined {
-  if (derived === null || !(key in derived.perUnit)) {
+  if (derived === null) {
     return served?.costPerVolume
   }
+  if (!(key in derived.perUnit)) {
+    // A per-term Other row: keep the served rate only while the camp volume it was computed against
+    // still stands. NOTE the comparison is committed-vs-SERVED CAMP volume, not against the row's own
+    // volume — an Other row's stored volume is its item-141/142 amount and legitimately differs from
+    // the camp volume, so comparing those blanked the rate on load.
+    return campVolumeMoved ? null : served?.costPerVolume
+  }
   return derived.perUnit[key]
+}
+
+/**
+ * True when the committed Associated Camp Volume differs from the one the served document carried —
+ * i.e. BR-03 has rewritten the two Other rows' volume cells, so their served per-term rate no longer
+ * describes anything on screen. See {@link categoryRate}.
+ */
+export function campVolumeMovedFrom(values: CampFormValues, served?: Camp): boolean {
+  const committed = committedNum(values.associatedCampVolume)
+  const servedVolume = served?.associatedCampVolume ?? null
+  return committed !== servedVolume
 }

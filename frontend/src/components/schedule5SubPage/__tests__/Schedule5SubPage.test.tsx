@@ -147,6 +147,84 @@ const rowInputs = async (name: RegExp) => {
 const confirmDialog = (text: string): HTMLElement =>
   screen.getByText(text).closest('.cds--modal') as HTMLElement
 
+// ---- Defect #291: the footer and the row rates track entry, on blur. ----------------------------
+//
+// This page had NO test for its mirror: the code review proved both mirrors could be deleted with
+// 56/56 still passing, because the 12 unit tests exercise `deriveSubPageTotals` in isolation and never
+// observe the page calling it. Every test below fails if the mirror is disabled.
+
+describe('#291 the sub-page mirror', () => {
+  /** The Totals footer's three figures. */
+  const footerCells = (): (string | null)[] => {
+    const tr = document.querySelector('.schedule-5-sub-page__totals') as HTMLElement
+    return [...tr.querySelectorAll('td')].slice(1, 4).map((td) => td.textContent)
+  }
+  /** The `$/m³` cell of the row whose cost input currently holds `value`. */
+  const rateOfRowWithCost = (value: string): string | null | undefined => {
+    const tr = screen.getByDisplayValue(value).closest('tr') as HTMLElement
+    return [...tr.querySelectorAll('td')][3]?.textContent
+  }
+
+  test('on load the mirror reproduces the served CAMP footer (AC5)', async () => {
+    // campDoc is self-consistent: 10000+2500+500 = 13,000 over 3 x 120,000 = 360,000 -> 0.04.
+    seedCamp()
+    renderSubPage('CAMP')
+    await screen.findByDisplayValue('10,000')
+    expect(footerCells()).toEqual(['360,000', '13,000', '0.04'])
+  })
+
+  test('typing alone moves nothing; blurring a cost moves the footer AND that row rate', async () => {
+    seedCamp()
+    renderSubPage('CAMP')
+    const user = userEvent.setup()
+    const cost = await screen.findByDisplayValue('10,000')
+
+    await user.clear(cost)
+    await user.type(cost, '20000')
+    expect(footerCells()).toEqual(['360,000', '13,000', '0.04']) // not per keystroke
+
+    await user.tab()
+    // 20000+2500+500 = 23,000 over 360,000 -> 0.06; the row's own rate 20000/120000 -> 0.17.
+    expect(footerCells()).toEqual(['360,000', '23,000', '0.06'])
+    expect(rateOfRowWithCost('20000')).toBe('0.17')
+  })
+
+  test('the ACCESS footer uses the SINGLE camp volume, not n x it', async () => {
+    server.use(http.get(ACCESS_URL, () => HttpResponse.json(accessDoc())))
+    renderSubPage('ACCESS')
+    const user = userEvent.setup()
+    const cost = await screen.findByDisplayValue('7,000')
+
+    await user.clear(cost)
+    await user.type(cost, '9000')
+    await user.tab()
+    // 9000+3000 = 12,000 over the single 120,000 -> 0.10. A CAMP-shaped footer would show 240,000.
+    expect(footerCells()).toEqual(['120,000', '12,000', '0.10'])
+  })
+
+  test('an unusable entry holds the last valid figures', async () => {
+    seedCamp()
+    renderSubPage('CAMP')
+    const user = userEvent.setup()
+    const cost = await screen.findByDisplayValue('10,000')
+
+    await user.clear(cost)
+    await user.type(cost, '1e3') // parses under toNum, rejected by the wire parser
+    await user.tab()
+    expect(footerCells()).toEqual(['360,000', '13,000', '0.04'])
+  })
+
+  test('read-only renders the served figures untouched (AC7)', async () => {
+    // A totals block that disagrees with its own rows: a recomputing view would show 13,000.
+    seedCamp(
+      campDoc({ editable: false, totals: { volume: 999, cost: 999999, costPerVolume: 9.99 } }),
+    )
+    renderSubPage('CAMP')
+    await screen.findByText('Totals:')
+    expect(footerCells()).toEqual(['999', '999,999', '9.99'])
+  })
+})
+
 describe('rendering (AC9)', () => {
   test('the CAMP page renders its legacy headers, columns and Totals footer', async () => {
     seedCamp()

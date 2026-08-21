@@ -245,6 +245,45 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(gridCells('Camp and Access: ')[2]).toBe('1,806,000')
   })
 
+  test('a moved camp volume BLANKS the two per-term Other rates (#291)', async () => {
+    // Ruled 2026-08-21 after code review: BR-03 rewrites those rows' VOLUME cells while their rate is
+    // server-owned (the per-term formula cannot be reproduced client-side), so keeping the served rate
+    // left a row reading 60,000 / 24,000 / 0.31 — which no arithmetic reconciles. A blank is honest.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    expect(rate('Other Camp Expenses (3):')).toBe('0.31') // still the served denominator
+
+    const campVolume = screen.getByLabelText(/Associated Camp Volume/i)
+    await user.clear(campVolume)
+    await user.type(campVolume, '60000')
+    await user.tab()
+
+    expect(rate('Other Camp Expenses (3):')).toBe('') // the mask renders a blank, not an em dash
+    expect(rate('Other Access Expenses (1):')).toBe('')
+    // The mirrorable rates DID move, so this is a targeted blank rather than a dead grid.
+    expect(rate('Catering and Food: ')).toBe('8.00')
+  })
+
+  test('an invalid entry holds the last valid figures (#291)', async () => {
+    // Ruled 2026-08-21: legacy's failed round-trip left the totals alone. Committing an out-of-range
+    // value instead drove thirteen cells to a state no Save can produce.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '999999999') // past the cost band
+    await user.tab()
+
+    // Frozen at the served figures, not recomputed from the rejected value.
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000')
+  })
+
   test('the two per-term Other rows keep their served rate — recorded deviation (#291)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()

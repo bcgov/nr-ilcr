@@ -43,13 +43,20 @@ import {
   CAMP_NAME_MAX_LENGTH,
   COMMENTS_MAX_LENGTH,
   GRID_ROWS,
+  CATEGORY_KEYS,
   VOLUME_CATEGORY_KEYS,
   emptyCategories,
   isCampFormValid,
   validateCamp,
 } from './validation'
 import { fmtCost, fmtCostPerVolume, fmtVolume } from './masks'
-import { categoryRate, deriveSchedule5, type Schedule5Derived } from './derived'
+import {
+  categoryRate,
+  campVolumeMovedFrom,
+  deriveSchedule5,
+  type Schedule5Derived,
+} from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome — every one of these is either confirm-dialog text or is rendered when NO
@@ -314,10 +321,22 @@ const CategoryGrid: FC<{
   readonly errors: CampErrors
   /** Null in read-only mode, where the served figures render untouched (#291 AC7). */
   readonly derived: Schedule5Derived | null
+  /** True once the camp volume has moved from the served one — blanks the per-term Other rates. */
+  readonly campVolumeMoved: boolean
   readonly onChange: (key: CategoryKey, half: 'volume' | 'cost', value: string) => void
   readonly onBlur: (key: CategoryKey, half: 'volume' | 'cost') => void
   readonly onOpenSubPage: (kind: SubPageKind) => void
-}> = ({ values, served, readOnly, errors, derived, onChange, onBlur, onOpenSubPage }) => (
+}> = ({
+  values,
+  served,
+  readOnly,
+  errors,
+  derived,
+  campVolumeMoved,
+  onChange,
+  onBlur,
+  onOpenSubPage,
+}) => (
   <TableContainer className="schedule-5__grid">
     <Table aria-label="Camp and access expenses">
       <TableBody>
@@ -360,7 +379,7 @@ const CategoryGrid: FC<{
               row={row}
               values={values.categories[row.key]}
               served={served?.[row.key]}
-              rate={categoryRate(row.key, derived, served?.[row.key])}
+              rate={categoryRate(row.key, derived, served?.[row.key], campVolumeMoved)}
               subPageCount={row.subPageCount === undefined ? 0 : (served?.[row.subPageCount] ?? 0)}
               readOnly={readOnly}
               errors={errors}
@@ -703,11 +722,27 @@ const Schedule5: FC = () => {
     setBlurred((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
   }
 
+  const commitEntry = () => {
+    // The WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
+    // volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
+    const invalid = Object.keys(validateCamp(form, otherCampNames)).length > 0
+    const unusable =
+      isUnusableStrictEntry(form.associatedCampVolume) ||
+      CATEGORY_KEYS.some(
+        (key) =>
+          isUnusableStrictEntry(form.categories[key].volume) ||
+          isUnusableStrictEntry(form.categories[key].cost),
+      )
+    if (!invalid && !unusable) {
+      setCommitted(form)
+    }
+  }
+
   // Commit the entry baseline when a descriptor field loses focus — the Associated Camp Volume is one
   // of them, and it drives all four derived rows plus every category rate (#291).
   const commitOnBlur = (key: string) => {
     markBlurred(key)
-    setCommitted(form)
+    commitEntry()
   }
 
   /**
@@ -799,10 +834,14 @@ const Schedule5: FC = () => {
 
   const handleCategoryBlur = (key: CategoryKey, half: 'volume' | 'cost') => {
     markBlurred(`${key}.${half}`)
-    // Commit the whole form, not just this half: BR-03 propagates the Associated Camp Volume into all
-    // eleven volume-bearing categories, so one field's blur can legitimately move every rate (#291).
-    setCommitted(form)
+    commitEntry()
   }
+
+  /**
+   * Advance the mirror's baseline only from entries the Save could carry (ruled 2026-08-21). An
+   * out-of-range camp volume otherwise drove thirteen cells to a state the server rejects, and a
+   * negative Recoveries inflated the displayed Camp Total while its own field was red.
+   */
 
   /**
    * Apply a write echo: replace the document, render its message verbatim, and re-seat the panel on
@@ -1132,7 +1171,10 @@ const Schedule5: FC = () => {
   // recomputing them here. Left blank until the save echo brings the real ones back (deviation (O)).
   const derivedSource = panelMode === 'edit' || panelMode === 'view' ? servedCamp : undefined
   // Null in view mode, where there is no entry and the served figures render untouched (#291 AC7).
-  const derived = readOnlyPanel ? null : deriveSchedule5(committed, derivedSource)
+  // Gated on BOTH the panel mode and the DOCUMENT's editability (#291 AC7, code review 2026-08-21):
+  // gating on `panelMode` alone left a live mirror over a schedule the server would refuse to write,
+  // because `applySaved` re-seats the panel in edit mode from the echo without checking its flag.
+  const derived = readOnlyPanel || !editable ? null : deriveSchedule5(committed, derivedSource)
 
   const rowActions = (camp: Camp) => {
     if (!editable) {
@@ -1230,6 +1272,7 @@ const Schedule5: FC = () => {
         values={form}
         served={derivedSource}
         derived={derived}
+        campVolumeMoved={campVolumeMovedFrom(committed, derivedSource)}
         readOnly={readOnlyPanel}
         errors={errors}
         onChange={handleCategoryChange}

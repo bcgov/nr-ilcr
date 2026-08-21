@@ -31,18 +31,22 @@ import { committedNum, perUnitLegacy, wholeDollars } from '@/utils/derivedMath'
  *   null whatever the volume — after which the total's volume is overwritten with the SINGLE camp
  *   volume, unconditionally, including on an empty list.
  *
- * ## Which cells legacy refreshed, and why both are mirrored anyway
+ * ## Why both cells are mirrored — a deliberate improvement, NOT legacy parity
  *
- * Legacy was asymmetric: the CAMP page's row-cost handler rendered `footer`
- * (`schedule5CampExpenses.xhtml:78`) and the page has no per-row rate id at all; the ACCESS page's
- * handlers rendered `@this calcCost` (`schedule5AccessExpenses.xhtml:63,75`) — the row's own rate —
- * and the page has no footer id at all. The modern component renders BOTH cells on BOTH pages, a
- * pre-existing shape choice this defect did not introduce.
+ * **Corrected 2026-08-21 after code review.** An earlier version of this note claimed legacy refreshed
+ * the CAMP footer (`render="footer"`, `schedule5CampExpenses.xhtml:78`) and the ACCESS row rate
+ * (`render="@this calcCost"`, `schedule5AccessExpenses.xhtml:63,75`). Both citations are wrong:
+ * **`id="footer"` exists only in `schedule8AdditionsAndDeductions.xhtml:282`, and `id="calcCost"`
+ * exists nowhere in the webapp.** Both render targets are dangling, so those handlers refreshed
+ * nothing and legacy left BOTH cells stale until Save on BOTH pages — which is what the pre-change
+ * code did.
  *
- * Both are mirrored on both pages, applying the ruling already made for the Schedule 1/3 divergences
- * (2026-08-21): legacy moved a figure while leaving a figure derived from the same entry stale, and
- * reproducing that inconsistency would read as the very bug being fixed. The footer ARITHMETIC stays
- * page-aware, because that difference is real rather than an inconsistency.
+ * Mirroring them is therefore a deliberate improvement, ruled 2026-08-21: a stale derived cell sitting
+ * beside a live input is the defect this ticket exists to remove, and both pages already render both
+ * cells, so leaving either one frozen reads as a calculation bug. It is recorded as a divergence on the
+ * same grounds as the Schedule 1/3 ones, not as parity.
+ *
+ * The footer ARITHMETIC stays page-aware, because that difference is real.
  */
 
 export interface SubPageTotals {
@@ -94,6 +98,9 @@ export function deriveSubPageTotals(
   }
   // Legacy starts the running volume at ZERO and only adds non-null row volumes, so a camp whose
   // item-141 volume is null totals 0 here rather than null.
+  // `rows.length` here counts the SAME array whose costs were summed above — the service sums and
+  // counts one list (`Schedule5Service.java:1266,1288`), so the two must not come from different
+  // arrays (code review 2026-08-21).
   const summedVolume = volume === null ? 0 : volume * rows.length
   return { volume: summedVolume, cost, costPerVolume: perUnitLegacy(cost, summedVolume) }
 }
