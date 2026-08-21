@@ -119,3 +119,45 @@ jobs:
             -p NAME="${{ github.event.repository.name }}"
             ${{ matrix.parameters }}
           triggers: ${{ inputs.triggers }}
+
+  # Shared Oracle in the TOOLS namespace, deployed only after the backend and
+  # frontend so app deploys never wait on it. One instance serves every zone
+  # (ZONE=tools), so this is idempotent: overwrite=false means `oc create` —
+  # an existing database is left untouched and its data survives. To roll a
+  # new image or template change, delete the deployment in the tools
+  # namespace and re-run.
+  #
+  # No `environment:` here — the tools namespace is shared across dev/test,
+  # so OC_NAMESPACE_TOOLS, OC_TOKEN_TOOLS and TOOLS_ORACLEDB_PASSWORD are
+  # repo-level secrets (via `secrets: inherit`).
+  deploy-database:
+    name: Deploy (database)
+    needs: [deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DB_PASS: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
+      NS_TOOLS: ${{ secrets.OC_NAMESPACE_TOOLS }}
+    steps:
+      # The template's NetworkPolicy needs the license plate to admit the
+      # product's dev/test namespaces; derive it instead of adding a secret.
+      - name: Derive license plate
+        run: |
+          LICENSE_PLATE="${NS_TOOLS%-tools}"
+          echo "::add-mask::$LICENSE_PLATE"
+          echo "LICENSE_PLATE=$LICENSE_PLATE" >> $GITHUB_ENV
+      - uses: bcgov/action-deployer-openshift@27a85b7b157bfc9c3c9bf0aca53bcd288d4d2506 # v4.2.1
+        id: deploy
+        with:
+          file: database/openshift.deploy.yml
+          oc_namespace: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_token: ${{ secrets.OC_TOKEN_TOOLS }}
+          overwrite: false
+          parameters:
+            -p ZONE=tools
+            -p NAME='${{ github.event.repository.name }}'
+            -p IMAGE_TAG='${{ inputs.tag }}'
+            -p ORACLEDB_PASSWORD="$DB_PASS"
+            -p LICENSE_PLATE="$LICENSE_PLATE"
+          triggers: ${{ inputs.triggers }}

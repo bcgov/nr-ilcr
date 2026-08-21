@@ -32,8 +32,10 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        package: [backend, frontend]
-    timeout-minutes: 10
+        package: [backend, frontend, database]
+    # database is a rare, large build (Oracle base image); backend/frontend
+    # stay well under the old 10 minute cap
+    timeout-minutes: 15
     steps:
       - uses: bcgov/action-builder-ghcr@cb2629351c87dd1c2130073e4ebb7233a9653a63 # v4.4.1
         with:
