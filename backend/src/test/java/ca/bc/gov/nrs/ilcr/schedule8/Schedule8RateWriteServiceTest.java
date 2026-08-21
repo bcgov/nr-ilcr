@@ -10,8 +10,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,10 +25,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Unit test for the Schedule 8 rate-detail write control flow (Story 14.4) — mocked repository. Covers
- * the Draft gate, unknown-sample / unknown-row 404s, the optimistic-lock stale path (409), add →
- * insert, and the idempotent delete guard. Full behaviour is proven against Oracle in
- * {@link Schedule8RateWriteIT}.
+ * Unit test for the Schedule 8 rate-detail write control flow (Story 14.4) — mocked repository.
+ * Covers the Draft gate, unknown-sample / unknown-row 404s, the optimistic-lock stale path (409),
+ * add → insert, and the idempotent delete guard. Full behaviour is proven against Oracle in {@link
+ * Schedule8RateWriteIT}.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule8RateWriteServiceTest {
@@ -38,18 +38,17 @@ class Schedule8RateWriteServiceTest {
   private static final int SAMPLE = 8941;
   private static final String USER = "tester";
 
-  @Mock
-  private Schedule8Repository repository;
+  @Mock private Schedule8Repository repository;
 
-  @InjectMocks
-  private Schedule8Service service;
+  @InjectMocks private Schedule8Service service;
 
   @BeforeEach
   void stubReadsForRecompute() {
     lenient().when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    // Cost item 82 = addition subcategory "1"; cost type CT1 known — so the write-path code checks pass.
+    // Cost item 82 = addition subcategory "1"; cost type CT1 known — so the write-path code checks
+    // pass.
     lenient().when(repository.costItemSubcategories()).thenReturn(Map.of(82, "1"));
     lenient().when(repository.supportCentreLabels()).thenReturn(Map.of());
     lenient().when(repository.regionLabels()).thenReturn(Map.of());
@@ -69,7 +68,8 @@ class Schedule8RateWriteServiceTest {
   void unknownSample_throwsNotFound() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), true, USER));
     verify(repository, never()).insertRate(anyInt(), any(), any(), any(), any(), any());
   }
@@ -79,8 +79,8 @@ class Schedule8RateWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     service.saveRate(MILL, YEAR, SAMPLE, null, rate(null), true, USER);
-    verify(repository).insertRate(eq(SAMPLE), eq("CT1"), eq(82), eq("d"),
-        eq(new BigDecimal("5.00")), eq(USER));
+    verify(repository)
+        .insertRate(eq(SAMPLE), eq("CT1"), eq(82), eq("d"), eq(new BigDecimal("5.00")), eq(USER));
   }
 
   @Test
@@ -88,7 +88,8 @@ class Schedule8RateWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(false);
-    assertThrows(ScheduleNotFoundException.class,
+    assertThrows(
+        ScheduleNotFoundException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(0), true, USER));
   }
 
@@ -97,9 +98,11 @@ class Schedule8RateWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.sampleInMillYear(SAMPLE, MILL, YEAR)).thenReturn(true);
     when(repository.rateExists(7000, SAMPLE)).thenReturn(true);
-    when(repository.updateRateRow(eq(7000), eq(5), anyString(), anyInt(), any(), any(), anyString()))
+    when(repository.updateRateRow(
+            eq(7000), eq(5), anyString(), anyInt(), any(), any(), anyString()))
         .thenReturn(0);
-    assertThrows(StaleRevisionException.class,
+    assertThrows(
+        StaleRevisionException.class,
         () -> service.saveRate(MILL, YEAR, SAMPLE, 7000, rate(5), true, USER));
   }
 

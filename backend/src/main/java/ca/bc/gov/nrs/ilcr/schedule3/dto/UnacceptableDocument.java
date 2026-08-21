@@ -1,11 +1,12 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.List;
 
 /**
- * The Included Unacceptable Costs sub-resource document (AD-5/AD-12) — the itemized item-38 rows plus
- * the server-computed total and the read-only Annual Rents (S111) figure (the item-29 Harvest, shown
- * read-only on the sub-page). {@code count} is the number of item-38 rows (the main page's
+ * The Included Unacceptable Costs sub-resource document (AD-5/AD-12) — the itemized item-38 rows
+ * plus the server-computed total and the read-only Annual Rents (S111) figure (the item-29 Harvest,
+ * shown read-only on the sub-page). {@code count} is the number of item-38 rows (the main page's
  * {@code unacceptableCount} additionally adds Annual Rents — unchanged here).
  *
  * @param editable whether the caller may edit (EDIT_SCHEDULE + Draft track)

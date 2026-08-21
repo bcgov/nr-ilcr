@@ -15,10 +15,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
@@ -39,15 +39,15 @@ import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit tests for {@link Schedule7bService}: the derived total, cost routing by item id, editability,
- * the type-conditional Check Status matrix (BR-07) with its verbatim legacy labels, and write-time
- * validation (Stories 13.1/13.2). Pure logic — the repository and message source are mocked; the
- * Testcontainers path is proven in the {@code *IT} classes.
+ * Unit tests for {@link Schedule7bService}: the derived total, cost routing by item id,
+ * editability, the type-conditional Check Status matrix (BR-07) with its verbatim legacy labels,
+ * and write-time validation (Stories 13.1/13.2). Pure logic — the repository and message source are
+ * mocked; the Testcontainers path is proven in the {@code *IT} classes.
  *
  * <p>The Check Status block is the substance of this class. BR-07 is the one rule a reader is most
- * likely to get wrong by copying Schedule 7A, so every branch is asserted in BOTH directions: flagged
- * when it should be, and <em>not</em> flagged when it should not be. Rise gets its own test because
- * "never checked for any type" is only provable by its absence.
+ * likely to get wrong by copying Schedule 7A, so every branch is asserted in BOTH directions:
+ * flagged when it should be, and <em>not</em> flagged when it should not be. Rise gets its own test
+ * because "never checked for any type" is only provable by its absence.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule7bService — total, routing, type-conditional check status, validation")
@@ -57,10 +57,11 @@ class Schedule7bServiceTest {
   private static final int YEAR = 2021;
   private static final String USER = "tester";
 
-  private static final List<CodeDescriptionDto> TYPES = List.of(
-      new CodeDescriptionDto("R", "Round"),
-      new CodeDescriptionDto("O", "Others"),
-      new CodeDescriptionDto("PA", "Pipe Arch"));
+  private static final List<CodeDescriptionDto> TYPES =
+      List.of(
+          new CodeDescriptionDto("R", "Round"),
+          new CodeDescriptionDto("O", "Others"),
+          new CodeDescriptionDto("PA", "Pipe Arch"));
 
   @Mock private Schedule7bRepository repository;
   @Mock private MessageSource messageSource;
@@ -70,17 +71,26 @@ class Schedule7bServiceTest {
   void resolveMessagesToTheirKeyText() {
     // The bundle is exercised for real in the ITs; here resolve the two keys the service composes
     // with, so the assertions can pin the composed shape rather than the bundle's wording.
-    lenient().when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), anyString(), any()))
+    lenient()
+        .when(messageSource.getMessage(eq("missingRequiredFieldMsg"), any(), anyString(), any()))
         .thenReturn("Value Required");
-    lenient().when(messageSource.getMessage(
-            eq("scheduleRequirementsMetMsg"), any(), anyString(), any()))
+    lenient()
+        .when(messageSource.getMessage(eq("scheduleRequirementsMetMsg"), any(), anyString(), any()))
         .thenReturn("All requirements for this schedule have been met");
     lenient().when(repository.culvertTypeOptions(YEAR)).thenReturn(TYPES);
   }
 
-  /** A stored culvert row; every optional value is a parameter so each test states only what matters. */
+  /**
+   * A stored culvert row; every optional value is a parameter so each test states only what
+   * matters.
+   */
   private static CulvertReportEntity row(
-      long id, String type, Integer span, Integer rise, BigDecimal length, Integer pieces,
+      long id,
+      String type,
+      Integer span,
+      Integer rise,
+      BigDecimal length,
+      Integer pieces,
       String comments) {
     return new CulvertReportEntity(id, type, span, rise, length, pieces, comments, 0);
   }
@@ -95,15 +105,23 @@ class Schedule7bServiceTest {
   }
 
   /** Both cost rows present for a culvert (the storage shape a complete culvert always has). */
-  private static List<CulvertCostEntity> bothCosts(long culvertId, Integer material, Integer install) {
+  private static List<CulvertCostEntity> bothCosts(
+      long culvertId, Integer material, Integer install) {
     return List.of(
         cost(culvertId * 10, culvertId, 77, material),
         cost(culvertId * 10 + 1, culvertId, 78, install));
   }
 
   private static CulvertRequest request(
-      String type, Integer span, Integer rise, BigDecimal length, Integer pieces,
-      Integer material, Integer install, String comments, Integer revision) {
+      String type,
+      Integer span,
+      Integer rise,
+      BigDecimal length,
+      Integer pieces,
+      Integer material,
+      Integer install,
+      String comments,
+      Integer revision) {
     return new CulvertRequest(
         type, span, rise, length, pieces, material, install, comments, revision);
   }
@@ -152,7 +170,8 @@ class Schedule7bServiceTest {
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, null, null));
 
-      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts().getFirst().totalCost()).isNull();
+      assertThat(service.getSchedule7b(MILL, YEAR, true).culverts().getFirst().totalCost())
+          .isNull();
     }
 
     @Test
@@ -161,9 +180,8 @@ class Schedule7bServiceTest {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
       when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
       // Deliberately listed install-first so a positional bug would surface.
-      when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of(
-          cost(1, 7801, 78, 1500),
-          cost(2, 7801, 77, 4000)));
+      when(repository.findCostDetails(MILL, YEAR))
+          .thenReturn(List.of(cost(1, 7801, 78, 1500), cost(2, 7801, 77, 4000)));
 
       Culvert culvert = service.getSchedule7b(MILL, YEAR, true).culverts().getFirst();
 
@@ -273,8 +291,9 @@ class Schedule7bServiceTest {
           check(row(7801, "R", null, 900, new BigDecimal("12.5"), 3, null), 4000, 1500);
 
       assertThat(response.requirementsMet()).isFalse();
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required");
     }
 
     @Test
@@ -294,8 +313,9 @@ class Schedule7bServiceTest {
           check(row(7801, "O", null, null, new BigDecimal("8.0"), 2, null), 2500, 700);
 
       assertThat(response.requirementsMet()).isFalse();
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
     }
 
     @Test
@@ -305,8 +325,9 @@ class Schedule7bServiceTest {
           check(row(7801, "O", null, null, new BigDecimal("8.0"), 2, ""), 2500, 700);
 
       assertThat(response.requirementsMet()).isFalse();
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
     }
 
     @Test
@@ -337,7 +358,8 @@ class Schedule7bServiceTest {
     }
 
     @Test
-    @DisplayName("S27: a NON-Others culvert with no comments PASSES — comments conditional on type O")
+    @DisplayName(
+        "S27: a NON-Others culvert with no comments PASSES — comments conditional on type O")
     void nonOthersWithoutCommentsPasses() {
       Schedule7bCheckStatusResponse response =
           check(row(7801, "R", 1200, 900, new BigDecimal("12.5"), 3, null), 4000, 1500);
@@ -366,8 +388,7 @@ class Schedule7bServiceTest {
       Schedule7bCheckStatusResponse response =
           check(row(7801, "PA", null, null, null, 4, null), 1800, 300);
 
-      assertThat(texts(response))
-          .containsExactly("Culvert Report Id: 1 - Length : Value Required");
+      assertThat(texts(response)).containsExactly("Culvert Report Id: 1 - Length : Value Required");
     }
 
     @Test
@@ -386,9 +407,10 @@ class Schedule7bServiceTest {
       Schedule7bCheckStatusResponse response =
           check(row(7801, "PA", null, null, new BigDecimal("6.5"), 4, null), null, null);
 
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id: 1 - Material Cost : Value Required",
-          "Culvert Report Id: 1 - Install Cost : Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id: 1 - Material Cost : Value Required",
+              "Culvert Report Id: 1 - Install Cost : Value Required");
     }
 
     @Test
@@ -407,12 +429,13 @@ class Schedule7bServiceTest {
       Schedule7bCheckStatusResponse response =
           check(row(7801, "R", null, null, null, null, null), null, null);
 
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required",
-          "Culvert Report Id: 1 - Length : Value Required",
-          "Culvert Report Id: 1 - Piece Count : Value Required",
-          "Culvert Report Id: 1 - Material Cost : Value Required",
-          "Culvert Report Id: 1 - Install Cost : Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Round - Span size: Value Required",
+              "Culvert Report Id: 1 - Length : Value Required",
+              "Culvert Report Id: 1 - Piece Count : Value Required",
+              "Culvert Report Id: 1 - Material Cost : Value Required",
+              "Culvert Report Id: 1 - Install Cost : Value Required");
     }
 
     @Test
@@ -423,24 +446,29 @@ class Schedule7bServiceTest {
 
       assertThat(texts(others))
           .noneMatch(text -> text.contains("Span size"))
-          .containsExactly("Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
+          .containsExactly(
+              "Culvert Report Id : 1 - Culvert Type Others - Comments: Value Required");
     }
 
     @Test
     @DisplayName("Errors are grouped per culvert with each culvert's own rowCounter")
     void errorsCarryPerCulvertRowCounter() {
-      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(
-          completeRound(7801),
-          row(7802, "R", null, null, new BigDecimal("9.0"), 1, null)));
-      when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of(
-          cost(1, 7801, 77, 4000), cost(2, 7801, 78, 1500),
-          cost(3, 7802, 77, 100), cost(4, 7802, 78, 50)));
+      when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  completeRound(7801), row(7802, "R", null, null, new BigDecimal("9.0"), 1, null)));
+      when(repository.findCostDetails(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  cost(1, 7801, 77, 4000), cost(2, 7801, 78, 1500),
+                  cost(3, 7802, 77, 100), cost(4, 7802, 78, 50)));
 
       Schedule7bCheckStatusResponse response = service.checkStatus(MILL, YEAR);
 
       assertThat(response.requirementsMet()).isFalse();
-      assertThat(texts(response)).containsExactly(
-          "Culvert Report Id : 2 - Culvert Type Round - Span size: Value Required");
+      assertThat(texts(response))
+          .containsExactly(
+              "Culvert Report Id : 2 - Culvert Type Round - Span size: Value Required");
     }
 
     @Test
@@ -486,14 +514,18 @@ class Schedule7bServiceTest {
 
     /**
      * A Draft context in which the given culverts EXIST. The write path resolves existence from the
-     * one {@code findCulverts} read that also feeds the unchanged-type exemption, so a correction test
-     * has to say which ids are there — otherwise the 404 pre-check fires before anything it means to
-     * exercise.
+     * one {@code findCulverts} read that also feeds the unchanged-type exemption, so a correction
+     * test has to say which ids are there — otherwise the 404 pre-check fires before anything it
+     * means to exercise.
      */
     private void draftWith(long... culvertIds) {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-      lenient().when(repository.findCulverts(MILL, YEAR)).thenReturn(
-          java.util.Arrays.stream(culvertIds).mapToObj(Schedule7bServiceTest::completeRound).toList());
+      lenient()
+          .when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(
+              java.util.Arrays.stream(culvertIds)
+                  .mapToObj(Schedule7bServiceTest::completeRound)
+                  .toList());
       lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     }
 
@@ -505,7 +537,8 @@ class Schedule7bServiceTest {
 
       service.addCulvert(MILL, YEAR, validRequest(null), true, USER);
 
-      verify(repository).insertCulvert(any(CulvertReportEntity.class), eq(MILL), eq(YEAR), eq(USER));
+      verify(repository)
+          .insertCulvert(any(CulvertReportEntity.class), eq(MILL), eq(YEAR), eq(USER));
       verify(repository).upsertCost(9501L, 77, 4000, USER);
       verify(repository).upsertCost(9501L, 78, 1500, USER);
     }
@@ -517,9 +550,11 @@ class Schedule7bServiceTest {
       when(repository.nextCulvertReportId()).thenReturn(9501L);
 
       service.addCulvert(
-          MILL, YEAR,
+          MILL,
+          YEAR,
           request("R", 1200, 900, new BigDecimal("12.5"), 3, null, null, null, null),
-          true, USER);
+          true,
+          USER);
 
       verify(repository).upsertCost(9501L, 77, null, USER);
       verify(repository).upsertCost(9501L, 78, null, USER);
@@ -575,7 +610,8 @@ class Schedule7bServiceTest {
     }
 
     @Test
-    @DisplayName("AC8: the type check also runs on correct and on the page-level Save, not just add")
+    @DisplayName(
+        "AC8: the type check also runs on correct and on the page-level Save, not just add")
     void unknownTypeIsRejectedOnUpdateAndSaveAll() {
       draft();
       // A culvert whose stored type is 'R', so changing it to XOLD is a genuine change.
@@ -598,10 +634,11 @@ class Schedule7bServiceTest {
     void unchangedOutOfWindowTypeIsExempt() {
       draft();
       // 7801 is stored with XOLD (retired). Resubmitting XOLD unchanged must NOT 400 — otherwise no
-      // culvert on the page could ever be corrected. Legacy did not block the save (it silently wiped
+      // culvert on the page could ever be corrected. Legacy did not block the save (it silently
+      // wiped
       // the type instead), so blocking here would be worse than legacy in a different way.
-      when(repository.findCulverts(MILL, YEAR)).thenReturn(
-          List.of(row(7801, "XOLD", 1200, 900, new BigDecimal("12.5"), 3, null)));
+      when(repository.findCulverts(MILL, YEAR))
+          .thenReturn(List.of(row(7801, "XOLD", 1200, 900, new BigDecimal("12.5"), 3, null)));
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(1);
       CulvertRequest unchangedType =
           request("XOLD", 1300, 900, new BigDecimal("12.5"), 3, 4000, 1500, null, 0);
@@ -619,10 +656,18 @@ class Schedule7bServiceTest {
 
       // 12.50 is the SAME number as the accepted 12.5; a @Digits(fraction=1) constraint rejected it
       // because it reads BigDecimal.scale(). 12.55 is what legacy let NUMBER(7,1) round to 12.6.
-      service.addCulvert(MILL, YEAR,
-          request("R", 1200, 900, new BigDecimal("12.50"), 3, 4000, 1500, null, null), true, USER);
-      service.addCulvert(MILL, YEAR,
-          request("R", 1200, 900, new BigDecimal("12.55"), 3, 4000, 1500, null, null), true, USER);
+      service.addCulvert(
+          MILL,
+          YEAR,
+          request("R", 1200, 900, new BigDecimal("12.50"), 3, 4000, 1500, null, null),
+          true,
+          USER);
+      service.addCulvert(
+          MILL,
+          YEAR,
+          request("R", 1200, 900, new BigDecimal("12.55"), 3, 4000, 1500, null, null),
+          true,
+          USER);
 
       var captor = org.mockito.ArgumentCaptor.forClass(CulvertReportEntity.class);
       verify(repository, times(2))
@@ -658,7 +703,8 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("AC2: a culvert deleted concurrently still falls to the countCulvert 404 backstop")
     void concurrentDeleteIsNotFound() {
-      // The pre-check reads committed state, so a row deleted by another transaction between that read
+      // The pre-check reads committed state, so a row deleted by another transaction between that
+      // read
       // and the UPDATE gets here with 0 rows updated and 0 rows counted. Without this the backstop
       // could be deleted and the suite would stay green.
       draftWith(7801L);
@@ -673,11 +719,12 @@ class Schedule7bServiceTest {
     @Test
     @DisplayName("PR #266: an unknown id with an INVALID type is 404, not the type-validation 400")
     void unknownIdBeatsTypeValidationOnThePut() {
-      // The status must not depend on the body. Validating the submitted type first answered 400 here,
+      // The status must not depend on the body. Validating the submitted type first answered 400
+      // here,
       // because storedTypes.get(unknownId) is null so the unchanged-type exemption cannot apply.
       draft();
-      CulvertRequest retiredType = request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500,
-          "ok", 0);
+      CulvertRequest retiredType =
+          request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0);
 
       assertThatThrownBy(() -> service.updateCulvert(MILL, YEAR, 7801L, retiredType, true, USER))
           .isInstanceOf(CulvertNotFoundException.class);
@@ -687,10 +734,13 @@ class Schedule7bServiceTest {
     @DisplayName("PR #266: the same holds for every entry of a page-level Save")
     void unknownIdBeatsTypeValidationInTheBatch() {
       draftWith(7801L);
-      CulvertSaveAllRequest batch = new CulvertSaveAllRequest(List.of(
-          new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
-          new CulvertSaveAllRequest.Item(9999L,
-              request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0))));
+      CulvertSaveAllRequest batch =
+          new CulvertSaveAllRequest(
+              List.of(
+                  new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
+                  new CulvertSaveAllRequest.Item(
+                      9999L,
+                      request("ZZ", 1200, 900, new BigDecimal("12.5"), 3, 4000, 1500, "ok", 0))));
 
       assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
           .isInstanceOf(CulvertNotFoundException.class);
@@ -744,9 +794,11 @@ class Schedule7bServiceTest {
     @DisplayName("AC3: a batch naming the same culvert twice is rejected before any write")
     void duplicateBatchIdsRejected() {
       draft();
-      CulvertSaveAllRequest batch = new CulvertSaveAllRequest(List.of(
-          new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
-          new CulvertSaveAllRequest.Item(7801L, validRequest(0))));
+      CulvertSaveAllRequest batch =
+          new CulvertSaveAllRequest(
+              List.of(
+                  new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
+                  new CulvertSaveAllRequest.Item(7801L, validRequest(0))));
 
       assertThatThrownBy(() -> service.saveAllCulverts(MILL, YEAR, batch, true, USER))
           .isInstanceOf(DuplicateCulvertException.class);
@@ -759,10 +811,12 @@ class Schedule7bServiceTest {
     void batchReadsCodeTableOnce() {
       draftWith(7801L, 7802L, 7803L);
       when(repository.updateCulvert(any(), eq(MILL), eq(YEAR), eq(0), eq(USER))).thenReturn(1);
-      CulvertSaveAllRequest batch = new CulvertSaveAllRequest(List.of(
-          new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
-          new CulvertSaveAllRequest.Item(7802L, validRequest(0)),
-          new CulvertSaveAllRequest.Item(7803L, validRequest(0))));
+      CulvertSaveAllRequest batch =
+          new CulvertSaveAllRequest(
+              List.of(
+                  new CulvertSaveAllRequest.Item(7801L, validRequest(0)),
+                  new CulvertSaveAllRequest.Item(7802L, validRequest(0)),
+                  new CulvertSaveAllRequest.Item(7803L, validRequest(0))));
 
       service.saveAllCulverts(MILL, YEAR, batch, true, USER);
 
@@ -776,7 +830,8 @@ class Schedule7bServiceTest {
       draft();
       when(repository.nextCulvertReportId()).thenReturn(9501L);
       doThrow(new DataIntegrityViolationException("boom"))
-          .when(repository).insertCulvert(any(), anyLong(), anyInt(), anyString());
+          .when(repository)
+          .insertCulvert(any(), anyLong(), anyInt(), anyString());
       CulvertRequest added = validRequest(null);
 
       assertThatThrownBy(() -> service.addCulvert(MILL, YEAR, added, true, USER))

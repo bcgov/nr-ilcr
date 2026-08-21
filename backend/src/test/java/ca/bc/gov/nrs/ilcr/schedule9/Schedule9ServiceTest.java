@@ -23,9 +23,9 @@ import org.springframework.context.MessageSource;
 
 /**
  * Unit test for the Schedule 9 document assembly + server-side derivation (Story 9.1 / T3) with a
- * mocked repository — the $/Unit null-safe divide, the server-authoritative {@code editable} branch,
- * and the record↔cost-line join, without a database. The SQL itself is exercised against real
- * Oracle by {@link Schedule9DocumentIT}.
+ * mocked repository — the $/Unit null-safe divide, the server-authoritative {@code editable}
+ * branch, and the record↔cost-line join, without a database. The SQL itself is exercised against
+ * real Oracle by {@link Schedule9DocumentIT}.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule9Service — assembly + $/Unit derivation")
@@ -34,19 +34,29 @@ class Schedule9ServiceTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private Schedule9Repository repository;
+  @Mock private Schedule9Repository repository;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule9Service service;
+  @InjectMocks private Schedule9Service service;
 
   /** A record row with the given id, units, and free-text descriptions blank unless overridden. */
   private static RecordRow record(int id, BigDecimal units) {
-    return new RecordRow(id, 0, "CTR-1", units, 25, "comment", "M3", "Cubic Metres", null, "A",
-        "Actual Cost", null, "BZ1", "BEC Zone One");
+    return new RecordRow(
+        id,
+        0,
+        "CTR-1",
+        units,
+        25,
+        "comment",
+        "M3",
+        "Cubic Metres",
+        null,
+        "A",
+        "Actual Cost",
+        null,
+        "BZ1",
+        "BEC Zone One");
   }
 
   private void stub(String trackStatus, List<RecordRow> records, List<CostRow> costLines) {
@@ -58,7 +68,9 @@ class Schedule9ServiceTest {
   @Test
   @DisplayName("$/Unit = cost ÷ units, scale 2 HALF_UP, joined to the record's cost line")
   void derivesCostPerUnit() {
-    stub("D", List.of(record(9101, new BigDecimal("100.0"))),
+    stub(
+        "D",
+        List.of(record(9101, new BigDecimal("100.0"))),
         List.of(new CostRow(9101, 108, "Cattleguard", null, 5000)));
 
     ContractualWorkRecord row = service.getSchedule9(MILL, YEAR, true).records().get(0);
@@ -72,7 +84,9 @@ class Schedule9ServiceTest {
   @Test
   @DisplayName("zero units -> $/Unit null (S14), even though a cost is stored")
   void nullCostPerUnit_whenUnitsZero() {
-    stub("D", List.of(record(9102, BigDecimal.ZERO)),
+    stub(
+        "D",
+        List.of(record(9102, BigDecimal.ZERO)),
         List.of(new CostRow(9102, 109, "Pipeline Crossing", null, 3000)));
 
     ContractualWorkRecord row = service.getSchedule9(MILL, YEAR, true).records().get(0);
@@ -84,7 +98,9 @@ class Schedule9ServiceTest {
   @Test
   @DisplayName("null units -> $/Unit null (no NPE on the divide)")
   void nullCostPerUnit_whenUnitsNull() {
-    stub("D", List.of(record(9103, null)),
+    stub(
+        "D",
+        List.of(record(9103, null)),
         List.of(new CostRow(9103, 110, "Remedial Fence", null, 2000)));
 
     assertNull(service.getSchedule9(MILL, YEAR, true).records().get(0).costPerUnit());
@@ -119,7 +135,9 @@ class Schedule9ServiceTest {
   @Test
   @DisplayName("non-Draft track with EDIT_SCHEDULE -> editable false; records still served")
   void notEditable_whenNonDraft() {
-    stub("S", List.of(record(9110, new BigDecimal("40.0"))),
+    stub(
+        "S",
+        List.of(record(9110, new BigDecimal("40.0"))),
         List.of(new CostRow(9110, 111, "Semi-permanent Road Deactivation", null, 8000)));
 
     Schedule9Response response = service.getSchedule9(MILL, YEAR, true);

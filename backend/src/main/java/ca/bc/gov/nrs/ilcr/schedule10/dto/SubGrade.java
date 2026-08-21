@@ -7,8 +7,8 @@ import java.math.BigDecimal;
  * The sub-grade substructure: dimensions, three cost lines, and the six "Less" deduction lines.
  *
  * <p>Every {@code total*} and {@code costPerLength} value is DERIVED server-side and is read-only —
- * present in responses, ignored or rejected on write (AD-5, AD-12). The arithmetic lives in
- * {@code Schedule10Amounts} and nowhere else.
+ * present in responses, ignored or rejected on write (AD-5, AD-12). The arithmetic lives in {@code
+ * Schedule10Amounts} and nowhere else.
  *
  * <p><strong>Null is not zero.</strong> When a road detail has no cost lines at all — the normal
  * shape in the real delivery database — every field here is absent from the JSON rather than
@@ -46,5 +46,4 @@ public record SubGrade(
     BigDecimal totalCosts,
     BigDecimal totalDeductions,
     BigDecimal total,
-    BigDecimal costPerLength) {
-}
+    BigDecimal costPerLength) {}

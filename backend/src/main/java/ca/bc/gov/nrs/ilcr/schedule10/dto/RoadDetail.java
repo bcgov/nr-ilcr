@@ -9,12 +9,11 @@ import java.math.BigDecimal;
  * <p><strong>Three legacy fields are deliberately absent</strong> per the business-directed
  * departures confirmed 2026-08-11: {@code asmCode} (LD-1), {@code soilMoistureCode} (LD-2) and
  * {@code boulderAreaPct} (LD-3). Any of them appearing in a response is a defect. Their removal
- * also
- * eliminates legacy BR-06's runtime filtering, so slice S13 no longer applies.
+ * also eliminates legacy BR-06's runtime filtering, so slice S13 no longer applies.
  *
  * @param roadDetailId the {@code ROAD_CONSTRUCTION_REPRT_DTL_ID}
- * @param rowNumber positional 1-based number assigned on read; not stored
- *     ({@code Schedule10DAO:405})
+ * @param rowNumber positional 1-based number assigned on read; not stored ({@code
+ *     Schedule10DAO:405})
  * @param roadDetailLabel the legacy summary-list label, {@code "Road #{n}, {name}"}
  * @param roadName the road name
  * @param roadLifetimeCode the Road Type code
@@ -54,5 +53,4 @@ public record RoadDetail(
     BigDecimal overlandDistance,
     BigDecimal overlandVolume,
     String comments,
-    Integer revisionCount) {
-}
+    Integer revisionCount) {}

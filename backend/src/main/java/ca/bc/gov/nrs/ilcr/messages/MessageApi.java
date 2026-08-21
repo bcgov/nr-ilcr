@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.messages;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,8 +32,8 @@ public interface MessageApi {
    * <p>The repeatable {@code arg} query parameter is read off the request rather than bound to a
    * {@code List<String>} parameter: Spring converts a SINGLE query value to a collection by
    * splitting it on commas ({@code StringToCollectionConverter}), which would silently truncate a
-   * free-text argument — a camp named {@code Cedar, North} would resolve {@code {0}} to
-   * {@code Cedar}. {@code WebRequest#getParameterValues} hands each value over verbatim.
+   * free-text argument — a camp named {@code Cedar, North} would resolve {@code {0}} to {@code
+   * Cedar}. {@code WebRequest#getParameterValues} hands each value over verbatim.
    *
    * @param key the {@code messages.properties} key; must be on the client-renderable allowlist
    * @param request carries the {@code MessageFormat} arguments as repeatable {@code arg} query
@@ -42,6 +42,5 @@ public interface MessageApi {
    * @return 200 with the key and its resolved text; 404 when the key is not client-renderable
    */
   @GetMapping
-  ResponseEntity<MessageInfo> resolve(
-      @RequestParam(name = "key") String key, WebRequest request);
+  ResponseEntity<MessageInfo> resolve(@RequestParam(name = "key") String key, WebRequest request);
 }

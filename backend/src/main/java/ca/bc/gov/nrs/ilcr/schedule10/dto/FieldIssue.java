@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 
 /**
  * One outstanding Check Status requirement on a page or a road detail.
@@ -13,5 +13,4 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
  * @param field the machine field name, stable for UI correlation
  * @param message the legacy bundle key and its composed, resolved text
  */
-public record FieldIssue(String field, MessageInfo message) {
-}
+public record FieldIssue(String field, MessageInfo message) {}

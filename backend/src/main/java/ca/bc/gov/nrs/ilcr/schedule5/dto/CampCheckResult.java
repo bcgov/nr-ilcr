@@ -28,10 +28,7 @@ import java.util.List;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CampCheckResult(
-    int campId,
-    String campName,
-    boolean requirementsMet,
-    List<CampCheckMessage> messages) {
+    int campId, String campName, boolean requirementsMet, List<CampCheckMessage> messages) {
 
   /**
    * One check-status line: the legacy bundle key, the request-DTO field it points at, and the
@@ -49,6 +46,5 @@ public record CampCheckResult(
    * @param text the resolved, composed verbatim line
    */
   @JsonInclude(JsonInclude.Include.NON_NULL)
-  public record CampCheckMessage(String key, String field, String text) {
-  }
+  public record CampCheckMessage(String key, String field, String text) {}
 }

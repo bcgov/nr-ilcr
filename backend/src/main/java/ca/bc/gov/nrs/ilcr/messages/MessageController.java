@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.messages;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.Set;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;

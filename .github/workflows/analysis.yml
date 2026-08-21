@@ -35,7 +35,7 @@ jobs:
           # provides: AbstractOracleIT starts one gvenzl/oracle-free container per JVM and applies
           # the test snapshot with Flyway's Java API.
           commands: |
-            mvn -B -ntp -Dcheckstyle.skip=false -Dskip.integration.tests=false verify checkstyle:checkstyle
+            mvn -B -ntp -Dskip.integration.tests=false verify
           dir: backend
           java-cache: maven
           java-distribution: temurin

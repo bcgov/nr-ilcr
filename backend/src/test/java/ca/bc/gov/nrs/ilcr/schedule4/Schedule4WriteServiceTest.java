@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -12,12 +13,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import static ca.bc.gov.nrs.ilcr.support.TestAmounts.bd;
-
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryInput;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import java.util.List;
@@ -30,12 +29,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit test for the Schedule 4 location write path (Story 4.2). Mocked repository — no DB, no Spring
- * — so it isolates the family write model: create (insert primary + bump 0→1 + fixed on primary +
- * distance child), edit (bump expected + rename + update-in-place), the delete-when-emptied distance
- * child, server-side name uniqueness (ERR-002), the Draft gate, optimistic-lock handling, idempotent
- * delete, delete cascade, cross-context (mill/year-scoped) edit rejection, and persistence-failure
- * rollback translation.
+ * Unit test for the Schedule 4 location write path (Story 4.2). Mocked repository — no DB, no
+ * Spring — so it isolates the family write model: create (insert primary + bump 0→1 + fixed on
+ * primary + distance child), edit (bump expected + rename + update-in-place), the
+ * delete-when-emptied distance child, server-side name uniqueness (ERR-002), the Draft gate,
+ * optimistic-lock handling, idempotent delete, delete cascade, cross-context (mill/year-scoped)
+ * edit rejection, and persistence-failure rollback translation.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule4WriteServiceTest {
@@ -44,13 +43,13 @@ class Schedule4WriteServiceTest {
   private static final int YEAR = 2021;
   private static final String USER = "dev-submitter";
 
-  @Mock
-  private Schedule4Repository repository;
+  @Mock private Schedule4Repository repository;
 
-  @InjectMocks
-  private Schedule4Service service;
+  @InjectMocks private Schedule4Service service;
 
-  /** The recompute read at the end of a successful save — kept minimal (content not asserted here). */
+  /**
+   * The recompute read at the end of a successful save — kept minimal (content not asserted here).
+   */
   private void stubRecompute() {
     lenient().when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
@@ -69,15 +68,25 @@ class Schedule4WriteServiceTest {
         .thenReturn(9002);
     stubRecompute();
 
-    service.saveLocation(MILL, YEAR, new Schedule4LocationRequest(null, null, "New Dump", null, List.of(
-        new CategoryInput(40, bd("1000"), 50000, null),
-        new CategoryInput(47, bd("200"), 8000, bd("60.0")))), true, USER);
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            null,
+            null,
+            "New Dump",
+            null,
+            List.of(
+                new CategoryInput(40, bd("1000"), 50000, null),
+                new CategoryInput(47, bd("200"), 8000, bd("60.0")))),
+        true,
+        USER);
 
-    verify(repository).insertReport(MILL, YEAR, "New Dump", null, USER);   // primary (distance null)
-    verify(repository).bumpRevision(9001, 0, MILL, YEAR, null, USER);            // 0 -> 1
-    verify(repository).upsertDetail(9001, 40, bd("1000"), 50000, USER);    // fixed on primary
+    verify(repository).insertReport(MILL, YEAR, "New Dump", null, USER); // primary (distance null)
+    verify(repository).bumpRevision(9001, 0, MILL, YEAR, null, USER); // 0 -> 1
+    verify(repository).upsertDetail(9001, 40, bd("1000"), 50000, USER); // fixed on primary
     verify(repository).insertReport(MILL, YEAR, "New Dump", bd("60.0"), USER); // distance child
-    verify(repository).upsertDetail(9002, 47, bd("200"), 8000, USER);      // distance detail
+    verify(repository).upsertDetail(9002, 47, bd("200"), 8000, USER); // distance detail
   }
 
   @Test
@@ -89,8 +98,12 @@ class Schedule4WriteServiceTest {
     when(repository.bumpRevision(9001, 0, MILL, YEAR, null, USER)).thenReturn(1);
     stubRecompute();
 
-    service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(null, null, "Bare Dump", null, List.of()), true, USER);
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(null, null, "Bare Dump", null, List.of()),
+        true,
+        USER);
 
     verify(repository).insertReport(MILL, YEAR, "Bare Dump", null, USER);
     verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
@@ -106,9 +119,19 @@ class Schedule4WriteServiceTest {
         .thenReturn(Optional.of(8002));
     stubRecompute();
 
-    service.saveLocation(MILL, YEAR, new Schedule4LocationRequest(8001, 0, "Renamed Dump", null, List.of(
-        new CategoryInput(40, bd("1500"), 60000, null),
-        new CategoryInput(47, bd("250"), 9000, bd("70.0")))), true, USER);
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Renamed Dump",
+            null,
+            List.of(
+                new CategoryInput(40, bd("1500"), 60000, null),
+                new CategoryInput(47, bd("250"), 9000, bd("70.0")))),
+        true,
+        USER);
 
     verify(repository).bumpRevision(8001, 0, MILL, YEAR, null, USER);
     verify(repository).renameFamily(MILL, YEAR, "Existing Dump", "Renamed Dump", USER);
@@ -126,11 +149,20 @@ class Schedule4WriteServiceTest {
     when(repository.bumpRevision(8001, 0, MILL, YEAR, null, USER)).thenReturn(1);
     stubRecompute();
 
-    service.saveLocation(MILL, YEAR, new Schedule4LocationRequest(8001, 0, "Existing Dump", null, List.of(
-        new CategoryInput(40, bd("1500"), 60000, null))), true, USER);
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001,
+            0,
+            "Existing Dump",
+            null,
+            List.of(new CategoryInput(40, bd("1500"), 60000, null))),
+        true,
+        USER);
 
-    verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
-        anyString());
+    verify(repository, never())
+        .renameFamily(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -144,8 +176,13 @@ class Schedule4WriteServiceTest {
     stubRecompute();
 
     // A distance category with all-null amounts clears it: the child report is deleted.
-    service.saveLocation(MILL, YEAR, new Schedule4LocationRequest(8001, 0, "Existing Dump", null, List.of(
-        new CategoryInput(47, null, null, null))), true, USER);
+    service.saveLocation(
+        MILL,
+        YEAR,
+        new Schedule4LocationRequest(
+            8001, 0, "Existing Dump", null, List.of(new CategoryInput(47, null, null, null))),
+        true,
+        USER);
 
     verify(repository).deleteReport(8002);
     verify(repository, never()).updateReportDistance(anyInt(), any(), anyString());
@@ -157,37 +194,61 @@ class Schedule4WriteServiceTest {
     when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.of("Existing Dump"));
     when(repository.nameExists(MILL, YEAR, "Rival Dump", "Existing Dump")).thenReturn(true);
 
-    assertThrows(LocationNameConflictException.class, () -> service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(8001, 0, "Rival Dump", null, List.of()), true, USER));
+    assertThrows(
+        LocationNameConflictException.class,
+        () ->
+            service.saveLocation(
+                MILL,
+                YEAR,
+                new Schedule4LocationRequest(8001, 0, "Rival Dump", null, List.of()),
+                true,
+                USER));
 
-    verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), isNull(), anyString());
+    verify(repository, never())
+        .bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), isNull(), anyString());
     verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
-    verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
-        anyString());
+    verify(repository, never())
+        .renameFamily(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
   void save_edit_foreignId_notInContext_throwsNotFound_writesNothing() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    // The id is not a category-4 report for THIS mill/year (foreign / cross-context) -> 404, and the
+    // The id is not a category-4 report for THIS mill/year (foreign / cross-context) -> 404, and
+    // the
     // request must not mutate anything (the IDOR guard SScholefield flagged).
     when(repository.findLocationName(8001, MILL, YEAR)).thenReturn(Optional.empty());
 
-    assertThrows(ScheduleNotFoundException.class, () -> service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(8001, 0, "Whatever", null, List.of()), true, USER));
+    assertThrows(
+        ScheduleNotFoundException.class,
+        () ->
+            service.saveLocation(
+                MILL,
+                YEAR,
+                new Schedule4LocationRequest(8001, 0, "Whatever", null, List.of()),
+                true,
+                USER));
 
     verify(repository, never()).nameExists(anyLong(), anyInt(), anyString(), any());
-    verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), isNull(), anyString());
-    verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
-        anyString());
+    verify(repository, never())
+        .bumpRevision(anyInt(), anyInt(), anyLong(), anyInt(), isNull(), anyString());
+    verify(repository, never())
+        .renameFamily(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
   void save_notDraft_throwsNotEditable_writesNothing() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () -> service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(null, null, "X", null, List.of()), true, USER));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.saveLocation(
+                MILL,
+                YEAR,
+                new Schedule4LocationRequest(null, null, "X", null, List.of()),
+                true,
+                USER));
 
     verify(repository, never()).nameExists(anyLong(), anyInt(), anyString(), any());
     verify(repository, never()).insertReport(anyLong(), anyInt(), anyString(), any(), anyString());
@@ -200,13 +261,24 @@ class Schedule4WriteServiceTest {
     when(repository.nameExists(MILL, YEAR, "Existing Dump", "Existing Dump")).thenReturn(false);
     when(repository.bumpRevision(8001, 5, MILL, YEAR, null, USER)).thenReturn(0);
 
-    assertThrows(StaleRevisionException.class, () -> service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(8001, 5, "Existing Dump", null,
-            List.of(new CategoryInput(40, bd("1"), 1, null))), true, USER));
+    assertThrows(
+        StaleRevisionException.class,
+        () ->
+            service.saveLocation(
+                MILL,
+                YEAR,
+                new Schedule4LocationRequest(
+                    8001,
+                    5,
+                    "Existing Dump",
+                    null,
+                    List.of(new CategoryInput(40, bd("1"), 1, null))),
+                true,
+                USER));
 
     verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
-    verify(repository, never()).renameFamily(anyLong(), anyInt(), anyString(), anyString(),
-        anyString());
+    verify(repository, never())
+        .renameFamily(anyLong(), anyInt(), anyString(), anyString(), anyString());
   }
 
   @Test
@@ -216,8 +288,15 @@ class Schedule4WriteServiceTest {
     when(repository.insertReport(eq(MILL), eq(YEAR), eq("New Dump"), isNull(), eq(USER)))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.saveLocation(MILL, YEAR,
-        new Schedule4LocationRequest(null, null, "New Dump", null, List.of()), true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.saveLocation(
+                MILL,
+                YEAR,
+                new Schedule4LocationRequest(null, null, "New Dump", null, List.of()),
+                true,
+                USER));
   }
 
   @Test
@@ -245,7 +324,8 @@ class Schedule4WriteServiceTest {
   void delete_notDraft_throwsNotEditable() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () -> service.deleteLocation(MILL, YEAR, 8001));
+    assertThrows(
+        ScheduleNotEditableException.class, () -> service.deleteLocation(MILL, YEAR, 8001));
 
     verify(repository, never()).deleteFamily(anyLong(), anyInt(), anyString());
   }

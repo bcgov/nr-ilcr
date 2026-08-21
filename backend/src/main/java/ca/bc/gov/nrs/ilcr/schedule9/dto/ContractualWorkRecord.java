@@ -10,8 +10,8 @@ import java.math.BigDecimal;
  * licensee enters it: contractor, item, unit + units, zone, cost, side slope, source, comments.
  *
  * <p><strong>Stored vs derived.</strong> {@code costPerUnit} = {@code cost} ÷ {@code numberOfUnits}
- * is computed server-side (AD-5) and is <strong>null when {@code numberOfUnits} is zero/blank</strong>
- * (S14) — never client-editable. Everything else is stored: the descriptors on
+ * is computed server-side (AD-5) and is <strong>null when {@code numberOfUnits} is
+ * zero/blank</strong> (S14) — never client-editable. Everything else is stored: the descriptors on
  * {@code THE.CONTRACTUAL_WORK_REPORT} and the {@code cost} + Contractual Item (108–114) on the
  * joined {@code THE.ILCR_COST_REPORT_DETAIL} line.
  *
@@ -22,10 +22,10 @@ import java.math.BigDecimal;
  * source) are stored columns served verbatim; their enable/require semantics (BR-04) are a Story
  * 9.2/9.3 concern.
  *
- * <p>{@code id} and {@code revisionCount} are primitive {@code int}: the delivery columns
- * ({@code CONTRACTUAL_WORK_REPORT_ID}, {@code REVISION_COUNT}) are {@code NOT NULL}, and boxing
- * {@code revisionCount} would let {@code NON_NULL} silently drop the optimistic-lock token the 9.2
- * write path requires.
+ * <p>{@code id} and {@code revisionCount} are primitive {@code int}: the delivery columns ({@code
+ * CONTRACTUAL_WORK_REPORT_ID}, {@code REVISION_COUNT}) are {@code NOT NULL}, and boxing {@code
+ * revisionCount} would let {@code NON_NULL} silently drop the optimistic-lock token the 9.2 write
+ * path requires.
  *
  * @param id the record id (its own optimistic-lock key; there is no schedule-level revision)
  * @param revisionCount this record's optimistic-lock token
@@ -38,7 +38,8 @@ import java.math.BigDecimal;
  * @param biogeoclimaticZone the BEC zone code + description
  * @param cost the work item cost (whole dollars)
  * @param costPerUnit derived cost ÷ units; null when units zero/blank
- * @param sideSlopePct side slope percentage (only meaningful for road-deactivation items; else null)
+ * @param sideSlopePct side slope percentage (only meaningful for road-deactivation items; else
+ *     null)
  * @param source the cost source code + description
  * @param sourceDescription free text when the source is "O"/"S" (else null)
  * @param comments per-record comments
@@ -59,5 +60,4 @@ public record ContractualWorkRecord(
     Integer sideSlopePct,
     CodeDescriptionDto source,
     String sourceDescription,
-    String comments) {
-}
+    String comments) {}

@@ -8,16 +8,17 @@ import java.math.BigDecimal;
  * only one with a {@code cycle}), and Other Transportation (code 55). Code 54 is dead (never
  * persisted) and never appears here.
  *
- * <p>Unlike the fixed/distance {@link CategoryAmount category amounts} (which live on the location's
- * primary and per-distance-code reports), each sub-page row is its OWN {@code TRANSPORTATION_REPORT}
- * sharing the location's {@code LOCATION_DESCRIPTION}, with a free-text {@code description}
- * ({@code ITEM_DESCRIPTION}), its own {@code distance} (and {@code cycle} for Truck Rehaul) on the
- * report, and a single {@code ILCR_COST_REPORT_DETAIL} row. {@code id} is that row's
- * {@code TRANSPORTATION_REPORT_ID} — the stable handle the write path deletes by.
+ * <p>Unlike the fixed/distance {@link CategoryAmount category amounts} (which live on the
+ * location's primary and per-distance-code reports), each sub-page row is its OWN {@code
+ * TRANSPORTATION_REPORT} sharing the location's {@code LOCATION_DESCRIPTION}, with a free-text
+ * {@code description} ({@code ITEM_DESCRIPTION}), its own {@code distance} (and {@code cycle} for
+ * Truck Rehaul) on the report, and a single {@code ILCR_COST_REPORT_DETAIL} row. {@code id} is that
+ * row's {@code TRANSPORTATION_REPORT_ID} — the stable handle the write path deletes by.
  *
- * <p>{@code perUnit} ($/m³) is derived server-side (AD-6, cost ÷ volume); null when volume is null or
- * zero. Running totals per sub-page are derivable by summing the rows. All nullable fields are omitted
- * from the JSON when null (app-wide Jackson {@code non_null}); {@code cycle} is null except on 46.
+ * <p>{@code perUnit} ($/m³) is derived server-side (AD-6, cost ÷ volume); null when volume is null
+ * or zero. Running totals per sub-page are derivable by summing the rows. All nullable fields are
+ * omitted from the JSON when null (app-wide Jackson {@code non_null}); {@code cycle} is null except
+ * on 46.
  */
 public record SubPageRow(
     Integer id,
@@ -27,5 +28,4 @@ public record SubPageRow(
     BigDecimal volume,
     Integer cost,
     Integer cycle,
-    BigDecimal perUnit) {
-}
+    BigDecimal perUnit) {}

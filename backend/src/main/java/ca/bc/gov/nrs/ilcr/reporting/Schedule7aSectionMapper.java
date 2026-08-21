@@ -10,23 +10,23 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Maps the Schedule 7A read document to the section datasource: one detail card per bridge, with the
- * New/Used construction type resolved code&rarr;description from the document's own {@code codeLists}
- * (legacy printed the description, not the raw code) and the BR-06 totals the service computed. The
- * material/deliver/install lines use the pre-summed {@code total*} fields.
+ * Maps the Schedule 7A read document to the section datasource: one detail card per bridge, with
+ * the New/Used construction type resolved code&rarr;description from the document's own {@code
+ * codeLists} (legacy printed the description, not the raw code) and the BR-06 totals the service
+ * computed. The material/deliver/install lines use the pre-summed {@code total*} fields.
  */
 final class Schedule7aSectionMapper {
 
-  private Schedule7aSectionMapper() {
-  }
+  private Schedule7aSectionMapper() {}
 
   static SectionData map(Schedule7aResponse response) {
     List<Bridge> bridges = response.bridges();
     if (bridges == null || bridges.isEmpty()) {
       return null;
     }
-    Map<String, String> constructionTypes = descriptions(
-        response.codeLists() == null ? null : response.codeLists().constructionTypes());
+    Map<String, String> constructionTypes =
+        descriptions(
+            response.codeLists() == null ? null : response.codeLists().constructionTypes());
     List<Map<String, ?>> rows = new ArrayList<>(bridges.size());
     for (Bridge bridge : bridges) {
       rows.add(toRow(bridge, constructionTypes));
@@ -48,7 +48,9 @@ final class Schedule7aSectionMapper {
     return row;
   }
 
-  /** Resolve a code to its description; an unmapped/blank code falls back to the code (then dash). */
+  /**
+   * Resolve a code to its description; an unmapped/blank code falls back to the code (then dash).
+   */
   private static String describe(Map<String, String> lookup, String code) {
     if (code == null) {
       return "-";
@@ -62,8 +64,9 @@ final class Schedule7aSectionMapper {
     }
     return options.stream()
         .filter(option -> option.code() != null)
-        .collect(Collectors.toMap(
-            CodeDescriptionDto::code, Schedule7aSectionMapper::descriptionOf, (a, b) -> a));
+        .collect(
+            Collectors.toMap(
+                CodeDescriptionDto::code, Schedule7aSectionMapper::descriptionOf, (a, b) -> a));
   }
 
   private static String descriptionOf(CodeDescriptionDto option) {

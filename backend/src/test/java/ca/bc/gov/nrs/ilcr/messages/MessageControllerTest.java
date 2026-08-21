@@ -46,9 +46,10 @@ class MessageControllerTest {
     messageSource.setBasename("messages");
     messageSource.setDefaultEncoding("UTF-8");
     MessageSource bundle = messageSource;
-    mockMvc = MockMvcBuilders.standaloneSetup(new MessageController(bundle))
-        .setControllerAdvice(new GlobalExceptionHandler(bundle))
-        .build();
+    mockMvc =
+        MockMvcBuilders.standaloneSetup(new MessageController(bundle))
+            .setControllerAdvice(new GlobalExceptionHandler(bundle))
+            .build();
   }
 
   @Test
@@ -92,7 +93,8 @@ class MessageControllerTest {
   }
 
   @Test
-  @DisplayName("404s a real bundle key that is NOT allowlisted — the bundle is not a public surface")
+  @DisplayName(
+      "404s a real bundle key that is NOT allowlisted — the bundle is not a public surface")
   void rejectsKeyOutsideTheAllowlist() throws Exception {
     // A genuine key (messages.properties:207) that the server composes and owns. It resolves fine
     // through MessageSource; the allowlist is the only thing standing between it and a caller.

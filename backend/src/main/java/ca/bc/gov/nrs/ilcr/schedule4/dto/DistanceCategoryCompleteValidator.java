@@ -5,10 +5,11 @@ import jakarta.validation.ConstraintValidatorContext;
 import java.util.Set;
 
 /**
- * Validates BR-04 (bidirectional required) for the 3 distance-based codes on a {@link CategoryInput}
- * (Story 4.2, S22/S23). Fixed codes and a fully-empty distance category pass; a partially-filled
- * distance category fails with a {@code missingRequiredFieldMsg} violation bound to each missing
- * field (so the 400 ProblemDetail names {@code distance}/{@code volume}/{@code cost}).
+ * Validates BR-04 (bidirectional required) for the 3 distance-based codes on a {@link
+ * CategoryInput} (Story 4.2, S22/S23). Fixed codes and a fully-empty distance category pass; a
+ * partially-filled distance category fails with a {@code missingRequiredFieldMsg} violation bound
+ * to each missing field (so the 400 ProblemDetail names {@code distance}/{@code volume}/{@code
+ * cost}).
  */
 public class DistanceCategoryCompleteValidator
     implements ConstraintValidator<DistanceCategoryComplete, CategoryInput> {
@@ -50,7 +51,8 @@ public class DistanceCategoryCompleteValidator
   }
 
   private static void addViolation(ConstraintValidatorContext context, String property) {
-    context.buildConstraintViolationWithTemplate("{missingRequiredFieldMsg}")
+    context
+        .buildConstraintViolationWithTemplate("{missingRequiredFieldMsg}")
         .addPropertyNode(property)
         .addConstraintViolation();
   }

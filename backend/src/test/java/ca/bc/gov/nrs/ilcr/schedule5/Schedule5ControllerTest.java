@@ -30,12 +30,12 @@ import org.springframework.security.core.Authentication;
  * <p><strong>Why this cannot be an integration test.</strong> {@code SchedulePermissions} grants
  * BOTH {@code VIEW_SCHEDULE} and {@code EDIT_SCHEDULE} to BOTH shipped roles, so no JWT can produce
  * a caller who may view but not edit: once {@code @PreAuthorize} passes, the lookup always returns
- * true and the conjunction in the service degenerates to the Draft check alone.
- * {@link Schedule5DocumentIT} runs with security off, and {@link Schedule5AuthorizationIT} only
- * asserts status codes. The consequence was that replacing the controller's lookup with a literal
- * {@code true}, or misspelling the action string — which makes
- * {@code SchedulePermissions.hasPermission} return false for everyone and silently strips edit
- * rights — left the entire suite green. Mocking the collaborator is the only way to observe it.
+ * true and the conjunction in the service degenerates to the Draft check alone. {@link
+ * Schedule5DocumentIT} runs with security off, and {@link Schedule5AuthorizationIT} only asserts
+ * status codes. The consequence was that replacing the controller's lookup with a literal {@code
+ * true}, or misspelling the action string — which makes {@code SchedulePermissions.hasPermission}
+ * return false for everyone and silently strips edit rights — left the entire suite green. Mocking
+ * the collaborator is the only way to observe it.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Schedule5Controller — the editable permission lookup (AD-9)")
@@ -46,20 +46,15 @@ class Schedule5ControllerTest {
   private static final long MILL = 514L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule5Service schedule5Service;
+  @Mock private Schedule5Service schedule5Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
   private Schedule5Controller controller;
 

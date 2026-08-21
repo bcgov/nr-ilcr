@@ -2,10 +2,10 @@ package ca.bc.gov.nrs.ilcr.reporting;
 
 /**
  * The schedules Epic 20.2 can render, each bound to its classpath template and its bookmark title.
- * Declared in the FIXED legacy print order (5 → 6 → 7A → 7B → 9 → 11 within the 1..11 sequence), so
- * iterating the enum yields the combined PDF's section order (BR-08) without a separate ordering
- * table. Schedules 1/2/3/8/10 and the Mill Information report are out of scope (no enum constant) —
- * a selected-but-unimplemented schedule is skipped-with-a-log by the orchestrator.
+ * Declared in the FIXED legacy print order (5 → 6 → 7A → 7B → 9 → 10 → 11 within the 1..11
+ * sequence), so iterating the enum yields the combined PDF's section order (BR-08) without a
+ * separate ordering table. Schedules 1/2/3/8 and the Mill Information report are out of scope (no
+ * enum constant) — a selected-but-unimplemented schedule is skipped-with-a-log by the orchestrator.
  */
 public enum ScheduleKey {
   SCHEDULE_5("reports/schedule5.jrxml", "Schedule 5: Camp and Access Expenses"),
@@ -13,6 +13,7 @@ public enum ScheduleKey {
   SCHEDULE_7A("reports/schedule7a.jrxml", "Schedule 7A: Bridge Costs"),
   SCHEDULE_7B("reports/schedule7b.jrxml", "Schedule 7B: Culvert Costs"),
   SCHEDULE_9("reports/schedule9.jrxml", "Schedule 9: Miscellaneous/Unique Logging Costs"),
+  SCHEDULE_10("reports/schedule10.jrxml", "Schedule 10: New Road Construction Costs"),
   SCHEDULE_11("reports/schedule11.jrxml", "Schedule 11: Basic Silviculture");
 
   private final String templatePath;

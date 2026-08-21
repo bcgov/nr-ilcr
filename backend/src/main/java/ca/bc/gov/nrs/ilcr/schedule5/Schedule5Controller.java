@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
 import ca.bc.gov.nrs.ilcr.schedule5.api.Schedule5Api;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampCheckResult;
@@ -57,15 +57,17 @@ public class Schedule5Controller implements Schedule5Api {
    * stop at the word. Copying Schedule 6's {@code FIELD_SEGMENTS} map wholesale gets every one of
    * these eight lines wrong by one byte.
    */
-  private static final Map<String, String> FIELD_SEGMENTS = Map.of(
-      Schedule5Service.FIELD_CAMP_NAME, " - Camp name",
-      Schedule5Service.FIELD_ROAD_DISTANCE, " - Road Distance to Operating Area",
-      Schedule5Service.FIELD_SIZE_OF_CAMP, " - Size of Camp",
-      Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME, " - Associated Camp Volume",
-      Schedule5Service.FIELD_OTHER_CAMP_DESCRIPTION, " - Other Camp Expense List (Description)",
-      Schedule5Service.FIELD_OTHER_CAMP_COST, " - Other Camp Expense List (Cost $)",
-      Schedule5Service.FIELD_OTHER_ACCESS_DESCRIPTION, " - Other Access Expense List (Description)",
-      Schedule5Service.FIELD_OTHER_ACCESS_COST, " - Other Access Expense List (Cost $)");
+  private static final Map<String, String> FIELD_SEGMENTS =
+      Map.of(
+          Schedule5Service.FIELD_CAMP_NAME, " - Camp name",
+          Schedule5Service.FIELD_ROAD_DISTANCE, " - Road Distance to Operating Area",
+          Schedule5Service.FIELD_SIZE_OF_CAMP, " - Size of Camp",
+          Schedule5Service.FIELD_ASSOCIATED_CAMP_VOLUME, " - Associated Camp Volume",
+          Schedule5Service.FIELD_OTHER_CAMP_DESCRIPTION, " - Other Camp Expense List (Description)",
+          Schedule5Service.FIELD_OTHER_CAMP_COST, " - Other Camp Expense List (Cost $)",
+          Schedule5Service.FIELD_OTHER_ACCESS_DESCRIPTION,
+              " - Other Access Expense List (Description)",
+          Schedule5Service.FIELD_OTHER_ACCESS_COST, " - Other Access Expense List (Cost $)");
 
   private final MillContextService millContextService;
   private final Schedule5Service schedule5Service;
@@ -99,9 +101,13 @@ public class Schedule5Controller implements Schedule5Api {
   public ResponseEntity<Schedule5Response> addCamp(
       String millId, String year, CampRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule5Response doc = schedule5Service.addCamp(
-        context.millId(), context.year(), request,
-        permissions.hasPermission(authentication, EDIT_SCHEDULE), authentication.getName());
+    Schedule5Response doc =
+        schedule5Service.addCamp(
+            context.millId(),
+            context.year(),
+            request,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -110,9 +116,14 @@ public class Schedule5Controller implements Schedule5Api {
   public ResponseEntity<Schedule5Response> updateCamp(
       int campId, String millId, String year, CampRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule5Response doc = schedule5Service.updateCamp(
-        context.millId(), context.year(), campId, request,
-        permissions.hasPermission(authentication, EDIT_SCHEDULE), authentication.getName());
+    Schedule5Response doc =
+        schedule5Service.updateCamp(
+            context.millId(),
+            context.year(),
+            campId,
+            request,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -121,9 +132,12 @@ public class Schedule5Controller implements Schedule5Api {
   public ResponseEntity<Schedule5Response> deleteCamp(
       int campId, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule5Response doc = schedule5Service.deleteCamp(
-        context.millId(), context.year(), campId,
-        permissions.hasPermission(authentication, EDIT_SCHEDULE));
+    Schedule5Response doc =
+        schedule5Service.deleteCamp(
+            context.millId(),
+            context.year(),
+            campId,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE));
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
@@ -138,18 +152,20 @@ public class Schedule5Controller implements Schedule5Api {
     // Resolve every bundle key the service emitted to verbatim text (AD-8): the schedule banner,
     // each passing camp's met message (with the CAMP NAME as its {0} arg — legacy passes the name,
     // not an ordinal, unlike Schedule 6's rowCounter), and each composed "Value Required" line.
-    List<MessageInfo> scheduleMessages = raw.messages().stream()
-        .map(m -> message(m.key()))
-        .toList();
-    List<CampCheckResult> camps = raw.camps().stream()
-        .map(camp -> new CampCheckResult(
-            camp.campId(),
-            camp.campName(),
-            camp.requirementsMet(),
-            camp.messages().stream()
-                .map(m -> resolveCampMessage(camp.campName(), m))
-                .toList()))
-        .toList();
+    List<MessageInfo> scheduleMessages =
+        raw.messages().stream().map(m -> message(m.key())).toList();
+    List<CampCheckResult> camps =
+        raw.camps().stream()
+            .map(
+                camp ->
+                    new CampCheckResult(
+                        camp.campId(),
+                        camp.campName(),
+                        camp.requirementsMet(),
+                        camp.messages().stream()
+                            .map(m -> resolveCampMessage(camp.campName(), m))
+                            .toList()))
+            .toList();
     return ResponseEntity.ok(
         new Schedule5CheckStatusResponse(raw.outcome(), scheduleMessages, camps));
   }
@@ -209,7 +225,10 @@ public class Schedule5Controller implements Schedule5Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<SubPageDocument> saveOtherCampExpenses(
-      int campId, String millId, String year, SubPageSaveRequest request,
+      int campId,
+      String millId,
+      String year,
+      SubPageSaveRequest request,
       Authentication authentication) {
     return ResponseEntity.ok(
         saveSubPage(campId, millId, year, SubPage.CAMP, request, authentication));
@@ -218,7 +237,10 @@ public class Schedule5Controller implements Schedule5Api {
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<SubPageDocument> saveOtherAccessExpenses(
-      int campId, String millId, String year, SubPageSaveRequest request,
+      int campId,
+      String millId,
+      String year,
+      SubPageSaveRequest request,
       Authentication authentication) {
     return ResponseEntity.ok(
         saveSubPage(campId, millId, year, SubPage.ACCESS, request, authentication));
@@ -243,22 +265,49 @@ public class Schedule5Controller implements Schedule5Api {
   private SubPageDocument readSubPage(
       int campId, String millId, String year, SubPage page, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return schedule5Service.getSubPage(context.millId(), context.year(), campId, page,
+    return schedule5Service.getSubPage(
+        context.millId(),
+        context.year(),
+        campId,
+        page,
         permissions.hasPermission(authentication, EDIT_SCHEDULE));
   }
 
-  private SubPageDocument saveSubPage(int campId, String millId, String year, SubPage page,
-      SubPageSaveRequest request, Authentication authentication) {
+  private SubPageDocument saveSubPage(
+      int campId,
+      String millId,
+      String year,
+      SubPage page,
+      SubPageSaveRequest request,
+      Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return schedule5Service.saveSubPage(context.millId(), context.year(), campId, page, request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE), authentication.getName())
+    return schedule5Service
+        .saveSubPage(
+            context.millId(),
+            context.year(),
+            campId,
+            page,
+            request,
+            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            authentication.getName())
         .withMessage(message(MSG_SAVED));
   }
 
-  private SubPageDocument deleteSubPageRow(int campId, int rowId, String millId, String year,
-      SubPage page, Authentication authentication) {
+  private SubPageDocument deleteSubPageRow(
+      int campId,
+      int rowId,
+      String millId,
+      String year,
+      SubPage page,
+      Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return schedule5Service.deleteSubPageRow(context.millId(), context.year(), campId, page, rowId,
+    return schedule5Service
+        .deleteSubPageRow(
+            context.millId(),
+            context.year(),
+            campId,
+            page,
+            rowId,
             permissions.hasPermission(authentication, EDIT_SCHEDULE))
         .withMessage(message(MSG_DELETED));
   }

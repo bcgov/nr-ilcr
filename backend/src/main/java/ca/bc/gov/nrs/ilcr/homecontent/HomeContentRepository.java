@@ -10,17 +10,19 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Reads and updates the role-keyed Home messages in the legacy {@code THE.ILCR_ROLE} table (Story 24.2
- * / UC-CNT-001): PK {@code ILCR_ROLE_NAME} ({@code LICENSEE}/{@code AUDITOR}/{@code ADMIN}), the
- * rich-text {@code MESSAGE_TEXT VARCHAR2(4000)}, and the NOT NULL audit quartet. Every value is a bound
- * named parameter; the acting admin + {@code SYSTIMESTAMP} are stamped on each update (AD-11).
+ * Reads and updates the role-keyed Home messages in the legacy {@code THE.ILCR_ROLE} table (Story
+ * 24.2 / UC-CNT-001): PK {@code ILCR_ROLE_NAME} ({@code LICENSEE}/{@code AUDITOR}/{@code ADMIN}),
+ * the rich-text {@code MESSAGE_TEXT VARCHAR2(4000)}, and the NOT NULL audit quartet. Every value is
+ * a bound named parameter; the acting admin + {@code SYSTIMESTAMP} are stamped on each update
+ * (AD-11).
  */
 @Repository
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class HomeContentRepository {
 
   private static final RowMapper<HomeContentEntry> MAPPER =
-      (rs, rowNum) -> new HomeContentEntry(rs.getString("ILCR_ROLE_NAME"), rs.getString("MESSAGE_TEXT"));
+      (rs, rowNum) ->
+          new HomeContentEntry(rs.getString("ILCR_ROLE_NAME"), rs.getString("MESSAGE_TEXT"));
 
   private final NamedParameterJdbcTemplate jdbc;
 
@@ -36,12 +38,18 @@ public class HomeContentRepository {
 
   /** One role's message (the Home render of the viewer's role), or empty when the row is absent. */
   public Optional<HomeContentEntry> findByRole(String role) {
-    return jdbc.query(
-        "SELECT ILCR_ROLE_NAME, MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
-        new MapSqlParameterSource("role", role), MAPPER).stream().findFirst();
+    return jdbc
+        .query(
+            "SELECT ILCR_ROLE_NAME, MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+            new MapSqlParameterSource("role", role),
+            MAPPER)
+        .stream()
+        .findFirst();
   }
 
-  /** Update one role's message + audit columns; returns rows affected (0 when the role is absent). */
+  /**
+   * Update one role's message + audit columns; returns rows affected (0 when the role is absent).
+   */
   public int updateMessage(String role, String messageText, String user) {
     return jdbc.update(
         "UPDATE THE.ILCR_ROLE SET MESSAGE_TEXT = :text, UPDATE_USERID = :user, "

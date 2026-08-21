@@ -13,12 +13,14 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Acceptance test — Schedule 8 read (AD-5, AD-10, AD-12). GET /api/v1/schedule8 three-level document.
+ * Acceptance test — Schedule 8 read (AD-5, AD-10, AD-12). GET /api/v1/schedule8 three-level
+ * document.
  *
- * <p>Security OFF ({@code ilcr.security.enabled=false}) so the mock {@code ILCR_SUBMITTER} principal
- * applies, isolating document assembly from authz (covered by {@link Schedule8AuthorizationIT}).
- * Asserts the pinned three-level wire contract, the addition/deduction split, the resolved code
- * labels, the server-computed roll-ups, and {@code editable} against the V11 seed.
+ * <p>Security OFF ({@code ilcr.security.enabled=false}) so the mock {@code ILCR_SUBMITTER}
+ * principal applies, isolating document assembly from authz (covered by {@link
+ * Schedule8AuthorizationIT}). Asserts the pinned three-level wire contract, the addition/deduction
+ * split, the resolved code labels, the server-computed roll-ups, and {@code editable} against the
+ * V11 seed.
  */
 @DisplayName("GET /api/v1/schedule8 — Tree to Truck document (Schedule 8 read)")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -29,10 +31,12 @@ class Schedule8DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("576/2021 Draft — page → sample → additions/deductions, labels + computed rates")
   void draftContext_servesThreeLevelHierarchy() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "576")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "576")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.millId", is(576)))
@@ -40,7 +44,8 @@ class Schedule8DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.pages.length()", is(1)))
-        // Page 8500 — id + revision + the code fields surfaced as BOTH code and resolved label (§3).
+        // Page 8500 — id + revision + the code fields surfaced as BOTH code and resolved label
+        // (§3).
         .andExpect(jsonPath("$.pages[0].id", is(8500)))
         .andExpect(jsonPath("$.pages[0].revisionCount", is(0)))
         .andExpect(jsonPath("$.pages[0].division", is("North Div")))
@@ -65,7 +70,7 @@ class Schedule8DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].samples[0].actualHarvested", is(1000)))
         .andExpect(jsonPath("$.pages[0].samples[0].skidTypeCode", is("ST1")))
         .andExpect(jsonPath("$.pages[0].samples[0].skidTypeDescription", is("Skid Type One")))
-        .andExpect(jsonPath("$.pages[0].samples[0].uphillDirection", is(true)))    // "Y"
+        .andExpect(jsonPath("$.pages[0].samples[0].uphillDirection", is(true))) // "Y"
         .andExpect(jsonPath("$.pages[0].samples[0].waterDumpDestination", is(false))) // "N"
         // originalRate 25.50 + additionsTotal 5.00 − deductionsTotal 2.00 = finalRate 28.50.
         .andExpect(jsonPath("$.pages[0].samples[0].originalRate", is(25.5)))
@@ -80,21 +85,24 @@ class Schedule8DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.pages[0].samples[0].additions[0].itemDescription", is("Add A")))
         .andExpect(jsonPath("$.pages[0].samples[0].additions[0].costingRate", is(5)))
         .andExpect(jsonPath("$.pages[0].samples[0].additions[0].costTypeCode", is("CT1")))
-        .andExpect(jsonPath("$.pages[0].samples[0].additions[0].costTypeDescription",
-            is("Cost Type One")))
+        .andExpect(
+            jsonPath("$.pages[0].samples[0].additions[0].costTypeDescription", is("Cost Type One")))
         .andExpect(jsonPath("$.pages[0].samples[0].deductions.length()", is(1)))
         .andExpect(jsonPath("$.pages[0].samples[0].deductions[0].costItemCode", is(101)))
-        .andExpect(jsonPath("$.pages[0].samples[0].deductions[0].costTypeDescription",
-            is("Cost Type Two")));
+        .andExpect(
+            jsonPath(
+                "$.pages[0].samples[0].deductions[0].costTypeDescription", is("Cost Type Two")));
   }
 
   @Test
   @DisplayName("577/2021 non-Draft — trackStatus S, editable false, page listed, no rate rows")
   void nonDraftContext_notEditable_pageStillListed() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "577")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "577")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("S")))
         .andExpect(jsonPath("$.editable", is(false)))
@@ -116,10 +124,12 @@ class Schedule8DocumentIT extends AbstractOracleIT {
   @Test
   @DisplayName("578/2021 valid active Draft, no pages — 200 empty list, NOT 404")
   void noPages_returnsEmptyList() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
-            .param("millId", "578")
-            .param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "578")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.trackStatus", is("D")))
         .andExpect(jsonPath("$.editable", is(true)))

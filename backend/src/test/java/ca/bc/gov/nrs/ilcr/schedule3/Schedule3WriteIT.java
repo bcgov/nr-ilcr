@@ -18,9 +18,9 @@ import org.springframework.http.MediaType;
 
 /**
  * Acceptance test — Story 4.2 PUT/DELETE + BR-09 Crown Timber push (AD-5/AD-9/AD-14). Security OFF
- * (mock ILCR_SUBMITTER) so this isolates the write behavior from authz ({@link Schedule3WriteAuthorizationIT}).
- * Each test reads the current revision via GET first, so it is order-independent against the shared
- * container. Write fixtures seeded by V14 (mills 573/570/571).
+ * (mock ILCR_SUBMITTER) so this isolates the write behavior from authz ({@link
+ * Schedule3WriteAuthorizationIT}). Each test reads the current revision via GET first, so it is
+ * order-independent against the shared container. Write fixtures seeded by V14 (mills 573/570/571).
  */
 @DisplayName("PUT/DELETE /api/v1/schedule3 — write path + Crown Timber push (Story 4.2)")
 class Schedule3WriteIT extends AbstractOracleIT {
@@ -29,10 +29,16 @@ class Schedule3WriteIT extends AbstractOracleIT {
 
   /** GET the current document JSON for a mill/year (to read the optimistic-lock revision etc.). */
   private String getDoc(long millId) throws Exception {
-    return mockMvc.perform(get(ENDPOINT).param("millId", String.valueOf(millId)).param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    return mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", String.valueOf(millId))
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        .andReturn().getResponse().getContentAsString();
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
   }
 
   private int revisionOf(String doc) {
@@ -41,23 +47,36 @@ class Schedule3WriteIT extends AbstractOracleIT {
 
   /** GET the current Schedule 1 document JSON for a mill/year (for the BR-09 push cross-checks). */
   private String getSch1Doc(long millId) throws Exception {
-    return mockMvc.perform(get("/api/v1/schedule1").param("millId", String.valueOf(millId))
-            .param("year", "2021").accept(MediaType.APPLICATION_JSON))
+    return mockMvc
+        .perform(
+            get("/api/v1/schedule1")
+                .param("millId", String.valueOf(millId))
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
-        .andReturn().getResponse().getContentAsString();
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
   }
 
   @Test
   @DisplayName("PUT valid — persists entered values, returns SUC-001 + recomputed document")
   void putValid_persistsAndRecomputes() throws Exception {
     int rev = revisionOf(getDoc(573));
-    String body = """
+    String body =
+        """
         { "revisionCount": %d, "comments": "updated", "overrideHarvestTotalPop": "N",
           "lineItems": [ { "costItemCode": 27, "harvest": 111, "pop": 44 } ],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
-        """.formatted(rev);
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+        """
+            .formatted(rev);
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
         .andExpect(jsonPath("$.revisionCount", is(rev + 1)))
@@ -74,17 +93,29 @@ class Schedule3WriteIT extends AbstractOracleIT {
     String doc = getDoc(573);
     int rev = revisionOf(doc);
     int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 1000;
-    String body = """
+    String body =
+        """
         { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": %d }
-        """.formatted(rev, newCrown);
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+        """
+            .formatted(rev, newCrown);
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.warnings[0].key", is("crownVolumeChangeSchedule1")));
-    // Schedule 1 (cat-1 summary 1041) item-12 VOLUME overwritten with the new crown; COST preserved.
-    mockMvc.perform(get("/api/v1/schedule1").param("millId", "573").param("year", "2021")
-            .accept(MediaType.APPLICATION_JSON))
+    // Schedule 1 (cat-1 summary 1041) item-12 VOLUME overwritten with the new crown; COST
+    // preserved.
+    mockMvc
+        .perform(
+            get("/api/v1/schedule1")
+                .param("millId", "573")
+                .param("year", "2021")
+                .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].volume", contains(newCrown)))
         .andExpect(jsonPath("$.lineItems[?(@.costItemCode == 12)].cost", contains(50000)));
@@ -96,18 +127,26 @@ class Schedule3WriteIT extends AbstractOracleIT {
     int sch1RevBefore = revisionOf(getSch1Doc(573));
     String doc = getDoc(573);
     int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 2000;
-    String body = """
+    String body =
+        """
         { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": %d }
-        """.formatted(revisionOf(doc), newCrown);
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+        """
+            .formatted(revisionOf(doc), newCrown);
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isOk());
-    // AR11: the push incremented Schedule 1's REVISION_COUNT, so a client still holding sch1RevBefore
+    // AR11: the push incremented Schedule 1's REVISION_COUNT, so a client still holding
+    // sch1RevBefore
     // now holds a stale optimistic-lock token — its main-page save would be rejected (409).
     int sch1RevAfter = revisionOf(getSch1Doc(573));
-    assertTrue(sch1RevAfter > sch1RevBefore,
-        "Schedule 1 revision must increase after the crown push");
+    assertTrue(
+        sch1RevAfter > sch1RevBefore, "Schedule 1 revision must increase after the crown push");
   }
 
   @Test
@@ -116,12 +155,19 @@ class Schedule3WriteIT extends AbstractOracleIT {
     String doc = getDoc(570);
     int rev = revisionOf(doc);
     int newCrown = ((Number) JsonPath.read(doc, "$.crownTimber.volume")).intValue() + 1000;
-    String body = """
+    String body =
+        """
         { "revisionCount": %d, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": %d }
-        """.formatted(rev, newCrown);
-    mockMvc.perform(put(ENDPOINT).param("millId", "570").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+        """
+            .formatted(rev, newCrown);
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "570")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.warnings[0].key", is("crownVolumeNotSetSchedule1")));
   }
@@ -129,23 +175,31 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("DELETE removes the whole Schedule 3 family (SUC-002); GET then 404")
   void delete_removesFamily() throws Exception {
-    mockMvc.perform(delete(ENDPOINT).param("millId", "571").param("year", "2021"))
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "571").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")));
-    mockMvc.perform(get(ENDPOINT).param("millId", "571").param("year", "2021"))
+    mockMvc
+        .perform(get(ENDPOINT).param("millId", "571").param("year", "2021"))
         .andExpect(status().isNotFound());
   }
 
   @Test
   @DisplayName("PUT out-of-range cost → 400 FLD-001 (nothing persisted)")
   void putCostOutOfRange_returns400() throws Exception {
-    String body = """
+    String body =
+        """
         { "revisionCount": 0, "overrideHarvestTotalPop": "N",
           "lineItems": [ { "costItemCode": 27, "harvest": 100000000, "pop": 0 } ],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -153,12 +207,18 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT out-of-range volume → 400 FLD-002")
   void putVolumeOutOfRange_returns400() throws Exception {
-    String body = """
+    String body =
+        """
         { "revisionCount": 0, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": 10000000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -166,24 +226,36 @@ class Schedule3WriteIT extends AbstractOracleIT {
   @Test
   @DisplayName("PUT with a stale revisionCount → 409")
   void putStaleRevision_returns409() throws Exception {
-    String body = """
+    String body =
+        """
         { "revisionCount": 999, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "573").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "573")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isConflict());
   }
 
   @Test
   @DisplayName("PUT on a non-Draft schedule → 409")
   void putNonDraft_returns409() throws Exception {
-    String body = """
+    String body =
+        """
         { "revisionCount": 0, "overrideHarvestTotalPop": "N", "lineItems": [],
           "popTimberVolume": 5000, "crownTimberVolume": 5000 }
         """;
-    mockMvc.perform(put(ENDPOINT).param("millId", "517").param("year", "2021")
-            .contentType(MediaType.APPLICATION_JSON).content(body))
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "517")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
         .andExpect(status().isConflict());
   }
 }

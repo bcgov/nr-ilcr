@@ -179,12 +179,12 @@ public interface Schedule5Api {
    * The Other Camp Expenses sub-page for one camp (S04).
    *
    * <p>Serves the rows in {@code ILCR_COST_REPORT_DETAIL_ID} order plus the camp context the page
-   * renders around them and the server-computed footer {@code totals}. Every row's {@code volume} is
-   * the camp's item-141 amount STAMPED AT READ — no per-row volume is stored anywhere.
+   * renders around them and the server-computed footer {@code totals}. Every row's {@code volume}
+   * is the camp's item-141 amount STAMPED AT READ — no per-row volume is stored anywhere.
    *
    * <p>Guards: bad mill/year → 400/409/404 (UC-SCH5-001 ERR-003/004/005); an unknown or foreign
-   * camp id → 404; no {@code VIEW_SCHEDULE} → 403. A camp with no rows is a valid 200 with
-   * {@code rows: []}.
+   * camp id → 404; no {@code VIEW_SCHEDULE} → 403. A camp with no rows is a valid 200 with {@code
+   * rows: []}.
    *
    * @param campId the parent camp id
    * @param millId the raw mill id param (validated by millcontext)
@@ -226,12 +226,12 @@ public interface Schedule5Api {
    * from the body is deleted. An unknown or foreign {@code rowId} is a 404 with NOTHING persisted:
    * the whole body is classified before any statement runs, so a stale id cannot half-apply.
    *
-   * <p>Costs on THIS page are bounded &plusmn;9,999,999 ({@code costSize7ValidatorErrorMsg}) — every
-   * cost input on the Camp sub-page carries {@code costSize="7"}. A blank or null description is
-   * ACCEPTED and persisted (deviation (F)); Check Status is what flags it.
+   * <p>Costs on THIS page are bounded &plusmn;9,999,999 ({@code costSize7ValidatorErrorMsg}) —
+   * every cost input on the Camp sub-page carries {@code costSize="7"}. A blank or null description
+   * is ACCEPTED and persisted (deviation (F)); Check Status is what flags it.
    *
-   * <p>Guards: a non-Draft 1–10 track → 409; no {@code EDIT_SCHEDULE} → 403; an out-of-range cost or
-   * an over-long description → 400 with the verbatim legacy text.
+   * <p>Guards: a non-Draft 1–10 track → 409; no {@code EDIT_SCHEDULE} → 403; an out-of-range cost
+   * or an over-long description → 400 with the verbatim legacy text.
    *
    * @param campId the parent camp id
    * @param millId the raw mill id param
@@ -278,9 +278,9 @@ public interface Schedule5Api {
    * not a client-side list edit. CFM-001 is the CLIENT's confirmation — reaching this endpoint IS
    * the confirmation.
    *
-   * <p>Camp- AND item-scoped, so a foreign {@code rowId} is a 404, never a cross-camp or
-   * cross-page delete (deviation (O): legacy matched on detail id alone against the camp's entire
-   * detail collection). Carries no revision token (AR11 house deviation (N)).
+   * <p>Camp- AND item-scoped, so a foreign {@code rowId} is a 404, never a cross-camp or cross-page
+   * delete (deviation (O): legacy matched on detail id alone against the camp's entire detail
+   * collection). Carries no revision token (AR11 house deviation (N)).
    *
    * @param campId the parent camp id
    * @param rowId the row to delete

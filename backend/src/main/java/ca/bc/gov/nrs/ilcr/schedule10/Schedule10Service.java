@@ -19,8 +19,9 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.DETAI
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_DELETED;
 import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_NOT_SAVED;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
@@ -50,20 +51,21 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Each public method opens the transaction — read-only for {@link #getSchedule10} and {@link
  * #checkStatus}, read-write for a save — and the assembly then runs inside it, so its queries
- * observe a single consistent snapshot. That ordering matters: a self-invoked {@code
- * @Transactional} method never passes through the Spring proxy, so annotating the assembly would
- * have looked like a guarantee without being one.
+ * observe a single consistent snapshot. That ordering matters: a self-invoked
+ * {@code @Transactional} method never passes through the Spring proxy, so annotating the assembly
+ * would have looked like a guarantee without being one.
  *
  * <p>Write rules that matter:
+ *
  * <ul>
  *   <li><strong>Draft only.</strong> Every write is gated on the 1–10 track status being {@code D},
- *       server-side. Legacy has no such gate at all.</li>
+ *       server-side. Legacy has no such gate at all.
  *   <li><strong>Costs</strong> are keyed rows, not columns: all twelve are maintained per road
  *       detail, update-in-place, and a blank stores {@code COST = NULL} rather than deleting the
- *       row (BR-08, AC5).</li>
+ *       row (BR-08, AC5).
  *   <li><strong>Derived values are never accepted from a client.</strong> Totals, rates, labels and
  *       positional numbers are computed on read; the two LD-removed moisture columns are derived
- *       from BEC Zone plus RSMR class, and preserved untouched when neither input changes.</li>
+ *       from BEC Zone plus RSMR class, and preserved untouched when neither input changes.
  * </ul>
  */
 @Service
@@ -79,8 +81,8 @@ public class Schedule10Service {
   private final Schedule10DocumentAssembler assembler;
 
   /**
-   * Wires the Schedule 10 repository. Mill/year validation happens in the controller via
-   * {@code MillContextService} (AD-4) before this service is ever reached.
+   * Wires the Schedule 10 repository. Mill/year validation happens in the controller via {@code
+   * MillContextService} (AD-4) before this service is ever reached.
    *
    * <p>The document assembler is constructed here rather than injected: it is an implementation
    * detail of this service with no independent lifecycle, and constructing it keeps the existing
@@ -128,7 +130,6 @@ public class Schedule10Service {
     return assembler.assemble(millId, year, trackStatus, editable);
   }
 
-
   // ===============================================================================================
   // WRITES
   // ===============================================================================================
@@ -170,15 +171,14 @@ public class Schedule10Service {
       List.of("ED", "VD", "MD", "SD", "F", "M", "VM", "W");
 
   /** Stand-ins so an omitted optional substructure needs no null checks at every use site. */
-  private static final SubGradeRequest NO_SUB_GRADE = new SubGradeRequest(
-      null, null, null, null, null, null, null, null, null, null, null);
+  private static final SubGradeRequest NO_SUB_GRADE =
+      new SubGradeRequest(null, null, null, null, null, null, null, null, null, null, null);
 
   private static final MaterialCompositionRequest NO_MATERIAL =
       new MaterialCompositionRequest(null, null, null, null, null);
 
   /** A page's location after the mutual-exclusion rule has been applied. */
-  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
-  }
+  private record Location(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
 
   /**
    * Creates a construction page.
@@ -197,8 +197,11 @@ public class Schedule10Service {
     requireOfferedForestRegion(millId, year, request.forestRegionCode());
     Location location = classify(request);
     int pageId = repository.nextPageId();
-    persist(() -> repository.insertPage(
-        toPageEntity(pageId, millId, year, request, location), millId, year, user), PAGE_NOT_SAVED);
+    persist(
+        () ->
+            repository.insertPage(
+                toPageEntity(pageId, millId, year, request, location), millId, year, user),
+        PAGE_NOT_SAVED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -216,7 +219,11 @@ public class Schedule10Service {
    */
   @Transactional
   public Schedule10Response updatePage(
-      long millId, int year, int pageId, ConstructionPageRequest request, String user,
+      long millId,
+      int year,
+      int pageId,
+      ConstructionPageRequest request,
+      String user,
       boolean callerMayEdit) {
     requireDraft(millId, year);
     int expectedRevision = requireRevision(request.revisionCount());
@@ -225,16 +232,22 @@ public class Schedule10Service {
     requirePage(pageId, millId, year);
     requireOfferedForestRegion(millId, year, request.forestRegionCode());
     Location location = classify(request);
-    persist(() -> {
-      int updated = repository.updatePage(
-          toPageEntity(pageId, millId, year, request, location), millId, year, expectedRevision,
-          user);
-      if (updated == 0) {
-        // Zero rows means the id is gone or the revision moved. Re-probe to say which.
-        requirePage(pageId, millId, year);
-        throw new StaleRevisionException();
-      }
-    }, PAGE_NOT_SAVED);
+    persist(
+        () -> {
+          int updated =
+              repository.updatePage(
+                  toPageEntity(pageId, millId, year, request, location),
+                  millId,
+                  year,
+                  expectedRevision,
+                  user);
+          if (updated == 0) {
+            // Zero rows means the id is gone or the revision moved. Re-probe to say which.
+            requirePage(pageId, millId, year);
+            throw new StaleRevisionException();
+          }
+        },
+        PAGE_NOT_SAVED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -256,16 +269,26 @@ public class Schedule10Service {
   public Schedule10Response copyPage(
       long millId, int year, int pageId, String user, boolean callerMayEdit) {
     requireDraft(millId, year);
-    RoadConstructionReportEntity source = repository.findPages(millId, year).stream()
-        .filter(page -> page.roadConstructionReprtId() == pageId)
-        .findFirst()
-        .orElseThrow(ConstructionPageNotFoundException::new);
+    RoadConstructionReportEntity source =
+        repository.findPages(millId, year).stream()
+            .filter(page -> page.roadConstructionReprtId() == pageId)
+            .findFirst()
+            .orElseThrow(ConstructionPageNotFoundException::new);
 
     int copyId = repository.nextPageId();
-    RoadConstructionReportEntity copy = new RoadConstructionReportEntity(
-        copyId, year, millId, CATEGORY, source.constructionPeriod(),
-        source.constructionDivisionName(), source.ilcrForestRegionCode(), source.tsbNumberCode(),
-        source.tsaNumber(), source.tflNumberCode(), 0);
+    RoadConstructionReportEntity copy =
+        new RoadConstructionReportEntity(
+            copyId,
+            year,
+            millId,
+            CATEGORY,
+            source.constructionPeriod(),
+            source.constructionDivisionName(),
+            source.ilcrForestRegionCode(),
+            source.tsbNumberCode(),
+            source.tsaNumber(),
+            source.tflNumberCode(),
+            0);
     persist(() -> repository.insertPage(copy, millId, year, user), PAGE_NOT_SAVED);
     return document(millId, year, callerMayEdit);
   }
@@ -284,19 +307,20 @@ public class Schedule10Service {
    * @return the refreshed document
    */
   @Transactional
-  public Schedule10Response deletePage(
-      long millId, int year, int pageId, boolean callerMayEdit) {
+  public Schedule10Response deletePage(long millId, int year, int pageId, boolean callerMayEdit) {
     requireDraft(millId, year);
     requirePage(pageId, millId, year);
-    persist(() -> {
-      repository.deleteCostsForPage(pageId, millId, year);
-      repository.deleteRoadDetailsForPage(pageId, millId, year);
-      // The result is checked rather than discarded: a silently zero-row delete would answer
-      // "deleted successfully" while the row survived.
-      if (repository.deletePage(pageId, millId, year) == 0) {
-        throw new ConstructionPageNotFoundException();
-      }
-    }, PAGE_NOT_DELETED);
+    persist(
+        () -> {
+          repository.deleteCostsForPage(pageId, millId, year);
+          repository.deleteRoadDetailsForPage(pageId, millId, year);
+          // The result is checked rather than discarded: a silently zero-row delete would answer
+          // "deleted successfully" while the row survived.
+          if (repository.deletePage(pageId, millId, year) == 0) {
+            throw new ConstructionPageNotFoundException();
+          }
+        },
+        PAGE_NOT_DELETED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -313,7 +337,11 @@ public class Schedule10Service {
    */
   @Transactional
   public Schedule10Response addRoadDetail(
-      long millId, int year, int pageId, RoadDetailRequest request, String user,
+      long millId,
+      int year,
+      int pageId,
+      RoadDetailRequest request,
+      String user,
       boolean callerMayEdit) {
     requireDraft(millId, year);
     requirePage(pageId, millId, year);
@@ -322,12 +350,16 @@ public class Schedule10Service {
     RoadDetailRequest coupled = applyBallastCoupling(request);
 
     int roadDetailId = repository.nextRoadDetailId();
-    persist(() -> {
-      repository.insertRoadDetail(
-          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
-          moisture.asmCode(), user);
-      writeCostLines(roadDetailId, coupled, user, millId, year);
-    }, DETAIL_NOT_SAVED);
+    persist(
+        () -> {
+          repository.insertRoadDetail(
+              toDetailEntity(roadDetailId, pageId, coupled),
+              moisture.soilMoistureCode(),
+              moisture.asmCode(),
+              user);
+          writeCostLines(roadDetailId, coupled, user, millId, year);
+        },
+        DETAIL_NOT_SAVED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -348,7 +380,12 @@ public class Schedule10Service {
    */
   @Transactional
   public Schedule10Response updateRoadDetail(
-      long millId, int year, int pageId, int roadDetailId, RoadDetailRequest request, String user,
+      long millId,
+      int year,
+      int pageId,
+      int roadDetailId,
+      RoadDetailRequest request,
+      String user,
       boolean callerMayEdit) {
     requireDraft(millId, year);
     int expectedRevision = requireRevision(request.revisionCount());
@@ -357,16 +394,24 @@ public class Schedule10Service {
     MoistureCodePair moisture = moistureForEdit(roadDetailId, request);
     RoadDetailRequest coupled = applyBallastCoupling(request);
 
-    persist(() -> {
-      int updated = repository.updateRoadDetail(
-          toDetailEntity(roadDetailId, pageId, coupled), moisture.soilMoistureCode(),
-          moisture.asmCode(), millId, year, expectedRevision, user);
-      if (updated == 0) {
-        requireRoadDetail(roadDetailId, pageId, millId, year);
-        throw new StaleRevisionException();
-      }
-      writeCostLines(roadDetailId, coupled, user, millId, year);
-    }, DETAIL_NOT_SAVED);
+    persist(
+        () -> {
+          int updated =
+              repository.updateRoadDetail(
+                  toDetailEntity(roadDetailId, pageId, coupled),
+                  moisture.soilMoistureCode(),
+                  moisture.asmCode(),
+                  millId,
+                  year,
+                  expectedRevision,
+                  user);
+          if (updated == 0) {
+            requireRoadDetail(roadDetailId, pageId, millId, year);
+            throw new StaleRevisionException();
+          }
+          writeCostLines(roadDetailId, coupled, user, millId, year);
+        },
+        DETAIL_NOT_SAVED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -385,12 +430,14 @@ public class Schedule10Service {
       long millId, int year, int pageId, int roadDetailId, boolean callerMayEdit) {
     requireDraft(millId, year);
     requireRoadDetail(roadDetailId, pageId, millId, year);
-    persist(() -> {
-      repository.deleteCostsForRoadDetail(roadDetailId, millId, year);
-      if (repository.deleteRoadDetail(roadDetailId, pageId, millId, year) == 0) {
-        throw new RoadDetailNotFoundException();
-      }
-    }, DETAIL_NOT_DELETED);
+    persist(
+        () -> {
+          repository.deleteCostsForRoadDetail(roadDetailId, millId, year);
+          if (repository.deleteRoadDetail(roadDetailId, pageId, millId, year) == 0) {
+            throw new RoadDetailNotFoundException();
+          }
+        },
+        DETAIL_NOT_DELETED);
     return document(millId, year, callerMayEdit);
   }
 
@@ -508,9 +555,10 @@ public class Schedule10Service {
       return candidates.get(0);
     }
     return candidates.stream()
-        .min(Comparator.comparingInt((MoistureCodePair pair) -> gradientRank(pair.asmCode()))
-            .thenComparing(MoistureCodePair::asmCode)
-            .thenComparing(MoistureCodePair::soilMoistureCode))
+        .min(
+            Comparator.comparingInt((MoistureCodePair pair) -> gradientRank(pair.asmCode()))
+                .thenComparing(MoistureCodePair::asmCode)
+                .thenComparing(MoistureCodePair::soilMoistureCode))
         .orElseThrow(InvalidBecClassificationException::new);
   }
 
@@ -531,7 +579,8 @@ public class Schedule10Service {
    * permanently unsaveable, because an unchanged classification never re-enters the gate.
    */
   private MoistureCodePair moistureForEdit(int roadDetailId, RoadDetailRequest request) {
-    return repository.findStoredClassification(roadDetailId)
+    return repository
+        .findStoredClassification(roadDetailId)
         .filter(stored -> stored.asmCode() != null && stored.soilMoistureCode() != null)
         .filter(stored -> Objects.equals(stored.becId(), request.becbiogeoCatalogueId()))
         .filter(stored -> Objects.equals(stored.rsmrClassCode(), request.relSoilMoistRgmClsCode()))
@@ -556,10 +605,10 @@ public class Schedule10Service {
    *   <li>{@code N} — the four dimensions, the actual cost and the other transfer are forced to
    *       zero, and the material code to {@code "NA"}. Note the tree-to-truck transfer is
    *       deliberately NOT zeroed: legacy re-converts only the actual-cost and other-transfer
-   *       items.</li>
+   *       items.
    *   <li>{@code D} — only the material code is forced to {@code "NA"}; the figures are stored as
-   *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.</li>
-   *   <li>{@code C} — nothing is forced, and the material code is required.</li>
+   *       submitted. The asymmetry with {@code N} is legacy's, not an oversight here.
+   *   <li>{@code C} — nothing is forced, and the material code is required.
    * </ul>
    *
    * <p>Legacy additionally cleared these fields from the browser when the method changed. That is
@@ -591,22 +640,31 @@ public class Schedule10Service {
       if (blankToNull(stabilizing.ballastMaterialCode()) != null) {
         return request;
       }
-      return withStabilizing(request, new StabilizingRequest(
-          method, BALLAST_MATERIAL_NOT_APPLICABLE, stabilizing.length(),
-          stabilizing.surfaceWidth(), stabilizing.depth(), stabilizing.distanceToSource(),
-          stabilizing.actualCost(), stabilizing.ttTransfer(), stabilizing.otherTransfer()));
+      return withStabilizing(
+          request,
+          new StabilizingRequest(
+              method,
+              BALLAST_MATERIAL_NOT_APPLICABLE,
+              stabilizing.length(),
+              stabilizing.surfaceWidth(),
+              stabilizing.depth(),
+              stabilizing.distanceToSource(),
+              stabilizing.actualCost(),
+              stabilizing.ttTransfer(),
+              stabilizing.otherTransfer()));
     }
 
-    StabilizingRequest coupled = new StabilizingRequest(
-        method,
-        BALLAST_MATERIAL_NOT_APPLICABLE,
-        notRequired ? BigDecimal.ZERO : stabilizing.length(),
-        notRequired ? BigDecimal.ZERO : stabilizing.surfaceWidth(),
-        notRequired ? BigDecimal.ZERO : stabilizing.depth(),
-        notRequired ? BigDecimal.ZERO : stabilizing.distanceToSource(),
-        notRequired ? 0 : stabilizing.actualCost(),
-        stabilizing.ttTransfer(),
-        notRequired ? 0 : stabilizing.otherTransfer());
+    StabilizingRequest coupled =
+        new StabilizingRequest(
+            method,
+            BALLAST_MATERIAL_NOT_APPLICABLE,
+            notRequired ? BigDecimal.ZERO : stabilizing.length(),
+            notRequired ? BigDecimal.ZERO : stabilizing.surfaceWidth(),
+            notRequired ? BigDecimal.ZERO : stabilizing.depth(),
+            notRequired ? BigDecimal.ZERO : stabilizing.distanceToSource(),
+            notRequired ? 0 : stabilizing.actualCost(),
+            stabilizing.ttTransfer(),
+            notRequired ? 0 : stabilizing.otherTransfer());
 
     return withStabilizing(request, coupled);
   }
@@ -630,11 +688,20 @@ public class Schedule10Service {
   private RoadDetailRequest withStabilizing(
       RoadDetailRequest request, StabilizingRequest stabilizing) {
     return new RoadDetailRequest(
-        request.roadName(), request.roadLifetimeCode(), request.becbiogeoCatalogueId(),
-        request.relSoilMoistRgmClsCode(), request.sideSlopePct(),
-        request.detailedEngineeringCostInd(), request.subGrade(), stabilizing,
-        request.materialComposition(), request.endHaulDistance(), request.endHaulVolume(),
-        request.overlandDistance(), request.overlandVolume(), request.comments(),
+        request.roadName(),
+        request.roadLifetimeCode(),
+        request.becbiogeoCatalogueId(),
+        request.relSoilMoistRgmClsCode(),
+        request.sideSlopePct(),
+        request.detailedEngineeringCostInd(),
+        request.subGrade(),
+        stabilizing,
+        request.materialComposition(),
+        request.endHaulDistance(),
+        request.endHaulVolume(),
+        request.overlandDistance(),
+        request.overlandVolume(),
+        request.comments(),
         request.revisionCount());
   }
 
@@ -682,9 +749,17 @@ public class Schedule10Service {
   private static RoadConstructionReportEntity toPageEntity(
       int pageId, long millId, int year, ConstructionPageRequest request, Location location) {
     return new RoadConstructionReportEntity(
-        pageId, year, millId, CATEGORY, blankToNull(request.constructionPeriod()),
-        blankToNull(request.divisionName()), request.forestRegionCode(), location.tsbNumberCode(),
-        location.tsaNumber(), location.tflNumberCode(), 0);
+        pageId,
+        year,
+        millId,
+        CATEGORY,
+        blankToNull(request.constructionPeriod()),
+        blankToNull(request.divisionName()),
+        request.forestRegionCode(),
+        location.tsbNumberCode(),
+        location.tsaNumber(),
+        location.tflNumberCode(),
+        0);
   }
 
   /**
@@ -782,8 +857,7 @@ public class Schedule10Service {
     try {
       write.run();
     } catch (DataAccessException ex) {
-      LOG.warn(
-          "Schedule 10 write failed [{}] for [{}]", ex.getClass().getSimpleName(), messageKey);
+      LOG.warn("Schedule 10 write failed [{}] for [{}]", ex.getClass().getSimpleName(), messageKey);
       throw new Schedule10PersistenceException(messageKey);
     }
   }

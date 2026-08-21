@@ -41,5 +41,4 @@ public record Culvert(
     Integer installCost,
     Integer totalCost,
     String comments,
-    int revisionCount) {
-}
+    int revisionCount) {}

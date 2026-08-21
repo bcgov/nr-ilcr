@@ -9,7 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Maps to HTTP 428 Precondition Required via {@link ResponseStatus @ResponseStatus}. The
  * exception message returned to clients includes the invalid field name and a short guidance to
- * consult the API documentation for valid sorting fields.</p>
+ * consult the API documentation for valid sorting fields.
  *
  * @since 1.0.0
  */
@@ -24,8 +24,8 @@ public class InvalidSortingFieldException extends ResponseStatusException {
   public InvalidSortingFieldException(String message) {
     super(
         HttpStatus.PRECONDITION_REQUIRED,
-        "Field " + message
-        + " is not a valid sorting field. Please check the documentation for valid sorting fields."
-    );
+        "Field "
+            + message
+            + " is not a valid sorting field. Please check the documentation for valid sorting fields.");
   }
 }

@@ -10,16 +10,16 @@ import org.springframework.data.repository.query.Param;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 6 tables (AD-3): explicit
- * {@code @Query} named-param SQL + {@code @Table} record entities — no derived queries, no
- * {@code CrudRepository}. SQL stays explicit because the model is a legacy-projection; every
- * derivation and (for Story 8.2) the transaction boundaries live in {@link Schedule6Service}.
+ * {@code @Query} named-param SQL + {@code @Table} record entities — no derived queries, no {@code
+ * CrudRepository}. SQL stays explicit because the model is a legacy-projection; every derivation
+ * and (for Story 8.2) the transaction boundaries live in {@link Schedule6Service}.
  *
- * <p>Storage shape (delivery-DB confirmed, Story 8.1 Task 1): a road record is one
- * {@code ROAD_MAINTENANCE_REPORT} row (category {@code '6'}, classification stored as codes,
- * general comment in {@code COMMENTS}, own {@code REVISION_COUNT}); its cost/volume/per-record
- * comment is the single {@code ILCR_COST_REPORT_DETAIL} row for cost item {@code 69}, joined by
- * {@code ROAD_MAINTENANCE_REPORT_ID}. There is no category-{@code '6'} {@code ILCR_REPORT_SUMMARY}
- * row, so {@code trackStatus} comes straight from {@code ILCR_MILL_REPORT_STATUS}.
+ * <p>Storage shape (delivery-DB confirmed, Story 8.1 Task 1): a road record is one {@code
+ * ROAD_MAINTENANCE_REPORT} row (category {@code '6'}, classification stored as codes, general
+ * comment in {@code COMMENTS}, own {@code REVISION_COUNT}); its cost/volume/per-record comment is
+ * the single {@code ILCR_COST_REPORT_DETAIL} row for cost item {@code 69}, joined by {@code
+ * ROAD_MAINTENANCE_REPORT_ID}. There is no category-{@code '6'} {@code ILCR_REPORT_SUMMARY} row, so
+ * {@code trackStatus} comes straight from {@code ILCR_MILL_REPORT_STATUS}.
  *
  * <p>The public {@code default} methods expose plain service-facing records ({@link RoadRecordRow},
  * {@link CostDetailRow}); the {@code @Query} methods are the explicit SQL, so entities never cross
@@ -28,21 +28,25 @@ import org.springframework.data.repository.query.Param;
 public interface Schedule6Repository extends Repository<RoadMaintenanceReportEntity, Integer> {
 
   /** One Schedule 6 road record (a {@code ROAD_MAINTENANCE_REPORT} row); codes stored inline. */
-  record RoadRecordRow(int recordId, String tsaNumber, String tsbNumberCode, String tflNumberCode,
-      String generalComment, Integer revisionCount) {
-  }
+  record RoadRecordRow(
+      int recordId,
+      String tsaNumber,
+      String tsbNumberCode,
+      String tflNumberCode,
+      String generalComment,
+      Integer revisionCount) {}
 
   /** The cost/volume/comment detail (item 69) for a road record. */
   record CostDetailRow(
-      int roadMaintenanceReportId, BigDecimal volume, Integer cost, String comments) {
-  }
+      int roadMaintenanceReportId, BigDecimal volume, Integer cost, String comments) {}
 
   // ---------------------------------------------------------------------------------------------
   // Reads — @Query returns @Table entities / scalars; default methods adapt to the service records.
   // ---------------------------------------------------------------------------------------------
 
   /** The category-{@code '6'} road-record rows for a mill/year, ordered by id (legacy order). */
-  @Query("""
+  @Query(
+      """
       SELECT ROAD_MAINTENANCE_REPORT_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE,
              COMMENTS, REVISION_COUNT
         FROM THE.ROAD_MAINTENANCE_REPORT
@@ -60,9 +64,15 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    */
   default List<RoadRecordRow> findRoadRecords(long millId, int year) {
     return findRoadReportEntities(millId, year).stream()
-        .map(e -> new RoadRecordRow(
-            e.roadMaintenanceReportId(), e.tsaNumber(), e.tsbNumberCode(), e.tflNumberCode(),
-            e.comments(), e.revisionCount()))
+        .map(
+            e ->
+                new RoadRecordRow(
+                    e.roadMaintenanceReportId(),
+                    e.tsaNumber(),
+                    e.tsbNumberCode(),
+                    e.tflNumberCode(),
+                    e.comments(),
+                    e.revisionCount()))
         .toList();
   }
 
@@ -70,7 +80,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    * The Schedule 6 cost detail rows (item {@code 69}) for a mill/year, joined to their road records
    * by {@code ROAD_MAINTENANCE_REPORT_ID} so the category/mill/year filter applies.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.ROAD_MAINTENANCE_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
              d.VOLUME, d.COST, d.COMMENTS
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -88,8 +99,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
   /** The cost detail rows mapped to the service-facing {@link CostDetailRow}. */
   default List<CostDetailRow> findCostDetails(long millId, int year) {
     return findCostDetailEntities(millId, year).stream()
-        .map(d ->
-            new CostDetailRow(d.roadMaintenanceReportId(), d.volume(), d.cost(), d.comments()))
+        .map(
+            d -> new CostDetailRow(d.roadMaintenanceReportId(), d.volume(), d.cost(), d.comments()))
         .toList();
   }
 
@@ -97,7 +108,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    * The Schedules 1-10 track status code ({@code ILCR_MILL_REPORT_STATUS_CODE}) for a mill/year —
    * NOT the silviculture track (AD-9). Empty when there is no report-status row.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -131,19 +143,20 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
   /**
    * Insert one road-maintenance record (category {@code '6'}, {@code REVISION_COUNT = 0}, all four
    * audit stamps). {@code COMMENTS} carries the CURRENT general comment — the legacy replication
-   * invariant (BR-09): every cat-6 row stores the same schedule-level comment
-   * ({@code Schedule6DAO.java:229}). Classification arrives pre-cleared by the service (BR-02).
+   * invariant (BR-09): every cat-6 row stores the same schedule-level comment ({@code
+   * Schedule6DAO.java:229}). Classification arrives pre-cleared by the service (BR-02).
    *
    * <p>The comment is sourced by a scalar sub-select over the mill/year's existing cat-6 rows
    * (highest id — the row the read side's last-row-wins loop would take) rather than passed in from
-   * a value the service read earlier. That read-then-insert shape lost a concurrent
-   * {@code PUT /general-comments}: the new row draws the highest sequence id, so its stale COMMENTS
-   * became the served {@code generalComments} and silently reverted the just-saved comment. Reading
-   * inside the INSERT collapses the window to the statement (code review 2026-08-04). NULL when the
-   * mill/year has no rows yet, which is the correct value for the first record.
+   * a value the service read earlier. That read-then-insert shape lost a concurrent {@code PUT
+   * /general-comments}: the new row draws the highest sequence id, so its stale COMMENTS became the
+   * served {@code generalComments} and silently reverted the just-saved comment. Reading inside the
+   * INSERT collapses the window to the statement (code review 2026-08-04). NULL when the mill/year
+   * has no rows yet, which is the correct value for the first record.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ROAD_MAINTENANCE_REPORT
           (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS,
@@ -164,9 +177,13 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
            0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertRoadReport(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("tsaNumber") String tsaNumber, @Param("tsbNumberCode") String tsbNumberCode,
-      @Param("tflNumberCode") String tflNumberCode, @Param("user") String user);
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("tsaNumber") String tsaNumber,
+      @Param("tsbNumberCode") String tsbNumberCode,
+      @Param("tflNumberCode") String tflNumberCode,
+      @Param("user") String user);
 
   /**
    * Optimistic-lock update of one record's classification (AR11 per-record keying): sets the
@@ -179,7 +196,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    *     revision is stale (→ 409). The service disambiguates via {@link #countRoadRecord}.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ROAD_MAINTENANCE_REPORT
          SET TSA_NUMBER = :tsaNumber,
              TSB_NUMBER_CODE = :tsbNumberCode,
@@ -194,17 +212,22 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateRoadReport(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("expectedRevision") int expectedRevision, @Param("tsaNumber") String tsaNumber,
-      @Param("tsbNumberCode") String tsbNumberCode, @Param("tflNumberCode") String tflNumberCode,
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("tsaNumber") String tsaNumber,
+      @Param("tsbNumberCode") String tsbNumberCode,
+      @Param("tflNumberCode") String tflNumberCode,
       @Param("user") String user);
 
   /**
-   * True iff a road record with this id exists under the mill/year (404-vs-409 disambiguation,
-   * the Schedule 11 pattern). Placeholder rows count — the service routes an edit that targets a
+   * True iff a road record with this id exists under the mill/year (404-vs-409 disambiguation, the
+   * Schedule 11 pattern). Placeholder rows count — the service routes an edit that targets a
    * placeholder to 404 before this runs (a placeholder is not a served record).
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.ROAD_MAINTENANCE_REPORT
        WHERE ROAD_MAINTENANCE_REPORT_ID = :id
@@ -231,11 +254,12 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
 
   /**
    * Update-in-place half of {@link #upsertCostDetail}; {@code 0} rows when the detail is absent.
-   * Detail {@code REVISION_COUNT} stays untouched (legacy never bumps it — parity), only
-   * {@code UPDATE_*} moves ({@code Schedule6DAO.java:337–339}).
+   * Detail {@code REVISION_COUNT} stays untouched (legacy never bumps it — parity), only {@code
+   * UPDATE_*} moves ({@code Schedule6DAO.java:337–339}).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              COST = :cost,
@@ -246,18 +270,22 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND ILCR_REPORT_COST_ITEM_ID = 69
       """)
   int updateCostDetail(
-      @Param("recordId") int recordId, @Param("volume") BigDecimal volume,
-      @Param("cost") Integer cost, @Param("comments") String comments, @Param("user") String user);
+      @Param("recordId") int recordId,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
    * Insert half of {@link #upsertCostDetail} (item 69; summary id NULL — a road detail hangs off
    * its report, not a summary; {@code ITEM_DESCRIPTION} stays NULL — legacy never sets it). Stamps
    * {@code REVISION_COUNT = 0} and BOTH audit pairs; the {@code ICRD_CHK_B_I_U} delivery trigger
-   * requires exactly one parent FK, which {@code ROAD_MAINTENANCE_REPORT_ID} alone satisfies
-   * (Task 1 gate (iii)).
+   * requires exactly one parent FK, which {@code ROAD_MAINTENANCE_REPORT_ID} alone satisfies (Task
+   * 1 gate (iii)).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ROAD_MAINTENANCE_REPORT_ID,
            ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -267,8 +295,12 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertCostDetail(
-      @Param("id") int id, @Param("recordId") int recordId, @Param("volume") BigDecimal volume,
-      @Param("cost") Integer cost, @Param("comments") String comments, @Param("user") String user);
+      @Param("id") int id,
+      @Param("recordId") int recordId,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
    * Replicate the general comment onto EVERY cat-6 row of the mill/year (BR-09 replication
@@ -278,7 +310,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    *     insert-placeholder branch)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ROAD_MAINTENANCE_REPORT
          SET COMMENTS = :comments,
              UPDATE_USERID = :user,
@@ -288,7 +321,9 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND ILCR_CATEGORY_ID = '6'
       """)
   int updateAllComments(
-      @Param("millId") long millId, @Param("year") int year, @Param("comments") String comments,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("comments") String comments,
       @Param("user") String user);
 
   /**
@@ -296,7 +331,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    * text, NO item-69 detail ({@code Schedule6DAO.java:263–267} — the comment-storage row is bare).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ROAD_MAINTENANCE_REPORT
           (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS,
@@ -306,21 +342,26 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
            0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertPlaceholder(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("comments") String comments, @Param("user") String user);
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("comments") String comments,
+      @Param("user") String user);
 
   /**
    * Delete one placeholder row (the BR-09 third branch: clearing the comment when it is the only
-   * thing stored — legacy {@code generalCommentRemovedLastRecord},
-   * {@code Schedule6DAO.java:327–330}). Mill/year-scoped and re-checked classification-NULL so a
-   * real record can never be deleted.
+   * thing stored — legacy {@code generalCommentRemovedLastRecord}, {@code
+   * Schedule6DAO.java:327–330}). Mill/year-scoped and re-checked classification-NULL so a real
+   * record can never be deleted.
    *
    * @return rows affected — {@code 0} when the row is not (or is no longer) NULL-classification:
    *     whitespace rather than NULL, or claimed by a concurrent {@code addRecord}. The service MUST
-   *     act on that, or the clear silently no-ops behind a success message (code review 2026-08-04).
+   *     act on that, or the clear silently no-ops behind a success message (code review
+   *     2026-08-04).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ROAD_MAINTENANCE_REPORT
        WHERE ROAD_MAINTENANCE_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
@@ -330,21 +371,21 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND TSB_NUMBER_CODE IS NULL
          AND TFL_NUMBER_CODE IS NULL
       """)
-  int deletePlaceholder(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year);
+  int deletePlaceholder(@Param("id") int id, @Param("millId") long millId, @Param("year") int year);
 
   /**
-   * Convert the placeholder into a real record — the BR-09 reuse branch
-   * ({@code Schedule6DAO.java:268–278}): {@code addRecord} when the only existing row is the
-   * placeholder updates the classification ONTO that row so its id and {@code ENTRY_*} survive.
-   * No revision predicate: the placeholder is invisible to clients (excluded from
-   * {@code roadRecords[]}), so no token exists to check; scoped like every other write.
+   * Convert the placeholder into a real record — the BR-09 reuse branch ({@code
+   * Schedule6DAO.java:268–278}): {@code addRecord} when the only existing row is the placeholder
+   * updates the classification ONTO that row so its id and {@code ENTRY_*} survive. No revision
+   * predicate: the placeholder is invisible to clients (excluded from {@code roadRecords[]}), so no
+   * token exists to check; scoped like every other write.
    *
    * @return rows affected — {@code 0} when the row is no longer a placeholder (raced by another
    *     writer); the service treats that as a fresh-insert fallback
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ROAD_MAINTENANCE_REPORT
          SET TSA_NUMBER = :tsaNumber,
              TSB_NUMBER_CODE = :tsbNumberCode,
@@ -360,7 +401,11 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND TFL_NUMBER_CODE IS NULL
       """)
   int claimPlaceholder(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("tsaNumber") String tsaNumber, @Param("tsbNumberCode") String tsbNumberCode,
-      @Param("tflNumberCode") String tflNumberCode, @Param("user") String user);
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("tsaNumber") String tsaNumber,
+      @Param("tsbNumberCode") String tsbNumberCode,
+      @Param("tflNumberCode") String tflNumberCode,
+      @Param("user") String user);
 }

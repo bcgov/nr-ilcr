@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7b;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule7b.api.Schedule7bApi;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
@@ -77,8 +77,9 @@ public class Schedule7bController implements Schedule7bApi {
   public ResponseEntity<Schedule7bResponse> addCulvert(
       String millId, String year, CulvertRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7bResponse doc = schedule7bService.addCulvert(
-        context.millId(), context.year(), request, true, authentication.getName());
+    Schedule7bResponse doc =
+        schedule7bService.addCulvert(
+            context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -87,8 +88,9 @@ public class Schedule7bController implements Schedule7bApi {
   public ResponseEntity<Schedule7bResponse> updateCulvert(
       long id, String millId, String year, CulvertRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7bResponse doc = schedule7bService.updateCulvert(
-        context.millId(), context.year(), id, request, true, authentication.getName());
+    Schedule7bResponse doc =
+        schedule7bService.updateCulvert(
+            context.millId(), context.year(), id, request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -97,8 +99,9 @@ public class Schedule7bController implements Schedule7bApi {
   public ResponseEntity<Schedule7bResponse> saveAllCulverts(
       String millId, String year, CulvertSaveAllRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7bResponse doc = schedule7bService.saveAllCulverts(
-        context.millId(), context.year(), request, true, authentication.getName());
+    Schedule7bResponse doc =
+        schedule7bService.saveAllCulverts(
+            context.millId(), context.year(), request, true, authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -107,8 +110,8 @@ public class Schedule7bController implements Schedule7bApi {
   public ResponseEntity<Schedule7bResponse> deleteCulvert(
       long id, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule7bResponse doc = schedule7bService.deleteCulvert(
-        context.millId(), context.year(), id, true);
+    Schedule7bResponse doc =
+        schedule7bService.deleteCulvert(context.millId(), context.year(), id, true);
     // SUC-002 unconditionally — including when that was the last culvert. Legacy 7B's
     // Schedule7bMB.update() (managedBean/Schedule7bMB.java:216-230) always emits the key it was
     // passed; the empty-list branch that swaps in anyDataToSaveInfoMsg exists ONLY in

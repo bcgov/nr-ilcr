@@ -12,17 +12,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * Code-table maintenance service (Story 24.3 / UC-CODE-001, T2). Lists the selectable tables, reads a
- * table's entries, and upserts one entry inside a transaction.
+ * Code-table maintenance service (Story 24.3 / UC-CODE-001, T2). Lists the selectable tables, reads
+ * a table's entries, and upserts one entry inside a transaction.
  *
  * <p>Validation (FLD-001..005) runs before any write, so a rejection saves nothing. A persistence
- * failure is NOT swallowed — it propagates as an error (S11: the legacy false-success is fixed here by
- * never returning a success outcome for a write that did not happen). Every successful write logs the
- * acting admin + table + code as the audit trail (S13); these reference tables carry no per-row user
- * column, so the log IS the "who changed what" record.
+ * failure is NOT swallowed — it propagates as an error (S11: the legacy false-success is fixed here
+ * by never returning a success outcome for a write that did not happen). Every successful write
+ * logs the acting admin + table + code as the audit trail (S13); these reference tables carry no
+ * per-row user column, so the log IS the "who changed what" record.
  *
- * <p>Contractual Item Codes (BR-08, description-only, Schedule 9-backed) is a separate slice (S04) and
- * is intentionally not offered by {@link #listTables()} yet.
+ * <p>Contractual Item Codes (BR-08, description-only, Schedule 9-backed) is a separate slice (S04)
+ * and is intentionally not offered by {@link #listTables()} yet.
  */
 @Slf4j
 @Service
@@ -35,12 +35,20 @@ public class CodeTableService {
     this.repository = repository;
   }
 
-  /** The maintainable tables for the selector — the 18 generic tables (Contractual excluded for now). */
+  /**
+   * The maintainable tables for the selector — the 18 generic tables (Contractual excluded for
+   * now).
+   */
   public List<CodeTableSummary> listTables() {
     return Arrays.stream(CodeTableRegistry.values())
         .filter(table -> !table.contractual())
-        .map(table -> new CodeTableSummary(
-            table.key(), table.label(), table.codeMaxLength(), table.descriptionMaxLength()))
+        .map(
+            table ->
+                new CodeTableSummary(
+                    table.key(),
+                    table.label(),
+                    table.codeMaxLength(),
+                    table.descriptionMaxLength()))
         .toList();
   }
 
@@ -76,9 +84,9 @@ public class CodeTableService {
   /**
    * FLD-001..005 + BR-06: code, description, and effective date are required; the per-table code /
    * description length caps are enforced; and when BOTH dates are present, effective must be on or
-   * before expiry. Expiry is OPTIONAL — a null expiry is the "never expires" case the read side NVLs
-   * to a far-future date, so an existing open-ended row can be edited without inventing an expiry
-   * (recorded deviation from the legacy always-required-expiry, AD-8).
+   * before expiry. Expiry is OPTIONAL — a null expiry is the "never expires" case the read side
+   * NVLs to a far-future date, so an existing open-ended row can be edited without inventing an
+   * expiry (recorded deviation from the legacy always-required-expiry, AD-8).
    */
   private static void validate(CodeTableRegistry table, CodeTableEntry entry) {
     if (!StringUtils.hasText(entry.code())) {

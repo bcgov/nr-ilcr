@@ -24,29 +24,29 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Story 7.2 acceptance — server-side field validation on the Schedule 5 writes (AC6; slices S12/S15;
- * BR-05/BR-07).
+ * Story 7.2 acceptance — server-side field validation on the Schedule 5 writes (AC6; slices
+ * S12/S15; BR-05/BR-07).
  *
  * <p>Every bound in the story's § VALIDATION table is exercised on BOTH sides, and every expected
- * string is the LEGACY bundle text, byte-for-byte. Three of the ranges are deliberate oddities that a
- * uniform implementation would smooth over, and each is asserted here rather than described:
+ * string is the LEGACY bundle text, byte-for-byte. Three of the ranges are deliberate oddities that
+ * a uniform implementation would smooth over, and each is asserted here rather than described:
  *
  * <ul>
- *   <li>{@code wagesAndBenefits.cost} validates at &plusmn;99,999,999 while its siblings validate at
- *       &plusmn;9,999,999 — the {@code costSize} attribute is missing from that one input in BOTH
- *       legacy pages (deviation (F), an Open Question for the Ministry).
- *   <li>{@code recoveries.cost} is 0-FLOORED and capped at the legacy MESSAGE's 9,999,999, not at the
- *       wider {@code NUMBER(8,0)} column (deviation (G) — the call {@code deferred-work.md:245} handed
- *       this story, resolved as "the legacy message wins").
- *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9 while its message SAYS "999,999"
- *       (deviation (H)). Real delivery data sits exactly on 999999.9, so clamping to the message would
- *       reject stored rows.
+ *   <li>{@code wagesAndBenefits.cost} validates at &plusmn;99,999,999 while its siblings validate
+ *       at &plusmn;9,999,999 — the {@code costSize} attribute is missing from that one input in
+ *       BOTH legacy pages (deviation (F), an Open Question for the Ministry).
+ *   <li>{@code recoveries.cost} is 0-FLOORED and capped at the legacy MESSAGE's 9,999,999, not at
+ *       the wider {@code NUMBER(8,0)} column (deviation (G) — the call {@code deferred-work.md:245}
+ *       handed this story, resolved as "the legacy message wins").
+ *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9 while its message SAYS
+ *       "999,999" (deviation (H)). Real delivery data sits exactly on 999999.9, so clamping to the
+ *       message would reject stored rows.
  * </ul>
  *
  * <p>Every test in this class asserts a REJECTION, so nothing here mutates — which is what lets it
  * share mill 670/2023 with the duplicate-name probes. The {@code @BeforeEach}/{@code @AfterEach}
- * fingerprint proves that claim per row rather than assuming it: count- and sum-based fingerprints have
- * passed while real writes slipped through ({@code 8-2-…md:112}).
+ * fingerprint proves that claim per row rather than assuming it: count- and sum-based fingerprints
+ * have passed while real writes slipped through ({@code 8-2-…md:112}).
  */
 @TestPropertySource(properties = "ilcr.security.enabled=false")
 @DisplayName("POST /api/v1/schedule5/camps — field validation (AC6)")
@@ -55,8 +55,7 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   private static final String CAMPS = "/api/v1/schedule5/camps";
   private static final String PROBLEM_JSON = "application/problem+json";
 
-  @Autowired
-  private DataSource dataSource;
+  @Autowired private DataSource dataSource;
 
   private List<Map<String, Object>> before;
 
@@ -86,12 +85,19 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
           "isolatedCamp": false,
           %s
         }
-        """.formatted(fieldJson);
+        """
+        .formatted(fieldJson);
   }
 
   private void expectRejected(String fieldJson, String verbatimText) throws Exception {
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON).content(bodyWith(fieldJson)))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(bodyWith(fieldJson)))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is(verbatimText)));
@@ -99,11 +105,17 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
 
   private void expectAccepted(String fieldJson) throws Exception {
     // Accepted by VALIDATION, then stopped by the duplicate-name check — so the bound is proven
-    // inclusive without this class ever writing a row. Reusing the name mill 670/2023 already holds is
+    // inclusive without this class ever writing a row. Reusing the name mill 670/2023 already holds
+    // is
     // what makes that possible.
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(bodyWith(fieldJson).replace("Validation Camp", "Duplicate Name Camp")))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(bodyWith(fieldJson).replace("Validation Camp", "Duplicate Name Camp")))
         .andExpect(status().isConflict());
   }
 
@@ -115,9 +127,14 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // FLD-001 has NO legacy text — it was the JSF container default, never overridden
     // (UC-SCH5-001-technical.md:279 records it as [UNKNOWN]) — so these keys are new, cited as new.
     for (String name : List.of("\"\"", "\"   \"", "null")) {
-      mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content("{\"campName\":" + name + ",\"isolatedCamp\":false}"))
+      mockMvc
+          .perform(
+              post(CAMPS)
+                  .with(csrf())
+                  .param("millId", "670")
+                  .param("year", "2023")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content("{\"campName\":" + name + ",\"isolatedCamp\":false}"))
           .andExpect(status().isBadRequest())
           .andExpect(jsonPath("$.detail", is("Camp Name is required.")));
     }
@@ -128,9 +145,14 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   void campNameMaxLength() throws Exception {
     // 31 chars. Without this cap the value reaches Oracle and raises ORA-12899, which the service's
     // catch could only turn into an opaque 500 (the 8.2 lesson).
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"campName\":\"" + "C".repeat(31) + "\",\"isolatedCamp\":false}"))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"campName\":\"" + "C".repeat(31) + "\",\"isolatedCamp\":false}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
   }
@@ -139,20 +161,29 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   @DisplayName("a camp name within 30 CHARS but over 30 UTF-8 BYTES -> 400, not a 500")
   void campNameMaxByteLength() throws Exception {
     // The column is VARCHAR2(30 BYTE) on an AL32UTF8 database (ALL_TAB_COLUMNS CHAR_USED = 'B',
-    // re-verified against the seeded image 2026-08-10), so @Size's CHARACTER count is the wrong unit
+    // re-verified against the seeded image 2026-08-10), so @Size's CHARACTER count is the wrong
+    // unit
     // and the two limits being equal makes the gap maximal: any multibyte character at all pushes a
     // 30-character name past 30 bytes. Each of these passes @Size and would previously have reached
-    // Oracle, raised ORA-12899, and surfaced as ScheduleNotSavedException -> 500. The request body is
+    // Oracle, raised ORA-12899, and surfaced as ScheduleNotSavedException -> 500. The request body
+    // is
     // sent as explicit UTF-8 bytes: the string would otherwise be encoded with the platform default
     // charset, which on a Windows dev box mangles the very characters under test.
-    for (String name : List.of(
-        "é".repeat(16),              // 16 chars, 32 bytes -- accented Latin, 2 bytes each
-        "Camp " + "ü".repeat(13),    // 18 chars, 31 bytes -- the realistic mixed case
-        "営".repeat(11),              // 11 chars, 33 bytes -- CJK, 3 bytes each
-        "Camp " + "🌲".repeat(7))) { // 12 chars, 33 bytes -- emoji, 4 bytes each (surrogate pairs)
-      mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-              .contentType(MediaType.APPLICATION_JSON)
-              .content(utf8("{\"campName\":\"" + name + "\",\"isolatedCamp\":false}")))
+    for (String name :
+        List.of(
+            "é".repeat(16), // 16 chars, 32 bytes -- accented Latin, 2 bytes each
+            "Camp " + "ü".repeat(13), // 18 chars, 31 bytes -- the realistic mixed case
+            "営".repeat(11), // 11 chars, 33 bytes -- CJK, 3 bytes each
+            "Camp "
+                + "🌲".repeat(7))) { // 12 chars, 33 bytes -- emoji, 4 bytes each (surrogate pairs)
+      mockMvc
+          .perform(
+              post(CAMPS)
+                  .with(csrf())
+                  .param("millId", "670")
+                  .param("year", "2023")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(utf8("{\"campName\":\"" + name + "\",\"isolatedCamp\":false}")))
           .andExpect(status().isBadRequest())
           .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
           .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
@@ -165,20 +196,36 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // Unlike campName the two caps differ (3500 chars vs 4000 bytes), so this needs sustained
     // multibyte text rather than a single character: 2001 two-byte characters is 4002 bytes while
     // comfortably inside the 3500-character screen cap legacy enforced.
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(utf8("{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
-                + "\"comments\":\"" + "é".repeat(2001) + "\"}")))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    utf8(
+                        "{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
+                            + "\"comments\":\""
+                            + "é".repeat(2001)
+                            + "\"}")))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is("Comments must be 3500 characters or fewer.")));
   }
 
   @Test
-  @DisplayName("a missing isolatedCamp -> 400 (BR-05; legacy would NPE on it, Schedule5DAO.java:377)")
+  @DisplayName(
+      "a missing isolatedCamp -> 400 (BR-05; legacy would NPE on it, Schedule5DAO.java:377)")
   void isolatedCampIsRequired() throws Exception {
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON).content("{\"campName\":\"Validation Camp\"}"))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"campName\":\"Validation Camp\"}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", is("Isolated Camp is required.")));
   }
@@ -191,8 +238,10 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     String text = "Entered distance must be between 0 and 999,999.";
     expectRejected("\"roadDistanceToOperatingArea\": -0.1", text);
     expectRejected("\"roadDistanceToOperatingArea\": 999999.91", text);
-    // The message UNDERSTATES the bound by 0.9 and that is preserved: ILCRDistanceValidator.java:16-17
-    // enforces 999999.9, and Task 1 gate (vii) found real data sitting exactly on it, so clamping to
+    // The message UNDERSTATES the bound by 0.9 and that is preserved:
+    // ILCRDistanceValidator.java:16-17
+    // enforces 999999.9, and Task 1 gate (vii) found real data sitting exactly on it, so clamping
+    // to
     // the message's 999,999 would reject stored rows.
     expectAccepted("\"roadDistanceToOperatingArea\": 999999.9");
     expectAccepted("\"roadDistanceToOperatingArea\": 0.0");
@@ -201,9 +250,11 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   @Test
   @DisplayName("distance: a THIRD decimal is rejected, not silently rounded by Oracle")
   void distanceScale() throws Exception {
-    // The column is NUMBER(8,2). Without the @Digits fraction cap Oracle would round 42.555 to 42.56
+    // The column is NUMBER(8,2). Without the @Digits fraction cap Oracle would round 42.555 to
+    // 42.56
     // and report success with a number the licensee never typed (the 25.2 lesson).
-    expectRejected("\"roadDistanceToOperatingArea\": 42.555",
+    expectRejected(
+        "\"roadDistanceToOperatingArea\": 42.555",
         "Entered distance must be between 0 and 999,999.");
   }
 
@@ -234,8 +285,8 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // ASSOCIATED_CAMP_VOLUME is NUMBER(7) with scale 0. Legacy called .intValue() and silently
     // truncated 1.9 to 1 (Schedule5DAO.java:376); the modern path rejects instead. Legacy is itself
     // inconsistent here — its sub-page helper uses intValueExact() and throws (:622).
-    expectRejected("\"associatedCampVolume\": 1.5",
-        "Entered volume must be between 0 and 9,999,999.");
+    expectRejected(
+        "\"associatedCampVolume\": 1.5", "Entered volume must be between 0 and 9,999,999.");
   }
 
   @Test
@@ -274,7 +325,8 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // narrow what legacy accepted.
     expectAccepted("\"wagesAndBenefits\": { \"cost\": 50000000 }");
     expectAccepted("\"wagesAndBenefits\": { \"cost\": 99999999 }");
-    expectRejected("\"wagesAndBenefits\": { \"cost\": 100000000 }",
+    expectRejected(
+        "\"wagesAndBenefits\": { \"cost\": 100000000 }",
         "Entered cost must be between -99,999,999 and 99,999,999.");
   }
 
@@ -296,9 +348,14 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // Jackson enables ACCEPT_FLOAT_AS_INT by default, which would bind 1234.99 as 1234 and report a
     // successful save with a different number than the licensee typed (deferred-work.md:180). The
     // feature is disabled in application.yml, so this is a clean 400.
-    mockMvc.perform(post(CAMPS).with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(bodyWith("\"cateringAndFood\": { \"cost\": 1234.99 }")))
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(bodyWith("\"cateringAndFood\": { \"cost\": 1234.99 }")))
         .andExpect(status().isBadRequest());
   }
 
@@ -310,13 +367,15 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // a 400. Recorded as a deliberate divergence from legacy's never-validated disabled inputs —
     // review decision 2026-08-07: accepted and pinned rather than refactoring every declarative
     // bound into programmatic checks for a value the server was going to discard.
-    expectRejected("\"recoveries\": { \"volume\": -1 }",
-        "Entered volume must be between 0 and 9,999,999.");
-    expectRejected("\"otherCampExpenses\": { \"cost\": 100000000 }",
+    expectRejected(
+        "\"recoveries\": { \"volume\": -1 }", "Entered volume must be between 0 and 9,999,999.");
+    expectRejected(
+        "\"otherCampExpenses\": { \"cost\": 100000000 }",
         "Entered cost must be between -99,999,999 and 99,999,999.");
   }
 
-  // ---- the SAME declarative and programmatic bounds hold on PUT (the edit path) ------------------
+  // ---- the SAME declarative and programmatic bounds hold on PUT (the edit path)
+  // ------------------
 
   @Test
   @DisplayName("PUT enforces the Default-group bounds too — the groups are Default + OnUpdate")
@@ -325,10 +384,17 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // every declarative bound from the edit path while missingRevisionCount_400 stayed green (the
     // review's regression gap). Camp 8206 belongs to 670/2023; the rejection persists nothing, so
     // the class fingerprint holds.
-    mockMvc.perform(put(CAMPS + "/8206").with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"campName\":\"" + "C".repeat(31)
-                + "\",\"isolatedCamp\":false,\"revisionCount\":0}"))
+    mockMvc
+        .perform(
+            put(CAMPS + "/8206")
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"campName\":\""
+                        + "C".repeat(31)
+                        + "\",\"isolatedCamp\":false,\"revisionCount\":0}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.detail", is("Camp Name must be 30 characters or fewer.")));
   }
@@ -338,10 +404,16 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   void putEnforcesTheProgrammaticRanges() throws Exception {
     // validateCostRanges runs on updateCamp before the name check and the guarded UPDATE, so the
     // stale revisionCount 0 never matters — the 400 wins.
-    mockMvc.perform(put(CAMPS + "/8206").with(csrf()).param("millId", "670").param("year", "2023")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
-                + "\"revisionCount\":0,\"recoveries\":{\"cost\":-1}}"))
+    mockMvc
+        .perform(
+            put(CAMPS + "/8206")
+                .with(csrf())
+                .param("millId", "670")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"campName\":\"Validation Camp\",\"isolatedCamp\":false,"
+                        + "\"revisionCount\":0,\"recoveries\":{\"cost\":-1}}"))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is("Entered cost must be between 0 and 9,999,999.")));
@@ -351,15 +423,18 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   @DisplayName("comments over 3500 characters -> 400 (the legacy textarea's own maxlength)")
   void commentsMaxLength() throws Exception {
     // The column is VARCHAR2(4000 BYTE) — WIDER than the screen cap — so unlike Schedule 6's
-    // per-record comment there is no over-cap defect to inherit. Task 1 gate (vii) found the longest
+    // per-record comment there is no over-cap defect to inherit. Task 1 gate (vii) found the
+    // longest
     // real stored comment is exactly 3500, so the cap is exactly right and is not widened.
-    expectRejected("\"comments\": \"" + "x".repeat(3501) + "\"",
-        "Comments must be 3500 characters or fewer.");
+    expectRejected(
+        "\"comments\": \"" + "x".repeat(3501) + "\"", "Comments must be 3500 characters or fewer.");
     expectAccepted("\"comments\": \"" + "x".repeat(3500) + "\"");
   }
 
   private List<Map<String, Object>> fingerprint() {
-    return new JdbcTemplate(dataSource).queryForList("""
+    return new JdbcTemplate(dataSource)
+        .queryForList(
+            """
         SELECT c.CAMP_REPORT_ID, c.CAMP_NAME, c.DISTANCE_TO_OPERATING_AREA, c.CAMP_SIZE_CAPACITY,
                c.ASSOCIATED_CAMP_VOLUME, c.ISOLATED_CAMP_IND, c.COMMENTS, c.REVISION_COUNT,
                c.ENTRY_USERID, c.ENTRY_TIMESTAMP, c.UPDATE_USERID, c.UPDATE_TIMESTAMP,

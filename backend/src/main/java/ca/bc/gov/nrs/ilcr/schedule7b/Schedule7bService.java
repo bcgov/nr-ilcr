@@ -4,10 +4,10 @@ import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_INSTALL;
 import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_MATERIAL;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
@@ -117,8 +117,13 @@ public class Schedule7bService {
           toCulvert(row, rowCounter++, costs.getOrDefault(row.culvertReportId(), Map.of())));
     }
     return new Schedule7bResponse(
-        millId, year, trackStatus, editable, culverts,
-        new CulvertCodeLists(repository.culvertTypeOptions(year)), null);
+        millId,
+        year,
+        trackStatus,
+        editable,
+        culverts,
+        new CulvertCodeLists(repository.culvertTypeOptions(year)),
+        null);
   }
 
   // ===============================================================================================
@@ -143,8 +148,11 @@ public class Schedule7bService {
       repository.insertCulvert(toEntity(culvertId, request), millId, year, user);
       writeCosts(culvertId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B add failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -157,7 +165,11 @@ public class Schedule7bService {
    */
   @Transactional
   public Schedule7bResponse updateCulvert(
-      long millId, int year, long culvertId, CulvertRequest request, boolean callerMayEdit,
+      long millId,
+      int year,
+      long culvertId,
+      CulvertRequest request,
+      boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
     applyCulvertUpdate(
@@ -224,26 +236,31 @@ public class Schedule7bService {
    * review). {@code storedTypes} holds an entry for every culvert of the mill/year, so its key set
    * is an existence oracle that costs no extra query — and {@code get} alone could not serve as
    * one, because a culvert with a NULL stored type and an absent culvert both answer null.
-   * Validating the
-   * submitted type first made the status depend on the BODY: an unknown id carrying a retired type
-   * answered 400 (invalid type) where the endpoint contract and the write tests both say 404. The
-   * same missing resource must report the same status whatever the body says, on the single PUT and
-   * on every entry of a page-level Save alike.
+   * Validating the submitted type first made the status depend on the BODY: an unknown id carrying
+   * a retired type answered 400 (invalid type) where the endpoint contract and the write tests both
+   * say 404. The same missing resource must report the same status whatever the body says, on the
+   * single PUT and on every entry of a page-level Save alike.
    *
    * <p>The {@code updated == 0} disambiguation further down stays as the concurrency backstop: this
    * check reads committed state, so a culvert deleted by another transaction between that read and
    * the UPDATE is still caught there.
    */
   private void applyCulvertUpdate(
-      long millId, int year, long culvertId, CulvertRequest request, String user,
-      Set<String> codes, Map<Long, String> storedTypes) {
+      long millId,
+      int year,
+      long culvertId,
+      CulvertRequest request,
+      String user,
+      Set<String> codes,
+      Map<Long, String> storedTypes) {
     if (!storedTypes.containsKey(culvertId)) {
       throw new CulvertNotFoundException();
     }
     validateCulvertType(codes, request, storedTypes.get(culvertId));
     try {
-      int updated = repository.updateCulvert(
-          toEntity(culvertId, request), millId, year, request.revisionCount(), user);
+      int updated =
+          repository.updateCulvert(
+              toEntity(culvertId, request), millId, year, request.revisionCount(), user);
       if (updated == 0) {
         // 0 rows = the id is absent (404) OR the revision is stale (409) — disambiguate.
         if (repository.countCulvert(culvertId, millId, year) == 0) {
@@ -253,8 +270,11 @@ public class Schedule7bService {
       }
       writeCosts(culvertId, request, user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B update failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B update failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
   }
@@ -264,12 +284,12 @@ public class Schedule7bService {
    * {@code CascadeType.ALL}, {@code model/CulvertReport.java:231}). Draft-gated; an unknown id →
    * 404.
    *
-   * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery carries
-   * an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE CASCADE},
-   * so deleting the culvert while its cost rows still reference it raises ORA-02292 ("child record
-   * found") and the whole delete fails. The ownership/404 check therefore cannot be the parent
-   * delete's row count; it is a scoped {@code countCulvert} taken BEFORE either delete, so another
-   * mill's id still removes nothing.
+   * <p>CHILDREN FIRST, then the parent — the order Hibernate's cascade gave legacy. Delivery
+   * carries an FK from {@code ILCR_COST_REPORT_DETAIL.CULVERT_REPORT_ID} without {@code ON DELETE
+   * CASCADE}, so deleting the culvert while its cost rows still reference it raises ORA-02292
+   * ("child record found") and the whole delete fails. The ownership/404 check therefore cannot be
+   * the parent delete's row count; it is a scoped {@code countCulvert} taken BEFORE either delete,
+   * so another mill's id still removes nothing.
    *
    * <p>The Yes/No confirmation (ALT-001) is an in-page dialog with no backend contract — a
    * cancelled delete (S05) simply never reaches here.
@@ -285,14 +305,18 @@ public class Schedule7bService {
       repository.deleteCostsForCulvert(culvertId);
       if (repository.deleteCulvert(culvertId, millId, year) == 0) {
         // The probe above passed, so a zero here means a concurrent delete won the race. Acting on
-        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result is
+        // the count rather than assuming success is Schedule 5's 8.2 lesson: a delete whose result
+        // is
         // discarded reported "Data deleted successfully" while the row survived — and here it would
         // have committed the cost deletes, so the row would re-render stripped of its costs.
         throw new CulvertNotFoundException();
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 7B delete failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 7B delete failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -314,8 +338,14 @@ public class Schedule7bService {
    */
   private static CulvertReportEntity toEntity(long culvertId, CulvertRequest r) {
     return new CulvertReportEntity(
-        culvertId, r.culvertTypeCode(), r.spanSize(), r.riseSize(), oneDecimal(r.length()),
-        r.culvertPieceCount(), r.comments(), 0);
+        culvertId,
+        r.culvertTypeCode(),
+        r.spanSize(),
+        r.riseSize(),
+        oneDecimal(r.length()),
+        r.culvertPieceCount(),
+        r.comments(),
+        0);
   }
 
   /**
@@ -389,8 +419,7 @@ public class Schedule7bService {
    * @param r the incoming request
    * @param storedType the type currently stored on this row, or {@code null} on a create
    */
-  private static void validateCulvertType(
-      Set<String> codes, CulvertRequest r, String storedType) {
+  private static void validateCulvertType(Set<String> codes, CulvertRequest r, String storedType) {
     if (r.culvertTypeCode().equals(storedType)) {
       return;
     }
@@ -437,9 +466,8 @@ public class Schedule7bService {
       rowCounter++;
     }
 
-    MessageInfo requirementsMetMessage = allMet
-        ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET))
-        : null;
+    MessageInfo requirementsMetMessage =
+        allMet ? new MessageInfo(MSG_REQUIREMENTS_MET, resolveText(MSG_REQUIREMENTS_MET)) : null;
     return new Schedule7bCheckStatusResponse(allMet, errors, requirementsMetMessage);
   }
 
@@ -453,8 +481,7 @@ public class Schedule7bService {
    */
   private record RequiredCheck(
       java.util.function.BiPredicate<CulvertReportEntity, Map<Integer, Integer>> missing,
-      String label) {
-  }
+      String label) {}
 
   /** A required-attribute check on the culvert row itself. */
   private static RequiredCheck attrCheck(Predicate<CulvertReportEntity> missing, String label) {
@@ -502,30 +529,33 @@ public class Schedule7bService {
    * are legacy string literals, not typos to tidy — the Gherkin assertions and the users' saved
    * screenshots expect them.
    */
-  private static final List<RequiredCheck> REQUIRED_CHECKS = List.of(
-      attrCheck(r -> TYPE_ROUND.equals(r.culvertTypeCode()) && r.spanSize() == null,
-          " - Culvert Type Round - Span size"),
-      attrCheck(r -> TYPE_OTHERS.equals(r.culvertTypeCode())
-              && (r.comments() == null || r.comments().isEmpty()),
-          " - Culvert Type Others - Comments"),
-      attrCheck(r -> r.length() == null, " - Length "),
-      attrCheck(r -> r.culvertPieceCount() == null, " - Piece Count "),
-      costCheck(ITEM_MATERIAL, " - Material Cost "),
-      costCheck(ITEM_INSTALL, " - Install Cost "));
+  private static final List<RequiredCheck> REQUIRED_CHECKS =
+      List.of(
+          attrCheck(
+              r -> TYPE_ROUND.equals(r.culvertTypeCode()) && r.spanSize() == null,
+              " - Culvert Type Round - Span size"),
+          attrCheck(
+              r ->
+                  TYPE_OTHERS.equals(r.culvertTypeCode())
+                      && (r.comments() == null || r.comments().isEmpty()),
+              " - Culvert Type Others - Comments"),
+          attrCheck(r -> r.length() == null, " - Length "),
+          attrCheck(r -> r.culvertPieceCount() == null, " - Piece Count "),
+          costCheck(ITEM_MATERIAL, " - Material Cost "),
+          costCheck(ITEM_INSTALL, " - Install Cost "));
 
   /**
    * The two type-conditional labels take {@code "Culvert Report Id : "} (space before the colon);
    * the four unconditional ones take {@code "Culvert Report Id: "}. Legacy hardcoded both spellings
    * ({@code Schedule7bMB.java:132,137} vs {@code :142,147,152,157}).
    */
-  private static final Set<String> SPACED_PREFIX_LABELS = Set.of(
-      " - Culvert Type Round - Span size", " - Culvert Type Others - Comments");
+  private static final Set<String> SPACED_PREFIX_LABELS =
+      Set.of(" - Culvert Type Round - Span size", " - Culvert Type Others - Comments");
 
   /**
    * The missing required-field labels for one culvert, in the exact legacy order (verbatim text).
    */
-  private static List<String> missingLabels(
-      CulvertReportEntity row, Map<Integer, Integer> cost) {
+  private static List<String> missingLabels(CulvertReportEntity row, Map<Integer, Integer> cost) {
     List<String> missing = new ArrayList<>();
     for (RequiredCheck check : REQUIRED_CHECKS) {
       if (check.missing().test(row, cost)) {
@@ -541,9 +571,8 @@ public class Schedule7bService {
    * {@code util/FacesUtil.java:134}).
    */
   private String missingText(int rowCounter, String label) {
-    String prefix = SPACED_PREFIX_LABELS.contains(label)
-        ? "Culvert Report Id : "
-        : "Culvert Report Id: ";
+    String prefix =
+        SPACED_PREFIX_LABELS.contains(label) ? "Culvert Report Id : " : "Culvert Report Id: ";
     return prefix + rowCounter + label + ": " + resolveText(MSG_VALUE_REQUIRED);
   }
 
@@ -559,7 +588,8 @@ public class Schedule7bService {
   private static Map<Long, Map<Integer, Integer>> costsByCulvert(List<CulvertCostEntity> rows) {
     Map<Long, Map<Integer, Integer>> byCulvert = new HashMap<>();
     for (CulvertCostEntity row : rows) {
-      byCulvert.computeIfAbsent(row.culvertReportId(), k -> new HashMap<>())
+      byCulvert
+          .computeIfAbsent(row.culvertReportId(), k -> new HashMap<>())
           .put(row.costItemId(), row.cost());
     }
     return byCulvert;
@@ -572,9 +602,18 @@ public class Schedule7bService {
     Integer install = cost.get(ITEM_INSTALL);
 
     return new Culvert(
-        row.culvertReportId(), rowCounter, row.culvertTypeCode(), row.spanSize(), row.riseSize(),
-        oneDecimal(row.length()), row.culvertPieceCount(), material, install,
-        totalCost(material, install), row.comments(), row.revisionCount());
+        row.culvertReportId(),
+        rowCounter,
+        row.culvertTypeCode(),
+        row.spanSize(),
+        row.riseSize(),
+        oneDecimal(row.length()),
+        row.culvertPieceCount(),
+        material,
+        install,
+        totalCost(material, install),
+        row.comments(),
+        row.revisionCount());
   }
 
   /**

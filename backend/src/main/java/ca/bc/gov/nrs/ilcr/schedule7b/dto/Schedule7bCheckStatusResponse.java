@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule7b.dto;
 
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.List;
 
 /**
@@ -29,7 +29,4 @@ import java.util.List;
  *     requirements for this schedule have been met"}) when all pass, else null
  */
 public record Schedule7bCheckStatusResponse(
-    boolean requirementsMet,
-    List<MessageInfo> errors,
-    MessageInfo requirementsMetMessage) {
-}
+    boolean requirementsMet, List<MessageInfo> errors, MessageInfo requirementsMetMessage) {}

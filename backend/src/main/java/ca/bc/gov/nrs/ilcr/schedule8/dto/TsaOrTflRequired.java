@@ -10,8 +10,8 @@ import java.lang.annotation.Target;
 
 /**
  * Class-level constraint (Story 14.2, S19/FLD-006): a Tree-to-Truck page must supply a TSA-or-TFL
- * context — at least one of {@code tsaNumber} / {@code tflNumber} is required at Save. The violation
- * is bound to {@code tsaNumber} with the standard {@code Value Required} message.
+ * context — at least one of {@code tsaNumber} / {@code tflNumber} is required at Save. The
+ * violation is bound to {@code tsaNumber} with the standard {@code Value Required} message.
  */
 @Documented
 @Constraint(validatedBy = TsaOrTflRequiredValidator.class)
@@ -19,9 +19,24 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface TsaOrTflRequired {
 
+  /**
+   * Returns the error message template.
+   *
+   * @return the error message template
+   */
   String message() default "{missingRequiredFieldMsg}";
 
+  /**
+   * Returns the groups the constraint belongs to.
+   *
+   * @return the groups the constraint belongs to
+   */
   Class<?>[] groups() default {};
 
+  /**
+   * Returns the payload associated to the constraint.
+   *
+   * @return the payload associated to the constraint
+   */
   Class<? extends Payload>[] payload() default {};
 }

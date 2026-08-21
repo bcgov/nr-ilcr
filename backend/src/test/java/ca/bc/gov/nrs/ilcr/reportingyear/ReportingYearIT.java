@@ -25,11 +25,11 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
  * Acceptance test — Story 24.1 (UC-RY-001) Open Reporting Year, security ON. Exercises the real
- * cognito:groups → role → action path: {@code OPEN_REPORTING_YEAR} is ADMIN-only, so an
- * {@code ILCR_SUBMITTER} is denied 403 (S13). The recurring open path is driven against the shared
- * seed (a year already exists), proving an ACTIVE mill (990) gets a Draft/Draft report-status row for
- * the new year and a CLOSED mill (991) does not. Each test removes the year it opened in
- * {@link #cleanUp()} so the JVM-wide container stays at its seeded baseline for other IT classes.
+ * cognito:groups → role → action path: {@code OPEN_REPORTING_YEAR} is ADMIN-only, so an {@code
+ * ILCR_SUBMITTER} is denied 403 (S13). The recurring open path is driven against the shared seed (a
+ * year already exists), proving an ACTIVE mill (990) gets a Draft/Draft report-status row for the
+ * new year and a CLOSED mill (991) does not. Each test removes the year it opened in {@link
+ * #cleanUp()} so the JVM-wide container stays at its seeded baseline for other IT classes.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("/api/v1/admin/reporting-years — Open Reporting Year (admin-gated, Story 24.1)")
@@ -41,11 +41,9 @@ class ReportingYearIT extends AbstractOracleIT {
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
-  @MockitoBean
-  private JwtDecoder jwtDecoder;
+  @MockitoBean private JwtDecoder jwtDecoder;
 
-  @Autowired
-  private NamedParameterJdbcTemplate jdbc;
+  @Autowired private NamedParameterJdbcTemplate jdbc;
 
   private Integer openedYear;
   private Integer seededPeriodYear;
@@ -60,7 +58,8 @@ class ReportingYearIT extends AbstractOracleIT {
       openedYear = null;
     }
     if (seededPeriodYear != null) {
-      jdbc.update("DELETE FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :year",
+      jdbc.update(
+          "DELETE FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :year",
           new MapSqlParameterSource("year", seededPeriodYear));
       seededPeriodYear = null;
     }
@@ -73,21 +72,26 @@ class ReportingYearIT extends AbstractOracleIT {
   }
 
   private int currentMaxYear() {
-    Integer max = jdbc.queryForObject(
-        "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD", new MapSqlParameterSource(),
-        Integer.class);
+    Integer max =
+        jdbc.queryForObject(
+            "SELECT MAX(REPORT_YEAR) FROM THE.ILCR_REPORTING_PERIOD",
+            new MapSqlParameterSource(),
+            Integer.class);
     return max == null ? 0 : max;
   }
 
   private long statusRowCount(long millId, int year) {
-    Integer count = jdbc.queryForObject(
-        "SELECT COUNT(*) FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
-        new MapSqlParameterSource(Map.of("m", millId, "y", year)), Integer.class);
+    Integer count =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM THE.ILCR_MILL_REPORT_STATUS WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
+            new MapSqlParameterSource(Map.of("m", millId, "y", year)),
+            Integer.class);
     return count == null ? 0 : count;
   }
 
   @Test
-  @DisplayName("admin opens the next year — 200, active mill initialized Draft, closed mill skipped")
+  @DisplayName(
+      "admin opens the next year — 200, active mill initialized Draft, closed mill skipped")
   void admin_opensNextYear() throws Exception {
     // Seed a high reporting period so the recurring path (max + 1) targets a year no other fixture
     // touches — the accumulated seeds hold orphan status rows for lower years that would otherwise
@@ -99,18 +103,21 @@ class ReportingYearIT extends AbstractOracleIT {
     int expected = currentMaxYear() + 1;
     openedYear = expected;
 
-    mockMvc.perform(post(ENDPOINT).with(groups("ILCR_ADMIN")))
+    mockMvc
+        .perform(post(ENDPOINT).with(groups("ILCR_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.year").value(expected))
-        .andExpect(jsonPath("$.message")
-            .value("The new reporting year " + expected + " has been successfully created."));
+        .andExpect(
+            jsonPath("$.message")
+                .value("The new reporting year " + expected + " has been successfully created."));
 
     // The period row exists (year selectable on Home) with the audit quartet populated — a missing
     // stamp would be NULL here and fail, catching the delivery NOT NULL before deployment.
-    Map<String, Object> period = jdbc.queryForMap(
-        "SELECT ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP "
-            + "FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :y",
-        new MapSqlParameterSource("y", expected));
+    Map<String, Object> period =
+        jdbc.queryForMap(
+            "SELECT ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP "
+                + "FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :y",
+            new MapSqlParameterSource("y", expected));
     assertThat(period.get("ENTRY_USERID")).isNotNull();
     assertThat(period.get("ENTRY_TIMESTAMP")).isNotNull();
     assertThat(period.get("UPDATE_USERID")).isNotNull();
@@ -119,11 +126,12 @@ class ReportingYearIT extends AbstractOracleIT {
     // Active mill got a both-tracks-Draft, not-completed row; closed mill got none.
     assertThat(statusRowCount(ACTIVE_MILL, expected)).isEqualTo(1);
     assertThat(statusRowCount(CLOSED_MILL, expected)).isZero();
-    Map<String, Object> row = jdbc.queryForMap(
-        "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
-            + "ENTRY_USERID, UPDATE_USERID FROM THE.ILCR_MILL_REPORT_STATUS "
-            + "WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
-        new MapSqlParameterSource(Map.of("m", ACTIVE_MILL, "y", expected)));
+    Map<String, Object> row =
+        jdbc.queryForMap(
+            "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
+                + "ENTRY_USERID, UPDATE_USERID FROM THE.ILCR_MILL_REPORT_STATUS "
+                + "WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
+            new MapSqlParameterSource(Map.of("m", ACTIVE_MILL, "y", expected)));
     assertThat(row.get("ILCR_MILL_REPORT_STATUS_CODE")).isEqualTo("D");
     assertThat(row.get("MILL_SILVICULTUR_STATUS_CODE")).isEqualTo("D");
     assertThat(row.get("REPORT_COMPLETED_IND")).isEqualTo("N");
@@ -135,18 +143,21 @@ class ReportingYearIT extends AbstractOracleIT {
     // closed mill gets none.
     assertThat(categoryRowCount(ACTIVE_MILL, expected)).isEqualTo(11);
     assertThat(categoryRowCount(CLOSED_MILL, expected)).isZero();
-    Map<String, Object> cat = jdbc.queryForMap(
-        "SELECT CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND FROM THE.ILCR_REPORT_CATEGORY "
-            + "WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y AND ILCR_CATEGORY_ID = '1'",
-        new MapSqlParameterSource(Map.of("m", ACTIVE_MILL, "y", expected)));
+    Map<String, Object> cat =
+        jdbc.queryForMap(
+            "SELECT CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND FROM THE.ILCR_REPORT_CATEGORY "
+                + "WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y AND ILCR_CATEGORY_ID = '1'",
+            new MapSqlParameterSource(Map.of("m", ACTIVE_MILL, "y", expected)));
     assertThat(cat.get("CATEGORY_STATE_CODE")).isEqualTo("D");
     assertThat(cat.get("REPORTABLE_DETAIL_IND")).isEqualTo("Y");
   }
 
   private long categoryRowCount(long millId, int year) {
-    Integer count = jdbc.queryForObject(
-        "SELECT COUNT(*) FROM THE.ILCR_REPORT_CATEGORY WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
-        new MapSqlParameterSource(Map.of("m", millId, "y", year)), Integer.class);
+    Integer count =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM THE.ILCR_REPORT_CATEGORY WHERE ILCR_MILL_ID = :m AND REPORT_YEAR = :y",
+            new MapSqlParameterSource(Map.of("m", millId, "y", year)),
+            Integer.class);
     return count == null ? 0 : count;
   }
 
@@ -154,7 +165,8 @@ class ReportingYearIT extends AbstractOracleIT {
   @DisplayName("admin view reports the recurring next year")
   void admin_viewShowsNextYear() throws Exception {
     int expectedNext = currentMaxYear() + 1;
-    mockMvc.perform(get(ENDPOINT).with(groups("ILCR_ADMIN")))
+    mockMvc
+        .perform(get(ENDPOINT).with(groups("ILCR_ADMIN")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.firstTime").value(false))
         .andExpect(jsonPath("$.nextYear").value(expectedNext));
@@ -163,7 +175,8 @@ class ReportingYearIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER is denied open — 403 (S13, admin-only action)")
   void submitter_isForbidden() throws Exception {
-    mockMvc.perform(post(ENDPOINT).with(groups("ILCR_SUBMITTER")))
+    mockMvc
+        .perform(post(ENDPOINT).with(groups("ILCR_SUBMITTER")))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -171,7 +184,6 @@ class ReportingYearIT extends AbstractOracleIT {
   @Test
   @DisplayName("no ILCR group is denied — 403")
   void noGroup_isForbidden() throws Exception {
-    mockMvc.perform(get(ENDPOINT).with(groups()))
-        .andExpect(status().isForbidden());
+    mockMvc.perform(get(ENDPOINT).with(groups())).andExpect(status().isForbidden());
   }
 }

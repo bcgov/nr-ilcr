@@ -10,9 +10,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
@@ -33,8 +33,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
 /**
- * Unit test for {@link Schedule4Controller}: the no-summary-required context guard
- * ({@code validateMillYearActive}), service delegation, the server-derived {@code editable} flag, the
+ * Unit test for {@link Schedule4Controller}: the no-summary-required context guard ({@code
+ * validateMillYearActive}), service delegation, the server-derived {@code editable} flag, the
  * verbatim AD-8 success-message decoration, and the check-status schedule/location/issue key
  * resolution — collaborators mocked, no Spring context.
  */
@@ -44,23 +44,17 @@ class Schedule4ControllerTest {
   private static final long MILL_ID = 546L;
   private static final int YEAR = 2021;
 
-  @Mock
-  private MillContextService millContextService;
+  @Mock private MillContextService millContextService;
 
-  @Mock
-  private Schedule4Service schedule4Service;
+  @Mock private Schedule4Service schedule4Service;
 
-  @Mock
-  private SchedulePermissions permissions;
+  @Mock private SchedulePermissions permissions;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @Mock
-  private Authentication authentication;
+  @Mock private Authentication authentication;
 
-  @InjectMocks
-  private Schedule4Controller controller;
+  @InjectMocks private Schedule4Controller controller;
 
   @Test
   void getSchedule4_validatesContext_derivesEditFlag_returnsDocument() {
@@ -84,8 +78,10 @@ class Schedule4ControllerTest {
     when(saved.withMessage(any())).thenReturn(saved);
     when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, true, "dev-admin")).thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, true, "dev-admin"))
+        .thenReturn(saved);
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -99,7 +95,7 @@ class Schedule4ControllerTest {
   @Test
   void deleteLocation_delegates_andReturnsDeletedMessage() {
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
 
     ResponseEntity<MessageResponse> response =
@@ -120,7 +116,8 @@ class Schedule4ControllerTest {
     when(authentication.getName()).thenReturn("dev-admin");
     when(schedule4Service.addSubPageRow(MILL_ID, YEAR, 8001, request, true, "dev-admin"))
         .thenReturn(saved);
-    when(messageSource.getMessage(eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+    when(messageSource.getMessage(
+            eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data saved successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -138,7 +135,7 @@ class Schedule4ControllerTest {
     when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
     when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
     when(messageSource.getMessage(
-        eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
+            eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
 
     ResponseEntity<Schedule4Response> response =
@@ -152,16 +149,20 @@ class Schedule4ControllerTest {
   @Test
   void checkStatus_resolvesScheduleBanner_locationMessages_andFieldIssues() {
     // ISSUES with one failing location that carries both a met-style message and a field issue, so
-    // the schedule-level, per-location, and per-issue key→text resolution branches are all exercised.
-    Schedule4CheckStatusResponse raw = new Schedule4CheckStatusResponse(
-        "ISSUES",
-        List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
-        List.of(new LocationCheckResult(
-            8001,
-            "Dump A",
-            false,
-            List.of(new MessageInfo("locationRequirementsMetMsg", null)),
-            List.of(new FieldIssue(47, new MessageInfo("missingRequiredFieldMsg", null))))));
+    // the schedule-level, per-location, and per-issue key→text resolution branches are all
+    // exercised.
+    Schedule4CheckStatusResponse raw =
+        new Schedule4CheckStatusResponse(
+            "ISSUES",
+            List.of(new MessageInfo("scheduleRequirementsMetMsg", null)),
+            List.of(
+                new LocationCheckResult(
+                    8001,
+                    "Dump A",
+                    false,
+                    List.of(new MessageInfo("locationRequirementsMetMsg", null)),
+                    List.of(
+                        new FieldIssue(47, new MessageInfo("missingRequiredFieldMsg", null))))));
     when(schedule4Service.checkStatus(MILL_ID, YEAR)).thenReturn(raw);
     when(messageSource.getMessage(anyString(), any(), any(), any(Locale.class)))
         .thenReturn("resolved text");

@@ -9,8 +9,8 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 /**
- * Spring Data JDBC access to the legacy {@code THE} Schedule 5 tables (AD-3): explicit {@code
- * @Query} named-param SQL + {@code @Table} record entities — no derived queries, no {@code
+ * Spring Data JDBC access to the legacy {@code THE} Schedule 5 tables (AD-3): explicit
+ * {@code @Query} named-param SQL + {@code @Table} record entities — no derived queries, no {@code
  * CrudRepository}. SQL stays explicit because the model is a legacy-projection; every derivation
  * lives in {@link Schedule5Service} (AD-6 — repositories are dumb SQL).
  *
@@ -34,10 +34,15 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * <p>{@code campId} and {@code revisionCount} are primitives because both columns are {@code NOT
    * NULL}; the nullable descriptors stay boxed.
    */
-  record CampRow(int campId, String campName, BigDecimal distanceToOperatingArea,
-      Integer sizeOfCamp, BigDecimal associatedCampVolume, String isolatedCampInd, String comments,
-      int revisionCount) {
-  }
+  record CampRow(
+      int campId,
+      String campName,
+      BigDecimal distanceToOperatingArea,
+      Integer sizeOfCamp,
+      BigDecimal associatedCampVolume,
+      String isolatedCampInd,
+      String comments,
+      int revisionCount) {}
 
   /**
    * One keyed category-amount row; {@code costItemId} decides which category it feeds.
@@ -48,9 +53,13 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * defeating the log-and-drop path {@link Schedule5Service} exists to provide. A null id is
    * dropped by the same branch that drops item 57.
    */
-  record DetailRow(int detailId, int campId, Integer costItemId, BigDecimal volume, Integer cost,
-      String itemDescription) {
-  }
+  record DetailRow(
+      int detailId,
+      int campId,
+      Integer costItemId,
+      BigDecimal volume,
+      Integer cost,
+      String itemDescription) {}
 
   // ---------------------------------------------------------------------------------------------
   // Reads — @Query returns @Table entities / scalars; default methods adapt to the service records.
@@ -64,7 +73,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * 111-113}), whose iteration order merely LOOKS ascending for small dense ids and reorders across
    * a bucket resize. A REST contract cannot ship that.
    */
-  @Query("""
+  @Query(
+      """
       SELECT CAMP_REPORT_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY,
              ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT
         FROM THE.CAMP_REPORT
@@ -85,9 +95,17 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    */
   default List<CampRow> findCamps(long millId, int year) {
     return findCampEntities(millId, year).stream()
-        .map(e -> new CampRow(e.campReportId(), e.campName(), e.distanceToOperatingArea(),
-            e.campSizeCapacity(), e.associatedCampVolume(), e.isolatedCampInd(), e.comments(),
-            e.revisionCount()))
+        .map(
+            e ->
+                new CampRow(
+                    e.campReportId(),
+                    e.campName(),
+                    e.distanceToOperatingArea(),
+                    e.campSizeCapacity(),
+                    e.associatedCampVolume(),
+                    e.isolatedCampInd(),
+                    e.comments(),
+                    e.revisionCount()))
         .toList();
   }
 
@@ -102,7 +120,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * identity-hashed {@code HashSet} happened to yield last, which is not stable between JVM runs on
    * identical data ({@code CampReport.java:93-94}).
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.CAMP_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
              d.VOLUME, d.COST, d.ITEM_DESCRIPTION
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -126,8 +145,15 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    */
   default List<DetailRow> findCostDetails(long millId, int year) {
     return findCostDetailEntities(millId, year).stream()
-        .map(d -> new DetailRow(d.detailId(), d.campReportId(), d.costItemId(), d.volume(),
-            d.cost(), d.itemDescription()))
+        .map(
+            d ->
+                new DetailRow(
+                    d.detailId(),
+                    d.campReportId(),
+                    d.costItemId(),
+                    d.volume(),
+                    d.cost(),
+                    d.itemDescription()))
         .toList();
   }
 
@@ -143,7 +169,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * @param year the validated reporting year
    * @return the 1-10 track code ({@code D}/{@code S}/{@code V}; dead {@code O} passes through)
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
@@ -153,45 +180,47 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
 
   /**
    * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
-   * per-mill/year report-status row. Every WRITE path's Draft gate uses this one; the read path keeps
-   * the unlocked variant. Copied from Schedule 2, which introduced it for the same reason
+   * per-mill/year report-status row. Every WRITE path's Draft gate uses this one; the read path
+   * keeps the unlocked variant. Copied from Schedule 2, which introduced it for the same reason
    * ({@code Schedule2Repository.java:90-106}).
    *
-   * <p><strong>It is the concurrency backstop that Schedule 5's schema cannot provide.</strong> This
-   * project owns no DDL on {@code THE} — there are no {@code src/main/resources/db/migration}
+   * <p><strong>It is the concurrency backstop that Schedule 5's schema cannot provide.</strong>
+   * This project owns no DDL on {@code THE} — there are no {@code src/main/resources/db/migration}
    * migrations at all, because the schema is shared with the legacy JSF application still in
-   * production — so neither of the two unique constraints the write paths would otherwise want can be
-   * added here: none on {@code (ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID, UPPER(CAMP_NAME))} for
-   * BR-02, and none on {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} for the keyed detail rows.
-   * Locking this row instead serializes all Schedule 5 writes for one mill/year, which closes three
-   * check-then-act races at once:
+   * production — so neither of the two unique constraints the write paths would otherwise want can
+   * be added here: none on {@code (ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID, UPPER(CAMP_NAME))}
+   * for BR-02, and none on {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} for the keyed detail
+   * rows. Locking this row instead serializes all Schedule 5 writes for one mill/year, which closes
+   * three check-then-act races at once:
    *
    * <ul>
-   * <li>BR-02's count-then-insert ({@code Schedule5Service.addCamp}) — two concurrent creates of the
-   * same name can no longer both count zero and both commit;
-   * <li>the Draft gate itself — the status this returns cannot transition between the gate and the
-   * INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than binding;
-   * <li>{@link #upsertCostDetail}'s update-then-insert — two concurrent first-edits of one camp can
-   * no longer both find zero rows and both insert a row for the same item id, which is the only way
-   * this story could have MANUFACTURED the duplicate keyed rows the read path merely tolerates.
+   *   <li>BR-02's count-then-insert ({@code Schedule5Service.addCamp}) — two concurrent creates of
+   *       the same name can no longer both count zero and both commit;
+   *   <li>the Draft gate itself — the status this returns cannot transition between the gate and
+   *       the INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than
+   *       binding;
+   *   <li>{@link #upsertCostDetail}'s update-then-insert — two concurrent first-edits of one camp
+   *       can no longer both find zero rows and both insert a row for the same item id, which is
+   *       the only way this story could have MANUFACTURED the duplicate keyed rows the read path
+   *       merely tolerates.
    * </ul>
    *
    * <p>Contention is bounded by the lock's granularity: one row per (mill, year), held for the
    * duration of one camp write by one licensee editing one reporting year.
    *
    * <p>Must run inside the write {@code @Transactional} so the lock is held until commit. A
-   * mill/year with NO status row locks nothing and returns empty — which the gate already answers as
-   * 409, so the absent-row case needs no separate handling.
+   * mill/year with NO status row locks nothing and returns empty — which the gate already answers
+   * as 409, so the absent-row case needs no separate handling.
    */
-  @Query("""
+  @Query(
+      """
       SELECT ILCR_MILL_REPORT_STATUS_CODE
         FROM THE.ILCR_MILL_REPORT_STATUS
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
        FOR UPDATE
       """)
-  Optional<String> findTrackStatusForUpdate(
-      @Param("millId") long millId, @Param("year") int year);
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
 
   // ===============================================================================================
   // Writes (Story 7.2) — explicit @Modifying SQL only. This interface is a bare
@@ -234,7 +263,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * insert cannot trip it. The local V1 snapshot has no such table, so no local IT can prove that.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.CAMP_REPORT
           (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
            CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME,
@@ -247,10 +277,15 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
            0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertCamp(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("campName") String campName, @Param("distance") BigDecimal distance,
-      @Param("sizeOfCamp") Integer sizeOfCamp, @Param("campVolume") BigDecimal campVolume,
-      @Param("isolatedCampInd") String isolatedCampInd, @Param("comments") String comments,
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("campName") String campName,
+      @Param("distance") BigDecimal distance,
+      @Param("sizeOfCamp") Integer sizeOfCamp,
+      @Param("campVolume") BigDecimal campVolume,
+      @Param("isolatedCampInd") String isolatedCampInd,
+      @Param("comments") String comments,
       @Param("user") String user);
 
   /**
@@ -265,7 +300,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    *     because both failures produce the same zero here.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.CAMP_REPORT
          SET CAMP_NAME = :campName,
              DISTANCE_TO_OPERATING_AREA = :distance,
@@ -283,11 +319,16 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          AND REVISION_COUNT = :expectedRevision
       """)
   int updateCamp(
-      @Param("id") int id, @Param("millId") long millId, @Param("year") int year,
-      @Param("expectedRevision") int expectedRevision, @Param("campName") String campName,
-      @Param("distance") BigDecimal distance, @Param("sizeOfCamp") Integer sizeOfCamp,
+      @Param("id") int id,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("expectedRevision") int expectedRevision,
+      @Param("campName") String campName,
+      @Param("distance") BigDecimal distance,
+      @Param("sizeOfCamp") Integer sizeOfCamp,
       @Param("campVolume") BigDecimal campVolume,
-      @Param("isolatedCampInd") String isolatedCampInd, @Param("comments") String comments,
+      @Param("isolatedCampInd") String isolatedCampInd,
+      @Param("comments") String comments,
       @Param("user") String user);
 
   /**
@@ -295,7 +336,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * zero-row {@link #updateCamp} into 404 (unknown or foreign id) rather than 409 (stale token).
    * Returns {@code 0} or {@code 1}; the PK makes more impossible.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.CAMP_REPORT
        WHERE CAMP_REPORT_ID = :id
@@ -339,22 +381,23 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * parity Schedule 6 keeps.
    *
    * <p><strong>Narrowed to the CANONICAL row, not every row for the camp/item.</strong> Nothing in
-   * delivery makes {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} unique, so a camp/item pair can
-   * in principle hold more than one row. The read path resolves such a pair FIRST-BY-DETAIL-ID-WINS
-   * ({@code Schedule5Service.groupDetails}, the {@code putIfAbsent} at {@code :197}) and deliberately
-   * ignores the rest. An unqualified {@code WHERE camp AND item} would have written all of them,
-   * including the rows the read path never serves — rotating {@code UPDATE_*} on data the API
-   * presents as untouched, and making "first row wins" meaningless the moment anyone edited. The
-   * {@code MIN} subquery makes the surviving row the ONLY row written, so read and write agree on
-   * which one is canonical.
+   * delivery makes {@code (CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID)} unique, so a camp/item pair
+   * can in principle hold more than one row. The read path resolves such a pair
+   * FIRST-BY-DETAIL-ID-WINS ({@code Schedule5Service.groupDetails}, the {@code putIfAbsent} at
+   * {@code :197}) and deliberately ignores the rest. An unqualified {@code WHERE camp AND item}
+   * would have written all of them, including the rows the read path never serves — rotating {@code
+   * UPDATE_*} on data the API presents as untouched, and making "first row wins" meaningless the
+   * moment anyone edited. The {@code MIN} subquery makes the surviving row the ONLY row written, so
+   * read and write agree on which one is canonical.
    *
-   * <p>Unreachable on delivery data today (Task 1 gate (vii): zero camp-parented detail rows exist),
-   * and this story can no longer create such a pair either — see {@link
+   * <p>Unreachable on delivery data today (Task 1 gate (vii): zero camp-parented detail rows
+   * exist), and this story can no longer create such a pair either — see {@link
    * #findTrackStatusForUpdate} for why the update-then-insert below is serialized. Kept because
    * correctness here must not rest on the absence of legacy rows that the schema still permits.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET VOLUME = :volume,
              COST = :cost,
@@ -368,8 +411,11 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
                                               AND d.ILCR_REPORT_COST_ITEM_ID = :itemId)
       """)
   int updateCostDetail(
-      @Param("campId") int campId, @Param("itemId") int itemId,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost, @Param("user") String user);
+      @Param("campId") int campId,
+      @Param("itemId") int itemId,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
+      @Param("user") String user);
 
   /**
    * Insert half of {@link #upsertCostDetail}. Every parent FK except {@code CAMP_REPORT_ID} stays
@@ -383,7 +429,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * REVISION_COUNT = 0} plus both audit pairs, per legacy :649-653.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -393,8 +440,11 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertCostDetail(
-      @Param("id") int id, @Param("campId") int campId, @Param("itemId") int itemId,
-      @Param("volume") BigDecimal volume, @Param("cost") Integer cost,
+      @Param("id") int id,
+      @Param("campId") int campId,
+      @Param("itemId") int itemId,
+      @Param("volume") BigDecimal volume,
+      @Param("cost") Integer cost,
       @Param("user") String user);
 
   /**
@@ -403,12 +453,13 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * memory with {@code equalsIgnoreCase} ({@code Schedule5MB.java:313, 315}).
    *
    * <p>The STORED side is deliberately not {@code TRIM}med: legacy persisted names untrimmed
-   * ({@code Schedule5DAO.java:373}) and compared the raw stored value, so a legacy-persisted
-   * {@code " Cedar "} does not collide with a new {@code "Cedar"} there either. Matching that is
-   * legacy parity, not an oversight (deviation (I) note) — adding {@code TRIM(CAMP_NAME)} would
+   * ({@code Schedule5DAO.java:373}) and compared the raw stored value, so a legacy-persisted {@code
+   * " Cedar "} does not collide with a new {@code "Cedar"} there either. Matching that is legacy
+   * parity, not an oversight (deviation (I) note) — adding {@code TRIM(CAMP_NAME)} would
    * retroactively 409 edits next to padded incumbents legacy accepted.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.CAMP_REPORT
        WHERE ILCR_MILL_ID = :millId
@@ -430,7 +481,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * THIRD camp, is judged on identity rather than on a string comparison that a rename would
    * invalidate.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(*)
         FROM THE.CAMP_REPORT
        WHERE ILCR_MILL_ID = :millId
@@ -440,7 +492,9 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          AND CAMP_REPORT_ID <> :excludeCampId
       """)
   int countCampsNamedExcluding(
-      @Param("millId") long millId, @Param("year") int year, @Param("name") String name,
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("name") String name,
       @Param("excludeCampId") int excludeCampId);
 
   /**
@@ -462,7 +516,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * @return rows deleted — {@code 0} is normal, and is in fact the delivery-typical case
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL d
        WHERE d.CAMP_REPORT_ID = :campId
          AND EXISTS (SELECT 1
@@ -489,7 +544,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    *     nothing)
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.CAMP_REPORT
        WHERE CAMP_REPORT_ID = :id
          AND ILCR_MILL_ID = :millId
@@ -522,16 +578,17 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
   /**
    * One camp's rows for ONE sub-page item, oldest first.
    *
-   * <p>Ordered by {@code ILCR_COST_REPORT_DETAIL_ID} (deviation (G)). Legacy's order is
-   * {@code HashSet} iteration order ({@code CampReport.java:93-94, 228-231}) — not stable between
-   * JVM runs on identical data — and the correctly-ordered named query
-   * {@code findCostDetailsForCampReport} exists but is never called. A REST contract cannot ship
-   * that, and the batch reconcile below depends on a stable identity per row.
+   * <p>Ordered by {@code ILCR_COST_REPORT_DETAIL_ID} (deviation (G)). Legacy's order is {@code
+   * HashSet} iteration order ({@code CampReport.java:93-94, 228-231}) — not stable between JVM runs
+   * on identical data — and the correctly-ordered named query {@code findCostDetailsForCampReport}
+   * exists but is never called. A REST contract cannot ship that, and the batch reconcile below
+   * depends on a stable identity per row.
    *
    * <p>Joined to {@code CAMP_REPORT} for the mill/year/category-{@code '5'} filter, exactly as
    * {@link #findCostDetails} does, so a row cannot be read across tenants.
    */
-  @Query("""
+  @Query(
+      """
       SELECT d.ILCR_COST_REPORT_DETAIL_ID, d.CAMP_REPORT_ID, d.ILCR_REPORT_COST_ITEM_ID,
              d.VOLUME, d.COST, d.ITEM_DESCRIPTION
         FROM THE.ILCR_COST_REPORT_DETAIL d
@@ -545,8 +602,10 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
        ORDER BY d.ILCR_COST_REPORT_DETAIL_ID
       """)
   List<CostReportDetailEntity> findSubPageRowEntities(
-      @Param("campId") int campId, @Param("itemId") int itemId,
-      @Param("millId") long millId, @Param("year") int year);
+      @Param("campId") int campId,
+      @Param("itemId") int itemId,
+      @Param("millId") long millId,
+      @Param("year") int year);
 
   /**
    * The sub-page rows mapped to the service-facing {@link DetailRow}.
@@ -560,8 +619,15 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    */
   default List<DetailRow> findSubPageRows(int campId, int itemId, long millId, int year) {
     return findSubPageRowEntities(campId, itemId, millId, year).stream()
-        .map(d -> new DetailRow(d.detailId(), d.campReportId(), d.costItemId(), d.volume(),
-            d.cost(), d.itemDescription()))
+        .map(
+            d ->
+                new DetailRow(
+                    d.detailId(),
+                    d.campReportId(),
+                    d.costItemId(),
+                    d.volume(),
+                    d.cost(),
+                    d.itemDescription()))
         .toList();
   }
 
@@ -569,9 +635,9 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * Insert one sub-page row.
    *
    * <p>{@code VOLUME} is written {@code NULL} and that is not an omission (deviation (B)): legacy's
-   * {@code getNewCostReportDetail} never calls {@code setVolume} ({@code Schedule5DAO.java:617-633}),
-   * so no stored sub-page row has ever carried one, and the displayed volume is stamped from the
-   * camp's item-141/142 row at read time.
+   * {@code getNewCostReportDetail} never calls {@code setVolume} ({@code
+   * Schedule5DAO.java:617-633}), so no stored sub-page row has ever carried one, and the displayed
+   * volume is stamped from the camp's item-141/142 row at read time.
    *
    * <p>{@code ITEM_DESCRIPTION} is written verbatim including {@code NULL} — the server does not
    * police it (deviation (F)). {@code ICRD_CHK_B_I_U} is indifferent: it counts populated parent-FK
@@ -583,7 +649,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * insert that skips one fails here exactly as it would in delivery.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       INSERT INTO THE.ILCR_COST_REPORT_DETAIL
           (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID,
            VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT,
@@ -593,8 +660,11 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
            :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
       """)
   void insertSubPageRow(
-      @Param("id") int id, @Param("campId") int campId, @Param("itemId") int itemId,
-      @Param("cost") Integer cost, @Param("description") String description,
+      @Param("id") int id,
+      @Param("campId") int campId,
+      @Param("itemId") int itemId,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
       @Param("user") String user);
 
   /**
@@ -602,8 +672,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    *
    * <p>Stamps {@code UPDATE_*} ONLY. {@code ENTRY_*} and {@code REVISION_COUNT} are left alone, and
    * that is LEGACY PARITY rather than a deviation — the story's deviation (H) misreads {@code
-   * Schedule5DAO.java:626-628}. Those lines belong to {@code getNewCostReportDetail}, whose output is
-   * only a CARRIER on the update path; the update branch at {@code :585-595} mutates the already
+   * Schedule5DAO.java:626-628}. Those lines belong to {@code getNewCostReportDetail}, whose output
+   * is only a CARRIER on the update path; the update branch at {@code :585-595} mutates the already
    * persistent row and copies just cost, description, volume and {@code UPDATE_*}, discarding the
    * transient object's {@code ENTRY_*} and its {@code REVISION_COUNT = 0}. So legacy already stamps
    * {@code ENTRY_*} on insert only. Detail {@code REVISION_COUNT} is not bumped, matching the camp
@@ -617,7 +687,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    *     which is what makes a stale id fail loudly instead of drifting into a re-insert.
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       UPDATE THE.ILCR_COST_REPORT_DETAIL
          SET COST = :cost,
              ITEM_DESCRIPTION = :description,
@@ -628,8 +699,11 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
          AND ILCR_REPORT_COST_ITEM_ID = :itemId
       """)
   int updateSubPageRow(
-      @Param("rowId") int rowId, @Param("campId") int campId, @Param("itemId") int itemId,
-      @Param("cost") Integer cost, @Param("description") String description,
+      @Param("rowId") int rowId,
+      @Param("campId") int campId,
+      @Param("itemId") int itemId,
+      @Param("cost") Integer cost,
+      @Param("description") String description,
       @Param("user") String user);
 
   /**
@@ -643,7 +717,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    *     dropped its value because nothing checked rows-affected).
    */
   @Modifying
-  @Query("""
+  @Query(
+      """
       DELETE FROM THE.ILCR_COST_REPORT_DETAIL
        WHERE ILCR_COST_REPORT_DETAIL_ID = :rowId
          AND CAMP_REPORT_ID = :campId

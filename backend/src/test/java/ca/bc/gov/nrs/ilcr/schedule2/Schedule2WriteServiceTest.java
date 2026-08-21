@@ -13,11 +13,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
@@ -44,25 +44,22 @@ class Schedule2WriteServiceTest {
   private static final int SUMMARY_ID = 1222;
   private static final String USER = "dev-submitter";
 
-  @Mock
-  private Schedule2Repository repository;
+  @Mock private Schedule2Repository repository;
 
-  @Mock
-  private Schedule1Service schedule1Service;
+  @Mock private Schedule1Service schedule1Service;
 
-  @Mock
-  private Schedule3Service schedule3Service;
+  @Mock private Schedule3Service schedule3Service;
 
-  @InjectMocks
-  private Schedule2Service service;
+  @InjectMocks private Schedule2Service service;
 
-  private static Schedule2Request request(Integer revision, Integer cost25,
-      BigDecimal vol26, Integer cost26) {
+  private static Schedule2Request request(
+      Integer revision, Integer cost25, BigDecimal vol26, Integer cost26) {
     return new Schedule2Request(revision, "c", cost25, vol26, cost26);
   }
 
   private void stubDraftExistingSummary() {
-    // Write-path Draft gate takes the FOR UPDATE lock (requireDraft) — always called on save/delete.
+    // Write-path Draft gate takes the FOR UPDATE lock (requireDraft) — always called on
+    // save/delete.
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
@@ -70,9 +67,11 @@ class Schedule2WriteServiceTest {
     // non-locking findTrackStatus), so keep these lenient.
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
-    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+    lenient()
+        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
         .thenThrow(new ScheduleNotFoundException());
-    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false))
+    lenient()
+        .when(schedule1Service.getSchedule1(MILL, YEAR, false))
         .thenThrow(new ScheduleNotFoundException());
   }
 
@@ -81,7 +80,8 @@ class Schedule2WriteServiceTest {
     stubDraftExistingSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    service.saveSchedule2(MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER);
+    service.saveSchedule2(
+        MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER);
 
     // item 25 — cost only (volume always null; carried from Sch3, never written).
     verify(repository).upsertDetail(SUMMARY_ID, 25, null, 500000, USER);
@@ -91,21 +91,25 @@ class Schedule2WriteServiceTest {
 
   @Test
   void save_createOnAbsent_insertsSummaryThenBumpsToOne() {
-    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D")); // write gate
+    when(repository.findTrackStatusForUpdate(MILL, YEAR))
+        .thenReturn(Optional.of("D")); // write gate
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D")); // recompute read
     when(repository.findSummary(MILL, YEAR))
-        .thenReturn(Optional.empty())            // create-on-absent lookup
+        .thenReturn(Optional.empty()) // create-on-absent lookup
         .thenReturn(Optional.of(new SummaryRow(9001, "c", 1))); // recompute read after save
     when(repository.insertSummary(MILL, YEAR, "c", USER)).thenReturn(9001);
     when(repository.bumpRevision(eq(9001), eq(0), anyString(), eq(USER))).thenReturn(1);
     lenient().when(repository.findDetails(9001)).thenReturn(List.of());
-    lenient().when(schedule3Service.getSchedule3(MILL, YEAR, false))
+    lenient()
+        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
         .thenThrow(new ScheduleNotFoundException());
-    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false))
+    lenient()
+        .when(schedule1Service.getSchedule1(MILL, YEAR, false))
         .thenThrow(new ScheduleNotFoundException());
 
     // null revisionCount from the client means "new/unsaved" -> matches the freshly-inserted 0.
-    service.saveSchedule2(MILL, YEAR, request(null, 500000, new BigDecimal("2000"), 100000), true, USER);
+    service.saveSchedule2(
+        MILL, YEAR, request(null, 500000, new BigDecimal("2000"), 100000), true, USER);
 
     verify(repository).insertSummary(MILL, YEAR, "c", USER);
     verify(repository).bumpRevision(9001, 0, "c", USER); // 0 -> 1
@@ -128,8 +132,11 @@ class Schedule2WriteServiceTest {
     stubDraftExistingSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(0);
 
-    assertThrows(StaleRevisionException.class, () ->
-        service.saveSchedule2(MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+    assertThrows(
+        StaleRevisionException.class,
+        () ->
+            service.saveSchedule2(
+                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
 
     verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
   }
@@ -138,8 +145,11 @@ class Schedule2WriteServiceTest {
   void save_notDraft_throwsNotEditable_andNeverWrites() {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () ->
-        service.saveSchedule2(MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () ->
+            service.saveSchedule2(
+                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
 
     verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyString(), anyString());
     verify(repository, never()).insertSummary(anyLong(), anyInt(), anyString(), anyString());
@@ -151,8 +161,11 @@ class Schedule2WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER)))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class, () ->
-        service.saveSchedule2(MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () ->
+            service.saveSchedule2(
+                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
   }
 
   @Test
@@ -191,7 +204,8 @@ class Schedule2WriteServiceTest {
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
     doThrow(new DataIntegrityViolationException("boom"))
-        .when(repository).deleteSchedule(SUMMARY_ID);
+        .when(repository)
+        .deleteSchedule(SUMMARY_ID);
 
     assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule2(MILL, YEAR));
   }

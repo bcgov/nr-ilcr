@@ -23,5 +23,4 @@ public record RoadDetailCheckResult(
     int rowNumber,
     String roadDetailLabel,
     boolean met,
-    List<FieldIssue> issues) {
-}
+    List<FieldIssue> issues) {}

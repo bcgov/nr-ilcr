@@ -24,8 +24,8 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
 /**
- * Unit test for the generic repository's control flow with a mocked JDBC template (Story 24.3 / T2) —
- * the upsert branches (including the insert-race fallback) without a database. The SQL itself is
+ * Unit test for the generic repository's control flow with a mocked JDBC template (Story 24.3 / T2)
+ * — the upsert branches (including the insert-race fallback) without a database. The SQL itself is
  * exercised against real Oracle by {@link CodeTableRepositoryIT}.
  */
 @ExtendWith(MockitoExtension.class)
@@ -35,11 +35,9 @@ class CodeTableRepositoryUnitTest {
   private static final CodeTableEntry ENTRY =
       new CodeTableEntry("M3", "Cubic Metres", LocalDate.of(2020, 1, 1), null);
 
-  @Mock
-  private NamedParameterJdbcTemplate jdbc;
+  @Mock private NamedParameterJdbcTemplate jdbc;
 
-  @InjectMocks
-  private CodeTableRepository repository;
+  @InjectMocks private CodeTableRepository repository;
 
   @Test
   void upsert_updatesInPlace_whenTheRowExists() {
@@ -80,9 +78,11 @@ class CodeTableRepositoryUnitTest {
 
   @Test
   void contractual_hasNoBackingTable_andIsRejected() {
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(
+        IllegalArgumentException.class,
         () -> repository.findEntries(CodeTableRegistry.CONTRACTUAL_ITEM_CODE));
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(
+        IllegalArgumentException.class,
         () -> repository.upsert(CodeTableRegistry.CONTRACTUAL_ITEM_CODE, ENTRY));
   }
 }

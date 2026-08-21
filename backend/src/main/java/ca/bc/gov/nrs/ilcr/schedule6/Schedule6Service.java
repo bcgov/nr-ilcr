@@ -1,9 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
-import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
-import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
@@ -26,19 +27,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Assembles the Schedule 6 (Road Management Costs) read document from the stored
- * {@code ROAD_MAINTENANCE_REPORT} records and their item-69 cost details, computing every derived
- * value server-side (AD-5, AD-6): the Resource Management Grouping (RMG, BR-04), the $/m&sup3;
+ * Assembles the Schedule 6 (Road Management Costs) read document from the stored {@code
+ * ROAD_MAINTENANCE_REPORT} records and their item-69 cost details, computing every derived value
+ * server-side (AD-5, AD-6): the Resource Management Grouping (RMG, BR-04), the $/m&sup3;
  * cost-per-volume (BR-04/BR-07), and the running totals (BR-07). The mill/year context is validated
  * by {@code MillContextService} in the controller before this runs (AD-4).
  *
  * <p>A valid, active mill/year with NO road records is NOT a 404 — it is the legitimate no-records
- * state and yields a 200 {@code roadRecords: []} with zero totals (mirrors the legacy
- * {@code Schedule6DAO.getSchedule}, which returned an empty document, never null, for an empty
- * result; the 404 is reserved for the missing mill/year context, Story 8.1 Task 1). A record whose
+ * state and yields a 200 {@code roadRecords: []} with zero totals (mirrors the legacy {@code
+ * Schedule6DAO.getSchedule}, which returned an empty document, never null, for an empty result; the
+ * 404 is reserved for the missing mill/year context, Story 8.1 Task 1). A record whose
  * classification (TSA/TSB/TFL) is entirely blank is a general-comment placeholder (S18): it is
- * excluded from {@code roadRecords} but its {@code COMMENTS} supplies the schedule-level
- * {@code generalComments}.
+ * excluded from {@code roadRecords} but its {@code COMMENTS} supplies the schedule-level {@code
+ * generalComments}.
  *
  * <p>Story 8.2 adds the write side (add/edit a road record, save the general comment) and Check
  * Status. Every write is one transaction gated on the Schedules 1–10 track being Draft (AD-9;
@@ -125,8 +126,12 @@ public class Schedule6Service {
         // classification at all — contributes the comment, not a road record. A cost detail on a
         // placeholder is a data anomaly whose money would silently vanish from totals; say so.
         if (costByRecord.containsKey(row.recordId())) {
-          log.warn("Schedule 6 mill {}/{}: placeholder row {} carries an item-69 cost detail; "
-              + "excluded from records and totals", millId, year, row.recordId());
+          log.warn(
+              "Schedule 6 mill {}/{}: placeholder row {} carries an item-69 cost detail; "
+                  + "excluded from records and totals",
+              millId,
+              year,
+              row.recordId());
         }
         continue;
       }
@@ -136,17 +141,18 @@ public class Schedule6Service {
       String comments = detail == null ? null : detail.comments();
 
       boolean tfl = tsaNumber == null && tflNumberCode != null;
-      roadRecords.add(new RoadRecord(
-          row.recordId(),
-          row.revisionCount(),
-          tfl ? AREA_TYPE_TFL : tsaNumber,
-          tfl ? tflNumberCode : null,
-          tfl ? null : tsbNumberCode,
-          RoadGroupLookup.rmgFor(tsaNumber, tsbNumberCode, tflNumberCode),
-          normalizeVolume(volume),
-          cost,
-          perUnit(cost == null ? null : (long) cost, volume),
-          comments));
+      roadRecords.add(
+          new RoadRecord(
+              row.recordId(),
+              row.revisionCount(),
+              tfl ? AREA_TYPE_TFL : tsaNumber,
+              tfl ? tflNumberCode : null,
+              tfl ? null : tsbNumberCode,
+              RoadGroupLookup.rmgFor(tsaNumber, tsbNumberCode, tflNumberCode),
+              normalizeVolume(volume),
+              cost,
+              perUnit(cost == null ? null : (long) cost, volume),
+              comments));
 
       if (cost != null) {
         totalCost += cost;
@@ -159,7 +165,10 @@ public class Schedule6Service {
     // generalComments now holds the LAST row's COMMENTS (legacy reads the general comment off the
     // last road-record row; the data model replicates it on every row, so any row would do).
     return new Schedule6Response(
-        millId, year, trackStatus, editable,
+        millId,
+        year,
+        trackStatus,
+        editable,
         generalComments,
         roadRecords,
         normalizeVolume(totalVolume),
@@ -177,8 +186,12 @@ public class Schedule6Service {
     Map<Integer, CostDetailRow> costByRecord = new HashMap<>();
     for (CostDetailRow detail : repository.findCostDetails(millId, year)) {
       if (costByRecord.putIfAbsent(detail.roadMaintenanceReportId(), detail) != null) {
-        log.warn("Schedule 6 mill {}/{}: duplicate item-69 cost detail for road record {}; "
-            + "keeping first-by-id", millId, year, detail.roadMaintenanceReportId());
+        log.warn(
+            "Schedule 6 mill {}/{}: duplicate item-69 cost detail for road record {}; "
+                + "keeping first-by-id",
+            millId,
+            year,
+            detail.roadMaintenanceReportId());
       }
     }
     return costByRecord;
@@ -215,23 +228,39 @@ public class Schedule6Service {
       List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
       Integer placeholderId = lonePlaceholderId(rows);
       int recordId;
-      if (placeholderId != null && repository.claimPlaceholder(placeholderId, millId, year,
-          classification.tsaNumber(), classification.tsbNumberCode(),
-          classification.tflNumberCode(), user) == 1) {
+      if (placeholderId != null
+          && repository.claimPlaceholder(
+                  placeholderId,
+                  millId,
+                  year,
+                  classification.tsaNumber(),
+                  classification.tsbNumberCode(),
+                  classification.tflNumberCode(),
+                  user)
+              == 1) {
         recordId = placeholderId;
       } else {
         // The BR-09 replication invariant (the new row carries the current general comment) is
         // satisfied inside insertRoadReport's SQL, not from a value read here — see its javadoc:
         // reading it in Java lost a concurrent general-comments save (code review 2026-08-04).
         recordId = repository.nextRoadReportId();
-        repository.insertRoadReport(recordId, millId, year, classification.tsaNumber(),
-            classification.tsbNumberCode(), classification.tflNumberCode(), user);
+        repository.insertRoadReport(
+            recordId,
+            millId,
+            year,
+            classification.tsaNumber(),
+            classification.tsbNumberCode(),
+            classification.tflNumberCode(),
+            user);
       }
-      repository.upsertCostDetail(recordId, request.volume(), request.cost(), request.comments(),
-          user);
+      repository.upsertCostDetail(
+          recordId, request.volume(), request.cost(), request.comments(), user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 6 add failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 6 add failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -242,8 +271,8 @@ public class Schedule6Service {
    * included: the BR-02 clear means switching TSA→TFL stores the TFL and NULLs both TSA columns).
    * Optimistic-lock on the record's own {@code REVISION_COUNT} (AR11 per-record keying): a stale
    * token → 409, an unknown/foreign/placeholder id → 404. The item-69 detail is upserted — real
-   * delivery rows have NO detail, so an edit must create it, never fail. Never touches
-   * {@code COMMENTS} (S04 independence).
+   * delivery rows have NO detail, so an edit must create it, never fail. Never touches {@code
+   * COMMENTS} (S04 independence).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -255,7 +284,11 @@ public class Schedule6Service {
    */
   @Transactional
   public Schedule6Response updateRecord(
-      long millId, int year, int recordId, RoadRecordRequest request, boolean callerMayEdit,
+      long millId,
+      int year,
+      int recordId,
+      RoadRecordRequest request,
+      boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
     Classification classification = classify(request);
@@ -272,9 +305,16 @@ public class Schedule6Service {
       if (isPlaceholderId(millId, year, recordId)) {
         throw new RoadRecordNotFoundException();
       }
-      int updated = repository.updateRoadReport(recordId, millId, year, request.revisionCount(),
-          classification.tsaNumber(), classification.tsbNumberCode(),
-          classification.tflNumberCode(), user);
+      int updated =
+          repository.updateRoadReport(
+              recordId,
+              millId,
+              year,
+              request.revisionCount(),
+              classification.tsaNumber(),
+              classification.tsbNumberCode(),
+              classification.tflNumberCode(),
+              user);
       if (updated == 0) {
         // 0 rows = the id is absent/foreign (404) OR the revision is stale (409) — disambiguate.
         if (repository.countRoadRecord(recordId, millId, year) == 0) {
@@ -282,11 +322,14 @@ public class Schedule6Service {
         }
         throw new StaleRevisionException();
       }
-      repository.upsertCostDetail(recordId, request.volume(), request.cost(), request.comments(),
-          user);
+      repository.upsertCostDetail(
+          recordId, request.volume(), request.cost(), request.comments(), user);
     } catch (DataAccessException ex) {
-      log.warn("Schedule 6 update failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 6 update failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -297,9 +340,8 @@ public class Schedule6Service {
    * branches, ported from {@code Schedule6DAO.saveSchedule} :257–310: rows exist → replicate the
    * comment onto EVERY cat-6 row; zero rows + non-blank → insert the placeholder row
    * (classification all NULL, no item-69 detail); placeholder-only + blank → delete the
-   * placeholder. Blank clears
-   * (stored as NULL); a non-blank comment is stored RAW, untrimmed (the 8.1 legacy-faithful
-   * decision). Draft-gated; carries no revision token (deviation (c2)).
+   * placeholder. Blank clears (stored as NULL); a non-blank comment is stored RAW, untrimmed (the
+   * 8.1 legacy-faithful decision). Draft-gated; carries no revision token (deviation (c2)).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -318,8 +360,7 @@ public class Schedule6Service {
       List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
       if (rows.isEmpty()) {
         if (comments != null) {
-          repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments,
-              user);
+          repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments, user);
         }
         // blank + no rows = nothing stored, nothing to clear (a no-op success, like legacy).
       } else if (comments == null && rows.stream().allMatch(Schedule6Service::isPlaceholder)) {
@@ -341,8 +382,11 @@ public class Schedule6Service {
         repository.updateAllComments(millId, year, comments, user);
       }
     } catch (DataAccessException ex) {
-      log.warn("Schedule 6 general-comments save failed for mill {} year {} [{}]",
-          millId, year, ex.getClass().getSimpleName());
+      log.warn(
+          "Schedule 6 general-comments save failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
     return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
@@ -398,7 +442,8 @@ public class Schedule6Service {
     // The width guard is redundant with the lookup now that no ported entry is 3 chars wide, and is
     // kept deliberately: it holds the column width for direct service callers (which bypass Bean
     // Validation) independently of what the verbatim table happens to contain.
-    if (normalized == null || normalized.length() > 2
+    if (normalized == null
+        || normalized.length() > 2
         || RoadGroupLookup.rmgFor(null, null, normalized) == null) {
       throw new InvalidTflNumberException();
     }
@@ -435,9 +480,9 @@ public class Schedule6Service {
    * True iff this record id is a general-comment placeholder for the mill/year, decided by the SAME
    * trim-aware rule the read side uses. Deliberately NOT {@code findPlaceholderIds}, whose SQL can
    * only test {@code IS NULL}: a whitespace-classification row is a placeholder to the read side
-   * (excluded from {@code roadRecords[]}) but invisible to that query, which would let a PUT convert
-   * a client-invisible row into a real record — exactly what the 404 guard exists to prevent (code
-   * review 2026-08-04, one predicate for both sides).
+   * (excluded from {@code roadRecords[]}) but invisible to that query, which would let a PUT
+   * convert a client-invisible row into a real record — exactly what the 404 guard exists to
+   * prevent (code review 2026-08-04, one predicate for both sides).
    */
   private boolean isPlaceholderId(long millId, int year, int recordId) {
     return repository.findRoadRecords(millId, year).stream()
@@ -452,8 +497,7 @@ public class Schedule6Service {
   }
 
   /** The pre-cleared classification a write persists (BR-02: exactly one side populated). */
-  private record Classification(String tsaNumber, String tsbNumberCode, String tflNumberCode) {
-  }
+  private record Classification(String tsaNumber, String tsbNumberCode, String tflNumberCode) {}
 
   // ===============================================================================================
   // Check Status (Story 8.2) — read-only readiness validation, ported VERBATIM from
@@ -503,12 +547,13 @@ public class Schedule6Service {
       // ported verbatim (unreachable in practice: FLD-001 blocks area-type-less writes).
       schedulePasses = schedulePasses && recordPasses(areaType, tflNumberCode, tsbNumberCode, cost);
       boolean met = issues.isEmpty();
-      records.add(new RoadRecordCheckResult(
-          row.recordId(),
-          rowCounter,
-          met,
-          met ? new MessageInfo(MSG_ROAD_MET, null) : null,
-          issues));
+      records.add(
+          new RoadRecordCheckResult(
+              row.recordId(),
+              rowCounter,
+              met,
+              met ? new MessageInfo(MSG_ROAD_MET, null) : null,
+              issues));
     }
 
     if (schedulePasses) {
@@ -521,11 +566,10 @@ public class Schedule6Service {
   }
 
   /**
-   * One record's missing-field findings in the verbatim legacy order — type, TFL/Supply Block,
-   * cost ({@code Schedule6MB.checkStatus()} :153–173). The TFL-missing branch is ported verbatim
-   * though it is unreachable from persisted rows (legacy view-state-only — recorded in Completion
-   * Notes); the cost check is null-only, so {@code 0} is MET (D2 precedent) and volume is never
-   * checked.
+   * One record's missing-field findings in the verbatim legacy order — type, TFL/Supply Block, cost
+   * ({@code Schedule6MB.checkStatus()} :153–173). The TFL-missing branch is ported verbatim though
+   * it is unreachable from persisted rows (legacy view-state-only — recorded in Completion Notes);
+   * the cost check is null-only, so {@code 0} is MET (D2 precedent) and volume is never checked.
    */
   static List<FieldIssue> evaluateRecord(
       String areaType, String tflNumber, String supplyBlock, Integer cost) {
@@ -581,8 +625,8 @@ public class Schedule6Service {
   }
 
   /**
-   * Normalize a volume so a whole value serializes as an integer ({@code 1000}, not
-   * {@code 1000.0000} or {@code 1.0E+3}) while a fractional value keeps its decimals. Null-safe.
+   * Normalize a volume so a whole value serializes as an integer ({@code 1000}, not {@code
+   * 1000.0000} or {@code 1.0E+3}) while a fractional value keeps its decimals. Null-safe.
    */
   private static BigDecimal normalizeVolume(BigDecimal volume) {
     if (volume == null) {

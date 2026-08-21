@@ -12,6 +12,8 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
+import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
@@ -29,8 +31,8 @@ import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Unit test for the Story 2.4 Subtotal Other Costs operations on {@link Schedule1Service} (server-side
- * derivation + Draft gate + not-found). Mocked repository — no DB, no Spring.
+ * Unit test for the Story 2.4 Subtotal Other Costs operations on {@link Schedule1Service}
+ * (server-side derivation + Draft gate + not-found). Mocked repository — no DB, no Spring.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule1OtherCostsServiceTest {
@@ -40,23 +42,22 @@ class Schedule1OtherCostsServiceTest {
   private static final int SUMMARY = 1025;
   private static final String USER = "tester";
 
-  @Mock
-  private Schedule1Repository repository;
+  @Mock private Schedule1Repository repository;
 
-  @Mock
-  private MessageSource messageSource;
+  @Mock private MessageSource messageSource;
 
-  @InjectMocks
-  private Schedule1Service service;
+  @InjectMocks private Schedule1Service service;
 
   private void stubContext(String trackStatus) {
-    lenient().when(repository.findSummary(MILL, YEAR, "1"))
+    lenient()
+        .when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY, null, null, 0)));
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(trackStatus));
   }
 
   private void stubRows(BigDecimal sharedVolume, List<OtherCostDetailRow> rows) {
-    lenient().when(repository.findSharedOtherCostsVolume(SUMMARY))
+    lenient()
+        .when(repository.findSharedOtherCostsVolume(SUMMARY))
         .thenReturn(Optional.ofNullable(sharedVolume));
     lenient().when(repository.findOtherCostRows(SUMMARY)).thenReturn(rows);
   }
@@ -64,9 +65,11 @@ class Schedule1OtherCostsServiceTest {
   @Test
   void getDocument_derivesSubtotalCountAndPerRowPerUnit() {
     stubContext("D");
-    stubRows(new BigDecimal("5000"), List.of(
-        new OtherCostDetailRow(5051, "Existing Row A", 3000, new BigDecimal("5000")),
-        new OtherCostDetailRow(5052, "Existing Row B", null, new BigDecimal("5000"))));
+    stubRows(
+        new BigDecimal("5000"),
+        List.of(
+            new OtherCostDetailRow(5051, "Existing Row A", 3000, new BigDecimal("5000")),
+            new OtherCostDetailRow(5052, "Existing Row B", null, new BigDecimal("5000"))));
 
     OtherCostsDocument doc = service.getOtherCostsDocument(MILL, YEAR, true);
 
@@ -108,8 +111,8 @@ class Schedule1OtherCostsServiceTest {
   void add_nonDraft_throws409() {
     stubContext("S");
     OtherCostRequest request = new OtherCostRequest("x", 1);
-    assertThrows(ScheduleNotEditableException.class,
-        () -> service.addOtherCost(MILL, YEAR, request, USER));
+    assertThrows(
+        ScheduleNotEditableException.class, () -> service.addOtherCost(MILL, YEAR, request, USER));
   }
 
   @Test
@@ -117,7 +120,8 @@ class Schedule1OtherCostsServiceTest {
     stubContext("D");
     when(repository.updateOtherCost(999999, SUMMARY, "x", 1, USER)).thenReturn(0);
     OtherCostRequest request = new OtherCostRequest("x", 1);
-    assertThrows(OtherCostNotFoundException.class,
+    assertThrows(
+        OtherCostNotFoundException.class,
         () -> service.updateOtherCost(MILL, YEAR, 999999, request, USER));
   }
 
@@ -125,13 +129,14 @@ class Schedule1OtherCostsServiceTest {
   void delete_unknownId_throws404() {
     stubContext("D");
     when(repository.deleteOtherCost(999999, SUMMARY)).thenReturn(0);
-    assertThrows(OtherCostNotFoundException.class,
-        () -> service.deleteOtherCost(MILL, YEAR, 999999));
+    assertThrows(
+        OtherCostNotFoundException.class, () -> service.deleteOtherCost(MILL, YEAR, 999999));
   }
 
   @Test
   void getDocument_editableFalseWhenCallerCannotEdit() {
-    // Draft track but caller lacks EDIT_SCHEDULE: the callerMayEdit short-circuit keeps it read-only.
+    // Draft track but caller lacks EDIT_SCHEDULE: the callerMayEdit short-circuit keeps it
+    // read-only.
     stubContext("D");
     stubRows(new BigDecimal("5000"), List.of());
     assertFalse(service.getOtherCostsDocument(MILL, YEAR, false).editable());
@@ -143,18 +148,20 @@ class Schedule1OtherCostsServiceTest {
     when(repository.findSharedOtherCostsVolume(SUMMARY))
         .thenReturn(Optional.of(new BigDecimal("6000")));
     doThrow(new DataIntegrityViolationException("boom"))
-        .when(repository).insertOtherCost(eq(SUMMARY), any(), any(), any(), eq(USER));
+        .when(repository)
+        .insertOtherCost(eq(SUMMARY), any(), any(), any(), eq(USER));
 
     OtherCostRequest request = new OtherCostRequest("x", 1);
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.addOtherCost(MILL, YEAR, request, USER));
+    assertThrows(
+        ScheduleNotSavedException.class, () -> service.addOtherCost(MILL, YEAR, request, USER));
   }
 
   @Test
   void update_happyPath_returnsRebuiltDocument() {
     stubContext("D");
-    stubRows(new BigDecimal("5000"), List.of(
-        new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
+    stubRows(
+        new BigDecimal("5000"),
+        List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
     when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER)).thenReturn(1);
 
     OtherCostsDocument doc =
@@ -168,14 +175,20 @@ class Schedule1OtherCostsServiceTest {
   @Test
   void save_reconcilesUpdateInsertAndDelete() {
     stubContext("D");
-    stubRows(new BigDecimal("5000"), List.of(
-        new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000")),
-        new OtherCostDetailRow(5052, "Row B", 100, new BigDecimal("5000"))));
+    stubRows(
+        new BigDecimal("5000"),
+        List.of(
+            new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000")),
+            new OtherCostDetailRow(5052, "Row B", 100, new BigDecimal("5000"))));
 
     // Update 5051, insert a fresh row (inherits shared volume), and drop 5052 (absent → delete).
-    service.saveOtherCosts(MILL, YEAR, List.of(
-        new OtherCostSaveRequest.Row(5051, "Row A+", 3200),
-        new OtherCostSaveRequest.Row(null, "Fresh", 500)), USER);
+    service.saveOtherCosts(
+        MILL,
+        YEAR,
+        List.of(
+            new OtherCostSaveRequest.Row(5051, "Row A+", 3200),
+            new OtherCostSaveRequest.Row(null, "Fresh", 500)),
+        USER);
 
     verify(repository).updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER);
     verify(repository).insertOtherCost(SUMMARY, "Fresh", 500, new BigDecimal("5000"), USER);
@@ -185,26 +198,30 @@ class Schedule1OtherCostsServiceTest {
   @Test
   void save_unknownId_throwsNotFound() {
     stubContext("D");
-    stubRows(new BigDecimal("5000"),
+    stubRows(
+        new BigDecimal("5000"),
         List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
 
-    // A row references an id that is not an itemized item-19 row here → conflict, not a silent insert.
+    // A row references an id that is not an itemized item-19 row here → conflict, not a silent
+    // insert.
     List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(999999, "Ghost", 1));
-    assertThrows(OtherCostNotFoundException.class,
-        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+    assertThrows(
+        OtherCostNotFoundException.class, () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
   }
 
   @Test
   void save_persistenceFailure_translatesToScheduleNotSaved() {
     stubContext("D");
-    stubRows(new BigDecimal("5000"),
+    stubRows(
+        new BigDecimal("5000"),
         List.of(new OtherCostDetailRow(5051, "Row A", 3000, new BigDecimal("5000"))));
     when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(5051, "Row A+", 3200));
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+    List<OtherCostSaveRequest.Row> rows =
+        List.of(new OtherCostSaveRequest.Row(5051, "Row A+", 3200));
+    assertThrows(
+        ScheduleNotSavedException.class, () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
   }
 
   @Test
@@ -214,7 +231,8 @@ class Schedule1OtherCostsServiceTest {
         .thenThrow(new DataIntegrityViolationException("boom"));
 
     OtherCostRequest request = new OtherCostRequest("x", 1);
-    assertThrows(ScheduleNotSavedException.class,
+    assertThrows(
+        ScheduleNotSavedException.class,
         () -> service.updateOtherCost(MILL, YEAR, 5051, request, USER));
   }
 
@@ -237,7 +255,6 @@ class Schedule1OtherCostsServiceTest {
     when(repository.deleteOtherCost(5051, SUMMARY))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class,
-        () -> service.deleteOtherCost(MILL, YEAR, 5051));
+    assertThrows(ScheduleNotSavedException.class, () -> service.deleteOtherCost(MILL, YEAR, 5051));
   }
 }

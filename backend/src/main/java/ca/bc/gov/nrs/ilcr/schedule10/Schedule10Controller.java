@@ -1,8 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule10.api.Schedule10Api;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.FieldIssue;
@@ -89,20 +89,32 @@ public class Schedule10Controller implements Schedule10Api {
   public ResponseEntity<Schedule10Response> addPage(
       String millId, String year, ConstructionPageRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return saved(schedule10Service.addPage(
-        context.millId(), context.year(), request, authentication.getName(),
-        mayEdit(authentication)));
+    return saved(
+        schedule10Service.addPage(
+            context.millId(),
+            context.year(),
+            request,
+            authentication.getName(),
+            mayEdit(authentication)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule10Response> updatePage(
-      int pageId, String millId, String year, ConstructionPageRequest request,
+      int pageId,
+      String millId,
+      String year,
+      ConstructionPageRequest request,
       Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return saved(schedule10Service.updatePage(
-        context.millId(), context.year(), pageId, request, authentication.getName(),
-        mayEdit(authentication)));
+    return saved(
+        schedule10Service.updatePage(
+            context.millId(),
+            context.year(),
+            pageId,
+            request,
+            authentication.getName(),
+            mayEdit(authentication)));
   }
 
   @Override
@@ -110,9 +122,13 @@ public class Schedule10Controller implements Schedule10Api {
   public ResponseEntity<Schedule10Response> copyPage(
       int pageId, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return saved(schedule10Service.copyPage(
-        context.millId(), context.year(), pageId, authentication.getName(),
-        mayEdit(authentication)));
+    return saved(
+        schedule10Service.copyPage(
+            context.millId(),
+            context.year(),
+            pageId,
+            authentication.getName(),
+            mayEdit(authentication)));
   }
 
   @Override
@@ -121,30 +137,49 @@ public class Schedule10Controller implements Schedule10Api {
       int pageId, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     // No user is threaded into a delete: it stamps nothing, because the row is gone.
-    return deleted(schedule10Service.deletePage(
-        context.millId(), context.year(), pageId, mayEdit(authentication)));
+    return deleted(
+        schedule10Service.deletePage(
+            context.millId(), context.year(), pageId, mayEdit(authentication)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule10Response> addRoadDetail(
-      int pageId, String millId, String year, RoadDetailRequest request,
+      int pageId,
+      String millId,
+      String year,
+      RoadDetailRequest request,
       Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return saved(schedule10Service.addRoadDetail(
-        context.millId(), context.year(), pageId, request, authentication.getName(),
-        mayEdit(authentication)));
+    return saved(
+        schedule10Service.addRoadDetail(
+            context.millId(),
+            context.year(),
+            pageId,
+            request,
+            authentication.getName(),
+            mayEdit(authentication)));
   }
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule10Response> updateRoadDetail(
-      int pageId, int roadDetailId, String millId, String year, RoadDetailRequest request,
+      int pageId,
+      int roadDetailId,
+      String millId,
+      String year,
+      RoadDetailRequest request,
       Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return saved(schedule10Service.updateRoadDetail(
-        context.millId(), context.year(), pageId, roadDetailId, request, authentication.getName(),
-        mayEdit(authentication)));
+    return saved(
+        schedule10Service.updateRoadDetail(
+            context.millId(),
+            context.year(),
+            pageId,
+            roadDetailId,
+            request,
+            authentication.getName(),
+            mayEdit(authentication)));
   }
 
   @Override
@@ -152,8 +187,9 @@ public class Schedule10Controller implements Schedule10Api {
   public ResponseEntity<Schedule10Response> deleteRoadDetail(
       int pageId, int roadDetailId, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    return deleted(schedule10Service.deleteRoadDetail(
-        context.millId(), context.year(), pageId, roadDetailId, mayEdit(authentication)));
+    return deleted(
+        schedule10Service.deleteRoadDetail(
+            context.millId(), context.year(), pageId, roadDetailId, mayEdit(authentication)));
   }
 
   @Override
@@ -190,33 +226,44 @@ public class Schedule10Controller implements Schedule10Api {
       return new Schedule10CheckStatusResponse(
           Schedule10CheckStatusResponse.MET, List.of(message(MSG_REQUIREMENTS_MET)), List.of());
     }
-    List<PageCheckResult> pages = outcome.pages().stream()
-        .map(this::composePage)
-        .toList();
+    List<PageCheckResult> pages = outcome.pages().stream().map(this::composePage).toList();
     return new Schedule10CheckStatusResponse(
         Schedule10CheckStatusResponse.ISSUES, List.of(), pages);
   }
 
   private PageCheckResult composePage(Schedule10CheckStatus.PageOutcome page) {
-    List<RoadDetailCheckResult> details = page.roadDetails().stream()
-        .map(detail -> new RoadDetailCheckResult(
-            detail.roadDetailId(), detail.rowNumber(), detail.roadDetailLabel(),
-            detail.issues().isEmpty(), composeIssues(detail.issues())))
-        .toList();
-    boolean met = page.issues().isEmpty()
-        && details.stream().allMatch(RoadDetailCheckResult::met);
+    List<RoadDetailCheckResult> details =
+        page.roadDetails().stream()
+            .map(
+                detail ->
+                    new RoadDetailCheckResult(
+                        detail.roadDetailId(),
+                        detail.rowNumber(),
+                        detail.roadDetailLabel(),
+                        detail.issues().isEmpty(),
+                        composeIssues(detail.issues())))
+            .toList();
+    boolean met = page.issues().isEmpty() && details.stream().allMatch(RoadDetailCheckResult::met);
     return new PageCheckResult(
-        page.pageId(), page.pageNumber(), page.pageLabel(), met, composeIssues(page.issues()),
+        page.pageId(),
+        page.pageNumber(),
+        page.pageLabel(),
+        met,
+        composeIssues(page.issues()),
         details);
   }
 
   private List<FieldIssue> composeIssues(List<Schedule10CheckStatus.Issue> issues) {
     return issues.stream()
-        .map(issue -> new FieldIssue(
-            issue.field(),
-            new MessageInfo(
-                issue.messageKey(),
-                issue.label() + ": " + resolve(issue.messageKey(), issue.args().toArray()))))
+        .map(
+            issue ->
+                new FieldIssue(
+                    issue.field(),
+                    new MessageInfo(
+                        issue.messageKey(),
+                        issue.label()
+                            + ": "
+                            + resolve(issue.messageKey(), issue.args().toArray()))))
         .toList();
   }
 

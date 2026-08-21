@@ -10,10 +10,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code GET /api/v1/me} with security OFF (the default local/test profile). The
- * {@code MockPrincipalFilter} seeds a principal so {@code /me} answers without a Cognito round-trip
- * and existing schedule tests keep working (AD-7). The mock role selector drives the backend
- * principal via {@code X-Mock-Groups}, so a dev can act as an admin locally.
+ * {@code GET /api/v1/me} with security OFF (the default local/test profile). The {@code
+ * MockPrincipalFilter} seeds a principal so {@code /me} answers without a Cognito round-trip and
+ * existing schedule tests keep working (AD-7). The mock role selector drives the backend principal
+ * via {@code X-Mock-Groups}, so a dev can act as an admin locally.
  */
 @DisplayName("GET /api/v1/me — security off (mock principal)")
 class UserMeSecurityOffIT extends AbstractOracleIT {
@@ -23,7 +23,8 @@ class UserMeSecurityOffIT extends AbstractOracleIT {
   @Test
   @DisplayName("default mock principal -> 200 as ILCR_SUBMITTER")
   void defaultMockPrincipal_returnsSubmitter() throws Exception {
-    mockMvc.perform(get(ENDPOINT))
+    mockMvc
+        .perform(get(ENDPOINT))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.userGuid").value("dev-submitter"))
         .andExpect(jsonPath("$.displayName").value("Local Development User"))
@@ -33,7 +34,8 @@ class UserMeSecurityOffIT extends AbstractOracleIT {
   @Test
   @DisplayName("X-Mock-Groups selects the admin role locally")
   void mockAdminViaHeader_returnsAdmin() throws Exception {
-    mockMvc.perform(get(ENDPOINT).header("X-Mock-Groups", "ILCR_ADMIN"))
+    mockMvc
+        .perform(get(ENDPOINT).header("X-Mock-Groups", "ILCR_ADMIN"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.userGuid").value("dev-admin"))
         .andExpect(jsonPath("$.roles", contains("ILCR_ADMIN")));

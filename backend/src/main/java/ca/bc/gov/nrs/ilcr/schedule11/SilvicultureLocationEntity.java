@@ -6,13 +6,12 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * Spring Data JDBC row shape for one Schedule 11 location (AD-3): a
- * {@code THE.BASIC_SILVICULTURE_REPORT} row LEFT-joined to its {@code THE.BIOGEOCLIMATIC_CATALOGUE}
- * row (the join column is the delivery's {@code BEC}-prefixed
- * {@code BECBIOGEOCLIMATIC_CATALOGUE_ID} — AC9 finding). Never crosses the service boundary:
- * {@code Schedule11Service} maps it to {@code dto/SilvicultureLocation}, deriving {@code becLabel}
- * from the four raw catalogue parts (legacy {@code getBiogeoSubZoneVariantPase()}, nulls →
- * {@code ""}).
+ * Spring Data JDBC row shape for one Schedule 11 location (AD-3): a {@code
+ * THE.BASIC_SILVICULTURE_REPORT} row LEFT-joined to its {@code THE.BIOGEOCLIMATIC_CATALOGUE} row
+ * (the join column is the delivery's {@code BEC}-prefixed {@code BECBIOGEOCLIMATIC_CATALOGUE_ID} —
+ * AC9 finding). Never crosses the service boundary: {@code Schedule11Service} maps it to {@code
+ * dto/SilvicultureLocation}, deriving {@code becLabel} from the four raw catalogue parts (legacy
+ * {@code getBiogeoSubZoneVariantPase()}, nulls → {@code ""}).
  *
  * @param locationId the location PK ({@code BASIC_SILVICULTURE_REPORT_ID})
  * @param location the location text (label "Location", max 30)
@@ -39,5 +38,4 @@ public record SilvicultureLocationEntity(
     @Column("PHASE") String phase,
     @Column("REFORESTED_NET_AREA") BigDecimal netArea,
     @Column("COMMENTS") String comments,
-    @Column("REVISION_COUNT") int revisionCount) {
-}
+    @Column("REVISION_COUNT") int revisionCount) {}

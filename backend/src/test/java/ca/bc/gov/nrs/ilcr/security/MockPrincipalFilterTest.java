@@ -30,14 +30,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 @ExtendWith(MockitoExtension.class)
 class MockPrincipalFilterTest {
 
-  @Mock
-  private HttpServletRequest request;
+  @Mock private HttpServletRequest request;
 
-  @Mock
-  private HttpServletResponse response;
+  @Mock private HttpServletResponse response;
 
-  @Mock
-  private FilterChain chain;
+  @Mock private FilterChain chain;
 
   @AfterEach
   void clearContext() {
@@ -89,7 +86,8 @@ class MockPrincipalFilterTest {
         .thenReturn("ILCR_ADMIN,ILCR_SUBMITTER");
     new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
-    assertEquals(Set.of("ADMIN", "SUBMITTER"),
+    assertEquals(
+        Set.of("ADMIN", "SUBMITTER"),
         authorityNames(SecurityContextHolder.getContext().getAuthentication()));
   }
 
@@ -98,14 +96,16 @@ class MockPrincipalFilterTest {
     org.mockito.Mockito.when(request.getHeader("X-Mock-Groups")).thenReturn("SOME_OTHER_APP_ADMIN");
     new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
-    assertEquals(Set.of("SUBMITTER"),
+    assertEquals(
+        Set.of("SUBMITTER"),
         authorityNames(SecurityContextHolder.getContext().getAuthentication()));
   }
 
   @Test
   void doesNotOverwrite_whenAlreadyAuthenticated() throws Exception {
-    Authentication existing = new UsernamePasswordAuthenticationToken(
-        "real-user", "N/A", List.of(new SimpleGrantedAuthority("SUBMITTER")));
+    Authentication existing =
+        new UsernamePasswordAuthenticationToken(
+            "real-user", "N/A", List.of(new SimpleGrantedAuthority("SUBMITTER")));
     SecurityContextHolder.getContext().setAuthentication(existing);
 
     new MockPrincipalFilter(Role.ADMIN).doFilterInternal(request, response, chain);
