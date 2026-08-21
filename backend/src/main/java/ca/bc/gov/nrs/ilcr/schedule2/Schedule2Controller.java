@@ -4,7 +4,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.api.Schedule2Api;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
@@ -77,11 +77,11 @@ public class Schedule2Controller implements Schedule2Api {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<CheckStatusResponse> checkStatus(
+  public ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
       long millId, int year, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
-    CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
+    Schedule2CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
     // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message. The
     // service carries an optional field label in MessageInfo.text; when present it is prefixed as
     // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
@@ -93,6 +93,6 @@ public class Schedule2Controller implements Schedule2Api {
               : new MessageInfo(base.key(), m.text() + ": " + base.text());
         })
         .toList();
-    return ResponseEntity.ok(new CheckStatusResponse(status.outcome(), resolved));
+    return ResponseEntity.ok(new Schedule2CheckStatusResponse(status.outcome(), resolved));
   }
 }

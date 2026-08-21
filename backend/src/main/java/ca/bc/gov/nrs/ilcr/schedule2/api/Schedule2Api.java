@@ -1,7 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule2.api;
 
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageResponse;
-import ca.bc.gov.nrs.ilcr.schedule2.dto.CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import jakarta.validation.Valid;
@@ -83,9 +83,9 @@ public interface Schedule2Api {
    * @param millId the mill id (required)
    * @param year the reporting year (required)
    * @param authentication the caller (authorized for VIEW_SCHEDULE)
-   * @return 200 with the {@link CheckStatusResponse} (outcome + resolved message)
+   * @return 200 with the {@link Schedule2CheckStatusResponse} (outcome + resolved message)
    */
   @PostMapping("/check-status")
-  ResponseEntity<CheckStatusResponse> checkStatus(
+  ResponseEntity<Schedule2CheckStatusResponse> checkStatus(
       @RequestParam long millId, @RequestParam int year, Authentication authentication);
 }

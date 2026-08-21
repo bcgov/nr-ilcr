@@ -45,7 +45,7 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 Draft (3 records) -> 200 application/pdf, %PDF body, attachment header")
   void draftWithRecords_returnsPdf() throws Exception {
-    MvcResult result = mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
+    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "514").param("year", "2021")
             .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -62,7 +62,7 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("517/2021 Submitted (1 record) -> 200 PDF (editability does not gate printing, AC9)")
   void nonDraftWithRecords_returnsPdf() throws Exception {
-    MvcResult result = mockMvc.perform(get(ENDPOINT).param("millId", "517").param("year", "2021")
+    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "517").param("year", "2021")
             .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -76,7 +76,7 @@ class ReportSchedule9IT extends AbstractOracleIT {
   @Test
   @DisplayName("514/2021 PDF text carries the heading, the mill title block, record data, and comments")
   void pdfText_carriesHeadingMillRecordAndComments() throws Exception {
-    MvcResult result = mockMvc.perform(get(ENDPOINT).param("millId", "514").param("year", "2021")
+    MvcResult result = streamPdf(get(ENDPOINT).param("millId", "514").param("year", "2021")
             .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isOk())
         .andReturn();

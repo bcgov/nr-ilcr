@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
@@ -54,6 +57,11 @@ class PrintScheduleIT extends AbstractOracleIT {
   // The deferred Mill Information Report (millInformationReportUnavailableMsg), verbatim.
   private static final String MILL_INFO_UNAVAILABLE = "The Mill Information Report is not yet available.";
 
+  // Spy the real factory so the fill still virtualizes normally, but we can prove the render obtained a
+  // virtualizer and wired it into the Jasper fill (Story 29.2 — large fills spill to disk, not the heap).
+  @MockitoSpyBean
+  private ReportVirtualizerFactory virtualizerFactory;
+
   private static String body(String json) {
     return json;
   }
@@ -68,7 +76,7 @@ class PrintScheduleIT extends AbstractOracleIT {
          "schedule9":true,"schedule11":true,
          "printScheduleInformation":true,"printComments":true}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "517").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection))
             .accept(MediaType.APPLICATION_PDF))
         .andExpect(status().isOk())
@@ -122,7 +130,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection = """
         {"schedule6":true,"printScheduleInformation":true,"printComments":true}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "517").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -141,7 +149,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection = """
         {"schedule7b":true,"printScheduleInformation":false,"printComments":true}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "517").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -158,7 +166,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection = """
         {"schedule9":true,"printScheduleInformation":true,"printComments":false}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "514").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isOk())
         .andReturn();
@@ -177,7 +185,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection = """
         {"schedule5":true,"schedule11":true,"printScheduleInformation":true,"printComments":true}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "514").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "514").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -276,7 +284,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection = """
         {"allSchedules":true,"printScheduleInformation":true}
         """;
-    MvcResult result = mockMvc.perform(post(ENDPOINT).param("millId", "517").param("year", "2021")
+    MvcResult result = streamPdf(post(ENDPOINT).param("millId", "517").param("year", "2021")
             .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -327,6 +335,22 @@ class PrintScheduleIT extends AbstractOracleIT {
         .andExpect(status().isNotFound())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail").value(MILL_INFO_UNAVAILABLE));
+  }
+
+  @Test
+  @DisplayName("combined fill uses the swap-file virtualizer (Story 29.2 — spilled, not heap-pinned)")
+  void combinedFill_usesVirtualizer() throws Exception {
+    // BR-07 "all" → the biggest fill in scope. The render must obtain a virtualizer from the factory
+    // and pass it as the Jasper fill parameter, so page objects spill to disk under a large fill.
+    String selection = """
+        {"allSchedules":true,"printScheduleInformation":true}
+        """;
+    streamPdf(post(ENDPOINT).param("millId", "517").param("year", "2021")
+            .contentType(MediaType.APPLICATION_JSON).content(body(selection)))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_PDF));
+
+    verify(virtualizerFactory, atLeastOnce()).create();
   }
 
   private static String extractText(byte[] pdf) throws Exception {

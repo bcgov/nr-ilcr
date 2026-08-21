@@ -83,7 +83,7 @@ class PrintAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz, streams the PDF")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
+    streamPdf(post(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .contentType(MediaType.APPLICATION_JSON).content(SELECTION)
@@ -96,7 +96,7 @@ class PrintAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz, streams the PDF")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(post(ENDPOINT)
+    streamPdf(post(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .contentType(MediaType.APPLICATION_JSON).content(SELECTION)

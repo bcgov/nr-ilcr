@@ -94,6 +94,23 @@ class CodeTableIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("blank code is rejected 400 problem+json by @Valid (Story 29.13, uniform shape)")
+  void blankCode_is400FromBeanValidation() throws Exception {
+    // @NotBlank on CodeTableEntry.code fails during request-body binding — BEFORE the controller and
+    // service run — so the uniform MethodArgumentNotValid handler answers with the same ProblemDetail
+    // shape every other 400 uses (title "Validation Failed"). The service-layer codeRequiredErrorMsg
+    // check remains as the authoritative belt-and-suspenders layer for the direct-service path.
+    String body = """
+        {"code":"","description":"Blank code","effectiveDate":"2020-01-01"}""";
+    mockMvc.perform(put(UNIT_ENTRIES).with(groups("ILCR_ADMIN"))
+            .contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+        .andExpect(jsonPath("$.title").value("Validation Failed"))
+        .andExpect(jsonPath("$.detail").value("Code: Value is required."));
+  }
+
+  @Test
   @DisplayName("ILCR_SUBMITTER is denied write — 403 (S13, admin-only action)")
   void submitter_isForbidden() throws Exception {
     String body = """
