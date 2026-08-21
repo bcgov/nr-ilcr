@@ -13,6 +13,7 @@ import {
   ballastForcesMaterialNa,
   ballastMaterialRequired,
   ballastZeroesFigures,
+  describe,
   previewCostPerVolumePerLength,
   previewMaterialTotal,
   previewStabilizingCostPerLength,
@@ -101,9 +102,6 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
       description: form.becbiogeoLabel === '' ? selectedBec : form.becbiogeoLabel,
     })
   }
-
-  const describe = (options: readonly CodeDescription[], code: string): string =>
-    options.find((option) => option.code === code)?.description ?? code
 
   const readOnlyField = (label: string, value: string): ReactNode => (
     <Field>
