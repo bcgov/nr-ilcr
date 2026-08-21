@@ -1,6 +1,11 @@
 // Mirrors the backend Schedule2Response DTO (Schedule 2 read slice). Blocks are nested `CostBlock`s;
 // Jackson omits nulls (non_null), so an absent block member simply won't be in the JSON. perUnit and
-// the derived blocks are computed server-side (read-only) — never recompute them client-side.
+// the derived blocks are computed server-side and are read-only here — never sent on a write, and the
+// server is the sole authority for every stored figure.
+//
+// They ARE mirrored for display while the schedule is being edited, so the read-only cells track entry
+// before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That mirror lives in
+// `components/schedule2/derived.ts` and nowhere else, and the Save echo supersedes it.
 
 export interface CostBlock {
   readonly volume: number | null
