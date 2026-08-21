@@ -42,10 +42,13 @@ export const halfUp = (value: number, decimals = 0): number => {
 }
 
 /**
- * `$/m³` = cost ÷ volume. Null when either operand is null OR the volume is zero (no divide-by-zero),
- * then scale-4 HALF_UP — the scale frozen into the wire contract, verified by
- * `Schedule2ServiceTest.perUnit_roundsToScale4HalfUp_onNonTerminatingQuotient` (200000 ÷ 30000 →
- * `6.6667`, not `6.6666`).
+ * `$/m³` for **Schedules 2 and 4**: cost ÷ volume, null when either operand is null OR the volume is
+ * zero (no divide-by-zero), then scale-4 HALF_UP — the scale frozen into those two wire contracts,
+ * verified by `Schedule2ServiceTest.perUnit_roundsToScale4HalfUp_onNonTerminatingQuotient`
+ * (200000 ÷ 30000 → `6.6667`, not `6.6666`).
+ *
+ * ⚠ Schedules 1 and 3 round DIFFERENTLY — use {@link perUnitLegacy} there. The two rules are not
+ * interchangeable: they disagree at a two-decimal boundary, which is exactly where the display sits.
  *
  * Rounding at scale 4 matters even though the cells display two decimals: rounding the raw quotient
  * straight to two places disagrees with the server near a boundary (a true quotient of `6.66499…`
@@ -58,6 +61,27 @@ export const perUnitOf = (cost: number | null, volume: number | null): number | 
     return null
   }
   return halfUp(cost / volume, 4)
+}
+
+/**
+ * `$/m³` for **Schedules 1 and 3**: the legacy `CoreUtil.bigDecimalDivision` — divide at scale 10
+ * HALF_UP, THEN round to scale 2 HALF_UP (`Schedule1Service.perUnit`, `Schedule3Service.perUnit`).
+ * Null when the cost is null or the volume is null/zero.
+ *
+ * The two-step rounding is transcribed rather than collapsed to a single scale-2 round because that is
+ * what the server does, and double rounding is not the same operation: a quotient of `6.66499999995`
+ * rounds to `6.665` at scale 10 and then UP to `6.67`, where rounding straight to two places gives
+ * `6.66`. Reachable only with contrived data, but the point of a mirror is to be the same function.
+ *
+ * Schedule 1's own javadoc records that scale 2 "fixes the earlier Schedule-1 divergence to 4
+ * decimals", so this — not {@link perUnitOf} — is the legacy-faithful rule; Schedules 2 and 4 are the
+ * ones that diverge. Do not unify them without changing the backend first.
+ */
+export const perUnitLegacy = (cost: number | null, volume: number | null): number | null => {
+  if (cost === null || volume === null || volume === 0) {
+    return null
+  }
+  return halfUp(halfUp(cost / volume, 10), 2)
 }
 
 /**
