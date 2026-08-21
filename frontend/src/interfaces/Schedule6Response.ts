@@ -4,9 +4,19 @@
 // the three totals are DERIVED server-side (BR-04/BR-07) and are response-only — never recomputed
 // here (AD-5) and never sent back. There is deliberately no DELETE contract (UC exclusion #1).
 
+import type { CodeDescription } from '@/utils/codes'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
+
+// The TSA-number and Supply-Block dropdown lists, served in-document (Schedule6CodeLists.java).
+// Both are year-filtered server-side and always include any code a stored record already references.
+// There is no TFL list: TFL stays a free-text entry (schedule6.xhtml:102,290), and the synthetic
+// "TFL" sentinel is not a code-table row, so the control — not the document — adds it.
+export interface Schedule6CodeLists {
+  readonly tsaNumbers: readonly CodeDescription[]
+  readonly supplyBlocks: readonly CodeDescription[]
+}
 
 // One road-maintenance record. A record is either a Timber Supply Area (`areaType` = the TSA code,
 // `supplyBlock` = the TSB code) or a Tree Farm Licence (`areaType` = the literal "TFL", `tflNumber`
@@ -71,6 +81,7 @@ export default interface Schedule6Response {
   // Placeholder rows (a lone general-comment holder) are excluded server-side, so an empty list with
   // a non-empty general comment is the valid S18 state.
   readonly roadRecords: readonly RoadRecord[]
+  readonly codeLists: Schedule6CodeLists
   readonly totalVolume: number | null
   readonly totalCost: number | null
   // Null in the S18 lone-comment state (0/0), where totalVolume/totalCost are 0 — renders BLANK.

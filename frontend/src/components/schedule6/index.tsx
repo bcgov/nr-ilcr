@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
+import type { Schedule6CodeLists } from '@/interfaces/Schedule6Response'
 import type { GeneralCommentsRequest, RoadRecordRequest } from '@/interfaces/Schedule6Request'
 import type { RoadRecordErrors, RoadRecordFormValues } from './validation'
 import { useCallback, useState } from 'react'
@@ -17,6 +18,8 @@ import {
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import CodeComboBox from '@/components/core/CodeComboBox'
+import { describe, supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { numStr } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
@@ -24,12 +27,11 @@ import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import {
-  AREA_TYPE_MAX_LENGTH,
   GENERAL_COMMENTS_MAX_LENGTH,
   RECORD_COMMENTS_MAX_LENGTH,
-  SUPPLY_BLOCK_MAX_LENGTH,
   TFL_AREA_TYPE,
   TFL_MAX_LENGTH,
+  areaTypeOptions,
   parseDecimalInput,
   roundCost,
   validateGeneralComments,
@@ -145,6 +147,7 @@ type RoadRecordFieldsProps = {
   readonly idPrefix: string
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
+  readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
   readonly rmg: string
   readonly costPerVolume: string
@@ -156,6 +159,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   idPrefix,
   form,
   errors,
+  codeLists,
   disabled,
   rmg,
   costPerVolume,
@@ -165,19 +169,19 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   const tfl = isTfl(form.areaType)
   return (
     <div className="schedule-6__fields">
-      {/* Deviation (A): TSA and Supply Block are text inputs over the raw code — legacy's
-          year-scoped selectOneMenu caches have no REST counterpart and no Schedule 6 codes
-          endpoint exists (the blessed Schedule 8 simplification). */}
-      <TextInput
+      {/* Corrections 2/3: legacy rendered both as a selectOneMenu over the code's DESCRIPTION
+          (schedule6.xhtml:265-323); retires deviation (A) now that the document serves the two code
+          lists (Schedule6CodeLists). TFL is a synthetic sentinel the CONTROL adds, not a served code
+          (LookUpCacheDAO.java:229-230) — see areaTypeOptions. */}
+      <CodeComboBox
         id={`${idPrefix}-area-type`}
-        labelText="TSA or TFL"
-        size="sm"
-        maxLength={AREA_TYPE_MAX_LENGTH}
+        titleText="TSA or TFL"
+        items={areaTypeOptions(codeLists.tsaNumbers)}
+        selectedCode={form.areaType}
         disabled={disabled}
-        value={form.areaType}
-        onChange={(e) => onAreaTypeChange(e.target.value)}
         invalid={Boolean(errors.areaType)}
         invalidText={errors.areaType}
+        onSelect={onAreaTypeChange}
       />
       <TextInput
         id={`${idPrefix}-tfl-number`}
@@ -190,16 +194,15 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.tflNumber)}
         invalidText={errors.tflNumber}
       />
-      <TextInput
+      <CodeComboBox
         id={`${idPrefix}-supply-block`}
-        labelText="Supply Block"
-        size="sm"
-        maxLength={SUPPLY_BLOCK_MAX_LENGTH}
+        titleText="Supply Block"
+        items={supplyBlocksFor(codeLists.supplyBlocks, form.areaType, form.supplyBlock)}
+        selectedCode={form.supplyBlock}
         disabled={disabled || tfl}
-        value={form.supplyBlock}
-        onChange={(e) => onFieldChange('supplyBlock', e.target.value)}
         invalid={Boolean(errors.supplyBlock)}
         invalidText={errors.supplyBlock}
+        onSelect={(code) => onFieldChange('supplyBlock', code)}
       />
       <dl className="schedule-6__derived">
         <FieldValue label="RMG" value={rmg} />
@@ -254,6 +257,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
 type AddPanelProps = {
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
+  readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
@@ -263,6 +267,7 @@ type AddPanelProps = {
 const AddPanel: FC<AddPanelProps> = ({
   form,
   errors,
+  codeLists,
   disabled,
   onAreaTypeChange,
   onFieldChange,
@@ -274,6 +279,7 @@ const AddPanel: FC<AddPanelProps> = ({
       idPrefix="add"
       form={form}
       errors={errors}
+      codeLists={codeLists}
       disabled={disabled}
       // Both are derived server-side from the saved record; legacy re-derived them live over ajax,
       // which AD-5 forbids re-implementing on the client (deviation D).
@@ -292,16 +298,28 @@ const AddPanel: FC<AddPanelProps> = ({
 // Comments, and the Edit button that opens the editor.
 type RecordDisplayProps = {
   readonly row: RoadRecord
+  readonly codeLists: Schedule6CodeLists
   readonly editDisabled: boolean
   readonly onEdit: () => void
 }
 
-const RecordDisplay: FC<RecordDisplayProps> = ({ row, editDisabled, onEdit }) => (
+// TFL stores the literal 'TFL' in areaType, which is not a served code — describe() would otherwise
+// look it up against codeLists.tsaNumbers and fall back to the bare 'TFL' anyway (the sentinel is its
+// own description), but resolving it through areaTypeOptions keeps this row and the combo consistent.
+const RecordDisplay: FC<RecordDisplayProps> = ({ row, codeLists, editDisabled, onEdit }) => (
   <>
     <dl className="schedule-6__fields">
-      <FieldValue label="TSA or TFL" value={row.areaType ?? ''} />
+      <FieldValue
+        label="TSA or TFL"
+        value={
+          row.areaType === null ? '' : describe(areaTypeOptions(codeLists.tsaNumbers), row.areaType)
+        }
+      />
       <FieldValue label="TFL" value={row.tflNumber ?? ''} />
-      <FieldValue label="Supply Block" value={row.supplyBlock ?? ''} />
+      <FieldValue
+        label="Supply Block"
+        value={row.supplyBlock === null ? '' : describe(codeLists.supplyBlocks, row.supplyBlock)}
+      />
       <FieldValue label="RMG" value={row.rmg ?? ''} />
       <FieldValue label="Volume m³" value={volumeMask(row.volume)} numeric />
       <FieldValue label="Cost $" value={moneyMask(row.cost)} numeric />
@@ -324,6 +342,7 @@ type RecordEditorProps = {
   readonly row: RoadRecord
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
+  readonly codeLists: Schedule6CodeLists
   readonly saving: boolean
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
@@ -335,6 +354,7 @@ const RecordEditor: FC<RecordEditorProps> = ({
   row,
   form,
   errors,
+  codeLists,
   saving,
   onAreaTypeChange,
   onFieldChange,
@@ -346,6 +366,7 @@ const RecordEditor: FC<RecordEditorProps> = ({
       idPrefix={`edit-${String(row.recordId)}`}
       form={form}
       errors={errors}
+      codeLists={codeLists}
       disabled={saving}
       // The row's last server-derived values; they refresh on the save echo.
       rmg={row.rmg ?? ''}
@@ -734,6 +755,7 @@ const Schedule6: FC = () => {
             <AddPanel
               form={addForm}
               errors={addErrors}
+              codeLists={data.codeLists}
               disabled={entryLocked}
               onAreaTypeChange={(value) => {
                 setAddForm((prev) => applyAreaType(prev, value))
@@ -763,6 +785,7 @@ const Schedule6: FC = () => {
                       row={row}
                       form={editForm}
                       errors={editErrors}
+                      codeLists={data.codeLists}
                       saving={saving}
                       onAreaTypeChange={(value) => {
                         setEditForm((prev) => applyAreaType(prev, value))
@@ -774,6 +797,7 @@ const Schedule6: FC = () => {
                   ) : (
                     <RecordDisplay
                       row={row}
+                      codeLists={data.codeLists}
                       editDisabled={entryLocked}
                       onEdit={() => {
                         startEdit(row)

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AREA_TYPE_MAX_LENGTH,
   GENERAL_COMMENTS_MAX_LENGTH,
   RECORD_COMMENTS_MAX_LENGTH,
   ROAD_MESSAGES,
-  SUPPLY_BLOCK_MAX_LENGTH,
   TFL_AREA_TYPE,
   TFL_MAX_LENGTH,
   parseDecimalInput,
@@ -34,10 +32,12 @@ describe('exported caps mirror the 8.2 DTO columns', () => {
     expect(GENERAL_COMMENTS_MAX_LENGTH).toBe(3500)
   })
 
-  it('caps the code fields at their delivery column widths', () => {
+  // AREA_TYPE_MAX_LENGTH / SUPPLY_BLOCK_MAX_LENGTH were retired with the TextInputs they bound
+  // maxLength to (2026-08-21 corrections): both fields are now CodeComboBoxes, and the validators
+  // that still gate width (validateAreaType, the supplyBlock check) reference their own internal
+  // constants rather than these exports. TFL stays a TextInput, so its cap is still exported.
+  it('caps the TFL field at its delivery column width', () => {
     expect(TFL_MAX_LENGTH).toBe(2)
-    expect(SUPPLY_BLOCK_MAX_LENGTH).toBe(3)
-    expect(AREA_TYPE_MAX_LENGTH).toBe(3)
   })
 })
 

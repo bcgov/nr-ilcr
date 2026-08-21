@@ -4,6 +4,8 @@
 // bundle, so an advisory message reads identically to a server rejection — which still renders
 // verbatim on a 400 (AD-8/AD-6), never replaced by anything here.
 
+import type { CodeDescription } from '@/utils/codes'
+import { TFL_SENTINEL } from '@/utils/codes'
 import { parseDecimalInput } from '@/utils/number'
 
 // Column-fidelity caps, exported so index.tsx binds the SAME numbers to maxLength/maxCount that this
@@ -24,6 +26,19 @@ const COST = { min: -99_999_999, max: 99_999_999 }
 
 /** The literal area-type value that selects the Tree Farm Licence branch (BR-02). */
 export const TFL_AREA_TYPE = 'TFL'
+
+/**
+ * The area-type control's options: the served TSA numbers, with the synthetic TFL sentinel FIRST.
+ *
+ * Legacy builds this list in the cache loader and puts TFL at the top — "Add the TFL TSA number
+ * Code to the top of the list" (LookUpCacheDAO.java:229-230). Schedule 10 appends its sentinel
+ * last; this follows legacy instead. The sentinel is not a code-table row, so the backend does not
+ * serve it (see Schedule6CodeLists).
+ */
+export const areaTypeOptions = (tsaNumbers: readonly CodeDescription[]): CodeDescription[] => [
+  { code: TFL_SENTINEL, description: TFL_SENTINEL },
+  ...tsaNumbers,
+]
 
 // Verbatim from the backend bundle (messages.properties) so an advisory message is byte-identical to
 // the server's rejection for the same field.
@@ -49,8 +64,9 @@ export interface RoadRecordErrors {
 }
 
 // The raw form values gathered by the Add panel / row editor before submission. Every field is a
-// string: the numeric ones are parsed with the legacy DecimalFormat semantics below, and the area
-// type is the raw code (deviation (A): text input over the code, no codes endpoint exists).
+// string: the numeric ones are parsed with the legacy DecimalFormat semantics below, and areaType /
+// supplyBlock hold the CODE a CodeComboBox writes back (corrections 2/3 retired deviation (A)'s
+// text-input-over-the-code shape; the code is still what travels on the wire).
 export interface RoadRecordFormValues {
   areaType: string
   tflNumber: string
@@ -170,8 +186,6 @@ export function validateRoadRecord(form: RoadRecordFormValues): RoadRecordErrors
 export const validateGeneralComments = (raw: string): string | undefined =>
   raw.length > GENERAL_COMMENTS_MAX ? ROAD_MESSAGES.generalCommentsMaxLength : undefined
 
-export const AREA_TYPE_MAX_LENGTH = AREA_TYPE_MAX
 export const TFL_MAX_LENGTH = TFL_MAX
-export const SUPPLY_BLOCK_MAX_LENGTH = SUPPLY_BLOCK_MAX
 export const RECORD_COMMENTS_MAX_LENGTH = RECORD_COMMENTS_MAX
 export const GENERAL_COMMENTS_MAX_LENGTH = GENERAL_COMMENTS_MAX

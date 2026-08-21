@@ -53,6 +53,21 @@ const tflRecord: RoadRecord = {
   comments: null,
 }
 
+// Two TSAs and two supply blocks across DIFFERENT TSAs, so the narrowing test asserts something real
+// rather than trivially passing on a single-TSA fixture. tsaRecord stores areaType '01' / supplyBlock
+// '01B' — both resolvable here — proving describe() resolves a code to its description (corrections
+// 2/3, retiring deviation (A)).
+const codeLists = {
+  tsaNumbers: [
+    { code: '01', description: 'Arrowsmith TSA' },
+    { code: '02', description: 'Boundary TSA' },
+  ],
+  supplyBlocks: [
+    { code: '01B', description: 'Arrowsmith Block B' },
+    { code: '02A', description: 'Boundary Block A' },
+  ],
+}
+
 const doc = (overrides: Record<string, unknown> = {}) => ({
   millId: 514,
   year: 2021,
@@ -63,6 +78,7 @@ const doc = (overrides: Record<string, unknown> = {}) => ({
   totalVolume: 1000,
   totalCost: 50000,
   totalCostPerVolume: 50,
+  codeLists,
   ...overrides,
 })
 
@@ -144,6 +160,27 @@ async function openAddPanel(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByRole('region', { name: 'Add Road Maintenance report' })
 }
 
+// TSA or TFL is a CodeComboBox (corrections 2/3): selecting an option is the combo-box equivalent of
+// the old `user.type` into a raw-code TextInput. `optionName` is the option's DESCRIPTION as rendered
+// in the menu ('TFL' for the sentinel, since the sentinel's description IS the literal 'TFL').
+async function selectAreaType(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  optionName: string,
+) {
+  await user.click(within(scope).getByRole('combobox', { name: /TSA or TFL/i }))
+  await user.click(await screen.findByRole('option', { name: optionName }))
+}
+
+async function selectSupplyBlock(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  optionName: string,
+) {
+  await user.click(within(scope).getByRole('combobox', { name: /Supply Block/i }))
+  await user.click(await screen.findByRole('option', { name: optionName }))
+}
+
 // The provider persists any un-`initial`ed context change to localStorage (MillYearProvider.tsx:67);
 // without this, the stale-race tests' setContext(999, 2020) leaks into every later bare render and
 // test order silently decides which mill the page loads.
@@ -187,8 +224,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     ]) {
       expect(within(panel).getByText(label)).toBeInTheDocument()
     }
-    expect(within(panel).getByText('01')).toBeInTheDocument()
-    expect(within(panel).getByText('01B')).toBeInTheDocument()
+    // Corrections 2/3: the row resolves the stored CODE to its DESCRIPTION, not the raw code.
+    expect(within(panel).getByText('Arrowsmith TSA')).toBeInTheDocument()
+    expect(within(panel).getByText('Arrowsmith Block B')).toBeInTheDocument()
     expect(within(panel).getByText('12')).toBeInTheDocument()
     expect(within(panel).getByText('1,000')).toBeInTheDocument()
     expect(within(panel).getByText('50,000')).toBeInTheDocument()
@@ -196,6 +234,70 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(panel).getByText('Culvert replacement')).toBeInTheDocument()
     // Display state renders values as text, never as editable inputs.
     expect(within(panel).queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  // Corrections 2/3: legacy rendered both controls as a selectOneMenu over the code's DESCRIPTION
+  // (schedule6.xhtml:265-323); the row is still RecordDisplay's read-only <dl>/<dd> text at this point
+  // in the branch (RecordEditor/RecordDisplay are merged into one editable row only in a later task),
+  // so this asserts against rendered TEXT rather than a combo box's display value.
+  test('a row resolves the stored code to its description, not the raw code (corrections 2/3)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }))
+    const panel = rowPanel(1)
+
+    // tsaRecord stores areaType '01' / supplyBlock '01B'.
+    expect(await within(panel).findByText('Arrowsmith TSA')).toBeInTheDocument()
+    expect(within(panel).getByText('Arrowsmith Block B')).toBeInTheDocument()
+    expect(within(panel).queryByText('01')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('01B')).not.toBeInTheDocument()
+  })
+
+  test('offers the TFL sentinel first in the area-type options', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.click(within(panel).getByRole('combobox', { name: /TSA or TFL/i }))
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    // Legacy adds TFL to the TOP of the cache list (LookUpCacheDAO.java:230). Schedule 10 appends it
+    // last; fidelity to Schedule 6's OWN legacy source wins here.
+    expect(options[0]).toBe('TFL')
+  })
+
+  test('narrows supply blocks to the chosen TSA', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    // supplyBlocksFor('') is empty by design (the legacy control's cleared state) — narrowing must be
+    // proven with a TSA actually chosen first, or the assertion below would be vacuously true.
+    await user.click(within(panel).getByRole('combobox', { name: /TSA or TFL/i }))
+    await user.click(await screen.findByRole('option', { name: 'Arrowsmith TSA' }))
+
+    await user.click(within(panel).getByRole('combobox', { name: /Supply Block/i }))
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    expect(options).toEqual(['Arrowsmith Block B'])
+  })
+
+  test('edit mode shows the description for the stored code, not the raw code', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    expect(within(rowPanel(1)).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      'Arrowsmith TSA',
+    )
+    expect(within(rowPanel(1)).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
+      'Arrowsmith Block B',
+    )
   })
 
   // Deviation (B): the row Delete + confirm dialog is un-sliced by the UC and 8.2 shipped no DELETE.
@@ -281,8 +383,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
-    await user.type(within(panel).getByLabelText('Supply Block'), '01B')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    await selectSupplyBlock(user, panel, 'Arrowsmith Block B')
     await user.type(within(panel).getByLabelText('Volume m³'), '1,000')
     await user.type(within(panel).getByLabelText('Cost $'), '50000')
     await user.type(within(panel).getByLabelText('Comments'), 'Culvert replacement')
@@ -321,7 +423,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
       ).not.toBeInTheDocument(),
     )
     const reopened = await openAddPanel(user)
-    expect(within(reopened).getByLabelText('TSA or TFL')).toHaveValue('')
+    // A ComboBox's empty (closed) menu carries the same aria-labelledby as its input, so
+    // getByLabelText finds two elements; getByRole('combobox', ...) is unambiguous.
+    expect(within(reopened).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue('')
     expect(within(reopened).getByLabelText('Volume m³')).toHaveValue('')
   })
 
@@ -338,18 +442,16 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    const areaType = within(panel).getByLabelText('TSA or TFL')
-    const supplyBlock = within(panel).getByLabelText('Supply Block')
-    await user.type(areaType, '01')
-    await user.type(supplyBlock, '01B')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    await selectSupplyBlock(user, panel, 'Arrowsmith Block B')
     // Now switch the classification: the counterpart must be CLEARED in state, not merely disabled —
     // a disabled-but-populated field still serializes, which the server would silently absorb.
-    await user.clear(areaType)
-    await user.type(areaType, 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '01')
 
-    expect(within(panel).getByLabelText('Supply Block')).toHaveValue('')
-    expect(within(panel).getByLabelText('Supply Block')).toBeDisabled()
+    const supplyBlockCombo = within(panel).getByRole('combobox', { name: /Supply Block/i })
+    expect(supplyBlockCombo).toHaveDisplayValue('')
+    expect(supplyBlockCombo).toBeDisabled()
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     await waitFor(() => expect(captured).not.toBeNull())
@@ -371,11 +473,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    const areaType = within(panel).getByLabelText('TSA or TFL')
-    await user.type(areaType, 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '02')
-    await user.clear(areaType)
-    await user.type(areaType, '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
 
     expect(within(panel).getByLabelText('TFL')).toHaveValue('')
     expect(within(panel).getByLabelText('TFL')).toBeDisabled()
@@ -392,7 +492,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     // Both are server-derived (AD-5) and there is no derive endpoint — they must not be guessed.
     expect(within(panel).getByText('RMG')).toBeInTheDocument()
     expect(within(panel).getByText('$ / m³')).toBeInTheDocument()
@@ -888,7 +988,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     const button = within(panel).getByRole('button', { name: /^add report$/i })
     await user.click(button)
     // Second click lands while the first POST is in flight — the saving lock must swallow it, or a
@@ -914,9 +1014,11 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // only the DB, so a verdict must never contradict visible unsaved input.
     const panel = await openAddPanel(user)
     expect(check).toBeEnabled() // open but empty — nothing unsaved yet
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '0')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     expect(check).toBeDisabled()
-    await user.clear(within(panel).getByLabelText('TSA or TFL'))
+    // The combo's own clear control (Carbon's ListBoxSelection), not a raw TextInput clear — dirtying
+    // and un-dirtying a CodeComboBox goes through selection, not keystrokes.
+    await user.click(within(panel).getByRole('button', { name: 'Clear selected item' }))
     expect(check).toBeEnabled()
     await user.click(screen.getByRole('button', { name: /^close$/i }))
 
@@ -963,7 +1065,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
@@ -1007,7 +1109,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(
@@ -1029,7 +1131,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '10000000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1050,7 +1152,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Cost $'), '-2.5')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1068,14 +1170,14 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '99')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // Values stay put so the entry can be corrected and resubmitted.
-    expect(within(panel).getByLabelText('TSA or TFL')).toHaveValue('TFL')
+    expect(within(panel).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue('TFL')
     expect(within(panel).getByLabelText('TFL')).toHaveValue('99')
     expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
   })
@@ -1103,7 +1205,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1209,7 +1311,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1271,7 +1373,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
     await user.click(screen.getByRole('button', { name: /change/i }))
 
@@ -1434,7 +1536,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
 
     await user.click(screen.getByRole('button', { name: /change/i }))
 
