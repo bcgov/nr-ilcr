@@ -76,7 +76,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz, streams the PDF")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
+    streamPdf(get(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .accept(MediaType.APPLICATION_PDF)
@@ -88,7 +88,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_ADMIN group -> passes authz, streams the PDF")
   void admin_passesAuthorization() throws Exception {
-    mockMvc.perform(get(ENDPOINT)
+    streamPdf(get(ENDPOINT)
             .param("millId", SEEDED_MILL)
             .param("year", SEEDED_YEAR)
             .accept(MediaType.APPLICATION_PDF)

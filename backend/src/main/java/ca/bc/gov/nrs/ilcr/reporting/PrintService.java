@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.function.Predicate;
 import net.sf.jasperreports.engine.JasperPrint;
+import net.sf.jasperreports.engine.fill.JRSwapFileVirtualizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -37,10 +38,13 @@ public class PrintService {
 
   private final ReportService reportService;
   private final MillContextService millContextService;
+  private final ReportVirtualizerFactory virtualizerFactory;
 
-  public PrintService(ReportService reportService, MillContextService millContextService) {
+  public PrintService(ReportService reportService, MillContextService millContextService,
+      ReportVirtualizerFactory virtualizerFactory) {
     this.reportService = reportService;
     this.millContextService = millContextService;
+    this.virtualizerFactory = virtualizerFactory;
   }
 
   /**
@@ -48,7 +52,7 @@ public class PrintService {
    *
    * @param context the validated (millId, year) pair
    * @param request the print selection (schedule flags + "all" + print options)
-   * @return the combined, bookmarked PDF bytes
+   * @return the filled report, ready to stream to the response (the caller closes it after export)
    * @throws ScheduleNotFoundException 404 — no selected in-scope schedule has any data (ERR-005)
    */
   // Deliberately NOT @Transactional: this is six independent read-only reads, each *Service.getScheduleN
@@ -56,7 +60,7 @@ public class PrintService {
   // method-wide readOnly transaction would pin ONE pooled connection for the whole render while the
   // Schedule 9 fill grabs a SECOND — two connections per /print on a maximum-pool-size of 5, so a handful
   // of concurrent prints would exhaust the pool and block until the 30s timeout.
-  public byte[] render(MillYearContext context, PrintRequest request) {
+  public RenderedReport render(MillYearContext context, PrintRequest request) {
     PrintOptions options =
         new PrintOptions(request.printScheduleInformation(), request.printComments());
     Predicate<ScheduleKey> selected = selectionOf(request);
@@ -65,6 +69,7 @@ public class PrintService {
       // The ONLY requested content is the deferred Mill Information report — no in-scope schedule
       // and no content option. That yields no PDF for a reason unrelated to missing schedule data,
       // so surface the honest "not yet available" rather than the misleading "Schedule not found.".
+      // Thrown before a virtualizer is created, so nothing to clean up.
       log.info("Mill-information-report-only selection for mill {} year {} — report not yet available",
           context.millId(), context.year());
       throw new MillInformationReportUnavailableException();
@@ -74,33 +79,48 @@ public class PrintService {
     // instead of re-querying it for each of the five bean sections.
     String millTitleBlock = millContextService.resolveMillTitleBlock(context.millId());
 
-    List<JasperPrint> sections = new ArrayList<>();
-    for (ScheduleKey key : ScheduleKey.values()) {
-      if (!selected.test(key)) {
-        continue;
+    // One virtualizer for the whole combined fill (Story 29.2): every section's page objects spill to
+    // the SAME swap file, so an "all schedules" print never pins the full section graph on the heap.
+    JRSwapFileVirtualizer virtualizer = virtualizerFactory.create();
+    boolean ownershipTransferred = false;
+    try {
+      List<JasperPrint> sections = new ArrayList<>();
+      for (ScheduleKey key : ScheduleKey.values()) {
+        if (!selected.test(key)) {
+          continue;
+        }
+        // BR-08: pass the section's bookmark title so its template renders the top-level PDF outline
+        // anchor. Every rendered schedule gets exactly one bookmark, including a single-schedule print.
+        JasperPrint print = reportService.fillSection(
+            key, context.millId(), context.year(), options, millTitleBlock, key.bookmarkTitle(),
+            virtualizer);
+        if (print == null) {
+          // BR-09 skip-empty: a selected schedule with no data contributes nothing and never aborts.
+          log.info("Skipping {} for mill {} year {} — no data",
+              key, context.millId(), context.year());
+          continue;
+        }
+        sections.add(print);
       }
-      // BR-08: pass the section's bookmark title so its template renders the top-level PDF outline
-      // anchor. Every rendered schedule gets exactly one bookmark, including a single-schedule print.
-      JasperPrint print = reportService.fillSection(
-          key, context.millId(), context.year(), options, millTitleBlock, key.bookmarkTitle());
-      if (print == null) {
-        // BR-09 skip-empty: a selected schedule with no data contributes nothing and never aborts.
-        log.info("Skipping {} for mill {} year {} — no data",
-            key, context.millId(), context.year());
-        continue;
+
+      logUnimplementedSelections(request);
+
+      if (sections.isEmpty()) {
+        // All-empty (S11): no selected content produced any section → no PDF, 404 ERR-005.
+        throw new ScheduleNotFoundException();
       }
-      sections.add(print);
+      log.info("Combining {} section(s) into one PDF for mill {} year {}",
+          sections.size(), context.millId(), context.year());
+      RenderedReport report = new RenderedReport(sections, virtualizer);
+      ownershipTransferred = true;
+      return report;
+    } finally {
+      // All-empty (404) or a fill failure produces no PDF, so clean the swap file here; otherwise
+      // ownership passes to the RenderedReport, which the streaming caller closes after export.
+      if (!ownershipTransferred) {
+        virtualizer.cleanup();
+      }
     }
-
-    logUnimplementedSelections(request);
-
-    if (sections.isEmpty()) {
-      // All-empty (S11): no selected content produced any section → no PDF, 404 ERR-005.
-      throw new ScheduleNotFoundException();
-    }
-    log.info("Combining {} section(s) into one PDF for mill {} year {}",
-        sections.size(), context.millId(), context.year());
-    return reportService.exportPdf(sections);
   }
 
   /**
