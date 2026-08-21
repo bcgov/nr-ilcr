@@ -20,8 +20,16 @@ import { committedNum, sumAsZero, wholeDollars } from '@/utils/derivedMath'
  * unit test of its own — it was the only new figure in that batch pinned by nothing.
  */
 
-/** The footer triple, keyed so it cannot be mis-paired with the summary labels positionally. */
-export interface OtherAcceptableSubtotal {
+/**
+ * The footer triple, keyed so it cannot be mis-paired with the summary labels positionally.
+ *
+ * `type`, NOT `interface`: `Schedule3SubPage`'s `deriveSummary` prop is typed
+ * `=> Readonly<Record<string, number | null>>` because it looks the triple up by key, and TypeScript
+ * grants an implicit index signature to a type alias but never to an interface. As an interface this
+ * assignment does not type-check — and it shipped that way, because `tsc --noEmit` aborts on this
+ * repo's tsconfig before reading a single source file (see deferred-work.md).
+ */
+export type OtherAcceptableSubtotal = {
   readonly harvest: number | null
   readonly pop: number | null
   readonly crown: number | null

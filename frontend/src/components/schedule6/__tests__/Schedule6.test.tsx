@@ -209,6 +209,38 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(rateIn(rowPanel(1))).toBe('') // the mask renders a blank, not an em dash
   })
 
+  test('the same blur re-applies the comma mask to the field itself (#291)', async () => {
+    // Legacy's handlers re-rendered the INPUT alongside the rate (`render="vol cal ..."`,
+    // schedule6.xhtml:153,163,364,383), which re-ran the converter and put the mask back. Schedule 6
+    // is the only page whose blur moves a derived cell, so it was the only one that could leave
+    // `50000` sitting unmasked next to a freshly-formatted rate.
+    //
+    // This test exists because that re-mask shipped INERT: `commitRate` called `groupInput` without
+    // importing it, so every blur threw a ReferenceError *after* the rate had been applied. The rate
+    // updated, the mask never came back, and the throw surfaced only as a Vitest unhandled error --
+    // which fails no test. Assert the field, not just the rate.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '1000000')
+    expect(volume).toHaveValue('1000000') // mid-entry: untouched, so the caret is not moved
+    await user.tab()
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000,000')
+
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '2500000')
+    await user.tab()
+    expect(within(rowPanel(1)).getByLabelText('Cost $')).toHaveValue('2,500,000')
+    expect(rateIn(rowPanel(1))).toBe('2.50') // 2,500,000 / 1,000,000
+  })
+
   test('the footer totals do NOT move during entry — legacy left them until Save (#291)', async () => {
     // The deliberate boundary: totalVol/totalCos/totalCal appear in NO legacy render or update
     // target, so refreshing them from the document is already faithful and they are not mirrored.
@@ -1172,7 +1204,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // Values stay put so the entry can be corrected and resubmitted.
     expect(within(panel).getByLabelText('TSA or TFL')).toHaveValue('TFL')
     expect(within(panel).getByLabelText('TFL')).toHaveValue('99')
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('a load failure carrying no detail falls back to the generic load message (AC7)', async () => {
@@ -1205,7 +1237,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
     // add-is-save: the panel and its values survive a server-side failure so the entry is not retyped.
     expect(screen.getByRole('region', { name: 'Add Road Maintenance report' })).toBeInTheDocument()
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('an edit failure renders the detail verbatim and leaves the editor open (AC4 / AC10)', async () => {
@@ -1227,7 +1259,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
     // it can be corrected, page state is not replaced, and no success banner appears alongside.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2,000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
     await waitFor(() =>
