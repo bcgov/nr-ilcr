@@ -28,7 +28,7 @@ type ScheduleFlag =
   | 'schedule10'
   | 'schedule11'
 
-// `renderable` = the backend produces a section today (5/6/7A/7B/9/11). The rest are shown for legacy
+// `renderable` = the backend produces a section today (2/5/6/7A/7B/9/11). The rest are shown for legacy
 // parity but disabled with a "(coming soon)" note until their print backend lands, so a selection can't
 // silently no-op (and the server never has to skip a deferred schedule).
 const SCHEDULES: {
@@ -37,7 +37,7 @@ const SCHEDULES: {
   readonly renderable: boolean
 }[] = [
   { key: 'schedule1', label: 'Schedule 1', renderable: false },
-  { key: 'schedule2', label: 'Schedule 2', renderable: false },
+  { key: 'schedule2', label: 'Schedule 2', renderable: true },
   { key: 'schedule3', label: 'Schedule 3', renderable: false },
   { key: 'schedule4', label: 'Schedule 4', renderable: false },
   { key: 'schedule5', label: 'Schedule 5', renderable: true },
