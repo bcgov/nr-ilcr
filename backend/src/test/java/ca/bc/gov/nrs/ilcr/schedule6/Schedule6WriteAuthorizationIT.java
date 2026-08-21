@@ -49,6 +49,7 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   private static final String RECORDS = "/api/v1/schedule6/records";
   private static final String COMMENTS = "/api/v1/schedule6/general-comments";
   private static final String CHECK_STATUS = "/api/v1/schedule6/check-status";
+  private static final String ENDPOINT = "/api/v1/schedule6";
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
@@ -110,6 +111,44 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+  }
+
+  @Test
+  @DisplayName("PUT /api/v1/schedule6 (whole-document save, Task 5) with no group -> 403")
+  void saveDocument_noGroup_returns403() throws Exception {
+    // An empty records[] + null comment is a trivially valid body -- @Valid runs during argument
+    // resolution BEFORE @PreAuthorize, so an invalid body would produce 400, not the 403 under
+    // test (same rationale as the other write probes in this class).
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "666")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"generalComments\":null,\"records\":[]}")
+                .with(jwtWithGroups(List.of())))
+        .andExpect(status().isForbidden())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+  }
+
+  @Test
+  @DisplayName(
+      "ILCR_SUBMITTER holds EDIT_SCHEDULE -> whole-document PUT authz passes (not 403); "
+          + "non-Draft gate -> 409 (Task 5)")
+  void submitter_passesSaveDocumentAuthorization() throws Exception {
+    // 662/2021 (status 'S'): authz passes so the request is NOT 403, and the service's Draft gate
+    // rejects it 409 WITHOUT mutating anything -- no fixture churn.
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "662")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"generalComments\":null,\"records\":[]}")
+                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+        .andExpect(status().isConflict());
   }
 
   @Test

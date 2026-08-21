@@ -448,12 +448,26 @@ public class Schedule6Service {
     try {
       List<RoadRecordRow> stored = repository.findRoadRecords(millId, year);
       requireEveryServedRow(stored, request.records());
+      // Pre-fetched once, keyed by id: the per-entry loop below used to re-query findRoadRecords
+      // via isPlaceholderId on every iteration (N+1 over a list already in hand). A recordId absent
+      // from this map is unknown/foreign to this mill/year, not a placeholder — updateRoadReport's
+      // 0-rows-affected path below still disambiguates that to 404 exactly as before.
+      Map<Integer, RoadRecordRow> storedById =
+          stored.stream().collect(Collectors.toMap(RoadRecordRow::recordId, row -> row));
 
       for (RoadRecordEntry entry : request.records()) {
         int recordId = entry.recordId();
+        // Defence in depth for the AR11 token (the same guard updateRecord carries): Bean
+        // Validation blocks a null revisionCount today, but updateRoadReport takes a primitive
+        // int, so unboxing it here would NPE -> 500 for any future caller that bypasses
+        // validation. Never a coerced 409 (Story 2.1 lesson).
+        if (entry.revisionCount() == null) {
+          throw new RevisionCountRequiredException();
+        }
         // A placeholder is not a served record, so a client can never legitimately address one —
         // 404 before the update could convert it into a real record (same guard as updateRecord).
-        if (isPlaceholderId(millId, year, recordId)) {
+        RoadRecordRow existing = storedById.get(recordId);
+        if (existing != null && isPlaceholder(existing)) {
           throw new RoadRecordNotFoundException();
         }
         Classification classification =
@@ -478,25 +492,33 @@ public class Schedule6Service {
         repository.upsertCostDetail(recordId, entry.volume(), entry.cost(), entry.comments(), user);
       }
 
-      // The BR-09 comment branches, unchanged from the retired-in-Task-8 saveGeneralComments except
-      // that the branch is chosen from the SUBMITTED list rather than a second DB read.
-      if (request.records().isEmpty()) {
+      // The BR-09 comment branches, structurally identical to the retired-in-Task-8
+      // saveGeneralComments (:379-401) — branching on the STORED rows, not the submitted list.
+      // Those two agree on every OTHER row by requireEveryServedRow above, but they can disagree
+      // here: a lone existing PLACEHOLDER means `stored` is non-empty while `records` is
+      // legitimately empty (nothing served). Branching on `request.records().isEmpty()` collapsed
+      // that case into the zero-rows branch and INSERTED A SECOND placeholder next to the
+      // original instead of updating it in place — legacy's `onlyGeneralCommentsExist` guard
+      // (`Schedule6DAO.java:263,286`) exists specifically to keep writing onto the same row
+      // (code review 2026-08-21, C1).
+      if (stored.isEmpty()) {
         if (comments != null) {
           repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments, user);
-        } else if (stored.stream().allMatch(Schedule6Service::isPlaceholder)) {
-          // Clearing the comment when it was the only thing stored removes the placeholder row(s)
-          // (legacy generalCommentRemovedLastRecord). The DELETE re-checks the placeholder shape in
-          // SQL and can legitimately match nothing — whitespace rather than NULL classification, or
-          // a concurrent addRecord having claimed it since the read above. A silent no-op would
-          // answer 200 "Data saved successfully" while the comment survived, so fall back to
-          // clearing COMMENTS in place (the same fallback saveGeneralComments already carries).
-          int deleted = 0;
-          for (RoadRecordRow row : stored) {
-            deleted += repository.deletePlaceholder(row.recordId(), millId, year);
-          }
-          if (deleted < stored.size()) {
-            repository.updateAllComments(millId, year, null, user);
-          }
+        }
+        // blank + no rows = nothing stored, nothing to clear (a no-op success, like legacy).
+      } else if (comments == null && stored.stream().allMatch(Schedule6Service::isPlaceholder)) {
+        // Clearing the comment when it was the only thing stored removes the placeholder row(s)
+        // (legacy generalCommentRemovedLastRecord). The DELETE re-checks the placeholder shape in
+        // SQL and can legitimately match nothing — whitespace rather than NULL classification, or
+        // a concurrent addRecord having claimed it since the read above. A silent no-op would
+        // answer 200 "Data saved successfully" while the comment survived, so fall back to
+        // clearing COMMENTS in place (the same fallback saveGeneralComments already carries).
+        int deleted = 0;
+        for (RoadRecordRow row : stored) {
+          deleted += repository.deletePlaceholder(row.recordId(), millId, year);
+        }
+        if (deleted < stored.size()) {
+          repository.updateAllComments(millId, year, null, user);
         }
       } else {
         repository.updateAllComments(millId, year, comments, user);

@@ -105,7 +105,9 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
                 .param("year", "2019")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath("$.detail", is("All existing road records must be included when saving.")));
 
     // Nothing persisted: both rows are untouched (revision still 0).
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
@@ -209,6 +211,48 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
             "SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT "
                 + "WHERE ILCR_MILL_ID = 724 AND REPORT_YEAR = 2022 AND ILCR_CATEGORY_ID = '6'",
             Integer.class));
+  }
+
+  @Test
+  @DisplayName(
+      "code review 2026-08-21 (C1): an empty list plus a NEW comment writes onto the existing "
+          + "lone placeholder, never inserts a second one")
+  void emptyListWithNewCommentUpdatesExistingPlaceholderInPlace() throws Exception {
+    // Mill 724/2025's ONLY row is placeholder 8398, carrying 'original comment'. The BR-09 branch
+    // must key on the STORED rows (non-empty: one placeholder), not the submitted records list
+    // (always empty here) -- branching on the submitted list collapsed this into the zero-rows
+    // branch and inserted a SECOND placeholder, stranding 'original comment' on an orphan row
+    // that `addRecord`'s lonePlaceholderId (rows.size() == 1) and `deleteRecord`'s wasOnlyRow could
+    // no longer see (legacy Schedule6DAO.java:263,286's `onlyGeneralCommentsExist` guard).
+    String body =
+        """
+        {"generalComments":"changed","records":[]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2025")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadRecords").isEmpty())
+        .andExpect(jsonPath("$.generalComments", is("changed")));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    assertEquals(
+        1,
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT "
+                + "WHERE ILCR_MILL_ID = 724 AND REPORT_YEAR = 2025 AND ILCR_CATEGORY_ID = '6'",
+            Integer.class));
+    assertEquals(
+        "changed",
+        jdbc.queryForObject(
+            "SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT "
+                + "WHERE ROAD_MAINTENANCE_REPORT_ID = 8398",
+            String.class));
   }
 
   @Test
