@@ -22,23 +22,44 @@ two such branches merge:
 
 ## Conventions
 
-1. **Version numbers.** Take the next free integer after the highest `V` currently on `main` **plus
-   any in-flight PRs you know about**. When you rebase/merge `main` and hit a duplicate, bump *your*
-   (newer) migration to the next free slot — never renumber someone else's merged migration. If we
-   keep colliding, switch to timestamp versions (`V20260728__…`), which removes the race entirely.
+1. **Seed data goes in a repeatable migration (`R__`), not a versioned one.** Decided 2026-08-20 —
+   see `docs/decisions/flyway-test-fixture-strategy.md`. Name the file for **what it seeds**, with a
+   numeric ordering prefix: `R__<10-80>_<what_it_seeds>.sql` for data,
+   `R__<90+>_<name>.sql` for constraints, indexes and FKs that must land after the data.
 
-   **Timestamp versions do NOT remove the race** — proven 2026-08-13, when three branches all reached
-   for the same two days (`V20260814` → schedule 5 subpage fixtures, `V20260815` → schedule 9 write
-   fixtures). Everyone picks today's or tomorrow's date, so a date is just as scarce as an integer.
+   Why: a version number is a **shared, sequential** resource, and two branches claiming the same one
+   produce two *differently named files* — so **git merges them cleanly and the failure only appears
+   when Flyway loads**, taking the whole `*IT` suite down at boot. Five collisions on record. With a
+   content-derived `R__` name, a shared prefix is harmless (both files run, ordered by the rest of the
+   name) and an identical name is the same path, which git reports as an ordinary conflict.
 
-1a. **Schema changes that must apply LAST: use a repeatable migration (`R__…`).** If your script adds a
-   constraint or index over data that *other* migrations seed — rather than seeding its own fixtures —
-   it does not want a version number at all. It wants to run after everything, which is precisely
-   Flyway's guarantee for repeatable migrations. `R__cost_detail_bridge_culvert_fks.sql` is the worked
-   example: it declares the delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures
-   have populated their per-report column, and it cannot collide with anyone. `FlywayMigrationVersionUniquenessTest`
-   ignores `R__` files by design. This is NOT a general escape hatch — a migration that inserts its own
-   fixtures still takes a version, because re-running it on a reused container would duplicate rows.
+   Verified on Flyway 12.4.0: repeatables apply **after every versioned migration**, in
+   **lexicographic order of description** — so the numeric prefix is what fixes FK ordering, and
+   digits sort before letters.
+
+1a. **Only DDL keeps a version.** `V<next>__<name>.sql` for adding or altering tables. Take the next
+   free integer after the highest `V` on `main` plus any in-flight PR you know about; on a duplicate,
+   bump *your* (newer) migration and never renumber someone else's merged one.
+   `FlywayMigrationVersionUniquenessTest` catches a clash at PR time rather than at IT boot. **Keep
+   `INSERT`s out of these files** — putting seed rows in a new `V__` reopens the collision this
+   convention exists to close.
+
+   *(Historical note, kept because it is the reason for the rule above: timestamp versions were tried
+   and did NOT remove the race. Proven 2026-08-13, when three branches reached for the same two days
+   (`V20260814`, `V20260815`), and again on 2026-08-19 with `V20260819`. Everyone hand-picks today's
+   date, so a date is exactly as scarce as an integer.)*
+
+1b. **`R__` files are safe to re-run here, and this is not the escape hatch it once looked like.** An
+   earlier revision of this README said a fixture-inserting migration "still takes a version, because
+   re-running it on a reused container would duplicate rows." That was wrong on both halves. Flyway
+   re-runs a repeatable migration **only when its checksum changes**, and `AbstractOracleIT` creates
+   the container **fresh per JVM** (no `withReuse`), so every repeatable applies exactly once per run.
+   The only residual case is editing an `R__` file against a container you are deliberately reusing —
+   which needs a clean container, the same caveat every DDL fixture here already carries.
+   `R__cost_detail_bridge_culvert_fks.sql` is the worked example of the `90+` band: it declares the
+   delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures have populated their
+   per-report column. It predates the prefix convention and still carries no number; it should gain
+   `90_` when the first prefixed seed lands beside it.
 2. **Fixture ID ranges.** Namespace seed entities by track so PKs can't overlap:
 
    | Track                     | `MILL_ID` block | Notes                                        |
@@ -54,14 +75,14 @@ two such branches merge:
    | Schedule 9                | **700–706**     | `V20260815`                                  |
    | Schedule 10               | **710–716**     | `V20260817`                                  |
 
-   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per convention 1 and
-   the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
+   **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
+   note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
    own mills so no destructive test can touch Story 7.2's `670–676`: `690` the write playground
    (Draft 2016–2023, one destructive concern per year), `691` Submitted → the write-gate 409, `692`
    check-status against real sub-page rows, `693` owned solely by the authorization IT. The block was
    `680–683` until Schedule 7B's `V20260811` landed on `main` claiming `680–681`; both migrations
    `INSERT INTO THE.MILL` those ids, so the merge would have failed Flyway outright on ORA-00001.
-   Per convention 1 the newer (unmerged) claim moved. PK ranges are
+   Per convention 1a the newer (unmerged) claim moved. PK ranges are
    a **new block**, verified above every value in use (the previous high-water mark was `8438`):
    `CAMP_REPORT_ID` **`8700–8719`** and `ILCR_COST_REPORT_DETAIL_ID` **`8720–8799`** — both below the
    sequence starts. It adds NO cost item (62/68/141/142 already exist via `V34`/`V31`).
@@ -212,5 +233,6 @@ snapshot they seed into, with the `V3x` references in the `schedule6` `*IT`s and
 lockstep. Version numbers only; no seed-ID clash (schedule 6 owns mills `660–666`).
 
 This is the third version collision on this convention (schedule 2, schedule 11, schedule 6), and
-each one was caught only after CI went red on a branch that was otherwise green. The
-timestamp-version escape hatch in convention 1 above is worth taking.
+each one was caught only after CI went red on a branch that was otherwise green. Under the 2026-08-20 decision this class of
+clash no longer arises for seed data at all: it goes in an `R__` file, which has no version to claim
+(convention 1 above).
