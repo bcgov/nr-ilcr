@@ -117,6 +117,61 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
+  /** A code-table row: the stored code and the description legacy displayed in its place. */
+  record CodeRow(String code, String description) {}
+
+  /**
+   * TSA numbers effective for the reporting year, PLUS any TSA a stored record already references.
+   *
+   * <p>Legacy sourced this control from {@code LookUpCaches.getTsaNumberCodeCache()} ({@code
+   * RoadMaintenanceReportType.java:85}) and displayed {@code DESCRIPTION} over the stored code
+   * ({@code schedule6.xhtml:269-271}). The year window reproduces {@code LookupCache.getCacheList}.
+   * The union keeps a historical code visible in its own dropdown: a row stored under a
+   * since-expired TSA would otherwise render blank over a value that is really there.
+   */
+  @Query(
+      """
+      SELECT TSA_NUMBER AS code, DESCRIPTION AS description
+        FROM THE.TSA_NUMBER_CODE
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR TSA_NUMBER IN (
+             SELECT r.TSA_NUMBER
+               FROM THE.ROAD_MAINTENANCE_REPORT r
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '6')
+       ORDER BY TSA_NUMBER
+      """)
+  List<CodeRow> findTsaNumbers(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Supply block codes effective for the reporting year, PLUS any block a stored record references.
+   *
+   * <p>Legacy narrowed this list to blocks whose code starts with the chosen TSA ({@code
+   * Schedule6DAO.getTsbByTsaNumber} :464-475). The full list is served and that narrowing is left
+   * to the control, which is where the chosen TSA lives — the Schedule 10 split.
+   */
+  @Query(
+      """
+      SELECT TSB_NUMBER_CODE AS code, DESCRIPTION AS description
+        FROM THE.TSB_NUMBER_CODE
+       WHERE ((EFFECTIVE_DATE IS NULL
+            OR EFFECTIVE_DATE <= TO_DATE(:year || '-01-01', 'YYYY-MM-DD'))
+         AND (EXPIRY_DATE IS NULL
+           OR EXPIRY_DATE >= TO_DATE(:year || '-01-01', 'YYYY-MM-DD')))
+          OR TSB_NUMBER_CODE IN (
+             SELECT r.TSB_NUMBER_CODE
+               FROM THE.ROAD_MAINTENANCE_REPORT r
+              WHERE r.ILCR_MILL_ID = :millId
+                AND r.REPORT_YEAR = :year
+                AND r.ILCR_CATEGORY_ID = '6')
+       ORDER BY TSB_NUMBER_CODE
+      """)
+  List<CodeRow> findSupplyBlocks(@Param("millId") long millId, @Param("year") int year);
+
   // ===============================================================================================
   // Write path (Story 8.2) — AD-3 dumb SQL; transaction boundary, Draft gate, BR-02 counterpart-
   // clear, BR-09 placeholder logic, and 404-vs-409 disambiguation live in Schedule6Service. All

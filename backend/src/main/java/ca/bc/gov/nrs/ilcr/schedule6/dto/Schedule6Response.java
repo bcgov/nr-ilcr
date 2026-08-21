@@ -23,6 +23,11 @@ import java.util.List;
  *
  * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson {@code non_null}
  * omits it), carrying the resolved {@link MessageInfo} on the Story 8.2 save echo.
+ *
+ * <p>{@code codeLists} carries the TSA and Supply Block dropdown options (code + description).
+ * Legacy rendered both controls as {@code p:selectOneMenu} with {@code itemLabel} bound to the
+ * code's {@code DESCRIPTION} ({@code schedule6.xhtml:265-323}), so the page must be able to show a
+ * name for a stored code. This retires deviation (A), which served the raw codes as free text.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record Schedule6Response(
@@ -35,6 +40,7 @@ public record Schedule6Response(
     BigDecimal totalVolume,
     Long totalCost,
     BigDecimal totalCostPerVolume,
+    Schedule6CodeLists codeLists,
     MessageInfo message) {
 
   /** A copy of this document carrying the given success message (for the save echo, AD-8). */
@@ -49,6 +55,7 @@ public record Schedule6Response(
         totalVolume,
         totalCost,
         totalCostPerVolume,
+        codeLists,
         message);
   }
 }

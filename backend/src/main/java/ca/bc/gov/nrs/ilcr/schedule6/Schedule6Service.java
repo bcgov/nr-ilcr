@@ -1,9 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
+import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
@@ -12,6 +14,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -173,7 +176,23 @@ public class Schedule6Service {
         normalizeVolume(totalVolume),
         totalCost,
         perUnit(totalCost, totalVolume),
+        codeLists(millId, year),
         null);
+  }
+
+  /**
+   * The two dropdown lists for the entry controls (deviation (A) retired). Read on every document
+   * build rather than cached: legacy read them from a process-wide {@code LookUpCaches} cache,
+   * which has no counterpart here, and the two queries are small indexed code-table scans.
+   */
+  private Schedule6CodeLists codeLists(long millId, int year) {
+    return new Schedule6CodeLists(
+        toCodeDescriptions(repository.findTsaNumbers(millId, year)),
+        toCodeDescriptions(repository.findSupplyBlocks(millId, year)));
+  }
+
+  private static List<CodeDescriptionDto> toCodeDescriptions(List<CodeRow> rows) {
+    return rows.stream().map(r -> new CodeDescriptionDto(r.code(), r.description())).toList();
   }
 
   /**
