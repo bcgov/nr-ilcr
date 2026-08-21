@@ -39,6 +39,68 @@ const rowOf = (displayValue: string) =>
 const intentOf = (url: string): string | null => /[?&]intent=([^&]+)/.exec(url)?.[1] ?? null
 
 describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch Save', () => {
+  // ---- Defect #291: the Totals footer tracks entry, on blur. -------------------------------------
+  //
+  // The fixture is self-consistent (rows 800+600 = 1400 harvest, 300+200 = 500 pop, crown 900), so
+  // the load assertion is a genuine mirror-vs-server comparison.
+
+  /** The Totals footer's three figures. */
+  const footerCells = (): (string | null)[] => {
+    const tr = document.querySelector('.schedule-3-sub__totals') as HTMLElement
+    return [...tr.querySelectorAll('td')].slice(1, 4).map((td) => td.textContent)
+  }
+
+  test('on load the footer mirror reproduces the served subtotal (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc)))
+    render(<OtherAcceptableCostsPage />)
+    await screen.findByDisplayValue('Consulting')
+
+    expect(footerCells()).toEqual(['1,400', '500', '900'])
+  })
+
+  test('typing alone leaves the footer alone; blurring a total recalculates it (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc)))
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByDisplayValue('Consulting')
+
+    const total = within(rowOf('Consulting')).getByLabelText('Edit total')
+    await user.clear(total)
+    await user.type(total, '1000')
+    expect(footerCells()).toEqual(['1,400', '500', '900']) // not per keystroke
+
+    await user.tab()
+    // Harvest 1000 + 600 = 1,600; PO&P unchanged at 500; Crown the difference.
+    expect(footerCells()).toEqual(['1,600', '500', '1,100'])
+  })
+
+  test('a PO&P blur moves the PO&P and Crown columns only (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc)))
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByDisplayValue('Consulting')
+
+    const pop = within(rowOf('Consulting')).getByLabelText('Edit PO&P')
+    await user.clear(pop)
+    await user.type(pop, '100')
+    await user.tab()
+
+    // Harvest unchanged at 1,400; PO&P 100 + 200 = 300; Crown 1,400 - 300.
+    expect(footerCells()).toEqual(['1,400', '300', '1,100'])
+  })
+
+  test('clearing a row treats its halves as 0, matching the server (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc)))
+    render(<OtherAcceptableCostsPage />)
+    const user = userEvent.setup()
+    await screen.findByDisplayValue('Consulting')
+
+    await user.clear(within(rowOf('Consulting')).getByLabelText('Edit total'))
+    await user.tab()
+    // subtotalOtherCosts sums with nulls as 0, so the footer is 600 / 500 / 100 -- not blank.
+    expect(footerCells()).toEqual(['600', '500', '100'])
+  })
+
   test('lists groups as editable inputs with live-derived crown + subtotal + add form', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc)))
     render(<OtherAcceptableCostsPage />)

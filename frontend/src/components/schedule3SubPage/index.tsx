@@ -1,4 +1,5 @@
 import type { FC } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -89,6 +90,15 @@ export interface Schedule3SubPageConfig<
   fields: Schedule3SubPageField<TRow>[]
   readonlyColumns?: Schedule3SubPageColumn[]
   summaryItems: Schedule3SubPageSummaryItem<TDoc>[]
+  /**
+   * Optional display-only mirror for the Totals footer (defect #291): given the blur-committed row
+   * values, return one figure per `summaryItems` entry, in the same order. Present only on the pages
+   * whose legacy footer refreshed during entry — Other Acceptable Costs, whose Total $ / PO&P $
+   * handlers rendered `footerValues` (schedule3SubtotalOtherCosts.xhtml:74,83). The Included
+   * Unacceptable page omits it: its only handler was `render="cost"`, with no derived target, so
+   * leaving that footer to the Save echo is faithful.
+   */
+  deriveSummary?: (rows: readonly SubPageValues[]) => readonly (number | null)[]
   rows: (doc: TDoc) => TRow[]
   validate: (description: string, values: SubPageValues) => SubPageErrors
 }
@@ -132,6 +142,16 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   } = editor
 
   const readonlyColumns = config.readonlyColumns ?? []
+
+  // The blur-committed row values the footer mirror reads (defect #291). Keyed by row key; a row not
+  // in the map has never been committed, so it contributes nothing yet. Re-seeded whenever the
+  // document is replaced (load / Save echo / delete reload).
+  const [committed, setCommitted] = useState<Record<string, SubPageValues>>({})
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  useLayoutEffect(() => {
+    setCommitted(Object.fromEntries(rowsRef.current.map((row) => [row.key, row.values])))
+  }, [editor.data])
 
   // Numeric view of a row's entered values, for the live-derived read-only columns (e.g. Crown $).
   const numeric = (values: SubPageValues): Record<string, number | null> =>
@@ -179,9 +199,15 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 value={row.values[field.key] ?? ''}
                 onChange={(e) => setRowValue(row.key, field.key, e.target.value)}
                 // Re-group on blur only — regrouping mid-keystroke would fight the caret.
-                onBlur={() =>
-                  setRowValue(row.key, field.key, groupInput(row.values[field.key] ?? ''))
-                }
+                onBlur={() => {
+                  const grouped = groupInput(row.values[field.key] ?? '')
+                  setRowValue(row.key, field.key, grouped)
+                  // Commit the grouped string, so `committed` and the field hold the same text.
+                  setCommitted((prev) => ({
+                    ...prev,
+                    [row.key]: { ...row.values, [field.key]: grouped },
+                  }))
+                }}
                 invalid={Boolean(errs[field.key])}
                 invalidText={errs[field.key]}
               />
@@ -234,6 +260,13 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     >
       {(data) => {
         const editable = data.editable
+        // The footer mirror: only when the page supplies one and the schedule is editable (#291 AC7).
+        // `editable` comes from the DOCUMENT — the editor hook does not expose it, and reading a
+        // non-existent `editor.editable` silently disabled the mirror entirely.
+        const mirroredSummary =
+          config.deriveSummary && editable
+            ? config.deriveSummary(rows.map((row) => committed[row.key] ?? {}))
+            : null
         // Description + numeric (field + readonly) columns + optional Action column — empty-state colSpan.
         const totalColumns = 1 + config.fields.length + readonlyColumns.length + (editable ? 1 : 0)
         return (
@@ -349,9 +382,9 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                             figures, refreshed after Save (legacy recomputed on save). */}
                       <TableRow className="schedule-3-sub__totals">
                         <TableCell>Totals</TableCell>
-                        {config.summaryItems.map((item) => (
+                        {config.summaryItems.map((item, index) => (
                           <TableCell key={item.label} className="schedule-3__num">
-                            {fmtNumber(item.value(data))}
+                            {fmtNumber(mirroredSummary ? mirroredSummary[index] : item.value(data))}
                           </TableCell>
                         ))}
                         {editable && <TableCell />}
