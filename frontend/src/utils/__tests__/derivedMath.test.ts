@@ -1,4 +1,12 @@
-import { addN, halfUp, perUnitOf, subN, sumAsZero, wholeDollars } from '@/utils/derivedMath'
+import {
+  addN,
+  halfUp,
+  perUnitLegacy,
+  perUnitOf,
+  subN,
+  sumAsZero,
+  wholeDollars,
+} from '@/utils/derivedMath'
 
 // The expected values here are transcribed from the BACKEND tests that pin the same arithmetic, so a
 // drift between the mirror and the server trips a test here rather than surfacing as a figure that
@@ -123,5 +131,56 @@ describe('sumAsZero', () => {
   test('is 0 — not null — when every operand is null', () => {
     expect(sumAsZero(null, null)).toBe(0)
     expect(sumAsZero()).toBe(0)
+  })
+})
+
+describe('halfUp — exact decimal halves (the float-representation trap)', () => {
+  test('an exact half-cent rounds UP, the way BigDecimal does', () => {
+    // 3075/5000 = 0.615 in decimal; the nearest double is 0.6149999999999999911…, so a
+    // multiply-and-round implementation gives 0.61 where the server gives 0.62.
+    expect(halfUp(3075 / 5000, 2)).toBe(0.62)
+    expect(halfUp(0.615, 2)).toBe(0.62)
+    expect(halfUp(1.005, 2)).toBe(1.01)
+    expect(halfUp(2.675, 2)).toBe(2.68)
+  })
+
+  test('and the same half rounds away from zero when negative', () => {
+    expect(halfUp(-0.615, 2)).toBe(-0.62)
+    expect(halfUp(-1.005, 2)).toBe(-1.01)
+  })
+
+  test('a value just BELOW the half still rounds down', () => {
+    expect(halfUp(0.6149, 2)).toBe(0.61)
+    expect(halfUp(1.00499, 2)).toBe(1.0)
+  })
+
+  test('exact halves at other scales', () => {
+    expect(halfUp(0.00005, 4)).toBe(0.0001)
+    expect(halfUp(2.5, 0)).toBe(3)
+    expect(halfUp(0.5, 0)).toBe(1)
+  })
+})
+
+describe('perUnitLegacy (Schedules 1 and 3)', () => {
+  test('rounds to two decimals, not four', () => {
+    // 200000/30000 = 6.66666… -> 6.67 here; perUnitOf would give 6.6667.
+    expect(perUnitLegacy(200000, 30000)).toBe(6.67)
+    expect(perUnitOf(200000, 30000)).toBe(6.6667)
+  })
+
+  test('the Schedule3ServiceTest timber rates', () => {
+    expect(perUnitLegacy(300000, 54321)).toBe(5.52) // 5.52272…
+    expect(perUnitLegacy(570000, 54321)).toBe(10.49) // 10.49318…
+    expect(perUnitLegacy(870000, 108642)).toBe(8.01) // 8.00795…
+  })
+
+  test('an exact half-cent quotient rounds up', () => {
+    expect(perUnitLegacy(3075, 5000)).toBe(0.62)
+  })
+
+  test('null and zero-volume rules match perUnitOf', () => {
+    expect(perUnitLegacy(null, 5000)).toBeNull()
+    expect(perUnitLegacy(3075, null)).toBeNull()
+    expect(perUnitLegacy(3075, 0)).toBeNull()
   })
 })

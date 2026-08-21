@@ -22,17 +22,37 @@
  * Round half-AWAY-FROM-ZERO at `decimals` places — Java's `RoundingMode.HALF_UP`, which is what every
  * derived figure in the backend uses.
  *
- * Deliberately NOT `Math.round` or `toFixed`: both round half-UP toward positive infinity, so they
- * disagree with the backend on negatives (`Math.round(-1.5)` is `-1`, HALF_UP gives `-2`). Costs are
- * normally positive, but a derived figure is a difference — `netPurchased`, `totalCosts` and the
- * `crown` column all subtract — so negatives are reachable from ordinary entry.
+ * Two traps, both of which cost a wrong figure on screen:
+ *
+ * 1. **Not `Math.round` / `toFixed` alone.** Both round half-UP toward positive infinity, so they
+ *    disagree with the backend on negatives (`Math.round(-1.5)` is `-1`, HALF_UP gives `-2`). A
+ *    derived figure is often a difference — `netPurchased`, `totalCosts`, the `crown` column — so
+ *    negatives are reachable from ordinary entry. The sign is therefore handled explicitly.
+ * 2. **Not `value * 10ⁿ` either.** Scaling by a power of ten and rounding loses exact halves to binary
+ *    representation: `3075 / 5000` is `0.615` in decimal — which BigDecimal rounds UP to `0.62` — but
+ *    the nearest double is `0.6149999999999999911…`, so `Math.round(0.615 * 100)` yields `61` and the
+ *    cell shows `0.61`. Both operands here are money and volume figures, so quotients landing exactly
+ *    on a half-cent are ordinary, not contrived.
+ *
+ * So the rounding is done on the value's DECIMAL expansion: `toFixed` re-expands the double to a
+ * decimal string (which recovers the intended `0.6150000000`), and the digit past the cut decides the
+ * carry. `decimals + 8` guard digits is ample — a tie at the guard boundary would need a denominator
+ * that is not a power of two, which no double can be.
  */
 export const halfUp = (value: number, decimals = 0): number => {
   if (value === 0 || !Number.isFinite(value)) {
     return value === 0 ? 0 : value
   }
-  const factor = 10 ** decimals
-  const rounded = Math.round(Math.abs(value) * factor) / factor
+  const expanded = Math.abs(value).toFixed(Math.min(decimals + 8, 100))
+  const [intDigits, fracDigits = ''] = expanded.split('.')
+  const kept = fracDigits.slice(0, decimals)
+  const dropped = fracDigits.slice(decimals)
+  // The kept digits as one integer, carried when the first dropped digit is 5 or more.
+  let scaled = Number(intDigits + kept)
+  if (dropped.charCodeAt(0) >= 53 /* '5' */) {
+    scaled += 1
+  }
+  const rounded = scaled / 10 ** decimals
   // A small negative that rounds down to zero must come back as +0: `-0` renders as "-0" through
   // `toLocaleString`, so re-applying the sign unconditionally would put a phantom minus on screen.
   if (rounded === 0) {

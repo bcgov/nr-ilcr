@@ -1,7 +1,14 @@
 // Mirrors the backend Schedule3Response DTO (Stories 4.1/4.2), the AD-12 aggregate document. Numbers
 // are nullable; Jackson omits nulls, so an absent line/block member simply won't be in the JSON. Every
 // crown value, timber cost/perUnit, subtotal, total and Total Overhead figure is computed server-side
-// (read-only) — never recompute them client-side.
+// and is read-only here — never sent on a write, and the server is the sole authority for every stored
+// figure.
+//
+// They ARE mirrored for display while the schedule is being edited, so the read-only cells track entry
+// before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That mirror lives in
+// `components/schedule3/derived.ts` and nowhere else, and the Save echo supersedes it. Note the
+// Scaling (33) line's `pop` is itself derived from the two timber volumes, and that Schedule 3 rounds
+// $/m³ with the LEGACY scale-2 rule (divide at scale 10, then scale 2), not Schedules 2/4's scale 4.
 
 import type { MessageInfo } from '@/interfaces/Schedule1Response'
 
