@@ -455,6 +455,12 @@ public class Schedule6Service {
         // Raced by a concurrent delete between the read above and here.
         throw new RoadRecordNotFoundException();
       }
+      // Recorded deviation: legacy's CoreUtil.isNullOrEmptyString (CoreUtil.java:166-172) is
+      // empty-aware, not blank-aware, so a whitespace-only comment re-inserts a placeholder in
+      // legacy and would NOT here. isNotBlank matches the trim-aware isPlaceholder convention this
+      // service already uses everywhere else, and saveGeneralComments already normalizes blank to
+      // NULL on the save side (:375-376), so a whitespace-only stored comment should not exist in
+      // practice — but if one ever does (e.g. a pre-existing row), this is where the two diverge.
       if (wasOnlyRow && StringUtils.isNotBlank(survivingComment)) {
         repository.insertPlaceholder(
             repository.nextRoadReportId(), millId, year, survivingComment, user);

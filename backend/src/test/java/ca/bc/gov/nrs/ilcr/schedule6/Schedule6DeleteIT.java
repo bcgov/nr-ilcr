@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.schedule6;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,15 +52,19 @@ class Schedule6DeleteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.generalComments", is("Comment that must survive the delete")))
         .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
 
-    // The surviving row is a real placeholder: classification all NULL, revision 0, no cost detail.
+    // The surviving row is a real placeholder: classification all NULL, revision 0, no cost detail,
+    // and a DIFFERENT id from the deleted 8370 -- a fresh INSERT (repository.nextRoadReportId()),
+    // never a mutated survivor of the deleted row (code review 2026-08-21).
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     Map<String, Object> placeholder =
         jdbc.queryForMap(
             """
-            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT
+            SELECT ROAD_MAINTENANCE_REPORT_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE,
+                   COMMENTS, REVISION_COUNT
               FROM THE.ROAD_MAINTENANCE_REPORT
              WHERE ILCR_MILL_ID = 667 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '6'
             """);
+    assertNotEquals(8370, ((Number) placeholder.get("ROAD_MAINTENANCE_REPORT_ID")).intValue());
     assertEquals(null, placeholder.get("TSA_NUMBER"));
     assertEquals(null, placeholder.get("TSB_NUMBER_CODE"));
     assertEquals(null, placeholder.get("TFL_NUMBER_CODE"));
@@ -144,10 +149,14 @@ class Schedule6DeleteIT extends AbstractOracleIT {
   @Test
   @DisplayName("a record belonging to another mill is a 404 -- the IDOR scope guard")
   void foreignMillRecordIsNotFound() throws Exception {
-    // 8372 belongs to mill 669/2021 -- addressing it via mill 667 is foreign.
+    // 8373 belongs to mill 669/2021 -- addressing it via mill 667 is foreign. Deliberately NOT
+    // 8372: deletingNonSoleRecordLeavesSurvivorUntouched deletes that row, so asserting its
+    // survival here would be order-dependent on JUnit's method-execution order (code review
+    // 2026-08-21). 8373 is never deleted by any test in this class, so this proof is genuinely
+    // order-free.
     mockMvc
         .perform(
-            delete(RECORDS + "/8372").param("millId", "667").param("year", "2021").with(csrf()))
+            delete(RECORDS + "/8373").param("millId", "667").param("year", "2021").with(csrf()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.detail", is("Road record not found.")));
 
@@ -157,7 +166,7 @@ class Schedule6DeleteIT extends AbstractOracleIT {
         1,
         jdbc.queryForObject(
             "SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT "
-                + "WHERE ROAD_MAINTENANCE_REPORT_ID = 8372",
+                + "WHERE ROAD_MAINTENANCE_REPORT_ID = 8373",
             Integer.class));
   }
 

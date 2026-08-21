@@ -502,10 +502,18 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
   }
 
   /**
-   * Delete a road record's item-69 cost detail rows. Must run BEFORE the master delete: the detail
-   * carries {@code ROAD_MAINTENANCE_REPORT_ID} as an FK, so the master delete would raise ORA-02292
-   * with the child still present. Legacy relied on a Hibernate cascade ({@code
-   * Schedule6DAO.java:293}); the explicit statement is the AD-3 equivalent.
+   * Delete ALL of a road record's cost detail rows (deliberately not filtered to item 69 — the only
+   * item a road record legitimately carries — so an anomalous extra-item row, however it got there,
+   * cannot survive the master delete and dangle as an orphan; narrowing the filter would strand
+   * such a row and re-raise the exact ORA-02292 this method exists to avoid). Must run BEFORE the
+   * master delete: the detail carries {@code ROAD_MAINTENANCE_REPORT_ID} as an FK, so the master
+   * delete would raise ORA-02292 with the child still present. Legacy relied on a Hibernate cascade
+   * ({@code Schedule6DAO.java:293}); the explicit statement is the AD-3 equivalent.
+   *
+   * <p>Deliberately NOT mill/year/category-scoped, unlike every write above — a detail row carries
+   * none of those columns itself. This is safe ONLY because the sole caller ({@link
+   * Schedule6Service#deleteRecord}) has already proven ownership of {@code recordId} via {@link
+   * #findRoadRecord} before calling this; it must never be called on an unverified id.
    *
    * @return rows affected — legitimately {@code 0}: real delivery cat-6 rows have NO item-69 detail
    */
