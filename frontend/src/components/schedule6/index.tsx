@@ -12,6 +12,7 @@ import {
   Column,
   Grid,
   InlineNotification,
+  Modal,
   TextArea,
   TextInput,
 } from '@carbon/react'
@@ -48,6 +49,13 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 // rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
 const EMPTY_LIST = 'No records found.'
 const ADD_PANEL_HEADING = 'Add Road Maintenance report'
+// Verbatim legacy delete-confirmation copy (messages.properties:31, schedule6.xhtml:433-450). The
+// dialog wording is client-owned chrome with no request behind it, so it is pinned here; every
+// success/error still renders from the API (AD-8).
+const CONFIRM_DELETE_HEADING = 'Confirmation'
+const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you want to continue?'
+const DELETE_BUTTON_LABEL = 'Delete'
+const DELETE_BUTTON_TITLE = 'Delete Road Maintenance Report'
 const SCHEDULE6_PATH = '/v1/schedule6'
 const RECORDS_PATH = `${SCHEDULE6_PATH}/records`
 const GENERAL_COMMENTS_PATH = `${SCHEDULE6_PATH}/general-comments`
@@ -300,13 +308,22 @@ type RecordDisplayProps = {
   readonly row: RoadRecord
   readonly codeLists: Schedule6CodeLists
   readonly editDisabled: boolean
+  readonly deleteDisabled: boolean
   readonly onEdit: () => void
+  readonly onDelete: () => void
 }
 
 // TFL stores the literal 'TFL' in areaType, which is not a served code — describe() would otherwise
 // look it up against codeLists.tsaNumbers and fall back to the bare 'TFL' anyway (the sentinel is its
 // own description), but resolving it through areaTypeOptions keeps this row and the combo consistent.
-const RecordDisplay: FC<RecordDisplayProps> = ({ row, codeLists, editDisabled, onEdit }) => (
+const RecordDisplay: FC<RecordDisplayProps> = ({
+  row,
+  codeLists,
+  editDisabled,
+  deleteDisabled,
+  onEdit,
+  onDelete,
+}) => (
   <>
     <dl className="schedule-6__fields">
       <FieldValue
@@ -331,6 +348,19 @@ const RecordDisplay: FC<RecordDisplayProps> = ({ row, codeLists, editDisabled, o
     </dl>
     <Button kind="ghost" size="sm" disabled={editDisabled} onClick={onEdit}>
       Edit
+    </Button>
+    <Button
+      kind="danger--ghost"
+      size="sm"
+      title={DELETE_BUTTON_TITLE}
+      // The visible label is the bare legacy "Delete"; the accessible name carries the legacy
+      // title (schedule6.xhtml:434) so screen-reader users get the row context sighted users get
+      // from position.
+      aria-label={DELETE_BUTTON_TITLE}
+      disabled={deleteDisabled}
+      onClick={onDelete}
+    >
+      {DELETE_BUTTON_LABEL}
     </Button>
   </>
 )
@@ -402,6 +432,11 @@ const Schedule6: FC = () => {
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
 
+  // The record awaiting delete confirmation, or null. Holds the id rather than a boolean so a
+  // context change mid-dialog cannot leave the confirm pointed at a row from the previous
+  // mill/year — resetTransient below clears it on every context change.
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+
   // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
   // so a context change can't strand an open editor, an open add panel or a stale banner.
   const resetTransient = useCallback(() => {
@@ -417,6 +452,7 @@ const Schedule6: FC = () => {
     setEditForm(emptyForm())
     setEditErrors({})
     setCommentsError(undefined)
+    setPendingDeleteId(null)
   }, [])
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
@@ -561,6 +597,26 @@ const Schedule6: FC = () => {
     )
   }
 
+  const handleConfirmDelete = () => {
+    const recordId = pendingDeleteId
+    // Close the dialog whether or not the delete actually proceeds — a stale `saving` guard below
+    // must not leave the confirm sitting open with nothing left to confirm.
+    setPendingDeleteId(null)
+    if (recordId === null || saving) {
+      return
+    }
+    clearBanners()
+    runMutation(
+      // The recordId travels in the URL — never the 1-based ordinal shown in the accordion title,
+      // which is display-only and does not identify the row server-side.
+      apiService
+        .getAxiosInstance()
+        .delete<Schedule6Response>(`${RECORDS_PATH}/${String(recordId)}${query}`),
+      () => undefined,
+      'Record could not be deleted.',
+    )
+  }
+
   const handleSaveComments = () => {
     if (!data || saving) {
       return
@@ -653,6 +709,11 @@ const Schedule6: FC = () => {
   const editable = data.editable
   const editing = editingId !== null
   const entryLocked = !editable || saving || editing
+  // Deliberately NOT entryLocked: legacy gated Delete on disableReportEdits() only
+  // (schedule6.xhtml:436-437), which never considered whether some OTHER row's editor was open.
+  // entryLocked would make Delete unavailable across the whole page whenever any editor is open,
+  // which legacy never did.
+  const deleteDisabled = !editable || saving
   // Legacy's Check Status was an ajax="false" full postback (schedule6.xhtml:226-229): JSF applied
   // the on-screen values to the model BEFORE checkStatus() evaluated it, so the verdict always
   // reflected the screen. The modern check reads only the DB, so it is disabled while unsaved
@@ -799,8 +860,12 @@ const Schedule6: FC = () => {
                       row={row}
                       codeLists={data.codeLists}
                       editDisabled={entryLocked}
+                      deleteDisabled={deleteDisabled}
                       onEdit={() => {
                         startEdit(row)
+                      }}
+                      onDelete={() => {
+                        setPendingDeleteId(row.recordId)
                       }}
                     />
                   )}
@@ -848,6 +913,26 @@ const Schedule6: FC = () => {
             and carries Save + Check Status only. */}
         {actionBar(false)}
       </Grid>
+      {/* One dialog for the whole page, keyed on pendingDeleteId — legacy also declared a single
+          global confirmDialog (schedule6.xhtml:444-450), not one per row. Conditionally MOUNTED
+          (not just `open`-toggled): Carbon's Modal always renders its own icon "Close" button in
+          the DOM regardless of `open`, which collides with the page's own Add/Close toggle button
+          of the same accessible name. */}
+      {pendingDeleteId !== null && (
+        <Modal
+          open
+          danger
+          modalHeading={CONFIRM_DELETE_HEADING}
+          primaryButtonText="Yes"
+          secondaryButtonText="No"
+          onRequestSubmit={handleConfirmDelete}
+          onRequestClose={() => {
+            setPendingDeleteId(null)
+          }}
+        >
+          <p>{CONFIRM_DELETE_BODY}</p>
+        </Modal>
+      )}
     </div>
   )
 }

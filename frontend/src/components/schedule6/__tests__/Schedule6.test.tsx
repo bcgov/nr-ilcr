@@ -300,14 +300,104 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
   })
 
-  // Deviation (B): the row Delete + confirm dialog is un-sliced by the UC and 8.2 shipped no DELETE.
-  test('no Delete control is rendered anywhere (deviation B)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
+  // Deviation (B) retired by task 4 (correction 1): DELETE now ships. Verbatim legacy copy from
+  // messages.properties:31 and schedule6.xhtml:433-450.
+  test('asks for confirmation with the legacy wording before deleting', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'No' })).toBeInTheDocument()
+  })
+
+  test('sends no request when the confirmation is declined', async () => {
+    let deleted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, () => {
+        deleted = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(screen.getByRole('button', { name: 'No' }))
+
+    expect(deleted).toBe(false)
+    // Declining must not merely hide the modal — a stranded pendingDeleteId would resurrect the
+    // dialog on the next unrelated render.
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+  })
+
+  test('deletes the row and renders the API success message', async () => {
+    let deletedId: string | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, ({ params }) => {
+        deletedId = String(params.id)
+        return HttpResponse.json(
+          doc({ roadRecords: [], message: { key: 'x', text: 'Data deleted successfully' } }),
+        )
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+
+    // The recordId travels in the URL, never the ordinal shown in the accordion title.
+    await waitFor(() => {
+      expect(deletedId).toBe('9501')
+    })
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(screen.getByText('No records found.')).toBeInTheDocument()
+  })
+
+  test('surfaces the API detail verbatim when the delete fails', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, () => problemBody(409, 'Schedule is not editable.')),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Schedule is not editable.')).toBeInTheDocument()
+    // The row must still be there to retry against — a failed delete is not a silent data loss.
+    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
+  })
+
+  test('Delete is disabled when the schedule is not editable, but not when a row editor is open', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     render(<Schedule6 />)
 
+    expect(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }),
+    ).toBeDisabled()
+  })
+
+  test('Delete stays enabled while another row is being edited (gated on editable/saving only)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+
+    // Deliberately not `entryLocked`: legacy gated Delete on disableReportEdits() only
+    // (schedule6.xhtml:436-437), never on another row's open editor.
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete Road Maintenance Report' })
+    deleteButtons.forEach((button) => {
+      expect(button).toBeEnabled()
+    })
   })
 
   test('totals render the three server figures with the legacy masks (AC6)', async () => {
