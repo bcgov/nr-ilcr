@@ -12,16 +12,20 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecord;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DataAccessException;
@@ -241,7 +245,8 @@ public class Schedule6Service {
   public Schedule6Response addRecord(
       long millId, int year, RoadRecordRequest request, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
-    Classification classification = classify(request);
+    Classification classification =
+        classify(request.areaType(), request.tflNumber(), request.supplyBlock());
     try {
       List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
       Integer placeholderId = lonePlaceholderId(rows);
@@ -309,7 +314,8 @@ public class Schedule6Service {
       boolean callerMayEdit,
       String user) {
     requireDraft(millId, year);
-    Classification classification = classify(request);
+    Classification classification =
+        classify(request.areaType(), request.tflNumber(), request.supplyBlock());
     // Defence in depth for the AR11 token: the controller's @Validated OnUpdate group already
     // rejects a null revisionCount as a clean 400, but unboxing it here would NPE -> 500 if any
     // future caller reached the service without that group. Never a coerced 409 (Story 2.1 lesson).
@@ -411,6 +417,123 @@ public class Schedule6Service {
   }
 
   /**
+   * Save the whole Schedule 6 document in one transaction — every road record plus the general
+   * comment (legacy {@code Schedule6DAO.saveSchedule} :236-346).
+   *
+   * <p>Retires deviation (C). The per-record {@link #updateRecord} it stands alongside (Task 8
+   * removes {@code updateRecord} and {@link #saveGeneralComments} once the frontend switches over)
+   * could only ever save the one row an Edit button had opened; with Task 7 making every row
+   * editable at once, legacy's atomic whole-document save is the only shape that cannot half-land
+   * across records and the comment they replicate.
+   *
+   * <p>Order matters: rows first, comment second. {@link Schedule6Repository#updateRoadReport}
+   * deliberately never touches {@code COMMENTS} (S04 independence), so the single {@link
+   * Schedule6Repository#updateAllComments} that follows is what enforces the BR-09 replication
+   * invariant across every row — including any row a concurrent {@link #addRecord} inserted, which
+   * is exactly what legacy's blanket write did.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param request every served record plus the general comment
+   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param user the acting user id (audit columns)
+   * @return the recomputed aggregate document
+   */
+  @Transactional
+  public Schedule6Response saveDocument(
+      long millId, int year, Schedule6SaveRequest request, boolean callerMayEdit, String user) {
+    requireDraft(millId, year);
+    String comments =
+        StringUtils.isBlank(request.generalComments()) ? null : request.generalComments();
+    try {
+      List<RoadRecordRow> stored = repository.findRoadRecords(millId, year);
+      requireEveryServedRow(stored, request.records());
+
+      for (RoadRecordEntry entry : request.records()) {
+        int recordId = entry.recordId();
+        // A placeholder is not a served record, so a client can never legitimately address one —
+        // 404 before the update could convert it into a real record (same guard as updateRecord).
+        if (isPlaceholderId(millId, year, recordId)) {
+          throw new RoadRecordNotFoundException();
+        }
+        Classification classification =
+            classify(entry.areaType(), entry.tflNumber(), entry.supplyBlock());
+        int updated =
+            repository.updateRoadReport(
+                recordId,
+                millId,
+                year,
+                entry.revisionCount(),
+                classification.tsaNumber(),
+                classification.tsbNumberCode(),
+                classification.tflNumberCode(),
+                user);
+        if (updated == 0) {
+          // Zero rows means either absent (404) or stale (409) — disambiguate, never guess (the
+          // Story 2.1 lesson, same as updateRecord).
+          throw repository.countRoadRecord(recordId, millId, year) == 0
+              ? new RoadRecordNotFoundException()
+              : new StaleRevisionException();
+        }
+        repository.upsertCostDetail(recordId, entry.volume(), entry.cost(), entry.comments(), user);
+      }
+
+      // The BR-09 comment branches, unchanged from the retired-in-Task-8 saveGeneralComments except
+      // that the branch is chosen from the SUBMITTED list rather than a second DB read.
+      if (request.records().isEmpty()) {
+        if (comments != null) {
+          repository.insertPlaceholder(repository.nextRoadReportId(), millId, year, comments, user);
+        } else if (stored.stream().allMatch(Schedule6Service::isPlaceholder)) {
+          // Clearing the comment when it was the only thing stored removes the placeholder row(s)
+          // (legacy generalCommentRemovedLastRecord). The DELETE re-checks the placeholder shape in
+          // SQL and can legitimately match nothing — whitespace rather than NULL classification, or
+          // a concurrent addRecord having claimed it since the read above. A silent no-op would
+          // answer 200 "Data saved successfully" while the comment survived, so fall back to
+          // clearing COMMENTS in place (the same fallback saveGeneralComments already carries).
+          int deleted = 0;
+          for (RoadRecordRow row : stored) {
+            deleted += repository.deletePlaceholder(row.recordId(), millId, year);
+          }
+          if (deleted < stored.size()) {
+            repository.updateAllComments(millId, year, null, user);
+          }
+        }
+      } else {
+        repository.updateAllComments(millId, year, comments, user);
+      }
+    } catch (DataAccessException ex) {
+      log.warn(
+          "Schedule 6 document save failed for mill {} year {} [{}]",
+          millId,
+          year,
+          ex.getClass().getSimpleName());
+      throw new ScheduleNotSavedException();
+    }
+    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+  }
+
+  /**
+   * Every served (non-placeholder) row must appear in the payload. Legacy posted its whole
+   * in-memory list, so a partial payload could not arise there; silently skipping an absent row
+   * would discard the user's data behind a success message (the same house 400 Schedules 5 and 7.4
+   * pinned for their own whole-document saves). A placeholder is excluded from this check — it is
+   * not served (excluded from {@code roadRecords[]}), so its omission is expected, not a defect;
+   * otherwise the lone-comment state would become unsavable with an empty {@code records} list.
+   */
+  private static void requireEveryServedRow(
+      List<RoadRecordRow> stored, List<RoadRecordEntry> submitted) {
+    Set<Integer> submittedIds =
+        submitted.stream().map(RoadRecordEntry::recordId).collect(Collectors.toSet());
+    boolean anyOmitted =
+        stored.stream()
+            .filter(row -> !isPlaceholder(row))
+            .anyMatch(row -> !submittedIds.contains(row.recordId()));
+    if (anyOmitted) {
+      throw new OmittedRoadRecordsException();
+    }
+  }
+
+  /**
    * Delete one Schedule 6 road record and return the recomputed document.
    *
    * <p>Ported from legacy {@code Schedule6MB.remove} :208-218 → {@code Schedule6DAO.saveSchedule}
@@ -499,18 +622,24 @@ public class Schedule6Service {
    * :293–309) and the DAO nulls TSA when the type is TFL ({@code Schedule6DAO.java:221–224}) — the
    * server-side clear reproduces the only UI-reachable net effect and closes the crafted-post hole
    * (deviation (b)).
+   *
+   * <p>Takes the three classification fields directly, not a {@code RoadRecordRequest}: both {@code
+   * addRecord}/{@code updateRecord} (unpacking a {@link RoadRecordRequest}) and {@code
+   * saveDocument} (unpacking a {@link RoadRecordEntry}) route through this ONE helper, so the
+   * classification rule can never drift between the per-row and whole-document write paths (Task
+   * 5).
    */
-  private static Classification classify(RoadRecordRequest request) {
-    if (AREA_TYPE_TFL.equals(request.areaType())) {
-      return new Classification(null, null, requireValidTfl(request.tflNumber()));
+  private static Classification classify(String areaType, String tflNumber, String supplyBlock) {
+    if (AREA_TYPE_TFL.equals(areaType)) {
+      return new Classification(null, null, requireValidTfl(tflNumber));
     }
-    // The DTO caps areaType at 3 for the "TFL" literal, so a 3-char NON-TFL code clears Bean
+    // The DTOs cap areaType at 3 for the "TFL" literal, so a 3-char NON-TFL code clears Bean
     // Validation and would hit TSA_NUMBER VARCHAR2(2) as ORA-12899 -> 500. Reject it as the house
     // 400 instead (code review 2026-08-04). Width only — deviation (f) still stores unknown codes.
-    if (request.areaType().length() > TSA_NUMBER_MAX_LENGTH) {
+    if (areaType.length() > TSA_NUMBER_MAX_LENGTH) {
       throw new InvalidClassificationCodeException();
     }
-    return new Classification(request.areaType(), request.supplyBlock(), null);
+    return new Classification(areaType, supplyBlock, null);
   }
 
   /**

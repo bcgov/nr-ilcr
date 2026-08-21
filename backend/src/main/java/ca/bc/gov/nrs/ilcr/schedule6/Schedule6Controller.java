@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +76,21 @@ public class Schedule6Controller implements Schedule6Api {
     boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
     return ResponseEntity.ok(
         schedule6Service.getSchedule6(context.millId(), context.year(), callerMayEdit));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule6Response> saveSchedule6Document(
+      String millId, String year, Schedule6SaveRequest request, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    Schedule6Response doc =
+        schedule6Service.saveDocument(
+            context.millId(),
+            context.year(),
+            request,
+            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            authentication.getName());
+    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
   @Override

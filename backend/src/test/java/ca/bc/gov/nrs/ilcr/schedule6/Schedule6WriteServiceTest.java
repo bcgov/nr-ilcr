@@ -19,7 +19,9 @@ import ca.bc.gov.nrs.ilcr.schedule1.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.schedule1.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -359,6 +361,60 @@ class Schedule6WriteServiceTest {
 
     verify(repository).updateAllComments(MILL, YEAR, null, USER);
     verify(repository, never()).deletePlaceholder(anyInt(), anyLong(), anyInt());
+  }
+
+  // ---- Task 5: whole-document save — omitted-rows guard
+  // ------------------------------------------
+
+  @Test
+  @DisplayName(
+      "Task 5: a stored real row absent from the submitted list -> OmittedRoadRecordsException, "
+          + "nothing written")
+  void saveDocument_omitsAStoredRealRow_throws() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new RoadRecordRow(8390, "01", "01B", null, null, 0),
+                new RoadRecordRow(8391, "03", "03B", null, null, 0)));
+    Schedule6SaveRequest request =
+        new Schedule6SaveRequest(
+            null,
+            List.of(
+                new RoadRecordEntry(
+                    8390, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
+
+    assertThrows(
+        OmittedRoadRecordsException.class,
+        () -> service.saveDocument(MILL, YEAR, request, true, USER));
+    verify(repository, never())
+        .updateRoadReport(
+            anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  @DisplayName(
+      "Task 5: a placeholder row does NOT count as omitted -- the lone-comment state stays "
+          + "savable with only the real row submitted")
+  void saveDocument_placeholderNotCountedAsOmitted_succeeds() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new RoadRecordRow(8390, "01", "01B", null, null, 0),
+                new RoadRecordRow(8392, null, null, null, "lone comment", 0)));
+    when(repository.updateRoadReport(8390, MILL, YEAR, 0, "01", "01B", null, USER)).thenReturn(1);
+    Schedule6SaveRequest request =
+        new Schedule6SaveRequest(
+            "still here",
+            List.of(
+                new RoadRecordEntry(
+                    8390, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
+
+    service.saveDocument(MILL, YEAR, request, true, USER);
+
+    verify(repository).updateRoadReport(8390, MILL, YEAR, 0, "01", "01B", null, USER);
+    verify(repository).updateAllComments(MILL, YEAR, "still here", USER);
   }
 
   // ---- Draft gate + failure translation ---------------------------------------------------------

@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,31 @@ public interface Schedule6Api {
   ResponseEntity<Schedule6Response> getSchedule6(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
+      Authentication authentication);
+
+  /**
+   * Save the whole Schedule 6 document — every road record plus the general comment — in one
+   * transaction, as legacy's single Save did ({@code Schedule6DAO.saveSchedule} :236-346). Retires
+   * deviation (C). {@code records} must carry EVERY served row (a placeholder never counts as
+   * served); an omitted row → 400. Per-row field validation → 400 (verbatim FLD texts); a stale
+   * {@code revisionCount} on any row → 409 and nothing is written (rows are written before the
+   * comment, in the same transaction); an unknown/foreign/placeholder id → 404; non-Draft → 409;
+   * missing {@code EDIT_SCHEDULE} → 403.
+   *
+   * <p>{@code PUT /records/{recordId}} and {@code PUT /general-comments} stay in place alongside
+   * this for now — the frontend still calls them until Task 7 switches over; Task 8 removes them.
+   *
+   * @param millId the raw mill id param (validated by millcontext)
+   * @param year the raw reporting year param
+   * @param request every served record plus the general comment
+   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
+   * @return 200 with the recomputed document (success {@code message})
+   */
+  @PutMapping
+  ResponseEntity<Schedule6Response> saveSchedule6Document(
+      @RequestParam(name = "millId", required = false) String millId,
+      @RequestParam(name = "year", required = false) String year,
+      @Valid @RequestBody Schedule6SaveRequest request,
       Authentication authentication);
 
   /**
