@@ -211,7 +211,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       <CodeComboBox
         id={`${idPrefix}-area-type`}
         titleText="TSA or TFL"
-        items={areaTypeOptions(codeLists.tsaNumbers)}
+        items={areaTypeOptions(codeLists.tsaNumbers, form.areaType)}
         selectedCode={form.areaType}
         disabled={disabled}
         invalid={Boolean(errors.areaType)}
@@ -287,8 +287,9 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   )
 }
 
-// The Add panel (legacy's toggled `roadAddPanel`). `Add Report` posts immediately — add-is-save, so
-// there is no page-level Save to fan out (deviation C).
+// The Add panel (legacy's toggled `roadAddPanel`). `Add Report` posts immediately — add-is-save,
+// independent of the page-level Save (`handleSave`) that fans the rows and general comment out
+// together; deviation (C) is retired now that every row is always editable (Task 7).
 type AddPanelProps = {
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
@@ -333,6 +334,7 @@ const AddPanel: FC<AddPanelProps> = ({
 // were always directly editable, schedule6.xhtml:248-431) plus the Delete button (Task 4).
 type RoadRecordRowProps = {
   readonly row: RoadRecord
+  readonly ordinal: number
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
   readonly codeLists: Schedule6CodeLists
@@ -345,6 +347,7 @@ type RoadRecordRowProps = {
 
 const RoadRecordRow: FC<RoadRecordRowProps> = ({
   row,
+  ordinal,
   form,
   errors,
   codeLists,
@@ -371,10 +374,12 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       kind="danger--ghost"
       size="sm"
       title={DELETE_BUTTON_TITLE}
-      // The visible label is the bare legacy "Delete"; the accessible name carries the legacy
-      // title (schedule6.xhtml:434) so screen-reader users get the row context sighted users get
-      // from position.
-      aria-label={DELETE_BUTTON_TITLE}
+      // The VISIBLE label stays the bare legacy "Delete" (legacy carries no per-row text of its
+      // own to diverge from — this is chrome, not a fidelity claim). The ACCESSIBLE name appends the
+      // ordinal so an N-row schedule doesn't collapse into N identically-named buttons (Carbon renders
+      // every AccordionItem's children into the DOM regardless of which panel is expanded) — matching
+      // the row's own "Road Maintenance report Id: N" accordion title (final-review M8).
+      aria-label={`${DELETE_BUTTON_TITLE} ${String(ordinal)}`}
       disabled={deleteDisabled}
       onClick={onDelete}
     >
@@ -477,7 +482,7 @@ const Schedule6: FC = () => {
     }))
   }
 
-  // Shared tail for the three DOCUMENT mutations (add, edit, general comment): apply on success, keep
+  // Shared tail for the DOCUMENT mutations (add, delete, whole-document save): apply on success, keep
   // entered values and surface the API's verbatim detail on failure, and release the in-flight lock —
   // each branch guarded, including the `finally`, where an unguarded release would free a lock
   // belonging to a NEWER request. Check Status shares the same three-branch guarding but deliberately
@@ -692,10 +697,11 @@ const Schedule6: FC = () => {
   // Server-authoritative (AD-9) — never derived from trackStatus or the role. No `editing` term any
   // more: every row is always live, so there is no separate "an editor is open" state to fold in.
   const editable = data.editable
+  // Shared by every row control AND Delete (deliberately the same gate now, not the historical
+  // per-row-editor distinction): legacy gated Delete on disableReportEdits() only
+  // (schedule6.xhtml:436-437), same as every other row input.
   const entryLocked = !editable || saving
-  // Deliberately the SAME as entryLocked now (not the historical distinction from a per-row editor):
-  // legacy gated Delete on disableReportEdits() only (schedule6.xhtml:436-437).
-  const deleteDisabled = !editable || saving
+  const deleteDisabled = entryLocked
 
   // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
   // (saveButton0/checkStatusButton0, schedule6.xhtml:222-229) and the same pair again below the
@@ -813,6 +819,7 @@ const Schedule6: FC = () => {
                 >
                   <RoadRecordRow
                     row={row}
+                    ordinal={index + 1}
                     form={getRowForm(row)}
                     errors={rowErrors[row.recordId] ?? {}}
                     codeLists={data.codeLists}

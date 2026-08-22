@@ -22,9 +22,17 @@ import java.util.List;
  * ROAD_MAINTENANCE_REPORT.COMMENTS}, a different and wider column than the per-record comment's 400
  * ({@link RoadRecordEntry#comments()}). Null or blank clears it.
  *
+ * <p>The element-type {@code @NotNull} on {@code List<@NotNull RoadRecordEntry>} closes a {@code
+ * null} ENTRY inside an otherwise-present list ({@code "records":[null]}) — without it, a null
+ * element reaches {@code requireEveryServedRow} ({@link
+ * ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service#requireEveryServedRow}) and NPEs past the {@code
+ * catch (DataAccessException)} there into a 500, instead of the clean 400 every other malformed
+ * payload gets. The sibling {@link Schedule6CheckRequest.CheckEntry} closed the identical hole one
+ * commit later ({@code List<@NotNull CheckEntry>}); this mirrors it.
+ *
  * @param generalComments the schedule-level comment (null/blank clears)
  * @param records every served road record, each with its own revision token
  */
 public record Schedule6SaveRequest(
     @Size(max = 3500, message = "{commentsMaxLengthErrorMsg}") String generalComments,
-    @NotNull(message = "{invalidCodeValueErrorMsg}") @Valid List<RoadRecordEntry> records) {}
+    @NotNull(message = "{missingRequiredFieldMsg}") @Valid List<@NotNull(message = "{missingRequiredFieldMsg}") RoadRecordEntry> records) {}

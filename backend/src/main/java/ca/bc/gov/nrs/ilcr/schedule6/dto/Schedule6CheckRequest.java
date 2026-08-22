@@ -34,7 +34,8 @@ import java.util.List;
  * @param records the rows currently on screen, in display order
  */
 public record Schedule6CheckRequest(
-    String generalComments, @NotNull List<@NotNull CheckEntry> records) {
+    String generalComments,
+    @NotNull(message = "{missingRequiredFieldMsg}") List<@NotNull(message = "{missingRequiredFieldMsg}") CheckEntry> records) {
 
   /**
    * One on-screen row. Unvalidated by design: Check Status REPORTS on incomplete input — a missing

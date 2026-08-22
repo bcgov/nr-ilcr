@@ -5,6 +5,7 @@ import {
   ROAD_MESSAGES,
   TFL_AREA_TYPE,
   TFL_MAX_LENGTH,
+  areaTypeOptions,
   parseDecimalInput,
   validateGeneralComments,
   validateRoadRecord,
@@ -251,5 +252,40 @@ describe('comments boundaries — 400 per record, 3500 general', () => {
 
   it('accepts a blank general comment (blank clears, BR-09)', () => {
     expect(validateGeneralComments('')).toBeUndefined()
+  })
+})
+
+// Final-review I3: a stored areaType with no TSA_NUMBER_CODE row at all (deviation (f) still lets
+// the write path store one) must still display, mirroring supplyBlocksFor's stored-code synthesis
+// (utils/codes.ts:47-55).
+describe('areaTypeOptions', () => {
+  const tsaNumbers = [
+    { code: '01', description: 'Arrowsmith TSA' },
+    { code: '02', description: 'Boundary TSA' },
+  ]
+
+  it('puts the TFL sentinel first, ahead of the served TSA numbers', () => {
+    expect(areaTypeOptions(tsaNumbers).map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('a stored code absent from the served list is still offered, over itself', () => {
+    expect(areaTypeOptions(tsaNumbers, '09')).toEqual([
+      { code: 'TFL', description: 'TFL' },
+      { code: '01', description: 'Arrowsmith TSA' },
+      { code: '02', description: 'Boundary TSA' },
+      { code: '09', description: '09' },
+    ])
+  })
+
+  it('does not duplicate a stored code already on the list', () => {
+    expect(areaTypeOptions(tsaNumbers, '01').map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('does not synthesise an entry for the TFL sentinel itself', () => {
+    expect(areaTypeOptions(tsaNumbers, 'TFL').map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('does not synthesise an entry when nothing is selected', () => {
+    expect(areaTypeOptions(tsaNumbers, '').map((o) => o.code)).toEqual(['TFL', '01', '02'])
   })
 })

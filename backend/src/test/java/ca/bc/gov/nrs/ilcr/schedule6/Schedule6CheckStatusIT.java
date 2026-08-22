@@ -133,7 +133,11 @@ class Schedule6CheckStatusIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
                 .with(csrf()))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isBadRequest())
+        // Bean Validation's element-type @NotNull now carries a bundle key (final-review M6) rather
+        // than falling back to its English default -- every sibling in Schedule6SaveDocumentIT
+        // asserts $.detail verbatim, not just the status.
+        .andExpect(jsonPath("$.detail", is("Value Required")));
   }
 
   @Test

@@ -5,10 +5,12 @@ import org.springframework.http.HttpStatus;
 
 /**
  * Raised when an edit reaches the service without its AR11 optimistic-lock token. The normal path
- * never gets here — {@code @Validated({Default.class, OnUpdate.class})} on the API's PUT already
- * rejects a null {@code revisionCount} as a 400 — but the service unboxes the token to an {@code
- * int}, so this makes the failure a clean 400 instead of an NPE-driven 500 for any future caller
- * that bypasses the group (code review 2026-08-04, defence in depth).
+ * never gets here — {@link ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry#revisionCount()}'s
+ * unconditional {@code @NotNull} already rejects a null token as a 400 (Task 8 retired the {@code
+ * OnUpdate} validation group along with the per-record PUT it gated) — but the service unboxes the
+ * token to an {@code int} at {@link Schedule6Service#saveDocument} :336-338, so this makes the
+ * failure a clean 400 instead of an NPE-driven 500 for any future caller that bypasses Bean
+ * Validation (code review 2026-08-04, defence in depth).
  *
  * <p>Maps to 400 with the same {@code revisionCountRequiredErrorMsg} the Bean Validation path
  * produces, so the two routes are indistinguishable to a client. Critically NOT a 409: a missing

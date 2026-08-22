@@ -273,6 +273,27 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(within(panel).queryByDisplayValue('01B')).not.toBeInTheDocument()
   })
 
+  // Final-review I3: deviation (f) still lets the write path store an areaType with NO
+  // TSA_NUMBER_CODE row at all (unlike the Supply Block case, which is protected by the backend's
+  // own TSA-numbers union arm). Before this fix the combo box found no matching option and rendered
+  // blank over a value that is really there.
+  test('a row whose areaType has no code-table row still displays the stored code', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ roadRecords: [{ ...tsaRecord, areaType: '09' }] })),
+      ),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }))
+    const panel = rowPanel(1)
+
+    expect(await within(panel).findByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      '09',
+    )
+  })
+
   test('offers the TFL sentinel first in the area-type options', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
     render(<Schedule6 />)
@@ -313,7 +334,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule6 />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
 
     expect(await screen.findByText('Confirmation')).toBeInTheDocument()
     expect(
@@ -334,7 +357,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
     await user.click(screen.getByRole('button', { name: 'No' }))
 
     expect(deleted).toBe(false)
@@ -356,7 +381,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
     await user.click(screen.getByRole('button', { name: 'Yes' }))
 
     // The recordId travels in the URL, never the ordinal shown in the accordion title.
@@ -374,7 +401,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }))
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
     await user.click(screen.getByRole('button', { name: 'Yes' }))
 
     expect(await screen.findByText('Schedule is not editable.')).toBeInTheDocument()
@@ -387,7 +416,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     render(<Schedule6 />)
 
     expect(
-      await screen.findByRole('button', { name: 'Delete Road Maintenance Report' }),
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
     ).toBeDisabled()
   })
 

@@ -203,11 +203,13 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
    *
    * <p>The comment is sourced by a scalar sub-select over the mill/year's existing cat-6 rows
    * (highest id — the row the read side's last-row-wins loop would take) rather than passed in from
-   * a value the service read earlier. That read-then-insert shape lost a concurrent {@code PUT
-   * /general-comments}: the new row draws the highest sequence id, so its stale COMMENTS became the
-   * served {@code generalComments} and silently reverted the just-saved comment. Reading inside the
-   * INSERT collapses the window to the statement (code review 2026-08-04). NULL when the mill/year
-   * has no rows yet, which is the correct value for the first record.
+   * a value the service read earlier. That read-then-insert shape lost a concurrent whole-document
+   * save ({@link Schedule6Service#saveDocument}'s {@link #updateAllComments}, the live analogue of
+   * the retired per-record {@code PUT /general-comments} this rationale originally cited): the new
+   * row draws the highest sequence id, so its stale COMMENTS became the served {@code
+   * generalComments} and silently reverted the just-saved comment. Reading inside the INSERT
+   * collapses the window to the statement (code review 2026-08-04). NULL when the mill/year has no
+   * rows yet, which is the correct value for the first record.
    */
   @Modifying
   @Query(

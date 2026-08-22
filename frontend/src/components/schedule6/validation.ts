@@ -34,11 +34,26 @@ export const TFL_AREA_TYPE = 'TFL'
  * Code to the top of the list" (LookUpCacheDAO.java:229-230). Schedule 10 appends its sentinel
  * last; this follows legacy instead. The sentinel is not a code-table row, so the backend does not
  * serve it (see Schedule6CodeLists).
+ *
+ * Mirrors {@code supplyBlocksFor}'s stored-code synthesis (utils/codes.ts:47-55, citing delivery
+ * page 8904's TSB `16Z`): deviation (f) still lets the write path store an areaType with no
+ * `TSA_NUMBER_CODE` row at all — the backend's TSA-numbers union arm only covers a stored code
+ * that HAS a code-table row, not one that has none. Without this, such a row's `CodeComboBox` finds
+ * no matching option (CodeComboBox.tsx:55) and renders blank over a value that is really there, and
+ * touching the combo would then clear it. `selectedCode` is omitted by every caller that has no row
+ * yet (the Add panel), where there is nothing stored to preserve.
  */
-export const areaTypeOptions = (tsaNumbers: readonly CodeDescription[]): CodeDescription[] => [
-  { code: TFL_SENTINEL, description: TFL_SENTINEL },
-  ...tsaNumbers,
-]
+export const areaTypeOptions = (
+  tsaNumbers: readonly CodeDescription[],
+  selectedCode = '',
+): CodeDescription[] => {
+  const options = [{ code: TFL_SENTINEL, description: TFL_SENTINEL }, ...tsaNumbers]
+  const selected = selectedCode.trim()
+  if (selected === '' || options.some((option) => option.code === selected)) {
+    return options
+  }
+  return [...options, { code: selected, description: selected }]
+}
 
 // Verbatim from the backend bundle (messages.properties) so an advisory message is byte-identical to
 // the server's rejection for the same field.

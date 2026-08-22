@@ -2,7 +2,7 @@
 // here, never re-shaped (AD-12). Jackson omits nulls (non_null), so every nullable member is typed
 // `| null` AND may simply be absent from the JSON; read them defensively. `rmg`, `costPerVolume` and
 // the three totals are DERIVED server-side (BR-04/BR-07) and are response-only — never recomputed
-// here (AD-5) and never sent back. There is deliberately no DELETE contract (UC exclusion #1).
+// here (AD-5) and never sent back.
 
 import type { CodeDescription } from '@/utils/codes'
 import type { MessageInfo } from './Schedule1Response'

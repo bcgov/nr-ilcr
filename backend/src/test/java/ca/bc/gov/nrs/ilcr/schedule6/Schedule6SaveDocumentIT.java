@@ -285,6 +285,29 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("a null entry in records[] is a clean 400, never an NPE-to-500 (final-review I1)")
+  void nullEntryInRecords_returns400() throws Exception {
+    // {"records":[null]} used to reach requireEveryServedRow (Schedule6Service.java) and NPE past
+    // the catch (DataAccessException) into the catch-all 500 handler -- @NotNull carried no
+    // element-type guard, unlike its Schedule6CheckRequest sibling. Mirrors
+    // Schedule6CheckStatusIT#nullEntryInRecords_returns400.
+    String body =
+        """
+        {"generalComments":null,"records":[null]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", is("Value Required")));
+  }
+
+  @Test
   @DisplayName("field validation rejects with the verbatim FLD text; nothing persists")
   void fieldValidation_returns400() throws Exception {
     // S12: blank area type.
@@ -479,11 +502,11 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
           + "re-derives the RMG, bumps the revision, and the detail upsert INSERTS on the "
           + "delivery-real no-detail row")
   void switchAreaTypeTsaToTfl() throws Exception {
-    // 8401 (mill 724/2026) is seeded TSA 01/01B with NO item-69 detail -- the real delivery shape.
+    // 8374 (mill 724/2026) is seeded TSA 01/01B with NO item-69 detail -- the real delivery shape.
     String body =
         """
         {"generalComments":null,
-         "records":[{"recordId":8401,"revisionCount":0,"areaType":"TFL","tflNumber":"18",
+         "records":[{"recordId":8374,"revisionCount":0,"areaType":"TFL","tflNumber":"18",
                      "volume":300,"cost":15000}]}
         """;
     mockMvc
@@ -495,18 +518,18 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].areaType", contains("TFL")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].tflNumber", contains("18")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].supplyBlock", hasSize(0)))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].rmg", contains("4")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].revisionCount", contains(1)));
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8374)].areaType", contains("TFL")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8374)].tflNumber", contains("18")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8374)].supplyBlock", hasSize(0)))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8374)].rmg", contains("4")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8374)].revisionCount", contains(1)));
 
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     var row =
         jdbc.queryForMap(
             """
             SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, UPDATE_USERID, UPDATE_TIMESTAMP
-              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8401
+              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8374
             """);
     assertEquals(null, row.get("TSA_NUMBER"));
     assertEquals(null, row.get("TSB_NUMBER_CODE"));
@@ -521,7 +544,7 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8401 AND ILCR_REPORT_COST_ITEM_ID = 69
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8374 AND ILCR_REPORT_COST_ITEM_ID = 69
             """,
             Integer.class));
   }
@@ -532,20 +555,20 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
           + "UPDATES that row rather than inserting a second one -- COUNT stays 1 and every written "
           + "column lands")
   void editWithExistingDetail_updatesInPlace() throws Exception {
-    // 8402 (mill 724/2027) is seeded WITH detail 8403 (vol 1000 / cost 50000 / 'Seeded 2027
+    // 8375 (mill 724/2027) is seeded WITH detail 8383 (vol 1000 / cost 50000 / 'Seeded 2027
     // record').
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     int detailId =
         jdbc.queryForObject(
             """
             SELECT ILCR_COST_REPORT_DETAIL_ID FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8375 AND ILCR_REPORT_COST_ITEM_ID = 69
             """,
             Integer.class);
     String body =
         """
         {"generalComments":null,
-         "records":[{"recordId":8402,"revisionCount":0,"areaType":"05","supplyBlock":"05B",
+         "records":[{"recordId":8375,"revisionCount":0,"areaType":"05","supplyBlock":"05B",
                      "volume":250,"cost":7500,"comments":"Edited in place"}]}
         """;
     mockMvc
@@ -557,10 +580,10 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8402)].volume", contains(250)))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8402)].cost", contains(7500)))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8375)].volume", contains(250)))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8375)].cost", contains(7500)))
         .andExpect(
-            jsonPath("$.roadRecords[?(@.recordId==8402)].comments", contains("Edited in place")));
+            jsonPath("$.roadRecords[?(@.recordId==8375)].comments", contains("Edited in place")));
 
     // COUNT == 1 AND the same detail id is what pins update-in-place over a second insert.
     assertEquals(
@@ -568,7 +591,7 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8375 AND ILCR_REPORT_COST_ITEM_ID = 69
             """,
             Integer.class));
     var detail =
@@ -577,7 +600,7 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
             SELECT ILCR_COST_REPORT_DETAIL_ID, VOLUME, COST, COMMENTS, REVISION_COUNT,
                    ENTRY_USERID, UPDATE_USERID, UPDATE_TIMESTAMP
               FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8375 AND ILCR_REPORT_COST_ITEM_ID = 69
             """);
     assertEquals(detailId, ((Number) detail.get("ILCR_COST_REPORT_DETAIL_ID")).intValue());
     assertEquals(250, ((Number) detail.get("VOLUME")).intValue());

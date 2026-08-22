@@ -452,18 +452,25 @@ public class Schedule6Service {
       long millId, int year, int recordId, boolean callerMayEdit, String user) {
     requireDraft(millId, year);
     try {
+      // One read answers all three questions below (the storedById refactor already applied to
+      // saveDocument, :328-329, back-applied here): this used to call findRoadRecords twice (once
+      // inside isPlaceholderId, once again for wasOnlyRow) plus a third targeted findRoadRecord.
+      List<RoadRecordRow> stored = repository.findRoadRecords(millId, year);
+      RoadRecordRow target =
+          stored.stream()
+              .filter(row -> row.recordId() == recordId)
+              .findFirst()
+              .orElseThrow(RoadRecordNotFoundException::new);
       // A placeholder is excluded from roadRecords[], so a client can never legitimately address
-      // one — 404 before the delete could remove the row holding the general comment.
-      if (isPlaceholderId(millId, year, recordId)) {
+      // one — 404 before the delete could remove the row holding the general comment. isPlaceholder
+      // stays trim-aware exactly as before (whitespace, not just NULL, counts) — a stricter null
+      // check here would misclassify a whitespace row as a real record.
+      if (isPlaceholder(target)) {
         throw new RoadRecordNotFoundException();
       }
-      RoadRecordRow target =
-          repository
-              .findRoadRecord(recordId, millId, year)
-              .orElseThrow(RoadRecordNotFoundException::new);
       // Read before deleting: legacy decides the re-insert from the pre-delete list size
       // (Schedule6DAO.java:297 evaluates getRoadMaintenanceReports().size() == 1).
-      boolean wasOnlyRow = repository.findRoadRecords(millId, year).size() == 1;
+      boolean wasOnlyRow = stored.size() == 1;
       String survivingComment = target.generalComment();
 
       repository.deleteCostDetailsFor(recordId);
@@ -580,19 +587,6 @@ public class Schedule6Service {
       return rows.get(0).recordId();
     }
     return null;
-  }
-
-  /**
-   * True iff this record id is a general-comment placeholder for the mill/year, decided by the SAME
-   * trim-aware rule the read side uses. Deliberately NOT {@code findPlaceholderIds}, whose SQL can
-   * only test {@code IS NULL}: a whitespace-classification row is a placeholder to the read side
-   * (excluded from {@code roadRecords[]}) but invisible to that query, which would let a PUT
-   * convert a client-invisible row into a real record — exactly what the 404 guard exists to
-   * prevent (code review 2026-08-04, one predicate for both sides).
-   */
-  private boolean isPlaceholderId(long millId, int year, int recordId) {
-    return repository.findRoadRecords(millId, year).stream()
-        .anyMatch(row -> row.recordId() == recordId && isPlaceholder(row));
   }
 
   /** A general-comment placeholder: classification entirely blank (the read-side S18 rule). */
