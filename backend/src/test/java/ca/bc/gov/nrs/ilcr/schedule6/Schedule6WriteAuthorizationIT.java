@@ -58,9 +58,13 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
       new CognitoGroupsJwtAuthenticationConverter();
 
   // A valid record body — so a 403 fires at @PreAuthorize, not at @Valid (which runs first).
+  // No revisionCount: RoadRecordRequest dropped that field (Task 8) since POST /records never
+  // read it; sending one relied only on Boot's default FAIL_ON_UNKNOWN_PROPERTIES=false and would
+  // 400-before-403 the moment that default ever flips (the exact silent-wrong-test failure mode
+  // this class exists to avoid).
   private static final String VALID_BODY =
       """
-        {"areaType":"01","supplyBlock":"01B","volume":10,"cost":100,"revisionCount":0}
+        {"areaType":"01","supplyBlock":"01B","volume":10,"cost":100}
         """;
 
   @MockitoBean private JwtDecoder jwtDecoder;

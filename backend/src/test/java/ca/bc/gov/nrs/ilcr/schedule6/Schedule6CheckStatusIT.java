@@ -96,6 +96,48 @@ class Schedule6CheckStatusIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
+      "VIEW-gated, not Draft-gated: check-status runs on a non-Draft ('S') mill (2.6 precedent)")
+  void nonDraftTrack_stillChecks() throws Exception {
+    // Mill 662/2021 is 'S' (non-Draft, shared read-only fixture) -- the endpoint must NOT 409.
+    // Removing requireDraft would only be caught indirectly today (by a stubbed-repository unit
+    // test noticing an extra call); this is the HTTP-level proof of the 2.6 precedent itself.
+    String body =
+        """
+        {"generalComments":null,
+         "records":[{"areaType":"01","supplyBlock":"01B","cost":1}]}
+        """;
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", "662")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(csrf()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome", is("MET")));
+  }
+
+  @Test
+  @DisplayName("a null entry in records[] is a clean 400, never an NPE-to-500")
+  void nullEntryInRecords_returns400() throws Exception {
+    String body =
+        """
+        {"generalComments":null,"records":[null]}
+        """;
+    mockMvc
+        .perform(
+            post(CHECK_STATUS)
+                .param("millId", "726")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .with(csrf()))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName(
       "Context guard reused: missing millId -> 400 verbatim ERR-001 (trailing space), even with "
           + "a well-formed body")
   void missingContext_returns400Err001() throws Exception {

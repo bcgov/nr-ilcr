@@ -505,12 +505,17 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
     var row =
         jdbc.queryForMap(
             """
-            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE
+            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, UPDATE_USERID, UPDATE_TIMESTAMP
               FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8401
             """);
     assertEquals(null, row.get("TSA_NUMBER"));
     assertEquals(null, row.get("TSB_NUMBER_CODE"));
     assertEquals("18", row.get("TFL_NUMBER_CODE"));
+    // The UPDATE's audit stamps moved off the seeded 'SEED'. An UPDATE that drops them cannot fail
+    // on a NOT NULL column, so only an assertion catches it (code review 2026-08-04, carried across
+    // from the original updateRecord test this one replaced).
+    assertEquals("dev-submitter", row.get("UPDATE_USERID"));
+    assertNotNull(row.get("UPDATE_TIMESTAMP"));
     assertEquals(
         1,
         jdbc.queryForObject(
@@ -615,12 +620,17 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
     List<Map<String, Object>> rows =
         jdbc.queryForList(
             """
-            SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT
+            SELECT COMMENTS, UPDATE_USERID, UPDATE_TIMESTAMP FROM THE.ROAD_MAINTENANCE_REPORT
              WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2023 AND ILCR_CATEGORY_ID = '6'
             """);
     assertEquals(2, rows.size());
     for (Map<String, Object> row : rows) {
       assertEquals("Replicated 2023 update", row.get("COMMENTS"));
+      // The replication invariant, proven on the rows themselves: the UPDATE_* stamps moved (an
+      // UPDATE that drops its audit stamps cannot fail on a NOT NULL column, so only an assertion
+      // catches it — code review 2026-08-04, carried across from the original this test replaced).
+      assertEquals("dev-submitter", row.get("UPDATE_USERID"));
+      assertNotNull(row.get("UPDATE_TIMESTAMP"));
     }
 
     // The mill/year IDOR scoping of updateAllComments: a neighbouring context of the SAME mill
@@ -662,5 +672,28 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
              WHERE ILCR_MILL_ID = 724 AND REPORT_YEAR = 2028 AND ILCR_CATEGORY_ID = '6'
             """,
             String.class));
+  }
+
+  @Test
+  @DisplayName(
+      "(ported): general comments beyond 3500 -> 400 verbatim cap (retired "
+          + "Schedule6GeneralCommentsIT#overlongComment_returns400's only verbatim-message proof; "
+          + "non-mutating, so it safely shares 724/2028 with the raw-untrimmed test above)")
+  void generalComment_beyond3500_returns400Verbatim() throws Exception {
+    String body =
+        """
+        {"generalComments":"%s","records":[]}
+        """
+            .formatted("x".repeat(3501));
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2028")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail", is("Comments must be 3500 characters or fewer.")));
   }
 }

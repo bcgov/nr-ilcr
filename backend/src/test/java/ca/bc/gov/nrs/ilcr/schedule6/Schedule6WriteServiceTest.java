@@ -175,7 +175,7 @@ class Schedule6WriteServiceTest {
       "BR-09: with real records present a fresh insert runs, then its detail — in order. "
           + "The general comment is NOT threaded through Java: insertRoadReport sources it in SQL so a "
           + "concurrent general-comments save cannot be reverted, so the replication invariant itself is "
-          + "proven by Schedule6GeneralCommentsIT.addRecord_carriesCurrentGeneralComment, not here")
+          + "proven by Schedule6WriteIT.addRecord_carriesCurrentGeneralComment, not here")
   void addRecord_insertsThenDetail_inOrder() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findRoadRecords(MILL, YEAR))

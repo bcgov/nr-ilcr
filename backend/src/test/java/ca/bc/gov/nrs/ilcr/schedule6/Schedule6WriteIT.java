@@ -46,9 +46,11 @@ import org.springframework.test.context.TestPropertySource;
  * <p>Mutating tests are ORDER-INDEPENDENT via the V32 context model: a context is (mill, YEAR), so
  * each destructive test method claims its own year — mill 661: 2019 add-TSA, 2020 add-TFL, 2024 TFL
  * alias (2023 is the never-mutated rejection-fingerprint year); mill 665: 2018 add-carries-comment,
- * 2020 over-wide classification, 2022 placeholder-reuse, 2024 overlong per-record comment. Edits
- * read the current {@code revisionCount} before writing (never a hard-coded token — Story 2.1
- * review lesson), and assertions locate records by id/field (JSONPath filters), not array index.
+ * 2020 over-wide classification, 2022 placeholder-reuse, 2024 overlong per-record comment. This
+ * class is POST-only now (Task 8 retired the per-record {@code PUT} it used to also cover — see
+ * {@link Schedule6SaveDocumentIT} for the edit/optimistic-lock cases that replaced it), so every
+ * record here is freshly assigned; assertions locate records by id/field (JSONPath filters), not
+ * array index, because sequence-assigned ids are not predictable.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=false")
 @DisplayName("POST /api/v1/schedule6/records — Schedule 6 writes (Story 8.2/Task 8)")
