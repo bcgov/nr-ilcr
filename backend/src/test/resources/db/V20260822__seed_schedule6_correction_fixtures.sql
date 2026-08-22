@@ -86,6 +86,9 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2023, 724, 'D', 'SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2024, 724, 'D', 'SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2025, 724, 'D', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2026, 724, 'D', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2027, 724, 'D', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2028, 724, 'D', 'SEED');
 
 -- 2018: SOLE real record -> the success test (rows written, THEN the general comment, one PUT).
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
@@ -131,6 +134,25 @@ INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
   VALUES (8398, 2025, 724, '6', NULL, NULL, NULL, 'original comment', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 
+-- 2026: SOLE real record, delivery-real shape (no item-69 detail) -> Task 8 ports
+-- Schedule6WriteIT's retired switchAreaTypeTsaToTfl through the whole-document PUT: TSA->TFL (S19),
+-- Supply Block cleared, RMG re-derived, revision bumped, and the detail upsert's INSERT branch
+-- (real cat-6 rows have none -- Story 8.1 Task 1).
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8401, 2026, 724, '6', '01', '01B', NULL, NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- 2027: SOLE real record WITH an existing item-69 detail -> Task 8 ports Schedule6WriteIT's retired
+-- editWithExistingDetail_updatesInPlace: editing a record that already has a detail row must UPDATE
+-- it in place (same ILCR_COST_REPORT_DETAIL_ID), never insert a second one alongside it.
+INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (8402, 2027, 724, '6', '05', '05B', NULL, NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ENTRY_USERID)
+  VALUES (8403, 8402, 69, 1000, 50000, 'Seeded 2027 record', 'SEED');
+
+-- 2028: ZERO records -> ports Schedule6GeneralCommentsIT's retired raw-untrimmed-comment proof
+-- (no fixture row needed, same as 2021 above: the context itself, Draft with nothing stored, is
+-- the seed).
+
 -- ============ Mill 725 / 2021 — non-Draft ('S') track -> the whole-document PUT write-gate 409 ==
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (725, 'Sch6 Save Document Locked Milling', 725, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (725, 'ACT', 'SEED');
@@ -138,16 +160,21 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
   VALUES (8397, 2021, 725, '6', '01', '01B', NULL, 'Locked comment.', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 
--- Task 6 (Check Status over submitted values) fixtures. Mill 671 already exists as an ACTIVE mill
--- (V20260807 schedule 5 write fixtures — MILL + XREF inserted there for category '5'/year 2021), so
--- it is reused here for a DIFFERENT year and category rather than re-inserting MILL/XREF (which
--- would collide on the mill_id primary key). ROAD_MAINTENANCE_REPORT_ID 8399, ILCR_COST_REPORT_
--- DETAIL_ID 8400 (free: this file's own blocks end at 8398/8382 and V31/V32 only reach 8362).
--- Read-only endpoint (checkStatus mutates nothing), so both IT tests below safely share this one
--- context — no per-test isolation is needed the way a mutating write path would require.
-INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2020, 671, 'D', 'SEED');
+-- Task 6 (Check Status over submitted values) fixtures. Originally placed on mill 671 — which
+-- belongs to Schedule 5 (V20260807 write fixtures claim the whole 670-676 block for category '5')
+-- — moved in Task 8 onto a fresh mill of its own (726, next free after Task 5's 724/725) rather than
+-- borrowing another schedule's fixture mill: no key collision exists today (Schedule 5 owns
+-- 671/2021, this used 671/2020), but sharing a mill id across schedules breaks the
+-- one-task-owns-its-fixtures discipline every other block in this file follows, and would collide
+-- the moment Schedule 5 ever seeds a 671/2020 row. ROAD_MAINTENANCE_REPORT_ID 8399, ILCR_COST_
+-- REPORT_DETAIL_ID 8400 (free: this file's own blocks end at 8398/8382 and V31/V32 only reach
+-- 8362). Read-only endpoint (checkStatus mutates nothing), so both IT tests below safely share this
+-- one context — no per-test isolation is needed the way a mutating write path would require.
+INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (726, 'Sch6 Check Status Milling', 726, 'SEED');
+INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (726, 'ACT', 'SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2020, 726, 'D', 'SEED');
 INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
-  VALUES (8399, 2020, 671, '6', 'Y9', 'Y9A', NULL, 'stored comment, never touched by check-status', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+  VALUES (8399, 2020, 726, '6', 'Y9', 'Y9A', NULL, 'stored comment, never touched by check-status', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ENTRY_USERID)
   VALUES (8400, 8399, 69, 10, 15000, 'stored detail comment', 'SEED');
 

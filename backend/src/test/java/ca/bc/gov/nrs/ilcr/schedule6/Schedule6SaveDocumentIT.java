@@ -1,13 +1,18 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.util.List;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,16 +22,20 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Task 5 acceptance — {@code PUT /api/v1/schedule6}: the whole-document save, restoring legacy's
- * single atomic {@code saveSchedule} ({@code Schedule6DAO.saveSchedule} :236-346) — every road
- * record plus the general comment in one transaction. {@code PUT /records/{recordId}} and {@code
- * PUT /general-comments} keep working alongside this (proven by {@link Schedule6WriteIT}); Task 8
- * removes them. Security-off is pinned EXPLICITLY, matching {@link Schedule6WriteIT}.
+ * Task 5/Task 8 acceptance — {@code PUT /api/v1/schedule6}: the whole-document save, restoring
+ * legacy's single atomic {@code saveSchedule} ({@code Schedule6DAO.saveSchedule} :236-346) — every
+ * road record plus the general comment in one transaction. This is now the ONLY road-record write
+ * path: Task 8 retired the per-record {@code PUT /records/{recordId}} and the independent {@code
+ * PUT /general-comments} once every row became always-editable (Task 7), and this class absorbed
+ * the behaviour-asserting cases from their retired {@code Schedule6WriteIT}/{@code
+ * Schedule6GeneralCommentsIT} suites (the item-69 detail upsert's two branches; the BR-09
+ * comment-branch selection; the raw-untrimmed comment; 404-vs-409 disambiguation). Security-off is
+ * pinned EXPLICITLY.
  *
- * <p>Fixture mills 724/725 (V20260822 migration, Task 5 block) follow the same "one destructive
- * test per (mill, year) context" contract {@link Schedule6DeleteIT} established: every MUTATING
- * save owns a dedicated year, so JUnit's method-execution order can never let one test's write
- * corrupt another's fixture. A REJECTED save (400/404/409) never mutates anything, so several
+ * <p>Fixture mills 724/725 (V20260822 migration, Task 5/Task 8 blocks) follow the same "one
+ * destructive test per (mill, year) context" contract {@link Schedule6DeleteIT} established: every
+ * MUTATING save owns a dedicated year, so JUnit's method-execution order can never let one test's
+ * write corrupt another's fixture. A REJECTED save (400/404/409) never mutates anything, so several
  * read-only probes deliberately share one context (mill 724/2023, mill 724/2024) — see the fixture
  * file's comments for exactly which id belongs to which test.
  */
@@ -454,5 +463,204 @@ class Schedule6SaveDocumentIT extends AbstractOracleIT {
     assertEquals("01B", row.get("TSB_NUMBER_CODE"));
     assertEquals("Locked comment.", row.get("COMMENTS"));
     assertEquals(0, ((Number) row.get("REVISION_COUNT")).intValue());
+  }
+
+  // ---- Task 8: ported from the retired Schedule6WriteIT (PUT /records/{id})
+  // -----------------------
+  // These two prove the item-69 detail upsert's two branches, which none of the tests above happen
+  // to exercise beyond a single INSERT: the S19 switch's no-detail-row INSERT, and the far less
+  // obvious UPDATE-in-place branch on a row that already carries one. The suite that ported these
+  // used to exercise only the INSERT branch, so an always-insert regression (duplicate details,
+  // money invisible in totals) would have shipped green (code review 2026-08-04, on the original).
+
+  @Test
+  @DisplayName(
+      "S19 (ported): switching TSA->TFL via the whole-document PUT clears the Supply Block, "
+          + "re-derives the RMG, bumps the revision, and the detail upsert INSERTS on the "
+          + "delivery-real no-detail row")
+  void switchAreaTypeTsaToTfl() throws Exception {
+    // 8401 (mill 724/2026) is seeded TSA 01/01B with NO item-69 detail -- the real delivery shape.
+    String body =
+        """
+        {"generalComments":null,
+         "records":[{"recordId":8401,"revisionCount":0,"areaType":"TFL","tflNumber":"18",
+                     "volume":300,"cost":15000}]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2026")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].areaType", contains("TFL")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].tflNumber", contains("18")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].supplyBlock", hasSize(0)))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].rmg", contains("4")))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8401)].revisionCount", contains(1)));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    var row =
+        jdbc.queryForMap(
+            """
+            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE
+              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8401
+            """);
+    assertEquals(null, row.get("TSA_NUMBER"));
+    assertEquals(null, row.get("TSB_NUMBER_CODE"));
+    assertEquals("18", row.get("TFL_NUMBER_CODE"));
+    assertEquals(
+        1,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8401 AND ILCR_REPORT_COST_ITEM_ID = 69
+            """,
+            Integer.class));
+  }
+
+  @Test
+  @DisplayName(
+      "(ported): editing a record that ALREADY has an item-69 detail via the whole-document PUT "
+          + "UPDATES that row rather than inserting a second one -- COUNT stays 1 and every written "
+          + "column lands")
+  void editWithExistingDetail_updatesInPlace() throws Exception {
+    // 8402 (mill 724/2027) is seeded WITH detail 8403 (vol 1000 / cost 50000 / 'Seeded 2027
+    // record').
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    int detailId =
+        jdbc.queryForObject(
+            """
+            SELECT ILCR_COST_REPORT_DETAIL_ID FROM THE.ILCR_COST_REPORT_DETAIL
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+            """,
+            Integer.class);
+    String body =
+        """
+        {"generalComments":null,
+         "records":[{"recordId":8402,"revisionCount":0,"areaType":"05","supplyBlock":"05B",
+                     "volume":250,"cost":7500,"comments":"Edited in place"}]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2027")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8402)].volume", contains(250)))
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8402)].cost", contains(7500)))
+        .andExpect(
+            jsonPath("$.roadRecords[?(@.recordId==8402)].comments", contains("Edited in place")));
+
+    // COUNT == 1 AND the same detail id is what pins update-in-place over a second insert.
+    assertEquals(
+        1,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+            """,
+            Integer.class));
+    var detail =
+        jdbc.queryForMap(
+            """
+            SELECT ILCR_COST_REPORT_DETAIL_ID, VOLUME, COST, COMMENTS, REVISION_COUNT,
+                   ENTRY_USERID, UPDATE_USERID, UPDATE_TIMESTAMP
+              FROM THE.ILCR_COST_REPORT_DETAIL
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8402 AND ILCR_REPORT_COST_ITEM_ID = 69
+            """);
+    assertEquals(detailId, ((Number) detail.get("ILCR_COST_REPORT_DETAIL_ID")).intValue());
+    assertEquals(250, ((Number) detail.get("VOLUME")).intValue());
+    assertEquals(7500, ((Number) detail.get("COST")).intValue());
+    assertEquals("Edited in place", detail.get("COMMENTS"));
+    // Detail REVISION_COUNT stays 0 (legacy never bumps it) and ENTRY_* survive the update.
+    assertEquals(0, ((Number) detail.get("REVISION_COUNT")).intValue());
+    assertEquals("SEED", detail.get("ENTRY_USERID"));
+    assertEquals("dev-submitter", detail.get("UPDATE_USERID"));
+    assertNotNull(detail.get("UPDATE_TIMESTAMP"));
+  }
+
+  @Test
+  @DisplayName(
+      "BR-09 (ported): rows exist -> the comment is replicated onto EVERY cat-6 row, "
+          + "scoped to this mill/year only")
+  void savingWithMultipleRows_replicatesCommentOntoEveryRow() throws Exception {
+    // Mill 665/2023 (retired Schedule6GeneralCommentsIT fixture, V32) carries two real records
+    // (8332 TSA, 8333 TFL) sharing the replicated comment.
+    String body =
+        """
+        {"generalComments":"Replicated 2023 update",
+         "records":[{"recordId":8332,"revisionCount":0,"areaType":"01","supplyBlock":"01B",
+                     "cost":1},
+                    {"recordId":8333,"revisionCount":0,"areaType":"TFL","tflNumber":"18",
+                     "cost":1}]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2023")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.generalComments", is("Replicated 2023 update")));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    List<Map<String, Object>> rows =
+        jdbc.queryForList(
+            """
+            SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2023 AND ILCR_CATEGORY_ID = '6'
+            """);
+    assertEquals(2, rows.size());
+    for (Map<String, Object> row : rows) {
+      assertEquals("Replicated 2023 update", row.get("COMMENTS"));
+    }
+
+    // The mill/year IDOR scoping of updateAllComments: a neighbouring context of the SAME mill
+    // (665/2018, record 8357) keeps its own comment. Without "AND REPORT_YEAR = :year" this would
+    // land here too.
+    assertEquals(
+        "Carried general comment.",
+        jdbc.queryForObject(
+            "SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8357",
+            String.class));
+  }
+
+  @Test
+  @DisplayName(
+      "(ported): a non-blank general comment is stored RAW, untrimmed (the 8.1 legacy-faithful "
+          + "decision applies to the whole-document save too)")
+  void generalComment_isStoredRawUntrimmed() throws Exception {
+    String body =
+        """
+        {"generalComments":"  raw untrimmed  ","records":[]}
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("millId", "724")
+                .param("year", "2028")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.generalComments", is("  raw untrimmed  ")));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    assertEquals(
+        "  raw untrimmed  ",
+        jdbc.queryForObject(
+            """
+            SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 724 AND REPORT_YEAR = 2028 AND ILCR_CATEGORY_ID = '6'
+            """,
+            String.class));
   }
 }

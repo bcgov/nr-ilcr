@@ -1,17 +1,13 @@
 package ca.bc.gov.nrs.ilcr.schedule6.api;
 
-import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
-import ca.bc.gov.nrs.ilcr.schedule6.dto.OnUpdate;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import jakarta.validation.Valid;
-import jakarta.validation.groups.Default;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -61,9 +57,6 @@ public interface Schedule6Api {
    * comment, in the same transaction); an unknown/foreign/placeholder id → 404; non-Draft → 409;
    * missing {@code EDIT_SCHEDULE} → 403.
    *
-   * <p>{@code PUT /records/{recordId}} and {@code PUT /general-comments} stay in place alongside
-   * this for now — the frontend still calls them until Task 7 switches over; Task 8 removes them.
-   *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
    * @param request every served record plus the general comment
@@ -98,46 +91,6 @@ public interface Schedule6Api {
       Authentication authentication);
 
   /**
-   * Edit one Schedule 6 road record (S19: switching the area type stores the new side and NULLs the
-   * other — BR-02). Same validation/gates as add; the body must carry the record's {@code
-   * revisionCount} ({@link OnUpdate} group — omit = clean 400). A stale token → 409; an
-   * unknown/foreign/placeholder id → 404.
-   *
-   * @param recordId the road record id ({@code ROAD_MAINTENANCE_REPORT_ID}) to edit
-   * @param millId the raw mill id param
-   * @param year the raw reporting year param
-   * @param request the entered fields + required {@code revisionCount} (default + OnUpdate groups)
-   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
-   * @return 200 with the recomputed document (success {@code message})
-   */
-  @PutMapping("/records/{recordId}")
-  ResponseEntity<Schedule6Response> updateRoadRecord(
-      @PathVariable int recordId,
-      @RequestParam(name = "millId", required = false) String millId,
-      @RequestParam(name = "year", required = false) String year,
-      @Validated({Default.class, OnUpdate.class}) @RequestBody RoadRecordRequest request,
-      Authentication authentication);
-
-  /**
-   * Save the schedule-level General Comment independently of any road record (S04, BR-09: rows
-   * exist → replicated onto every row; none → placeholder row inserted; placeholder-only + blank →
-   * placeholder deleted). Carries NO revision token (recorded deviation (c2)). Draft-gated; blank
-   * clears.
-   *
-   * @param millId the raw mill id param
-   * @param year the raw reporting year param
-   * @param request the comment text (null/blank = clear)
-   * @param authentication the caller (EDIT_SCHEDULE + audit user + echoed editability)
-   * @return 200 with the recomputed document (success {@code message})
-   */
-  @PutMapping("/general-comments")
-  ResponseEntity<Schedule6Response> saveGeneralComments(
-      @RequestParam(name = "millId", required = false) String millId,
-      @RequestParam(name = "year", required = false) String year,
-      @Valid @RequestBody GeneralCommentsRequest request,
-      Authentication authentication);
-
-  /**
    * Check Status for Schedule 6 (S09–S11, S20, S21) — read-only readiness validation, mutates
    * nothing, NOT Draft-gated ({@code VIEW_SCHEDULE}; the 2.6 precedent). Returns the composed
    * per-record {@code Value Required} lines byte-for-byte, the per-record met banner on mixed
@@ -146,14 +99,11 @@ public interface Schedule6Api {
    *
    * <p>{@code request} carries the on-screen values (Task 6): legacy's {@code ajax="false"}
    * postback applied the screen to the model before evaluating ({@code Schedule6MB.checkStatus}
-   * :139-140), so the verdict must describe the screen, not the database. The body is OPTIONAL —
-   * TRANSITIONAL — because the shipped frontend does not send one yet; a body-less POST still
-   * evaluates the stored rows (Task 7 switches the frontend over; Task 8 makes the body required
-   * and removes the fallback).
+   * :139-140), so the verdict must describe the screen, not the database.
    *
    * @param millId the raw mill id param (validated by millcontext)
    * @param year the raw reporting year param
-   * @param request the on-screen values, or absent for the transitional stored-rows fallback
+   * @param request the on-screen values
    * @param authentication the caller (VIEW_SCHEDULE)
    * @return 200 with the check-status result
    */
@@ -161,7 +111,7 @@ public interface Schedule6Api {
   ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
       @RequestParam(name = "millId", required = false) String millId,
       @RequestParam(name = "year", required = false) String year,
-      @RequestBody(required = false) Schedule6CheckRequest request,
+      @Valid @RequestBody Schedule6CheckRequest request,
       Authentication authentication);
 
   /**

@@ -49,9 +49,11 @@ export interface FieldIssue {
 }
 
 // One record's Check Status result. `rowCounter` is the 1-based ordinal the user sees in the message
-// text (and the accordion title) — NOT `recordId`, which travels only for UI correlation.
-// `metMessage` is present only when this record is met AND the schedule outcome is ISSUES, and
-// Jackson may omit it entirely rather than send null (Story 8.2 deviation (i)).
+// text (and the accordion title). `recordId` carries that SAME 1-based payload ordinal, not a
+// database id — a payload row addresses no stored record, so there is no id to echo; it is a React
+// list key only, never a correlation back to a stored row. `metMessage` is present only when this
+// record is met AND the schedule outcome is ISSUES, and Jackson may omit it entirely rather than send
+// null (Story 8.2 deviation (i)).
 export interface RoadRecordCheckResult {
   readonly recordId: number
   readonly rowCounter: number

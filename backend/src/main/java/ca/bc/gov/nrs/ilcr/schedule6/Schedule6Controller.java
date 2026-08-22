@@ -4,7 +4,6 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.MessageInfo;
 import ca.bc.gov.nrs.ilcr.schedule6.api.Schedule6Api;
-import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
@@ -110,46 +109,10 @@ public class Schedule6Controller implements Schedule6Api {
   }
 
   @Override
-  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule6Response> updateRoadRecord(
-      int recordId,
-      String millId,
-      String year,
-      RoadRecordRequest request,
-      Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule6Response doc =
-        schedule6Service.updateRecord(
-            context.millId(),
-            context.year(),
-            recordId,
-            request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
-            authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
-  }
-
-  @Override
-  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule6Response> saveGeneralComments(
-      String millId, String year, GeneralCommentsRequest request, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule6Response doc =
-        schedule6Service.saveGeneralComments(
-            context.millId(),
-            context.year(),
-            request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
-            authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
-  }
-
-  @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
       String millId, String year, Schedule6CheckRequest request, Authentication authentication) {
-    // Read-only (AD-5): context guard first, then evaluate — mutates nothing. `request` may be
-    // null (the Task 6 transitional fallback) — Schedule6Service decides what that means.
+    // Read-only (AD-5): context guard first, then evaluate — mutates nothing.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule6CheckStatusResponse raw =
         schedule6Service.checkStatus(context.millId(), context.year(), request);

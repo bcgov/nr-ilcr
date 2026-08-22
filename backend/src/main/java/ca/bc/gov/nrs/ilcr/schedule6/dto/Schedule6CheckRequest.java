@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule6.dto;
 
+import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -19,15 +20,17 @@ import java.util.List;
  * revision token. Rows are identified by payload ordinal (1-based), which is exactly what {@code
  * rowCounter} has always meant.
  *
- * <p>{@code null} is the transitional value — "evaluate the stored rows instead" — until Task 8
- * makes this body required and removes that fallback (see {@code Schedule6Service#checkStatus}).
- *
- * <p>Read-only: this type reaches no write path.
+ * <p>Read-only: this type reaches no write path. The body itself is required — an absent body is a
+ * clean 400 from Bean Validation, not a 500. {@code records} must be present (empty is a legitimate
+ * "nothing on screen"); {@code @NotNull} here turns an omitted list into the same clean 400 rather
+ * than an NPE against {@code request.records()} deep in {@code Schedule6Service#checkStatus}.
+ * Individual {@link CheckEntry} fields stay unvalidated (see below) — only the collection's
+ * presence is enforced.
  *
  * @param generalComments the comment currently on screen
  * @param records the rows currently on screen, in display order
  */
-public record Schedule6CheckRequest(String generalComments, List<CheckEntry> records) {
+public record Schedule6CheckRequest(String generalComments, @NotNull List<CheckEntry> records) {
 
   /**
    * One on-screen row. Unvalidated by design: Check Status REPORTS on incomplete input — a missing

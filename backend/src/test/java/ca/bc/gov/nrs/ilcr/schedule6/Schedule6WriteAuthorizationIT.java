@@ -22,10 +22,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Story 8.2 acceptance — authorization on the Schedule 6 writes (AC8; AD-7). Security ON: drives
- * the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize} ({@code EDIT_SCHEDULE} on the
- * three writes, {@code VIEW_SCHEDULE} on check-status), authorities via the production {@link
- * CognitoGroupsJwtAuthenticationConverter}.
+ * Story 8.2/Task 8 acceptance — authorization on the Schedule 6 writes (AC8; AD-7). Security ON:
+ * drives the real {@code oauth2ResourceServer} chain + {@code @PreAuthorize} ({@code EDIT_SCHEDULE}
+ * on the writes, {@code VIEW_SCHEDULE} on check-status), authorities via the production {@link
+ * CognitoGroupsJwtAuthenticationConverter}. The retired {@code PUT /records/{recordId}} and {@code
+ * PUT /general-comments} no-group-403 cases dropped with their endpoints (Task 8) — the same {@code
+ * EDIT_SCHEDULE} authorization requirement they proved is proven for every remaining Schedule 6
+ * write here, including the whole-document {@code PUT /api/v1/schedule6} that replaced them.
  *
  * <p>Bodies on the 403 write tests are VALID because {@code @Valid} body binding runs during
  * argument resolution BEFORE {@code @PreAuthorize} fires — an invalid body would yield 400, not the
@@ -34,9 +37,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * fixture churn.
  *
  * <p>Mill <b>666</b> is this class's own fixture (V32), added at code review 2026-08-04. These
- * probes previously fired at 661/2021 — the year {@code Schedule6WriteIT.optimisticLockPerRecord}
- * owns — so an {@code @PreAuthorize} regression would have let a write land on that test's lock
- * target and failed a different suite instead of this one.
+ * probes previously fired at 661/2021 — a year {@link Schedule6WriteIT} once used for its own
+ * per-record edit tests (retired with {@code PUT /records/{recordId}}) — so a PreAuthorize
+ * regression would have let a write land on that test's target and failed a different suite instead
+ * of this one.
  *
  * <p><b>Coverage gap (inherited, recorded on 25.2):</b> a "holds VIEW but not EDIT → 403" case is
  * unreachable today — both shipped roles hold {@code EDIT_SCHEDULE}. It becomes testable when the
@@ -47,7 +51,6 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
 
   private static final String RECORDS = "/api/v1/schedule6/records";
-  private static final String COMMENTS = "/api/v1/schedule6/general-comments";
   private static final String CHECK_STATUS = "/api/v1/schedule6/check-status";
   private static final String ENDPOINT = "/api/v1/schedule6";
   private static final String PROBLEM_JSON = "application/problem+json";
@@ -82,21 +85,6 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
-  }
-
-  @Test
-  @DisplayName("PUT /records/{id} with no group -> 403")
-  void updateRecord_noGroup_returns403() throws Exception {
-    mockMvc
-        .perform(
-            put(RECORDS + "/8358")
-                .with(csrf())
-                .param("millId", "666")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(VALID_BODY)
-                .with(jwtWithGroups(List.of())))
-        .andExpect(status().isForbidden());
   }
 
   @Test
@@ -152,29 +140,18 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("PUT /general-comments with no group -> 403")
-  void saveGeneralComments_noGroup_returns403() throws Exception {
-    mockMvc
-        .perform(
-            put(COMMENTS)
-                .with(csrf())
-                .param("millId", "666")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"generalComments\":\"x\"}")
-                .with(jwtWithGroups(List.of())))
-        .andExpect(status().isForbidden());
-  }
-
-  @Test
   @DisplayName("check-status with no group -> 403 (VIEW_SCHEDULE required)")
   void checkStatus_noGroup_returns403() throws Exception {
+    // A valid (empty) body, same rationale as the write probes above: @Valid runs before
+    // @PreAuthorize, and the body is required (Task 8) -- an absent one would 400, not 403.
     mockMvc
         .perform(
             post(CHECK_STATUS)
                 .with(csrf())
                 .param("millId", "663")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"generalComments\":null,\"records\":[]}")
                 .with(jwtWithGroups(List.of())))
         .andExpect(status().isForbidden());
   }
@@ -182,12 +159,16 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("check-status with VIEW_SCHEDULE only in play (ILCR_SUBMITTER) -> 200")
   void checkStatus_submitter_returns200() throws Exception {
+    // An empty records[] is the vacuous MET pass (Task 6/Task 8: the verdict is payload-only) --
+    // this test is about authorization, not schedule data, so any valid body proves the point.
     mockMvc
         .perform(
             post(CHECK_STATUS)
                 .with(csrf())
                 .param("millId", "663")
                 .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"generalComments\":null,\"records\":[]}")
                 .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));

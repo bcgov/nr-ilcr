@@ -134,7 +134,7 @@ const buildBody = (form: RoadRecordFormValues): RoadRecordRequest => {
 const buildCheckEntry = buildBody
 
 // One row of the Save PUT: the parsed fields plus the identifiers the batch endpoint needs to place
-// and lock it. `revisionCount` is REQUIRED here (not the optional field on RoadRecordRequest) --
+// and lock it. `recordId`/`revisionCount` exist only on this shape, not on RoadRecordRequest --
 // callers must resolve the hazard-1 guard before this is ever called.
 const buildSaveEntry = (
   form: RoadRecordFormValues,
