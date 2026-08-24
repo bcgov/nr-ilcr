@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Service;
+import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
@@ -64,6 +65,7 @@ public class ReportService {
   private final DataSource dataSource;
   private final Schedule1Service schedule1Service;
   private final Schedule2Service schedule2Service;
+  private final Schedule3Service schedule3Service;
   private final Schedule5Service schedule5Service;
   private final Schedule6Service schedule6Service;
   private final Schedule7aService schedule7aService;
@@ -88,6 +90,8 @@ public class ReportService {
    * @param schedule1Service the Schedule 1 read (bean-datasource feed, Story 20.5 — the statement +
    *     the itemized Other-Cost-List sub-document)
    * @param schedule2Service the Schedule 2 read (bean-datasource feed, Story 20.6)
+   * @param schedule3Service the Schedule 3 read (bean-datasource feed, Story 20.7 — the
+   *     three-column ledger + the two itemization sub-documents)
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
@@ -103,6 +107,7 @@ public class ReportService {
       @Qualifier("reportingDataSource") DataSource dataSource,
       Schedule1Service schedule1Service,
       Schedule2Service schedule2Service,
+      Schedule3Service schedule3Service,
       Schedule5Service schedule5Service,
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,
@@ -114,6 +119,7 @@ public class ReportService {
     this.dataSource = dataSource;
     this.schedule1Service = schedule1Service;
     this.schedule2Service = schedule2Service;
+    this.schedule3Service = schedule3Service;
     this.schedule5Service = schedule5Service;
     this.schedule6Service = schedule6Service;
     this.schedule7aService = schedule7aService;
@@ -214,6 +220,16 @@ public class ReportService {
               bookmarkTitle,
               Schedule2SectionMapper.map(schedule2Service.getSchedule2(millId, year, false)),
               virtualizer);
+      case SCHEDULE_3 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              schedule3Section(millId, year),
+              virtualizer);
       case SCHEDULE_5 ->
           fillBean(
               key,
@@ -276,6 +292,25 @@ public class ReportService {
               virtualizer);
       case SCHEDULE_9 -> fillSchedule9(millId, year, options, bookmarkTitle, virtualizer);
     };
+  }
+
+  /**
+   * Build the Schedule 3 section (the three-column ledger plus the two itemization sub-documents),
+   * or {@code null} when the mill/year has no Schedule 3 summary. As with Schedule 1, {@code
+   * getSchedule3} / {@code getOtherAcceptableDocument} / {@code getUnacceptableDocument} throw
+   * {@link ScheduleNotFoundException} on an absent summary, so translate that into the BR-09
+   * skip-empty null. Read-only: every read passes {@code callerMayEdit = false} (no BR-09 crown
+   * push).
+   */
+  private SectionData schedule3Section(long millId, int year) {
+    try {
+      return Schedule3SectionMapper.map(
+          schedule3Service.getSchedule3(millId, year, false),
+          schedule3Service.getOtherAcceptableDocument(millId, year, false),
+          schedule3Service.getUnacceptableDocument(millId, year, false));
+    } catch (ScheduleNotFoundException e) {
+      return null;
+    }
   }
 
   /**

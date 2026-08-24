@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@/test-utils'
+import { render, screen, waitFor, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule4 from '@/components/schedule4'
@@ -256,6 +256,146 @@ describe('Schedule4 page', () => {
     ).toBeInTheDocument()
     // Amounts cloned from the source (thousands-grouped).
     expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+  })
+
+  // ---- Defect #291: the panel's $/m³ column tracks entry, on blur, before Save. -------------------
+
+  /** A category row's cells as text: [label, dist, volume, cost, $/m³, cycle]. */
+  const gridCells = (label: string) => {
+    const tr = screen.getByText(`${label}:`).closest('tr')
+    if (!tr) throw new Error(`no grid row for "${label}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+  /** The read-only $/m³ cell of a category row (index 4). */
+  const rate = (label: string) => gridCells(label)[4]
+
+  test('typing alone leaves $/m³ alone; blurring the cost recalculates it (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    // Seeded from the saved amounts: 100000/2000 = 50.00.
+    expect(rate('Lakeside Dry Dump')).toBe('50.00')
+
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '150000')
+    expect(rate('Lakeside Dry Dump')).toBe('50.00') // not per keystroke
+
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('75.00') // 150000/2000
+  })
+
+  test('blurring the volume recalculates $/m³, and only that category (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.type(volume, '4000')
+    await userEvent.tab()
+
+    expect(rate('Lakeside Dry Dump')).toBe('25.00') // 100000/4000
+    // The other saved category is untouched, and an empty one stays blank.
+    expect(rate('Truck Barge/Ferry')).toBe('50.00') // 25000/500
+    expect(rate('Water Dump')).toBe('—')
+  })
+
+  test('clearing the volume blanks $/m³ rather than showing Infinity (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const volume = screen.getByLabelText('Lakeside Dry Dump volume')
+    await userEvent.clear(volume)
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('—')
+
+    // A zero volume is the divide-by-zero case the server nulls out.
+    await userEvent.type(screen.getByLabelText('Lakeside Dry Dump volume'), '0')
+    await userEvent.tab()
+    expect(rate('Lakeside Dry Dump')).toBe('—')
+  })
+
+  test("Copy shows the cloned amounts' $/m³ immediately, without a save (#291)", async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^copy$/i })[0])
+
+    // A copy clones the amounts, so their rate is known — it used to render blank until the first save
+    // because the panel captured $/m³ from the server and a copy has no server figure yet.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('100,000')
+    expect(rate('Lakeside Dry Dump')).toBe('50.00')
+    expect(rate('Truck Barge/Ferry')).toBe('50.00')
+  })
+
+  test('the Save echo supersedes the mirror, and the rates agree (#291 AC5)', async () => {
+    // Schedule 4 had no AC5 test at all, and its panel was never re-seeded from the echo — so
+    // `deriveCategoryPerUnits(panelCommitted)` kept driving the column for the rest of the session
+    // (code review 2026-08-21). The echo below carries the server's own perUnit for the saved amounts.
+    const saved: Location = {
+      ...harbour,
+      revisionCount: 1,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 150000, distance: null, perUnit: 75.0 },
+        { code: 47, kind: 'DISTANCE', volume: 500, cost: 25000, distance: 120.5, perUnit: 50.0 },
+      ],
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(LOCATIONS_URL, () =>
+        HttpResponse.json({
+          ...doc({ locations: [saved, emptyLanding] }),
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const cost = screen.getByLabelText('Lakeside Dry Dump cost')
+    await userEvent.clear(cost)
+    await userEvent.type(cost, '150000')
+    await userEvent.tab()
+    // The mirror must already agree with the rate the server will echo: 150000 / 2000 = 75.00.
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // The panel stays open in edit mode; the column now reflects the echo and still reads 75.00.
+    expect(screen.getByLabelText('Lakeside Dry Dump cost')).toHaveValue('150,000')
+    expect(rate('Lakeside Dry Dump')).toBe('75.00')
+    expect(rate('Truck Barge/Ferry')).toBe('50.00')
+  })
+
+  test('View mode renders the document $/m³ as-is — no client recomputation (#291 AC7)', async () => {
+    // The stored perUnit deliberately disagrees with the stored pair: a recomputing view would show
+    // 50.00 instead of the server's own figure.
+    const skewed: Location = {
+      ...harbour,
+      categories: [
+        { code: 40, kind: 'FIXED', volume: 2000, cost: 100000, distance: null, perUnit: 999.99 },
+      ],
+    }
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ editable: false, locations: [skewed], trackStatus: 'S' })),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+
+    expect(rate('Lakeside Dry Dump')).toBe('999.99')
   })
 
   test('Check Status renders the per-location results', async () => {

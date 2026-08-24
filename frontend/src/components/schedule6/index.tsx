@@ -43,6 +43,8 @@ import {
   validateGeneralComments,
   validateRoadRecord,
 } from './validation'
+import { EMPTY_RATE_INPUTS, rateInputsOf, recordCostPerVolume, type RateInputs } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success/error is
@@ -192,6 +194,8 @@ type RoadRecordFieldsProps = {
   readonly costPerVolume: string
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  /** Blur commit for the two fields the $ / m³ is computed from (defect #291). */
+  readonly onRateCommit: () => void
 }
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
@@ -204,6 +208,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   costPerVolume,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
 }) => {
   const tfl = isTfl(form.areaType)
   return (
@@ -259,11 +264,20 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.volume}
         onChange={(e) => onFieldChange('volume', e.target.value)}
-        // Re-group on blur only, never mid-keystroke (that would fight the caret) -- through
-        // groupInput, not a fixed mask, because volume permits up to 2 decimals and groupInput
-        // preserves exactly what was typed (sibling schedules 1 / 1-other-costs / 7b / 9). Invalid
-        // text passes through unchanged, so a typo stays on screen for the user to correct.
+        // One blur does two things (#291 + fix 2), in this order:
+        //
+        // 1. Commit the $ / m³ baseline, which validates the form AS TYPED -- so the re-group must
+        //    come after it, never before (the derived-figure work found that re-grouping first
+        //    replaced the form mid-validation and stopped the commit landing at all).
+        // 2. Re-group the field itself, on blur only and never mid-keystroke (that would fight the
+        //    caret) -- through groupInput, not a fixed mask, because volume permits up to 2 decimals
+        //    and groupInput preserves exactly what was typed (sibling schedules 1 / 1-other-costs /
+        //    7b / 9). Invalid text passes through unchanged, so a typo stays on screen for the user
+        //    to correct. Deliberately NOT gated on the commit succeeding: masking the entry and
+        //    moving the derived cell are separate legacy behaviours, and an out-of-range volume that
+        //    holds the rate at its last valid figure must still be shown grouped.
         onBlur={() => {
+          onRateCommit()
           const grouped = groupInput(form.volume)
           if (grouped !== form.volume) {
             onFieldChange('volume', grouped)
@@ -280,11 +294,14 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.cost}
         onChange={(e) => onFieldChange('cost', e.target.value)}
-        // Fixed to 0 decimals, not plain groupInput: legacy's mask for this field was
-        // ##,###,### (mask.int.7digits, `moneyMask` above) and roundCost already sends a whole-dollar
-        // wire value, so a typed "1500.7" must re-render as "1,501" -- matching what actually gets
-        // stored -- rather than lingering on screen as a fractional value the field will never save.
+        // Commit-then-re-group, as on Volume above. Fixed to 0 decimals, not plain groupInput:
+        // legacy's mask for this field was ##,###,### (mask.int.7digits, `moneyMask` above) and
+        // roundCost already sends a whole-dollar wire value, so a typed "1500.7" must re-render as
+        // "1,501" -- matching what actually gets stored -- rather than lingering on screen as a
+        // fractional value the field will never save. The rate agrees with it by construction:
+        // recordCostPerVolume rounds the cost through the same whole-dollar step (derived.ts).
         onBlur={() => {
+          onRateCommit()
           const grouped = groupFixedInput(form.cost, 0)
           if (grouped !== form.cost) {
             onFieldChange('cost', grouped)
@@ -324,8 +341,10 @@ type AddPanelProps = {
   readonly errors: RoadRecordErrors
   readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  readonly onRateCommit: () => void
   readonly onSubmit: () => void
 }
 
@@ -334,8 +353,10 @@ const AddPanel: FC<AddPanelProps> = ({
   errors,
   codeLists,
   disabled,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
   onSubmit,
 }) => (
   <section className="schedule-6__section" aria-label={ADD_PANEL_HEADING}>
@@ -346,12 +367,13 @@ const AddPanel: FC<AddPanelProps> = ({
       errors={errors}
       codeLists={codeLists}
       disabled={disabled}
-      // Both are derived server-side from the saved record; legacy re-derived them live over ajax,
-      // which AD-5 forbids re-implementing on the client (deviation D).
       rmg=""
-      costPerVolume=""
+      // The rate tracks the committed (blurred) volume/cost, as legacy's own `change` handler did
+      // (#291). `rmg` stays server-derived — see derived.ts for why it is not mirrored.
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
     <Button kind="primary" disabled={disabled} onClick={onSubmit}>
       Add Report
@@ -369,8 +391,10 @@ type RoadRecordRowProps = {
   readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
   readonly deleteDisabled: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  readonly onRateCommit: () => void
   readonly onDelete: () => void
 }
 
@@ -382,8 +406,10 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
   codeLists,
   disabled,
   deleteDisabled,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
   onDelete,
 }) => (
   <>
@@ -393,11 +419,13 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       errors={errors}
       codeLists={codeLists}
       disabled={disabled}
-      // The row's last server-derived values; they refresh on the save echo.
+      // `rmg` is the row's last server-derived value and refreshes on the save echo; the rate now
+      // tracks the committed (blurred) volume/cost, as legacy's own `change` handler did (#291).
       rmg={row.rmg ?? ''}
-      costPerVolume={ratioMask(row.costPerVolume)}
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
     <Button
       kind="danger--ghost"
@@ -427,6 +455,9 @@ const Schedule6: FC = () => {
 
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState<RoadRecordFormValues>(emptyForm)
+  // The blur-committed volume/cost the $ / m³ mirror reads. Legacy refreshed the row's own rate on the
+  // field's own `change` handler, so the rate settles when focus leaves rather than per keystroke (#291).
+  const [addRate, setAddRate] = useState<RateInputs>(EMPTY_RATE_INPUTS)
   const [addErrors, setAddErrors] = useState<RoadRecordErrors>({})
 
   // One form per row, keyed by recordId. Legacy's rows were always directly editable and one
@@ -436,6 +467,32 @@ const Schedule6: FC = () => {
   // getRowForm) -- so a freshly-loaded or freshly-added row needs no explicit seed.
   const [rowForms, setRowForms] = useState<Record<number, RoadRecordFormValues>>({})
   const [rowErrors, setRowErrors] = useState<Record<number, RoadRecordErrors>>({})
+  // The blur-committed volume/cost each row's $ / m³ mirror reads, keyed by recordId (#291). Same
+  // fallback rule as rowForms: a row with no entry here reads the document's own values (getRowRate),
+  // so the load and every echo seed it without an explicit write. The per-row map replaces the single
+  // editRate the derived-figure work carried, because there is no longer one open editor at a time.
+  const [rowRates, setRowRates] = useState<Record<number, RateInputs>>({})
+
+  /**
+   * Advance a rate baseline only from a usable, valid entry (ruled 2026-08-21). Legacy's round-trip
+   * failed conversion/validation and left the derived cell at its last valid figure; committing an
+   * out-of-range or unparseable value instead drives the rate from something no Save can persist.
+   *
+   * Re-grouping the blurred FIELD is the caller's job here (the `onBlur` handlers in
+   * RoadRecordFields), not this helper's: this page masks Volume and Cost differently -- groupInput
+   * vs groupFixedInput(_, 0) -- and masks unconditionally, whereas the rate below moves only when the
+   * entry passes the gate.
+   */
+  const commitRate = (form: RoadRecordFormValues, apply: (next: RateInputs) => void): void => {
+    const errors = validateRoadRecord(form)
+    if (errors.volume !== undefined || errors.cost !== undefined) {
+      return
+    }
+    if (isUnusableStrictEntry(form.volume) || isUnusableStrictEntry(form.cost)) {
+      return
+    }
+    apply(rateInputsOf(form))
+  }
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
 
@@ -455,9 +512,11 @@ const Schedule6: FC = () => {
     setCheckResult(null)
     setShowAdd(false)
     setAddForm(emptyForm())
+    setAddRate(EMPTY_RATE_INPUTS)
     setAddErrors({})
     setRowForms({})
     setRowErrors({})
+    setRowRates({})
     setCommentsError(undefined)
     setPendingDeleteId(null)
   }, [])
@@ -500,6 +559,19 @@ const Schedule6: FC = () => {
   // the three can never disagree about what "on screen" means for a given row.
   const getRowForm = (row: RoadRecord): RoadRecordFormValues =>
     rowForms[row.recordId] ?? seedForm(row)
+
+  // The row's rate baseline: whatever the user last committed on this row, or the document's own
+  // values when they haven't committed one (fresh load, save echo, or an untouched row). Read from
+  // seedForm(row) rather than getRowForm(row) deliberately -- falling back to the LIVE form would make
+  // the $ / m³ track every keystroke, which is exactly what committing on blur exists to prevent.
+  const getRowRate = (row: RoadRecord): RateInputs =>
+    rowRates[row.recordId] ?? rateInputsOf(seedForm(row))
+
+  const commitRowRate = (row: RoadRecord) => {
+    commitRate(getRowForm(row), (next) => {
+      setRowRates((prev) => ({ ...prev, [row.recordId]: next }))
+    })
+  }
 
   const updateRowForm = (
     row: RoadRecord,
@@ -564,6 +636,7 @@ const Schedule6: FC = () => {
         // add-is-save: inputs clear only on success, and the panel collapses — legacy's add() sets
         // showAddRoadReport = false before saving (Schedule6MB.java:203).
         setAddForm(emptyForm())
+        setAddRate(EMPTY_RATE_INPUTS)
         setShowAdd(false)
       },
       'Schedule could not be saved.',
@@ -653,6 +726,9 @@ const Schedule6: FC = () => {
         // or otherwise server-corrected entry) over whatever draft the user was looking at, so the
         // screen matches what was actually stored.
         setRowForms(Object.fromEntries(doc.roadRecords.map((row) => [row.recordId, seedForm(row)])))
+        // The rate baselines follow the same re-seed: clearing the map hands every row back to
+        // getRowRate's document fallback, which now reads the echoed values (#291).
+        setRowRates({})
       },
       'Schedule could not be saved.',
     )
@@ -833,6 +909,10 @@ const Schedule6: FC = () => {
                 setAddForm((prev) => applyAreaType(prev, value))
               }}
               onFieldChange={setAddField}
+              rateInputs={addRate}
+              onRateCommit={() => {
+                commitRate(addForm, setAddRate)
+              }}
               onSubmit={handleAdd}
             />
           </Column>
@@ -860,11 +940,15 @@ const Schedule6: FC = () => {
                     codeLists={data.codeLists}
                     disabled={entryLocked}
                     deleteDisabled={deleteDisabled}
+                    rateInputs={getRowRate(row)}
                     onAreaTypeChange={(value) => {
                       updateRowForm(row, (prev) => applyAreaType(prev, value))
                     }}
                     onFieldChange={(key, value) => {
                       updateRowForm(row, (prev) => ({ ...prev, [key]: value }))
+                    }}
+                    onRateCommit={() => {
+                      commitRowRate(row)
                     }}
                     onDelete={() => {
                       setPendingDeleteId(row.recordId)

@@ -28,14 +28,15 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
- * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/5/6/7A/7B/11), on the shared
- * seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule 1 added
- * by Story 20.5, Schedule 2 by Story 20.6, Schedule 11 by V20260816). The PDF text is asserted with
- * pdfbox to prove each selected section's heading and a seeded value rendered, and the PDF outline
- * (top-level bookmarks) is asserted to be exactly the rendered schedules' titles in order
- * (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the deferred mill-information-report and
- * the ERR-002/003/004 selection ladder plus the 400/409 context guards are pinned here. Security is
- * OFF (isolated from authz — {@link PrintAuthorizationIT}).
+ * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
+ * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
+ * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 11 by
+ * V20260816). The PDF text is asserted with pdfbox to prove each selected section's heading and a
+ * seeded value rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the
+ * rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the
+ * deferred mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409
+ * context guards are pinned here. Security is OFF (isolated from authz — {@link
+ * PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -362,7 +363,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     // BR-07: "all" expands to every schedule; only the in-scope ones render. Mill 517/2021 has data
     // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
     // combined PDF carries Schedule 1 (Story 20.5) FIRST, then Schedule 2 (Story 20.6), then
-    // 5/6/7A/7B/9/11 — Schedule 10 skipped (BR-09).
+    // Schedule 3 (Story 20.7), then 5/6/7A/7B/9/11 — Schedule 10 skipped (BR-09).
     String selection =
         """
         {"allSchedules":true,"printScheduleInformation":true}
@@ -383,17 +384,20 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 1:  Average Cost of Logging");
     assertThat(text).contains("Schedule 2:  Purchased/Private Log Costs & Sales");
     assertThat(text).contains("333,000"); // Schedule 2 purchased log cost (517 item 25)
+    assertThat(text).contains("Schedule 3:  Forest Management Administration Costs");
     assertThat(text).contains("Schedule 5:  Camp and Access Expense");
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
-    // BR-08 fixed order: Schedule 1 sorts ahead of Schedule 2, which sorts ahead of Schedule 5.
+    // BR-08 fixed order: Schedule 1 sorts ahead of Schedule 2, which sorts ahead of Schedule 3,
+    // which sorts ahead of Schedule 5.
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
             ScheduleKey.SCHEDULE_1.bookmarkTitle(),
             ScheduleKey.SCHEDULE_2.bookmarkTitle(),
+            ScheduleKey.SCHEDULE_3.bookmarkTitle(),
             ScheduleKey.SCHEDULE_5.bookmarkTitle(),
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
@@ -480,6 +484,51 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("Schedule 3 (Story 20.7): 514/2021 renders the ledger + itemization + one bookmark")
+  void schedule3_rendersWithOneBookmark() throws Exception {
+    // Mill 514/2021 carries the full Schedule 3 three-column document (summary 1003). Selecting
+    // Schedule 3 alone must render the ledger (admin-line labels, the three total lines, the timber
+    // block) plus the Annual-Rents-prepended Unacceptable list, with EXACTLY one top-level
+    // bookmark.
+    String selection =
+        """
+        {"schedule3":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 3:  Forest Management Administration Costs");
+    assertThat(text).contains("Licenses, Fees, Insurance:"); // a fixed admin line
+    assertThat(text).contains("Annual Rents:"); // a harvest-only admin line
+    assertThat(text).contains("Silviculture Admin Costs:"); // the other harvest-only line
+    assertThat(text).contains("Subtotal Other Costs:"); // total line 1
+    assertThat(text).contains("Included Unacceptable Costs:"); // total line 2
+    assertThat(text).contains("Total Cost:"); // total line 3
+    assertThat(text).contains("Crown Timber:"); // timber block
+    assertThat(text).contains("Annual Rents (Forest Act, S111)"); // prepended Unacceptable row
+
+    // Layout guard: the ledger must render on PAGE 1, not be pushed to a blank page 2 by an
+    // over-tall detail band (the BR-08 bookmark anchor sits in the title band on page 1). "Total
+    // Cost:" is the final total line, so its presence on page 1 proves the whole band fit.
+    assertThat(pageText(pdf, 1)).contains("Total Cost:");
+
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_3.bookmarkTitle());
+  }
+
+  @Test
   @DisplayName("all-empty (ERR-005): 515/2021 select 1, no summary -> 404 'Schedule not found.'")
   void schedule1Only_noData_returns404() throws Exception {
     // Mill 515/2021 has no Schedule 1 summary; getSchedule1 throws ScheduleNotFound, which the
@@ -512,6 +561,28 @@ class PrintScheduleIT extends AbstractOracleIT {
     String selection =
         """
         {"schedule2":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 515/2021 select 3, no summary -> 404 'Schedule not found.'")
+  void schedule3Only_noData_returns404() throws Exception {
+    // Mill 515/2021 has no Schedule 3 summary; getSchedule3 throws ScheduleNotFound, translated to
+    // a
+    // null skip (BR-09) — a Schedule-3-only print is then all-empty, the legacy ERR-005 outcome.
+    String selection =
+        """
+        {"schedule3":true,"printScheduleInformation":true,"printComments":true}
         """;
     mockMvc
         .perform(
@@ -683,6 +754,22 @@ class PrintScheduleIT extends AbstractOracleIT {
   private static String extractText(byte[] pdf) throws Exception {
     try (PDDocument document = Loader.loadPDF(pdf)) {
       return new PDFTextStripper().getText(document);
+    }
+  }
+
+  /**
+   * The text of a single page (1-based). Used to pin that a section's content lands on its FIRST
+   * page — the BR-08 bookmark anchor lives in the title band, so an over-tall detail band that
+   * pushes the ledger to page 2 would leave the bookmark pointing at a blank page. {@link
+   * #extractText} can't catch that (it flattens every page), so this scopes the assertion to page
+   * 1.
+   */
+  private static String pageText(byte[] pdf, int oneBasedPage) throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDFTextStripper stripper = new PDFTextStripper();
+      stripper.setStartPage(oneBasedPage);
+      stripper.setEndPage(oneBasedPage);
+      return stripper.getText(document);
     }
   }
 

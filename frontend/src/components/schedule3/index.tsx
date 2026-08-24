@@ -32,7 +32,9 @@ import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule3 } from './validation'
+import { deriveSchedule3, enteredFromForm } from './derived'
 import './index.scss'
 
 // Client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so the
@@ -148,6 +150,11 @@ const Schedule3: FC = () => {
         setSaveWarnings([])
       },
     })
+
+  // The blur-committed snapshot the derived mirror reads (defect #291): `form` tracks every keystroke
+  // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
+  // whenever `data` is replaced (load / Save echo / Delete reset).
+  const { committed, commit } = useCommittedValues(form, data)
 
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
@@ -305,6 +312,11 @@ const Schedule3: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule3(form) : {}
 
+  // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
+  // read-only cells track data entry the way legacy did. Null outside Draft / in view mode, where
+  // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
+  const derived = editable ? deriveSchedule3(data, enteredFromForm(committed)) : null
+
   // A value cell: an editable TextInput when writable and the schedule is editable, else read-only
   // text. `onBlur` lets the Annual Rents Harvest field raise the S111 alert (legacy onchange).
   const numberCell = (
@@ -325,9 +337,16 @@ const Schedule3: FC = () => {
           size="sm"
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
-          // Re-group the value AND run the caller's own blur hook (the Annual Rents S111 alert).
+          // Re-group the value, commit it to the derived mirror's baseline (#291), AND run the
+          // caller's own blur hook (the Annual Rents S111 alert). The GROUPED string is passed
+          // explicitly so `committed` and `form` hold the same text, and an invalid field holds its
+          // previous committed value rather than driving the cascade (code review 2026-08-21).
           onBlur={() => {
             groupField(fieldKey)
+            commit(fieldKey, {
+              value: groupInput(form[fieldKey] ?? ''),
+              invalid: Boolean(fieldErrors[fieldKey]),
+            })
             onBlur?.()
           }}
           invalid={Boolean(fieldErrors[fieldKey])}
@@ -341,6 +360,9 @@ const Schedule3: FC = () => {
   const lineRow = (line: CostLine) => {
     const code = line.costItemCode
     const label = LINE_LABELS[code] ?? `Cost item ${code}`
+    // The crown column, and Scaling (33)'s read-only PO&P, come from the mirror while editable so they
+    // track entry; from the document otherwise (#291).
+    const shown = derived ? derived.lines[code] : line
     const showPop = HARVEST_POP.has(code)
     const harvestBlur = code === CODE_ANNUAL_RENTS ? () => window.alert(ALT_S111) : undefined
     // Annual Rents (29) and Silviculture Admin (37) have NO PO&P (legacy renders the field hidden);
@@ -349,14 +371,14 @@ const Schedule3: FC = () => {
     const popCell = POP_HIDDEN.has(code) ? (
       <TableCell className="schedule-3__num">—</TableCell>
     ) : (
-      numberCell(`pop-${code}`, `${label} PO&P`, showPop, line.pop)
+      numberCell(`pop-${code}`, `${label} PO&P`, showPop, shown.pop)
     )
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
         {numberCell(`harvest-${code}`, `${label} Harvest`, true, line.harvest, harvestBlur)}
         {popCell}
-        <TableCell className="schedule-3__num">{fmtNumber(line.crown)}</TableCell>
+        <TableCell className="schedule-3__num">{fmtNumber(shown.crown)}</TableCell>
       </TableRow>
     )
   }
@@ -495,16 +517,24 @@ const Schedule3: FC = () => {
                   ROUTE_OTHER_ACCEPTABLE,
                   data.subtotalOtherCosts,
                 )}
-                {totalRow('subtotalActual', 'Subtotal (Actual Costs)', data.subtotalActualCosts)}
+                {totalRow(
+                  'subtotalActual',
+                  'Subtotal (Actual Costs)',
+                  derived ? derived.subtotalActualCosts : data.subtotalActualCosts,
+                )}
                 {subPageRow(
                   'inclUnacceptable',
                   'Included Unacceptable Costs',
-                  data.unacceptableCount,
+                  derived ? derived.unacceptableCount : data.unacceptableCount,
                   ROUTE_UNACCEPTABLE,
-                  data.includedUnacceptableCosts,
+                  derived ? derived.includedUnacceptableCosts : data.includedUnacceptableCosts,
                   true, // PO&P is a legacy inputHidden — render blank (—), not the backend's 0
                 )}
-                {totalRow('totalCosts', 'Total Costs', data.totalCosts)}
+                {totalRow(
+                  'totalCosts',
+                  'Total Costs',
+                  derived ? derived.totalCosts : data.totalCosts,
+                )}
                 {/* Legacy: the Override dropdown is the last row of this table (in the Harvest column). */}
                 <TableRow key="overrideHarvestTotalPop">
                   <TableCell>Override Harvest ⁄ Total PO&P $</TableCell>
@@ -548,10 +578,18 @@ const Schedule3: FC = () => {
                 {timberRow(
                   'Privately Owned & Purchased (PO&P) Timber',
                   'popTimberVolume',
-                  data.popTimber,
+                  derived ? derived.popTimber : data.popTimber,
                 )}
-                {timberRow('Crown Timber', 'crownTimberVolume', data.crownTimber)}
-                {timberRow('Total Overhead', null, data.totalOverhead)}
+                {timberRow(
+                  'Crown Timber',
+                  'crownTimberVolume',
+                  derived ? derived.crownTimber : data.crownTimber,
+                )}
+                {timberRow(
+                  'Total Overhead',
+                  null,
+                  derived ? derived.totalOverhead : data.totalOverhead,
+                )}
               </TableBody>
             </Table>
           </TableContainer>
