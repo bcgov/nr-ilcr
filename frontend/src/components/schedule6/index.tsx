@@ -26,7 +26,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
-import { numStr } from '@/utils/number'
+import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -93,12 +93,15 @@ const emptyForm = (): RoadRecordFormValues => ({
   comments: '',
 })
 
+// Seeded GROUPED, matching every sibling schedule (1, 3-subpage, 7b, 9, 1-other-costs): this was
+// the one page still seeding numeric fields with the bare digit string, so 15000 read "15000"
+// instead of "15,000" beside plain-text cells that already group.
 const seedForm = (row: RoadRecord): RoadRecordFormValues => ({
   areaType: row.areaType ?? '',
   tflNumber: row.tflNumber ?? '',
   supplyBlock: row.supplyBlock ?? '',
-  volume: numStr(row.volume),
-  cost: numStr(row.cost),
+  volume: numStrGroup(row.volume),
+  cost: numStrGroup(row.cost),
   comments: row.comments ?? '',
 })
 
@@ -210,6 +213,9 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
           (LookUpCacheDAO.java:229-230) — see areaTypeOptions. */}
       <CodeComboBox
         id={`${idPrefix}-area-type`}
+        // Options render the code's DESCRIPTION (corrections 2/3 above), and a description like
+        // "Arrowsmith TSA" truncates under the shared grid's 10rem minimum track — wide spans two.
+        className="schedule-6__field--wide"
         titleText="TSA or TFL"
         items={areaTypeOptions(codeLists.tsaNumbers, form.areaType)}
         selectedCode={form.areaType}
@@ -231,6 +237,8 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
       />
       <CodeComboBox
         id={`${idPrefix}-supply-block`}
+        // Same widening as TSA or TFL above, for the same reason — its options are descriptions too.
+        className="schedule-6__field--wide"
         titleText="Supply Block"
         items={supplyBlocksFor(codeLists.supplyBlocks, form.areaType, form.supplyBlock)}
         selectedCode={form.supplyBlock}
@@ -250,6 +258,16 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.volume}
         onChange={(e) => onFieldChange('volume', e.target.value)}
+        // Re-group on blur only, never mid-keystroke (that would fight the caret) -- through
+        // groupInput, not a fixed mask, because volume permits up to 2 decimals and groupInput
+        // preserves exactly what was typed (sibling schedules 1 / 1-other-costs / 7b / 9). Invalid
+        // text passes through unchanged, so a typo stays on screen for the user to correct.
+        onBlur={() => {
+          const grouped = groupInput(form.volume)
+          if (grouped !== form.volume) {
+            onFieldChange('volume', grouped)
+          }
+        }}
         invalid={Boolean(errors.volume)}
         invalidText={errors.volume}
       />
@@ -261,6 +279,16 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.cost}
         onChange={(e) => onFieldChange('cost', e.target.value)}
+        // Fixed to 0 decimals, not plain groupInput: legacy's mask for this field was
+        // ##,###,### (mask.int.7digits, `moneyMask` above) and roundCost already sends a whole-dollar
+        // wire value, so a typed "1500.7" must re-render as "1,501" -- matching what actually gets
+        // stored -- rather than lingering on screen as a fractional value the field will never save.
+        onBlur={() => {
+          const grouped = groupFixedInput(form.cost, 0)
+          if (grouped !== form.cost) {
+            onFieldChange('cost', grouped)
+          }
+        }}
         invalid={Boolean(errors.cost)}
         invalidText={errors.cost}
       />

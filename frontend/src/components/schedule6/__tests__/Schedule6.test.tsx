@@ -242,9 +242,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // RMG and $/m³ are server-derived (AD-5) and stay read-only text.
     expect(within(panel).getByText('12')).toBeInTheDocument()
     expect(within(panel).getByText('50.00')).toBeInTheDocument()
-    // Volume/Cost/Comments are live form inputs, seeded plainly (not grouped) from the row.
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
-    expect(within(panel).getByLabelText('Cost $')).toHaveValue('50000')
+    // Volume/Cost/Comments are live form inputs, seeded GROUPED like every sibling schedule (fix 2):
+    // 1000/50000 must read 1,000/50,000, not the bare digit string.
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
+    expect(within(panel).getByLabelText('Cost $')).toHaveValue('50,000')
     expect(within(panel).getByLabelText('Comments')).toHaveValue('Culvert replacement')
     // Legacy rows were always directly editable (schedule6.xhtml:248-431) -- no read-only display
     // state to fall back into, so the row's textboxes are present from the moment it opens.
@@ -321,6 +322,24 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.click(within(panel).getByRole('combobox', { name: /Supply Block/i }))
     const options = screen.getAllByRole('option').map((o) => o.textContent)
     expect(options).toEqual(['Arrowsmith Block B'])
+  })
+
+  // Fix 1: the shared field grid's 10rem minimum track truncates a description like "Arrowsmith TSA"
+  // — only the two combo boxes get the wide modifier (TFL's TextInput holds a 2-character code and
+  // stays narrow).
+  test('the TSA/Supply Block combo boxes get the wide modifier, TFL stays narrow (fix 1)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const areaTypeCombo = within(panel).getByRole('combobox', { name: /TSA or TFL/i })
+    const supplyBlockCombo = within(panel).getByRole('combobox', { name: /Supply Block/i })
+    const tfl = within(panel).getByLabelText('TFL')
+
+    expect(areaTypeCombo.closest('.schedule-6__field--wide')).not.toBeNull()
+    expect(supplyBlockCombo.closest('.schedule-6__field--wide')).not.toBeNull()
+    expect(tfl.closest('.schedule-6__field--wide')).toBeNull()
   })
 
   // 'edit mode shows the description for the stored code, not the raw code' DELETED (Task 7): there is
@@ -408,7 +427,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(await screen.findByText('Schedule is not editable.')).toBeInTheDocument()
     // The row must still be there to retry against — a failed delete is not a silent data loss.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1000')
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('Delete is disabled when the schedule is not editable', async () => {
@@ -680,8 +699,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
       comments: null,
     })
     // The echoed document replaces page state: the row re-renders the SAVED volume, not the pre-edit
-    // 1,000 — a save that only banners is a silent data-staleness bug.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
+    // 1,000 — a save that only banners is a silent data-staleness bug. Grouped (fix 2): re-seeded via
+    // the same numStrGroup as every sibling schedule.
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2,000')
     expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
   })
 
@@ -724,8 +744,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.type(volume, '2000')
     await user.click(barSaveButtons()[0])
 
-    // The server's answer (2500), not the draft (2000), is what the row shows after the echo.
-    expect(await screen.findByLabelText('Volume m³')).toHaveValue('2500')
+    // The server's answer (2500), not the draft (2000), is what the row shows after the echo —
+    // grouped (fix 2), the same as every re-seed.
+    expect(await screen.findByLabelText('Volume m³')).toHaveValue('2,500')
 
     await user.click(barSaveButtons()[0])
     await waitFor(() => expect(secondBody).toBeDefined())
@@ -1004,8 +1025,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     checkStatusButtons().forEach((button) => {
       expect(button).toBeDisabled()
     })
-    // Read-only (disabled) still shows the data.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1000')
+    // Read-only (disabled) still shows the data, grouped (fix 2).
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000')
     expect(within(totalsRegion()).getByText('50,000')).toBeInTheDocument()
     expect(within(region).getByLabelText('General Comments')).toHaveValue('Season summary')
   })
@@ -1347,6 +1368,97 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured!.cost).toBe(-3)
   })
 
+  // Fix 2: Schedule 6 was the one sibling schedule still seeding numeric fields with the bare digit
+  // string and never re-grouping on blur (Schedules 1, 1-other-costs, 7b and 9 all already do). These
+  // pin the three moving parts: the seed, the two blur masks, and — the assertion that actually makes
+  // this safe rather than merely cosmetic — that the wire still gets the plain number.
+  test('typing into Volume and blurring re-groups it with thousands separators (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, '15000')
+    expect(volume).toHaveValue('15000')
+    await user.tab()
+
+    expect(volume).toHaveValue('15,000')
+  })
+
+  test('typing a fractional Cost and blurring re-groups it through the fixed-0 mask (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const cost = within(panel).getByLabelText('Cost $')
+    await user.type(cost, '1500.7')
+    await user.tab()
+
+    // Legacy's mask for this field is whole-dollar (##,###,### / moneyMask above, no decimals), and
+    // roundCost already sends 1501 to the wire — the display must agree with what gets stored.
+    expect(cost).toHaveValue('1,501')
+  })
+
+  test('invalid text typed into Volume is left unchanged on blur, not silently rewritten (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, 'abc')
+    await user.tab()
+
+    // groupInput's contract: a typo stays on screen for the user to correct rather than being
+    // blanked or silently rewritten.
+    expect(volume).toHaveValue('abc')
+  })
+
+  test('invalid text typed into Cost is left unchanged on blur, not silently rewritten (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const cost = within(panel).getByLabelText('Cost $')
+    await user.type(cost, 'abc')
+    await user.tab()
+
+    expect(cost).toHaveValue('abc')
+  })
+
+  // The one assertion that matters most here: proving the display-only regrouping never reaches the
+  // wire. If groupInput's comma leaked into the parsed body, or roundCost's mask silently changed what
+  // gets stored, this is where it would show up.
+  test('a grouped Volume/Cost display still sends the plain number on save (fix 2)', async () => {
+    let captured: RoadRecordRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      http.post(RECORDS_URL, async ({ request }) => {
+        captured = (await request.json()) as RoadRecordRequest
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, '15000')
+    await user.tab()
+    expect(volume).toHaveValue('15,000')
+
+    await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
+
+    await waitFor(() => expect(captured).not.toBeNull())
+    // The screen shows "15,000"; the wire must still carry the number 15000, not the grouped string
+    // and not NaN/null (which stripGroup's absence would produce).
+    expect(captured!.volume).toBe(15000)
+  })
+
   test('a backend 400 renders the detail verbatim and retains every entered value (AC10)', async () => {
     const detail = 'Entered TFL number is not valid for Interior Regions.'
     server.use(
@@ -1366,7 +1478,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // Values stay put so the entry can be corrected and resubmitted.
     expect(within(panel).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue('TFL')
     expect(within(panel).getByLabelText('TFL')).toHaveValue('99')
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    // Blurred (focus left Volume for the Add Report button) and grouped (fix 2).
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('a load failure carrying no detail falls back to the generic load message (AC7)', async () => {
@@ -1399,7 +1512,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
     // add-is-save: the panel and its values survive a server-side failure so the entry is not retyped.
     expect(screen.getByRole('region', { name: 'Add Road Maintenance report' })).toBeInTheDocument()
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    // Blurred and grouped (fix 2).
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('a Save failure renders the API detail verbatim and retains every entered value (AC4 / AC10)', async () => {
@@ -1419,8 +1533,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // The failure branch must not run onSuccess: the row keeps the rejected value so it can be
-    // corrected, page state is not replaced, and no success banner appears alongside.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
+    // corrected, page state is not replaced, and no success banner appears alongside. Blurred and
+    // grouped (fix 2).
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2,000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
     await waitFor(() => expect(barSaveButtons()[0]).toBeEnabled())
