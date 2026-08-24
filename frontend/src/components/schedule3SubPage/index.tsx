@@ -1,4 +1,5 @@
 import type { FC } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Button,
@@ -14,6 +15,7 @@ import {
 } from '@carbon/react'
 import { TrashCan } from '@carbon/icons-react'
 import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
+import { committedNum, isUnusableStrictEntry } from '@/utils/derivedMath'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
 import SubPanel from '@/components/core/SubPanel'
 import { useEditableCostRows, type EditRow } from '@/hooks/useEditableCostRows'
@@ -59,6 +61,14 @@ export interface Schedule3SubPageColumn {
 
 /** One summary figure rendered under the table (last-saved; refreshes on Save). */
 export interface Schedule3SubPageSummaryItem<TDoc extends Schedule3SubPageDoc> {
+  /**
+   * Stable key the footer mirror is looked up by. Keyed rather than positional (code review
+   * 2026-08-21): indexing a returned array against `summaryItems` couples the two across a config
+   * boundary with `noUncheckedIndexedAccess` off, so a short or reordered array mis-pairs figures with
+   * labels with no type error — the same invisible-to-tsc shape as the inert-mirror bug this file
+   * already records.
+   */
+  key: string
   label: string
   value: (doc: TDoc) => number | null
 }
@@ -89,6 +99,19 @@ export interface Schedule3SubPageConfig<
   fields: Schedule3SubPageField<TRow>[]
   readonlyColumns?: Schedule3SubPageColumn[]
   summaryItems: Schedule3SubPageSummaryItem<TDoc>[]
+  /**
+   * Optional display-only mirror for the Totals footer (defect #291): given the blur-committed row
+   * values, return a figure per `summaryItems` entry KEYED BY that entry's `key` — not a positional
+   * list. The keyed contract is deliberate (see `schedule3OtherAcceptableCosts/derived.ts`, where
+   * `OtherAcceptableSubtotal` is "keyed so it cannot be mis-paired with the summary labels
+   * positionally"): a triple looked up by name cannot silently pair with the wrong label when a
+   * column is added or reordered. Present only on the pages
+   * whose legacy footer refreshed during entry — Other Acceptable Costs, whose Total $ / PO&P $
+   * handlers rendered `footerValues` (schedule3SubtotalOtherCosts.xhtml:74,83). The Included
+   * Unacceptable page omits it: its only handler was `render="cost"`, with no derived target, so
+   * leaving that footer to the Save echo is faithful.
+   */
+  deriveSummary?: (rows: readonly SubPageValues[]) => Readonly<Record<string, number | null>>
   rows: (doc: TDoc) => TRow[]
   validate: (description: string, values: SubPageValues) => SubPageErrors
 }
@@ -133,9 +156,31 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
 
   const readonlyColumns = config.readonlyColumns ?? []
 
+  // The blur-committed row values the footer mirror reads (defect #291). Keyed by row key; a row not
+  // in the map has never been committed, so it contributes nothing yet. Re-seeded whenever the
+  // document is replaced (load / Save echo / delete reload).
+  const [committed, setCommitted] = useState<Record<string, SubPageValues>>({})
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  useLayoutEffect(() => {
+    setCommitted(Object.fromEntries(rowsRef.current.map((row) => [row.key, row.values])))
+  }, [editor.data])
+
   // Numeric view of a row's entered values, for the live-derived read-only columns (e.g. Crown $).
+  //
+  // `committedNum`, NOT `toNum` (PR #344 review): this must be the SAME parse the footer mirror uses
+  // (`deriveOtherAcceptableSubtotal` → `committedNum` → `parseDecimalInput`), or the two disagree on
+  // every form the lax parser accepts and the strict one rejects. `1e3` was the clearest case —
+  // `validateOtherAcceptable` passes it (`Number('1e3')` is 1000, in range), the row's Crown $ showed
+  // `1,000 − pop`, and the footer excluded the row entirely because `committedNum('1e3')` is null. Same
+  // for `0x10` → 16 and a mis-grouped `12,34` → 1234. That is the same self-contradiction the comment
+  // on `rowCells` says was ruled out — row Crowns of 700 and 400 under a Subtotal Crown of 900 —
+  // reached by a parser mismatch instead of a timing one.
+  //
+  // It also closes a smaller gap the review noted in passing: `toNum` has no finiteness guard, so
+  // `Infinity` rendered `∞` in Crown $. `committedNum` rejects it, and the wire never carried it.
   const numeric = (values: SubPageValues): Record<string, number | null> =>
-    Object.fromEntries(config.fields.map((f) => [f.key, toNum(values[f.key])]))
+    Object.fromEntries(config.fields.map((f) => [f.key, committedNum(values[f.key] ?? '')]))
 
   // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
   // editable field, AND each derived read-only column (e.g. Crown $) are sortable. See useRowSort for
@@ -150,8 +195,21 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     ),
   })
 
+  /**
+   * A row's committed values, falling back to its LIVE values when it has never been committed — only
+   * true of a row appended locally by `handleAdd` before its PUT lands. Falling back to `{}` made the
+   * footer silently omit a row visibly sitting in the grid (code review 2026-08-21, proven by probe
+   * with a delayed PUT).
+   */
+  const committedFor = (row: EditRow): SubPageValues => committed[row.key] ?? row.values
+
   const rowCells = (row: EditRow, editable: boolean) => {
-    const nums = numeric(row.values)
+    // The derived read-only columns read the COMMITTED values, so every derived cell on the page
+    // settles on ONE event — matching legacy's single `update="otherCrownTabel footerValues"`
+    // (schedule3SubtotalOtherCosts.xhtml:74,83) and the ratified blur trigger. Deriving Crown from the
+    // live values while the footer moved on blur made the page contradict itself mid-typing: row
+    // Crowns of 700 and 400 under a Subtotal Crown of 900 (ruled 2026-08-21).
+    const nums = numeric(committedFor(row))
     const errs = rowErrors[row.key] ?? {}
     if (editable) {
       return (
@@ -178,10 +236,36 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 size="sm"
                 value={row.values[field.key] ?? ''}
                 onChange={(e) => setRowValue(row.key, field.key, e.target.value)}
-                // Re-group on blur only — regrouping mid-keystroke would fight the caret.
-                onBlur={() =>
-                  setRowValue(row.key, field.key, groupInput(row.values[field.key] ?? ''))
-                }
+                // Re-group on blur only — regrouping mid-keystroke would fight the caret. The
+                // re-group is cosmetic and unconditional (`groupInput` returns invalid text
+                // unchanged, so a typo stays on screen); only the COMMIT is gated below.
+                onBlur={() => {
+                  const grouped = groupInput(row.values[field.key] ?? '')
+                  setRowValue(row.key, field.key, grouped)
+                  // An invalid or unusable entry HOLDS its previous committed value (PR #344 review).
+                  // This is the rule `useCommittedValues` documents and every other surface already
+                  // followed — Schedule 4 reimplements the same guard. Without it an out-of-range
+                  // 999,999,999 in Total $ moved the footer to a figure the server can never produce.
+                  //
+                  // Validate HERE rather than reading `rowErrors`: that map is populated only by
+                  // `persist` (useEditableCostRows.ts:204), i.e. on a Save attempt, so it is still
+                  // empty during the entry this gate has to catch. `errs` below is right for the
+                  // field's `invalid` styling and wrong as a commit gate.
+                  const next = { ...row.values, [field.key]: grouped }
+                  const blurErrs = config.validate(row.description, next)
+                  if (blurErrs[field.key] !== undefined || isUnusableStrictEntry(grouped)) {
+                    return
+                  }
+                  // Merge onto the row's previous committed values rather than the live `row.values`,
+                  // so a blur advances only the field that blurred. Not a reachable bug today —
+                  // moving focus to another field blurs this one first — but it keeps the snapshot's
+                  // meaning exact rather than relying on focus ordering.
+                  setCommitted((prev) => ({
+                    ...prev,
+                    // Commit the grouped string, so `committed` and the field hold the same text.
+                    [row.key]: { ...(prev[row.key] ?? row.values), [field.key]: grouped },
+                  }))
+                }}
                 invalid={Boolean(errs[field.key])}
                 invalidText={errs[field.key]}
               />
@@ -234,6 +318,13 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     >
       {(data) => {
         const editable = data.editable
+        // The footer mirror: only when the page supplies one and the schedule is editable (#291 AC7).
+        // `editable` comes from the DOCUMENT — the editor hook does not expose it, and reading a
+        // non-existent `editor.editable` silently disabled the mirror entirely.
+        const mirroredSummary =
+          config.deriveSummary && editable
+            ? config.deriveSummary(rows.map((row) => committedFor(row)))
+            : null
         // Description + numeric (field + readonly) columns + optional Action column — empty-state colSpan.
         const totalColumns = 1 + config.fields.length + readonlyColumns.length + (editable ? 1 : 0)
         return (
@@ -351,7 +442,9 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                         <TableCell>Totals</TableCell>
                         {config.summaryItems.map((item) => (
                           <TableCell key={item.label} className="schedule-3__num">
-                            {fmtNumber(item.value(data))}
+                            {fmtNumber(
+                              mirroredSummary ? mirroredSummary[item.key] : item.value(data),
+                            )}
                           </TableCell>
                         ))}
                         {editable && <TableCell />}

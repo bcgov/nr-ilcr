@@ -1,6 +1,12 @@
 import { type Page } from '@playwright/test';
 
 /**
+ * Shared budget for cold paints / initial navigations (e.g. auth-flow redirects and home page loading),
+ * which can take longer on a heavily-loaded or cold parallel runner.
+ */
+export const NAVIGATION_BUDGET = 30000;
+
+/**
  * Barrier a "no write was sent" assertion crosses before reading a route spy — deterministic, NOT a
  * fixed sleep.
  *

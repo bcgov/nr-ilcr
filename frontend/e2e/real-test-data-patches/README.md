@@ -49,12 +49,9 @@ After applying to an already-running backend, **evict the app's reference-data c
 
 ## Current patches
 
-_None yet — the suite runs on discovered real data. Add a row only as a real gap is hit during test
-creation._
-
 | Patch | UC(s) | Why real data fell short |
 |---|---|---|
-| _(example)_ `<domain>/<name>.sql` (+ `.teardown.sql`) | `UC-<DOMAIN>-<NNN>` | _One sentence: which real-data precondition was missing and why discovery couldn't satisfy it. Note it's reversible + `E2E_SEED`-sentinel-marked._ |
+| `sch4/view-mode-amounts.sql` (+ `.teardown.sql`) | `UC-SCH4-001` | The extract contains **no Schedule 4 amounts at all** — 289 category-"4" `TRANSPORTATION_REPORT` rows but not one `ILCR_COST_REPORT_DETAIL` row with a Schedule 4 cost item (40–55), so all 68 locations have an empty category grid and no sub-page rows. Draft scenarios don't care (they create their own data through the app's own endpoints), but the read-only S18/STA-001 arm cannot: the Draft gate answers 409 to any write on a Submitted/Verified mill-year, and no non-Draft location has amounts to render. Adds ONE sentinel location (`E2E View Location`, `ENTRY_USERID='E2E_SEED'`) with a fixed category, a distance category and one Towing row, on each of the two non-Draft anchors. Reversible + double-sentinel-keyed; verified idempotent (2× apply → 1 copy) and fully removed by its teardown. |
 
 Add entries only as real gaps are hit during test creation/testing.
 

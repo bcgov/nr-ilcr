@@ -131,6 +131,203 @@ const StaleRaceHarness = () => {
 }
 
 describe('Schedule 5 camps table (AC1, AC2)', () => {
+  // ---- Defect #291: the camp grid's rates and its four totals track entry, on blur. -------------
+  //
+  // The `cedarFlats` fixture is self-consistent — every stored rate and total satisfies
+  // Schedule5Service's formulas — so the load-time assertion below is a genuine mirror-vs-server
+  // comparison, not the mirror measured against hand arithmetic.
+
+  /** A grid row's cells as text: [label, volume, cost, $/m³]. */
+  const gridCells = (label: string) => {
+    // Trimmed for the lookup: testing-library normalizes whitespace, so the grid's legacy trailing
+    // ": " never matches literally. The expected cell text below keeps it, since that is the DOM text.
+    const tr = screen.getByText(label.trim()).closest('tr')
+    if (!tr) throw new Error(`no grid row for "${label}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+  /** The read-only $/m³ cell of a grid row (index 3). */
+  const rate = (label: string) => gridCells(label)[3]
+
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    // The four derived rows and a fully-entered category rate, all mirror-driven already.
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '120,000',
+      '1,644,000',
+      '13.70',
+    ])
+    expect(gridCells('Camp Total: ')).toEqual(['Camp Total: ', '120,000', '1,600,000', '13.33'])
+    expect(gridCells('Access Expense Total: ')).toEqual([
+      'Access Expense Total: ',
+      '120,000',
+      '306,000',
+      '2.55',
+    ])
+    expect(gridCells('Camp and Access: ')).toEqual([
+      'Camp and Access: ',
+      '120,000',
+      '1,906,000',
+      '15.88',
+    ])
+    expect(rate('Catering and Food: ')).toBe('5.00') // 480000 / its own stored volume 96000
+  })
+
+  test('typing alone moves nothing; blurring a cost recalculates the cascade (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '600000')
+    expect(rate('Catering and Food: ')).toBe('5.00') // not per keystroke
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000')
+
+    await user.tab()
+    expect(rate('Catering and Food: ')).toBe('6.25') // 600000/96000
+    // Sub-Total 600000+960000+120000+60000+24000 = 1,764,000 -> 14.70
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,764,000')
+    expect(rate('Camp Sub-Total: ')).toBe('14.70')
+    // Camp Total less Recoveries 44000 = 1,720,000 -> 14.33; and Camp-and-Access + 306,000.
+    expect(gridCells('Camp Total: ')[2]).toBe('1,720,000')
+    expect(rate('Camp Total: ')).toBe('14.33')
+    expect(gridCells('Camp and Access: ')[2]).toBe('2,026,000')
+    // The access side is untouched.
+    expect(gridCells('Access Expense Total: ')[2]).toBe('306,000')
+  })
+
+  test('the Associated Camp Volume moves every rate, via the BR-03 propagation (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const campVolume = screen.getByLabelText(/Associated Camp Volume/i)
+    await user.clear(campVolume)
+    await user.type(campVolume, '60000')
+    await user.tab()
+
+    // BR-03 propagated 60000 into all eleven volume-bearing categories, so the costs are unchanged
+    // and every rate doubles.
+    expect(rate('Catering and Food: ')).toBe('8.00') // 480000/60000
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '60,000',
+      '1,644,000',
+      '27.40',
+    ])
+    expect(rate('Camp Total: ')).toBe('26.67') // 1,600,000/60,000 = 26.6666… -> 26.67
+    expect(rate('Access Expense Total: ')).toBe('5.10')
+    expect(rate('Camp and Access: ')).toBe('31.77') // 1,906,000/60,000 = 31.7666… -> 31.77
+  })
+
+  test('Recoveries feeds Camp Total but never the Sub-Total (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const recoveries = screen.getByLabelText('Recoveries cost')
+    await user.clear(recoveries)
+    await user.type(recoveries, '144000')
+    await user.tab()
+
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000') // unchanged
+    expect(gridCells('Camp Total: ')[2]).toBe('1,500,000') // 1,644,000 - 144,000
+    expect(gridCells('Camp and Access: ')[2]).toBe('1,806,000')
+  })
+
+  test('a moved camp volume BLANKS the two per-term Other rates (#291)', async () => {
+    // Ruled 2026-08-21 after code review: BR-03 rewrites those rows' VOLUME cells while their rate is
+    // server-owned (the per-term formula cannot be reproduced client-side), so keeping the served rate
+    // left a row reading 60,000 / 24,000 / 0.31 — which no arithmetic reconciles. A blank is honest.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    expect(rate('Other Camp Expenses (3):')).toBe('0.31') // still the served denominator
+
+    const campVolume = screen.getByLabelText(/Associated Camp Volume/i)
+    await user.clear(campVolume)
+    await user.type(campVolume, '60000')
+    await user.tab()
+
+    expect(rate('Other Camp Expenses (3):')).toBe('') // the mask renders a blank, not an em dash
+    expect(rate('Other Access Expenses (1):')).toBe('')
+    // The mirrorable rates DID move, so this is a targeted blank rather than a dead grid.
+    expect(rate('Catering and Food: ')).toBe('8.00')
+  })
+
+  test('an invalid entry holds the last valid figures (#291)', async () => {
+    // Ruled 2026-08-21: legacy's failed round-trip left the totals alone. Committing an out-of-range
+    // value instead drove thirteen cells to a state no Save can produce.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    const cost = screen.getByLabelText('Catering and Food cost')
+    await user.clear(cost)
+    await user.type(cost, '999999999') // past the cost band
+    await user.tab()
+
+    // Frozen at the served figures, not recomputed from the rejected value.
+    expect(gridCells('Camp Sub-Total: ')[2]).toBe('1,644,000')
+  })
+
+  test('the two per-term Other rows keep their served rate — recorded deviation (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await openEditor(user)
+
+    // Their $/m³ sums per-row quotients over sub-page rows the camp document does not carry, so the
+    // mirror cannot reproduce it and deliberately leaves the served figure in place.
+    expect(rate('Other Camp Expenses (3):')).toBe('0.31')
+    expect(rate('Other Access Expenses (1):')).toBe('0.05')
+  })
+
+  test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {
+    // A stored Sub-Total that disagrees with its own components: a recomputing view would show
+    // 1,644,000 instead of the server's figure.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            trackStatus: 'S',
+            editable: false,
+            camps: [
+              {
+                ...cedarFlats,
+                campSubTotal: { volume: 120000, cost: 999999, costPerVolume: 8.33 },
+              },
+            ],
+          }),
+        ),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<Schedule5 />)
+    await user.click(await screen.findByRole('button', { name: /^view$/i }))
+    await screen.findByText('Camp Sub-Total:')
+
+    expect(gridCells('Camp Sub-Total: ')).toEqual([
+      'Camp Sub-Total: ',
+      '120,000',
+      '999,999',
+      '8.33',
+    ])
+  })
+
   test('lists camps in served order under Existing Camps, with exactly two columns', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
@@ -272,7 +469,7 @@ describe('Schedule 5 camp panel (AC4, AC5, AC7)', () => {
     expect(within(grid).queryByRole('columnheader')).not.toBeInTheDocument()
   })
 
-  test('derived rows and $/m³ render server values with the legacy masks, never recomputed', async () => {
+  test('derived rows and $/m³ render with the legacy masks (the mirror reproduces the served figures)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule5 />)
     const user = userEvent.setup()

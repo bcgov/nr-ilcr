@@ -3,8 +3,8 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
 /**
  * The Print Schedules selection (Epic 20.2). Carries the twelve schedule flags plus the "all"
  * shortcut and the three print options, mirroring the legacy {@code PrintSchedulesMB} screen so the
- * frontend can build the full page while the backend renders only the in-scope sections (5, 6, 7A,
- * 7B, 9, 11). A selected-but-unimplemented schedule (1/2/3/8/10) and {@code
+ * frontend can build the full page while the backend renders only the in-scope sections (1, 2, 3,
+ * 5, 6, 7A, 7B, 9, 10, 11). A selected-but-unimplemented schedule (4/8) and {@code
  * printMillInformationReport} are accepted for forward-compatibility but produce no section yet
  * (skipped, logged) until their story lands.
  *
@@ -14,9 +14,9 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * is null-safe. {@code allSchedules} expands to every schedule flag (BR-07), resolved by the
  * service.
  *
- * @param schedule1 print Schedule 1 (accepted; not rendered in 20.2)
- * @param schedule2 print Schedule 2 (accepted; not rendered in 20.2)
- * @param schedule3 print Schedule 3 (accepted; not rendered in 20.2)
+ * @param schedule1 print Schedule 1 (Average Cost of Logging)
+ * @param schedule2 print Schedule 2 (Purchased and Private Log Costs and Sales)
+ * @param schedule3 print Schedule 3 (Forest Management Administration Costs)
  * @param schedule4 print Schedule 4 (accepted; not rendered in 20.2)
  * @param schedule5 print Schedule 5 (Camp and Access Expenses)
  * @param schedule6 print Schedule 6 (Road Management Costs)
@@ -24,7 +24,7 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * @param schedule7b print Schedule 7B (Culvert Costs)
  * @param schedule8 print Schedule 8 (accepted; not rendered in 20.2)
  * @param schedule9 print Schedule 9 (Miscellaneous/Unique Logging Costs)
- * @param schedule10 print Schedule 10 (accepted; not rendered in 20.2)
+ * @param schedule10 print Schedule 10 (New Road Construction Costs)
  * @param schedule11 print Schedule 11 (Basic Silviculture)
  * @param allSchedules select every schedule (BR-07); expanded server-side
  * @param printScheduleInformation render the template body ({@code p_do_print_body})
