@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -174,7 +176,7 @@ class Schedule2WriteServiceTest {
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
 
-    service.deleteSchedule2(MILL, YEAR);
+    assertTrue(service.deleteSchedule2(MILL, YEAR), "a real delete reports that it removed a row");
 
     verify(repository).deleteSchedule(SUMMARY_ID);
   }
@@ -184,7 +186,9 @@ class Schedule2WriteServiceTest {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
 
-    service.deleteSchedule2(MILL, YEAR); // must not throw
+    // Must not throw, and must report that nothing was removed so the controller can say so
+    // instead of announcing a successful delete (defect #292 code review).
+    assertFalse(service.deleteSchedule2(MILL, YEAR), "the no-op must not claim it deleted a row");
 
     verify(repository, never()).deleteSchedule(anyInt());
   }

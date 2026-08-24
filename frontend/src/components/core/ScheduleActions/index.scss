@@ -1,0 +1,11 @@
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
+
+// The "why is Delete unavailable?" hint (defect #292, decision 3). Sits in the flex action bar beside
+// the buttons, vertically centred with them, and reads as secondary text rather than a control.
+.schedule-actions__delete-hint {
+  align-self: center;
+  margin-inline-start: $spacing-02;
+  color: var(--cds-text-secondary);
+  @include type-style('label-01');
+}

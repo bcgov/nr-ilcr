@@ -404,6 +404,17 @@ Then('the Schedule 2 Delete action is unavailable', async ({ schedule2Page }) =>
 
 Then('the Schedule 2 Delete action is available', async ({ schedule2Page }) => {
   await expect(schedule2Page.deleteButton).toBeEnabled();
+  // The converse of the hint below: when Delete IS available there is nothing to explain.
+  await expect(schedule2Page.deleteUnavailableHint).toHaveCount(0);
+});
+
+Then('the Schedule 2 delete-unavailable hint is shown', async ({ schedule2Page }) => {
+  // nr-ilcr #292 decision 3: greying Delete rather than omitting it (legacy's `rendered`) costs a
+  // screen-reader user the control entirely, because a disabled Carbon button is not focusable. The
+  // app pays that cost with a visible, programmatically-associated reason — assert both halves.
+  await expect(schedule2Page.deleteUnavailableHint).toBeVisible();
+  const hintId = await schedule2Page.deleteUnavailableHint.getAttribute('id');
+  await expect(schedule2Page.deleteButton).toHaveAttribute('aria-describedby', hintId ?? '');
 });
 
 Then('the Schedule 2 fields are read-only', async ({ schedule2Page }) => {

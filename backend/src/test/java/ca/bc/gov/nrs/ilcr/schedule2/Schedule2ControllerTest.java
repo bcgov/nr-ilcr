@@ -89,7 +89,8 @@ class Schedule2ControllerTest {
   }
 
   @Test
-  void deleteSchedule2_delegates_andReturnsDeletedMessage() {
+  void deleteSchedule2_removedARow_returnsDeletedMessage() {
+    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR)).thenReturn(true);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");
@@ -99,8 +100,32 @@ class Schedule2ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
+    assertEquals("dataDeletedSuccesfullyInfoMsg", response.getBody().message().key());
+    assertEquals("Data deleted successfully", response.getBody().message().text());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(schedule2Service).deleteSchedule2(MILL_ID, YEAR);
+  }
+
+  /**
+   * The idempotent no-op (Draft mill/year with no Schedule 2) stays 200 but must NOT reuse the
+   * success text of a delete that removed something — the whole point of defect #292's backend
+   * ruling. Without this the API tells every client, UI or otherwise, that it deleted a record that
+   * never existed.
+   */
+  @Test
+  void deleteSchedule2_removedNothing_returnsNoDataToDeleteMessage() {
+    when(schedule2Service.deleteSchedule2(MILL_ID, YEAR)).thenReturn(false);
+    when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("No saved data was found, so nothing was deleted");
+
+    ResponseEntity<MessageResponse> response =
+        controller.deleteSchedule2(MILL_ID, YEAR, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertNotNull(response.getBody());
+    assertEquals("noDataToDeleteInfoMsg", response.getBody().message().key());
+    assertEquals(
+        "No saved data was found, so nothing was deleted", response.getBody().message().text());
   }
 
   @Test

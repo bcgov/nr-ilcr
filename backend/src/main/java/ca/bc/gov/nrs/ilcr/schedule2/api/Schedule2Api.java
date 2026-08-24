@@ -66,8 +66,12 @@ public interface Schedule2Api {
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)
+   *     <p>The status is 200 for both outcomes, but the {@code message} distinguishes them (defect
+   *     #292 code review): {@code dataDeletedSuccesfullyInfoMsg} when a summary was removed, {@code
+   *     noDataToDeleteInfoMsg} when there was nothing to remove. Callers render it verbatim (AD-8),
+   *     so a no-op no longer reads as a successful delete — for the UI or for any other client.
    * @param authentication the caller (drives EDIT_SCHEDULE)
-   * @return 200 with the success {@code message} (SUC-002, AD-8)
+   * @return 200 with the outcome {@code message} (SUC-002 on a real delete, AD-8)
    */
   @DeleteMapping
   ResponseEntity<MessageResponse> deleteSchedule2(

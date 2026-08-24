@@ -40,9 +40,12 @@ S13–S16 entry rejection (`validation.feature`); the save round-trip surviving 
 (`accessibility.feature`).
 
 **Every one of the 16 slices is dispositioned `covered`.** 33 scenarios (39 tests after Scenario-Outline
-expansion): **38 green + 1 deliberate `@discovered-bug` RED** tracking a genuine app defect this suite
-found — Delete is offered on a schedule that has never been saved (defects.md **BUG-1**, BR-08/S06). A
-clean run is `npm run test:gate` (regenerates the features first and excludes every `@discovered-*` red).
+expansion). **All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
+schedule that has never been saved (defects.md **BUG-1**, BR-08/S06) — was fixed in nr-ilcr #292, so its tag
+is removed and the scenario now runs in the gate as the regression barrier. The suite's own `deleteButton`
+locator moved from the top bar to the bottom one at the same time, because #292 also restored legacy's
+bottom-bar-only Delete. A clean run is `npm run test:gate` (regenerates the features first and excludes
+every `@discovered-*` red — of which Schedule 2 now has none).
 
 Priorities: **5 × p0, 17 × p1, 11 × p2.**
 
@@ -58,7 +61,7 @@ reading the matrix below:
 | computed Net Purchased / Total Average figures displaying correctly | `happy-path.feature` `@p0 @S01` (full arithmetic, UI **and** stored) | `covered` |
 | enter / save / update / **retry** (S01–S04, S12) | `happy-path`, `update`, `blank-fields`, `save-error` (both arms) | `covered` |
 | out-of-range and multi-error rejection (S13–S16) | `validation.feature` (9 scenarios, 14 tests) | `covered` |
-| delete (S05) **and Delete absent when unsaved (S06)** | `delete.feature` ×2; `render-states.feature` `@discovered-bug @S06` | `covered` (S06 is the RED — BUG-1) |
+| delete (S05) **and Delete absent when unsaved (S06)** | `delete.feature` ×2; `render-states.feature` `@S06` | `covered` (S06 was the RED — BUG-1, fixed #292) |
 | Check Status success / missing (S07, S08) | `check-status.feature` ×3 | `covered` |
 | written after implementation per AD-10 (verification, not red phase) | 3.1–3.3 were `done` before this suite was authored | satisfied |
 | axe: zero violations **or** triaged disposition (NFR1) | `accessibility.feature` — 4 clean renders; the 5th is GAP-4's recorded disposition | `covered` |
@@ -121,8 +124,8 @@ recorded rather than silently dropped:
 | Save with both (less) Log Sales fields blank | `S04` | same | `blank-fields.feature` `@p1 @S04` | `covered` | — |
 | Delete a saved schedule → empty editable document | `S05` | `Schedule2Service.deleteSchedule2` / `index.tsx:145` | `delete.feature` `@p0 @S05` | `covered` | — |
 | Cancelling the delete confirmation is a no-op | `S05` (AF1 dismiss) | Carbon `Modal` secondary action | `delete.feature` `@p1 @S05` | `covered` | — |
-| Delete not available for an unsaved (new) schedule | `S06`, BR-08 | `index.tsx:245` `deletable` | `render-states.feature` `@discovered-bug @p1 @S06` | `divergence` | **BUG-1** |
-| A never-saved schedule still renders both action bars + legacy row order | `S06` (Relevant Controls) | `index.tsx:314` `actions`, `:368` row order | `render-states.feature` `@p1 @S06` | `covered` | — |
+| Delete not available for an unsaved (new) schedule | `S06`, BR-08 | `utils/schedule.ts` `isScheduleSaved` → `ScheduleActions` `scheduleSaved` | `render-states.feature` `@p1 @S06` | `covered` | BUG-1 fixed #292 |
+| A never-saved schedule still renders both action bars + legacy row order | `S06` (Relevant Controls) | `index.tsx` `actionBar()` (Delete on the bottom bar only, #292), row order below it | `render-states.feature` `@p1 @S06` | `covered` | — |
 | Check Status — all requirements met | `S07`, BR-07 | `Schedule2Service.checkStatus` | `check-status.feature` `@p0 @S07` | `covered` | — |
 | Check Status — purchased-log cost missing | `S08`, BR-07 | same | `check-status.feature` `@p0 @S08` | `covered` | — |
 | A **saved** schedule with no cost still fails Check Status | `S08` (follow-on of `S03`) | same | `check-status.feature` `@p1 @S08` | `covered` | — |
@@ -188,13 +191,14 @@ recorded rather than silently dropped:
 | BR-05 amounts within their allowed ranges | `validation.feature` (all outlines) | `covered` |
 | BR-06 net/subtotal/total-average computed read-only | `happy-path` (full derived arithmetic, UI **and** stored) | `covered` |
 | BR-07 Check Status requires the purchased-log cost | `check-status.feature` both sides | `covered` |
-| BR-08 Delete only when saved **and** editable | `render-states` (`@discovered-bug`), `update`/`persistence` (available when saved) | `divergence` — **BUG-1** |
+| BR-08 Delete only when saved **and** editable | `render-states` (`@p1 @S06`, in the gate), `delete`/`update`/`persistence` (available when saved, unavailable again after the delete) | `covered` — BUG-1 fixed #292 |
 
-> **Honest note on the "Delete is available" assertions.** `update.feature`, `delete.feature` and
-> `persistence.feature` each assert Delete **is** available on a saved schedule, and those pass — but
-> while BUG-1 stands they are **non-discriminating**, because Delete is currently enabled whenever the
-> schedule is editable. They are kept deliberately: they cost nothing, they document the intended
-> behaviour, and they regain their power the moment BUG-1 is fixed.
+> **Honest note on the "Delete is available" assertions — resolved 2026-08-24.** `update.feature`,
+> `delete.feature` and `persistence.feature` each assert Delete **is** available on a saved schedule. While
+> BUG-1 stood those assertions were **non-discriminating**, because Delete was enabled whenever the schedule
+> was editable; they were kept on the grounds that they would regain their power the moment BUG-1 was fixed.
+> It is fixed (nr-ilcr #292), so they now discriminate: the gate is `editable && isScheduleSaved(doc)`, and
+> `delete.feature` additionally asserts the button goes unavailable again once the record is gone.
 
 ## Deliberately excluded by the slice catalogue — re-checked against the new app
 
@@ -257,8 +261,8 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
 
 - **P0: 100%** — all 5 P0 scenarios green (happy path incl. full derived arithmetic, delete, both Check
   Status arms, persistence).
-- **P1: 100%** of P1 items covered — 17 scenarios, all green except the deliberate `@discovered-bug` red,
-  which **counts as covered** (it maps to BR-08/S06 and is red on purpose).
+- **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
+  formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
 - **Overall: 16/16 slices covered**, plus every message-catalog row except the two `deferred` fallbacks
   (GAP-3) and the `blocked` role item (GAP-1). Both remain above the 80% bar.
 - **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-3/GAP-4

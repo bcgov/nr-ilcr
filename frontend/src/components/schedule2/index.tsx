@@ -21,6 +21,7 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import { isScheduleSaved } from '@/utils/schedule'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -139,7 +140,11 @@ const Schedule2: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-check the gate in the handler, not only in the button's `disabled` (defect #292 code
+    // review): a disabled attribute is presentation, and any other route into this handler — a
+    // mis-wired bar, a programmatic open, the modal's submit — would otherwise fire a DELETE for a
+    // schedule that does not exist. Mirrors handleSave, which also re-validates here.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
@@ -147,12 +152,22 @@ const Schedule2: FC = () => {
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 2.',
       // Schedule 2 never 404s: with the summary gone, a re-GET returns the 200 empty EDITABLE
-      // document (revisionCount null). Reload it so the meta row / form reflect reality and the
+      // document (no revisionCount). Reload it so the meta row / form reflect reality and the
       // Licensee can immediately re-enter data (legacy AF1), while keeping the API delete message.
       // This per-page empty-state lives at the call site (Story 29.6): list/re-GET pages re-seed
       // from the reload, single-doc reset-in-place pages (Schedules 1/3) reset in place instead.
       onSuccess: (delResp) => {
         const deleteMessage = delResp?.message?.text ?? null
+        // Drop the optimistic-lock token BEFORE the reload is dispatched, so "this schedule is
+        // saved" becomes false the instant the record is gone (defect #292 code review, face 2).
+        // Without this the reload is the only thing that closes the Delete gate, and it closes it
+        // too late: `run`'s `.finally` releases `saving` when the DELETE settles — while the reload
+        // GET is still in flight — so Delete re-enabled on an already-deleted schedule for the whole
+        // reload window, and stayed enabled indefinitely if the reload failed. Both let the user
+        // fire a second DELETE and get another success message for a record that no longer exists,
+        // which is the exact symptom #292 was raised for. Schedules 1/3 avoid it by resetting in
+        // place; this is the same move, narrowed to the token the gate reads.
+        setData((prev) => (prev ? { ...prev, revisionCount: null } : prev))
         run(
           apiService
             .getAxiosInstance()
@@ -229,14 +244,9 @@ const Schedule2: FC = () => {
 
   const editable = data.editable
   // Delete targets a persisted summary; an unsaved document has nothing to delete, so gate it exactly
-  // like legacy isScheduleOpen() (BR-08 / S06). `!= null` is LOOSE on purpose (defect #292): under the
-  // app-wide Jackson `default-property-inclusion: non_null` a null revisionCount is OMITTED from the
-  // GET body, so an unsaved (or just-deleted) Schedule 2 serves `undefined` and a `!== null` test is
-  // always true. Schedule 2 is the page where that matters: its GET never 404s, it serves a 200 empty
-  // EDITABLE document, and its DELETE is idempotent — so the inert gate offered Delete on a schedule
-  // that never existed and reported "Data deleted successfully" for it. Same trap as
-  // schedule5/index.tsx (Camp.campName). Do not "tidy" this to `!==`.
-  const scheduleSaved = data.revisionCount != null
+  // like legacy isScheduleOpen() (BR-08 / S06). The absent-vs-null subtlety that made #292 possible
+  // lives in the shared predicate — read it before touching this line.
+  const scheduleSaved = isScheduleSaved(data)
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 

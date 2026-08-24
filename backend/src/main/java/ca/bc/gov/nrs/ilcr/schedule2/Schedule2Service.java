@@ -192,18 +192,25 @@ public class Schedule2Service {
    * gate as save. Idempotent: a Draft mill with no category-{@code "2"} summary is a no-op that
    * still returns 200 (never 404). Context is already validated in the controller (AD-4).
    *
+   * <p>Returns whether anything was actually removed, so the controller can tell a real delete from
+   * the idempotent no-op instead of announcing success for both (defect #292 code review). The 200
+   * is unchanged — only the message differs; the never-404 read contract and the client's
+   * delete-then-re-GET flow both depend on the status staying 200.
+   *
    * @param millId the mill id
    * @param year the reporting year
+   * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public void deleteSchedule2(long millId, int year) {
+  public boolean deleteSchedule2(long millId, int year) {
     requireDraft(millId, year);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
-      return; // idempotent — nothing to remove
+      return false; // idempotent — nothing to remove, and the caller must not claim otherwise
     }
     try {
       repository.deleteSchedule(summary.get().summaryId());
+      return true;
     } catch (DataAccessException ex) {
       log.warn(
           "Schedule 2 delete failed for mill {} year {} [{}]: {}",
