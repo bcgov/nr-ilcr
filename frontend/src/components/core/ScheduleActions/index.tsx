@@ -1,6 +1,5 @@
 import type { FC } from 'react'
 import { Button, Column } from '@carbon/react'
-import './index.scss'
 
 // One id is safe: at most one bar renders the hint (only the Delete-bearing instance can, and a page
 // renders that once). Stable so `aria-describedby` can point at it.
@@ -76,12 +75,20 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
             but changed its mechanism from "not rendered" to "disabled". A disabled Carbon button is
             not focusable, so on its own that is WORSE than legacy for a screen-reader user: legacy's
             absence at least matched what assistive tech reported, whereas a silent dead button
-            reports nothing at all. This hint pays that cost — it states why Delete is unavailable,
-            for sighted and screen-reader users alike, and only in the state where the question
-            arises (editable but nothing saved yet). Read-only schedules say nothing: there the whole
-            bar is disabled and the tombstone already shows the non-Draft status. */}
+            reports nothing at all. This reason pays that cost.
+
+            VISUALLY HIDDEN, deliberately (product call 2026-08-24, after seeing it on screen): it
+            shipped as visible text beside the button for one commit and read as clutter next to a
+            control that is already self-evidently greyed. `cds--visually-hidden` keeps it in the
+            accessibility tree — where the disabled button gives a screen-reader user nothing at all —
+            while removing it from the page. Do not delete it to "clean up" the DOM: without it,
+            greying the button is strictly less accessible than legacy's omission was.
+
+            Rendered only in the state where the question arises (editable but nothing saved yet).
+            Read-only schedules say nothing: there the whole bar is disabled and the tombstone already
+            shows the non-Draft status. */}
         {editable && !scheduleSaved && (
-          <span id={HINT_ID} className="schedule-actions__delete-hint">
+          <span id={HINT_ID} className="cds--visually-hidden">
             Available once the schedule is saved
           </span>
         )}

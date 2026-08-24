@@ -36,7 +36,7 @@ Feature: Schedule 2 — delete a saved schedule
     # tracking signal. Both faces are fixed (nr-ilcr #292), so the P0 journey now pins the whole cycle
     # instead of stopping at the delete. See defects.md BUG-1 (CLOSED).
     And the Schedule 2 Delete action is unavailable
-    And the Schedule 2 delete-unavailable hint is shown
+    And the Schedule 2 delete-unavailable reason is announced
 
   # Dismissing the confirmation must be a genuine no-op, not a delayed delete.
   @p1 @S05

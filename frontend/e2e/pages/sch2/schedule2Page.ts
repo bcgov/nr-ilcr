@@ -24,8 +24,8 @@ import {
  *     severity word in the title (WCAG 2.1 AA — never colour alone).
  *   - Delete on a never-saved schedule is rendered-but-DISABLED, where legacy omitted it from the DOM
  *     entirely. Same user-visible outcome (delete unavailable), different mechanism — see coverage.md.
- *     The app states the reason beside the button ("Available once the schedule is saved"), which
- *     legacy had no need to do; `deleteUnavailableHint` addresses it.
+ *     The app states the reason in a visually-hidden span ("Available once the schedule is saved"),
+ *     which legacy had no need to do; `deleteUnavailableHint` addresses it.
  *
  * TOP-AND-BOTTOM ACTION BARS, DELIBERATELY ASYMMETRIC: the page emits an action bar above and below
  * the table, but only the BOTTOM one carries Delete — legacy's shape (schedule2.xhtml:35-36 vs
@@ -200,10 +200,13 @@ export class Schedule2Page {
   }
 
   /**
-   * The hint that explains a greyed Delete ("Available once the schedule is saved"). Rendered only
-   * when the schedule is editable but has never been saved — defect #292 kept legacy's rule (no
-   * delete without a persisted record) while changing the mechanism from "not rendered" to
-   * "disabled", and a disabled Carbon button is not focusable, so the reason has to be stated.
+   * The reason a greyed Delete gives ("Available once the schedule is saved"). Rendered only when the
+   * schedule is editable but has never been saved — defect #292 kept legacy's rule (no delete without
+   * a persisted record) while changing the mechanism from "not rendered" to "disabled", and a
+   * disabled Carbon button is not focusable, so the reason has to be stated somewhere.
+   *
+   * It is `cds--visually-hidden`: in the accessibility tree, NOT on the page. `getByText` still finds
+   * it, but do not assert `toBeVisible()` — assert `toBeAttached()` and the `aria-describedby` wiring.
    */
   get deleteUnavailableHint(): Locator {
     return this.page.getByText('Available once the schedule is saved', { exact: true });

@@ -282,8 +282,11 @@ describe('Schedule2 page', () => {
     actionBarButtons(/delete/i, 1).forEach((b) => expect(b).toBeDisabled())
     actionBarButtons(/^save$/i, 2).forEach((b) => expect(b).toBeEnabled())
     actionBarButtons(/check status/i, 2).forEach((b) => expect(b).toBeEnabled())
-    // The greyed button must say why (defect #292 decision 3) and be described by it.
+    // The greyed button must say why (defect #292 decision 3) — to assistive technology, not on the
+    // page: the reason is `cds--visually-hidden`, since a disabled button is not focusable but the
+    // visible text read as clutter (product call 2026-08-24).
     const hint = screen.getByText('Available once the schedule is saved')
+    expect(hint).toHaveClass('cds--visually-hidden')
     expect(actionBarButtons(/delete/i, 1)[0]).toHaveAttribute('aria-describedby', hint.id)
   })
 

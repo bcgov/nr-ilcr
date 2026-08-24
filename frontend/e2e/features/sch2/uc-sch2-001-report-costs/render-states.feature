@@ -55,9 +55,10 @@ Feature: Schedule 2 — render states and context guards
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 2
     Then the Schedule 2 Delete action is unavailable
-    # The greyed button states why, since a disabled Carbon button is not focusable and legacy's
-    # omission at least matched what assistive tech reported (nr-ilcr #292 decision 3).
-    And the Schedule 2 delete-unavailable hint is shown
+    # The greyed button states why TO ASSISTIVE TECH (visually hidden — a disabled Carbon button is
+    # not focusable, so legacy's omission at least matched what AT reported; nr-ilcr #292 decision 3,
+    # narrowed to screen-reader-only by a product call once the visible text was seen on screen).
+    And the Schedule 2 delete-unavailable reason is announced
 
   # ---- S11: not editable outside Draft ----------------------------------------------------------------
 

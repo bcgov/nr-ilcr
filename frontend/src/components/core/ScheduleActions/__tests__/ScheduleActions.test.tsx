@@ -37,13 +37,17 @@ describe('ScheduleActions', () => {
     expect(screen.getByRole('button', { name: 'Check Status' })).toBeEnabled()
   })
 
-  test('an unsaved schedule explains why Delete is unavailable, and the button points at it', () => {
+  test('an unsaved schedule explains why Delete is unavailable — to assistive tech only', () => {
     render(<ScheduleActions {...props} scheduleSaved={false} />)
 
     const hint = screen.getByText(HINT)
     // Greying rather than hiding (decision 1) costs a screen-reader user the button entirely — a
-    // disabled Carbon button is not focusable — so the reason must be announced, not just shown.
+    // disabled Carbon button is not focusable — so the reason must be announced.
     expect(deleteButton()).toHaveAttribute('aria-describedby', hint.id)
+    // …but NOT drawn: it read as clutter beside an already-greyed control (product call 2026-08-24).
+    // Both halves are pinned, so neither can be lost — deleting the span would strip the reason from
+    // the accessibility tree, and styling it back in would put the text back on the page.
+    expect(hint).toHaveClass('cds--visually-hidden')
   })
 
   test('no hint on a saved schedule, and none on a read-only one', () => {
