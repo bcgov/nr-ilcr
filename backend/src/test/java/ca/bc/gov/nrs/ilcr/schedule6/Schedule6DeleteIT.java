@@ -90,8 +90,9 @@ class Schedule6DeleteIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.roadRecords").isEmpty())
         .andExpect(jsonPath("$.generalComments").doesNotExist());
 
-    // Legacy re-inserts ONLY when the deleted row's comment was non-blank (:297). A placeholder
-    // here would resurrect an empty comment and strand a bare row forever.
+    // Legacy re-inserts ONLY when the deleted row's comment was non-EMPTY (:297, via
+    // CoreUtil.isNullOrEmptyString). This row's COMMENTS is NULL, so the branch is off. A
+    // placeholder here would resurrect an empty comment and strand a bare row forever.
     JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     assertEquals(
         0,

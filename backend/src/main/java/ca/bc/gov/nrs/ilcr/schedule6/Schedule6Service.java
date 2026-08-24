@@ -479,13 +479,22 @@ public class Schedule6Service {
         // Raced by a concurrent delete between the read above and here.
         throw new RoadRecordNotFoundException();
       }
-      // Recorded deviation: legacy's CoreUtil.isNullOrEmptyString (CoreUtil.java:166-172) is
-      // empty-aware, not blank-aware, so a whitespace-only comment re-inserts a placeholder in
-      // legacy and would NOT here. isNotBlank matches the trim-aware isPlaceholder convention this
-      // service already uses everywhere else, and saveDocument already normalizes blank to NULL on
-      // the save side, so a whitespace-only stored comment should not exist in practice — but if
-      // one ever does (e.g. a pre-existing row), this is where the two diverge.
-      if (wasOnlyRow && StringUtils.isNotBlank(survivingComment)) {
+      // Empty-aware, NOT blank-aware, matching legacy's CoreUtil.isNullOrEmptyString
+      // (CoreUtil.java:166-172): a whitespace-only comment re-inserts a placeholder in legacy, so
+      // it
+      // re-inserts one here. This was previously isNotBlank — a recorded deviation justified by
+      // saveDocument normalizing blank to NULL on the save side, so a whitespace-only stored
+      // comment
+      // "should not exist in practice". It can still arrive on a pre-existing delivery row, and
+      // there the deviation silently destroyed the comment, so the deviation is retired in favour
+      // of
+      // legacy's own predicate (code review 2026-08-24).
+      //
+      // The trim-aware isPlaceholder convention this service uses elsewhere is a separate rule
+      // about
+      // the CLASSIFICATION columns, not the comment: a re-inserted row is a placeholder because its
+      // TSA/TSB/TFL are all NULL, whatever its COMMENTS holds.
+      if (wasOnlyRow && StringUtils.isNotEmpty(survivingComment)) {
         repository.insertPlaceholder(
             repository.nextRoadReportId(), millId, year, survivingComment, user);
       }
@@ -530,6 +539,13 @@ public class Schedule6Service {
    * between the per-row and whole-document write paths (Task 5).
    */
   private static Classification classify(String areaType, String tflNumber, String supplyBlock) {
+    // Defence in depth for FLD-001, mirroring the revisionCount guard in saveDocument (:337): both
+    // write DTOs mark areaType @NotBlank and both endpoints bind them @Valid, but the TSA branch
+    // below dereferences the value (areaType.length()), so a direct service caller that bypasses
+    // Bean Validation would get an NPE -> 500 instead of the house 400 (code review 2026-08-24).
+    if (StringUtils.isBlank(areaType)) {
+      throw new AreaTypeRequiredException();
+    }
     if (AREA_TYPE_TFL.equals(areaType)) {
       return new Classification(null, null, requireValidTfl(tflNumber));
     }

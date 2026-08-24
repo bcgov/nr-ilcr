@@ -37,9 +37,12 @@ INSERT INTO THE.ROAD_MAINTENANCE_REPORT (ROAD_MAINTENANCE_REPORT_ID, REPORT_YEAR
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ROAD_MAINTENANCE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, COMMENTS, ENTRY_USERID)
   VALUES (8380, 8370, 69, 1000, 40000, 'row comment', 'SEED');
 
--- ============ Mill 668 / 2021 — SOLE record, BLANK (NULL) COMMENTS ============
+-- ============ Mill 668 / 2021 — SOLE record, NULL COMMENTS ============
 -- Deleting 8371 must leave NOTHING behind: legacy re-inserts only when the deleted row's comment
--- was non-blank (Schedule6DAO.java:297); a placeholder here would resurrect an empty comment.
+-- was non-EMPTY (Schedule6DAO.java:297 via CoreUtil.isNullOrEmptyString, which is empty-aware and
+-- NOT trim-aware); a placeholder here would resurrect an empty comment. COMMENTS is NULL here, so
+-- this fixture pins the re-insert's OFF branch under either predicate — the whitespace-only case
+-- that actually separates them is unit-pinned in Schedule6WriteServiceTest.
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID) VALUES (668, 'Sch6 Delete Sole Blank Milling', 668, 'SEED');
 INSERT INTO THE.ILCR_MILL_STATUS_XREF (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID) VALUES (668, 'ACT', 'SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, ENTRY_USERID) VALUES (2021, 668, 'D', 'SEED');

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
@@ -522,6 +523,175 @@ class Schedule6WriteServiceTest {
         assertThrows(
             ScheduleNotSavedException.class,
             () -> service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER));
+    assertEquals("scheduleNotSavedErrorMsg", ex.getMessageKey());
+  }
+
+  // ---- FLD-001 defence in depth -----------------------------------------------------------------
+
+  @ParameterizedTest(name = "area type [{0}] -> 400, nothing written")
+  @NullSource
+  @ValueSource(strings = {"", "   "})
+  @DisplayName(
+      "FLD-001 defence in depth: a missing area type is the house 400, never an NPE-driven 500 — "
+          + "@NotBlank protects the two endpoints, not the method")
+  void blankAreaType_rejectedBeforeAnyWrite(String areaType) {
+    stubDraft();
+    AreaTypeRequiredException ex =
+        assertThrows(
+            AreaTypeRequiredException.class,
+            () -> service.addRecord(MILL, YEAR, request(areaType, null, "01B"), true, USER));
+    // Message parity with the @NotBlank route: the two are indistinguishable to a client.
+    assertEquals("tsaOrTflRequiredErrorMsg", ex.getMessageKey());
+    verify(repository, never())
+        .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
+  }
+
+  // ---- deleteRecord (Task 3) --------------------------------------------------------------------
+  // The delete path's HTTP surface is covered end-to-end by Schedule6DeleteIT; these pin the same
+  // decisions at the service seam, where the BR-09 re-insert branch and the child-before-master
+  // delete order can be asserted directly against the repository calls (code review 2026-08-24).
+
+  /** A served (non-placeholder) row: TSA classification present. */
+  private static RoadRecordRow servedRow(int recordId, String generalComment) {
+    return new RoadRecordRow(recordId, "01", "01B", null, generalComment, 0);
+  }
+
+  /** A general-comment placeholder: classification entirely blank (the read-side S18 rule). */
+  private static RoadRecordRow placeholderRow(int recordId, String generalComment) {
+    return new RoadRecordRow(recordId, null, null, null, generalComment, 0);
+  }
+
+  private void stubDeleteDraft(List<RoadRecordRow> stored) {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findRoadRecords(MILL, YEAR)).thenReturn(stored);
+    lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
+    lenient().when(repository.nextRoadReportId()).thenReturn(9600);
+    lenient().when(repository.deleteRoadReport(anyInt(), anyLong(), anyInt())).thenReturn(1);
+  }
+
+  @Test
+  @DisplayName(
+      "BR-09 delete side: deleting the SOLE record re-inserts a placeholder carrying its comment, "
+          + "and deletes the cost children BEFORE the master (ILCR_LCRD_RM_RPT_FK, NO ACTION)")
+  void deleteSoleRecord_reInsertsPlaceholderAndDeletesChildrenFirst() {
+    stubDeleteDraft(List.of(servedRow(8336, "the general comment")));
+
+    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+
+    InOrder order = inOrder(repository);
+    // Parent-first would pass against a constraint-less test schema and raise ORA-02292 in
+    // delivery — the exact defect R__cost_detail_bridge_culvert_fks.sql exists to catch.
+    order.verify(repository).deleteCostDetailsFor(8336);
+    order.verify(repository).deleteRoadReport(8336, MILL, YEAR);
+    order.verify(repository).insertPlaceholder(9600, MILL, YEAR, "the general comment", USER);
+  }
+
+  @Test
+  @DisplayName("Deleting the sole record with NO comment leaves nothing behind")
+  void deleteSoleRecord_nullComment_insertsNoPlaceholder() {
+    stubDeleteDraft(List.of(servedRow(8336, null)));
+
+    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+
+    verify(repository).deleteRoadReport(8336, MILL, YEAR);
+    verify(repository, never())
+        .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
+  }
+
+  @Test
+  @DisplayName(
+      "Legacy parity: a WHITESPACE-ONLY comment still re-inserts the placeholder — legacy's "
+          + "CoreUtil.isNullOrEmptyString is empty-aware, not blank-aware")
+  void deleteSoleRecord_whitespaceComment_reInsertsPlaceholder() {
+    stubDeleteDraft(List.of(servedRow(8336, "   ")));
+
+    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+
+    verify(repository).insertPlaceholder(9600, MILL, YEAR, "   ", USER);
+  }
+
+  @Test
+  @DisplayName(
+      "Deleting one of SEVERAL records re-inserts nothing — the comment survives on the rest")
+  void deleteOneOfSeveral_insertsNoPlaceholder() {
+    stubDeleteDraft(List.of(servedRow(8336, "shared comment"), servedRow(8337, "shared comment")));
+
+    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+
+    verify(repository).deleteRoadReport(8336, MILL, YEAR);
+    verify(repository, never())
+        .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
+  }
+
+  @Test
+  @DisplayName("A placeholder id is a 404 — it is not a served record, and it holds the comment")
+  void deletePlaceholderId_isNotFound_andNothingIsDeleted() {
+    stubDeleteDraft(List.of(placeholderRow(8340, "the general comment")));
+
+    assertThrows(
+        RoadRecordNotFoundException.class,
+        () -> service.deleteRecord(MILL, YEAR, 8340, true, USER));
+
+    verify(repository, never()).deleteCostDetailsFor(anyInt());
+    verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName(
+      "An unknown/foreign record id is a 404 before anything is deleted (the IDOR scope guard)")
+  void deleteUnknownId_isNotFound_andNothingIsDeleted() {
+    stubDeleteDraft(List.of(servedRow(8336, null)));
+
+    assertThrows(
+        RoadRecordNotFoundException.class,
+        () -> service.deleteRecord(MILL, YEAR, 9999, true, USER));
+
+    verify(repository, never()).deleteCostDetailsFor(anyInt());
+    verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("A concurrent delete between the read and the DELETE (0 rows affected) is a 404")
+  void deleteRacedByConcurrentDelete_isNotFound() {
+    stubDeleteDraft(List.of(servedRow(8336, "the general comment")));
+    when(repository.deleteRoadReport(8336, MILL, YEAR)).thenReturn(0);
+
+    assertThrows(
+        RoadRecordNotFoundException.class,
+        () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
+
+    // The raced delete must not resurrect the comment onto a placeholder the winner already
+    // handled.
+    verify(repository, never())
+        .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
+  }
+
+  @ParameterizedTest(name = "track \"{0}\" -> 409, nothing deleted")
+  @ValueSource(strings = {"S", "V", "A"})
+  @DisplayName("Deviation (a): the delete is Draft-gated like every other write")
+  void deleteOnNonDraftTrack_rejects(String track) {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
+
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
+
+    verify(repository, never()).deleteCostDetailsFor(anyInt());
+    verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName(
+      "AD-11: a DataAccessException on the delete path surfaces as ScheduleNotSavedException")
+  void deleteDataAccessFailure_translated() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findRoadRecords(MILL, YEAR))
+        .thenThrow(new DataAccessResourceFailureException("boom"));
+
+    ScheduleNotSavedException ex =
+        assertThrows(
+            ScheduleNotSavedException.class,
+            () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
     assertEquals("scheduleNotSavedErrorMsg", ex.getMessageKey());
   }
 }
