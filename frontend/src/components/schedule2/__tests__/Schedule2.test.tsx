@@ -542,6 +542,31 @@ describe('Schedule2 page', () => {
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
   })
 
+  test('an unsaved schedule with no carried Schedule 3 figures renders blanks, never NaN', async () => {
+    // Regression for the NaN that reached main on 2026-08-24. `unsavedDoc` is the real served body, so
+    // its CostBlocks are `{}` — the carried Schedule 3 figures are ABSENT, not null. The derived mirror
+    // runs on any editable document, and an unsaved schedule is editable, so those `undefined`s reached
+    // the arithmetic: `12345 + undefined` is NaN, and the user saw "NaN" in Subtotal, Net Purchased and
+    // Total Average — the last one before typing anything at all.
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Purchased Log Cost cost')
+    expect(document.body.textContent).not.toContain('NaN')
+
+    // Commit a cost the way legacy did — on blur, which is what feeds the mirror.
+    await user.type(cost, '12345')
+    await user.tab()
+
+    await waitFor(() => expect(cost).toHaveValue('12,345'))
+    expect(document.body.textContent).not.toContain('NaN')
+    // …and the figures that DO derive from the entry are still right: with nothing carried, the
+    // subtotal is the entered cost itself (absent behaves as "nothing to add", not as poison).
+    const subtotalRow = screen.getByText('Subtotal:').closest('tr')
+    expect(subtotalRow?.textContent).toContain('12,345')
+  })
+
   test('Delete stays disabled while the post-delete reload is in flight, so no second DELETE can fire (defect #292 face 2)', async () => {
     // The window that survived the first fix: `run`'s `.finally` releases `saving` when the DELETE
     // settles, but the reload GET it dispatched is still outstanding — and until that reload lands,
