@@ -38,7 +38,7 @@ const SCHEDULES: {
 }[] = [
   { key: 'schedule1', label: 'Schedule 1', renderable: false },
   { key: 'schedule2', label: 'Schedule 2', renderable: false },
-  { key: 'schedule3', label: 'Schedule 3', renderable: false },
+  { key: 'schedule3', label: 'Schedule 3', renderable: true },
   { key: 'schedule4', label: 'Schedule 4', renderable: false },
   { key: 'schedule5', label: 'Schedule 5', renderable: true },
   { key: 'schedule6', label: 'Schedule 6', renderable: true },
