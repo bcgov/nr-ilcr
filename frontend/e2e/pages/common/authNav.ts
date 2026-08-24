@@ -1,4 +1,5 @@
 import { type Page, expect } from '@playwright/test';
+import { NAVIGATION_BUDGET } from './settle';
 
 /**
  * Cross-domain browser-interaction helpers — app entry, side-nav, and Carbon date entry. No domain
@@ -14,10 +15,19 @@ import { type Page, expect } from '@playwright/test';
 /** The app name rendered as the Carbon Header aria-label — proves the shell mounted. */
 const APP_NAME = 'Interior Logging Cost Reports (ILCR)';
 
-/** Open the app at Home (`/`). Security is off, so no login step is needed. */
+/**
+ * Open the app at Home (`/`). Security is off, so no login step is needed.
+ *
+ * The shell assertion gets the NAVIGATION budget (30 s), not the default 10 s `expect` timeout: this is a
+ * first-paint readiness check, not a state assertion. The Vite dev server compiles on demand, so with
+ * several workers opening the SPA at once a cold first paint can exceed 10 s — observed once as a lone
+ * "element(s) not found" on the app banner during a 137-scenario parallel run, which reproduced nowhere
+ * afterwards. Waiting longer for the FIRST render is the honest fix; a retry would just have hidden it.
+ * Every assertion after this one keeps the strict default, so a genuine hang still fails fast.
+ */
 export async function openApp(page: Page): Promise<void> {
   await page.goto('/');
-  await expect(page.getByRole('banner', { name: APP_NAME })).toBeVisible();
+  await expect(page.getByRole('banner', { name: APP_NAME })).toBeVisible({ timeout: NAVIGATION_BUDGET });
 }
 
 /**
