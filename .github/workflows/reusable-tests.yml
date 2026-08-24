@@ -167,8 +167,13 @@ jobs:
           # (<name>-tools-database, written by database/openshift.deploy.yml) —
           # single source of truth, nothing hardcoded here. Only the password
           # is masked: the username would mask an ordinary word in every log.
-          DB_USER=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_USER}' | base64 -d)
-          DB_PASS=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_PASSWORD}' | base64 -d)
+          # tr -d '\r\n': a secret pasted with a stray CR/LF (Windows clipboard)
+          # otherwise splits the chain — the in-step ALTER USER below would set
+          # "pass\r" while GITHUB_ENV's parser strips the CR, so every later
+          # login sends "pass" and gets ORA-01017. Sanitizing once here makes
+          # the ALTER, the env round-trip, and every login byte-identical.
+          DB_USER=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_USER}' | base64 -d | tr -d '\r\n')
+          DB_PASS=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_PASSWORD}' | base64 -d | tr -d '\r\n')
           echo "::add-mask::$DB_PASS"
           echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
           echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
