@@ -28,13 +28,14 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
- * datasource (Schedule 9) and the schedule {@code *Service} DTOs (5/6/7A/7B/11), on the shared
- * seed: mill 517/2021 carries data for all six in-scope schedules (Schedule 11 added by V20260816).
- * The PDF text is asserted with pdfbox to prove each selected section's heading and a seeded value
- * rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the rendered
- * schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the deferred
- * mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409 context guards
- * are pinned here. Security is OFF (isolated from authz — {@link PrintAuthorizationIT}).
+ * datasource (Schedule 9) and the schedule {@code *Service} DTOs (2/5/6/7A/7B/11), on the shared
+ * seed: mill 517/2021 carries data for all seven in-scope schedules (Schedule 2 added by Story
+ * 20.6, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
+ * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
+ * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
+ * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
+ * ladder plus the 400/409 context guards are pinned here. Security is OFF (isolated from authz —
+ * {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -358,8 +359,10 @@ class PrintScheduleIT extends AbstractOracleIT {
   @Test
   @DisplayName("allSchedules=true -> 200 combined PDF with every in-scope section (BR-07)")
   void allSchedules_rendersEveryInScopeSection() throws Exception {
-    // BR-07: "all" expands to every schedule; only the six in-scope ones render. Mill 517/2021 has
-    // data in all six, so the combined PDF must carry all six section headings and bookmarks.
+    // BR-07: "all" expands to every schedule; only the in-scope ones render. Mill 517/2021 has data
+    // in all seven in-scope schedules (Schedule 2 added by Story 20.6), so the combined PDF must
+    // carry all seven section headings and bookmarks — with Schedule 2 FIRST in the fixed legacy
+    // order (BR-08), ahead of Schedule 5.
     String selection =
         """
         {"allSchedules":true,"printScheduleInformation":true}
@@ -377,20 +380,94 @@ class PrintScheduleIT extends AbstractOracleIT {
 
     byte[] pdf = result.getResponse().getContentAsByteArray();
     String text = extractText(pdf);
+    assertThat(text).contains("Schedule 2:  Purchased/Private Log Costs & Sales");
+    assertThat(text).contains("333,000"); // Schedule 2 purchased log cost (517 item 25)
     assertThat(text).contains("Schedule 5:  Camp and Access Expense");
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
+    // BR-08 fixed order: Schedule 2 sorts ahead of Schedule 5.
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
+            ScheduleKey.SCHEDULE_2.bookmarkTitle(),
             ScheduleKey.SCHEDULE_5.bookmarkTitle(),
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
             ScheduleKey.SCHEDULE_9.bookmarkTitle(),
             ScheduleKey.SCHEDULE_11.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("Schedule 2 (Story 20.6): 621/2021 renders the section + exactly one bookmark")
+  void schedule2_rendersWithOneBookmark() throws Exception {
+    // Mill 621/2021 carries the full Schedule 2 read fixture (V10): stored item 25/26 plus the
+    // carried Schedule-1/3 figures. Selecting Schedule 2 alone must render its section (heading,
+    // the
+    // fixed row labels, a real seeded value) and carry exactly its one top-level bookmark (BR-08).
+    String selection =
+        """
+        {"schedule2":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "621")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 2:  Purchased/Private Log Costs & Sales");
+    assertThat(text).contains("Sch2 Read Milling"); // mill title block (name-number)
+    assertThat(text).contains("Net Purchased / Private Log Cost:"); // a fixed row label (body)
+    // The two longest labels asserted IN FULL: if the label column ever clips them, pdfbox won't
+    // find the whole string and this breaks — catching a truncated label rather than shipping it.
+    assertThat(text)
+        .contains("Purchased / Private Wood Overhead (Schedule 3, Woodlands Subtotal):");
+    assertThat(text).contains("Total Company Logging Costs (Including total Silviculture Cost):");
+    assertThat(text).contains("500,000"); // purchased log cost (621 item 25)
+
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_2.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 515/2021 select 2, no summary -> 404 'Schedule not found.'")
+  void schedule2Only_noData_returns404() throws Exception {
+    // Mill 515/2021 is a valid active Draft with NO Schedule 2 summary AND no Schedule 1/3 to carry
+    // figures from, so every cost block is null → the mapper returns null and the section is
+    // skipped
+    // (BR-09). A Schedule-2-only print is then all-empty, the legacy single-schedule outcome
+    // ERR-005
+    // — not a blank PDF. (This pins Schedule 2's skip-empty at the orchestrator level; a
+    // "skip-2-but-keep-another-section" IT is intentionally omitted — no seeded mill has an empty
+    // Schedule 2 alongside other renderable data, because Schedule 2 carries Schedule-1/3 figures,
+    // so
+    // any mill with Schedule 1 or 3 data renders a non-empty Schedule 2. The null-on-empty mapper
+    // path is covered by Schedule2SectionMapperTest.)
+    String selection =
+        """
+        {"schedule2":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
   }
 
   @Test

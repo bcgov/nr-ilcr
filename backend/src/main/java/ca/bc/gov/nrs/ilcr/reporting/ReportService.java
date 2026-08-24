@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.reporting;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
+import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Service;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
@@ -60,6 +61,7 @@ public class ReportService {
   private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
   private final DataSource dataSource;
+  private final Schedule2Service schedule2Service;
   private final Schedule5Service schedule5Service;
   private final Schedule6Service schedule6Service;
   private final Schedule7aService schedule7aService;
@@ -81,6 +83,7 @@ public class ReportService {
    *     from — its own small pool, isolated from the {@code @Primary} transactional pool so a burst
    *     of report renders cannot starve ordinary schedule requests (its connections are read-only
    *     as a hint, not an enforced privilege)
+   * @param schedule2Service the Schedule 2 read (bean-datasource feed, Story 20.6)
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
@@ -94,6 +97,7 @@ public class ReportService {
    */
   public ReportService(
       @Qualifier("reportingDataSource") DataSource dataSource,
+      Schedule2Service schedule2Service,
       Schedule5Service schedule5Service,
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,
@@ -103,6 +107,7 @@ public class ReportService {
       Schedule11Service schedule11Service,
       ReportVirtualizerFactory virtualizerFactory) {
     this.dataSource = dataSource;
+    this.schedule2Service = schedule2Service;
     this.schedule5Service = schedule5Service;
     this.schedule6Service = schedule6Service;
     this.schedule7aService = schedule7aService;
@@ -183,6 +188,16 @@ public class ReportService {
       String bookmarkTitle,
       JRSwapFileVirtualizer virtualizer) {
     return switch (key) {
+      case SCHEDULE_2 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              Schedule2SectionMapper.map(schedule2Service.getSchedule2(millId, year, false)),
+              virtualizer);
       case SCHEDULE_5 ->
           fillBean(
               key,
