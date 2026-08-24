@@ -17,12 +17,11 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn()
 import Schedule6 from '@/components/schedule6'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
-import type { RoadRecordRequest, GeneralCommentsRequest } from '@/interfaces/Schedule6Request'
+import type { RoadRecordRequest, Schedule6SaveRequest } from '@/interfaces/Schedule6Request'
 import type { RoadRecord } from '@/interfaces/Schedule6Response'
 
 const URL = 'http://localhost:3000/api/v1/schedule6'
 const RECORDS_URL = 'http://localhost:3000/api/v1/schedule6/records'
-const COMMENTS_URL = 'http://localhost:3000/api/v1/schedule6/general-comments'
 const CHECK_URL = 'http://localhost:3000/api/v1/schedule6/check-status'
 
 // A TSA record (areaType = the TSA code, supplyBlock set, tflNumber null — BR-02).
@@ -53,6 +52,21 @@ const tflRecord: RoadRecord = {
   comments: null,
 }
 
+// Two TSAs and two supply blocks across DIFFERENT TSAs, so the narrowing test asserts something real
+// rather than trivially passing on a single-TSA fixture. tsaRecord stores areaType '01' / supplyBlock
+// '01B' — both resolvable here — proving describe() resolves a code to its description (corrections
+// 2/3, retiring deviation (A)).
+const codeLists = {
+  tsaNumbers: [
+    { code: '01', description: 'Arrowsmith TSA' },
+    { code: '02', description: 'Boundary TSA' },
+  ],
+  supplyBlocks: [
+    { code: '01B', description: 'Arrowsmith Block B' },
+    { code: '02A', description: 'Boundary Block A' },
+  ],
+}
+
 const doc = (overrides: Record<string, unknown> = {}) => ({
   millId: 514,
   year: 2021,
@@ -63,6 +77,7 @@ const doc = (overrides: Record<string, unknown> = {}) => ({
   totalVolume: 1000,
   totalCost: 50000,
   totalCostPerVolume: 50,
+  codeLists,
   ...overrides,
 })
 
@@ -118,8 +133,7 @@ const commentsRegion = (): HTMLElement => screen.getByRole('region', { name: 'Ge
 
 // Save and Check Status render on BOTH action bars — above the records and below the General Comment
 // — mirroring legacy's saveButton0/saveButton1 pair, so every query is plural (the same convention
-// Schedules 1 and 3 use for their duplicated bars). `[0]` is the TOP bar in DOM order; a row
-// editor's own Save sorts after it, so indexing the first stays unambiguous with an editor open.
+// Schedules 1 and 3 use for their duplicated bars). `[0]` is the TOP bar in DOM order.
 const barSaveButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /^save$/i })
 const checkStatusButtons = (): HTMLElement[] =>
   screen.getAllByRole('button', { name: /check status/i })
@@ -138,10 +152,38 @@ const StaleRaceHarness = () => {
   )
 }
 
+// Task 7 hazard 2: with N row forms instead of one, a mill/year change surviving edit is the state
+// bug this per-row-map design most invites. Reuses the existing StaleRaceHarness's "change" button
+// rather than adding a second mechanism for the same context switch.
+async function switchContext(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /change/i }))
+}
+
 // Open the Add panel and fill the fields a valid TSA record needs.
 async function openAddPanel(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: /^add$/i }))
   return screen.getByRole('region', { name: 'Add Road Maintenance report' })
+}
+
+// TSA or TFL is a CodeComboBox (corrections 2/3): selecting an option is the combo-box equivalent of
+// the old `user.type` into a raw-code TextInput. `optionName` is the option's DESCRIPTION as rendered
+// in the menu ('TFL' for the sentinel, since the sentinel's description IS the literal 'TFL').
+async function selectAreaType(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  optionName: string,
+) {
+  await user.click(within(scope).getByRole('combobox', { name: /TSA or TFL/i }))
+  await user.click(await screen.findByRole('option', { name: optionName }))
+}
+
+async function selectSupplyBlock(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  optionName: string,
+) {
+  await user.click(within(scope).getByRole('combobox', { name: /Supply Block/i }))
+  await user.click(await screen.findByRole('option', { name: optionName }))
 }
 
 // The provider persists any un-`initial`ed context change to localStorage (MillYearProvider.tsx:67);
@@ -152,6 +194,135 @@ afterEach(() => {
 })
 
 describe('Schedule 6 page (Story 8.3)', () => {
+  // ---- Defect #291: the record's $ / m³ tracks entry, on blur. ------------------------------------
+  //
+  // The fixture is self-consistent (50000/1000 = 50), so the load assertion below is a genuine
+  // mirror-vs-server comparison rather than the mirror measured against hand arithmetic in this file.
+  //
+  // These read the ROW directly, with no Edit click: correction 4 made every row editable on arrival
+  // and retired the per-row editor the mirror was first written against, so a row's rate baseline is
+  // seeded from the document (getRowRate) instead of by opening an editor.
+
+  /** The `$ / m³` value inside a panel — the third FieldValue of the derived block. */
+  const rateIn = (panel: HTMLElement): string | null =>
+    within(panel).getByText('$ / m³').closest('div')?.textContent?.replace('$ / m³', '') ?? null
+
+  test('on load each row reproduces the served rate exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+
+    expect(rateIn(rowPanel(1))).toBe('50.00') // 50,000 / 1,000, the served figure
+  })
+
+  test('typing alone leaves the rate alone; blurring the cost recalculates it (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '75000')
+    expect(rateIn(rowPanel(1))).toBe('50.00') // not per keystroke
+
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('75.00') // 75,000 / 1,000
+  })
+
+  test('blurring the volume recalculates the rate too (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('25.00') // 50,000 / 2,000
+
+    // Clearing it blanks the rate rather than dividing by zero.
+    await user.clear(within(rowPanel(1)).getByLabelText('Volume m³'))
+    await user.tab()
+    expect(rateIn(rowPanel(1))).toBe('') // the mask renders a blank, not an em dash
+  })
+
+  test('the same blur re-applies the comma mask to the field itself (#291)', async () => {
+    // Legacy's handlers re-rendered the INPUT alongside the rate (`render="vol cal ..."`,
+    // schedule6.xhtml:153,163,364,383), which re-ran the converter and put the mask back. Schedule 6
+    // is the only page whose blur moves a derived cell, so it was the only one that could leave
+    // `50000` sitting unmasked next to a freshly-formatted rate.
+    //
+    // This test exists because that re-mask shipped INERT: `commitRate` called `groupInput` without
+    // importing it, so every blur threw a ReferenceError *after* the rate had been applied. The rate
+    // updated, the mask never came back, and the throw surfaced only as a Vitest unhandled error --
+    // which fails no test. Assert the field, not just the rate.
+    //
+    // The re-mask now lives in each field's own `onBlur` rather than in commitRate: Cost is masked to
+    // whole dollars (##,###,###) and Volume through groupInput, and both mask whether or not the rate
+    // commit passes its gate. Hence the two separate assertions below.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+
+    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '1000000')
+    expect(volume).toHaveValue('1000000') // mid-entry: untouched, so the caret is not moved
+    await user.tab()
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000,000')
+
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '2500000')
+    await user.tab()
+    expect(within(rowPanel(1)).getByLabelText('Cost $')).toHaveValue('2,500,000')
+    expect(rateIn(rowPanel(1))).toBe('2.50') // 2,500,000 / 1,000,000
+  })
+
+  test('the footer totals do NOT move during entry — legacy left them until Save (#291)', async () => {
+    // The deliberate boundary: totalVol/totalCos/totalCal appear in NO legacy render or update
+    // target, so refreshing them from the document is already faithful and they are not mirrored.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    const totalsBefore = totalsRegion().textContent
+
+    const cost = within(rowPanel(1)).getByLabelText('Cost $')
+    await user.clear(cost)
+    await user.type(cost, '999999')
+    await user.tab()
+
+    expect(rateIn(rowPanel(1))).toBe('1,000.00') // 999,999/1,000 = 999.999 -> scale 2 -> 1,000.00
+    // Asserted against the LITERAL footer text, not against itself: comparing the region to a
+    // snapshot of itself also passed if the footer rendered nothing (code review 2026-08-21).
+    expect(totalsRegion().textContent).toBe(totalsBefore)
+    expect(totalsRegion().textContent).toContain('50,000') // the served total, unmoved
+  })
+
+  test('the Add panel shows a rate as soon as both halves are committed (#291)', async () => {
+    // It previously passed a hardcoded blank, so a new record showed no rate until the first save.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    expect(rateIn(panel)).toBe('')
+
+    await user.type(within(panel).getByLabelText('Volume m³'), '1000')
+    await user.type(within(panel).getByLabelText('Cost $'), '50000')
+    await user.tab()
+    expect(rateIn(panel)).toBe('50.00')
+  })
+
   test('accordion titles use the 1-based ORDINAL, never recordId (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
     render(<Schedule6 />)
@@ -167,6 +338,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(screen.queryByText(/Road Maintenance report Id: 9502/)).not.toBeInTheDocument()
   })
 
+  // Task 7 (correction 4): rows are editable on arrival, so the six entered fields are inputs, not
+  // text; only RMG and $/m³ stay read-only text (server-derived, AD-5). Converted from getByText to
+  // display-value assertions per the Task 7 instruction reversing Task 2's read-only-row guidance.
   test('an opened row shows the six legacy-labelled fields with rmg and $/m³ read-only (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     render(<Schedule6 />)
@@ -187,26 +361,217 @@ describe('Schedule 6 page (Story 8.3)', () => {
     ]) {
       expect(within(panel).getByText(label)).toBeInTheDocument()
     }
-    expect(within(panel).getByText('01')).toBeInTheDocument()
-    expect(within(panel).getByText('01B')).toBeInTheDocument()
+    // Corrections 2/3: the row resolves the stored CODE to its DESCRIPTION, not the raw code.
+    expect(within(panel).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      'Arrowsmith TSA',
+    )
+    expect(within(panel).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
+      'Arrowsmith Block B',
+    )
+    // RMG and $/m³ are server-derived (AD-5) and stay read-only text.
     expect(within(panel).getByText('12')).toBeInTheDocument()
-    expect(within(panel).getByText('1,000')).toBeInTheDocument()
-    expect(within(panel).getByText('50,000')).toBeInTheDocument()
     expect(within(panel).getByText('50.00')).toBeInTheDocument()
-    expect(within(panel).getByText('Culvert replacement')).toBeInTheDocument()
-    // Display state renders values as text, never as editable inputs.
-    expect(within(panel).queryByRole('textbox')).not.toBeInTheDocument()
+    // Volume/Cost/Comments are live form inputs, seeded GROUPED like every sibling schedule (fix 2):
+    // 1000/50000 must read 1,000/50,000, not the bare digit string.
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
+    expect(within(panel).getByLabelText('Cost $')).toHaveValue('50,000')
+    expect(within(panel).getByLabelText('Comments')).toHaveValue('Culvert replacement')
+    // Legacy rows were always directly editable (schedule6.xhtml:248-431) -- no read-only display
+    // state to fall back into, so the row's textboxes are present from the moment it opens.
+    expect(within(panel).getAllByRole('textbox').length).toBeGreaterThan(0)
   })
 
-  // Deviation (B): the row Delete + confirm dialog is un-sliced by the UC and 8.2 shipped no DELETE.
-  test('no Delete control is rendered anywhere (deviation B)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
+  // Corrections 2/3: legacy rendered both controls as a selectOneMenu over the code's DESCRIPTION
+  // (schedule6.xhtml:265-323). Task 7 collapses RecordDisplay/RecordEditor into one always-editable
+  // row, so this now asserts the combo box's DISPLAY VALUE rather than rendered text.
+  test('a row resolves the stored code to its description, not the raw code (corrections 2/3)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }))
+    const panel = rowPanel(1)
+
+    // tsaRecord stores areaType '01' / supplyBlock '01B'.
+    expect(await within(panel).findByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      'Arrowsmith TSA',
+    )
+    expect(within(panel).getByRole('combobox', { name: /Supply Block/i })).toHaveDisplayValue(
+      'Arrowsmith Block B',
+    )
+    expect(within(panel).queryByDisplayValue('01')).not.toBeInTheDocument()
+    expect(within(panel).queryByDisplayValue('01B')).not.toBeInTheDocument()
+  })
+
+  // Final-review I3: deviation (f) still lets the write path store an areaType with NO
+  // TSA_NUMBER_CODE row at all (unlike the Supply Block case, which is protected by the backend's
+  // own TSA-numbers union arm). Before this fix the combo box found no matching option and rendered
+  // blank over a value that is really there.
+  test('a row whose areaType has no code-table row still displays the stored code', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ roadRecords: [{ ...tsaRecord, areaType: '09' }] })),
+      ),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }))
+    const panel = rowPanel(1)
+
+    expect(await within(panel).findByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue(
+      '09',
+    )
+  })
+
+  test('offers the TFL sentinel first in the area-type options', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await user.click(within(panel).getByRole('combobox', { name: /TSA or TFL/i }))
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    // Legacy adds TFL to the TOP of the cache list (LookUpCacheDAO.java:230). Schedule 10 appends it
+    // last; fidelity to Schedule 6's OWN legacy source wins here.
+    expect(options[0]).toBe('TFL')
+  })
+
+  test('narrows supply blocks to the chosen TSA', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    // supplyBlocksFor('') is empty by design (the legacy control's cleared state) — narrowing must be
+    // proven with a TSA actually chosen first, or the assertion below would be vacuously true.
+    await user.click(within(panel).getByRole('combobox', { name: /TSA or TFL/i }))
+    await user.click(await screen.findByRole('option', { name: 'Arrowsmith TSA' }))
+
+    await user.click(within(panel).getByRole('combobox', { name: /Supply Block/i }))
+    const options = screen.getAllByRole('option').map((o) => o.textContent)
+    expect(options).toEqual(['Arrowsmith Block B'])
+  })
+
+  // Fix 1: the shared field grid's 10rem minimum track truncates a description like "Arrowsmith TSA"
+  // — only the two combo boxes get the wide modifier (TFL's TextInput holds a 2-character code and
+  // stays narrow).
+  test('the TSA/Supply Block combo boxes get the wide modifier, TFL stays narrow (fix 1)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const areaTypeCombo = within(panel).getByRole('combobox', { name: /TSA or TFL/i })
+    const supplyBlockCombo = within(panel).getByRole('combobox', { name: /Supply Block/i })
+    const tfl = within(panel).getByLabelText('TFL')
+
+    expect(areaTypeCombo.closest('.schedule-6__field--wide')).not.toBeNull()
+    expect(supplyBlockCombo.closest('.schedule-6__field--wide')).not.toBeNull()
+    expect(tfl.closest('.schedule-6__field--wide')).toBeNull()
+  })
+
+  // 'edit mode shows the description for the stored code, not the raw code' DELETED (Task 7): there is
+  // no edit mode any more -- a row's combo box always shows the description, which the rewritten
+  // 'a row resolves the stored code to its description' test above already covers without an Edit
+  // click.
+
+  // Deviation (B) retired by task 4 (correction 1): DELETE now ships. Verbatim legacy copy from
+  // messages.properties:31 and schedule6.xhtml:433-450.
+  test('asks for confirmation with the legacy wording before deleting', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
+
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'No' })).toBeInTheDocument()
+  })
+
+  test('sends no request when the confirmation is declined', async () => {
+    let deleted = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, () => {
+        deleted = true
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'No' }))
+
+    expect(deleted).toBe(false)
+    // Declining must not merely hide the modal — a stranded pendingDeleteId would resurrect the
+    // dialog on the next unrelated render.
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+  })
+
+  test('deletes the row and renders the API success message', async () => {
+    let deletedId: string | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, ({ params }) => {
+        deletedId = String(params.id)
+        return HttpResponse.json(
+          doc({ roadRecords: [], message: { key: 'x', text: 'Data deleted successfully' } }),
+        )
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+
+    // The recordId travels in the URL, never the ordinal shown in the accordion title.
+    await waitFor(() => {
+      expect(deletedId).toBe('9501')
+    })
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(screen.getByText('No records found.')).toBeInTheDocument()
+  })
+
+  test('surfaces the API detail verbatim when the delete fails', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.delete(`${RECORDS_URL}/:id`, () => problemBody(409, 'Schedule is not editable.')),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText('Schedule is not editable.')).toBeInTheDocument()
+    // The row must still be there to retry against — a failed delete is not a silent data loss.
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000')
+  })
+
+  test('Delete is disabled when the schedule is not editable', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     render(<Schedule6 />)
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Delete Road Maintenance Report 1' }),
+    ).toBeDisabled()
   })
+
+  // 'Delete stays enabled while another row is being edited' DELETED (Task 7): there is no longer a
+  // per-row "editor open" state for Delete to stay independent of -- every row is always live at once,
+  // so Delete's gating on editable/saving only is already exercised by the test above and by the
+  // editable:false test below.
 
   test('totals render the three server figures with the legacy masks (AC6)', async () => {
     server.use(
@@ -281,8 +646,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
-    await user.type(within(panel).getByLabelText('Supply Block'), '01B')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    await selectSupplyBlock(user, panel, 'Arrowsmith Block B')
     await user.type(within(panel).getByLabelText('Volume m³'), '1,000')
     await user.type(within(panel).getByLabelText('Cost $'), '50000')
     await user.type(within(panel).getByLabelText('Comments'), 'Culvert replacement')
@@ -312,7 +677,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // Derived values are never sent (AD-5/AD-12), and revisionCount belongs to the PUT only.
     expect(captured).not.toHaveProperty('rmg')
     expect(captured).not.toHaveProperty('costPerVolume')
-    expect(captured!.revisionCount).toBeUndefined()
+    // toHaveProperty, not `captured!.revisionCount` — Task 8 dropped revisionCount from
+    // RoadRecordRequest, so the member access is a TS2339 against the current type while asserting
+    // the same thing. This form matches the two lines above and stays valid once the field is gone.
+    expect(captured).not.toHaveProperty('revisionCount')
     // Legacy's add() collapses the panel before saving (Schedule6MB.java:203) — reopening it must
     // show cleared inputs (add-is-save: they clear only on success).
     await waitFor(() =>
@@ -321,7 +689,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
       ).not.toBeInTheDocument(),
     )
     const reopened = await openAddPanel(user)
-    expect(within(reopened).getByLabelText('TSA or TFL')).toHaveValue('')
+    // A ComboBox's empty (closed) menu carries the same aria-labelledby as its input, so
+    // getByLabelText finds two elements; getByRole('combobox', ...) is unambiguous.
+    expect(within(reopened).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue('')
     expect(within(reopened).getByLabelText('Volume m³')).toHaveValue('')
   })
 
@@ -338,18 +708,16 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    const areaType = within(panel).getByLabelText('TSA or TFL')
-    const supplyBlock = within(panel).getByLabelText('Supply Block')
-    await user.type(areaType, '01')
-    await user.type(supplyBlock, '01B')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    await selectSupplyBlock(user, panel, 'Arrowsmith Block B')
     // Now switch the classification: the counterpart must be CLEARED in state, not merely disabled —
     // a disabled-but-populated field still serializes, which the server would silently absorb.
-    await user.clear(areaType)
-    await user.type(areaType, 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '01')
 
-    expect(within(panel).getByLabelText('Supply Block')).toHaveValue('')
-    expect(within(panel).getByLabelText('Supply Block')).toBeDisabled()
+    const supplyBlockCombo = within(panel).getByRole('combobox', { name: /Supply Block/i })
+    expect(supplyBlockCombo).toHaveDisplayValue('')
+    expect(supplyBlockCombo).toBeDisabled()
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     await waitFor(() => expect(captured).not.toBeNull())
@@ -371,11 +739,9 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    const areaType = within(panel).getByLabelText('TSA or TFL')
-    await user.type(areaType, 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '02')
-    await user.clear(areaType)
-    await user.type(areaType, '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
 
     expect(within(panel).getByLabelText('TFL')).toHaveValue('')
     expect(within(panel).getByLabelText('TFL')).toBeDisabled()
@@ -392,16 +758,25 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     // Both are server-derived (AD-5) and there is no derive endpoint — they must not be guessed.
     expect(within(panel).getByText('RMG')).toBeInTheDocument()
     expect(within(panel).getByText('$ / m³')).toBeInTheDocument()
     expect(within(panel).queryByText('12')).not.toBeInTheDocument()
   })
 
-  test('inline edit PUTs the row with ITS OWN revisionCount, including a falsy 0 (AC4)', async () => {
-    const captured: Record<number, RoadRecordRequest> = {}
-    let capturedUrl: string | null = null
+  test('has no Edit button and rows are editable on arrival', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule6 />)
+    // Legacy rows were always directly editable under their bare field names
+    // (schedule6.xhtml:248-431); there was no edit mode to enter.
+    expect(await screen.findByDisplayValue('Arrowsmith TSA')).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+  })
+
+  test('saves every row and the general comment in one request, each row with its own token (AC4)', async () => {
+    let body: unknown
     // The echo returns the SAVED row (volume 2,000) rather than the pre-edit one, so the render
     // assertions below can prove the response document is applied to page state. An echo of the
     // unchanged record cannot: the success banner rides its own setter, so a dropped setData() would
@@ -409,9 +784,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const savedTsaRecord: RoadRecord = { ...tsaRecord, volume: 2000, costPerVolume: 25 }
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))),
-      http.put(`${RECORDS_URL}/:recordId`, async ({ request, params }) => {
-        captured[Number(params.recordId)] = (await request.json()) as RoadRecordRequest
-        capturedUrl = request.url
+      http.put(URL, async ({ request }) => {
+        body = await request.json()
         return HttpResponse.json(
           doc({
             roadRecords: [savedTsaRecord, tflRecord],
@@ -427,47 +801,125 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
     const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    // The PUT carries the mill/year request params the 8.2 endpoint requires.
-    const params = new window.URL(capturedUrl!).searchParams
-    expect(params.get('millId')).toBe('13050')
-    expect(params.get('year')).toBe('2017')
-    expect(captured[9501].revisionCount).toBe(3)
-    // The whole seeded body is pinned — a mis-seeded editor or mis-mapped body must fail here.
-    expect(captured[9501].areaType).toBe('01')
-    expect(captured[9501].supplyBlock).toBe('01B')
-    expect(captured[9501].tflNumber).toBeNull()
-    expect(captured[9501].volume).toBe(2000)
-    expect(captured[9501].cost).toBe(50000)
-    expect(captured[9501].comments).toBe('Culvert replacement')
-    // The echoed document replaces page state: the editor is torn down and the row re-renders the
-    // SAVED volume, not the pre-edit 1,000 — a save that only banners is a silent data-staleness bug.
-    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
-    expect(within(rowPanel(1)).getByText('2,000')).toBeInTheDocument()
-    expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
-
+    const saveBody = body as Schedule6SaveRequest
+    expect(saveBody.generalComments).toBe('Season summary')
+    // EVERY served row travels, each with its own revision token — an omitted row is a 400.
+    expect(saveBody.records).toHaveLength(2)
+    expect(saveBody.records[0]).toMatchObject({
+      recordId: 9501,
+      revisionCount: 3,
+      areaType: '01',
+      supplyBlock: '01B',
+      tflNumber: null,
+      volume: 2000,
+      cost: 50000,
+      comments: 'Culvert replacement',
+    })
     // Row 2's token is 0: it must travel as 0, never be dropped or coerced by a falsy check.
-    await user.click(within(rowPanel(2)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(2)).getByRole('button', { name: /^save$/i }))
-    await waitFor(() => expect(captured[9502]).toBeDefined())
-    expect(captured[9502].revisionCount).toBe(0)
-    expect(captured[9502].areaType).toBe('TFL')
-    expect(captured[9502].tflNumber).toBe('01')
-    expect(captured[9502].supplyBlock).toBeNull()
-    expect(captured[9502].comments).toBeNull()
+    expect(saveBody.records[1]).toMatchObject({
+      recordId: 9502,
+      revisionCount: 0,
+      areaType: 'TFL',
+      tflNumber: '01',
+      supplyBlock: null,
+      comments: null,
+    })
+    // The echoed document replaces page state: the row re-renders the SAVED volume, not the pre-edit
+    // 1,000 — a save that only banners is a silent data-staleness bug. Grouped (fix 2): re-seeded via
+    // the same numStrGroup as every sibling schedule.
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2,000')
+    expect(within(totalsRegion()).getByText('2,500')).toBeInTheDocument()
   })
 
-  test('edit Cancel restores the display state and issues no request (AC4)', async () => {
+  // Hazard 3 is guarded by TWO independent mechanisms, and this test pins each to the assertion that
+  // actually exercises it (deleting either mechanism should fail exactly one of the two assertions
+  // below, not both):
+  //  - The revisionCount token comes straight off `data.roadRecords`, refreshed by applyDocument's
+  //    setData BEFORE the onSuccess callback where the re-seed runs (index.tsx :453-454 -> :497) --
+  //    so the token assertion guards applyDocument/setData, NOT the re-seed.
+  //  - RoadRecordFormValues carries no revisionCount field at all, so the re-seed was never "protecting
+  //    a token" -- what it actually does is adopt the server's canonical/normalised FORM VALUES (e.g.
+  //    volume) over the user's draft. The volume assertion is what genuinely pins the re-seed: delete
+  //    it and the row keeps showing the typed '2000' forever, because rowForms[9501] stays populated
+  //    and getRowForm never falls back to the document's own value.
+  // The echo deliberately returns a volume AND a revisionCount the draft does not hold (2500/4, not
+  // the typed 2000/the originally-served 3), so neither assertion can pass by coincidence.
+  test('re-seeds row forms from the save echo with the server’s canonical values (hazard 3)', async () => {
+    let secondBody: unknown
+    let calls = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.put(URL, async ({ request }) => {
+        calls += 1
+        if (calls === 1) {
+          return HttpResponse.json(
+            doc({ roadRecords: [{ ...tsaRecord, volume: 2500, revisionCount: 4 }] }),
+          )
+        }
+        secondBody = await request.json()
+        return HttpResponse.json(
+          doc({ roadRecords: [{ ...tsaRecord, volume: 2500, revisionCount: 4 }] }),
+        )
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Volume m³')
+    await user.clear(volume)
+    await user.type(volume, '2000')
+    await user.click(barSaveButtons()[0])
+
+    // The server's answer (2500), not the draft (2000), is what the row shows after the echo —
+    // grouped (fix 2), the same as every re-seed.
+    expect(await screen.findByLabelText('Volume m³')).toHaveValue('2,500')
+
+    await user.click(barSaveButtons()[0])
+    await waitFor(() => expect(secondBody).toBeDefined())
+    // The second Save's token is the ECHOED 4, not the originally-served 3. This guards
+    // applyDocument/setData (index.tsx :453-454 -> :497), NOT the re-seed below: handleSave reads
+    // revisionCount off `data.roadRecords`, which applyDocument refreshes BEFORE the onSuccess
+    // callback where the re-seed runs -- so this assertion would still pass even with the re-seed
+    // deleted. It is the VOLUME assertion above that genuinely pins the re-seed: rowForms keeps
+    // showing the typed '2000' draft until something re-seeds it from the echo.
+    expect((secondBody as Schedule6SaveRequest).records[0]).toMatchObject({
+      revisionCount: 4,
+      volume: 2500,
+    })
+  })
+
+  test('posts the on-screen values to check status, not the stored ones', async () => {
+    let body: { records: { cost: number | null }[] } | undefined
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async ({ request }) => {
+        body = (await request.json()) as typeof body
+        return HttpResponse.json({ outcome: 'MET', messages: [], records: [] })
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await user.clear(await screen.findByLabelText(/Cost \$/i))
+    await user.click(checkStatusButtons()[0])
+    await waitFor(() => {
+      expect(body).toBeDefined()
+    })
+    // The verdict must describe what the user is looking at, not what is stored.
+    expect(body?.records[0].cost).toBeNull()
+  })
+
+  test('leaves Check Status enabled while rows are dirty (no longer gated on dirtiness)', async () => {
     const put = vi.fn()
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${RECORDS_URL}/9501`, () => {
+      http.put(URL, () => {
         put()
         return HttpResponse.json(doc())
       }),
@@ -475,28 +927,30 @@ describe('Schedule 6 page (Story 8.3)', () => {
     render(<Schedule6 />)
     const user = userEvent.setup()
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    const volume = within(rowPanel(1)).getByLabelText('Volume m³')
-    await user.clear(volume)
-    await user.type(volume, '4321')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
-
+    await user.clear(await screen.findByLabelText(/Cost \$/i))
+    // Legacy gated it on disableReportEdits() only (schedule6.xhtml:226-229), never on dirtiness.
+    expect(checkStatusButtons()[0]).toBeEnabled()
+    // The one genuine residue of retiring per-row Cancel: typing in a row alone (no Save click) must
+    // still issue no request.
     expect(put).not.toHaveBeenCalled()
-    expect(within(rowPanel(1)).queryByLabelText('Volume m³')).not.toBeInTheDocument()
-    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
   })
 
-  test('an open editor blocks the other rows’ Edit and the Add toggle (AC4)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [tsaRecord, tflRecord] }))))
-    render(<Schedule6 />)
+  test('reseeds every row form when the mill/year context changes (hazard 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<StaleRaceHarness />)
     const user = userEvent.setup()
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
+    const cost = await screen.findByLabelText(/Cost \$/i)
+    await user.clear(cost)
+    await user.type(cost, '999')
+    expect(cost).toHaveValue('999')
 
-    expect(within(rowPanel(2)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled()
+    server.use(http.get(URL, () => HttpResponse.json(otherContextDoc())))
+    await switchContext(user)
+
+    // With N row forms instead of one, a surviving edit is the state bug this design most invites.
+    expect(await screen.findByDisplayValue('111')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('999')).not.toBeInTheDocument()
   })
 
   test('Save and Check Status render on both bars, Add on the top one only (legacy saveButton0/1)', async () => {
@@ -519,14 +973,16 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
   })
 
-  test('the bottom bar’s Save fires the same General Comment PUT as the top one', async () => {
+  // Save is now ONE PUT of the whole document (Task 5/7, retiring deviation C): the general comment
+  // travels alongside every road record in a single transaction, rather than its own endpoint.
+  test('the bottom bar’s Save fires the same whole-document PUT as the top one', async () => {
     let calls = 0
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
+      http.put(URL, async ({ request }) => {
         calls += 1
-        captured = (await request.json()) as GeneralCommentsRequest
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(doc({ generalComments: 'Revised summary' }))
       }),
     )
@@ -544,16 +1000,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await waitFor(() => {
       expect(calls).toBe(1)
     })
-    expect(captured).toEqual({ generalComments: 'Revised summary' })
+    expect(captured!.generalComments).toBe('Revised summary')
+    // The served row travels unchanged alongside the comment — an omitted row would 400.
+    expect(captured!.records).toHaveLength(1)
+    expect(captured!.records[0].recordId).toBe(9501)
   })
 
-  test('the General Comment saves independently via PUT /general-comments (AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+  test('the General Comment saves via the whole-document PUT (AC5)', async () => {
+    let captured: Schedule6SaveRequest | null = null
     let capturedUrl: string | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         capturedUrl = request.url
         return HttpResponse.json(
           doc({
@@ -573,7 +1032,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
-    expect(captured).toEqual({ generalComments: 'Revised summary' })
+    expect(captured!.generalComments).toBe('Revised summary')
     // The PUT carries the mill/year request params the 8.2 endpoint requires.
     const params = new window.URL(capturedUrl!).searchParams
     expect(params.get('millId')).toBe('13050')
@@ -581,11 +1040,11 @@ describe('Schedule 6 page (Story 8.3)', () => {
   })
 
   test('the General Comment saves with zero road records (the BR-09 placeholder branch, AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc({ roadRecords: [], generalComments: null }))),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(loneCommentDoc())
       }),
     )
@@ -598,14 +1057,15 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured!.generalComments).toBe('First note')
+    expect(captured!.records).toEqual([])
   })
 
   test('blanking the General Comment sends null to clear it (BR-09, AC5)', async () => {
-    let captured: GeneralCommentsRequest | null = null
+    let captured: Schedule6SaveRequest | null = null
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, async ({ request }) => {
-        captured = (await request.json()) as GeneralCommentsRequest
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
         return HttpResponse.json(doc({ generalComments: null }))
       }),
     )
@@ -685,7 +1145,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled()
-    expect(within(rowPanel(1)).getByRole('button', { name: /^edit$/i })).toBeDisabled()
+    expect(within(rowPanel(1)).getByRole('combobox', { name: /TSA or TFL/i })).toBeDisabled()
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toBeDisabled()
     const region = commentsRegion()
     expect(within(region).getByLabelText('General Comments')).toBeDisabled()
     // Both bars, not just the first: a read-only reporter must not find a live Save at either end.
@@ -696,8 +1157,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     checkStatusButtons().forEach((button) => {
       expect(button).toBeDisabled()
     })
-    // Read-only still shows the data.
-    expect(within(rowPanel(1)).getByText('1,000')).toBeInTheDocument()
+    // Read-only (disabled) still shows the data, grouped (fix 2).
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('1,000')
     expect(within(totalsRegion()).getByText('50,000')).toBeInTheDocument()
     expect(within(region).getByLabelText('General Comments')).toHaveValue('Season summary')
   })
@@ -888,7 +1349,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     const button = within(panel).getByRole('button', { name: /^add report$/i })
     await user.click(button)
     // Second click lands while the first POST is in flight — the saving lock must swallow it, or a
@@ -902,38 +1363,19 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(post).toHaveBeenCalledTimes(1)
   })
 
-  test('Check Status is disabled while unsaved entries are on screen (dirty gate)', async () => {
-    server.use(http.get(URL, () => HttpResponse.json(doc())))
-    render(<Schedule6 />)
-    const user = userEvent.setup()
+  // 'Check Status is disabled while unsaved entries are on screen (dirty gate)' DELETED (Task 7,
+  // correction 4): this rule is explicitly retired. Legacy's full postback applied on-screen values
+  // before evaluating and never disabled Check Status for dirtiness (schedule6.xhtml:226-229); the
+  // modern body now posts those on-screen values itself. Replaced by 'leaves Check Status enabled
+  // while rows are dirty' above.
 
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    const check = checkStatusButtons()[0]
-
-    // Legacy's full postback applied the on-screen values before evaluating; the modern check reads
-    // only the DB, so a verdict must never contradict visible unsaved input.
-    const panel = await openAddPanel(user)
-    expect(check).toBeEnabled() // open but empty — nothing unsaved yet
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '0')
-    expect(check).toBeDisabled()
-    await user.clear(within(panel).getByLabelText('TSA or TFL'))
-    expect(check).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: /^close$/i }))
-
-    // An open row editor is unsaved input from the first keystroke it might carry — disabled outright.
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    expect(check).toBeDisabled()
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^cancel$/i }))
-    expect(check).toBeEnabled()
-  })
-
-  test('a row served without a revisionCount surfaces an error on Save, never a silent no-op (AC4)', async () => {
+  test('a row served without a revisionCount surfaces an error on Save, never a silent no-op (hazard 1, AC4)', async () => {
     const put = vi.fn()
     server.use(
       http.get(URL, () =>
         HttpResponse.json(doc({ roadRecords: [{ ...tsaRecord, revisionCount: null }] })),
       ),
-      http.put(`${RECORDS_URL}/9501`, () => {
+      http.put(URL, () => {
         put()
         return HttpResponse.json(doc())
       }),
@@ -942,10 +1384,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
-    // 8.1 always serves the token, so this is a contract-regression surface: it must be VISIBLE.
+    // 8.1 always serves the token, so this is a contract-regression surface: it must be VISIBLE, and
+    // nothing may be sent -- a coerced 0 would silently bypass the stale-edit check for this row.
     expect(await screen.findByText(/missing its revision token/i)).toBeInTheDocument()
     expect(put).not.toHaveBeenCalled()
   })
@@ -963,7 +1405,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
     expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
 
@@ -1007,7 +1449,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(
@@ -1029,7 +1471,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '10000000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1050,12 +1492,103 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Cost $'), '-2.5')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     await waitFor(() => expect(captured).not.toBeNull())
     expect(captured!.cost).toBe(-3)
+  })
+
+  // Fix 2: Schedule 6 was the one sibling schedule still seeding numeric fields with the bare digit
+  // string and never re-grouping on blur (Schedules 1, 1-other-costs, 7b and 9 all already do). These
+  // pin the three moving parts: the seed, the two blur masks, and — the assertion that actually makes
+  // this safe rather than merely cosmetic — that the wire still gets the plain number.
+  test('typing into Volume and blurring re-groups it with thousands separators (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, '15000')
+    expect(volume).toHaveValue('15000')
+    await user.tab()
+
+    expect(volume).toHaveValue('15,000')
+  })
+
+  test('typing a fractional Cost and blurring re-groups it through the fixed-0 mask (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const cost = within(panel).getByLabelText('Cost $')
+    await user.type(cost, '1500.7')
+    await user.tab()
+
+    // Legacy's mask for this field is whole-dollar (##,###,### / moneyMask above, no decimals), and
+    // roundCost already sends 1501 to the wire — the display must agree with what gets stored.
+    expect(cost).toHaveValue('1,501')
+  })
+
+  test('invalid text typed into Volume is left unchanged on blur, not silently rewritten (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, 'abc')
+    await user.tab()
+
+    // groupInput's contract: a typo stays on screen for the user to correct rather than being
+    // blanked or silently rewritten.
+    expect(volume).toHaveValue('abc')
+  })
+
+  test('invalid text typed into Cost is left unchanged on blur, not silently rewritten (fix 2)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    const cost = within(panel).getByLabelText('Cost $')
+    await user.type(cost, 'abc')
+    await user.tab()
+
+    expect(cost).toHaveValue('abc')
+  })
+
+  // The one assertion that matters most here: proving the display-only regrouping never reaches the
+  // wire. If groupInput's comma leaked into the parsed body, or roundCost's mask silently changed what
+  // gets stored, this is where it would show up.
+  test('a grouped Volume/Cost display still sends the plain number on save (fix 2)', async () => {
+    let captured: RoadRecordRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: [] }))),
+      http.post(RECORDS_URL, async ({ request }) => {
+        captured = (await request.json()) as RoadRecordRequest
+        return HttpResponse.json(doc())
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    const panel = await openAddPanel(user)
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
+    const volume = within(panel).getByLabelText('Volume m³')
+    await user.type(volume, '15000')
+    await user.tab()
+    expect(volume).toHaveValue('15,000')
+
+    await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
+
+    await waitFor(() => expect(captured).not.toBeNull())
+    // The screen shows "15,000"; the wire must still carry the number 15000, not the grouped string
+    // and not NaN/null (which stripGroup's absence would produce).
+    expect(captured!.volume).toBe(15000)
   })
 
   test('a backend 400 renders the detail verbatim and retains every entered value (AC10)', async () => {
@@ -1068,16 +1601,17 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), 'TFL')
+    await selectAreaType(user, panel, 'TFL')
     await user.type(within(panel).getByLabelText('TFL'), '99')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
     // Values stay put so the entry can be corrected and resubmitted.
-    expect(within(panel).getByLabelText('TSA or TFL')).toHaveValue('TFL')
+    expect(within(panel).getByRole('combobox', { name: /TSA or TFL/i })).toHaveDisplayValue('TFL')
     expect(within(panel).getByLabelText('TFL')).toHaveValue('99')
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    // Blurred (focus left Volume for the Add Report button) and grouped (fix 2).
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
   test('a load failure carrying no detail falls back to the generic load message (AC7)', async () => {
@@ -1103,47 +1637,46 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
     expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
     // add-is-save: the panel and its values survive a server-side failure so the entry is not retyped.
     expect(screen.getByRole('region', { name: 'Add Road Maintenance report' })).toBeInTheDocument()
-    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1000')
+    // Blurred and grouped (fix 2).
+    expect(within(panel).getByLabelText('Volume m³')).toHaveValue('1,000')
   })
 
-  test('an edit failure renders the detail verbatim and leaves the editor open (AC4 / AC10)', async () => {
+  test('a Save failure renders the API detail verbatim and retains every entered value (AC4 / AC10)', async () => {
     const detail = 'Entered RMG could not be resolved for the supplied Supply Block.'
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(`${RECORDS_URL}/9501`, () => problemBody(400, detail)),
+      http.put(URL, () => problemBody(400, detail)),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
 
     await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
     const volume = within(rowPanel(1)).getByLabelText('Volume m³')
     await user.clear(volume)
     await user.type(volume, '2000')
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
+    await user.click(barSaveButtons()[0])
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
-    // The failure branch must not run onSuccess: the editor stays open holding the rejected value so
-    // it can be corrected, page state is not replaced, and no success banner appears alongside.
-    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2000')
+    // The failure branch must not run onSuccess: the row keeps the rejected value so it can be
+    // corrected, page state is not replaced, and no success banner appears alongside. Blurred and
+    // grouped (fix 2).
+    expect(within(rowPanel(1)).getByLabelText('Volume m³')).toHaveValue('2,000')
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     // The in-flight lock releases on the error path too, or Save is dead until reload.
-    await waitFor(() =>
-      expect(within(rowPanel(1)).getByRole('button', { name: /^save$/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(barSaveButtons()[0]).toBeEnabled())
   })
 
-  test('a General Comment failure falls back to its OWN message and keeps the text (AC5)', async () => {
+  test('a detail-less Save failure falls back to the generic Save message and keeps the comment (AC5)', async () => {
     server.use(
       http.get(URL, () => HttpResponse.json(doc())),
-      http.put(COMMENTS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.put(URL, () => new HttpResponse(null, { status: 500 })),
     )
     render(<Schedule6 />)
     const user = userEvent.setup()
@@ -1153,10 +1686,8 @@ describe('Schedule 6 page (Story 8.3)', () => {
     await user.type(within(region).getByLabelText('General Comments'), 'Revised summary')
     await user.click(barSaveButtons()[0])
 
-    // The comment mutation owns a DIFFERENT fallback than the record mutations — sharing the record
-    // string here would misattribute which save failed.
-    expect(await screen.findByText('Comments could not be saved.')).toBeInTheDocument()
-    expect(screen.queryByText('Schedule could not be saved.')).not.toBeInTheDocument()
+    // handleSaveEdit/handleSaveComments are gone -- one Save, one fallback string.
+    expect(await screen.findByText('Schedule could not be saved.')).toBeInTheDocument()
     expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
       'Revised summary',
     )
@@ -1209,7 +1740,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.type(within(panel).getByLabelText('Volume m³'), '1000')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
 
@@ -1271,7 +1802,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     const user = userEvent.setup()
 
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
     await user.click(within(panel).getByRole('button', { name: /^add report$/i }))
     await user.click(screen.getByRole('button', { name: /change/i }))
 
@@ -1324,49 +1855,17 @@ describe('Schedule 6 page (Story 8.3)', () => {
     ).not.toBeInTheDocument()
   })
 
-  test('a stale edit response (mill/year changed mid-flight) never applies (AC11)', async () => {
+  // The retired 'stale edit' and 'stale comment' tests collapse into one: Save is now a single
+  // whole-document PUT carrying both the row and the general comment, so there is only one save
+  // response left to guard against landing stale.
+  test('a stale Save response (mill/year changed mid-flight) never applies (AC11)', async () => {
     server.use(
       http.get(URL, ({ request }) =>
         request.url.includes('millId=999')
           ? HttpResponse.json(otherContextDoc())
           : HttpResponse.json(doc()),
       ),
-      http.put(`${RECORDS_URL}/9501`, async () => {
-        await delay(300)
-        return HttpResponse.json(
-          doc({ message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' } }),
-        )
-      }),
-    )
-    render(
-      <MillYearProvider initial={{ millId: 13050, year: 2021 }}>
-        <StaleRaceHarness />
-      </MillYearProvider>,
-    )
-    const user = userEvent.setup()
-
-    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^edit$/i }))
-    await user.click(within(rowPanel(1)).getByRole('button', { name: /^save$/i }))
-    await user.click(screen.getByRole('button', { name: /change/i }))
-
-    expect(await screen.findByText('Other mill record')).toBeInTheDocument()
-    // Let the stale PUT resolve. The edit branch carries the widest blast radius of the four: an
-    // unguarded response would banner a save the new mill never made AND overwrite its rows.
-    await delay(400)
-    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
-    expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
-    expect(screen.getByText('Other mill record')).toBeInTheDocument()
-  })
-
-  test('a stale comment response (mill/year changed mid-flight) never applies (AC11)', async () => {
-    server.use(
-      http.get(URL, ({ request }) =>
-        request.url.includes('millId=999')
-          ? HttpResponse.json(otherContextDoc())
-          : HttpResponse.json(doc()),
-      ),
-      http.put(COMMENTS_URL, async () => {
+      http.put(URL, async () => {
         await delay(300)
         return HttpResponse.json(
           doc({
@@ -1383,17 +1882,17 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    // Waits for the document to land before the save fires the race.
-    await waitFor(() => commentsRegion())
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
     await user.click(barSaveButtons()[0])
     await user.click(screen.getByRole('button', { name: /change/i }))
 
     expect(await screen.findByText('Other mill record')).toBeInTheDocument()
-    // The comment PUT returns the WHOLE document, so an unguarded stale response replaces the new
-    // mill's rows and comment with the old mill's — the fourth mutation, guarded like the other three.
+    // Let the stale PUT resolve. Save carries the widest blast radius: an unguarded response would
+    // banner a save the new mill never made AND overwrite both its rows and its general comment.
     await delay(400)
     expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     expect(screen.queryByText('Culvert replacement')).not.toBeInTheDocument()
+    expect(screen.getByText('Other mill record')).toBeInTheDocument()
     expect(within(commentsRegion()).getByLabelText('General Comments')).toHaveValue(
       'Other mill comment',
     )
@@ -1426,15 +1925,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
     )
     const user = userEvent.setup()
 
-    // Check first (the dirty gate disables the button once the Add panel holds a value), then dirty
-    // the Add panel so the context change has both a check result and an open panel to reset.
     await waitFor(() => expect(checkStatusButtons()[0]).toBeEnabled())
     await user.click(checkStatusButtons()[0])
     expect(
       await screen.findByText('All requirements for this schedule have been met'),
     ).toBeInTheDocument()
     const panel = await openAddPanel(user)
-    await user.type(within(panel).getByLabelText('TSA or TFL'), '01')
+    await selectAreaType(user, panel, 'Arrowsmith TSA')
 
     await user.click(screen.getByRole('button', { name: /change/i }))
 

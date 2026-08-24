@@ -14,14 +14,17 @@ import type {
   StabilizingRequest,
   SubGradeRequest,
 } from '@/interfaces/Schedule10Request'
-import type { CodeDescription, ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
+import type { ConstructionPage, RoadDetail } from '@/interfaces/Schedule10Response'
+import { TFL_SENTINEL } from '@/utils/codes'
 import { utf8Length } from '@/utils/forms'
 import { numStrFixed, parseDecimalInput, roundCost } from '@/utils/number'
 
 export { numStrFixed, parseDecimalInput, roundCost }
 
-/** The sentinel the single TSA-or-TFL field carries when the page is TFL-located. */
-export const TFL_SENTINEL = 'TFL'
+// Hoisted to utils/codes so Schedule 6 can use the same location helpers (2026-08-21 corrections).
+// Re-exported rather than repointed at every call site: this file is Schedule 10's public surface.
+export { describe, supplyBlocksFor, TFL_SENTINEL } from '@/utils/codes'
+export type { CodeDescription } from '@/utils/codes'
 
 export const DIVISION_MAX = 20
 export const ROAD_NAME_MAX = 30
@@ -218,48 +221,6 @@ export const ballastForcesMaterialNa = (methodCode: string): boolean => {
  */
 export const ballastZeroesFigures = (methodCode: string): boolean =>
   methodCode.trim().toUpperCase() === 'N'
-
-/**
- * Legacy narrowed the supply-block list to blocks whose code begins with the chosen TSA, which is
- * what makes the pair coherent — block `01A` belongs to TSA `01`. With no TSA chosen the list is
- * empty rather than the full catalogue, matching the legacy control's cleared state.
- *
- * A stored block is always kept, even when it does not belong to the stored TSA. Delivery holds such
- * pairs — a page on TSA `02` carrying block `01D` — because the TSA leg was never validated, and
- * narrowing them away would blank a field that does hold a value and silently drop it on the next
- * save. The narrowing governs what can be CHOSEN; it must not hide what is already there.
- *
- * That holds for a block absent from the CATALOGUE too, not just one off the chosen branch. Filtering
- * the served list for the stored code yields nothing when the code was never served — delivery page
- * 8904 stores TSB `16Z`, which no longer appears in the code table — and the field then renders blank
- * over a value that is really there. The stored code is synthesised as its own option instead, showing
- * the bare code because that is all the document carries about it.
- */
-export const supplyBlocksFor = (
-  blocks: readonly CodeDescription[],
-  tsaOrTfl: string,
-  selectedCode = '',
-): CodeDescription[] => {
-  const tsa = tsaOrTfl.trim()
-  const selected = selectedCode.trim()
-  const stored: CodeDescription[] =
-    selected === ''
-      ? []
-      : [
-          blocks.find((block) => block.code === selected) ?? {
-            code: selected,
-            description: selected,
-          },
-        ]
-
-  if (tsa === '' || isTflLocated(tsa)) {
-    return stored
-  }
-
-  const offered = blocks.filter((block) => block.code.startsWith(tsa))
-  const missing = stored.filter((block) => !offered.some((o) => o.code === block.code))
-  return [...offered, ...missing]
-}
 
 export const emptyPageForm = (): PageFormValues => ({
   divisionName: '',

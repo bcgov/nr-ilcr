@@ -1,7 +1,13 @@
 import type { FC } from 'react'
 import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
-import type { GeneralCommentsRequest, RoadRecordRequest } from '@/interfaces/Schedule6Request'
+import type { Schedule6CodeLists } from '@/interfaces/Schedule6Response'
+import type {
+  RoadRecordEntry,
+  RoadRecordRequest,
+  Schedule6CheckRequest,
+  Schedule6SaveRequest,
+} from '@/interfaces/Schedule6Request'
 import type { RoadRecordErrors, RoadRecordFormValues } from './validation'
 import { useCallback, useState } from 'react'
 import {
@@ -11,30 +17,34 @@ import {
   Column,
   Grid,
   InlineNotification,
+  Modal,
   TextArea,
   TextInput,
 } from '@carbon/react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
+import CodeComboBox from '@/components/core/CodeComboBox'
+import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
-import { numStr } from '@/utils/number'
+import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import PageTitle from '@/components/core/PageTitle'
 import {
-  AREA_TYPE_MAX_LENGTH,
   GENERAL_COMMENTS_MAX_LENGTH,
   RECORD_COMMENTS_MAX_LENGTH,
-  SUPPLY_BLOCK_MAX_LENGTH,
   TFL_AREA_TYPE,
   TFL_MAX_LENGTH,
+  areaTypeOptions,
   parseDecimalInput,
   roundCost,
   validateGeneralComments,
   validateRoadRecord,
 } from './validation'
+import { EMPTY_RATE_INPUTS, rateInputsOf, recordCostPerVolume, type RateInputs } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. Every success/error is
@@ -46,10 +56,21 @@ const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the
 // rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
 const EMPTY_LIST = 'No records found.'
 const ADD_PANEL_HEADING = 'Add Road Maintenance report'
+// Verbatim legacy delete-confirmation copy (messages.properties:31, schedule6.xhtml:433-450). The
+// dialog wording is client-owned chrome with no request behind it, so it is pinned here; every
+// success/error still renders from the API (AD-8).
+const CONFIRM_DELETE_HEADING = 'Confirmation'
+const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you want to continue?'
+const DELETE_BUTTON_LABEL = 'Delete'
+const DELETE_BUTTON_TITLE = 'Delete Road Maintenance Report'
 const SCHEDULE6_PATH = '/v1/schedule6'
 const RECORDS_PATH = `${SCHEDULE6_PATH}/records`
-const GENERAL_COMMENTS_PATH = `${SCHEDULE6_PATH}/general-comments`
 const CHECK_STATUS_PATH = `${SCHEDULE6_PATH}/check-status`
+// A missing revisionCount is a contract regression (8.1 always serves it) -- a coerced 0 would
+// silently bypass the stale-edit check, so this surfaces instead of sending anything (hazard 1,
+// ported from the retired handleSaveEdit guard).
+const ERR_MISSING_REVISION =
+  'This record cannot be saved because it is missing its revision token. Reload the page and try again.'
 
 // Legacy display masks, transcribed from the JSF converters (AD-5 no recompute — every value here is
 // server-computed and this only formats it). Those converters return "" for a null/non-BigDecimal
@@ -75,12 +96,15 @@ const emptyForm = (): RoadRecordFormValues => ({
   comments: '',
 })
 
+// Seeded GROUPED, matching every sibling schedule (1, 3-subpage, 7b, 9, 1-other-costs): this was
+// the one page still seeding numeric fields with the bare digit string, so 15000 read "15000"
+// instead of "15,000" beside plain-text cells that already group.
 const seedForm = (row: RoadRecord): RoadRecordFormValues => ({
   areaType: row.areaType ?? '',
   tflNumber: row.tflNumber ?? '',
   supplyBlock: row.supplyBlock ?? '',
-  volume: numStr(row.volume),
-  cost: numStr(row.cost),
+  volume: numStrGroup(row.volume),
+  cost: numStrGroup(row.cost),
   comments: row.comments ?? '',
 })
 
@@ -92,7 +116,12 @@ const isTfl = (areaType: string): boolean => areaType.trim() === TFL_AREA_TYPE
 const applyAreaType = (form: RoadRecordFormValues, areaType: string): RoadRecordFormValues =>
   isTfl(areaType) ? { ...form, areaType, supplyBlock: '' } : { ...form, areaType, tflNumber: '' }
 
-const buildBody = (form: RoadRecordFormValues, revisionCount?: number): RoadRecordRequest => {
+// Shared by the Add panel POST, the page-level Save PUT and Check Status: the same
+// parseDecimalInput/roundCost parse for all three, or a verdict could describe different numbers
+// than a save would store (step 4.6). Check-status entries are exactly this shape -- no recordId, no
+// revisionCount, rows identified by payload ordinal (Task 6) -- so buildCheckEntry is this function
+// under a name that says what it is used for at each call site.
+const buildBody = (form: RoadRecordFormValues): RoadRecordRequest => {
   const tfl = isTfl(form.areaType)
   const blank = (raw: string): string | null => (raw.trim() === '' ? null : raw.trim())
   return {
@@ -105,9 +134,23 @@ const buildBody = (form: RoadRecordFormValues, revisionCount?: number): RoadReco
     volume: parseDecimalInput(form.volume),
     cost: roundCost(parseDecimalInput(form.cost)),
     comments: form.comments.trim() === '' ? null : form.comments,
-    ...(revisionCount === undefined ? {} : { revisionCount }),
   }
 }
+
+const buildCheckEntry = buildBody
+
+// One row of the Save PUT: the parsed fields plus the identifiers the batch endpoint needs to place
+// and lock it. `recordId`/`revisionCount` exist only on this shape, not on RoadRecordRequest --
+// callers must resolve the hazard-1 guard before this is ever called.
+const buildSaveEntry = (
+  form: RoadRecordFormValues,
+  recordId: number,
+  revisionCount: number,
+): Schedule6SaveRequest['records'][number] => ({
+  ...buildBody(form),
+  recordId,
+  revisionCount,
+})
 
 const PAGE_HEADER = (
   <Grid fullWidth className="app-page__header">
@@ -145,39 +188,47 @@ type RoadRecordFieldsProps = {
   readonly idPrefix: string
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
+  readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
   readonly rmg: string
   readonly costPerVolume: string
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  /** Blur commit for the two fields the $ / m³ is computed from (defect #291). */
+  readonly onRateCommit: () => void
 }
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   idPrefix,
   form,
   errors,
+  codeLists,
   disabled,
   rmg,
   costPerVolume,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
 }) => {
   const tfl = isTfl(form.areaType)
   return (
     <div className="schedule-6__fields">
-      {/* Deviation (A): TSA and Supply Block are text inputs over the raw code — legacy's
-          year-scoped selectOneMenu caches have no REST counterpart and no Schedule 6 codes
-          endpoint exists (the blessed Schedule 8 simplification). */}
-      <TextInput
+      {/* Corrections 2/3: legacy rendered both as a selectOneMenu over the code's DESCRIPTION
+          (schedule6.xhtml:265-323); retires deviation (A) now that the document serves the two code
+          lists (Schedule6CodeLists). TFL is a synthetic sentinel the CONTROL adds, not a served code
+          (LookUpCacheDAO.java:229-230) — see areaTypeOptions. */}
+      <CodeComboBox
         id={`${idPrefix}-area-type`}
-        labelText="TSA or TFL"
-        size="sm"
-        maxLength={AREA_TYPE_MAX_LENGTH}
+        // Options render the code's DESCRIPTION (corrections 2/3 above), and a description like
+        // "Arrowsmith TSA" truncates under the shared grid's 10rem minimum track — wide spans two.
+        className="schedule-6__field--wide"
+        titleText="TSA or TFL"
+        items={areaTypeOptions(codeLists.tsaNumbers, form.areaType)}
+        selectedCode={form.areaType}
         disabled={disabled}
-        value={form.areaType}
-        onChange={(e) => onAreaTypeChange(e.target.value)}
         invalid={Boolean(errors.areaType)}
         invalidText={errors.areaType}
+        onSelect={onAreaTypeChange}
       />
       <TextInput
         id={`${idPrefix}-tfl-number`}
@@ -190,16 +241,17 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.tflNumber)}
         invalidText={errors.tflNumber}
       />
-      <TextInput
+      <CodeComboBox
         id={`${idPrefix}-supply-block`}
-        labelText="Supply Block"
-        size="sm"
-        maxLength={SUPPLY_BLOCK_MAX_LENGTH}
+        // Same widening as TSA or TFL above, for the same reason — its options are descriptions too.
+        className="schedule-6__field--wide"
+        titleText="Supply Block"
+        items={supplyBlocksFor(codeLists.supplyBlocks, form.areaType, form.supplyBlock)}
+        selectedCode={form.supplyBlock}
         disabled={disabled || tfl}
-        value={form.supplyBlock}
-        onChange={(e) => onFieldChange('supplyBlock', e.target.value)}
         invalid={Boolean(errors.supplyBlock)}
         invalidText={errors.supplyBlock}
+        onSelect={(code) => onFieldChange('supplyBlock', code)}
       />
       <dl className="schedule-6__derived">
         <FieldValue label="RMG" value={rmg} />
@@ -212,6 +264,25 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.volume}
         onChange={(e) => onFieldChange('volume', e.target.value)}
+        // One blur does two things (#291 + fix 2), in this order:
+        //
+        // 1. Commit the $ / m³ baseline, which validates the form AS TYPED -- so the re-group must
+        //    come after it, never before (the derived-figure work found that re-grouping first
+        //    replaced the form mid-validation and stopped the commit landing at all).
+        // 2. Re-group the field itself, on blur only and never mid-keystroke (that would fight the
+        //    caret) -- through groupInput, not a fixed mask, because volume permits up to 2 decimals
+        //    and groupInput preserves exactly what was typed (sibling schedules 1 / 1-other-costs /
+        //    7b / 9). Invalid text passes through unchanged, so a typo stays on screen for the user
+        //    to correct. Deliberately NOT gated on the commit succeeding: masking the entry and
+        //    moving the derived cell are separate legacy behaviours, and an out-of-range volume that
+        //    holds the rate at its last valid figure must still be shown grouped.
+        onBlur={() => {
+          onRateCommit()
+          const grouped = groupInput(form.volume)
+          if (grouped !== form.volume) {
+            onFieldChange('volume', grouped)
+          }
+        }}
         invalid={Boolean(errors.volume)}
         invalidText={errors.volume}
       />
@@ -223,6 +294,19 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         disabled={disabled}
         value={form.cost}
         onChange={(e) => onFieldChange('cost', e.target.value)}
+        // Commit-then-re-group, as on Volume above. Fixed to 0 decimals, not plain groupInput:
+        // legacy's mask for this field was ##,###,### (mask.int.7digits, `moneyMask` above) and
+        // roundCost already sends a whole-dollar wire value, so a typed "1500.7" must re-render as
+        // "1,501" -- matching what actually gets stored -- rather than lingering on screen as a
+        // fractional value the field will never save. The rate agrees with it by construction:
+        // recordCostPerVolume rounds the cost through the same whole-dollar step (derived.ts).
+        onBlur={() => {
+          onRateCommit()
+          const grouped = groupFixedInput(form.cost, 0)
+          if (grouped !== form.cost) {
+            onFieldChange('cost', grouped)
+          }
+        }}
         invalid={Boolean(errors.cost)}
         invalidText={errors.cost}
       />
@@ -249,23 +333,30 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   )
 }
 
-// The Add panel (legacy's toggled `roadAddPanel`). `Add Report` posts immediately — add-is-save, so
-// there is no page-level Save to fan out (deviation C).
+// The Add panel (legacy's toggled `roadAddPanel`). `Add Report` posts immediately — add-is-save,
+// independent of the page-level Save (`handleSave`) that fans the rows and general comment out
+// together; deviation (C) is retired now that every row is always editable (Task 7).
 type AddPanelProps = {
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
+  readonly codeLists: Schedule6CodeLists
   readonly disabled: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
+  readonly onRateCommit: () => void
   readonly onSubmit: () => void
 }
 
 const AddPanel: FC<AddPanelProps> = ({
   form,
   errors,
+  codeLists,
   disabled,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
+  onRateCommit,
   onSubmit,
 }) => (
   <section className="schedule-6__section" aria-label={ADD_PANEL_HEADING}>
@@ -274,13 +365,15 @@ const AddPanel: FC<AddPanelProps> = ({
       idPrefix="add"
       form={form}
       errors={errors}
+      codeLists={codeLists}
       disabled={disabled}
-      // Both are derived server-side from the saved record; legacy re-derived them live over ajax,
-      // which AD-5 forbids re-implementing on the client (deviation D).
       rmg=""
-      costPerVolume=""
+      // The rate tracks the committed (blurred) volume/cost, as legacy's own `change` handler did
+      // (#291). `rmg` stays server-derived — see derived.ts for why it is not mirrored.
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
     <Button kind="primary" disabled={disabled} onClick={onSubmit}>
       Add Report
@@ -288,76 +381,66 @@ const AddPanel: FC<AddPanelProps> = ({
   </section>
 )
 
-// A record's read-only display state inside its accordion row: the six legacy-labelled fields plus
-// Comments, and the Edit button that opens the editor.
-type RecordDisplayProps = {
+// A record's row inside its accordion: the six legacy-labelled fields (always live -- legacy rows
+// were always directly editable, schedule6.xhtml:248-431) plus the Delete button (Task 4).
+type RoadRecordRowProps = {
   readonly row: RoadRecord
-  readonly editDisabled: boolean
-  readonly onEdit: () => void
-}
-
-const RecordDisplay: FC<RecordDisplayProps> = ({ row, editDisabled, onEdit }) => (
-  <>
-    <dl className="schedule-6__fields">
-      <FieldValue label="TSA or TFL" value={row.areaType ?? ''} />
-      <FieldValue label="TFL" value={row.tflNumber ?? ''} />
-      <FieldValue label="Supply Block" value={row.supplyBlock ?? ''} />
-      <FieldValue label="RMG" value={row.rmg ?? ''} />
-      <FieldValue label="Volume m³" value={volumeMask(row.volume)} numeric />
-      <FieldValue label="Cost $" value={moneyMask(row.cost)} numeric />
-      <FieldValue label="$ / m³" value={ratioMask(row.costPerVolume)} numeric />
-      <div className="schedule-6__field schedule-6__comments">
-        <dt>Comments</dt>
-        <dd>{row.comments ?? ''}</dd>
-      </div>
-    </dl>
-    <Button kind="ghost" size="sm" disabled={editDisabled} onClick={onEdit}>
-      Edit
-    </Button>
-  </>
-)
-
-// A record's edit state. Legacy's rows were always directly editable and one page-wide Save posted
-// every record at once; 8.2 replaced that with a per-record PUT, so an explicit edit mode is the only
-// way to scope one PUT to one row and know which revision token it echoes (deviation C).
-type RecordEditorProps = {
-  readonly row: RoadRecord
+  readonly ordinal: number
   readonly form: RoadRecordFormValues
   readonly errors: RoadRecordErrors
-  readonly saving: boolean
+  readonly codeLists: Schedule6CodeLists
+  readonly disabled: boolean
+  readonly deleteDisabled: boolean
+  readonly rateInputs: RateInputs
   readonly onAreaTypeChange: (value: string) => void
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
-  readonly onSave: () => void
-  readonly onCancel: () => void
+  readonly onRateCommit: () => void
+  readonly onDelete: () => void
 }
 
-const RecordEditor: FC<RecordEditorProps> = ({
+const RoadRecordRow: FC<RoadRecordRowProps> = ({
   row,
+  ordinal,
   form,
   errors,
-  saving,
+  codeLists,
+  disabled,
+  deleteDisabled,
+  rateInputs,
   onAreaTypeChange,
   onFieldChange,
-  onSave,
-  onCancel,
+  onRateCommit,
+  onDelete,
 }) => (
   <>
     <RoadRecordFields
-      idPrefix={`edit-${String(row.recordId)}`}
+      idPrefix={`row-${String(row.recordId)}`}
       form={form}
       errors={errors}
-      disabled={saving}
-      // The row's last server-derived values; they refresh on the save echo.
+      codeLists={codeLists}
+      disabled={disabled}
+      // `rmg` is the row's last server-derived value and refreshes on the save echo; the rate now
+      // tracks the committed (blurred) volume/cost, as legacy's own `change` handler did (#291).
       rmg={row.rmg ?? ''}
-      costPerVolume={ratioMask(row.costPerVolume)}
+      costPerVolume={ratioMask(recordCostPerVolume(rateInputs))}
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
+      onRateCommit={onRateCommit}
     />
-    <Button kind="primary" size="sm" disabled={saving} onClick={onSave}>
-      Save
-    </Button>
-    <Button kind="ghost" size="sm" disabled={saving} onClick={onCancel}>
-      Cancel
+    <Button
+      kind="danger--ghost"
+      size="sm"
+      title={DELETE_BUTTON_TITLE}
+      // The VISIBLE label stays the bare legacy "Delete" (legacy carries no per-row text of its
+      // own to diverge from — this is chrome, not a fidelity claim). The ACCESSIBLE name appends the
+      // ordinal so an N-row schedule doesn't collapse into N identically-named buttons (Carbon renders
+      // every AccordionItem's children into the DOM regardless of which panel is expanded) — matching
+      // the row's own "Road Maintenance report Id: N" accordion title (final-review M8).
+      aria-label={`${DELETE_BUTTON_TITLE} ${String(ordinal)}`}
+      disabled={deleteDisabled}
+      onClick={onDelete}
+    >
+      {DELETE_BUTTON_LABEL}
     </Button>
   </>
 )
@@ -372,17 +455,56 @@ const Schedule6: FC = () => {
 
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState<RoadRecordFormValues>(emptyForm)
+  // The blur-committed volume/cost the $ / m³ mirror reads. Legacy refreshed the row's own rate on the
+  // field's own `change` handler, so the rate settles when focus leaves rather than per keystroke (#291).
+  const [addRate, setAddRate] = useState<RateInputs>(EMPTY_RATE_INPUTS)
   const [addErrors, setAddErrors] = useState<RoadRecordErrors>({})
 
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editRevision, setEditRevision] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<RoadRecordFormValues>(emptyForm)
-  const [editErrors, setEditErrors] = useState<RoadRecordErrors>({})
+  // One form per row, keyed by recordId. Legacy's rows were always directly editable and one
+  // page-wide Save posted every record at once (schedule6.xhtml:248-431, Schedule6MB.save); the
+  // shipped Edit button existed only to scope a per-record PUT, which no longer exists (correction 4,
+  // retiring deviation (C)). A row with no entry here falls back to the document's own values (see
+  // getRowForm) -- so a freshly-loaded or freshly-added row needs no explicit seed.
+  const [rowForms, setRowForms] = useState<Record<number, RoadRecordFormValues>>({})
+  const [rowErrors, setRowErrors] = useState<Record<number, RoadRecordErrors>>({})
+  // The blur-committed volume/cost each row's $ / m³ mirror reads, keyed by recordId (#291). Same
+  // fallback rule as rowForms: a row with no entry here reads the document's own values (getRowRate),
+  // so the load and every echo seed it without an explicit write. The per-row map replaces the single
+  // editRate the derived-figure work carried, because there is no longer one open editor at a time.
+  const [rowRates, setRowRates] = useState<Record<number, RateInputs>>({})
+
+  /**
+   * Advance a rate baseline only from a usable, valid entry (ruled 2026-08-21). Legacy's round-trip
+   * failed conversion/validation and left the derived cell at its last valid figure; committing an
+   * out-of-range or unparseable value instead drives the rate from something no Save can persist.
+   *
+   * Re-grouping the blurred FIELD is the caller's job here (the `onBlur` handlers in
+   * RoadRecordFields), not this helper's: this page masks Volume and Cost differently -- groupInput
+   * vs groupFixedInput(_, 0) -- and masks unconditionally, whereas the rate below moves only when the
+   * entry passes the gate.
+   */
+  const commitRate = (form: RoadRecordFormValues, apply: (next: RateInputs) => void): void => {
+    const errors = validateRoadRecord(form)
+    if (errors.volume !== undefined || errors.cost !== undefined) {
+      return
+    }
+    if (isUnusableStrictEntry(form.volume) || isUnusableStrictEntry(form.cost)) {
+      return
+    }
+    apply(rateInputsOf(form))
+  }
 
   const [commentsError, setCommentsError] = useState<string | undefined>(undefined)
 
-  // Clear all transient mutation + add/edit state whenever a fresh document loads (mill/year change),
-  // so a context change can't strand an open editor, an open add panel or a stale banner.
+  // The record awaiting delete confirmation, or null. Holds the id rather than a boolean so a
+  // context change mid-dialog cannot leave the confirm pointed at a row from the previous
+  // mill/year — resetTransient below clears it on every context change.
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+
+  // Clear all transient mutation + add/row state whenever a fresh document loads (mill/year change),
+  // so a context change can't strand an open add panel, a stale banner, or -- the hazard this design
+  // most invites, with N row forms instead of one -- a PREVIOUS mill's edits sitting over the new
+  // document. Without this, a row form only clears by being re-seeded (save echo) or never at all.
   const resetTransient = useCallback(() => {
     setSaving(false)
     setMessage(null)
@@ -390,12 +512,13 @@ const Schedule6: FC = () => {
     setCheckResult(null)
     setShowAdd(false)
     setAddForm(emptyForm())
+    setAddRate(EMPTY_RATE_INPUTS)
     setAddErrors({})
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
+    setRowForms({})
+    setRowErrors({})
+    setRowRates({})
     setCommentsError(undefined)
+    setPendingDeleteId(null)
   }, [])
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
@@ -429,10 +552,38 @@ const Schedule6: FC = () => {
 
   const setAddField = (key: keyof RoadRecordFormValues, value: string) =>
     setAddForm((prev) => ({ ...prev, [key]: value }))
-  const setEditField = (key: keyof RoadRecordFormValues, value: string) =>
-    setEditForm((prev) => ({ ...prev, [key]: value }))
 
-  // Shared tail for the three DOCUMENT mutations (add, edit, general comment): apply on success, keep
+  // The row's current on-screen values: whatever the user has typed, or the document's own values
+  // when the user hasn't touched this row yet (or the document just (re)loaded/echoed and cleared the
+  // map). This is what every read of a row's form -- render, Save, Check Status -- goes through, so
+  // the three can never disagree about what "on screen" means for a given row.
+  const getRowForm = (row: RoadRecord): RoadRecordFormValues =>
+    rowForms[row.recordId] ?? seedForm(row)
+
+  // The row's rate baseline: whatever the user last committed on this row, or the document's own
+  // values when they haven't committed one (fresh load, save echo, or an untouched row). Read from
+  // seedForm(row) rather than getRowForm(row) deliberately -- falling back to the LIVE form would make
+  // the $ / m³ track every keystroke, which is exactly what committing on blur exists to prevent.
+  const getRowRate = (row: RoadRecord): RateInputs =>
+    rowRates[row.recordId] ?? rateInputsOf(seedForm(row))
+
+  const commitRowRate = (row: RoadRecord) => {
+    commitRate(getRowForm(row), (next) => {
+      setRowRates((prev) => ({ ...prev, [row.recordId]: next }))
+    })
+  }
+
+  const updateRowForm = (
+    row: RoadRecord,
+    updater: (form: RoadRecordFormValues) => RoadRecordFormValues,
+  ) => {
+    setRowForms((prev) => ({
+      ...prev,
+      [row.recordId]: updater(prev[row.recordId] ?? seedForm(row)),
+    }))
+  }
+
+  // Shared tail for the DOCUMENT mutations (add, delete, whole-document save): apply on success, keep
   // entered values and surface the API's verbatim detail on failure, and release the in-flight lock —
   // each branch guarded, including the `finally`, where an unguarded release would free a lock
   // belonging to a NEWER request. Check Status shares the same three-branch guarding but deliberately
@@ -485,82 +636,101 @@ const Schedule6: FC = () => {
         // add-is-save: inputs clear only on success, and the panel collapses — legacy's add() sets
         // showAddRoadReport = false before saving (Schedule6MB.java:203).
         setAddForm(emptyForm())
+        setAddRate(EMPTY_RATE_INPUTS)
         setShowAdd(false)
       },
       'Schedule could not be saved.',
     )
   }
 
-  const startEdit = (row: RoadRecord) => {
-    clearBanners()
-    setEditingId(row.recordId)
-    // revisionCount is read from the LOADED row — never hardcoded, never coerced to 0 (a coerced 0
-    // silently bypasses the stale-edit check). `?? null` preserves a legitimate 0.
-    setEditRevision(row.revisionCount ?? null)
-    setEditForm(seedForm(row))
-    setEditErrors({})
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditRevision(null)
-    setEditForm(emptyForm())
-    setEditErrors({})
-  }
-
-  const handleSaveEdit = () => {
-    if (editingId === null || saving) {
+  const handleConfirmDelete = () => {
+    const recordId = pendingDeleteId
+    // Close the dialog whether or not the delete actually proceeds — a stale `saving` guard below
+    // must not leave the confirm sitting open with nothing left to confirm.
+    setPendingDeleteId(null)
+    if (recordId === null || saving) {
       return
     }
     clearBanners()
-    // Contract guard: 8.1 always serves revisionCount, but the type admits null/absent. A silent
-    // early-return would leave an enabled Save that does nothing and mask the contract regression —
-    // surface it instead (client-owned generic fallback, AD-8).
-    if (editRevision === null) {
-      setActionError(
-        'This record cannot be saved because it is missing its revision token. Reload the page and try again.',
-      )
-      return
-    }
-    const errors = validateRoadRecord(editForm)
-    if (Object.keys(errors).length > 0) {
-      setEditErrors(errors)
-      return
-    }
-    setEditErrors({})
+    // A successful delete leaves this row's rowForms/rowErrors entry behind, orphaned -- deliberately
+    // not cleaned up here. Both the render loop and handleSave iterate `data.roadRecords`, so an entry
+    // with no matching row is never read or sent, and resetTransient bounds its lifetime to the
+    // current mill/year session (it clears on the next context change regardless).
     runMutation(
+      // The recordId travels in the URL — never the 1-based ordinal shown in the accordion title,
+      // which is display-only and does not identify the row server-side.
       apiService
         .getAxiosInstance()
-        .put<Schedule6Response>(
-          `${RECORDS_PATH}/${String(editingId)}${query}`,
-          buildBody(editForm, editRevision),
-        ),
-      () => cancelEdit(),
-      'Schedule could not be saved.',
+        .delete<Schedule6Response>(`${RECORDS_PATH}/${String(recordId)}${query}`),
+      () => undefined,
+      'Record could not be deleted.',
     )
   }
 
-  const handleSaveComments = () => {
+  // Replaces handleSaveEdit + handleSaveComments: legacy's page-wide Save posted every record plus
+  // the general comment in one transaction (schedule6.xhtml:222-229/518-526, Schedule6MB.save), which
+  // Story 8.2 decomposed into per-record PUTs -- Task 5 restores the single endpoint, so this restores
+  // the single handler.
+  const handleSave = () => {
     if (!data || saving) {
       return
     }
     clearBanners()
-    const error = validateGeneralComments(generalComments)
-    if (error) {
-      setCommentsError(error)
+    const commentError = validateGeneralComments(generalComments)
+    const errors: Record<number, RoadRecordErrors> = {}
+    for (const row of data.roadRecords) {
+      const rowError = validateRoadRecord(getRowForm(row))
+      if (Object.keys(rowError).length > 0) {
+        errors[row.recordId] = rowError
+      }
+    }
+    setRowErrors(errors)
+    setCommentsError(commentError)
+    if (commentError || Object.keys(errors).length > 0) {
       return
     }
-    setCommentsError(undefined)
-    const body: GeneralCommentsRequest = {
-      // Blank clears the comment (BR-09 third branch).
+    // Hazard 1: 8.1 always serves revisionCount, but the type admits null/absent. Sending a coerced 0
+    // would silently bypass the stale-edit check for exactly this row -- a missing token must surface
+    // as a client-owned error and the WHOLE save must stop (one transaction; partial send is worse
+    // than no send).
+    // Built in the SAME pass that checks the token (rather than a separate .map that would need a
+    // cast at the call site) -- a cast that depends on a guard six lines away having already run rots
+    // quietly once the two stop being read together.
+    // Mutable while it is being built, then assigned to the request's `readonly records` below --
+    // a mutable array is assignable to a readonly one, not the reverse. Typing this as
+    // `Schedule6SaveRequest['records']` made `.push` a TS2339 (readonly arrays expose no mutators);
+    // nothing in the pipeline type-checks -- `build` is bare `vite build` and Vitest runs through
+    // esbuild, both of which strip types without checking them -- so it stayed invisible until a
+    // reviewer ran `tsc` (code review 2026-08-24).
+    const entries: RoadRecordEntry[] = []
+    for (const row of data.roadRecords) {
+      if (row.revisionCount === null || row.revisionCount === undefined) {
+        setActionError(ERR_MISSING_REVISION)
+        return
+      }
+      entries.push(buildSaveEntry(getRowForm(row), row.recordId, row.revisionCount))
+    }
+    const body: Schedule6SaveRequest = {
       generalComments: generalComments.trim() === '' ? null : generalComments,
+      // EVERY served row travels, each with the revision token from the document it was seeded
+      // from. An omitted row is a 400 -- the server refuses to guess what the user meant to leave
+      // alone.
+      records: entries,
     }
     runMutation(
-      apiService
-        .getAxiosInstance()
-        .put<Schedule6Response>(`${GENERAL_COMMENTS_PATH}${query}`, body),
-      () => undefined,
-      'Comments could not be saved.',
+      apiService.getAxiosInstance().put<Schedule6Response>(`${SCHEDULE6_PATH}${query}`, body),
+      (doc) => {
+        // Re-seed every row form from the echo -- NOT for the revision token (RoadRecordFormValues
+        // carries no such field; the token always comes straight off `data.roadRecords`, fresh on
+        // every applyDocument). This adopts the server's canonical/normalised values (e.g. a trimmed
+        // or otherwise server-corrected entry) over whatever draft the user was looking at, so the
+        // screen matches what was actually stored.
+        setRowForms(Object.fromEntries(doc.roadRecords.map((row) => [row.recordId, seedForm(row)])))
+        // The rate baselines follow the same re-seed: clearing the map hands every row back to
+        // getRowRate's document fallback, which now reads the echoed values (#291).
+        setRowRates({})
+      },
+      'Schedule could not be saved.',
     )
   }
 
@@ -572,9 +742,16 @@ const Schedule6: FC = () => {
     // In-flight lock: rapid clicks must not issue concurrent POSTs, and a slow check result must not
     // interleave with a mutation — `saving` locks both ways. Read-only; mutates nothing.
     setSaving(true)
+    // Posts the ON-SCREEN values, not the stored ones (Task 6): legacy's Check Status was an
+    // ajax="false" full postback (schedule6.xhtml:226-229) that applied entered values to the model
+    // BEFORE evaluating, so the verdict always reflected the screen -- never gated on dirtiness.
+    const body: Schedule6CheckRequest = {
+      generalComments: generalComments.trim() === '' ? null : generalComments,
+      records: data.roadRecords.map((row) => buildCheckEntry(getRowForm(row))),
+    }
     apiService
       .getAxiosInstance()
-      .post<Schedule6CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`)
+      .post<Schedule6CheckStatusResponse>(`${CHECK_STATUS_PATH}${query}`, body)
       .then((response) => {
         if (contextStillCurrent()) {
           setCheckResult(response.data)
@@ -628,38 +805,30 @@ const Schedule6: FC = () => {
     return null
   }
 
-  // Server-authoritative (AD-9) — never derived from trackStatus or the role.
+  // Server-authoritative (AD-9) — never derived from trackStatus or the role. No `editing` term any
+  // more: every row is always live, so there is no separate "an editor is open" state to fold in.
   const editable = data.editable
-  const editing = editingId !== null
-  const entryLocked = !editable || saving || editing
-  // Legacy's Check Status was an ajax="false" full postback (schedule6.xhtml:226-229): JSF applied
-  // the on-screen values to the model BEFORE checkStatus() evaluated it, so the verdict always
-  // reflected the screen. The modern check reads only the DB, so it is disabled while unsaved
-  // entries are on screen (open row editor, or Add panel with entered values) — a verdict must
-  // never contradict visible unsaved input.
-  const addDirty = showAdd && Object.values(addForm).some((value) => value.trim() !== '')
+  // Shared by every row control AND Delete (deliberately the same gate now, not the historical
+  // per-row-editor distinction): legacy gated Delete on disableReportEdits() only
+  // (schedule6.xhtml:436-437), same as every other row input.
+  const entryLocked = !editable || saving
+  const deleteDisabled = entryLocked
 
   // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
   // (saveButton0/checkStatusButton0, schedule6.xhtml:222-229) and the same pair again below the
   // General Comment (saveButton1/checkStatusButton1, :518-526) — the same mirrored shape as
   // Schedules 1 and 3. `Add` rides the top bar only: it toggles the entry panel that sits directly
   // beneath it, and legacy's bottom bar carried no add control.
-  //
-  // Save is the General Comment PUT (deviation C): 8.2 decomposed legacy's page-wide save() into
-  // three endpoints, so the road records save themselves via Add Report and the per-row Save, and
-  // this is the only page-level write left. Placement changed here; nothing about what it sends did.
   const actionBar = (includeAdd: boolean) => (
     <Column sm={4} md={8} lg={16} className="schedule-6__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSaveComments}>
+      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
         Save
       </Button>
       {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
-          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. */}
-      <Button
-        kind="tertiary"
-        disabled={!editable || saving || editing || addDirty}
-        onClick={handleCheckStatus}
-      >
+          disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. Gated on THAT only: legacy
+          never disabled Check Status while unsaved input sat on screen (schedule6.xhtml:226-229), and
+          the modern body now posts the on-screen values itself instead of needing the DB to agree. */}
+      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
         Check Status
       </Button>
       {includeAdd && (
@@ -734,11 +903,16 @@ const Schedule6: FC = () => {
             <AddPanel
               form={addForm}
               errors={addErrors}
+              codeLists={data.codeLists}
               disabled={entryLocked}
               onAreaTypeChange={(value) => {
                 setAddForm((prev) => applyAreaType(prev, value))
               }}
               onFieldChange={setAddField}
+              rateInputs={addRate}
+              onRateCommit={() => {
+                commitRate(addForm, setAddRate)
+              }}
               onSubmit={handleAdd}
             />
           </Column>
@@ -758,28 +932,28 @@ const Schedule6: FC = () => {
                   // lines key on — never recordId, which belongs only in the PUT URL and the key.
                   title={`Road Maintenance report Id: ${String(index + 1)}`}
                 >
-                  {editingId === row.recordId ? (
-                    <RecordEditor
-                      row={row}
-                      form={editForm}
-                      errors={editErrors}
-                      saving={saving}
-                      onAreaTypeChange={(value) => {
-                        setEditForm((prev) => applyAreaType(prev, value))
-                      }}
-                      onFieldChange={setEditField}
-                      onSave={handleSaveEdit}
-                      onCancel={cancelEdit}
-                    />
-                  ) : (
-                    <RecordDisplay
-                      row={row}
-                      editDisabled={entryLocked}
-                      onEdit={() => {
-                        startEdit(row)
-                      }}
-                    />
-                  )}
+                  <RoadRecordRow
+                    row={row}
+                    ordinal={index + 1}
+                    form={getRowForm(row)}
+                    errors={rowErrors[row.recordId] ?? {}}
+                    codeLists={data.codeLists}
+                    disabled={entryLocked}
+                    deleteDisabled={deleteDisabled}
+                    rateInputs={getRowRate(row)}
+                    onAreaTypeChange={(value) => {
+                      updateRowForm(row, (prev) => applyAreaType(prev, value))
+                    }}
+                    onFieldChange={(key, value) => {
+                      updateRowForm(row, (prev) => ({ ...prev, [key]: value }))
+                    }}
+                    onRateCommit={() => {
+                      commitRowRate(row)
+                    }}
+                    onDelete={() => {
+                      setPendingDeleteId(row.recordId)
+                    }}
+                  />
                 </AccordionItem>
               ))}
             </Accordion>
@@ -824,6 +998,26 @@ const Schedule6: FC = () => {
             and carries Save + Check Status only. */}
         {actionBar(false)}
       </Grid>
+      {/* One dialog for the whole page, keyed on pendingDeleteId — legacy also declared a single
+          global confirmDialog (schedule6.xhtml:444-450), not one per row. Conditionally MOUNTED
+          (not just `open`-toggled): Carbon's Modal always renders its own icon "Close" button in
+          the DOM regardless of `open`, which collides with the page's own Add/Close toggle button
+          of the same accessible name. */}
+      {pendingDeleteId !== null && (
+        <Modal
+          open
+          danger
+          modalHeading={CONFIRM_DELETE_HEADING}
+          primaryButtonText="Yes"
+          secondaryButtonText="No"
+          onRequestSubmit={handleConfirmDelete}
+          onRequestClose={() => {
+            setPendingDeleteId(null)
+          }}
+        >
+          <p>{CONFIRM_DELETE_BODY}</p>
+        </Modal>
+      )}
     </div>
   )
 }

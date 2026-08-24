@@ -7,6 +7,8 @@ import type {
 } from '@/interfaces/Schedule5SubPage'
 import type { SubPageErrors } from './validation'
 import { useCallback, useEffect, useState } from 'react'
+import { deriveSubPageTotals, rowCostPerVolume } from './derived'
+import { isUnusableStrictEntry } from '@/utils/derivedMath'
 import {
   Button,
   Column,
@@ -107,7 +109,7 @@ export interface Schedule5SubPageProps {
  * One Schedule 5 expense sub-page — the itemized Other Camp (item 62) or Other Access (item 68)
  * rows for a single camp (S04, S07, S10, S21, S22, S23).
  *
- * <p>Nothing is computed here. The footer totals, every $/m³ and every row volume arrive derived
+ * <p>The footer and the row rates are mirrored here while editable (#291); everything else is served. The footer totals, every $/m³ and every row volume arrive derived
  * from the server (AD-5); this file contains no `reduce` over costs and no division.
  */
 const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) => {
@@ -124,6 +126,9 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
   const [addForm, setAddForm] = useState<SubPageRowForm>(emptyAddForm)
   const [addErrors, setAddErrors] = useState<SubPageErrors>({})
   const [rows, setRows] = useState<readonly SubPageRowForm[]>([])
+  // The blur-committed copy the derived mirror reads. Legacy refreshed these figures on a row cost's
+  // own `change` handler, so they settle when focus leaves rather than per keystroke (defect #291).
+  const [committedRows, setCommittedRows] = useState<readonly SubPageRowForm[]>([])
   const [rowErrors, setRowErrors] = useState<SubPageErrors>({})
 
   const [confirmDeleteRow, setConfirmDeleteRow] = useState<SubPageRowForm | null>(null)
@@ -141,6 +146,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
   const applyDocument = useCallback((payload: SubPageDocument) => {
     setDoc(payload)
     setRows(payload.rows.map(seedRow))
+    setCommittedRows(payload.rows.map(seedRow))
     setRowErrors({})
     setAddForm(emptyAddForm())
     setAddErrors({})
@@ -311,12 +317,15 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
       'Unable to delete the expense.',
       (payload) => {
         applyDocument(payload)
-        setRows(
-          payload.rows.map(seedRow).map((seeded) => {
-            const draft = drafts.get(seeded.rowId)
-            return draft ? { ...seeded, description: draft.description, cost: draft.cost } : seeded
-          }),
-        )
+        // Merge the surviving drafts into BOTH lists. Applying them to `rows` alone left the edited
+        // cost in the input while the footer and every rate reverted to served values, until the next
+        // blur (code review 2026-08-21, proven by probe).
+        const merged = payload.rows.map(seedRow).map((seeded) => {
+          const draft = drafts.get(seeded.rowId)
+          return draft ? { ...seeded, description: draft.description, cost: draft.cost } : seeded
+        })
+        setRows(merged)
+        setCommittedRows(merged)
       },
     )
   }
@@ -440,6 +449,38 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
     </div>
   )
 
+  // The footer triple: mirrored from the committed row costs while editable, the served figures
+  // otherwise (#291 AC7). The page-specific arithmetic lives in `deriveSubPageTotals`.
+  // ONE binding for the stamped volume. Three spellings of it were in this table — the volume cell,
+  // the row rate and the footer each resolved it differently — where the service derives every one of
+  // them from a single `stampedVolume` (code review 2026-08-21).
+  const stampedVolume = doc.associatedCampVolume ?? null
+
+  /**
+   * The committed snapshot for one row, matched by `rowId` rather than by array index (code review
+   * 2026-08-21). Index pairing against an `rowId`-keyed list silently mispairs the moment the two
+   * arrays differ in length or order, and the old `?? row` fallback substituted the LIVE row, which
+   * reintroduced per-keystroke churn for exactly that row.
+   */
+  const committedRowFor = (row: SubPageRowForm): SubPageRowForm =>
+    committedRows.find((candidate) => candidate.rowId === row.rowId) ?? { ...row, cost: '' }
+
+  /** Advance the baseline only from entries the Save could carry (ruled 2026-08-21). */
+  const commitRows = () => {
+    if (rows.some((row) => isUnusableStrictEntry(row.cost))) {
+      return
+    }
+    setCommittedRows(rows)
+  }
+
+  const footer = editable
+    ? deriveSubPageTotals(def.kind, committedRows, stampedVolume)
+    : {
+        volume: doc.totals?.volume ?? null,
+        cost: doc.totals?.cost ?? null,
+        costPerVolume: doc.totals?.costPerVolume ?? null,
+      }
+
   const listTable = (
     <TableContainer title={def.listHeader}>
       <Table aria-label={def.listHeader}>
@@ -500,10 +541,17 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                     onChange={(event) => {
                       updateRow(index, 'cost', event.target.value)
                     }}
+                    onBlur={() => {
+                      commitRows()
+                    }}
                   />
                 </TableCell>
                 <TableCell className="schedule-5-sub-page__num">
-                  {fmtCostPerVolume(served?.costPerVolume)}
+                  {fmtCostPerVolume(
+                    editable
+                      ? rowCostPerVolume(committedRowFor(row), stampedVolume)
+                      : served?.costPerVolume,
+                  )}
                 </TableCell>
                 <TableCell>
                   <Button
@@ -520,17 +568,17 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
               </TableRow>
             )
           })}
-          {/* The `Totals:` footer (:94 / :90). Server-derived — and note the two pages do NOT agree
-              on the volume: CAMP sums the row volumes, ACCESS reports the single camp volume
-              (deviation (C)). Nothing is summed here. */}
+          {/* The `Totals:` footer (:94 / :90). Mirrored from the committed row costs while editable
+              (defect #291) and rendered from the document otherwise. The two pages do NOT agree on
+              the volume: CAMP sums the row volumes, ACCESS reports the single camp volume
+              (deviation (C)) — `deriveSubPageTotals` keeps that difference, which is real, while
+              filling both derived cells on both pages, which legacy did inconsistently. */}
           <TableRow className="schedule-5-sub-page__totals">
             <TableCell>Totals:</TableCell>
+            <TableCell className="schedule-5-sub-page__num">{fmtVolume(footer.volume)}</TableCell>
+            <TableCell className="schedule-5-sub-page__num">{fmtCost(footer.cost)}</TableCell>
             <TableCell className="schedule-5-sub-page__num">
-              {fmtVolume(doc.totals?.volume)}
-            </TableCell>
-            <TableCell className="schedule-5-sub-page__num">{fmtCost(doc.totals?.cost)}</TableCell>
-            <TableCell className="schedule-5-sub-page__num">
-              {fmtCostPerVolume(doc.totals?.costPerVolume)}
+              {fmtCostPerVolume(footer.costPerVolume)}
             </TableCell>
             <TableCell />
           </TableRow>

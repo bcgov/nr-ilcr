@@ -96,6 +96,14 @@
   grid-column: 1 / -1;
 }
 
+// The TSA/Supply Block combo boxes need more than one 10rem track: their options are code
+// DESCRIPTIONS, not the bare codes (corrections 2/3), and a truncated description ("Arrowsmith
+// TSA" clipped to "Arrowsm...") defeats the whole point of showing one. TFL's plain TextInput stays
+// at the default width -- it only ever holds a 2-character code.
+.schedule-6__field--wide {
+  grid-column: span 2;
+}
+
 // Legacy laid the totals out as a 4-column grid — `"" | Volume m³ | Cost $ | $ / m³` above
 // `Totals: | 1,000 | 50,000 | 50.00` (schedule6.xhtml:466-482) — so the three figures run ACROSS,
 // labels above values, with `Totals:` on the values' line. `flex-end` puts the label on that line.

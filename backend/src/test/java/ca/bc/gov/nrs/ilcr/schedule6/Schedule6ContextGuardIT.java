@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
 import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -92,6 +94,23 @@ class Schedule6ContextGuardIT extends AbstractOracleIT {
   void blankYear_returns400_verbatim() throws Exception {
     mockMvc
         .perform(get(ENDPOINT).param("millId", "514").param("year", ""))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is(ERR_001)));
+  }
+
+  @Test
+  @DisplayName(
+      "the whole-document PUT (Task 5) reuses the SAME context guard: missing millId -> 400 "
+          + "verbatim ERR-001")
+  void saveDocument_missingMillId_returns400_verbatim() throws Exception {
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(csrf())
+                .param("year", SEEDED_YEAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"generalComments\":null,\"records\":[]}"))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
         .andExpect(jsonPath("$.detail", is(ERR_001)));

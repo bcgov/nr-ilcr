@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
@@ -48,9 +47,6 @@ import java.math.BigDecimal;
  * {@code cost} is whole dollars &plusmn;99,999,999 (FLD-004). Both optional at save — a missing
  * cost is Check Status's finding (S09), not a save rejection.
  *
- * <p>{@code revisionCount} is the RECORD's own optimistic-lock token (AR11 per-record keying, 8.1
- * deviation (b)) — required only on UPDATE (the {@link OnUpdate} group), ignored on create.
- *
  * @param areaType a TSA code (&le;2) or the literal {@code "TFL"} (required — FLD-001)
  * @param tflNumber the TFL number (required-and-validated iff {@code areaType == "TFL"}, BR-03;
  *     otherwise cleared server-side)
@@ -60,7 +56,6 @@ import java.math.BigDecimal;
  * @param cost the whole-dollar cost (optional at save, &plusmn;99,999,999; required by Check
  *     Status)
  * @param comments the per-record comment (optional, &le; 400 — the detail column's width)
- * @param revisionCount the optimistic-lock token echoed from the served record (required on UPDATE)
  */
 public record RoadRecordRequest(
     @NotBlank(message = "{tsaOrTflRequiredErrorMsg}") @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String areaType,
@@ -68,5 +63,4 @@ public record RoadRecordRequest(
     @Size(max = 3, message = "{invalidCodeValueErrorMsg}") String supplyBlock,
     @DecimalMin(value = "0", message = "{volumeValidatorErrorMsg}") @DecimalMax(value = "9999999", message = "{volumeValidatorErrorMsg}") @Digits(integer = 8, fraction = 2, message = "{volumeValidatorErrorMsg}") BigDecimal volume,
     @Min(value = -99999999, message = "{costValidatorErrorMsg}") @Max(value = 99999999, message = "{costValidatorErrorMsg}") Integer cost,
-    @Size(max = 400, message = "{roadCommentsMaxLengthErrorMsg}") String comments,
-    @NotNull(groups = OnUpdate.class, message = "{revisionCountRequiredErrorMsg}") Integer revisionCount) {}
+    @Size(max = 400, message = "{roadCommentsMaxLengthErrorMsg}") String comments) {}

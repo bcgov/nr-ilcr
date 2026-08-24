@@ -1,6 +1,12 @@
 // Mirrors the backend Schedule4Response DTO (Story 4.1/4.3 read + 4.4 check-status). Jackson omits
 // nulls (non_null), so absent members simply won't be in the JSON. `perUnit`, `kind`, `editable`,
-// per-category `distance`, and every derived value are computed server-side — never recomputed here.
+// per-category `distance`, and every derived value are computed server-side and are read-only here —
+// never sent on a write, and the server is the sole authority for every stored figure.
+//
+// `perUnit` IS mirrored for display while a location is being edited or copied, so the $/m³ column
+// tracks entry before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That
+// mirror lives in `components/schedule4/derived.ts` and nowhere else; View mode renders these figures
+// untouched, and the Save echo supersedes the mirror.
 
 export interface MessageInfo {
   readonly key: string

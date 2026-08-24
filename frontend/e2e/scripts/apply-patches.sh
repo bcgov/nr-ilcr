@@ -75,9 +75,13 @@ for patch in "$PATCHES_DIR"/*/*.sql; do
   # line is never echoed into the log (belt-and-braces against a patch that flips `SET ECHO ON`).
   # WHENEVER SQLERROR EXIT (armed before CONNECT) aborts on a failed connect or any SQL error; pipefail
   # + set -e then stop the run instead of silently continuing.
+  # MSYS2_ARG_CONV_EXCL='*': on Git Bash (a documented way to run this — see e2e/README.md) MSYS
+  # rewrites any argument that looks like a POSIX path, so a bare `/nolog` reaches sqlplus as
+  # `C:/Program Files/Git/nolog` and it prints its usage banner instead of connecting. Excluding
+  # argument conversion for this one call keeps the same command working on Git Bash, WSL and Linux.
   { printf 'SET ECHO OFF\nWHENEVER SQLERROR EXIT SQL.SQLCODE\nCONNECT %s\n' "$ORACLE_DSN"; \
     cat "$patch"; printf '\nEXIT\n'; } \
-    | "$SQLPLUS" -S /nolog | sed 's/^/    /'
+    | MSYS2_ARG_CONV_EXCL='*' "$SQLPLUS" -S /nolog | sed 's/^/    /'
 done
 
 if [ "$found" -eq 0 ]; then

@@ -6,11 +6,11 @@ import java.util.List;
 
 /**
  * One road record's Check Status result (S09–S11, S20, S21). The message text keys on {@code
- * rowCounter} — the 1-based ordinal in {@code ROAD_MAINTENANCE_REPORT_ID} order, placeholders
- * excluded (legacy {@code Schedule6MB} composes from {@code rowCounter}, assigned by DB read order;
- * the Gherkin pins {@code "Road : 1 - …"}) — while {@code recordId} travels for UI correlation. The
- * ordinal equals the record's 1-based index in the GET document's {@code roadRecords[]} (same
- * ordering, same placeholder exclusion).
+ * rowCounter} — the 1-based ordinal in payload order (legacy {@code Schedule6MB} composes from
+ * {@code rowCounter}, assigned by DB read order in the pre-Task-6 stored-rows evaluation; the
+ * Gherkin pins {@code "Road : 1 - …"}). {@code recordId} carries that same 1-based payload ordinal,
+ * not a database id — a payload row addresses no stored record, so there is no id to echo; the
+ * frontend only ever uses it as a React list key, never to correlate a result back to a stored row.
  *
  * <p>{@code metMessage} ({@code roadRequirementsMetMsg}, "All requirements for {rowCounter} have
  * been met.") is present only when this record is met AND the schedule outcome is ISSUES — the
@@ -19,7 +19,8 @@ import java.util.List;
  * TFL/Supply Block, cost); the service emits bundle keys, the controller resolves the composed
  * verbatim text (AD-8).
  *
- * @param recordId the road record's DB id ({@code ROAD_MAINTENANCE_REPORT_ID}) — UI correlation
+ * @param recordId the 1-based payload ordinal (no stored id exists for an on-screen row) — a React
+ *     list key only, never a correlation back to a database record
  * @param rowCounter the 1-based ordinal used in the message text (THE identifier the user sees)
  * @param met whether the record meets its requirements
  * @param metMessage the per-record met banner — only when met and the schedule outcome is ISSUES

@@ -178,9 +178,10 @@ Every scenario carries two kinds of tag:
   never masked with `@skip`, xfail, or a weakened assertion. A failing test does not stop the others
   (Playwright isolates them). For a clean "fresh failures only" pass, use `npm run test:gate` (above).
 
-- **Domain + accessibility** — `@<domain>` (`@sch1`, `@sch11`, `@sec`) scopes a run to one subject area, and
-  **every accessibility scenario is `@a11y`**, in every domain. (It is a tag, not the file name: those
-  scenarios live in each UC's `accessibility.feature`.)
+- **Domain + accessibility** — `@<domain>` scopes a run to one subject area; the tag is the folder name under
+  `features/` (so `features/sch4/…` carries `@sch4`), applied at feature level. **Every accessibility scenario
+  is `@a11y`**, in every domain. (It is a tag, not the file name: those scenarios live in each UC's
+  `accessibility.feature`.)
 
 Filter with Playwright's `--grep` (args after `--` pass through; `pretest` still regenerates first):
 

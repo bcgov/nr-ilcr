@@ -39,6 +39,13 @@ export const KNOWN_A11Y_RULES: readonly string[] = ['aria-valid-attr-value'];
 
 export interface A11yOptions {
   /**
+   * Skip the pointer-parking below and scan with the pointer EXACTLY where the scenario left it.
+   *
+   * Only for a scan that is deliberately testing a pointer state (a hovered table row). Every other
+   * caller wants the resting state, which is reproducible.
+   */
+  keepPointer?: boolean;
+  /**
    * True when the caller's scenario is a documented `@discovered-bug` red (see the UC's defects.md).
    * Only violations whose rule id is in `KNOWN_A11Y_RULES` are then logged quietly; a violation outside
    * that list is treated as a fresh finding and printed in full regardless.
@@ -51,6 +58,22 @@ export async function assertNoA11yViolations(
   label: string,
   opts: A11yOptions = {},
 ): Promise<void> {
+  // PARK THE POINTER FIRST — determinism, not cosmetics.
+  //
+  // axe's `color-contrast` rule measures the COMPOSITED background, so a row the mouse happens to be
+  // Resting on is measured in its :hover state. Playwright leaves the pointer wherever the last click
+  // left it, so without this the scan result depends on which control the scenario clicked last — the
+  // same page could pass or fail run to run, and across domains (Carbon's table hover layer #e0e0e0
+  // under a `ghost`/`danger--ghost` label measures 3.78:1, below 4.5:1). Found while authoring the
+  // Schedule 4 sweeps 2026-08-17: the sub-page scan failed only because the pointer had come to rest
+  // over a row after a modal closed.
+  //
+  // Scanning the RESTING state is what these sweeps are for, and it is reproducible. A hover-state rule
+  // is worth testing too, but it must hover DELIBERATELY — see the Schedule 4 accessibility feature's
+  // explicit row-hover scenario.
+  if (!opts.keepPointer) {
+    await page.mouse.move(0, 300);
+  }
   const results = await new AxeBuilder({ page }).withTags(WCAG_2_1_AA_TAGS).analyze();
   const { violations } = results;
   // Split by rule id, not by the caller's tag: an expected red must never hide an unexpected one.
