@@ -68,7 +68,15 @@ describe('PrintSchedules', () => {
   it('"Select all schedules" checks only the renderable schedules', async () => {
     render(<PrintSchedules />)
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select all schedules' }))
-    for (const label of ['Schedule 1', 'Schedule 2', 'Schedule 3', 'Schedule 5', 'Schedule 7B', 'Schedule 9', 'Schedule 11']) {
+    for (const label of [
+      'Schedule 1',
+      'Schedule 2',
+      'Schedule 3',
+      'Schedule 5',
+      'Schedule 7B',
+      'Schedule 9',
+      'Schedule 11',
+    ]) {
       expect(screen.getByRole('checkbox', { name: label })).toBeChecked()
     }
     expect(screen.getByRole('checkbox', { name: 'Schedule 8 (coming soon)' })).not.toBeChecked()
