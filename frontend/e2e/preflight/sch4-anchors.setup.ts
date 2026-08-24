@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+
+// This package is `"type": "module"`, so the CommonJS directory global is not defined here.
+// Referencing it threw a ReferenceError in the two static checks below, and because the `chromium`
+// project declares `dependencies: ['setup']`, a failing setup test SKIPS every dependent scenario —
+// so this one-file bug took 39 scenarios out of the run on any branch, not just Schedule 4's.
+// Same ESM-safe idiom already used by `sch11-anchors.setup.ts`.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 import {
   ANCHORS,
   GUARD_ANCHORS,
@@ -203,7 +211,7 @@ function getFeatureFiles(dir: string): string[] {
 }
 
 test('preflight: Schedule 4 mutating anchors are used in at most one feature file', async () => {
-  const dir = path.join(__dirname, '../features/sch4');
+  const dir = path.join(HERE, '../features/sch4');
   const files = getFeatureFiles(dir);
   const anchorUsage = new Map<string, string[]>();
 
@@ -240,7 +248,7 @@ test('preflight: Schedule 4 mutating anchors are used in at most one feature fil
 });
 
 test('preflight: Cross-domain anchors are globally distinct', async () => {
-  const fixturesDir = path.join(__dirname, '../fixtures');
+  const fixturesDir = path.join(HERE, '../fixtures');
   const fixtureFiles = fs.readdirSync(fixturesDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name !== 'common')
     .map((e) => path.join(fixturesDir, e.name, `${e.name === 'sec' ? 'working-context' : e.name === 'sch7a' ? 'schedule7a' : e.name === 'sch7b' ? 'schedule7b' : e.name === 'sch9' ? 'schedule9' : e.name === 'sch6' ? 'schedule6' : e.name === 'sch5' ? 'schedule5' : e.name === 'sch10' ? 'schedule10' : e.name === 'sch8' ? 'schedule8' : e.name}-test-data.ts`))
