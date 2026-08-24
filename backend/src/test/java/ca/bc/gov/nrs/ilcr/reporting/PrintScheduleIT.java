@@ -28,11 +28,15 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
- * combined-PDF section order (the orchestrator iterates {@link ScheduleKey#values()} with no
- * separate ordering table), so this pins the FIXED legacy sequence: Schedule 1 (Story 20.5) is
- * declared FIRST, followed by Schedule 2 (Story 20.6), Schedule 3 (Story 20.7), and Schedule 10
- * (Story 20.4) sits between Schedule 9 and Schedule 11. A combined print always emits each in that
- * fixed position relative to the other selected sections. No Spring context or database.
+ * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
+ * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
+ * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 11 by
+ * V20260816). The PDF text is asserted with pdfbox to prove each selected section's heading and a
+ * seeded value rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the
+ * rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the
+ * deferred mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409
+ * context guards are pinned here. Security is OFF (isolated from authz — {@link
+ * PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -516,6 +520,11 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Crown Timber:"); // timber block
     assertThat(text).contains("Annual Rents (Forest Act, S111)"); // prepended Unacceptable row
 
+    // Layout guard: the ledger must render on PAGE 1, not be pushed to a blank page 2 by an
+    // over-tall detail band (the BR-08 bookmark anchor sits in the title band on page 1). "Total
+    // Cost:" is the final total line, so its presence on page 1 proves the whole band fit.
+    assertThat(pageText(pdf, 1)).contains("Total Cost:");
+
     assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_3.bookmarkTitle());
   }
 
@@ -745,6 +754,22 @@ class PrintScheduleIT extends AbstractOracleIT {
   private static String extractText(byte[] pdf) throws Exception {
     try (PDDocument document = Loader.loadPDF(pdf)) {
       return new PDFTextStripper().getText(document);
+    }
+  }
+
+  /**
+   * The text of a single page (1-based). Used to pin that a section's content lands on its FIRST
+   * page — the BR-08 bookmark anchor lives in the title band, so an over-tall detail band that
+   * pushes the ledger to page 2 would leave the bookmark pointing at a blank page. {@link
+   * #extractText} can't catch that (it flattens every page), so this scopes the assertion to page
+   * 1.
+   */
+  private static String pageText(byte[] pdf, int oneBasedPage) throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDFTextStripper stripper = new PDFTextStripper();
+      stripper.setStartPage(oneBasedPage);
+      stripper.setEndPage(oneBasedPage);
+      return stripper.getText(document);
     }
   }
 
