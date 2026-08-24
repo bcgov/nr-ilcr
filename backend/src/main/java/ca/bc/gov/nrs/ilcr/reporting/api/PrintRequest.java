@@ -4,9 +4,9 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * The Print Schedules selection (Epic 20.2). Carries the twelve schedule flags plus the "all"
  * shortcut and the three print options, mirroring the legacy {@code PrintSchedulesMB} screen so the
  * frontend can build the full page while the backend renders only the in-scope sections (5, 6, 7A,
- * 7B, 9, 11). A selected-but-unimplemented schedule (1/2/3/8/10) and {@code
- * printMillInformationReport} are accepted for forward-compatibility but produce no section yet
- * (skipped, logged) until their story lands.
+ * 7B, 9, 11). A selected-but-unimplemented schedule (4/8) and {@code printMillInformationReport}
+ * are accepted for forward-compatibility but produce no section yet (skipped, logged) until their
+ * story lands.
  *
  * <p>Flags are boxed {@link Boolean} (the request-record convention in this codebase) so Jackson
  * has a property-based creator; the compact constructor defaults any OMITTED flag to {@code false},
