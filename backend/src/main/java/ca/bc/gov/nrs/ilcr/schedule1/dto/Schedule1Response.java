@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule1.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.math.BigDecimal;
 import java.util.List;
 

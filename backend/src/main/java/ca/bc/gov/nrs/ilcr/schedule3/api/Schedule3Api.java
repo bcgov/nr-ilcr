@@ -1,6 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule3.api;
 
-import ca.bc.gov.nrs.ilcr.schedule3.dto.MessageResponse;
+import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;

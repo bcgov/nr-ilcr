@@ -168,7 +168,7 @@ at-rest state.
   - **Where it belongs — NOT here.** A component test on `components/schedule2` is Schedule 2 story
     territory (3.3), not this verification story (3.4); and this suite changes no files outside
     `frontend/e2e/`. Two cases, ~10 lines, beside the existing 11.
-  - **Ticket:** [bcgov/nr-ilcr#297](https://github.com/bcgov/nr-ilcr/issues/297) — *"[BUGFIX]: Schedule 2:
+  - **Ticket:** [bcgov/nr-ilcr#298](https://github.com/bcgov/nr-ilcr/issues/298) — *"[BUGFIX]: Schedule 2:
     add unit tests for the two load/delete error fallback messages."*
   - **Status:** OPEN — with the dev. `deferred` in coverage.md; flips to CLOSED when the two Vitest cases
     land.

@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.millcontext.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+
 /**
  * The resolved Home working context for a selected (mill, reporting year) pair (Story 1.2, pinned
  * wire contract AD-12 — unchanged from the Story 1.1 pin). Returned by {@code GET

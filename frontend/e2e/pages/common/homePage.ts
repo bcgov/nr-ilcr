@@ -1,5 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { openApp } from './authNav';
+import { NAVIGATION_BUDGET } from './settle';
 import { MSG_SAVED } from '../../fixtures/sch1/schedule1-test-data';
 
 /**
@@ -38,7 +39,14 @@ export class HomePage {
   async open(): Promise<void> {
     await openApp(this.page);
     // Home shows a LoadingScreen until the mills/years fetch resolves; the dropdown proves it landed.
-    await expect(this.millDropdown).toBeVisible();
+    //
+    // NAVIGATION budget (30 s), not the default 10 s `expect` timeout — for the same reason `openApp`'s
+    // shell check has one: this is FIRST-FETCH readiness, not a state assertion. The shell can paint while
+    // `/v1/mills` + `/v1/reporting-years` are still in flight, and under a parallel stress run (many workers
+    // each cold-loading the SPA through the Vite dev server) that gap exceeded 10 s once in 514 executions —
+    // failing here, before the scenario had done anything. Stabilised rather than retried away; every
+    // assertion after this one keeps the strict default, so a genuine hang still fails fast.
+    await expect(this.millDropdown).toBeVisible({ timeout: NAVIGATION_BUDGET });
     // Fail fast at the entry point if the option lists failed to load.
     await expect(this.page.getByText('Unable to load')).toHaveCount(0);
   }

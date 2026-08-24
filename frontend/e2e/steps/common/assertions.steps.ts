@@ -26,6 +26,20 @@ Then(
   },
 );
 
+Then(
+  'the {string} view has no WCAG 2.1 AA accessibility violations in its current pointer state',
+  async ({ page, $testInfo, $tags }, label) => {
+    // Same scan as above, but WITHOUT parking the pointer first — for a scenario that has deliberately
+    // hovered something and is testing that state (see pages/common/axe.ts for why every other scan parks
+    // it). Kept as its own phrase so a hover-dependent assertion can never be written by accident.
+    $testInfo.setTimeout($testInfo.timeout + 60_000);
+    await assertNoA11yViolations(page, label, {
+      known: $tags.includes('@discovered-bug'),
+      keepPointer: true,
+    });
+  },
+);
+
 Then('I should see the error {string}', async ({ page }, message) => {
   // .first(): some forms surface the same message in BOTH the error banner and the field's inline
   // text (2 matches) — asserting the message is visible somewhere is the intent, so avoid a strict-mode
