@@ -1,0 +1,449 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Schedule 1 (Average Cost of Logging) — JasperReports 7 template (AD-16, Epic 20.5). JR7 Jackson/JAXB
+  model. Bean-datasource fill from Schedule1Service's DTO (the 20.2 data-feed decision): Schedule 1 is
+  a FLAT single-page statement, so the datasource carries ONE row with every fixed cell pre-formatted
+  as a String (Schedule1SectionMapper; "-" for null). The one dynamic block is the "Other Cost List"
+  at the bottom — an in-band nested list bound to the OtherCostList sub-dataset, fed from the single
+  row's `otherCostRows` collection field.
+
+  LANDSCAPE (842x595) like the rebuilt sibling sections so the long cross-schedule labels do not clip.
+  Cross-schedule figures (143 Forest Mgmt Admin, 139 Less Silv Admin, 144 Subtotal, totals, Crown
+  Timber Volume) are already derived by Schedule1Service — rendered verbatim. p_do_print_body gates
+  the statement; p_do_print_comment gates the Comments block.
+-->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+    name="schedule1" pageWidth="842" pageHeight="595" orientation="Landscape"
+    whenNoDataType="AllSectionsNoDetail" columnWidth="802" leftMargin="20" rightMargin="20"
+    topMargin="30" bottomMargin="30">
+  <style name="bold" bold="true"/>
+  <dataset name="OtherCostList">
+    <field name="otherCostDesc" class="java.lang.String"/>
+    <field name="otherCostVol" class="java.lang.String"/>
+    <field name="otherCostCos" class="java.lang.String"/>
+    <field name="otherCostCal" class="java.lang.String"/>
+  </dataset>
+  <parameter name="millTitleBlock" class="java.lang.String"/>
+  <parameter name="year" class="java.lang.Integer"/>
+  <parameter name="p_do_print_body" class="java.lang.Boolean"/>
+  <parameter name="p_do_print_comment" class="java.lang.Boolean"/>
+  <parameter name="bookmarkTitle" class="java.lang.String"/>
+  <field name="crownTimberVolume" class="java.lang.String"/>
+  <field name="standingTreeToTruckVol" class="java.lang.String"/>
+  <field name="standingTreeToTruckCos" class="java.lang.String"/>
+  <field name="standingTreeToTruckCal" class="java.lang.String"/>
+  <field name="logTransportationVol" class="java.lang.String"/>
+  <field name="logTransportationCos" class="java.lang.String"/>
+  <field name="logTransportationCal" class="java.lang.String"/>
+  <field name="roadManagementVol" class="java.lang.String"/>
+  <field name="roadManagementCos" class="java.lang.String"/>
+  <field name="roadManagementCal" class="java.lang.String"/>
+  <field name="roadConstructionCostVol" class="java.lang.String"/>
+  <field name="roadConstructionCostCos" class="java.lang.String"/>
+  <field name="roadConstructionCostCal" class="java.lang.String"/>
+  <field name="postLoggingTreatmentVol" class="java.lang.String"/>
+  <field name="postLoggingTreatmentCos" class="java.lang.String"/>
+  <field name="postLoggingTreatmentCal" class="java.lang.String"/>
+  <field name="forestManagementVol" class="java.lang.String"/>
+  <field name="forestManagementCos" class="java.lang.String"/>
+  <field name="forestManagementCal" class="java.lang.String"/>
+  <field name="stumpageRoyaltyVol" class="java.lang.String"/>
+  <field name="stumpageRoyaltyCos" class="java.lang.String"/>
+  <field name="stumpageRoyaltyCal" class="java.lang.String"/>
+  <field name="depletionAmortizationVol" class="java.lang.String"/>
+  <field name="depletionAmortizationCos" class="java.lang.String"/>
+  <field name="depletionAmortizationCal" class="java.lang.String"/>
+  <field name="subtotalOtherCostsVol" class="java.lang.String"/>
+  <field name="subtotalOtherCostsCos" class="java.lang.String"/>
+  <field name="subtotalOtherCostsCal" class="java.lang.String"/>
+  <field name="subtotalCompanyCostsVol" class="java.lang.String"/>
+  <field name="subtotalCompanyCostsCos" class="java.lang.String"/>
+  <field name="subtotalCompanyCostsCal" class="java.lang.String"/>
+  <field name="silvActualSpentVol" class="java.lang.String"/>
+  <field name="silvActualSpentCos" class="java.lang.String"/>
+  <field name="silvActualSpentCal" class="java.lang.String"/>
+  <field name="silvAdminCostVol" class="java.lang.String"/>
+  <field name="silvAdminCostCos" class="java.lang.String"/>
+  <field name="silvAdminCostCal" class="java.lang.String"/>
+  <field name="silvAccruedSpentVol" class="java.lang.String"/>
+  <field name="silvAccruedSpentCos" class="java.lang.String"/>
+  <field name="silvAccruedSpentCal" class="java.lang.String"/>
+  <field name="silvTotalVolumeVol" class="java.lang.String"/>
+  <field name="silvTotalVolumeCos" class="java.lang.String"/>
+  <field name="silvTotalVolumeCal" class="java.lang.String"/>
+  <field name="totalVol" class="java.lang.String"/>
+  <field name="totalCos" class="java.lang.String"/>
+  <field name="totalCal" class="java.lang.String"/>
+  <field name="comments" class="java.lang.String"/>
+  <field name="otherCostRows" class="java.util.Collection"/>
+  <title height="30">
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <element kind="textField" x="0" y="15" width="802" height="15" hTextAlign="Center">
+      <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
+    </element>
+  </title>
+  <pageHeader height="34">
+    <element kind="staticText" style="bold" x="0" y="0" width="802" height="15">
+      <text><![CDATA[Schedule 1:  Average Cost of Logging]]></text>
+    </element>
+    <element kind="textField" x="0" y="16" width="802" height="15" hTextAlign="Left" blankWhenNull="true">
+      <expression><![CDATA[$P{millTitleBlock}]]></expression>
+    </element>
+  </pageHeader>
+  <detail>
+    <band height="420">
+      <!-- Column headers (body-gated). Label column 430 wide; three right-aligned value columns. -->
+      <element kind="staticText" style="bold" x="435" y="0" width="115" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Volume m³]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="555" y="0" width="115" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Cost $]]></text>
+      </element>
+      <element kind="staticText" style="bold" x="675" y="0" width="127" height="15" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[$/m³]]></text>
+      </element>
+
+      <!-- Crown Timber Volume (single Volume cell; cross-schedule). Always prints (identity line). -->
+      <element kind="staticText" x="0" y="20" width="430" height="16" hTextAlign="Left">
+        <text><![CDATA[Crown Timber Volume for all fields (Sch 3): ]]></text>
+      </element>
+      <element kind="textField" x="435" y="20" width="115" height="16" hTextAlign="Right" blankWhenNull="true">
+        <expression><![CDATA[$F{crownTimberVolume}]]></expression>
+      </element>
+
+      <!-- Fixed line items 12..18 (with 143 Forest Mgmt Admin between 16 and 17). -->
+      <element kind="staticText" x="0" y="42" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Standing Tree to Loaded Truck: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="42" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{standingTreeToTruckVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="42" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{standingTreeToTruckCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="42" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{standingTreeToTruckCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="58" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Log Transportation: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="58" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{logTransportationVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="58" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{logTransportationCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="58" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{logTransportationCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="74" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Road Management: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="74" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadManagementVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="74" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadManagementCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="74" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadManagementCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="90" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Road Construction Cost: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="90" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadConstructionCostVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="90" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadConstructionCostCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="90" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{roadConstructionCostCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="106" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Post Logging Treatment: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="106" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{postLoggingTreatmentVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="106" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{postLoggingTreatmentCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="106" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{postLoggingTreatmentCal}]]></expression>
+      </element>
+
+      <!-- 143 Forest Management Administration (Sch 3) — corrected spelling (legacy "Managmenet"). -->
+      <element kind="staticText" x="0" y="122" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Forest Management Administration (Sch 3): ]]></text>
+      </element>
+      <element kind="textField" x="435" y="122" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{forestManagementVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="122" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{forestManagementCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="122" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{forestManagementCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="138" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Stumpage and Royalty: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="138" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{stumpageRoyaltyVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="138" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{stumpageRoyaltyCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="138" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{stumpageRoyaltyCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="154" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Depletion and Amortization: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="154" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{depletionAmortizationVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="154" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{depletionAmortizationCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="154" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{depletionAmortizationCal}]]></expression>
+      </element>
+
+      <!-- Subtotal Other Costs. -->
+      <element kind="line" x="435" y="172" width="367" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <element kind="staticText" x="0" y="174" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Subtotal Other Costs: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="174" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="174" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="174" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalOtherCostsCal}]]></expression>
+      </element>
+
+      <!-- 144 Subtotal Company Logging Costs (no silv.). -->
+      <element kind="staticText" style="bold" x="0" y="190" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Subtotal Comp. Logging Costs (no silv.): ]]></text>
+      </element>
+      <element kind="textField" style="bold" x="435" y="190" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalCompanyCostsVol}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="555" y="190" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalCompanyCostsCos}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="675" y="190" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{subtotalCompanyCostsCal}]]></expression>
+      </element>
+
+      <!-- Silviculture block. -->
+      <element kind="staticText" style="bold" x="0" y="212" width="200" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Silviculture:]]></text>
+      </element>
+      <element kind="staticText" x="0" y="228" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Actual $ Spent: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="228" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvActualSpentVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="228" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvActualSpentCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="228" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvActualSpentCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="244" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Less Silviculture Admin Costs: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="244" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAdminCostVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="244" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAdminCostCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="244" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAdminCostCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="260" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Accrued less Actual $ Spent: ]]></text>
+      </element>
+      <element kind="textField" x="435" y="260" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAccruedSpentVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="260" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAccruedSpentCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="260" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvAccruedSpentCal}]]></expression>
+      </element>
+
+      <element kind="staticText" x="0" y="276" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Silviculture (As per Financial Stat.): ]]></text>
+      </element>
+      <element kind="textField" x="435" y="276" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvTotalVolumeVol}]]></expression>
+      </element>
+      <element kind="textField" x="555" y="276" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvTotalVolumeCos}]]></expression>
+      </element>
+      <element kind="textField" x="675" y="276" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{silvTotalVolumeCal}]]></expression>
+      </element>
+
+      <!-- Grand total. -->
+      <element kind="line" x="435" y="294" width="367" height="1">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="296" width="430" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Total Company Logging Costs (Including total Silviculture Cost): ]]></text>
+      </element>
+      <element kind="textField" style="bold" x="435" y="296" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalVol}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="555" y="296" width="115" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCos}]]></expression>
+      </element>
+      <element kind="textField" style="bold" x="675" y="296" width="127" height="16" hTextAlign="Right">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <expression><![CDATA[$F{totalCal}]]></expression>
+      </element>
+
+      <!-- Other Cost List — in-band nested list over the row's otherCostRows collection. -->
+      <element kind="staticText" style="bold" x="0" y="320" width="200" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <text><![CDATA[Other Cost List:]]></text>
+      </element>
+      <element kind="component" x="0" y="338" width="802" height="16">
+        <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
+        <component kind="list" printOrder="Vertical">
+          <datasetRun subDataset="OtherCostList">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRMapCollectionDataSource($F{otherCostRows})]]></dataSourceExpression>
+          </datasetRun>
+          <contents height="16">
+            <element kind="textField" x="0" y="0" width="430" height="16" blankWhenNull="true">
+              <expression><![CDATA[$F{otherCostDesc}]]></expression>
+            </element>
+            <element kind="textField" x="435" y="0" width="115" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{otherCostVol}]]></expression>
+            </element>
+            <element kind="textField" x="555" y="0" width="115" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{otherCostCos}]]></expression>
+            </element>
+            <element kind="textField" x="675" y="0" width="127" height="16" hTextAlign="Right" blankWhenNull="true">
+              <expression><![CDATA[$F{otherCostCal}]]></expression>
+            </element>
+          </contents>
+        </component>
+      </element>
+
+      <!-- Comments (comment-gated), stretch. -->
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="380" width="90" height="15">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <text><![CDATA[Comments:]]></text>
+      </element>
+      <element kind="textField" positionType="Float" x="0" y="395" width="802" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+        <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
+        <expression><![CDATA[$F{comments}]]></expression>
+      </element>
+    </band>
+  </detail>
+  <pageFooter height="15">
+    <element kind="staticText" x="700" y="0" width="32" height="15" vTextAlign="Bottom">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="734" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="756" y="0" width="21" height="15" hTextAlign="Center" vTextAlign="Bottom">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="777" y="0" width="22" height="15" hTextAlign="Center" vTextAlign="Bottom" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+  </pageFooter>
+</jasperReport>
