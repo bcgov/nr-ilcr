@@ -172,6 +172,32 @@ jobs:
           echo "::add-mask::$DB_PASS"
           echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
           echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
+          # Credential-drift self-heal (ORA-01017): the pod reads
+          # APP_USER_PASSWORD from the Secret ONCE at boot, so a Secret
+          # created/rotated after the pod started leaves the database
+          # initialized with a stale password. The data is disposable by
+          # design (flyway clean+migrate runs next), so the fix is a restart:
+          # the fresh pod re-initializes from the current Secret. The probe
+          # feeds the password on stdin so it never appears in argv.
+          probe() {
+            printf '%s\nexit\n' "$DB_PASS" \
+              | oc -n "$OC_NAMESPACE" exec -i "deploy/$NAME-tools-database" -- \
+                  sqlplus -L -S "$DB_USER@//localhost:1521/ILCR"
+          }
+          if ! probe >/dev/null 2>&1; then
+            echo "Login as $DB_USER failed — restarting the database to re-initialize from the current Secret..."
+            oc -n "$OC_NAMESPACE" rollout restart "deployment/$NAME-tools-database"
+            oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=900s
+            # First boot after a restart recreates the ILCR PDB + app user,
+            # which can finish after readiness; poll before the final attempt.
+            for i in $(seq 1 20); do
+              probe >/dev/null 2>&1 && break
+              echo "Waiting for the re-initialized database to accept logins ($i/20)..."
+              sleep 15
+            done
+            probe  # final attempt: fail the job here, with the sqlplus ORA- error visible
+          fi
+          echo "Database credentials verified."
           # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
           # otherwise surfaces as confusing scenario timeouts. Dies with the job.
           ( while true; do
