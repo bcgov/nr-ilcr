@@ -597,14 +597,82 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("only an unimplemented schedule (8) -> 404 'Schedule not found.'")
-  void onlyUnimplementedSchedule_returns404() throws Exception {
-    // Schedule 8 is accepted but has no enum constant (not rendered in 20.2), so it produces no
-    // section — leaving nothing selected in scope, which is all-empty (ERR-005), not
-    // mill-info-only.
+  @DisplayName("Schedule 8 (Story 20.8): 576/2021 renders all THREE levels + exactly one bookmark")
+  void schedule8_rendersThreeLevelsWithOneBookmark() throws Exception {
+    // Mill 576/2021 is the canonical full Tree-to-Truck fixture: ONE page → ONE sample → ONE
+    // addition + ONE deduction. Selecting Schedule 8 alone must render all three nested levels —
+    // the
+    // page descriptors (level 1), the sample body incl. the server-computed 100%-rule total and
+    // finalRate (level 2), and the additions/deductions rate rows (level 3) — with EXACTLY one
+    // top-level bookmark.
     String selection =
         """
-        {"schedule8":true,"printScheduleInformation":true}
+        {"schedule8":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "576")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 8:  Tree to Truck Costs");
+    // Level 1 — page descriptors (resolved labels).
+    assertThat(text).contains("North Div"); // division
+    assertThat(text).contains("Support Centre One"); // resolved support-centre label
+    assertThat(text).contains("Region One"); // resolved region label
+    // Level 2 — the sample body, with the server-computed roll-ups (not recomputed in the
+    // template).
+    assertThat(text).contains("100 %"); // percentTotal (the 100% rule)
+    assertThat(text).contains("28.50"); // finalRate = 25.50 + 5.00 − 2.00
+    // Level 3 — a rate row under the correct sample, in the additions list.
+    assertThat(text).contains("Add A"); // addition itemDescription
+    assertThat(text).contains("Cost Type One"); // resolved cost-type label
+
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_8.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 515/2021 select 8, no pages -> 404 'Schedule not found.'")
+  void schedule8Only_noData_returns404() throws Exception {
+    // Mill 515/2021 has no category-8 Tree-to-Truck pages; getSchedule8 returns pages:[] (never a
+    // 404 of its own), the mapper returns null → the section is skipped (BR-09). A Schedule-8-only
+    // print is then all-empty, the legacy single-schedule outcome ERR-005.
+    String selection =
+        """
+        {"schedule8":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
+  }
+
+  @Test
+  @DisplayName("only an unimplemented schedule (4) -> 404 'Schedule not found.'")
+  void onlyUnimplementedSchedule_returns404() throws Exception {
+    // Schedule 4 is accepted but has no enum constant (not rendered in Epic 20 yet), so it produces
+    // no section — leaving nothing selected in scope, which is all-empty (ERR-005), not
+    // mill-info-only. (Schedule 8 now renders — Story 20.8 — so it is no longer the unimplemented
+    // example; Schedule 4 is the last one left.)
+    String selection =
+        """
+        {"schedule4":true,"printScheduleInformation":true}
         """;
     mockMvc
         .perform(

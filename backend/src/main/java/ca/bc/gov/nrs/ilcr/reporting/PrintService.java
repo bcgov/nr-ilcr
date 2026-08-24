@@ -18,13 +18,13 @@ import org.springframework.stereotype.Service;
 /**
  * Orchestrates the combined Print Schedules PDF (Epic 20.2). Given a validated mill/year context
  * and a {@link PrintRequest}, it fills each SELECTED in-scope schedule section in the FIXED legacy
- * order (1 → 2 → 3 → 5 → 6 → 7A → 7B → 9 → 10 → 11, the {@link ScheduleKey} declaration order),
+ * order (1 → 2 → 3 → 5 → 6 → 7A → 7B → 8 → 9 → 10 → 11, the {@link ScheduleKey} declaration order),
  * SKIPS any section with no data (BR-09 skip-empty), and exports the accumulated sections to ONE
  * bookmarked PDF (BR-08) — one top-level bookmark per rendered schedule. When no selected content
  * yields any data the result is all-empty and no PDF is produced: {@link ScheduleNotFoundException}
  * (→ 404 ERR-005).
  *
- * <p>Selected-but-unimplemented schedules (4/8) and the mill-information-report option are accepted
+ * <p>The selected-but-unimplemented Schedule 4 and the mill-information-report option are accepted
  * for forward-compatibility but produce no section yet — they are skipped-with-a-log (documented
  * interim gap) until their story lands. Selection VALIDATION (ERR-002/003/004) is the controller's
  * responsibility and runs before this.
@@ -183,6 +183,7 @@ public class PrintService {
           case SCHEDULE_6 -> request.schedule6();
           case SCHEDULE_7A -> request.schedule7a();
           case SCHEDULE_7B -> request.schedule7b();
+          case SCHEDULE_8 -> request.schedule8();
           case SCHEDULE_9 -> request.schedule9();
           case SCHEDULE_10 -> request.schedule10();
           case SCHEDULE_11 -> request.schedule11();
@@ -195,10 +196,7 @@ public class PrintService {
    */
   private void logUnimplementedSelections(PrintRequest request) {
     boolean anyUnimplemented =
-        request.allSchedules()
-            || request.schedule4()
-            || request.schedule8()
-            || request.printMillInformationReport();
+        request.allSchedules() || request.schedule4() || request.printMillInformationReport();
     if (anyUnimplemented) {
       // DEBUG, not INFO: the SPA (Story 20.3) disables the deferred schedules/options, so this is
       // an
@@ -207,7 +205,7 @@ public class PrintService {
       // them.
       log.debug(
           "Print selection includes schedules/options not yet implemented in Epic 20 "
-              + "(4/8 and/or the Mill Information report); those are skipped for now");
+              + "(4 and/or the Mill Information report); those are skipped for now");
     }
   }
 }
