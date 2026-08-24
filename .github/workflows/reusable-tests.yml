@@ -160,9 +160,18 @@ jobs:
           NAME: ${{ github.event.repository.name }}
         run: |
           oc login --token="$OC_TOKEN" --server="$OC_SERVER"
-          # First boot creates the ILCR PDB + THE user; give it the same
+          # First boot creates the ILCR PDB + app user; give it the same
           # headroom the template's startupProbe allows.
           oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=600s
+          # App credentials come from the deployment's own Secret
+          # (<name>-tools-database, written by database/openshift.deploy.yml) —
+          # single source of truth, nothing hardcoded here. Only the password
+          # is masked: the username would mask an ordinary word in every log.
+          DB_USER=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_USER}' | base64 -d)
+          DB_PASS=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_PASSWORD}' | base64 -d)
+          echo "::add-mask::$DB_PASS"
+          echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
+          echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
           # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
           # otherwise surfaces as confusing scenario timeouts. Dies with the job.
           ( while true; do
@@ -181,16 +190,15 @@ jobs:
 
       - name: Reset and seed database (Flyway clean + migrate)
         working-directory: backend
-        env:
-          DB_PASS: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
-        # ILCR is the extra PDB database/openshift.deploy.yml creates; THE is
-        # its app user. Retried: right after a fresh deploy the DB can accept
-        # TCP before the pluggable database is open for logins.
+        # ILCR is the extra PDB database/openshift.deploy.yml creates;
+        # DB_USER/DB_PASS were read from its Secret in the port-forward step.
+        # Retried: right after a fresh deploy the DB can accept TCP before the
+        # pluggable database is open for logins.
         run: |
           for i in 1 2 3; do
             mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
               -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
-              -Dflyway.user=THE -Dflyway.password="$DB_PASS" && exit 0
+              -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" && exit 0
             echo "Flyway attempt $i failed; retrying in 20s..."
             sleep 20
           done
@@ -204,8 +212,8 @@ jobs:
           ILCR_SECURITY_ENABLED: "false"
           ILCR_DATASOURCE_ENABLED: "true"
           SPRING_DATASOURCE_URL: jdbc:oracle:thin:@//localhost:1525/ILCR
-          SPRING_DATASOURCE_USERNAME: THE
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
+          SPRING_DATASOURCE_USERNAME: ${{ env.DB_USER }}
+          SPRING_DATASOURCE_PASSWORD: ${{ env.DB_PASS }}
           LOG_LEVEL: INFO
         run: |
           mvn -B -ntp spring-boot:run > "$RUNNER_TEMP/backend.log" 2>&1 &
@@ -243,7 +251,7 @@ jobs:
           CI: "true"
           # user/pass@host:port/service — the python-oracledb bridge
           # (scripts/sch1_db_restore.py) and any DB-level cleanup steps.
-          ORACLE_DSN: THE/${{ secrets.TOOLS_ORACLEDB_PASSWORD }}@localhost:1525/ILCR
+          ORACLE_DSN: ${{ env.DB_USER }}/${{ env.DB_PASS }}@localhost:1525/ILCR
         run: npm run test:gate -- --workers=4
 
       - uses: actions/upload-artifact@v7
