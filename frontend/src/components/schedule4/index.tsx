@@ -486,9 +486,17 @@ const Schedule4: FC = () => {
     )
   }
 
-  const handleCheckStatus = () => {
+  // `scrollToTop` serves the bottom bar (defect #293). The verdict banners render in the
+  // `schedule-4__check` column above the top action bar, so a press from the bottom of a long page would
+  // otherwise look inert. It restores legacy's behaviour rather than adding new: legacy's Check Status was
+  // an ajax="false" full postback (schedule4.xhtml:220) that reloaded the page scrolled to the top with
+  // <p:messages> in view, and its ajax Save on the same page made the same repositioning explicit
+  // (schedule4.xhtml:200-202). Scrolling on press rather than on completion also covers the failure path,
+  // whose banner renders in the same place — `useScheduleMutations` exposes only `onSuccess`.
+  const handleCheckStatus = (scrollToTop: boolean) => {
     if (saving) return
     clearMessages()
+    if (scrollToTop) window.scrollTo(0, 0)
     checkStatus<Schedule4CheckStatusResponse>({
       fallback: 'Unable to check status.',
       onSuccess: setCheckResult,
@@ -830,6 +838,33 @@ const Schedule4: FC = () => {
     </div>
   )
 
+  // Two instances, deliberately asymmetric — the same shape Schedule 6 uses (schedule6/index.tsx:704-729).
+  // The top bar carries Add New Location plus Check Status; the bottom is Check Status ALONE, which is
+  // legacy's own bottom row (schedule4.xhtml:216-222 put Save/Close on one row and Check Status by itself
+  // on the next). Add rides the top bar only: it toggles the panel that opens directly beneath it, and a
+  // second copy at the page foot would be redundant.
+  //
+  // Legacy attached that bottom row to the New Location panel only (:171-224), so closing the panel left
+  // the page with no bottom control at all. Deviation (D): this is a page-level bar that renders in EVERY
+  // state, always last in the body — below the locations table, and below the location panel when one is
+  // open. It is deliberately NOT folded into the panel's Save / Back row: Check Status is a whole-schedule
+  // read, not a panel action.
+  //
+  // `bottom` also drives the scroll — the bottom instance repositions the page to its banners, the top
+  // instance is already beside them.
+  const actionBar = (bottom: boolean) => (
+    <Column sm={4} md={8} lg={16} className="schedule-4__actions">
+      {!bottom && (
+        <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+          Add New Location
+        </Button>
+      )}
+      <Button kind="tertiary" disabled={saving} onClick={() => handleCheckStatus(bottom)}>
+        Check Status
+      </Button>
+    </Column>
+  )
+
   return (
     <div className="app-page schedule-page">
       {header}
@@ -895,14 +930,7 @@ const Schedule4: FC = () => {
           </Column>
         )}
 
-        <Column sm={4} md={8} lg={16} className="schedule-4__actions">
-          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
-            Add New Location
-          </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
-            Check Status
-          </Button>
-        </Column>
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-4__section">
           {locationsTable}
@@ -913,6 +941,9 @@ const Schedule4: FC = () => {
             {panel}
           </Column>
         )}
+
+        {/* The page's bottom row (deviation D) — Check Status alone, always last in the body. */}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

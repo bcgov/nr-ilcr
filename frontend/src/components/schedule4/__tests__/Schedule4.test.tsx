@@ -434,7 +434,7 @@ describe('Schedule4 page', () => {
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /check status/i })[0])
 
     expect(await screen.findByText('Value Required')).toBeInTheDocument()
     expect(
@@ -845,7 +845,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /check status/i })[0])
 
     expect(
       await screen.findByText('All Schedule 4 requirements have been met.'),
@@ -861,7 +861,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(screen.getAllByRole('button', { name: /check status/i })[0])
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
   })
@@ -883,6 +883,100 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     expect(
       screen.queryByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
     ).not.toBeInTheDocument()
+  })
+
+  // ---- Defect #293: the page's own bottom Check Status. ------------------------------------------
+  // Legacy carried Check Status by itself on a row at the very bottom of the page (schedule4.xhtml:216-222).
+  // The bottom bar is Check Status ALONE — no Add New Location — and it is NOT part of the location panel's
+  // Save/Back row. Document order puts the top bar first, so the bottom instance is the LAST match.
+
+  const checkStatusButtons = () => screen.getAllByRole('button', { name: /check status/i })
+
+  test('a bottom Check Status renders below the content and runs the same check (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All Schedule 4 requirements have been met.',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    const firstRow = await screen.findByText('Harbour Dump')
+
+    const buttons = checkStatusButtons()
+    expect(buttons).toHaveLength(2)
+    // The second instance follows the locations table.
+    expect(firstRow.compareDocumentPosition(buttons[1])).toBe(
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    // Check Status alone — Add New Location rides the top bar only.
+    expect(screen.getAllByRole('button', { name: /add new location/i })).toHaveLength(1)
+
+    await userEvent.click(buttons[1])
+
+    expect(
+      await screen.findByText('All Schedule 4 requirements have been met.'),
+    ).toBeInTheDocument()
+  })
+
+  test('the bottom Check Status scrolls the page up to its banners (#293)', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({ outcome: 'MET', messages: [], locations: [] }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // Legacy parity: its ajax="false" postback reloaded the page at the top with the messages in view.
+    // (Asserting the top button does NOT scroll is not reliable here — TanStack Router calls scrollTo
+    // itself for scroll restoration, per test-setup.ts:18-20.)
+    scrollTo.mockClear()
+    await userEvent.click(checkStatusButtons()[1])
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    })
+    scrollTo.mockRestore()
+  })
+
+  test('the location panel keeps Save/Back only — the bottom bar sits below it (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    const heading = await screen.findByText('New Location')
+
+    // Still exactly two: opening a panel adds no third Check Status to its own button row.
+    const buttons = checkStatusButtons()
+    expect(buttons).toHaveLength(2)
+    // The bottom bar follows the panel rather than living inside it.
+    expect(heading.compareDocumentPosition(buttons[1])).toBe(
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  test('a read-only View context still offers the bottom Check Status (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(await screen.findByText('View Location')).toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    expect(checkStatusButtons()).toHaveLength(2)
+    expect(checkStatusButtons()[1]).toBeEnabled()
   })
 
   test('New location → sub-page link → NAV-003 save-first → opens the saved sub-page', async () => {
