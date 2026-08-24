@@ -169,15 +169,18 @@ const Schedule2: FC = () => {
         const deleteMessage = delResp?.message?.text ?? null
         // Drop the optimistic-lock token BEFORE the reload is dispatched, so "this schedule is
         // saved" becomes false the instant the record is gone (defect #292 code review, face 2).
-        // Without this the reload is the only thing that closes the Delete gate, and it closes it
-        // too late: `run`'s `.finally` releases `saving` when the DELETE settles — while the reload
-        // GET is still in flight — so Delete re-enabled on an already-deleted schedule for the whole
-        // reload window, and stayed enabled indefinitely if the reload failed. Both let the user
-        // fire a second DELETE and get another success message for a record that no longer exists,
-        // which is the exact symptom #292 was raised for. Schedules 1/3 avoid it by resetting in
-        // place; this is the same move, narrowed to the token the gate reads.
+        // Schedules 1/3 avoid the whole problem by resetting in place; this is the same move,
+        // narrowed to the token the gate reads.
         setData((prev) => (prev ? { ...prev, revisionCount: null } : prev))
-        run(
+        // RETURN the reload so delete→reload is ONE locked operation (PR #351 review). Clearing the
+        // token alone closed the DELETE gate but left the WINDOW open: `run`'s `.finally` released
+        // `saving` when the DELETE settled while this GET was still out, so for the length of the
+        // reload — and permanently if it failed — `saving` was false, `form` still held the
+        // pre-delete values and `revisionCount` was null. Save is gated on `saving`, not on the
+        // persisted-record check, so a click in that window PUT `revisionCount: 0` and RE-CREATED
+        // the schedule with the old figures; the reload then painted an empty document over a row
+        // that now existed. Returning the promise keeps the lock held until the reload settles.
+        return run(
           apiService
             .getAxiosInstance()
             .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`),

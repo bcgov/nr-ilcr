@@ -25,7 +25,12 @@ type UseScheduleBannersResult<TCheckResult> = {
   readonly resetBanners: () => void
   /** Surface an API failure, preferring its verbatim ProblemDetail over the caller's fallback. */
   readonly failed: (error: unknown, fallback: string) => void
-  readonly run: <T>(request: Promise<{ data: T }>, options: RunOptions<T>) => void
+  /**
+   * Dispatch a guarded request. Returns the settled chain so a caller can await the WHOLE operation;
+   * an {@code onSuccess} that itself returns a promise holds the in-flight lock until that promise
+   * settles too (see {@code RunOptions.onSuccess}).
+   */
+  readonly run: <T>(request: Promise<{ data: T }>, options: RunOptions<T>) => Promise<void>
 }
 
 type RunOptions<T> = {
@@ -35,7 +40,18 @@ type RunOptions<T> = {
    * Schedule 5's copy hint: a blank name in an obviously-new panel already carries the instruction).
    */
   readonly fallback: string | null
-  readonly onSuccess: (data: T) => void
+  /**
+   * Applied only when the request resolves under the still-current context.
+   *
+   * <p>If it returns a promise, {@code run} awaits it before releasing the in-flight lock, so a write
+   * that chains a follow-up request (typically a re-GET) is ONE locked operation. Returning the
+   * chained {@code run(...)} is the idiom. Without this the lock released when the FIRST request
+   * settled while the follow-up was still out, leaving a window in which `saving` is false but the
+   * page state is mid-transition — on Schedule 2 that let a Save re-create the schedule the user had
+   * just deleted, using the pre-delete figures, because the form had not been re-seeded yet
+   * (defect #292, PR #351 review).
+   */
+  readonly onSuccess: (data: T) => void | Promise<unknown>
 }
 
 export const useScheduleBanners = <TCheckResult>(
@@ -66,11 +82,15 @@ export const useScheduleBanners = <TCheckResult>(
   // memoized `run` would keep dispatching under a stale one.
   const run = <T>(request: Promise<{ data: T }>, { fallback, onSuccess }: RunOptions<T>) => {
     setSaving(true)
-    request
+    // RETURNING onSuccess's result is what makes a chained follow-up part of this operation: a
+    // promise returned here is awaited by the chain, so `.finally` — and the lock release — waits
+    // for it. A void return behaves exactly as before.
+    return request
       .then((response) => {
         if (isCurrent()) {
-          onSuccess(response.data)
+          return onSuccess(response.data)
         }
+        return undefined
       })
       .catch((error: unknown) => {
         // fallback === null → fail silently (no banner); see RunOptions.fallback.

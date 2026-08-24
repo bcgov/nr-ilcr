@@ -619,6 +619,64 @@ describe('Schedule2 page', () => {
     expect(deleteCount).toBe(1)
   })
 
+  test('the whole delete → reload sequence holds the in-flight lock (PR #351 review)', async () => {
+    // Clearing the optimistic-lock token shut the DELETE gate, but left the WINDOW open: `run`'s
+    // `.finally` released `saving` when the DELETE settled while the reload GET was still out. Save is
+    // gated on `saving`, NOT on the persisted-record check, so a click in that window PUT
+    // `revisionCount: 0` and re-created the schedule with the pre-delete figures — then the reload
+    // painted an empty document over a row that now existed. This asserts the LOCK; the gate tests
+    // above pass on the cleared token alone and cannot see this.
+    let deleted = false
+    let putCount = 0
+    let releaseReload: () => void = () => undefined
+    const reloadBlocked = new Promise<void>((resolve) => {
+      releaseReload = resolve
+    })
+    server.use(
+      http.get(URL, async () => {
+        if (deleted) {
+          await reloadBlocked // hold the reload open to keep the window measurable
+          return HttpResponse.json(unsavedDoc)
+        }
+        return HttpResponse.json(schedule2Doc)
+      }),
+      http.delete(URL, () => {
+        deleted = true
+        return HttpResponse.json({
+          message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+        })
+      }),
+      http.put(URL, () => {
+        putCount += 1
+        return HttpResponse.json(schedule2Doc)
+      }),
+    )
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(actionBarButtons(/delete/i, 1)[0]!)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    // Mid-window: the DELETE has settled, the reload has not. EVERY write control stays locked,
+    // because delete→reload is one operation rather than two.
+    await waitFor(() => expect(actionBarButtons(/delete/i, 1)[0]).toBeDisabled())
+    actionBarButtons(/^save$/i, 2).forEach((b) => expect(b).toBeDisabled())
+    actionBarButtons(/check status/i, 2).forEach((b) => expect(b).toBeDisabled())
+
+    // Prove it rather than trusting the attribute: a Save here cannot resurrect the deleted record.
+    await user.click(actionBarButtons(/^save$/i, 2)[0]!)
+    expect(putCount).toBe(0)
+
+    releaseReload()
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    // Lock released only once the whole sequence is done, and the form is re-seeded empty by then.
+    await waitFor(() => expect(actionBarButtons(/^save$/i, 2)[0]).toBeEnabled())
+    expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('')
+    expect(putCount).toBe(0)
+  })
+
   test('a FAILED post-delete reload still closes the Delete gate (defect #292 face 2)', async () => {
     // The permanent version of the same hole: if the reload never succeeds, nothing else ever tells
     // the page its record is gone. The banner says the refresh failed; Delete must still be shut,
