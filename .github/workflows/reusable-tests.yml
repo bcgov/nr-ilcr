@@ -172,32 +172,6 @@ jobs:
           echo "::add-mask::$DB_PASS"
           echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
           echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
-          # Credential-drift self-heal (ORA-01017): the pod reads
-          # APP_USER_PASSWORD from the Secret ONCE at boot, so a Secret
-          # created/rotated after the pod started leaves the database
-          # initialized with a stale password. The data is disposable by
-          # design (flyway clean+migrate runs next), so the fix is a restart:
-          # the fresh pod re-initializes from the current Secret. The probe
-          # feeds the password on stdin so it never appears in argv.
-          probe() {
-            printf '%s\nexit\n' "$DB_PASS" \
-              | oc -n "$OC_NAMESPACE" exec -i "deploy/$NAME-tools-database" -- \
-                  sqlplus -L -S "$DB_USER@//localhost:1521/ILCR"
-          }
-          if ! probe >/dev/null 2>&1; then
-            echo "Login as $DB_USER failed — restarting the database to re-initialize from the current Secret..."
-            oc -n "$OC_NAMESPACE" rollout restart "deployment/$NAME-tools-database"
-            oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=900s
-            # First boot after a restart recreates the ILCR PDB + app user,
-            # which can finish after readiness; poll before the final attempt.
-            for i in $(seq 1 20); do
-              probe >/dev/null 2>&1 && break
-              echo "Waiting for the re-initialized database to accept logins ($i/20)..."
-              sleep 15
-            done
-            probe  # final attempt: fail the job here, with the sqlplus ORA- error visible
-          fi
-          echo "Database credentials verified."
           # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
           # otherwise surfaces as confusing scenario timeouts. Dies with the job.
           ( while true; do
@@ -216,17 +190,36 @@ jobs:
 
       - name: Reset and seed database (Flyway clean + migrate)
         working-directory: backend
+        env:
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          NAME: ${{ github.event.repository.name }}
         # ILCR is the extra PDB database/openshift.deploy.yml creates;
         # DB_USER/DB_PASS were read from its Secret in the port-forward step.
-        # Retried: right after a fresh deploy the DB can accept TCP before the
-        # pluggable database is open for logins.
+        # Flyway doubles as the credential probe (same JDBC path the whole job
+        # uses). Retries cover a fresh pod accepting TCP before the PDB opens.
+        # ORA-01017 self-heal: the pod reads APP_USER_PASSWORD from the Secret
+        # ONCE at boot, so a Secret rotated after the pod started leaves the
+        # database initialized with a stale password; the data is disposable
+        # (this very step wipes it), so restart ONCE and let the fresh pod
+        # re-initialize from the current Secret, then keep retrying while the
+        # recreated PDB comes up.
         run: |
-          for i in 1 2 3; do
-            mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
-              -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
-              -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" && exit 0
-            echo "Flyway attempt $i failed; retrying in 20s..."
-            sleep 20
+          restarted=""
+          for i in $(seq 1 12); do
+            if mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
+                 -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
+                 -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" \
+                 2>&1 | tee "$RUNNER_TEMP/flyway.log"; test "${PIPESTATUS[0]}" -eq 0; then
+              exit 0
+            fi
+            if grep -q "ORA-01017" "$RUNNER_TEMP/flyway.log" && [ -z "$restarted" ]; then
+              restarted=yes
+              echo "Stale DB credentials (ORA-01017) — restarting the database to re-initialize from the current Secret..."
+              oc -n "$OC_NAMESPACE" rollout restart "deployment/$NAME-tools-database"
+              oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=900s
+            fi
+            echo "Flyway attempt $i failed; retrying in 30s..."
+            sleep 30
           done
           exit 1
 
