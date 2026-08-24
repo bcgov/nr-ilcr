@@ -63,7 +63,7 @@ class Schedule1SectionMapperTest {
         .containsEntry("silvAdminCostCos", "1,500") // 139 (Schedule-3 pull)
         .containsEntry("silvTotalVolumeCos", "40,000") // 140 (derived)
         .containsEntry("totalCos", "577,000") // grand total (derived)
-        .containsEntry("totalVol", "-"); // grand total has no own volume cell
+        .containsEntry("totalVol", ""); // grand total has no own volume cell
 
     assertThat(row).containsEntry("comments", "See the notes");
 
@@ -76,7 +76,7 @@ class Schedule1SectionMapperTest {
     assertThat(firstOther.get("otherCostDesc")).isEqualTo("Aerial survey");
     assertThat(firstOther.get("otherCostCos")).isEqualTo("1,200");
     assertThat(firstOther.get("otherCostCal")).isEqualTo("0.10");
-    assertThat(firstOther.get("otherCostVol")).isEqualTo("-"); // per-row volume shared → blank here
+    assertThat(firstOther.get("otherCostVol")).isEqualTo(""); // per-row volume shared → blank here
   }
 
   @Test

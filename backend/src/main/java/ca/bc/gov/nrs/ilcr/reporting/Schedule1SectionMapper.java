@@ -107,7 +107,7 @@ final class Schedule1SectionMapper {
         SectionFormat.decimal(response.totalSilviculturePerUnit()));
 
     // Grand total (Total Company Logging Costs incl. total Silviculture) — no own volume cell.
-    row.put("totalVol", SectionFormat.decimal((BigDecimal) null));
+    row.put("totalVol", "");
     row.put("totalCos", SectionFormat.money(response.totalCompanyLoggingCost()));
     row.put("totalCal", SectionFormat.decimal(response.totalCompanyLoggingPerUnit()));
 
@@ -163,7 +163,7 @@ final class Schedule1SectionMapper {
       // The itemized rows share the section's Other-Costs volume (not a per-row figure), so the
       // per-row Volume cell is left blank; the shared volume shows on the Subtotal Other Costs
       // line.
-      m.put("otherCostVol", SectionFormat.decimal((BigDecimal) null));
+      m.put("otherCostVol", "");
       m.put("otherCostCos", SectionFormat.money(r.cost()));
       m.put("otherCostCal", SectionFormat.decimal(r.perUnit()));
       rows.add(m);

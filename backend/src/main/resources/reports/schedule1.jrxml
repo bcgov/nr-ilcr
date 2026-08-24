@@ -422,11 +422,11 @@
       </element>
 
       <!-- Comments (comment-gated), stretch. -->
-      <element kind="staticText" style="bold" x="0" y="380" width="90" height="15">
+      <element kind="staticText" style="bold" positionType="Float" x="0" y="380" width="90" height="15">
         <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
         <text><![CDATA[Comments:]]></text>
       </element>
-      <element kind="textField" x="0" y="395" width="802" height="15" textAdjust="StretchHeight" blankWhenNull="true">
+      <element kind="textField" positionType="Float" x="0" y="395" width="802" height="15" textAdjust="StretchHeight" blankWhenNull="true">
         <printWhenExpression><![CDATA[$P{p_do_print_comment}]]></printWhenExpression>
         <expression><![CDATA[$F{comments}]]></expression>
       </element>

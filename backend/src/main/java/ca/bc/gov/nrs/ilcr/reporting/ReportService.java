@@ -271,13 +271,28 @@ public class ReportService {
    * the combined render. Read-only: both reads pass {@code callerMayEdit = false}.
    */
   private SectionData schedule1Section(long millId, int year) {
+    ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response summary;
     try {
-      return Schedule1SectionMapper.map(
-          schedule1Service.getSchedule1(millId, year, false),
-          schedule1Service.getOtherCostsDocument(millId, year, false));
+      summary = schedule1Service.getSchedule1(millId, year, false);
     } catch (ScheduleNotFoundException e) {
+      log.debug(
+          "Schedule 1 summary not found for mill {} year {} -> skipping section (BR-09)",
+          millId,
+          year);
       return null;
     }
+
+    ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument otherCosts = null;
+    try {
+      otherCosts = schedule1Service.getOtherCostsDocument(millId, year, false);
+    } catch (ScheduleNotFoundException e) {
+      log.debug(
+          "Schedule 1 other costs document not found for mill {} year {} -> mapping with empty list",
+          millId,
+          year);
+    }
+
+    return Schedule1SectionMapper.map(summary, otherCosts);
   }
 
   /** Bean-datasource fill: no rows → no section (null); else fill from the mapped section rows. */
