@@ -174,7 +174,7 @@ describe('Other Acceptable Costs sub-page (Story 4.4) — edit-in-place + batch 
     })
   })
 
-  test('an in-flight added row derives its Crown with the FOOTER\'s parser (#344 review)', async () => {
+  test("an in-flight added row derives its Crown with the FOOTER's parser (#344 review)", async () => {
     // The one path where the row/footer parser split is still observable. A row appended before its
     // PUT lands is absent from `committed`, so `committedFor` falls back to its LIVE values — and
     // `1e3` clears `validateOtherAcceptable` (`Number('1e3')` is 1000, in range), so it can be added.
