@@ -844,22 +844,41 @@ const Schedule4: FC = () => {
   // on the next). Add rides the top bar only: it toggles the panel that opens directly beneath it, and a
   // second copy at the page foot would be redundant.
   //
-  // Legacy attached that bottom row to the New Location panel only (:171-224), so closing the panel left
-  // the page with no bottom control at all. Deviation (D): this is a page-level bar that renders in EVERY
-  // state, always last in the body — below the locations table, and below the location panel when one is
-  // open. It is deliberately NOT folded into the panel's Save / Back row: Check Status is a whole-schedule
-  // read, not a panel action.
+  // Legacy carried that bottom row on BOTH location panels — schedule4NewLocation.xhtml:273-275 and
+  // schedule4ExistingLocation.xhtml:1141-1144 — but on neither in the list (no-panel) view, which is the
+  // real gap. Deviation (D): this is a page-level bar rendered last in the MAIN view, below the locations
+  // table and below the location panel when one is open. It is deliberately NOT folded into the panel's
+  // Save / Back row: Check Status is a whole-schedule read, not a panel action.
+  //
+  // It does NOT render in every branch of this component: the sub-page view (:606-630) and the
+  // contextMissing / isLoading / errorDetail shells (:554-590) return their own trees and bypass this
+  // helper entirely. Legacy's three sub-page files carry no Check Status either, so that is parity, not a
+  // gap — but anyone gating these buttons must remember the sub-page branch routes around `actionBar`.
   //
   // `bottom` also drives the scroll — the bottom instance repositions the page to its banners, the top
   // instance is already beside them.
   const actionBar = (bottom: boolean) => (
-    <Column sm={4} md={8} lg={16} className="schedule-4__actions">
+    <Column
+      sm={4}
+      md={8}
+      lg={16}
+      className={`schedule-4__actions${bottom ? ' schedule-4__actions--bottom' : ''}`}
+      data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
+    >
       {!bottom && (
         <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
           Add New Location
         </Button>
       )}
-      <Button kind="tertiary" disabled={saving} onClick={() => handleCheckStatus(bottom)}>
+      {/* `!editable` closes DIV-1 / issue #322 for Schedule 4: legacy bound EVERY Check Status instance
+          to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
+          schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
+          Schedules 4 and 8 were the outliers. Schedule 8 is still open; #322 does not close on this alone. */}
+      <Button
+        kind="tertiary"
+        disabled={!editable || saving}
+        onClick={() => handleCheckStatus(bottom)}
+      >
         Check Status
       </Button>
     </Column>
