@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -26,29 +25,38 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Story 8.2 acceptance — {@code POST/PUT /api/v1/schedule6/records} (AC1–AC4, AC6; slices
- * S01/S03/S05/S12–S16/S17-write/S19; AD-5, AD-9, AD-10, AD-12). The mock {@code ILCR_SUBMITTER}
- * holds both VIEW and EDIT; authz is proven in {@link Schedule6WriteAuthorizationIT}. Security-off
- * is pinned EXPLICITLY and every mutation carries {@code .with(csrf())} — no-ops today, but they
- * keep this suite green when a fail-closed security default merges in (the recorded
- * merge-regression guard).
+ * Story 8.2/Task 8 acceptance — {@code POST /api/v1/schedule6/records} (AC1-AC4; slices
+ * S01/S03/S05/S12-S16/S17-write-POST-half; AD-5, AD-9, AD-10, AD-12). The mock {@code
+ * ILCR_SUBMITTER} holds both VIEW and EDIT; authz is proven in {@link
+ * Schedule6WriteAuthorizationIT}. Security-off is pinned EXPLICITLY and every mutation carries
+ * {@code .with(csrf())} — no-ops today, but they keep this suite green when a fail-closed security
+ * default merges in (the recorded merge-regression guard).
+ *
+ * <p>{@code PUT /records/{recordId}} and {@code PUT /general-comments} — the two
+ * per-row/independent write endpoints this class used to cover alongside POST — are retired (Task
+ * 8; the frontend has called only the whole-document {@code PUT /api/v1/schedule6} since Task 7).
+ * Their behaviour-asserting cases live on: the item-69 detail upsert's two branches and the AC6
+ * optimistic lock / 404-vs-409 disambiguation moved to {@link Schedule6SaveDocumentIT}, which
+ * already covers the shape-level cases (unknown/foreign/placeholder id, stale token, missing token)
+ * from Task 5. This class also absorbs four {@code POST /records} tests that used to live in the
+ * now-deleted {@code Schedule6GeneralCommentsIT} (that class existed only to cover the retired
+ * {@code PUT /general-comments}; its few POST-only cases belong here instead) — mill 665's V32
+ * fixtures moved with them.
  *
  * <p>Mutating tests are ORDER-INDEPENDENT via the V32 context model: a context is (mill, YEAR), so
- * each destructive test method claims its own year on mill 661 — 2017 detail-update-in-place, 2019
- * add-TSA, 2020 add-TFL, 2021 stale-revision, 2022 edit/switch, 2024 TFL alias; 2023 is the
- * never-mutated rejection-fingerprint year and 2018 holds the placeholder the 404 probe rejects.
- * That invariant is load-bearing and was violated: the alias test and the add-TFL test both wrote
- * into 2020, so whichever ran second broke the other's exact-match {@code contains(...)} filter
- * (code review 2026-08-04). Edits read the current {@code revisionCount} before writing (never a
- * hard-coded token — Story 2.1 review lesson), and assertions locate records by id/field (JSONPath
- * filters), not array index.
+ * each destructive test method claims its own year — mill 661: 2019 add-TSA, 2020 add-TFL, 2024 TFL
+ * alias (2023 is the never-mutated rejection-fingerprint year); mill 665: 2018 add-carries-comment,
+ * 2020 over-wide classification, 2022 placeholder-reuse, 2024 overlong per-record comment. This
+ * class is POST-only now (Task 8 retired the per-record {@code PUT} it used to also cover — see
+ * {@link Schedule6SaveDocumentIT} for the edit/optimistic-lock cases that replaced it), so every
+ * record here is freshly assigned; assertions locate records by id/field (JSONPath filters), not
+ * array index, because sequence-assigned ids are not predictable.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=false")
-@DisplayName("POST/PUT /api/v1/schedule6/records — Schedule 6 writes (Story 8.2)")
+@DisplayName("POST /api/v1/schedule6/records — Schedule 6 writes (Story 8.2/Task 8)")
 class Schedule6WriteIT extends AbstractOracleIT {
 
   private static final String RECORDS = "/api/v1/schedule6/records";
-  private static final String COMMENTS = "/api/v1/schedule6/general-comments";
   private static final String CHECK_STATUS = "/api/v1/schedule6/check-status";
   private static final String ENDPOINT = "/api/v1/schedule6";
   private static final String PROBLEM_JSON = "application/problem+json";
@@ -151,9 +159,23 @@ class Schedule6WriteIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.roadRecords[?(@.recordId==" + recordId + ")]", hasSize(1)));
 
-    // SUC-003 clean follow-up: both 2019 records are complete -> the single MET banner.
+    // SUC-003 clean follow-up: check-status is payload-driven (Task 6/Task 8), so the clean
+    // verdict is proven by submitting the two now-persisted, now-complete 2019 records exactly as
+    // the GET above just served them -> the single MET banner.
+    String checkBody =
+        """
+        {"generalComments":null,
+         "records":[{"areaType":"01","supplyBlock":"01B","volume":1000,"cost":50000},
+                    {"areaType":"03","supplyBlock":"03B","volume":400,"cost":20000}]}
+        """;
     mockMvc
-        .perform(post(CHECK_STATUS).with(csrf()).param("millId", "661").param("year", "2019"))
+        .perform(
+            post(CHECK_STATUS)
+                .with(csrf())
+                .param("millId", "661")
+                .param("year", "2019")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(checkBody))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")))
         .andExpect(
@@ -228,129 +250,6 @@ class Schedule6WriteIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         // Served (and stored) as the padded code, resolving RMG 1 — never the raw alias.
         .andExpect(jsonPath("$.roadRecords[?(@.tflNumber=='01')].rmg", contains("1")));
-  }
-
-  // ---- AC2: S19 switch TSA -> TFL on an existing record ----------------------------------------
-
-  @Test
-  @DisplayName(
-      "S19: PUT switches TSA->TFL: TFL stored, Supply Block cleared to NULL, RMG re-derived, "
-          + "revision bumped; the detail upsert INSERTS on the delivery-real no-detail row")
-  void switchAreaTypeTsaToTfl() throws Exception {
-    // 8337 (2022) is seeded TSA 01/01B with NO item-69 detail — the real delivery shape.
-    int currentRevision = currentRevision(661, 2022, 8337);
-    String body =
-        """
-            {"areaType":"TFL","tflNumber":"18","volume":300,"cost":15000,"revisionCount":%d}
-            """
-            .formatted(currentRevision);
-    mockMvc
-        .perform(
-            put(RECORDS + "/8337")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2022")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.key", is("dataSavedSuccesfullyInfoMsg")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8337)].areaType", contains("TFL")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8337)].tflNumber", contains("18")))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8337)].supplyBlock", hasSize(0)))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8337)].rmg", contains("4")))
-        .andExpect(
-            jsonPath(
-                "$.roadRecords[?(@.recordId==8337)].revisionCount", contains(currentRevision + 1)));
-
-    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-    Map<String, Object> row =
-        jdbc.queryForMap(
-            """
-            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, UPDATE_USERID, UPDATE_TIMESTAMP
-              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8337
-            """);
-    assertEquals(null, row.get("TSA_NUMBER"));
-    assertEquals(null, row.get("TSB_NUMBER_CODE"));
-    assertEquals("18", row.get("TFL_NUMBER_CODE"));
-    // The UPDATE's audit stamps moved off the seeded 'SEED'. An UPDATE that drops them cannot
-    // fail on a NOT NULL column, so only an assertion catches it (code review 2026-08-04).
-    assertEquals("dev-submitter", row.get("UPDATE_USERID"));
-    assertNotNull(row.get("UPDATE_TIMESTAMP"));
-    // The edit CREATED the missing item-69 detail (8.1 Task 1: real cat-6 rows have none).
-    assertEquals(
-        1,
-        jdbc.queryForObject(
-            """
-            SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8337 AND ILCR_REPORT_COST_ITEM_ID = 69
-            """,
-            Integer.class));
-  }
-
-  @Test
-  @DisplayName(
-      "The detail upsert's UPDATE-IN-PLACE branch: editing a record that ALREADY has an "
-          + "item-69 detail updates that row rather than inserting a second one — COUNT stays 1 and "
-          + "every written column lands. The suite previously exercised only the INSERT branch, so "
-          + "an always-insert regression (duplicate details, money invisible in totals) shipped green")
-  void editWithExistingDetail_updatesInPlace() throws Exception {
-    // 8361 (2017) is seeded WITH detail 8362 (vol 1000 / cost 50000 / 'Seeded 2017 record') and
-    // owns its year, so this edit is the only destructive test in that context.
-    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-    int detailId =
-        jdbc.queryForObject(
-            """
-            SELECT ILCR_COST_REPORT_DETAIL_ID FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8361 AND ILCR_REPORT_COST_ITEM_ID = 69
-            """,
-            Integer.class);
-    int currentRevision = currentRevision(661, 2017, 8361);
-    String body =
-        """
-            {"areaType":"05","supplyBlock":"05B","volume":250,"cost":7500,
-             "comments":"Edited in place","revisionCount":%d}
-            """
-            .formatted(currentRevision);
-    mockMvc
-        .perform(
-            put(RECORDS + "/8361")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2017")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8361)].volume", contains(250)))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8361)].cost", contains(7500)))
-        .andExpect(
-            jsonPath("$.roadRecords[?(@.recordId==8361)].comments", contains("Edited in place")));
-
-    // COUNT == 1 AND the same detail id is what pins update-in-place over a second insert.
-    assertEquals(
-        1,
-        jdbc.queryForObject(
-            """
-            SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8361 AND ILCR_REPORT_COST_ITEM_ID = 69
-            """,
-            Integer.class));
-    Map<String, Object> detail =
-        jdbc.queryForMap(
-            """
-            SELECT ILCR_COST_REPORT_DETAIL_ID, VOLUME, COST, COMMENTS, REVISION_COUNT,
-                   ENTRY_USERID, UPDATE_USERID, UPDATE_TIMESTAMP
-              FROM THE.ILCR_COST_REPORT_DETAIL
-             WHERE ROAD_MAINTENANCE_REPORT_ID = 8361 AND ILCR_REPORT_COST_ITEM_ID = 69
-            """);
-    assertEquals(detailId, ((Number) detail.get("ILCR_COST_REPORT_DETAIL_ID")).intValue());
-    assertEquals(250, ((Number) detail.get("VOLUME")).intValue());
-    assertEquals(7500, ((Number) detail.get("COST")).intValue());
-    assertEquals("Edited in place", detail.get("COMMENTS"));
-    // Detail REVISION_COUNT stays 0 (legacy never bumps it) and ENTRY_* survive the update.
-    assertEquals(0, ((Number) detail.get("REVISION_COUNT")).intValue());
-    assertEquals("SEED", detail.get("ENTRY_USERID"));
-    assertEquals("dev-submitter", detail.get("UPDATE_USERID"));
-    assertNotNull(detail.get("UPDATE_TIMESTAMP"));
   }
 
   // ---- AC3: field validation rejects with verbatim texts and persists nothing (S05/S12-S16) ---
@@ -481,9 +380,11 @@ class Schedule6WriteIT extends AbstractOracleIT {
   // ---- AC4: writes outside Draft -> 409 (S17 write half, deviation (a)) ------------------------
 
   @Test
-  @DisplayName(
-      "S17: POST/PUT records and PUT general-comments on a non-Draft mill -> 409; untouched")
+  @DisplayName("S17: POST records on a non-Draft mill -> 409; untouched")
   void nonDraftTrack_returns409() throws Exception {
+    // The PUT /records/{id} and PUT /general-comments legs this test used to also exercise are
+    // gone (Task 8); the identical Draft-gate behaviour for the whole-document PUT that replaced
+    // them is proven by Schedule6SaveDocumentIT#nonDraftTrackReturns409.
     String before = fingerprint(662, 2021);
     String post =
         """
@@ -500,157 +401,7 @@ class Schedule6WriteIT extends AbstractOracleIT {
         .andExpect(status().isConflict())
         .andExpect(
             jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
-    String putBody =
-        """
-            {"areaType":"01","supplyBlock":"01B","cost":100,"revisionCount":0}
-            """;
-    mockMvc
-        .perform(
-            put(RECORDS + "/8321")
-                .with(csrf())
-                .param("millId", "662")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(putBody))
-        .andExpect(status().isConflict())
-        .andExpect(
-            jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
-    mockMvc
-        .perform(
-            put(COMMENTS)
-                .with(csrf())
-                .param("millId", "662")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"generalComments\":\"nope\"}"))
-        .andExpect(status().isConflict())
-        .andExpect(
-            jsonPath("$.detail", is("This schedule cannot be edited in its current status.")));
     assertEquals(before, fingerprint(662, 2021));
-  }
-
-  // ---- AC6: optimistic lock per record (AR11) --------------------------------------------------
-
-  @Test
-  @DisplayName(
-      "AC6: PUT with the current revision succeeds and bumps; re-PUT with the stale token -> "
-          + "409 without persisting; omitting revisionCount -> clean 400")
-  void optimisticLockPerRecord() throws Exception {
-    // 2021's seeded record 8336; this year belongs to this test alone.
-    int revision = currentRevision(661, 2021, 8336);
-    String edit =
-        """
-            {"areaType":"05","supplyBlock":"05A","volume":100,"cost":1000,"revisionCount":%d}
-            """
-            .formatted(revision);
-    mockMvc
-        .perform(
-            put(RECORDS + "/8336")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(edit))
-        .andExpect(status().isOk())
-        .andExpect(
-            jsonPath("$.roadRecords[?(@.recordId==8336)].revisionCount", contains(revision + 1)));
-
-    // The SAME token again is now stale -> 409, and the classification did not change back.
-    String stale =
-        """
-            {"areaType":"01","supplyBlock":"01B","volume":1,"cost":1,"revisionCount":%d}
-            """
-            .formatted(revision);
-    mockMvc
-        .perform(
-            put(RECORDS + "/8336")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(stale))
-        .andExpect(status().isConflict())
-        .andExpect(
-            jsonPath(
-                "$.detail",
-                is("This schedule was changed by another user. Please reload and try again.")));
-    mockMvc
-        .perform(
-            get(ENDPOINT)
-                .param("millId", "661")
-                .param("year", "2021")
-                .accept(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8336)].areaType", contains("05")));
-
-    // OnUpdate group: a PUT without the token is a clean 400, never a coerced 409.
-    mockMvc
-        .perform(
-            put(RECORDS + "/8336")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2021")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"areaType\":\"05\",\"supplyBlock\":\"05A\",\"cost\":1}"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.detail", is("Revision count is required for an update.")));
-  }
-
-  @Test
-  @DisplayName("AC6: PUT an unknown id, a foreign mill's id, or the placeholder id -> 404")
-  void unknownForeignOrPlaceholderId_returns404() throws Exception {
-    String body =
-        """
-            {"areaType":"01","supplyBlock":"01B","cost":100,"revisionCount":0}
-            """;
-    // Unknown id under a valid Draft context.
-    mockMvc
-        .perform(
-            put(RECORDS + "/79999")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2019")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail", is("Road record not found.")));
-    // 8334 belongs to mill 661/2019 — addressing it via another year is foreign (IDOR guard).
-    mockMvc
-        .perform(
-            put(RECORDS + "/8334")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2020")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail", is("Road record not found.")));
-    // 8340 is 661/2018's general-comment placeholder: not a served record -> 404, never a silent
-    // conversion into a real record. Deliberately NOT mill 664's placeholder 8324, which this
-    // used to target: 664 is declared read-only by V32 and fingerprinted by
-    // Schedule6CheckStatusIT, so a regression in the placeholder guard would have corrupted that
-    // suite's ordinals instead of failing here (code review 2026-08-04).
-    mockMvc
-        .perform(
-            put(RECORDS + "/8340")
-                .with(csrf())
-                .param("millId", "661")
-                .param("year", "2018")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.detail", is("Road record not found.")));
-    // ...and it is still a placeholder afterwards: the guard rejected, it did not convert.
-    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-    Map<String, Object> placeholder =
-        jdbc.queryForMap(
-            """
-            SELECT TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, REVISION_COUNT
-              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8340
-            """);
-    assertEquals(null, placeholder.get("TSA_NUMBER"));
-    assertEquals(null, placeholder.get("TSB_NUMBER_CODE"));
-    assertEquals(null, placeholder.get("TFL_NUMBER_CODE"));
-    assertEquals(0, ((Number) placeholder.get("REVISION_COUNT")).intValue());
   }
 
   // ---- Context guard reused (the 8.1 contract) -------------------------------------------------
@@ -670,25 +421,210 @@ class Schedule6WriteIT extends AbstractOracleIT {
             jsonPath("$.detail", is("Please Select Mill and Reporting Year in the Home Page. ")));
   }
 
-  /** Read a record's current revisionCount via GET so edits never hard-code a token. */
-  private int currentRevision(long millId, int year, int recordId) throws Exception {
-    String json =
-        mockMvc
-            .perform(
-                get(ENDPOINT)
-                    .param("millId", String.valueOf(millId))
-                    .param("year", String.valueOf(year))
-                    .accept(MediaType.APPLICATION_JSON))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-    for (JsonNode record : mapper.readTree(json).get("roadRecords")) {
-      if (record.get("recordId").asInt() == recordId) {
-        return record.get("revisionCount").asInt();
-      }
-    }
-    throw new IllegalStateException("record " + recordId + " not found");
+  // ---- Ported from the retired Schedule6GeneralCommentsIT (POST /records only; that class existed
+  // only to cover the now-retired PUT /general-comments) -----------------------------------------
+
+  @Test
+  @DisplayName(
+      "BR-09: POST a record into a context that already has a general comment -> the new "
+          + "row carries that comment, so the served generalComments is unchanged (the insert-side "
+          + "replication invariant; previously only mock-verified)")
+  void addRecord_carriesCurrentGeneralComment() throws Exception {
+    // 665/2018 holds record 8357 with COMMENTS 'Carried general comment.'.
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2018")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"areaType\":\"03\",\"supplyBlock\":\"03B\",\"volume\":50,\"cost\":500}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadRecords", hasSize(2)))
+        .andExpect(jsonPath("$.generalComments", is("Carried general comment.")));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    // The NEW row (highest id) must carry it: the read side takes the last row's COMMENTS, so a
+    // NULL here would silently blank the schedule's General Comment on every later GET.
+    assertEquals(
+        "Carried general comment.",
+        jdbc.queryForObject(
+            """
+            SELECT COMMENTS FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ROAD_MAINTENANCE_REPORT_ID =
+                   (SELECT MAX(ROAD_MAINTENANCE_REPORT_ID) FROM THE.ROAD_MAINTENANCE_REPORT
+                     WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2018 AND ILCR_CATEGORY_ID = '6')
+            """,
+            String.class));
+
+    mockMvc
+        .perform(
+            get(ENDPOINT)
+                .param("millId", "665")
+                .param("year", "2018")
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.generalComments", is("Carried general comment.")));
+  }
+
+  @Test
+  @DisplayName(
+      "BR-09: POST a record when only the placeholder exists -> the placeholder row is "
+          + "REUSED (same id, ENTRY_* survive, comment retained) and its detail is created")
+  void addRecord_reusesLonePlaceholder() throws Exception {
+    // 8331 is 2022's seeded placeholder ('Lone comment to reuse', ENTRY_USERID 'SEED').
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2022")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"areaType\":\"01\",\"supplyBlock\":\"01B\",\"volume\":100,\"cost\":5000}"))
+        .andExpect(status().isOk())
+        // The served record carries the PLACEHOLDER's id — the row was claimed, not added.
+        .andExpect(jsonPath("$.roadRecords[?(@.recordId==8331)].areaType", contains("01")))
+        .andExpect(jsonPath("$.roadRecords", hasSize(1)))
+        .andExpect(jsonPath("$.generalComments", is("Lone comment to reuse.")));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    // Still exactly ONE row for the context; its identity and ENTRY_* survived the claim.
+    assertEquals(
+        1,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2022 AND ILCR_CATEGORY_ID = '6'
+            """,
+            Integer.class));
+    Map<String, Object> row =
+        jdbc.queryForMap(
+            """
+            SELECT TSA_NUMBER, TSB_NUMBER_CODE, COMMENTS, ENTRY_USERID, UPDATE_USERID
+              FROM THE.ROAD_MAINTENANCE_REPORT WHERE ROAD_MAINTENANCE_REPORT_ID = 8331
+            """);
+    assertEquals("01", row.get("TSA_NUMBER"));
+    assertEquals("01B", row.get("TSB_NUMBER_CODE"));
+    assertEquals("Lone comment to reuse.", row.get("COMMENTS"));
+    assertEquals("SEED", row.get("ENTRY_USERID"));
+    assertEquals("dev-submitter", row.get("UPDATE_USERID"));
+    assertEquals(
+        1,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ILCR_COST_REPORT_DETAIL
+             WHERE ROAD_MAINTENANCE_REPORT_ID = 8331 AND ILCR_REPORT_COST_ITEM_ID = 69
+            """,
+            Integer.class));
+  }
+
+  @Test
+  @DisplayName(
+      "A PER-RECORD comment beyond 400 -> 400, NOT the 500 that ORA-12899 would produce: "
+          + "it lands in ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE), a different and much "
+          + "narrower column than the general comment's (code review 2026-08-04). 400 itself passes.")
+  void addRecord_overlongPerRecordComment_returns400() throws Exception {
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    int before =
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2024 AND ILCR_CATEGORY_ID = '6'
+            """,
+            Integer.class);
+
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2024")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"areaType\":\"01\",\"supplyBlock\":\"01B\",\"comments\":\""
+                        + "x".repeat(401)
+                        + "\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        // Its own key/text: the shared 3500 message would misstate the limit by 8.75x.
+        .andExpect(jsonPath("$.detail", is("Comments must be 400 characters or fewer.")));
+
+    assertEquals(
+        before,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2024 AND ILCR_CATEGORY_ID = '6'
+            """,
+            Integer.class));
+
+    // Exactly at the cap the write succeeds — proving the boundary is the column width, not a
+    // value Oracle would still reject.
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2024")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"areaType\":\"01\",\"supplyBlock\":\"01B\",\"comments\":\""
+                        + "y".repeat(400)
+                        + "\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.roadRecords[0].comments", is("y".repeat(400))));
+  }
+
+  @Test
+  @DisplayName(
+      "An over-wide TSA area type / supply block -> 400, not the ORA-12899 500 it used to "
+          + "produce (TSA_NUMBER VARCHAR2(2), TSB_NUMBER_CODE VARCHAR2(3))")
+  void addRecord_overWideClassification_returns400() throws Exception {
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"areaType\":\"999\",\"supplyBlock\":\"01B\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail", is("A valid value must be selected from the list.")));
+
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"areaType\":\"9999\",\"supplyBlock\":\"01B\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "665")
+                .param("year", "2020")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"areaType\":\"01\",\"supplyBlock\":\"01BX\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON));
+
+    JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+    assertEquals(
+        0,
+        jdbc.queryForObject(
+            """
+            SELECT COUNT(*) FROM THE.ROAD_MAINTENANCE_REPORT
+             WHERE ILCR_MILL_ID = 665 AND REPORT_YEAR = 2020 AND ILCR_CATEGORY_ID = '6'
+            """,
+            Integer.class));
   }
 
   /** The new record's DB id, located by its served areaType (sequence ids are not predictable). */

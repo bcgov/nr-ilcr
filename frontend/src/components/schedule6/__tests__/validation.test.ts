@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AREA_TYPE_MAX_LENGTH,
   GENERAL_COMMENTS_MAX_LENGTH,
   RECORD_COMMENTS_MAX_LENGTH,
   ROAD_MESSAGES,
-  SUPPLY_BLOCK_MAX_LENGTH,
   TFL_AREA_TYPE,
   TFL_MAX_LENGTH,
+  areaTypeOptions,
   parseDecimalInput,
   validateGeneralComments,
   validateRoadRecord,
@@ -34,10 +33,12 @@ describe('exported caps mirror the 8.2 DTO columns', () => {
     expect(GENERAL_COMMENTS_MAX_LENGTH).toBe(3500)
   })
 
-  it('caps the code fields at their delivery column widths', () => {
+  // AREA_TYPE_MAX_LENGTH / SUPPLY_BLOCK_MAX_LENGTH were retired with the TextInputs they bound
+  // maxLength to (2026-08-21 corrections): both fields are now CodeComboBoxes, and the validators
+  // that still gate width (validateAreaType, the supplyBlock check) reference their own internal
+  // constants rather than these exports. TFL stays a TextInput, so its cap is still exported.
+  it('caps the TFL field at its delivery column width', () => {
     expect(TFL_MAX_LENGTH).toBe(2)
-    expect(SUPPLY_BLOCK_MAX_LENGTH).toBe(3)
-    expect(AREA_TYPE_MAX_LENGTH).toBe(3)
   })
 })
 
@@ -251,5 +252,40 @@ describe('comments boundaries — 400 per record, 3500 general', () => {
 
   it('accepts a blank general comment (blank clears, BR-09)', () => {
     expect(validateGeneralComments('')).toBeUndefined()
+  })
+})
+
+// Final-review I3: a stored areaType with no TSA_NUMBER_CODE row at all (deviation (f) still lets
+// the write path store one) must still display, mirroring supplyBlocksFor's stored-code synthesis
+// (utils/codes.ts:47-55).
+describe('areaTypeOptions', () => {
+  const tsaNumbers = [
+    { code: '01', description: 'Arrowsmith TSA' },
+    { code: '02', description: 'Boundary TSA' },
+  ]
+
+  it('puts the TFL sentinel first, ahead of the served TSA numbers', () => {
+    expect(areaTypeOptions(tsaNumbers).map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('a stored code absent from the served list is still offered, over itself', () => {
+    expect(areaTypeOptions(tsaNumbers, '09')).toEqual([
+      { code: 'TFL', description: 'TFL' },
+      { code: '01', description: 'Arrowsmith TSA' },
+      { code: '02', description: 'Boundary TSA' },
+      { code: '09', description: '09' },
+    ])
+  })
+
+  it('does not duplicate a stored code already on the list', () => {
+    expect(areaTypeOptions(tsaNumbers, '01').map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('does not synthesise an entry for the TFL sentinel itself', () => {
+    expect(areaTypeOptions(tsaNumbers, 'TFL').map((o) => o.code)).toEqual(['TFL', '01', '02'])
+  })
+
+  it('does not synthesise an entry when nothing is selected', () => {
+    expect(areaTypeOptions(tsaNumbers, '').map((o) => o.code)).toEqual(['TFL', '01', '02'])
   })
 })

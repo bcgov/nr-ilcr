@@ -4,12 +4,13 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule6.api.Schedule6Api;
-import ca.bc.gov.nrs.ilcr.schedule6.dto.GeneralCommentsRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class Schedule6Controller implements Schedule6Api {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
+  private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
   // The verbatim legacy field segments (Schedule6MB.checkStatus() :155-172), keyed by the
   // FieldIssue.field names the service emits. Each carries its legacy leading AND trailing space.
@@ -78,6 +80,21 @@ public class Schedule6Controller implements Schedule6Api {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule6Response> saveSchedule6Document(
+      String millId, String year, Schedule6SaveRequest request, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    Schedule6Response doc =
+        schedule6Service.saveDocument(
+            context.millId(),
+            context.year(),
+            request,
+            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            authentication.getName());
+    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
   public ResponseEntity<Schedule6Response> addRoadRecord(
       String millId, String year, RoadRecordRequest request, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
@@ -92,48 +109,13 @@ public class Schedule6Controller implements Schedule6Api {
   }
 
   @Override
-  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule6Response> updateRoadRecord(
-      int recordId,
-      String millId,
-      String year,
-      RoadRecordRequest request,
-      Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule6Response doc =
-        schedule6Service.updateRecord(
-            context.millId(),
-            context.year(),
-            recordId,
-            request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
-            authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
-  }
-
-  @Override
-  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
-  public ResponseEntity<Schedule6Response> saveGeneralComments(
-      String millId, String year, GeneralCommentsRequest request, Authentication authentication) {
-    MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule6Response doc =
-        schedule6Service.saveGeneralComments(
-            context.millId(),
-            context.year(),
-            request,
-            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
-            authentication.getName());
-    return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
-  }
-
-  @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule6CheckStatusResponse> checkStatus(
-      String millId, String year, Authentication authentication) {
+      String millId, String year, Schedule6CheckRequest request, Authentication authentication) {
     // Read-only (AD-5): context guard first, then evaluate — mutates nothing.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule6CheckStatusResponse raw =
-        schedule6Service.checkStatus(context.millId(), context.year());
+        schedule6Service.checkStatus(context.millId(), context.year(), request);
     // Resolve every bundle key to verbatim text (AD-8): the schedule banner, each clean record's
     // met message (with its rowCounter as the {0} arg), and each composed "Value Required" line.
     List<MessageInfo> scheduleMessages =
@@ -167,6 +149,23 @@ public class Schedule6Controller implements Schedule6Api {
             .toList();
     return ResponseEntity.ok(
         new Schedule6CheckStatusResponse(raw.outcome(), scheduleMessages, records));
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'EDIT_SCHEDULE')")
+  public ResponseEntity<Schedule6Response> deleteRoadRecord(
+      int recordId, String millId, String year, Authentication authentication) {
+    MillYearContext context = millContextService.validateMillYearActive(millId, year);
+    Schedule6Response doc =
+        schedule6Service.deleteRecord(
+            context.millId(),
+            context.year(),
+            recordId,
+            permissions.hasPermission(authentication, "EDIT_SCHEDULE"),
+            authentication.getName());
+    // Legacy's delete path resolved its own message key, not the save one
+    // (Schedule6MB.delete() :224-226 -> "dataDeletedSuccesfullyInfoMsg").
+    return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
   /**

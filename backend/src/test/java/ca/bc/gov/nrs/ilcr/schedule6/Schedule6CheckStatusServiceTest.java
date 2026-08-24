@@ -4,16 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
-import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
+import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
-import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,14 +36,11 @@ class Schedule6CheckStatusServiceTest {
   private static final long MILL = 664L;
   private static final int YEAR = 2021;
 
+  // Unused by every remaining test (Task 8: checkStatus is payload-only and never touches the
+  // repository), but @InjectMocks still needs a Schedule6Repository to construct the service.
   @Mock private Schedule6Repository repository;
 
   @InjectMocks private Schedule6Service service;
-
-  private void stub(List<RoadRecordRow> rows, List<CostDetailRow> details) {
-    when(repository.findRoadRecords(MILL, YEAR)).thenReturn(rows);
-    lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(details);
-  }
 
   private static List<String> fields(RoadRecordCheckResult record) {
     return record.issues().stream().map(FieldIssue::field).toList();
@@ -119,36 +112,44 @@ class Schedule6CheckStatusServiceTest {
     assertTrue(Schedule6Service.recordPasses("TFL", "18", null, 0));
   }
 
-  // ---- The full check over stored rows ---------------------------------------------------------
+  // ---- The full check over the submitted payload (Task 6/Task 8: the ONLY source now) -----------
+  // These three used to run over stubbed stored rows (RoadRecordRow/CostDetailRow) through the
+  // since-retired storedCandidates path; Task 8 ports the aggregation-level behaviour they proved
+  // (mixed-results structure, the all-met single banner, the vacuous pass) onto payloadCandidates
+  // instead of dropping it — schedulePasses/the MET-vs-ISSUES banner logic is shared by both
+  // sources, so it needed no changes, only a different candidate source in the test. The
+  // placeholder-exclusion and read-side classification-trimming behaviours these tests used to also
+  // cover are retired along with storedCandidates: a payload row carries no placeholder concept and
+  // no derived classification to trim — it is exactly what the caller typed.
 
   @Test
   @DisplayName(
-      "Mixed results: placeholder excluded, 1-based rowCounters, met banner only for clean "
-          + "records, keys-with-null-text emitted for the controller to resolve")
+      "Mixed results: 1-based rowCounters/recordIds are the payload ordinal, met banner only "
+          + "for clean records, keys-with-null-text emitted for the controller to resolve")
   void checkStatus_mixedResults() {
-    stub(
-        List.of(
-            new RoadRecordRow(8324, null, null, null, "comment", 0), // placeholder
-            new RoadRecordRow(8325, "01", "01B", null, "comment", 0), // met
-            new RoadRecordRow(8326, "03", "03B", null, "comment", 0)), // missing cost
-        List.of(new CostDetailRow(8325, new BigDecimal("800"), 25000, null)));
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null,
+            List.of(
+                new CheckEntry("01", null, "01B", null, 25000, null), // met
+                new CheckEntry("03", null, "03B", null, null, null))); // missing cost
 
-    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR);
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
 
     assertEquals("ISSUES", response.outcome());
     assertTrue(response.messages().isEmpty());
     assertEquals(2, response.records().size());
 
     RoadRecordCheckResult met = response.records().get(0);
-    assertEquals(8325, met.recordId());
-    assertEquals(1, met.rowCounter()); // the placeholder shifted nothing — counters are 1-based
+    assertEquals(1, met.recordId());
+    assertEquals(1, met.rowCounter());
     assertTrue(met.met());
     assertEquals("roadRequirementsMetMsg", met.metMessage().key());
     assertNull(met.metMessage().text()); // key-only — the controller resolves with the ordinal
     assertTrue(met.issues().isEmpty());
 
     RoadRecordCheckResult flagged = response.records().get(1);
-    assertEquals(8326, flagged.recordId());
+    assertEquals(2, flagged.recordId());
     assertEquals(2, flagged.rowCounter());
     assertFalse(flagged.met());
     assertNull(flagged.metMessage());
@@ -158,11 +159,11 @@ class Schedule6CheckStatusServiceTest {
   @Test
   @DisplayName("All records pass -> MET, the single schedule banner, NO per-record results at all")
   void checkStatus_allMet() {
-    stub(
-        List.of(new RoadRecordRow(8322, "01", "01B", null, null, 0)),
-        List.of(new CostDetailRow(8322, null, 50000, null)));
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null, List.of(new CheckEntry("01", null, "01B", null, 50000, null)));
 
-    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR);
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
 
     assertEquals("MET", response.outcome());
     assertEquals(1, response.messages().size());
@@ -172,37 +173,67 @@ class Schedule6CheckStatusServiceTest {
   }
 
   @Test
-  @DisplayName("Zero records and lone-comment (deviation (d)) are both the vacuous pass")
+  @DisplayName("Zero submitted rows -> the vacuous pass (the legacy loop never runs)")
   void checkStatus_vacuousPasses() {
-    stub(List.of(), List.of());
-    assertEquals("MET", service.checkStatus(MILL, YEAR).outcome());
+    Schedule6CheckRequest request = new Schedule6CheckRequest(null, List.of());
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+    assertEquals("MET", response.outcome());
+    assertTrue(response.records().isEmpty());
+  }
 
-    stub(List.of(new RoadRecordRow(8324, null, null, null, "only a comment", 0)), List.of());
-    Schedule6CheckStatusResponse loneComment = service.checkStatus(MILL, YEAR);
-    assertEquals("MET", loneComment.outcome());
-    assertTrue(loneComment.records().isEmpty());
+  // ---- Task 6: a request evaluates the PAYLOAD, never the repository ----------------------------
+
+  @Test
+  @DisplayName(
+      "A non-null request never touches the repository at all — the verdict is built entirely "
+          + "from request.records(), not the stored rows (the whole point of Task 6)")
+  void checkStatus_withRequest_neverReadsTheRepository() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null, List.of(new CheckEntry("01", null, "01B", null, 5000, null)));
+
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals("MET", response.outcome());
+    org.mockito.Mockito.verifyNoInteractions(repository);
   }
 
   @Test
   @DisplayName(
-      "Blank-but-not-null classification codes are trimmed like the read side "
-          + "(a whitespace TSA row with a TFL code is a TFL record)")
-  void checkStatus_trimsLikeTheReadSide() {
-    stub(
-        List.of(new RoadRecordRow(8329, " ", " ", "18", null, 0)),
-        List.of(new CostDetailRow(8329, null, 100, null)));
+      "The verdict reflects the SUBMITTED values: a payload row with a cleared cost is ISSUES "
+          + "even though the (unqueried) stored row would have had one")
+  void checkStatus_withRequest_evaluatesSubmittedValues() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null, List.of(new CheckEntry("01", null, "01B", null, null, null)));
 
-    assertEquals("MET", service.checkStatus(MILL, YEAR).outcome());
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals("ISSUES", response.outcome());
+    assertEquals(1, response.records().size());
+    assertEquals(List.of("cost"), fields(response.records().get(0)));
   }
 
   @Test
-  @DisplayName("Read-only: the check never touches a write repository method (mutates nothing)")
-  void checkStatus_onlyReads() {
-    stub(List.of(), List.of());
-    service.checkStatus(MILL, YEAR);
-    verify(repository).findRoadRecords(MILL, YEAR);
-    verify(repository).findCostDetails(MILL, YEAR);
-    // Mockito verifies no OTHER interactions happened — any write call would fail here.
-    org.mockito.Mockito.verifyNoMoreInteractions(repository);
+  @DisplayName(
+      "Payload rows have no recordId: the 1-based payload ordinal is served in BOTH recordId and "
+          + "rowCounter (the Task 6 recordId decision — see Schedule6CheckRequest's javadoc)")
+  void checkStatus_withRequest_recordIdIsThePayloadOrdinal() {
+    Schedule6CheckRequest request =
+        new Schedule6CheckRequest(
+            null,
+            List.of(
+                new CheckEntry("01", null, "01B", null, null, null),
+                new CheckEntry("03", null, "03B", null, null, null)));
+
+    Schedule6CheckStatusResponse response = service.checkStatus(MILL, YEAR, request);
+
+    assertEquals(2, response.records().size());
+    RoadRecordCheckResult first = response.records().get(0);
+    RoadRecordCheckResult second = response.records().get(1);
+    assertEquals(1, first.recordId());
+    assertEquals(1, first.rowCounter());
+    assertEquals(2, second.recordId());
+    assertEquals(2, second.rowCounter());
   }
 }

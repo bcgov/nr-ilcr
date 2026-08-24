@@ -3,7 +3,14 @@ import { TextInput } from '@carbon/react'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import type { PageErrors, PageFormValues } from './validation'
-import { DIVISION_MAX, TFL_MAX, TFL_SENTINEL, isTflLocated, supplyBlocksFor } from './validation'
+import {
+  DIVISION_MAX,
+  TFL_MAX,
+  TFL_SENTINEL,
+  describe,
+  isTflLocated,
+  supplyBlocksFor,
+} from './validation'
 
 type PageFieldsProps = {
   readonly idPrefix: string
@@ -65,9 +72,6 @@ const PageFields: FC<PageFieldsProps> = ({
     { code: TFL_SENTINEL, description: TFL_SENTINEL },
   ]
   const blockOptions = supplyBlocksFor(codeLists.supplyBlocks, form.tsaOrTfl, form.supplyBlock)
-
-  const describe = (options: readonly CodeDescription[], code: string): string =>
-    options.find((option) => option.code === code)?.description ?? code
 
   if (readOnly) {
     return (
