@@ -20,7 +20,11 @@ export default interface Schedule2Response {
   readonly year: number
   readonly trackStatus: string | null
   readonly editable: boolean
-  readonly revisionCount: number | null
+  // Optional AND nullable on purpose (defect #292): the server leaves this null until the schedule
+  // is saved, and the app-wide Jackson `default-property-inclusion: non_null` then OMITS the key —
+  // so an unsaved (or just-deleted) Schedule 2 serves NO `revisionCount` and readers see `undefined`.
+  // Test it with a loose `!= null`, never `!== null`, and build fixtures by omitting the key.
+  readonly revisionCount?: number | null
   readonly comments: string | null
   readonly purchasedLogCost: CostBlock
   readonly purchasedWoodOverhead: CostBlock

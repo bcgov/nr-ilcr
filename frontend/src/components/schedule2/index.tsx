@@ -4,7 +4,6 @@ import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Respo
 import type Schedule2Request from '@/interfaces/Schedule2Request'
 import { useState } from 'react'
 import {
-  Button,
   Column,
   Grid,
   Modal,
@@ -26,6 +25,7 @@ import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
+import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
 import './index.scss'
@@ -228,9 +228,15 @@ const Schedule2: FC = () => {
   }
 
   const editable = data.editable
-  // Delete targets a persisted summary; an unsaved document (revisionCount null) has nothing to
-  // delete, so gate it exactly like legacy isScheduleOpen() (BR-08 / S06).
-  const deletable = editable && data.revisionCount !== null
+  // Delete targets a persisted summary; an unsaved document has nothing to delete, so gate it exactly
+  // like legacy isScheduleOpen() (BR-08 / S06). `!= null` is LOOSE on purpose (defect #292): under the
+  // app-wide Jackson `default-property-inclusion: non_null` a null revisionCount is OMITTED from the
+  // GET body, so an unsaved (or just-deleted) Schedule 2 serves `undefined` and a `!== null` test is
+  // always true. Schedule 2 is the page where that matters: its GET never 404s, it serves a 200 empty
+  // EDITABLE document, and its DELETE is idempotent — so the inert gate offered Delete on a schedule
+  // that never existed and reported "Data deleted successfully" for it. Same trap as
+  // schedule5/index.tsx (Camp.campName). Do not "tidy" this to `!==`.
+  const scheduleSaved = data.revisionCount != null
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
@@ -299,22 +305,21 @@ const Schedule2: FC = () => {
     </TableRow>
   )
 
-  const actions = (
-    <Column sm={4} md={8} lg={16} className="schedule-2__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-        Save
-      </Button>
-      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
-        Check Status
-      </Button>
-      <Button
-        kind="danger--tertiary"
-        disabled={!deletable || saving}
-        onClick={() => setConfirmDeleteOpen(true)}
-      >
-        Delete
-      </Button>
-    </Column>
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule and
+  // Save + Check Status + Delete below it (schedule2.xhtml:35-36 vs :172-178), the same shape as
+  // Schedules 1 and 3. Deleting the whole schedule is the one destructive action on this page, and
+  // legacy kept it off the bar a reporter meets first (defect #292 — it used to render on both).
+  const actionBar = (showDelete: boolean) => (
+    <ScheduleActions
+      className="schedule-2__actions"
+      editable={editable}
+      saving={saving}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+      onDelete={() => setConfirmDeleteOpen(true)}
+      showDelete={showDelete}
+      scheduleSaved={scheduleSaved}
+    />
   )
 
   return (
@@ -337,7 +342,7 @@ const Schedule2: FC = () => {
             />
           ))}
 
-        {actions}
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
           <TableContainer>
@@ -387,7 +392,7 @@ const Schedule2: FC = () => {
           )}
         </Column>
 
-        {actions}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

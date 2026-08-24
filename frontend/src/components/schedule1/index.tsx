@@ -514,6 +514,12 @@ const Schedule1: FC = () => {
   // Save + Check Status + Delete below it (schedule1.xhtml:35-38 vs :796-803). Deleting the whole
   // schedule is the one destructive action on this page, and legacy kept it off the bar a reporter
   // meets first.
+  // Delete is additionally gated on a persisted record (`scheduleSaved`), as legacy gated it on
+  // isScheduleOpen() as well as on edit rights. This page is already protected without it — the GET
+  // 404s when unsaved and a delete resets `editable` to false — but that is a side-effect, not a
+  // rule, and defect #292 showed what its absence costs on the one page (Schedule 2) that does serve
+  // an empty editable document. Loose `!= null`: an absent revisionCount arrives as `undefined`
+  // under the app-wide Jackson `non_null` policy.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-1__actions"
@@ -523,6 +529,7 @@ const Schedule1: FC = () => {
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
       showDelete={showDelete}
+      scheduleSaved={data.revisionCount != null}
     />
   )
 

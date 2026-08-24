@@ -40,6 +40,34 @@ const schedule2Doc = {
   totalAverage: block(2800, 134000, 47.86),
 }
 
+// The SERVED shape of an unsaved (or just-deleted) Schedule 2: every figure null and — critically —
+// NO `revisionCount` key at all. The backend leaves it null and the app-wide Jackson
+// `default-property-inclusion: non_null` (application.yml) then drops it from the body, so a fixture
+// that sets `revisionCount: null` describes a response the API cannot emit. Defect #292 shipped
+// behind exactly that: the delete test below asserted the right thing ("Delete is disabled") and
+// passed from the day it was written while the real gate (`revisionCount !== null`) was inert
+// against `undefined`.
+// Never add a `revisionCount` key here.
+const unsavedDoc = {
+  millId: 514,
+  year: 2021,
+  trackStatus: 'D',
+  editable: true,
+  comments: null,
+  purchasedLogCost: block(null, null, null),
+  purchasedWoodOverhead: block(null, null, null),
+  subtotal: block(null, null, null),
+  lessLogSales: block(null, null, null),
+  netPurchased: block(null, null, null),
+  totalCompanyLogging: block(null, null, null),
+  totalAverage: block(null, null, null),
+}
+
+// The action-bar buttons only (the confirm modal renders a "Delete" button of its own, and the bar
+// renders twice — above and below the table).
+const actionBarButtons = (name: RegExp) =>
+  screen.getAllByRole('button', { name }).filter((b) => b.closest('.schedule-2__actions'))
+
 const problemHandler = (status: number, detail: string) =>
   http.get(
     URL,
@@ -103,23 +131,8 @@ describe('Schedule2 page', () => {
 
   test('unsaved editable doc Saves with revisionCount 0 (AC2)', async () => {
     let captured: unknown = null
-    const emptyDoc = {
-      millId: 514,
-      year: 2021,
-      trackStatus: 'D',
-      editable: true,
-      revisionCount: null,
-      comments: null,
-      purchasedLogCost: block(null, null, null),
-      purchasedWoodOverhead: block(null, null, null),
-      subtotal: block(null, null, null),
-      lessLogSales: block(null, null, null),
-      netPurchased: block(null, null, null),
-      totalCompanyLogging: block(null, null, null),
-      totalAverage: block(null, null, null),
-    }
     server.use(
-      http.get(URL, () => HttpResponse.json(emptyDoc)),
+      http.get(URL, () => HttpResponse.json(unsavedDoc)),
       http.put(URL, async ({ request }) => {
         captured = await request.json()
         return HttpResponse.json({
@@ -235,22 +248,44 @@ describe('Schedule2 page', () => {
     ).toBeInTheDocument()
   })
 
+  test('a never-saved Schedule 2 disables Delete and leaves Save / Check Status usable (defect #292)', async () => {
+    // The served body of a mill/year that has never had a Schedule 2 saved: 200, EDITABLE, every
+    // figure blank, and NO `revisionCount` key. There is nothing to delete, so Delete must be
+    // greyed out — but data entry must still be possible (legacy AF1).
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule2 />)
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    const deletes = actionBarButtons(/delete/i)
+    expect(deletes).toHaveLength(1)
+    deletes.forEach((b) => expect(b).toBeDisabled())
+    actionBarButtons(/^save$/i).forEach((b) => expect(b).toBeEnabled())
+    actionBarButtons(/check status/i).forEach((b) => expect(b).toBeEnabled())
+  })
+
+  test('Delete renders on the bottom action bar only (defect #292)', async () => {
+    // Legacy carried Save + Check Status above the schedule and Save + Check Status + Delete below
+    // it (schedule2.xhtml:35-36 vs :172-178) — the asymmetry Schedules 1 and 3 already honour.
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    expect(actionBarButtons(/^save$/i)).toHaveLength(2)
+    expect(actionBarButtons(/check status/i)).toHaveLength(2)
+    const deletes = actionBarButtons(/delete/i)
+    expect(deletes).toHaveLength(1)
+    // …and it is the LAST action bar in the document that carries it.
+    const bars = Array.from(document.querySelectorAll('.schedule-2__actions'))
+    expect(bars).toHaveLength(2)
+    expect(bars[1]?.contains(deletes[0] ?? null)).toBe(true)
+    // A saved schedule (revisionCount 3) can still be deleted.
+    expect(deletes[0]).toBeEnabled()
+  })
+
   test('Delete confirms, shows the API message, then re-GETs the empty editable schedule (AC4)', async () => {
     let deleted = false
-    const emptyDoc = {
-      ...schedule2Doc,
-      revisionCount: null,
-      comments: null,
-      purchasedLogCost: block(null, null, null),
-      purchasedWoodOverhead: block(null, null, null),
-      subtotal: block(null, null, null),
-      lessLogSales: block(null, null, null),
-      netPurchased: block(null, null, null),
-      totalCompanyLogging: block(null, null, null),
-      totalAverage: block(null, null, null),
-    }
     server.use(
-      http.get(URL, () => HttpResponse.json(deleted ? emptyDoc : schedule2Doc)),
+      http.get(URL, () => HttpResponse.json(deleted ? unsavedDoc : schedule2Doc)),
       http.delete(URL, () => {
         deleted = true
         return HttpResponse.json({
@@ -274,11 +309,10 @@ describe('Schedule2 page', () => {
     // empty), Delete is disabled (nothing to delete), and Save/Check Status stay enabled so the
     // Licensee can immediately re-enter data (legacy AF1).
     await waitFor(() => expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue(''))
-    // Scope to the action-bar Delete buttons (the closed confirm modal also has a "Delete" button).
-    const actionDeletes = screen
-      .getAllByRole('button', { name: /delete/i })
-      .filter((b) => b.closest('.schedule-2__actions'))
-    expect(actionDeletes.length).toBeGreaterThan(0)
+    // Delete greys out again: the re-GET carries no `revisionCount`, so there is nothing to delete
+    // and the same schedule cannot be "deleted" repeatedly (defect #292, second face).
+    const actionDeletes = actionBarButtons(/delete/i)
+    expect(actionDeletes).toHaveLength(1)
     actionDeletes.forEach((b) => expect(b).toBeDisabled())
     screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
   })
