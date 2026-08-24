@@ -120,6 +120,140 @@ jobs:
           path: "./frontend/e2e/playwright-report" # path from current folder
           retention-days: 7
 
+  e2e-full:
+    # The FULL data-backed playwright-bdd suite (setup preflight + chromium
+    # projects), which the @smoke job above deliberately skips. It does NOT
+    # test the deployed PR env: mock auth only engages on localhost and several
+    # scenarios need direct DB access, so the whole stack runs on the runner —
+    # frontend (Vite :3000, mock auth) + backend (:8080) — against the
+    # shared TOOLS-namespace Oracle (database/openshift.deploy.yml, deployed by
+    # reusable-deploy's deploy-database job — which the `tests` call sites
+    # already sequence after), reached via `oc port-forward` (routes can't
+    # carry SQL*Net). Data comes from the backend's test-scope Flyway chain
+    # plus the e2e-only anchor seed (backend/src/test/resources/db-e2e/),
+    # reset with flyway:clean+migrate at the start of every run. That reset is
+    # why the concurrency group below only needs to QUEUE runs, never clean up
+    # after them — and it WIPES the tools database each run, which is fine by
+    # design (its template declares the data ephemeral / migration-rebuilt);
+    # nothing else may treat that DB as durable. Gate is `npm run test:gate`
+    # (plain `npm test` exits 1 by design on the known @discovered-* reds —
+    # see e2e/README.md).
+    name: E2E Full (tools Oracle)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: e2e-tools-oracle
+    steps:
+      - uses: actions/checkout@v7
+        name: Checkout
+
+      - name: Install oc
+        run: |
+          curl -sSfL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oc
+
+      - name: Port-forward the tools-namespace Oracle
+        env:
+          OC_SERVER: ${{ vars.OC_SERVER }}
+          OC_TOKEN: ${{ secrets.OC_TOKEN_TOOLS }}
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          oc login --token="$OC_TOKEN" --server="$OC_SERVER"
+          # First boot creates the ILCR PDB + THE user; give it the same
+          # headroom the template's startupProbe allows.
+          oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=600s
+          # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
+          # otherwise surfaces as confusing scenario timeouts. Dies with the job.
+          ( while true; do
+              oc -n "$OC_NAMESPACE" port-forward "svc/$NAME-tools-database" 1525:1521 || true
+              sleep 2
+            done ) &
+          timeout 120 bash -c 'until (echo > /dev/tcp/127.0.0.1/1525) 2>/dev/null; do sleep 2; done'
+          echo "Oracle listener reachable on localhost:1525"
+
+      - uses: actions/setup-java@v5
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Reset and seed database (Flyway clean + migrate)
+        working-directory: backend
+        env:
+          DB_PASS: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
+        # ILCR is the extra PDB database/openshift.deploy.yml creates; THE is
+        # its app user. Retried: right after a fresh deploy the DB can accept
+        # TCP before the pluggable database is open for logins.
+        run: |
+          for i in 1 2 3; do
+            mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
+              -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
+              -Dflyway.user=THE -Dflyway.password="$DB_PASS" && exit 0
+            echo "Flyway attempt $i failed; retrying in 20s..."
+            sleep 20
+          done
+          exit 1
+
+      - name: Start backend
+        working-directory: backend
+        env:
+          SERVER_PORT: "8080"
+          SPRING_PROFILES_ACTIVE: local
+          ILCR_SECURITY_ENABLED: "false"
+          ILCR_DATASOURCE_ENABLED: "true"
+          SPRING_DATASOURCE_URL: jdbc:oracle:thin:@//localhost:1525/ILCR
+          SPRING_DATASOURCE_USERNAME: THE
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.TOOLS_ORACLEDB_PASSWORD }}
+          LOG_LEVEL: INFO
+        run: |
+          mvn -B -ntp spring-boot:run > "$RUNNER_TEMP/backend.log" 2>&1 &
+          npx --yes wait-on -t 300000 http-get://localhost:8080/api/health \
+            || { tail -n 100 "$RUNNER_TEMP/backend.log"; exit 1; }
+
+      - uses: actions/setup-node@v7
+        name: Setup Node
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend/e2e/package-lock.json
+
+      - name: Start frontend (localhost, mock auth)
+        working-directory: frontend
+        env:
+          BACKEND_URL: http://localhost:8080
+        run: |
+          npm ci
+          npm run dev -- --port 3000 &
+          npx --yes wait-on -t 120000 http://localhost:3000
+
+      - name: Install e2e dependencies
+        working-directory: frontend/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run setup:python
+
+      - name: Run full suite (gate)
+        working-directory: frontend/e2e
+        env:
+          CI: "true"
+          # user/pass@host:port/service — the python-oracledb bridge
+          # (scripts/sch1_db_restore.py) and any DB-level cleanup steps.
+          ORACLE_DSN: THE/${{ secrets.TOOLS_ORACLEDB_PASSWORD }}@localhost:1525/ILCR
+        run: npm run test:gate -- --workers=4
+
+      - uses: actions/upload-artifact@v7
+        if: (! cancelled())
+        name: upload results
+        with:
+          name: playwright-report-full
+          path: ./frontend/e2e/playwright-report
+          retention-days: 7
+
   load-tests:
     name: Load
     runs-on: ubuntu-24.04
