@@ -1,5 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { openApp } from './authNav';
+import { NAVIGATION_BUDGET } from './settle';
 import { MSG_SAVED } from '../../fixtures/sch1/schedule1-test-data';
 
 /**
@@ -45,7 +46,7 @@ export class HomePage {
     // each cold-loading the SPA through the Vite dev server) that gap exceeded 10 s once in 514 executions —
     // failing here, before the scenario had done anything. Stabilised rather than retried away; every
     // assertion after this one keeps the strict default, so a genuine hang still fails fast.
-    await expect(this.millDropdown).toBeVisible({ timeout: 30_000 });
+    await expect(this.millDropdown).toBeVisible({ timeout: NAVIGATION_BUDGET });
     // Fail fast at the entry point if the option lists failed to load.
     await expect(this.page.getByText('Unable to load')).toHaveCount(0);
   }

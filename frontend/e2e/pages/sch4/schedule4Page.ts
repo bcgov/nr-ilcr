@@ -45,14 +45,6 @@ import {
  * ("1,200") while holding a raw one ("1200"), so `inputValue()` reads the grouped form the user
  * actually sees; `TextInput` keeps its `labelText` as the accessible name even under `hideLabel`.
  */
-/**
- * How long to let a hover's background transition finish before a colour-sensitive assertion reads it.
- * Carbon's is 70ms (`$duration-fast-02`); this is deliberately several times that so the settled colour is
- * measured, not a frame part-way through the fade. Only the DELIBERATE hover-state a11y scan needs it —
- * every other scan parks the pointer, which has no transition to wait for.
- */
-const HOVER_SETTLE_MS = 400;
-
 export class Schedule4Page {
   constructor(private readonly page: Page) {}
 
@@ -158,8 +150,22 @@ export class Schedule4Page {
    * one — i.e. it understates the contrast failure and can go green by luck of timing.
    */
   async hoverLocationRow(name: string): Promise<void> {
-    await this.locationRow(name).locator('td').first().hover();
-    await this.page.waitForTimeout(HOVER_SETTLE_MS);
+    const firstCell = this.locationRow(name).locator('td').first();
+    await firstCell.hover();
+
+    // Poll the background-color until it settles (two consecutive reads match)
+    let lastColor = '';
+    await expect.poll(async () => {
+      const color = await firstCell.evaluate((el) => window.getComputedStyle(el).backgroundColor);
+      if (color === lastColor && color !== '') {
+        return true;
+      }
+      lastColor = color;
+      return false;
+    }, {
+      message: 'Background color did not settle after hover',
+      timeout: 5000,
+    }).toBe(true);
   }
 
   /** Open a location's panel: Edit in Draft, View outside it (the same control, renamed). */

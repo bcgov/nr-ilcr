@@ -61,7 +61,7 @@ export async function assertNoA11yViolations(
   // PARK THE POINTER FIRST — determinism, not cosmetics.
   //
   // axe's `color-contrast` rule measures the COMPOSITED background, so a row the mouse happens to be
-  // resting on is measured in its :hover state. Playwright leaves the pointer wherever the last click
+  // Resting on is measured in its :hover state. Playwright leaves the pointer wherever the last click
   // left it, so without this the scan result depends on which control the scenario clicked last — the
   // same page could pass or fail run to run, and across domains (Carbon's table hover layer #e0e0e0
   // under a `ghost`/`danger--ghost` label measures 3.78:1, below 4.5:1). Found while authoring the
@@ -72,7 +72,7 @@ export async function assertNoA11yViolations(
   // is worth testing too, but it must hover DELIBERATELY — see the Schedule 4 accessibility feature's
   // explicit row-hover scenario.
   if (!opts.keepPointer) {
-    await page.mouse.move(0, 0);
+    await page.mouse.move(0, 300);
   }
   const results = await new AxeBuilder({ page }).withTags(WCAG_2_1_AA_TAGS).analyze();
   const { violations } = results;

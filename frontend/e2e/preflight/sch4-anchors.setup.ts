@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import {
   ANCHORS,
   GUARD_ANCHORS,
@@ -184,3 +186,93 @@ for (const [name, guard] of Object.entries(GUARD_ANCHORS)) {
     ).toBe(guard.detail);
   });
 }
+
+/** Helper function to find Gherkin feature files recursively. */
+function getFeatureFiles(dir: string): string[] {
+  let files: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files = files.concat(getFeatureFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.feature')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+test('preflight: Schedule 4 mutating anchors are used in at most one feature file', async () => {
+  const dir = path.join(__dirname, '../features/sch4');
+  const files = getFeatureFiles(dir);
+  const anchorUsage = new Map<string, string[]>();
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    const matches = content.matchAll(/Schedule 4 anchor "([^"]+)"/g);
+    for (const match of matches) {
+      const name = match[1];
+      if (name === 'validation') {
+        // "validation" is the designated non-mutating anchor and is safely shared.
+        continue;
+      }
+      if (!anchorUsage.has(name)) {
+        anchorUsage.set(name, []);
+      }
+      const list = anchorUsage.get(name)!;
+      if (!list.includes(file)) {
+        list.push(file);
+      }
+    }
+  }
+
+  const duplicates: string[] = [];
+  for (const [name, usages] of anchorUsage.entries()) {
+    if (usages.length > 1) {
+      duplicates.push(`"${name}" used in: ${usages.map((f) => path.basename(f)).join(', ')}`);
+    }
+  }
+
+  expect(
+    duplicates,
+    `Each mutating Schedule 4 anchor must be used by at most one scenario file to maintain parallel safety — duplicated: ${duplicates.join('; ')}`,
+  ).toEqual([]);
+});
+
+test('preflight: Cross-domain anchors are globally distinct', async () => {
+  const fixturesDir = path.join(__dirname, '../fixtures');
+  const fixtureFiles = fs.readdirSync(fixturesDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== 'common')
+    .map((e) => path.join(fixturesDir, e.name, `${e.name === 'sec' ? 'working-context' : e.name === 'sch7a' ? 'schedule7a' : e.name === 'sch7b' ? 'schedule7b' : e.name === 'sch9' ? 'schedule9' : e.name === 'sch6' ? 'schedule6' : e.name === 'sch5' ? 'schedule5' : e.name === 'sch10' ? 'schedule10' : e.name === 'sch8' ? 'schedule8' : e.name}-test-data.ts`))
+    .filter((f) => fs.existsSync(f));
+
+  const allKeys = new Map<string, string[]>();
+
+  for (const file of fixtureFiles) {
+    const domainName = path.basename(path.dirname(file));
+    const content = fs.readFileSync(file, 'utf8');
+    const matches = content.matchAll(/millId:\s*(\d+),\s*year:\s*(\d+)/g);
+    for (const match of matches) {
+      const key = `${match[1]}/${match[2]}`;
+      if (!allKeys.has(key)) {
+        allKeys.set(key, []);
+      }
+      const list = allKeys.get(key)!;
+      if (!list.includes(domainName)) {
+        list.push(domainName);
+      }
+    }
+  }
+
+  const duplicates: string[] = [];
+  for (const [key, domains] of allKeys.entries()) {
+    if (domains.length > 1) {
+      duplicates.push(`anchor "${key}" shared across: ${domains.join(', ')}`);
+    }
+  }
+
+  expect(
+    duplicates,
+    `Cross-domain anchors must be globally distinct to prevent test runner parallel collision — duplicated: ${duplicates.join('; ')}`,
+  ).toEqual([]);
+});

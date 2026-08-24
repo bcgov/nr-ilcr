@@ -1,4 +1,5 @@
 import { type Page, expect } from '@playwright/test';
+import { NAVIGATION_BUDGET } from './settle';
 
 /**
  * Cross-domain browser-interaction helpers — app entry, side-nav, and Carbon date entry. No domain
@@ -26,7 +27,7 @@ const APP_NAME = 'Interior Logging Cost Reports (ILCR)';
  */
 export async function openApp(page: Page): Promise<void> {
   await page.goto('/');
-  await expect(page.getByRole('banner', { name: APP_NAME })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('banner', { name: APP_NAME })).toBeVisible({ timeout: NAVIGATION_BUDGET });
 }
 
 /**
