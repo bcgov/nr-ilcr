@@ -72,8 +72,12 @@ type Props = {
   readonly errors: BridgeErrors
   readonly codeLists: BridgeCodeLists
   readonly disabled: boolean
-  // Absent in the Add panel: a bridge that does not exist yet has no server-computed totals.
-  readonly totals?: Bridge | null
+  // The four derived totals: the served bridge for an untouched row, the display-only mirror once the
+  // reporter has committed a cost, and the mirror from the start in the Add panel (#291).
+  readonly totals?: Pick<
+    Bridge,
+    'totalMaterial' | 'totalDeliver' | 'totalInstall' | 'grandTotal'
+  > | null
   readonly onChange: <K extends keyof BridgeFormValues>(key: K, value: string) => void
   // Re-group a money field once the user leaves it (schedule 3's `groupField` idiom). On blur rather
   // than on change so inserting a separator mid-word cannot move the caret while typing.

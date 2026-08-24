@@ -83,6 +83,207 @@ describe('Schedule2 page', () => {
     screen.getAllByRole('button', { name: /delete/i }).forEach((b) => expect(b).toBeEnabled())
   })
 
+  // ---- Defect #291: derived figures track data entry, on blur, before Save. -----------------------
+  // The fixture's carried figures: Sch3 PO&P volume 1000 / PO&P actual cost 2000 (purchasedWoodOverhead),
+  // Sch3 Crown volume 2000 / total logging cost 90000 (totalCompanyLogging). Entered: 50000 / 200 / 8000.
+
+  /** A value row's cells as text: [label, volume, cost, $/m³]. */
+  const rowCells = (label: string) => {
+    const tr = screen.getByText(label).closest('tr')
+    if (!tr) throw new Error(`no row for "${label}"`)
+    return within(tr)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent)
+  }
+
+  test('typing alone moves nothing; blurring the field recalculates every dependent figure (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Purchased Log Cost cost')
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '52,000', '52.00'])
+
+    // Typing must NOT recalculate — legacy recalculated on the field's change/blur, not per keystroke,
+    // so a half-typed number never drives the totals.
+    await user.clear(cost)
+    await user.type(cost, '60000')
+    expect(cost).toHaveValue('60,000')
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '52,000', '52.00'])
+
+    // Blur commits the field, and every dependent figure moves at once — with no Save.
+    await user.tab()
+    expect(rowCells('Purchased/Private Log Costs:')).toEqual([
+      'Purchased/Private Log Costs:',
+      '1,000',
+      'Purchased Log Cost cost', // the entry cell holds the input; its text is the hidden a11y label
+      '60.00', // 60000/1000
+    ])
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '62,000', '62.00'])
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual([
+      'Net Purchased/Private Log Cost:',
+      '800', // 1000 - 200
+      '54,000', // 62000 - 8000
+      '67.50',
+    ])
+    expect(rowCells('Total Average Logging Costs:')).toEqual([
+      'Total Average Logging Costs:',
+      '2,800', // 800 + 2000 crown
+      '144,000', // 54000 + 90000
+      '51.43', // 144000/2800 = 51.4286
+    ])
+  })
+
+  test('the wholly-carried rows never move during entry (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Purchased Log Cost cost')
+    await user.clear(cost)
+    await user.type(cost, '999999')
+    await user.tab()
+
+    // Both are carried from Schedules 3 and 1 — Schedule 2 entry cannot affect them.
+    expect(rowCells('Purchased/Private Wood Overhead:')).toEqual([
+      'Purchased/Private Wood Overhead:',
+      '1,000',
+      '2,000',
+      '2.00',
+    ])
+    expect(rowCells('Total Company Logging Costs(Sch 1):')).toEqual([
+      'Total Company Logging Costs(Sch 1):',
+      '2,000',
+      '90,000',
+      '45.00',
+    ])
+  })
+
+  test('editing the sales pair recalculates net and total average (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    const volume = await screen.findByLabelText('Less Log Sales volume')
+    await user.clear(volume)
+    await user.type(volume, '400')
+    await user.tab()
+
+    // 8000/400 = 20.00; net volume 1000-400 = 600; net cost unchanged at 52000-8000 = 44000;
+    // 44000/600 = 73.3333; total average volume 600+2000 = 2600, cost 44000+90000 = 134000.
+    expect(rowCells('(less) Log Sales:')).toEqual([
+      '(less) Log Sales:',
+      'Less Log Sales volume', // both cells hold inputs; their text is the hidden a11y label
+      'Less Log Sales cost',
+      '20.00', // 8000/400
+    ])
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual([
+      'Net Purchased/Private Log Cost:',
+      '600',
+      '44,000',
+      '73.33',
+    ])
+    expect(rowCells('Total Average Logging Costs:')).toEqual([
+      'Total Average Logging Costs:',
+      '2,600',
+      '134,000',
+      '51.54', // 134000/2600 = 51.5385
+    ])
+  })
+
+  test('the mirror equals the SERVER figures, before and after Save (#291 AC5)', async () => {
+    // What Schedule2Service actually computes for cost 60000 against this document's carried figures.
+    // Asserting the rendered cells against THESE values — not against a snapshot of the render — is
+    // what makes this a mirror-vs-server comparison. The earlier version snapshotted the pre-Save
+    // render and compared it to the post-Save render; because an editable page always renders the
+    // mirror, that compared the mirror to itself and would have passed with 999999 in the echo
+    // (code review 2026-08-21).
+    const SERVER = {
+      subtotal: block(1000, 62000, 62.0),
+      netPurchased: block(800, 54000, 67.5),
+      totalAverage: block(2800, 144000, 51.4286),
+    }
+    server.use(
+      http.get(URL, () => HttpResponse.json(schedule2Doc)),
+      http.put(URL, () =>
+        HttpResponse.json({
+          ...schedule2Doc,
+          revisionCount: 4,
+          purchasedLogCost: block(1000, 60000, 60.0),
+          ...SERVER,
+          message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+        }),
+      ),
+    )
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    const cost = await screen.findByLabelText('Purchased Log Cost cost')
+    await user.clear(cost)
+    await user.type(cost, '60000')
+    await user.tab()
+
+    // The mirror must already agree with what the server will send.
+    const expected = {
+      subtotal: ['Subtotal:', '1,000', '62,000', '62.00'],
+      net: ['Net Purchased/Private Log Cost:', '800', '54,000', '67.50'],
+      average: ['Total Average Logging Costs:', '2,800', '144,000', '51.43'],
+    }
+    expect(rowCells('Subtotal:')).toEqual(expected.subtotal)
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual(expected.net)
+    expect(rowCells('Total Average Logging Costs:')).toEqual(expected.average)
+
+    await user.click(screen.getAllByRole('button', { name: /^save$/i })[0])
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+
+    // ...and still agree once the echo has replaced the document.
+    expect(rowCells('Subtotal:')).toEqual(expected.subtotal)
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual(expected.net)
+    expect(rowCells('Total Average Logging Costs:')).toEqual(expected.average)
+  })
+
+  test('on load the mirror reproduces the served figures exactly (#291 AC5)', async () => {
+    // The fixture is self-consistent (its stored derived values satisfy Schedule2Service's formulas),
+    // so this is a direct mirror-vs-server comparison with no edit involved: a mirror that rounds or
+    // propagates nulls differently from the service fails here.
+    server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
+    render(<Schedule2 />)
+    await screen.findByText('Purchased/Private Log Costs:')
+
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '52,000', '52.00'])
+    expect(rowCells('Net Purchased/Private Log Cost:')).toEqual([
+      'Net Purchased/Private Log Cost:',
+      '800',
+      '44,000',
+      '55.00',
+    ])
+    expect(rowCells('Total Average Logging Costs:')).toEqual([
+      'Total Average Logging Costs:',
+      '2,800',
+      '134,000',
+      '47.86',
+    ])
+  })
+
+  test('view mode renders the document figures as-is — no client recomputation (#291 AC7)', async () => {
+    // A non-editable document whose stored Subtotal deliberately disagrees with its own line items: if
+    // the page recomputed outside Draft it would show 52,000 instead of the server's figure.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          ...schedule2Doc,
+          trackStatus: 'S',
+          editable: false,
+          subtotal: block(1000, 999999, 999.99),
+        }),
+      ),
+    )
+    render(<Schedule2 />)
+
+    expect(await screen.findByText('Purchased/Private Log Costs:')).toBeInTheDocument()
+    expect(rowCells('Subtotal:')).toEqual(['Subtotal:', '1,000', '999,999', '999.99'])
+  })
+
   test('editable:false renders read-only + disables actions (AC1)', async () => {
     server.use(
       http.get(URL, () =>

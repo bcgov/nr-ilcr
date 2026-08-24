@@ -30,7 +30,9 @@ import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule1 } from './validation'
+import { deriveSchedule1, enteredFromForm } from './derived'
 import './index.scss'
 
 // ERR-001 (mill/year not selected) and ALT-001 (open-other-costs-before-save) and confirmDeleteMsg
@@ -158,6 +160,11 @@ const Schedule1: FC = () => {
       onReset: resetBanners,
     })
 
+  // The blur-committed snapshot the derived mirror reads (defect #291): `form` tracks every keystroke
+  // because it drives the inputs, `committed` advances only when a field loses focus. Re-seeds
+  // whenever `data` is replaced (load / Save echo / Delete reset).
+  const { committed, commit } = useCommittedValues(form, data)
+
   // Re-group a numeric field's value on blur, so it reads like the plain-text cells beside it. Only
   // on blur — regrouping mid-keystroke would fight the caret. Invalid text is left as typed
   // (groupInput passes it through) so the inline error still points at what the user actually wrote.
@@ -165,6 +172,22 @@ const Schedule1: FC = () => {
     setForm((prev) => {
       const grouped = groupInput(prev[fieldKey] ?? '')
       return grouped === prev[fieldKey] ? prev : { ...prev, [fieldKey]: grouped }
+    })
+  }
+
+  // A field's blur does two things: re-group its display (as before) and commit its value to the
+  // derived mirror's baseline (defect #291). The GROUPED string is handed to `commit` explicitly —
+  // `groupField` only queues its `setForm`, so reading the ref would give the pre-grouping value and
+  // leave `committed` and `form` holding different strings, defeating the unchanged-value skip
+  // (code review 2026-08-21). An invalid field holds its previous committed value.
+  const commitField = (fieldKey: string) => () => {
+    groupField(fieldKey)()
+    const grouped = groupInput(form[fieldKey] ?? '')
+    // Validated here rather than read from `fieldErrors`, which is computed further down (after the
+    // early returns); same source of truth, and it only runs on blur.
+    commit(fieldKey, {
+      value: grouped,
+      invalid: Boolean(validateSchedule1(form)[fieldKey]),
     })
   }
 
@@ -326,6 +349,11 @@ const Schedule1: FC = () => {
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
+  // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
+  // read-only cells track data entry the way legacy did. Null outside Draft / in view mode, where
+  // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
+  const derived = editable ? deriveSchedule1(data, enteredFromForm(committed)) : null
+
   // A value cell: an editable TextInput when the field is writable and the schedule is editable,
   // otherwise read-only text. perUnit is always read-only (server-computed).
   const numberCell = (
@@ -346,7 +374,7 @@ const Schedule1: FC = () => {
           size="sm"
           value={form[fieldKey] ?? ''}
           onChange={setField(fieldKey)}
-          onBlur={groupField(fieldKey)}
+          onBlur={commitField(fieldKey)}
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
@@ -366,9 +394,35 @@ const Schedule1: FC = () => {
         <TableCell>{label}</TableCell>
         {numberCell(`vol-${code}`, `${label} volume`, writableVolume, item.volume)}
         {numberCell(`cost-${code}`, `${label} cost`, writableCost, item.cost)}
-        <TableCell className="schedule-1__num">{fmtCurrency(item.perUnit)}</TableCell>
+        <TableCell className="schedule-1__num">
+          {fmtCurrency(derived ? derived.perUnit[code] : item.perUnit)}
+        </TableCell>
       </TableRow>
     )
+  }
+
+  // 139's cost is pulled from Schedule 3 and stays served even mid-entry, because nothing on this
+  // page is an input to it; only 140's cost has a mirror. Extracted from a nested ternary (SonarQube
+  // 2026-08-21) -- worth doing, because the nesting hid that `derived` changes exactly ONE of these
+  // three branches.
+  const silvicultureCost = (code: number, item: LineItem | null): number | null | undefined => {
+    if (code === 139) return data.lessSilvAdminCost
+    if (code === 140) return derived ? derived.totalSilvicultureCost : data.totalSilvicultureCost
+    return item?.cost
+  }
+
+  // $/m³ = cost ÷ volume (139/140 fold in the Schedule 3 pulls). Mirrored while editable so it
+  // tracks entry; the document's server-computed figure otherwise (#291).
+  //
+  // NOTE the precedence is deliberately the OPPOSITE of `silvicultureCost` above: the mirror
+  // supersedes every row here, 139 and 140 included, because `deriveSchedule1` computes a rate for
+  // both (derived.ts:98,115) even though it computes a cost only for 140. Same two codes, different
+  // answer -- which is precisely what a three-deep ternary is bad at showing.
+  const silviculturePerUnit = (code: number, item: LineItem | null): number | null | undefined => {
+    if (derived) return derived.perUnit[code]
+    if (code === 139) return data.lessSilvAdminPerUnit
+    if (code === 140) return data.totalSilviculturePerUnit
+    return item?.perUnit
   }
 
   const silvicultureRow = (row: (typeof SILV_ROWS)[number]) => {
@@ -376,20 +430,8 @@ const Schedule1: FC = () => {
     // All four silviculture VOLUMES are user-entered; only 1 & 2 have an editable cost. 139's cost is
     // pulled from Schedule 3, 140's is derived — both read-only.
     const writableCost = row.code === 1 || row.code === 2
-    // 139's cost is pulled from Schedule 3; 140's is the derived Total Silviculture cost (both read-only).
-    const costValue =
-      row.code === 139
-        ? data.lessSilvAdminCost
-        : row.code === 140
-          ? data.totalSilvicultureCost
-          : item?.cost
-    // $/m³ = cost ÷ volume, computed server-side (139/140 fold in the Schedule 3 pulls).
-    const perUnitValue =
-      row.code === 139
-        ? data.lessSilvAdminPerUnit
-        : row.code === 140
-          ? data.totalSilviculturePerUnit
-          : item?.perUnit
+    const costValue = silvicultureCost(row.code, item)
+    const perUnitValue = silviculturePerUnit(row.code, item)
     return (
       <TableRow key={row.code}>
         <TableCell>{row.label}</TableCell>
@@ -413,7 +455,9 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 143)?.volume,
       )}
       <TableCell className="schedule-1__num">{fmtNumber(data.forestMgmtAdminCost)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtCurrency(data.forestMgmtAdminPerUnit)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(derived ? derived.perUnit[143] : data.forestMgmtAdminPerUnit)}
+      </TableCell>
     </TableRow>
   )
 
@@ -427,10 +471,10 @@ const Schedule1: FC = () => {
         data.lineItems.find((li) => li.costItemCode === 144)?.volume,
       )}
       <TableCell className="schedule-1__num">
-        {fmtNumber(data.subtotalCompanyLoggingCost)}
+        {fmtNumber(derived ? derived.subtotalCompanyLoggingCost : data.subtotalCompanyLoggingCost)}
       </TableCell>
       <TableCell className="schedule-1__num">
-        {fmtCurrency(data.subtotalCompanyLoggingPerUnit)}
+        {fmtCurrency(derived ? derived.perUnit[144] : data.subtotalCompanyLoggingPerUnit)}
       </TableCell>
     </TableRow>
   )
@@ -462,6 +506,7 @@ const Schedule1: FC = () => {
             size="sm"
             value={form['otherCostsVolume'] ?? ''}
             onChange={setField('otherCostsVolume')}
+            onBlur={commitField('otherCostsVolume')}
             invalid={Boolean(fieldErrors['otherCostsVolume'])}
             invalidText={fieldErrors['otherCostsVolume']}
           />
@@ -470,7 +515,9 @@ const Schedule1: FC = () => {
         <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.volume)}</TableCell>
       )}
       <TableCell className="schedule-1__num">{fmtNumber(data.otherCosts.costSubtotal)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtCurrency(data.otherCosts.perUnit)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(derived ? derived.otherCostsPerUnit : data.otherCosts.perUnit)}
+      </TableCell>
     </TableRow>
   )
 
@@ -481,9 +528,13 @@ const Schedule1: FC = () => {
     <TableRow key="total-company-logging" className="schedule-1__grand-total-row">
       <TableCell>Total Company Logging Costs (Including total Silviculture Cost)</TableCell>
       <TableCell className="schedule-1__num">{fmtNumber(data.schedule3CrownVolume)}</TableCell>
-      <TableCell className="schedule-1__num">{fmtNumber(data.totalCompanyLoggingCost)}</TableCell>
       <TableCell className="schedule-1__num">
-        {fmtCurrency(data.totalCompanyLoggingPerUnit)}
+        {fmtNumber(derived ? derived.totalCompanyLoggingCost : data.totalCompanyLoggingCost)}
+      </TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtCurrency(
+          derived ? derived.totalCompanyLoggingPerUnit : data.totalCompanyLoggingPerUnit,
+        )}
       </TableCell>
     </TableRow>
   )

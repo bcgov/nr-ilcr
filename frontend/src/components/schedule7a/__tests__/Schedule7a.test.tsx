@@ -188,6 +188,165 @@ async function fillAddForm(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Schedule 7A page', () => {
+  // ---- Defect #291: the four totals track entry, on blur. ----------------------------------------
+  //
+  // The `northFork` fixture is self-consistent — 8,000 / 800 / 1,200 / 12,000 all satisfy
+  // Schedule7aService's formulas — so the first test below is a genuine mirror-vs-server comparison.
+
+  /**
+   * One of the four total values inside a container. Scoped to the `.schedule-7a__total` blocks and
+   * matched on the label EXACTLY: the cost-field labels also contain "Material"/"Deliver"/"Install",
+   * so a bare getByText matches several elements.
+   */
+  const totalIn = (container: HTMLElement, label: string): string | null | undefined => {
+    const block = [...container.querySelectorAll('.schedule-7a__total')].find(
+      (el) => el.firstElementChild?.textContent === label,
+    )
+    return block?.querySelector('.schedule-7a__total-value')?.textContent
+  }
+
+  const bridgeContainer = (bridgeReportId: number): HTMLElement =>
+    document
+      .getElementById(`bridge-${String(bridgeReportId)}-locationName`)
+      ?.closest('.cds--accordion__item') as HTMLElement
+
+  test('the mirror reproduces the served totals exactly (#291 AC5)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    // Committing a cost WITHOUT changing it hands the row to the mirror, so these four figures now
+    // come from the client and must still equal what the server sent.
+    await user.click(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i))
+    await user.tab()
+
+    expect(totalIn(panel, 'Material')).toBe('8,000')
+    expect(totalIn(panel, 'Deliver')).toBe('800')
+    expect(totalIn(panel, 'Install')).toBe('1,200')
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('12,000')
+  })
+
+  test('typing alone moves nothing; blurring a cost recalculates the totals (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.clear(material)
+    await user.type(material, '7000')
+    expect(totalIn(panel, 'Material')).toBe('8,000') // not per keystroke
+
+    await user.tab()
+    expect(totalIn(panel, 'Material')).toBe('10,000') // 7000 + 3000 abutment
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('14,000') // 12,000 + 2,000
+    // The other two pair totals are untouched.
+    expect(totalIn(panel, 'Deliver')).toBe('800')
+    expect(totalIn(panel, 'Install')).toBe('1,200')
+  })
+
+  test('clearing both halves blanks that total rather than showing 0 (#291)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    await user.clear(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i))
+    await user.tab()
+    await user.clear(bridgePanel(7001).getByLabelText(/Abutment.*Material/i))
+    await user.tab()
+
+    expect(totalIn(panel, 'Material')).toBe('') // null, not 0
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('4,000') // 12,000 less the 8,000 material
+  })
+
+  test('the Add panel shows totals as soon as costs are committed (#291)', async () => {
+    // It previously passed no `totals` at all, so all four read blank for the whole of entry.
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^add$/i }))
+    const addPanel = document
+      .getElementById('add-locationName')
+      ?.closest('.schedule-7a__section') as HTMLElement
+    expect(totalIn(addPanel, 'Grand Total ($)')).toBe('')
+
+    await user.type(within(addPanel).getByLabelText(/Superstructure.*Material/i), '5000')
+    await user.tab()
+    expect(totalIn(addPanel, 'Material')).toBe('5,000')
+    expect(totalIn(addPanel, 'Grand Total ($)')).toBe('5,000')
+  })
+
+  test('the Save echo supersedes the row mirror — totals follow the server (#291 AC5)', async () => {
+    // The invariant the whole design rests on, and the one no test in this batch asserted: after a
+    // Save the derived cells must come from the echo, not from the pre-save client snapshot. Proven
+    // broken by the code review — `rowCommitted` was never cleared, so the input reverted to the
+    // echoed value while the total kept the stale mirror, permanently.
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      // The echo re-serves the ORIGINAL bridge, as a server that rejected or normalized the entry
+      // would: the totals must snap back to 8,000 / 12,000.
+      http.put(BRIDGES_URL, () => HttpResponse.json(doc())),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const panel = bridgeContainer(7001)
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.clear(material)
+    await user.type(material, '7000')
+    await user.tab()
+    expect(totalIn(panel, 'Material')).toBe('10,000') // the mirror, pre-Save
+
+    await savePage(user)
+    await waitFor(() => {
+      expect(bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)).toHaveValue('5,000')
+    })
+    // The field reverted to the echo; the total must have too.
+    expect(totalIn(panel, 'Material')).toBe('8,000')
+    expect(totalIn(panel, 'Grand Total ($)')).toBe('12,000')
+  })
+
+  test('a blur that changes nothing does not hand an untouched row to the mirror (#291 AC7)', async () => {
+    // Legacy fired on `change`; a tab-through is not a change. Without this guard a stray Tab replaced
+    // the served totals with a client recomputation, bypassing the AC7 test below.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [{ ...northFork, grandTotal: 999999 }] })),
+      ),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const material = bridgePanel(7001).getByLabelText(/Superstructure.*Material/i)
+    await user.click(material)
+    await user.tab()
+
+    expect(totalIn(bridgeContainer(7001), 'Grand Total ($)')).toBe('999,999')
+  })
+
+  test('an untouched row keeps the served totals — no client recomputation (#291 AC7)', async () => {
+    // A stored grand total that disagrees with its own components: until the reporter commits a cost,
+    // the row must show the server's figure, not a recomputed one.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ bridges: [{ ...northFork, grandTotal: 999999 }] })),
+      ),
+    )
+    render(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expect(totalIn(bridgeContainer(7001), 'Grand Total ($)')).toBe('999,999')
+  })
+
   test('renders each bridge as an accordion row with legacy labels and server totals (AC1, AC2)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()

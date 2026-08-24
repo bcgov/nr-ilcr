@@ -1,6 +1,13 @@
 // Mirrors the backend Schedule1Response DTO (Story 1.2). Numbers are nullable; Jackson omits nulls,
-// so an absent line item / block member simply won't be in the JSON. perUnit and subtotals are
-// computed server-side (read-only) — never recompute them client-side.
+// so an absent line item / block member simply won't be in the JSON. perUnit and the subtotals are
+// computed server-side and are read-only here — never sent on a write, and the server is the sole
+// authority for every stored figure.
+//
+// They ARE mirrored for display while the schedule is being edited, so the read-only cells track entry
+// before Save the way legacy did (defect #291; spine AD-5 amended 2026-08-20). That mirror lives in
+// `components/schedule1/derived.ts` and nowhere else, and the Save echo supersedes it. Note Schedule 1
+// rounds $/m³ with the LEGACY scale-2 rule (divide at scale 10, then scale 2), not the scale-4 rule
+// Schedules 2 and 4 use.
 
 export interface LineItem {
   readonly costItemCode: number
@@ -46,7 +53,8 @@ export default interface Schedule1Response {
   readonly forestMgmtAdminCost: number | null
   readonly lessSilvAdminCost: number | null
   readonly otherCosts: OtherCostsSummary
-  // Derived read-only figures (legacy Schedule1MB getters) — server-computed, never recompute client-side.
+  // Derived read-only figures (legacy Schedule1MB getters) — server-computed; mirrored for display
+  // during entry by `components/schedule1/derived.ts` only (defect #291).
   readonly forestMgmtAdminPerUnit: number | null // 143 $/m³
   readonly lessSilvAdminPerUnit: number | null // 139 $/m³
   readonly totalSilvicultureCost: number | null // 140 cost (silv actual − Sch3 silv admin + accrued)
