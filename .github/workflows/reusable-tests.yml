@@ -172,6 +172,25 @@ jobs:
           echo "::add-mask::$DB_PASS"
           echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
           echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
+          # Ensure the app user in the ILCR PDB matches EXACTLY the credential
+          # bytes this job just read. The image's boot-time createAppUser pipes
+          # the password through an UNQUOTED shell heredoc, so special
+          # characters ('"', '$', backtick, ...) can make it fail or store
+          # different bytes — observed as a persistent ORA-01017 even on a
+          # freshly restarted pod. Setting it here as SYSDBA (OS-auth, which
+          # the database Dockerfile's UID remap preserves) makes boot-time
+          # quirks and future Secret rotations irrelevant. The SQL travels
+          # over stdin — the password never appears in argv or the log.
+          DB_PASS_SQL="${DB_PASS//\"/\"\"}"
+          oc -n "$OC_NAMESPACE" exec -i "deploy/$NAME-tools-database" -- sqlplus -S / as sysdba <<EOF
+          WHENEVER SQLERROR EXIT SQL.SQLCODE
+          ALTER SESSION SET CONTAINER=ILCR;
+          CREATE USER IF NOT EXISTS $DB_USER IDENTIFIED BY "$DB_PASS_SQL" DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
+          GRANT DB_DEVELOPER_ROLE TO $DB_USER;
+          ALTER USER $DB_USER IDENTIFIED BY "$DB_PASS_SQL";
+          exit;
+          EOF
+          echo "App user $DB_USER ensured in PDB ILCR."
           # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
           # otherwise surfaces as confusing scenario timeouts. Dies with the job.
           ( while true; do
@@ -190,36 +209,18 @@ jobs:
 
       - name: Reset and seed database (Flyway clean + migrate)
         working-directory: backend
-        env:
-          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE_TOOLS }}
-          NAME: ${{ github.event.repository.name }}
         # ILCR is the extra PDB database/openshift.deploy.yml creates;
-        # DB_USER/DB_PASS were read from its Secret in the port-forward step.
-        # Flyway doubles as the credential probe (same JDBC path the whole job
-        # uses). Retries cover a fresh pod accepting TCP before the PDB opens.
-        # ORA-01017 self-heal: the pod reads APP_USER_PASSWORD from the Secret
-        # ONCE at boot, so a Secret rotated after the pod started leaves the
-        # database initialized with a stale password; the data is disposable
-        # (this very step wipes it), so restart ONCE and let the fresh pod
-        # re-initialize from the current Secret, then keep retrying while the
-        # recreated PDB comes up.
+        # DB_USER/DB_PASS were read from its Secret — and the app user was
+        # (re)aligned to those exact bytes — in the port-forward step. Retries
+        # cover transients only (a fresh pod accepting TCP before the PDB
+        # opens, a port-forward reconnect mid-migrate).
         run: |
-          restarted=""
-          for i in $(seq 1 12); do
-            if mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
-                 -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
-                 -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" \
-                 2>&1 | tee "$RUNNER_TEMP/flyway.log"; test "${PIPESTATUS[0]}" -eq 0; then
-              exit 0
-            fi
-            if grep -q "ORA-01017" "$RUNNER_TEMP/flyway.log" && [ -z "$restarted" ]; then
-              restarted=yes
-              echo "Stale DB credentials (ORA-01017) — restarting the database to re-initialize from the current Secret..."
-              oc -n "$OC_NAMESPACE" rollout restart "deployment/$NAME-tools-database"
-              oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=900s
-            fi
-            echo "Flyway attempt $i failed; retrying in 30s..."
-            sleep 30
+          for i in 1 2 3 4 5; do
+            mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
+              -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
+              -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" && exit 0
+            echo "Flyway attempt $i failed; retrying in 20s..."
+            sleep 20
           done
           exit 1
 
