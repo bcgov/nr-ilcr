@@ -548,7 +548,10 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // Derived values are never sent (AD-5/AD-12), and revisionCount belongs to the PUT only.
     expect(captured).not.toHaveProperty('rmg')
     expect(captured).not.toHaveProperty('costPerVolume')
-    expect(captured!.revisionCount).toBeUndefined()
+    // toHaveProperty, not `captured!.revisionCount` — Task 8 dropped revisionCount from
+    // RoadRecordRequest, so the member access is a TS2339 against the current type while asserting
+    // the same thing. This form matches the two lines above and stays valid once the field is gone.
+    expect(captured).not.toHaveProperty('revisionCount')
     // Legacy's add() collapses the panel before saving (Schedule6MB.java:203) — reopening it must
     // show cleared inputs (add-is-save: they clear only on success).
     await waitFor(() =>

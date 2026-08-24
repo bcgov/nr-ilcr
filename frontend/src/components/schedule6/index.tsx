@@ -3,6 +3,7 @@ import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
 import type { Schedule6CodeLists } from '@/interfaces/Schedule6Response'
 import type {
+  RoadRecordEntry,
   RoadRecordRequest,
   Schedule6CheckRequest,
   Schedule6SaveRequest,
@@ -622,7 +623,13 @@ const Schedule6: FC = () => {
     // Built in the SAME pass that checks the token (rather than a separate .map that would need a
     // cast at the call site) -- a cast that depends on a guard six lines away having already run rots
     // quietly once the two stop being read together.
-    const entries: Schedule6SaveRequest['records'] = []
+    // Mutable while it is being built, then assigned to the request's `readonly records` below --
+    // a mutable array is assignable to a readonly one, not the reverse. Typing this as
+    // `Schedule6SaveRequest['records']` made `.push` a TS2339 (readonly arrays expose no mutators);
+    // nothing in the pipeline type-checks -- `build` is bare `vite build` and Vitest runs through
+    // esbuild, both of which strip types without checking them -- so it stayed invisible until a
+    // reviewer ran `tsc` (code review 2026-08-24).
+    const entries: RoadRecordEntry[] = []
     for (const row of data.roadRecords) {
       if (row.revisionCount === null || row.revisionCount === undefined) {
         setActionError(ERR_MISSING_REVISION)
