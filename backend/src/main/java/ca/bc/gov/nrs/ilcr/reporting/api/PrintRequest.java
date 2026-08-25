@@ -4,7 +4,7 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * The Print Schedules selection (Epic 20.2). Carries the twelve schedule flags plus the "all"
  * shortcut and the three print options, mirroring the legacy {@code PrintSchedulesMB} screen so the
  * frontend can build the full page while the backend renders only the in-scope sections (1, 2, 3,
- * 5, 6, 7A, 7B, 9, 10, 11). A selected-but-unimplemented schedule (4/8) and {@code
+ * 5, 6, 7A, 7B, 8, 9, 10, 11). The selected-but-unimplemented Schedule 4 and {@code
  * printMillInformationReport} are accepted for forward-compatibility but produce no section yet
  * (skipped, logged) until their story lands.
  *
@@ -22,7 +22,7 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * @param schedule6 print Schedule 6 (Road Management Costs)
  * @param schedule7a print Schedule 7A (Bridge Costs)
  * @param schedule7b print Schedule 7B (Culvert Costs)
- * @param schedule8 print Schedule 8 (accepted; not rendered in 20.2)
+ * @param schedule8 print Schedule 8 (Tree to Truck Costs)
  * @param schedule9 print Schedule 9 (Miscellaneous/Unique Logging Costs)
  * @param schedule10 print Schedule 10 (New Road Construction Costs)
  * @param schedule11 print Schedule 11 (Basic Silviculture)

@@ -74,12 +74,15 @@ describe('PrintSchedules', () => {
       'Schedule 3',
       'Schedule 5',
       'Schedule 7B',
+      'Schedule 8',
       'Schedule 9',
       'Schedule 11',
     ]) {
       expect(screen.getByRole('checkbox', { name: label })).toBeChecked()
     }
-    expect(screen.getByRole('checkbox', { name: 'Schedule 8 (coming soon)' })).not.toBeChecked()
+    // Schedule 4 is the only non-renderable schedule left, so it is the "(coming soon)" one that
+    // "Select all" must leave unchecked.
+    expect(screen.getByRole('checkbox', { name: 'Schedule 4 (coming soon)' })).not.toBeChecked()
   })
 
   it('posts the selection and downloads the PDF on success', async () => {
