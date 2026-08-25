@@ -10,13 +10,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -31,7 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
  * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
  * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 8 by
- * V20260822, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
+ * V20260823, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
  * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
  * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
  * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
@@ -364,7 +368,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
     // combined PDF carries Schedule 1 (Story 20.5) FIRST, then Schedule 2 (Story 20.6), then
     // Schedule 3 (Story 20.7), then 5/6/7A/7B, then Schedule 8 (Story 20.8 — seeded on 517 by
-    // V20260822), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
+    // V20260823), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
     // Schedule 8 position (between 7B and 9) in a real combined PDF.
     String selection =
         """
@@ -392,10 +396,38 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
     assertThat(text).contains("Schedule 8:  Tree to Truck Costs");
-    // Deep-geometry proof: sample 1's 3rd addition and sample 2's lone addition both rendered, so
-    // the stretch/float of the nested additions/deductions lists across 2 samples held together.
-    assertThat(text).contains("Add Three"); // sample 1, 3rd addition row
+    // Deep-geometry proof (PR #352 review): the nested additions AND deductions lists must BOTH
+    // render every row inside the fixed-height Samples list cell — the level-3 construct with no
+    // precedent in the sibling templates. Sample 1 carries 3 additions + 3 deductions; the LAST row
+    // of each (Add Three / Ded Three) is the one that falls off the cell if it does not size to its
+    // content, so asserting them pins that the deductions block is neither dropped nor overlapped
+    // off the bottom. Sample 2's lone rows (Add Solo / Ded Solo) pin the 2+ sample reflow.
+    assertThat(text).contains("Additions"); // sample 1 additions sub-block heading
+    assertThat(text).contains("Add Three"); // sample 1, 3rd (last) addition row
+    assertThat(text).contains("Deductions"); // sample 1 deductions sub-block heading
+    assertThat(text)
+        .contains("Ded Three"); // sample 1, 3rd (last) deduction row — the overflow canary
     assertThat(text).contains("Add Solo"); // sample 2's addition row
+    assertThat(text).contains("Ded Solo"); // sample 2's deduction row
+    // Geometry, not just presence (PR #352 review): pdfbox flat text can't tell "rendered below"
+    // from "overlapped/dropped", so pin sample 1's block by LAYOUT. All six rate rows land on ONE
+    // page, the additions read top→bottom, and the deductions sit strictly BELOW the last addition
+    // —
+    // i.e. the additions list stretched its cell and floated the deductions block down cleanly
+    // rather
+    // than colliding with it or spilling the last rows off the fixed-height Samples cell.
+    Map<String, float[]> pos =
+        firstPositions(
+            pdf, List.of("Add One", "Add Two", "Add Three", "Ded One", "Ded Two", "Ded Three"));
+    assertThat(pos)
+        .containsKeys("Add One", "Add Two", "Add Three", "Ded One", "Ded Two", "Ded Three");
+    float sampleOnePage = pos.get("Add One")[0];
+    assertThat(pos.values()).allSatisfy(p -> assertThat(p[0]).isEqualTo(sampleOnePage));
+    assertThat(pos.get("Add One")[1]).isLessThan(pos.get("Add Two")[1]);
+    assertThat(pos.get("Add Two")[1]).isLessThan(pos.get("Add Three")[1]);
+    assertThat(pos.get("Add Three")[1]).isLessThan(pos.get("Ded One")[1]); // deductions below adds
+    assertThat(pos.get("Ded One")[1]).isLessThan(pos.get("Ded Two")[1]);
+    assertThat(pos.get("Ded Two")[1]).isLessThan(pos.get("Ded Three")[1]);
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
     // BR-08 fixed order: 1 -> 2 -> 3 -> 5 -> 6 -> 7A -> 7B -> 8 -> 9 -> 11 (Schedule 8 between 7B
@@ -847,6 +879,38 @@ class PrintScheduleIT extends AbstractOracleIT {
       stripper.setEndPage(oneBasedPage);
       return stripper.getText(document);
     }
+  }
+
+  /**
+   * First-occurrence layout position of each target string: {@code [1-based page, Y-from-top]}.
+   * Used to pin the level-3 nested-list GEOMETRY that pdfbox flat text can't — a row that overflows
+   * its fixed list cell still extracts as text, so text presence alone can't tell "rendered below"
+   * from "overlapped / dropped". Comparing Y positions turns that into red/green: additions above
+   * deductions, each list in order, all on one page ⇒ the block neither collided nor spilled.
+   * Captures {@link TextPosition#getYDirAdj()} (Y grows downward) of the first glyph on the first
+   * line that contains each target.
+   */
+  private static Map<String, float[]> firstPositions(byte[] pdf, List<String> targets)
+      throws Exception {
+    Map<String, float[]> found = new LinkedHashMap<>();
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDFTextStripper stripper =
+          new PDFTextStripper() {
+            @Override
+            protected void writeString(String string, List<TextPosition> textPositions)
+                throws IOException {
+              for (String target : targets) {
+                if (!found.containsKey(target) && string.contains(target)) {
+                  found.put(
+                      target, new float[] {getCurrentPageNo(), textPositions.get(0).getYDirAdj()});
+                }
+              }
+              super.writeString(string, textPositions);
+            }
+          };
+      stripper.getText(document);
+    }
+    return found;
   }
 
   /**
