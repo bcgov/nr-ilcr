@@ -19,7 +19,10 @@ jobs:
   integration-tests:
     name: Integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Covers the deployed-env probe below PLUS the backend *IT suite (moved
+    # here from analysis.yml): Testcontainers Oracle pull + start + 115 IT
+    # classes.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -62,69 +65,31 @@ jobs:
           npm ci
           node src/main.js
 
+      - uses: actions/setup-java@v5
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # The backend *IT acceptance suite (authorization, persistence,
+      # validation against a real Oracle) — moved here from analysis.yml so
+      # the Integration job owns all integration testing. AbstractOracleIT
+      # starts one gvenzl/oracle-free Testcontainer per JVM and applies the
+      # test snapshot (classpath:db) with Flyway's Java API; only Docker is
+      # needed, which the runner provides. The `integration-test` profile
+      # runs failsafe only (unit tests stay in analysis.yml's Sonar job).
+      - name: Backend integration tests (Testcontainers Oracle)
+        working-directory: backend
+        run: mvn -B -ntp -P integration-test verify
+
   e2e-tests:
-    name: E2E
-    # The e2e suite is the self-contained playwright-bdd project under frontend/e2e (it retired the old
-    # raw-Playwright frontend/e2e). Only the DATA-INDEPENDENT `@smoke` project runs here: it aborts /api,
-    # so it needs neither the seeded delivery Oracle nor the pinned fixtures the deployed env lacks. The
-    # full data-backed suite (setup + chromium — SCH1/SEC) is a LOCAL/manual gate; see frontend/e2e/README.md.
-    #
-    # The smoke runs against a LOCAL Vite server on localhost, NOT the deployed PR URL. Since Story 1.2
-    # turned auth on, mock auth is (by design) disabled off-localhost — `isMockAuth()` double-gates on
-    # `isLocalHost()` (src/env.ts) — so an anonymous visit to a deployed host correctly bounces to the
-    # FAM/Cognito Hosted UI and never renders the shell. On localhost with the repo-default
-    # `{ mockUser: true }` config the shell renders client-side, keeping this smoke auth- AND
-    # backend-independent (the scenarios still abort every /api call).
-    defaults:
-      run:
-        working-directory: frontend/e2e
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        name: Checkout
-      - uses: actions/setup-node@v7
-        name: Setup Node
-        with:
-          node-version: 24
-          cache: "npm"
-          cache-dependency-path: frontend/e2e/package-lock.json
-      - name: Install e2e dependencies
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
-      - name: Install frontend
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run smoke (data-independent, localhost mock auth)
-        working-directory: frontend
-        env:
-          CI: "true"
-        run: |
-          # Serve the app on localhost so mock auth engages (isMockAuth() requires localhost); the
-          # @smoke scenarios abort /api, so no backend is needed. No E2E_BASE_URL → the Playwright
-          # config defaults baseURL to http://localhost:3000.
-          npm run dev -- --port 3000 &
-          DEV_PID=$!
-          npx --yes wait-on -t 120000 http://localhost:3000
-          ( cd e2e && npm test -- --project=smoke --reporter=html )
-          kill "$DEV_PID" 2>/dev/null || true
-
-      - uses: actions/upload-artifact@v7
-        if: (! cancelled())
-        name: upload results
-        with:
-          name: playwright-report-smoke
-          path: "./frontend/e2e/playwright-report" # path from current folder
-          retention-days: 7
-
-  e2e-full:
-    # The FULL data-backed playwright-bdd suite (setup preflight + chromium
-    # projects), which the @smoke job above deliberately skips. It does NOT
-    # test the deployed PR env: mock auth only engages on localhost and several
-    # scenarios need direct DB access, so the whole stack runs on the runner —
+    # The COMPLETE playwright-bdd suite (frontend/e2e): the @smoke app-shell
+    # project, the `setup` preflight anchor checks, and the data-backed
+    # chromium scenarios, all in one job. It does NOT test the deployed PR
+    # env: mock auth only engages on localhost (`isMockAuth()` double-gates on
+    # `isLocalHost()`, src/env.ts) and several scenarios need direct DB
+    # access, so the whole stack runs on the runner —
     # frontend (Vite :3000, mock auth) + backend (:8080) — against the
     # shared TOOLS-namespace Oracle (database/openshift.deploy.yml, deployed by
     # reusable-deploy's deploy-database job — which the `tests` call sites
@@ -138,7 +103,7 @@ jobs:
     # nothing else may treat that DB as durable. Gate is `npm run test:gate`
     # (plain `npm test` exits 1 by design on the known @discovered-* reds —
     # see e2e/README.md).
-    name: E2E Full (tools Oracle)
+    name: E2E
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
@@ -285,16 +250,15 @@ jobs:
           # user/pass@host:port/service — the python-oracledb bridge
           # (scripts/sch1_db_restore.py) and any DB-level cleanup steps.
           ORACLE_DSN: ${{ env.DB_USER }}/${{ env.DB_PASS }}@localhost:1525/ILCR
-        # --project=chromium pulls in its `setup` (preflight) dependency
-        # automatically and skips the @smoke project, which the e2e-tests job
-        # above already runs — keeps the two jobs' scopes disjoint.
-        run: npm run test:gate -- --project=chromium --workers=4
+        # No --project filter: all three projects run — smoke (shell, no DB),
+        # setup (preflight anchors), chromium (data-backed scenarios).
+        run: npm run test:gate -- --workers=4
 
       - uses: actions/upload-artifact@v7
         if: (! cancelled())
         name: upload results
         with:
-          name: playwright-report-full
+          name: playwright-report
           path: ./frontend/e2e/playwright-report
           retention-days: 7
 
