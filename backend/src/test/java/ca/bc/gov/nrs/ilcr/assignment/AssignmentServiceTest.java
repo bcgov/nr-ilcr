@@ -1,17 +1,21 @@
 package ca.bc.gov.nrs.ilcr.assignment;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
+import ca.bc.gov.nrs.ilcr.assignment.dto.SubmitterAccount;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
@@ -176,6 +180,42 @@ class AssignmentServiceTest {
     assertEquals(1, rows.size());
     assertNull(rows.get(0).millNumber());
     assertNull(rows.get(0).millName());
+  }
+
+  @Test
+  @DisplayName("a lost provisioning race is absorbed — the account exists, which is all we needed")
+  void provisioningRaceIsAbsorbed() {
+    activeMill();
+    // Absent on the read, present by the time the insert lands: another request won the race.
+    when(users.findUser(GUID)).thenReturn(Optional.empty()).thenReturn(Optional.of(account()));
+    doThrow(new DataIntegrityViolationException("ORA-00001: unique constraint"))
+        .when(users)
+        .insertAccount(GUID, "LICENSEE", SubmitterAccount.INACTIVE, ADMIN);
+    when(assignments.findAssignment(MILL, GUID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(activeAssignment()));
+
+    assertDoesNotThrow(() -> service.assign(MILL, GUID, ADMIN));
+  }
+
+  @Test
+  @DisplayName("a provisioning failure that is NOT a race keeps its own error")
+  void provisioningIntegrityFailureIsNotSwallowed() {
+    // The same exception type, but no row appears on the re-read — so it was never a duplicate.
+    // Swallowing it would hide a genuinely broken insert (a role absent from ILCR_ROLE, a value
+    // too wide for its column) and resurface it later as a confusing assignment failure.
+    activeMill();
+    when(users.findUser(GUID)).thenReturn(Optional.empty());
+    DataIntegrityViolationException failure =
+        new DataIntegrityViolationException(
+            "ORA-02291: integrity constraint - parent key not found");
+    doThrow(failure).when(users).insertAccount(GUID, "LICENSEE", SubmitterAccount.INACTIVE, ADMIN);
+
+    assertSame(
+        failure,
+        assertThrows(
+            DataIntegrityViolationException.class, () -> service.assign(MILL, GUID, ADMIN)));
+    verify(assignments, never()).insertActiveAssignment(anyLong(), anyString(), anyString());
   }
 
   private void activeMill() {

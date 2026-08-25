@@ -128,6 +128,15 @@ public class AssignmentService {
       } catch (DataIntegrityViolationException concurrentProvision) {
         // Another request provisioned this user between the read and the insert. The row exists,
         // which is all this step needs — the race is no more an error here than it is below.
+        //
+        // But only a duplicate leaves a row to find. Swallowing every integrity failure would hide
+        // the ones that are genuinely broken — a role that is not in ILCR_ROLE, a value too wide
+        // for its column — and turn them into a confusing assignment failure further down, or a
+        // silent no-op. Re-read, and if the account still is not there, the failure was not a race:
+        // let it keep its own error. Mirrors the assignment insert below.
+        if (users.findUser(userGuid).isEmpty()) {
+          throw concurrentProvision;
+        }
       }
     }
 
