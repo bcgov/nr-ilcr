@@ -83,6 +83,14 @@
   margin-block-start: $spacing-06;
 }
 
+// The foot-of-page instance (defect #293). The base class only carries margin-block-end, so without
+// this the bottom bar butts flush against the table or panel above it and hangs off the end of the
+// page (PR #353 review).
+.schedule-4__actions--bottom {
+  margin-block-start: $spacing-06;
+  margin-block-end: 0;
+}
+
 .schedule-4__check {
   display: flex;
   flex-direction: column;

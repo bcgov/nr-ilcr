@@ -111,10 +111,12 @@ Feature: Schedule 4 — guard states and read-only view
     And the Schedule 4 Check Status button is enabled
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-1 — DELIBERATELY RED. See this UC's defects.md (DIV-1) and issue #322.
+  # DIV-1 — FIXED 2026-08-24 (defect #293 code review). Was DELIBERATELY RED; it went green on its own
+  # exactly as designed, so only the @discovered-divergence tag was dropped — no assertion was edited.
+  # `schedule4/index.tsx` now gives both Check Status buttons `disabled={!editable || saving}`.
+  # ⚠ Schedule 8 still carries the same defect, so issue #322 stays open. See this UC's defects.md (DIV-1).
   #
-  # This asserts what SHOULD happen (the button is disabled), so it fails today and goes green on its own
-  # when the app is fixed — no test edit needed at that point, just drop the tag.
+  # The original analysis follows.
   #
   # Legacy disabled Check Status outside Draft: `schedule4.xhtml:43` binds
   # `disabled="#{schedule4MB.disableReportEdits()}"` on it, and the source Gherkin S18 asserts it
@@ -125,8 +127,8 @@ Feature: Schedule 4 — guard states and read-only view
   # out in their own codebase. Confirmed in the browser 2026-08-17 on the Submitted anchor: Add New
   # Location disabled=true, Check Status disabled=false.
   # ---------------------------------------------------------------------------------------------------
-  @p2 @S18 @discovered-divergence
-  Scenario: Check Status is unavailable outside Draft [DISCOVERED DIVERGENCE — it stays enabled; defects.md DIV-1 / issue #322]
+  @p2 @S18
+  Scenario: Check Status is unavailable outside Draft
     Given the Schedule 4 read-only anchor "submitted"
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4

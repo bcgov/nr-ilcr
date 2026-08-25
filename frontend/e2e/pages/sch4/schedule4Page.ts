@@ -55,9 +55,19 @@ export class Schedule4Page {
     return this.page.getByRole('table', { name: 'Existing Locations' });
   }
 
-  /** The page-level action bar (Add New Location + Check Status). */
+  /**
+   * The TOP page-level action bar (Add New Location + Check Status). Schedule 4 renders the bar twice
+   * since defect #293 — the foot of the page carries a second Check Status — so this must be scoped by
+   * marker. A bare `.schedule-4__actions` locator matches both and every action on it fails Playwright
+   * strict mode (review 2026-08-24).
+   */
   private get actions(): Locator {
-    return this.page.locator('.schedule-4__actions');
+    return this.page.getByTestId('schedule-4-top-actions');
+  }
+
+  /** The bottom page-level action bar (Check Status alone) — defect #293. */
+  private get bottomActions(): Locator {
+    return this.page.getByTestId('schedule-4-bottom-actions');
   }
 
   /** Open Schedule 4 via the side-nav (client-side, so the context saved on Home survives). */
@@ -194,6 +204,11 @@ export class Schedule4Page {
 
   get checkStatusButton(): Locator {
     return this.actions.getByRole('button', { name: ACTION.checkStatus, exact: true });
+  }
+
+  /** The foot-of-page Check Status added by defect #293. */
+  get bottomCheckStatusButton(): Locator {
+    return this.bottomActions.getByRole('button', { name: ACTION.checkStatus, exact: true });
   }
 
   /** Open a blank New Location panel. */
