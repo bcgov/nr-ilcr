@@ -186,13 +186,21 @@ jobs:
           # the database Dockerfile's UID remap preserves) makes boot-time
           # quirks and future Secret rotations irrelevant. The SQL travels
           # over stdin — the password never appears in argv or the log.
+          # SET DEFINE OFF is load-bearing: an '&' in the password is otherwise
+          # a sqlplus substitution variable — it silently swallows the rest of
+          # the password AND the next line, "succeeds", and stores garbage
+          # (this is also exactly how the image's boot-time createAppUser
+          # mangles such passwords, which is why this step exists). The
+          # ACCOUNT UNLOCK clears any FAILED_LOGIN_ATTEMPTS lock left behind
+          # by earlier mismatched-password runs.
           DB_PASS_SQL="${DB_PASS//\"/\"\"}"
           oc -n "$OC_NAMESPACE" exec -i "deploy/$NAME-tools-database" -- sqlplus -S / as sysdba <<EOF
+          SET DEFINE OFF
           WHENEVER SQLERROR EXIT SQL.SQLCODE
           ALTER SESSION SET CONTAINER=ILCR;
           CREATE USER IF NOT EXISTS $DB_USER IDENTIFIED BY "$DB_PASS_SQL" DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
           GRANT DB_DEVELOPER_ROLE TO $DB_USER;
-          ALTER USER $DB_USER IDENTIFIED BY "$DB_PASS_SQL";
+          ALTER USER $DB_USER IDENTIFIED BY "$DB_PASS_SQL" ACCOUNT UNLOCK;
           exit;
           EOF
           echo "App user $DB_USER ensured in PDB ILCR."
