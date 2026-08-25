@@ -91,8 +91,13 @@ describe('Schedule 7A layout rules (source tripwire, not a behaviour test)', () 
   test('the accordion body keeps the width Carbon reserves for prose (#295 R1)', () => {
     // Carbon pads every accordion body 25% on the inline-end above 640px. A list row is 333px narrower
     // than the Add panel without this override.
+    //
+    // Pinned to Carbon's own density token, not a literal: the value has to track whatever Carbon puts
+    // on the inline-START or the two sides drift apart under a condensed-density ancestor (PR #355
+    // review). Matching the token name rather than `1rem` therefore also fails if someone "simplifies"
+    // it back to a hard-coded length, which is the regression this now guards.
     expect(source).toMatch(
-      /\.schedule-7a__section\s+\.cds--accordion__content\s*\{[^}]*padding-inline-end:\s*1rem/,
+      /\.schedule-7a__section\s+\.cds--accordion__content\s*\{[^}]*padding-inline-end:\s*var\(--cds-layout-density-padding-inline-local/,
     )
   })
 
