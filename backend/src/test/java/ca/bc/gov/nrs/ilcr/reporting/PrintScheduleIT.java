@@ -10,13 +10,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -30,13 +34,13 @@ import org.springframework.test.web.servlet.MvcResult;
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
  * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
  * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
- * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 11 by
- * V20260816). The PDF text is asserted with pdfbox to prove each selected section's heading and a
- * seeded value rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the
- * rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the
- * deferred mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409
- * context guards are pinned here. Security is OFF (isolated from authz — {@link
- * PrintAuthorizationIT}).
+ * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 8 by
+ * V20260823, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
+ * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
+ * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
+ * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
+ * ladder plus the 400/409 context guards are pinned here. Security is OFF (isolated from authz —
+ * {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -363,7 +367,9 @@ class PrintScheduleIT extends AbstractOracleIT {
     // BR-07: "all" expands to every schedule; only the in-scope ones render. Mill 517/2021 has data
     // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
     // combined PDF carries Schedule 1 (Story 20.5) FIRST, then Schedule 2 (Story 20.6), then
-    // Schedule 3 (Story 20.7), then 5/6/7A/7B/9/11 — Schedule 10 skipped (BR-09).
+    // Schedule 3 (Story 20.7), then 5/6/7A/7B, then Schedule 8 (Story 20.8 — seeded on 517 by
+    // V20260823), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
+    // Schedule 8 position (between 7B and 9) in a real combined PDF.
     String selection =
         """
         {"allSchedules":true,"printScheduleInformation":true}
@@ -389,10 +395,43 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
+    assertThat(text).contains("Schedule 8:  Tree to Truck Costs");
+    // Deep-geometry proof (PR #352 review): the nested additions AND deductions lists must BOTH
+    // render every row inside the fixed-height Samples list cell — the level-3 construct with no
+    // precedent in the sibling templates. Sample 1 carries 3 additions + 3 deductions; the LAST row
+    // of each (Add Three / Ded Three) is the one that falls off the cell if it does not size to its
+    // content, so asserting them pins that the deductions block is neither dropped nor overlapped
+    // off the bottom. Sample 2's lone rows (Add Solo / Ded Solo) pin the 2+ sample reflow.
+    assertThat(text).contains("Additions"); // sample 1 additions sub-block heading
+    assertThat(text).contains("Add Three"); // sample 1, 3rd (last) addition row
+    assertThat(text).contains("Deductions"); // sample 1 deductions sub-block heading
+    assertThat(text)
+        .contains("Ded Three"); // sample 1, 3rd (last) deduction row — the overflow canary
+    assertThat(text).contains("Add Solo"); // sample 2's addition row
+    assertThat(text).contains("Ded Solo"); // sample 2's deduction row
+    // Geometry, not just presence (PR #352 review): pdfbox flat text can't tell "rendered below"
+    // from "overlapped/dropped", so pin sample 1's block by LAYOUT. All six rate rows land on ONE
+    // page, the additions read top→bottom, and the deductions sit strictly BELOW the last addition
+    // —
+    // i.e. the additions list stretched its cell and floated the deductions block down cleanly
+    // rather
+    // than colliding with it or spilling the last rows off the fixed-height Samples cell.
+    Map<String, float[]> pos =
+        firstPositions(
+            pdf, List.of("Add One", "Add Two", "Add Three", "Ded One", "Ded Two", "Ded Three"));
+    assertThat(pos)
+        .containsKeys("Add One", "Add Two", "Add Three", "Ded One", "Ded Two", "Ded Three");
+    float sampleOnePage = pos.get("Add One")[0];
+    assertThat(pos.values()).allSatisfy(p -> assertThat(p[0]).isEqualTo(sampleOnePage));
+    assertThat(pos.get("Add One")[1]).isLessThan(pos.get("Add Two")[1]);
+    assertThat(pos.get("Add Two")[1]).isLessThan(pos.get("Add Three")[1]);
+    assertThat(pos.get("Add Three")[1]).isLessThan(pos.get("Ded One")[1]); // deductions below adds
+    assertThat(pos.get("Ded One")[1]).isLessThan(pos.get("Ded Two")[1]);
+    assertThat(pos.get("Ded Two")[1]).isLessThan(pos.get("Ded Three")[1]);
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
-    // BR-08 fixed order: Schedule 1 sorts ahead of Schedule 2, which sorts ahead of Schedule 3,
-    // which sorts ahead of Schedule 5.
+    // BR-08 fixed order: 1 -> 2 -> 3 -> 5 -> 6 -> 7A -> 7B -> 8 -> 9 -> 11 (Schedule 8 between 7B
+    // and 9, Schedule 10 skipped for lack of data on 517).
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
             ScheduleKey.SCHEDULE_1.bookmarkTitle(),
@@ -402,6 +441,7 @@ class PrintScheduleIT extends AbstractOracleIT {
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
+            ScheduleKey.SCHEDULE_8.bookmarkTitle(),
             ScheduleKey.SCHEDULE_9.bookmarkTitle(),
             ScheduleKey.SCHEDULE_11.bookmarkTitle());
   }
@@ -597,14 +637,82 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("only an unimplemented schedule (8) -> 404 'Schedule not found.'")
-  void onlyUnimplementedSchedule_returns404() throws Exception {
-    // Schedule 8 is accepted but has no enum constant (not rendered in 20.2), so it produces no
-    // section — leaving nothing selected in scope, which is all-empty (ERR-005), not
-    // mill-info-only.
+  @DisplayName("Schedule 8 (Story 20.8): 576/2021 renders all THREE levels + exactly one bookmark")
+  void schedule8_rendersThreeLevelsWithOneBookmark() throws Exception {
+    // Mill 576/2021 is the canonical full Tree-to-Truck fixture: ONE page → ONE sample → ONE
+    // addition + ONE deduction. Selecting Schedule 8 alone must render all three nested levels —
+    // the
+    // page descriptors (level 1), the sample body incl. the server-computed 100%-rule total and
+    // finalRate (level 2), and the additions/deductions rate rows (level 3) — with EXACTLY one
+    // top-level bookmark.
     String selection =
         """
-        {"schedule8":true,"printScheduleInformation":true}
+        {"schedule8":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "576")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection))
+                    .accept(MediaType.APPLICATION_PDF))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 8:  Tree to Truck Costs");
+    // Level 1 — page descriptors (resolved labels).
+    assertThat(text).contains("North Div"); // division
+    assertThat(text).contains("Support Centre One"); // resolved support-centre label
+    assertThat(text).contains("Region One"); // resolved region label
+    // Level 2 — the sample body, with the server-computed roll-ups (not recomputed in the
+    // template).
+    assertThat(text).contains("100 %"); // percentTotal (the 100% rule)
+    assertThat(text).contains("28.50"); // finalRate = 25.50 + 5.00 − 2.00
+    // Level 3 — a rate row under the correct sample, in the additions list.
+    assertThat(text).contains("Add A"); // addition itemDescription
+    assertThat(text).contains("Cost Type One"); // resolved cost-type label
+
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_8.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("all-empty (ERR-005): 515/2021 select 8, no pages -> 404 'Schedule not found.'")
+  void schedule8Only_noData_returns404() throws Exception {
+    // Mill 515/2021 has no category-8 Tree-to-Truck pages; getSchedule8 returns pages:[] (never a
+    // 404 of its own), the mapper returns null → the section is skipped (BR-09). A Schedule-8-only
+    // print is then all-empty, the legacy single-schedule outcome ERR-005.
+    String selection =
+        """
+        {"schedule8":true,"printScheduleInformation":true,"printComments":true}
+        """;
+    mockMvc
+        .perform(
+            post(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(selection)))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
+        .andExpect(jsonPath("$.detail").value(ERR_005));
+  }
+
+  @Test
+  @DisplayName("only an unimplemented schedule (4) -> 404 'Schedule not found.'")
+  void onlyUnimplementedSchedule_returns404() throws Exception {
+    // Schedule 4 is accepted but has no enum constant (not rendered in Epic 20 yet), so it produces
+    // no section — leaving nothing selected in scope, which is all-empty (ERR-005), not
+    // mill-info-only. (Schedule 8 now renders — Story 20.8 — so it is no longer the unimplemented
+    // example; Schedule 4 is the last one left.)
+    String selection =
+        """
+        {"schedule4":true,"printScheduleInformation":true}
         """;
     mockMvc
         .perform(
@@ -771,6 +879,38 @@ class PrintScheduleIT extends AbstractOracleIT {
       stripper.setEndPage(oneBasedPage);
       return stripper.getText(document);
     }
+  }
+
+  /**
+   * First-occurrence layout position of each target string: {@code [1-based page, Y-from-top]}.
+   * Used to pin the level-3 nested-list GEOMETRY that pdfbox flat text can't — a row that overflows
+   * its fixed list cell still extracts as text, so text presence alone can't tell "rendered below"
+   * from "overlapped / dropped". Comparing Y positions turns that into red/green: additions above
+   * deductions, each list in order, all on one page ⇒ the block neither collided nor spilled.
+   * Captures {@link TextPosition#getYDirAdj()} (Y grows downward) of the first glyph on the first
+   * line that contains each target.
+   */
+  private static Map<String, float[]> firstPositions(byte[] pdf, List<String> targets)
+      throws Exception {
+    Map<String, float[]> found = new LinkedHashMap<>();
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDFTextStripper stripper =
+          new PDFTextStripper() {
+            @Override
+            protected void writeString(String string, List<TextPosition> textPositions)
+                throws IOException {
+              for (String target : targets) {
+                if (!found.containsKey(target) && string.contains(target)) {
+                  found.put(
+                      target, new float[] {getCurrentPageNo(), textPositions.get(0).getYDirAdj()});
+                }
+              }
+              super.writeString(string, textPositions);
+            }
+          };
+      stripper.getText(document);
+    }
+    return found;
   }
 
   /**
