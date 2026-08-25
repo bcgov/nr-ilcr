@@ -30,10 +30,11 @@ import org.springframework.security.core.Authentication;
 /**
  * Unit test for the three Schedule 3 controllers ({@link Schedule3Controller}, {@link
  * Schedule3OtherCostsController}, {@link Schedule3UnacceptableCostsController}). Verifies the
- * category-"3" context guard ({@code validateScheduleViewable}), the server-derived {@code
- * editable} flag (from {@code EDIT_SCHEDULE}), service delegation, and verbatim success-message
- * decoration on the mutating responses (AD-8) — collaborators mocked, no Spring context. Mirrors
- * {@code Schedule2ControllerTest}.
+ * context guards (main page: {@code validateMillYearActive}; sub-pages: the summary-required {@code
+ * validateScheduleViewable}), the server-derived {@code editable} flag (from {@code
+ * EDIT_SCHEDULE}), service delegation, and verbatim success-message decoration on the mutating
+ * responses (AD-8) — collaborators mocked, no Spring context. Mirrors {@code
+ * Schedule2ControllerTest}.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule3ControllerTest {
@@ -72,7 +73,10 @@ class Schedule3ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"3"
+    // summary to exist, which is what made an unsaved Schedule 3 a 404 (defect #296). The
+    // sub-page tests below deliberately keep the summary-required guard (D1).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
   @Test
@@ -88,18 +92,25 @@ class Schedule3ControllerTest {
         controller.saveSchedule3(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"3"
+    // summary to exist, which is what made an unsaved Schedule 3 a 404 (defect #296). The
+    // sub-page tests below deliberately keep the summary-required guard (D1).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(saved).withMessage(any());
   }
 
   @Test
   void deleteSchedule3_delegates_andReturnsDeletedMessage() {
+    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR)).thenReturn(true);
     ResponseEntity<MessageResponse> response =
         controller.deleteSchedule3(MILL_ID, YEAR, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"3"
+    // summary to exist, which is what made an unsaved Schedule 3 a 404 (defect #296). The
+    // sub-page tests below deliberately keep the summary-required guard (D1).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(schedule3Service).deleteSchedule3(MILL_ID, YEAR);
   }
 
@@ -113,7 +124,10 @@ class Schedule3ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(result, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"3"
+    // summary to exist, which is what made an unsaved Schedule 3 a 404 (defect #296). The
+    // sub-page tests below deliberately keep the summary-required guard (D1).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
   // ---- Other Acceptable Costs sub-resource ------------------------------------------------------

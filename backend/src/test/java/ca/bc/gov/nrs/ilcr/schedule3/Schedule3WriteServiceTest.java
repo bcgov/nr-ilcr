@@ -53,7 +53,10 @@ class Schedule3WriteServiceTest {
   @InjectMocks private Schedule3Service service;
 
   private void stubDraft(BigDecimal persistedCrownVolume) {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
     lenient()
@@ -113,7 +116,10 @@ class Schedule3WriteServiceTest {
 
   @Test
   void save_staleRevision_throws() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 3)));
     lenient().when(repository.findDetails(1040)).thenReturn(List.of());
@@ -125,7 +131,10 @@ class Schedule3WriteServiceTest {
 
   @Test
   void save_notDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
     var req = request("N", new BigDecimal("5000"), List.of());
     assertThrows(
         ScheduleNotEditableException.class,
@@ -173,7 +182,10 @@ class Schedule3WriteServiceTest {
 
   @Test
   void delete_draftGated_removesFamily() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
     service.deleteSchedule3(MILL, YEAR);
@@ -182,13 +194,19 @@ class Schedule3WriteServiceTest {
 
   @Test
   void delete_notDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("V"));
     assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule3(MILL, YEAR));
   }
 
   @Test
   void delete_repositoryFailure_throwsNotDeleted() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
     doThrow(new DataAccessResourceFailureException("db down"))
@@ -199,7 +217,10 @@ class Schedule3WriteServiceTest {
 
   @Test
   void deleteOtherAcceptable_repositoryFailure_throwsNotDeleted() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
     when(repository.findSubPageRows(anyInt(), anyInt()))
@@ -211,7 +232,10 @@ class Schedule3WriteServiceTest {
 
   @Test
   void deleteUnacceptable_repositoryFailure_throwsNotDeleted() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Main save/delete read the status FOR UPDATE (defect #296 create-on-absent
+    // serialization); the sub-page writes still use the plain read. Both stubbed.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(1040, "N", "c", 0)));
     when(repository.deleteSubPageRowById(anyInt(), anyInt(), anyInt()))

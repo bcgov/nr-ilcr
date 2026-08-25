@@ -61,12 +61,16 @@ export const RENDER_STATE_ANCHORS: Record<
     mill: { millNumber: '45', millName: 'GORMAN BROS. - DOWNIE STREET' },
     expectHttp: 409,
   },
-  // S21 — mill 16050 is active for 2016 but has no Schedule 1 summary → GET 404 "Schedule not found.",
-  // which the frontend maps to "No Schedule 1 exists for Mill 16050 in Reporting Year 2016…".
+  // S21 — mill 16050 is active for 2016 and has NO Schedule 1 summary. Since defect #296 that is the
+  // legitimate unsaved state, not an error: GET returns 200 with an empty editable document and the
+  // summary is created by the first save (Schedule 2's shape). It previously returned 404, which the
+  // frontend rewrote into "No Schedule 1 exists for Mill 16050 …" — note the 16050 there: the client
+  // was interpolating the INTERNAL mill id into user-facing text while the tombstone beside it read
+  // mill 514. Both the 404 and that sentence are gone.
   'no-schedule': {
     key: { millId: 16050, year: 2016 },
     mill: { millNumber: '514', millName: 'AAA MILLING' },
-    expectHttp: 404,
+    expectHttp: 200,
   },
   // S22 — mill 12050 / 2016 track is Submitted ("S") → GET 200 but editable:false; the page renders
   // read-only (no input fields; Save / Check Status / Delete disabled).

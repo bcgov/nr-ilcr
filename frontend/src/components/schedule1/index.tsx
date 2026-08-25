@@ -70,16 +70,13 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 
 type FieldValues = Record<string, string>
 
-const mapLoadErrorDetail = (
-  detail: string | undefined,
-  millId: number | null,
-  year: number | null,
-): string => {
-  if (detail === 'Schedule not found.' && millId != null && year != null) {
-    return `No Schedule 1 exists for Mill ${millId} in Reporting Year ${year}. Select another mill/year from Home, or create Schedule 1 data for this context.`
-  }
-  return detail || 'Unable to load Schedule 1.'
-}
+// The API's ProblemDetail text, verbatim (AD-8). This used to rewrite a 404 'Schedule not found.'
+// into a longer sentence composed HERE — which broke AD-8, interpolated the internal mill id into
+// user-facing text, and advised an action ('create Schedule 1 data for this context') the app had no
+// way to perform. Defect #296 removed the 404 that reached it, so the branch was unreachable as well
+// as wrong. Schedule 3 has always had this shape.
+const mapLoadErrorDetail = (detail: string | undefined): string =>
+  detail || 'Unable to load Schedule 1.'
 
 // Seed editable form state from the loaded document (writable fields only).
 function seedForm(doc: Schedule1Response): FieldValues {

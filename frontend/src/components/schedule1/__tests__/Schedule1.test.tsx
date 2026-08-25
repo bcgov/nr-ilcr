@@ -595,20 +595,22 @@ describe('Schedule1 editable page', () => {
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
-  test('404 not-found shows verbatim ERR-003 (AC / S21)', async () => {
+  // Defect #296 inverted this case. It used to assert that a 404 rendered a sentence composed in the
+  // CLIENT ('No Schedule 1 exists for Mill 514 ...'), which broke AD-8, leaked the internal mill id,
+  // and told the user to do something the app could not do. The backend no longer 404s for an unsaved
+  // schedule at all, so what remains is the plain rule: whatever ProblemDetail text the API sends is
+  // shown verbatim.
+  test('a load error shows the API detail verbatim (AD-8), never a client-composed sentence', async () => {
     server.use(problemHandler(404, 'Schedule not found.'))
-    // Explicit context so the message is deterministic regardless of the dev default mill/year.
+    // Explicit context so the render is deterministic regardless of the dev default mill/year.
     render(
       <MillYearProvider initial={{ millId: 514, year: 2021 }}>
         <Schedule1 />
       </MillYearProvider>,
     )
 
-    expect(
-      await screen.findByText(
-        'No Schedule 1 exists for Mill 514 in Reporting Year 2021. Select another mill/year from Home, or create Schedule 1 data for this context.',
-      ),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Schedule not found.')).toBeInTheDocument()
+    expect(screen.queryByText(/No Schedule 1 exists for Mill/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 

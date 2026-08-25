@@ -169,6 +169,30 @@ Then('the Schedule 1 input form is not displayed', async ({ schedule1Page }) => 
   await expect(schedule1Page.saveButton).toHaveCount(0);
 });
 
+Then('the Schedule 1 input form is displayed', async ({ schedule1Page }) => {
+  await expect(schedule1Page.companyLoggingTable).toBeVisible();
+  await expect(schedule1Page.saveButton).toBeEnabled();
+});
+
+/**
+ * Defect #296 AC1: an unsaved Schedule 1 renders as an EMPTY form, not an error. Checking a
+ * representative editable amount and the comments editor is enough — both are Carbon inputs that only
+ * exist on an editable document, and both carry the stored value when one exists.
+ */
+Then('every Schedule 1 amount is blank', async ({ schedule1Page }) => {
+  await expect(schedule1Page.firstAmountInput).toHaveValue('');
+  await expect(schedule1Page.commentsInput).toHaveValue('');
+});
+
+/**
+ * Defect #296 AC3 (legacy isScheduleOpen): nothing has been saved, so there is nothing to delete and
+ * the button is not rendered at all. This gate has existed since the #292 code review but could never
+ * be exercised while the page 404'd before rendering.
+ */
+Then('the Schedule 1 Delete action is not offered', async ({ schedule1Page }) => {
+  await expect(schedule1Page.deleteButton).toHaveCount(0);
+});
+
 Then('the Schedule 1 actions are disabled', async ({ schedule1Page }) => {
   await expect(schedule1Page.saveButton).toBeDisabled();
   await expect(schedule1Page.checkStatusButton).toBeDisabled();

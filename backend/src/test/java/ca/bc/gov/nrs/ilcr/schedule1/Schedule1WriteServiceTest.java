@@ -1,8 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -14,7 +17,6 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.EntryAmount;
@@ -57,7 +59,10 @@ class Schedule1WriteServiceTest {
   }
 
   private void stubDraftSummary() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // The main save path takes the FOR UPDATE lock (defect #296 create-on-absent serialization);
+    // delete and the sub-pages still use the plain read. Both lenient so either shape is fine.
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient().when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
@@ -165,7 +170,8 @@ class Schedule1WriteServiceTest {
 
   @Test
   void save_notDraft_throwsNotEditable_andNeverWrites() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    // The main save path reads the status FOR UPDATE (defect #296 create-on-absent serialization).
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
     assertThrows(
         ScheduleNotEditableException.class,
@@ -210,17 +216,61 @@ class Schedule1WriteServiceTest {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
 
-    service.deleteSchedule1(MILL, YEAR);
+    assertTrue(service.deleteSchedule1(MILL, YEAR));
 
     verify(repository).deleteSchedule(SUMMARY_ID);
   }
 
+  /**
+   * Defect #296: a Draft mill/year with no category-"1" summary is the legitimate unsaved state, so
+   * DELETE is an idempotent no-op that returns false (never 404) — the controller then says
+   * "nothing was deleted" rather than announcing success, as Schedule 2's has since the #292
+   * review.
+   */
   @Test
-  void save_missingSummary_throwsNotFound() {
+  void delete_noSummary_isIdempotentNoOp() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+
+    assertFalse(service.deleteSchedule1(MILL, YEAR));
+
+    verify(repository, never()).deleteSchedule(anyInt());
+  }
+
+  /**
+   * Defect #296, the heart of it: the FIRST save on a mill/year with no summary must CREATE the
+   * summary rather than 404, so a Schedule 1 can be started at all. Before the fix this threw
+   * ScheduleNotFoundException and there was no route by which a Schedule 1 could ever be created.
+   */
+  @Test
+  void save_missingSummary_createsIt() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
+    // Absent on the write-path probe, present on the post-create reload (getSchedule1).
+    when(repository.findSummary(MILL, YEAR, "1"))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
+    when(repository.insertSummary(eq(MILL), eq(YEAR), anyString(), eq(USER)))
+        .thenReturn(SUMMARY_ID);
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
+    when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
+    when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
+
+    service.saveSchedule1(
+        MILL, YEAR, request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER);
+
+    verify(repository).insertSummary(eq(MILL), eq(YEAR), anyString(), eq(USER));
+    verify(repository).bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER));
+  }
+
+  /**
+   * The Draft gate still bites on the create path — a non-Draft track is 409, not a silent create.
+   */
+  @Test
+  void save_missingSummary_notDraft_stillNotEditable() {
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
     assertThrows(
-        ScheduleNotFoundException.class,
+        ScheduleNotEditableException.class,
         () ->
             service.saveSchedule1(
                 MILL,
@@ -228,6 +278,7 @@ class Schedule1WriteServiceTest {
                 request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
                 true,
                 USER));
+    verify(repository, never()).insertSummary(anyLong(), anyInt(), anyString(), anyString());
   }
 
   @Test
