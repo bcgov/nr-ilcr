@@ -46,6 +46,21 @@ parameters:
   - name: LOG_LEVEL
     description: Application log level (debug|info|warn|error)
     value: "info"
+  # NR User Lookup API (DL-27) — the ministry directory behind the assignment picker. Only the
+  # NON-SECRET half is wired here. The service-account credential (ILCR_USER_LOOKUP_CLIENT_ID /
+  # _SECRET) is a per-environment Vault secret that does not exist yet, and a secretKeyRef to a
+  # missing Secret fails the pod — so it lands with the DL-27 onboarding story, together with
+  # flipping ILCR_USER_LOOKUP_ENABLED to "true". The backend refuses to start with the flag on and
+  # any of the four values blank, so the two cannot drift apart.
+  - name: ILCR_USER_LOOKUP_ENABLED
+    description: Enable the NR User Lookup directory search. Keep "false" until the DL-27 service account and Vault secret exist; the pod will not start with it "true" and the credential unset.
+    value: "false"
+  - name: ILCR_USER_LOOKUP_BASE_URL
+    description: NR User Lookup API root. Non-secret; set at DL-27 onboarding.
+    value: ""
+  - name: ILCR_USER_LOOKUP_TOKEN_URL
+    description: Keycloak token endpoint issuing the service-account token. Non-secret; set at DL-27 onboarding.
+    value: ""
   # ORACLEDB_HOST / ORACLEDB_SERVICENAME are not parameters: they come from
   # environment-scoped GitHub secrets via the init-created backend Secret
   # (common/openshift.init.yml), read below with secretKeyRef.
@@ -147,6 +162,14 @@ objects:
                 # emptyDir, so spilling there would stay in RAM and defeat the heap relief).
                 - name: ILCR_REPORTING_SWAP_DIR
                   value: /var/tmp/report-swap
+                # NR User Lookup (DL-27): non-secret half only — see the parameter block above for
+                # why the credential waits for the Vault secret.
+                - name: ILCR_USER_LOOKUP_ENABLED
+                  value: ${ILCR_USER_LOOKUP_ENABLED}
+                - name: ILCR_USER_LOOKUP_BASE_URL
+                  value: ${ILCR_USER_LOOKUP_BASE_URL}
+                - name: ILCR_USER_LOOKUP_TOKEN_URL
+                  value: ${ILCR_USER_LOOKUP_TOKEN_URL}
                 - name: ORACLEDB_HOST
                   valueFrom:
                     secretKeyRef:
