@@ -59,7 +59,11 @@ jobs:
     with:
       target: ${{ needs.init.outputs.zone }}
       tag: ${{ github.event.pull_request.head.sha }}
-      triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
+      # database/ included so a database-only PR still deploys (deploy-database
+      # reuses this list) and runs the test stage — otherwise the new image is
+      # built but never rolled out or exercised, and the documented tools-DB
+      # recovery (delete the deployment, re-run) silently no-ops.
+      triggers: ('backend/', 'frontend/', 'common/', 'database/', '.github/workflows/')
 
   tests:
      name: Tests
