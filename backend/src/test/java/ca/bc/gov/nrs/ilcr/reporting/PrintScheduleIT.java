@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
  * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
  * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
  * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 8 by
- * V20260822, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
+ * V20260823, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
  * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
  * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
  * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
@@ -368,7 +368,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
     // combined PDF carries Schedule 1 (Story 20.5) FIRST, then Schedule 2 (Story 20.6), then
     // Schedule 3 (Story 20.7), then 5/6/7A/7B, then Schedule 8 (Story 20.8 — seeded on 517 by
-    // V20260822), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
+    // V20260823), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
     // Schedule 8 position (between 7B and 9) in a real combined PDF.
     String selection =
         """
@@ -882,22 +882,6 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   /**
-   * The ordered top-level bookmark (outline) titles of the PDF, or an empty list when it has none.
-   */
-  private static List<String> topLevelBookmarks(byte[] pdf) throws Exception {
-    try (PDDocument document = Loader.loadPDF(pdf)) {
-      PDDocumentOutline outline = document.getDocumentCatalog().getDocumentOutline();
-      List<String> titles = new ArrayList<>();
-      if (outline != null) {
-        for (PDOutlineItem item : outline.children()) {
-          titles.add(item.getTitle());
-        }
-      }
-      return titles;
-    }
-  }
-
-  /**
    * First-occurrence layout position of each target string: {@code [1-based page, Y-from-top]}.
    * Used to pin the level-3 nested-list GEOMETRY that pdfbox flat text can't — a row that overflows
    * its fixed list cell still extracts as text, so text presence alone can't tell "rendered below"
@@ -927,5 +911,21 @@ class PrintScheduleIT extends AbstractOracleIT {
       stripper.getText(document);
     }
     return found;
+  }
+
+  /**
+   * The ordered top-level bookmark (outline) titles of the PDF, or an empty list when it has none.
+   */
+  private static List<String> topLevelBookmarks(byte[] pdf) throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      PDDocumentOutline outline = document.getDocumentCatalog().getDocumentOutline();
+      List<String> titles = new ArrayList<>();
+      if (outline != null) {
+        for (PDOutlineItem item : outline.children()) {
+          titles.add(item.getTitle());
+        }
+      }
+      return titles;
+    }
   }
 }

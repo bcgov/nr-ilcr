@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -35,6 +35,16 @@ function makeRouter(initialUrl = '/schedule-4') {
 
 const renderSchedule4 = (initialUrl = '/schedule-4') =>
   render(<RouterProvider router={makeRouter(initialUrl)} />)
+
+// Schedule 4 renders its action bar twice (defect #293): Add New Location + Check Status at the top,
+// Check Status alone at the foot. Both buttons share an accessible name, so address the bars by their
+// marker rather than by document position — `getAllByRole(...)[index]` silently retargets if either bar
+// moves or disappears, which a mutation run proved could hide the loss of the top button entirely
+// (review 2026-08-24).
+const topActions = () => within(screen.getByTestId('schedule-4-top-actions'))
+const bottomActions = () => within(screen.getByTestId('schedule-4-bottom-actions'))
+const bottomCheckStatus = () => bottomActions().getByRole('button', { name: /check status/i })
+const checkStatusButtons = () => screen.getAllByRole('button', { name: /check status/i })
 
 const URL = 'http://localhost:3000/api/v1/schedule4'
 const LOCATIONS_URL = 'http://localhost:3000/api/v1/schedule4/locations'
@@ -434,7 +444,7 @@ describe('Schedule4 page', () => {
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText('Value Required')).toBeInTheDocument()
     expect(
@@ -845,7 +855,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(
       await screen.findByText('All Schedule 4 requirements have been met.'),
@@ -861,7 +871,7 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     renderSchedule4()
     await screen.findByText('Harbour Dump')
 
-    await userEvent.click(screen.getByRole('button', { name: /check status/i }))
+    await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
   })
@@ -883,6 +893,192 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     expect(
       screen.queryByText('Any unsaved data will be lost. Are you sure you would like to continue?'),
     ).not.toBeInTheDocument()
+  })
+
+  // ---- Defect #293: the page's own bottom Check Status. ------------------------------------------
+  // Legacy carried Check Status by itself on a row at the very bottom of the page (schedule4.xhtml:216-222).
+  // The bottom bar is Check Status ALONE — no Add New Location — and it is NOT part of the location panel's
+  // Save/Back row. Document order puts the top bar first, so the bottom instance is the LAST match.
+
+  test('a bottom Check Status renders below the content and runs the same check (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All Schedule 4 requirements have been met.',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    const firstRow = await screen.findByText('Harbour Dump')
+
+    expect(checkStatusButtons()).toHaveLength(2)
+    // The bottom bar follows the locations table and is not inside it.
+    const table = firstRow.closest('table') as HTMLElement
+    expect(table).not.toContainElement(bottomCheckStatus())
+    expect(firstRow.compareDocumentPosition(bottomCheckStatus())).toBe(
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    // Check Status alone — Add New Location rides the top bar only.
+    expect(screen.getAllByRole('button', { name: /add new location/i })).toHaveLength(1)
+    expect(bottomActions().queryByRole('button', { name: /add new location/i })).toBeNull()
+
+    await userEvent.click(bottomCheckStatus())
+
+    expect(
+      await screen.findByText('All Schedule 4 requirements have been met.'),
+    ).toBeInTheDocument()
+  })
+
+  test('a Check Status verdict takes focus, so the result is reached from either bar (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All Schedule 4 requirements have been met.',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // The verdict renders at the TOP of the page; the bottom button sits at the foot. Focus is what
+    // carries the user (and a screen reader) to the result — it replaced a window.scrollTo that moved
+    // the viewport but left focus stranded on the off-screen button (PR #353 review).
+    await userEvent.click(bottomCheckStatus())
+
+    const verdict = await screen.findByText('All Schedule 4 requirements have been met.')
+    const region = verdict.closest('.schedule-4__check')
+    expect(region).not.toBeNull()
+    await waitFor(() => {
+      expect(region).toHaveFocus()
+    })
+    // Programmatic target only — never in the tab order.
+    expect(region).toHaveAttribute('tabindex', '-1')
+  })
+
+  test('a FAILED Check Status moves focus to the error banner too (#293)', async () => {
+    const detail = 'Unable to evaluate the schedule right now.'
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    // The failure banner renders in the same top-of-page region, so the failure path must reach it as
+    // well — the success path alone would leave a failed check just as invisible as before.
+    await userEvent.click(bottomCheckStatus())
+
+    const banner = await screen.findByText(detail)
+    await waitFor(() => {
+      expect(banner.closest('[tabindex="-1"]')).toHaveFocus()
+    })
+  })
+
+  test('a Save validation error does NOT steal focus from the field being corrected (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await screen.findByText('New Location')
+
+    // Focus-on-banner is armed by Check Status only. A Save that fails validation must leave focus
+    // where the user is typing — yanking it to a banner would be worse than the bug it fixes.
+    const nameField = screen.getByLabelText('Location Name')
+    await userEvent.click(nameField)
+    expect(nameField).toHaveFocus()
+
+    await userEvent.click(
+      within(
+        screen.getByText('New Location').closest('.schedule-4__panel') as HTMLElement,
+      ).getByRole('button', { name: /^save$/i }),
+    )
+
+    // The banner DOES render, and it renders in the very region Check Status focuses — so without the
+    // `focusVerdict` guard this is exactly where focus would be stolen.
+    const banner = await screen.findByText('Please correct the highlighted fields before saving.')
+    expect(banner.closest('[tabindex="-1"]')).not.toBeNull()
+    expect(document.activeElement).not.toHaveAttribute('tabindex', '-1')
+  })
+
+  test('the bottom Check Status is locked while a check is in flight — one POST per click (#293)', async () => {
+    let posts = 0
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, async () => {
+        posts += 1
+        await delay(50)
+        return HttpResponse.json({ outcome: 'MET', messages: [], locations: [] })
+      }),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    const button = bottomCheckStatus()
+    await userEvent.click(button)
+    await userEvent.click(button)
+
+    await waitFor(() => {
+      expect(button).toBeEnabled()
+    })
+    expect(posts).toBe(1)
+  })
+
+  test('the location panel keeps Save/Back only — the bottom bar sits below it (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    const heading = await screen.findByText('New Location')
+
+    // Still exactly two: opening a panel adds no third Check Status to its own button row.
+    expect(checkStatusButtons()).toHaveLength(2)
+
+    // Containment, not document order: `compareDocumentPosition(...) === FOLLOWING` is also true for a
+    // button nested INSIDE the panel, so folding the button into schedule-4__panel-actions — the design
+    // this fix rejected — passed the old assertion (review 2026-08-24).
+    const panel = heading.closest('.schedule-4__panel')
+    expect(panel).not.toBeNull()
+    expect(panel).not.toContainElement(bottomCheckStatus())
+    const panelActions = panel?.querySelector('.schedule-4__panel-actions') as HTMLElement
+    expect(within(panelActions).queryByRole('button', { name: /check status/i })).toBeNull()
+    expect(within(panelActions).getByRole('button', { name: /^back$/i })).toBeInTheDocument()
+    expect(within(panelActions).getByRole('button', { name: /^save$/i })).toBeInTheDocument()
+  })
+
+  test('both Check Status buttons are DISABLED outside Draft (DIV-1 / #322)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+    expect(await screen.findByText('View Location')).toBeInTheDocument()
+
+    // Legacy bound EVERY Check Status instance to disableReportEdits() (schedule4.xhtml:43, :220-221;
+    // schedule4NewLocation.xhtml:275; schedule4ExistingLocation.xhtml:1144), and the other seven
+    // schedules already carry the `!editable` term. Ratified 2026-08-24: close it here for Schedule 4.
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+    expect(checkStatusButtons()).toHaveLength(2)
+    expect(topActions().getByRole('button', { name: /check status/i })).toBeDisabled()
+    expect(bottomCheckStatus()).toBeDisabled()
+    expect(screen.getByRole('button', { name: /add new location/i })).toBeDisabled()
   })
 
   test('New location → sub-page link → NAV-003 save-first → opens the saved sub-page', async () => {

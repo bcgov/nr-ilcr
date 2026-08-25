@@ -83,6 +83,13 @@ class ScheduleKeyTest {
   }
 
   @Test
+  @DisplayName("SCHEDULE_8 is bound to its template + bookmark title")
+  void schedule8_hasTemplateAndBookmark() {
+    assertThat(ScheduleKey.SCHEDULE_8.templatePath()).isEqualTo("reports/schedule8.jrxml");
+    assertThat(ScheduleKey.SCHEDULE_8.bookmarkTitle()).isEqualTo("Schedule 8: Tree to Truck Costs");
+  }
+
+  @Test
   @DisplayName("SCHEDULE_10 is bound to its template + bookmark title")
   void schedule10_hasTemplateAndBookmark() {
     assertThat(ScheduleKey.SCHEDULE_10.templatePath()).isEqualTo("reports/schedule10.jrxml");

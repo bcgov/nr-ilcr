@@ -486,9 +486,30 @@ const Schedule4: FC = () => {
     )
   }
 
+  // Focus, not scroll (PR #353 review). The verdict renders in the `schedule-4__check` column at the
+  // TOP of the page while the second Check Status sits at the foot, so a press down there changed
+  // nothing the user could see. An earlier version answered that with `window.scrollTo(0, 0)`, which
+  // moved the viewport but left focus on the now-off-screen button — no announcement for a screen
+  // reader, and the next Tab scrolled straight back down. Focusing the verdict region instead brings
+  // it into view, announces it, and respects prefers-reduced-motion, in one move. `focusVerdictRef`
+  // makes it fire for THIS action only: a Save validation error must not yank focus off the field
+  // the user is correcting.
+  const focusVerdictRef = useRef(false)
+  const verdictRef = useRef<HTMLDivElement>(null)
+  const actionErrorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!focusVerdictRef.current) return
+    if (checkResult === null && saveError === null) return
+    focusVerdictRef.current = false
+    // Whichever landed: the verdict column on success, the "Action failed" column on error.
+    ;(verdictRef.current ?? actionErrorRef.current)?.focus()
+  }, [checkResult, saveError])
+
   const handleCheckStatus = () => {
     if (saving) return
     clearMessages()
+    focusVerdictRef.current = true
     checkStatus<Schedule4CheckStatusResponse>({
       fallback: 'Unable to check status.',
       onSuccess: setCheckResult,
@@ -830,6 +851,37 @@ const Schedule4: FC = () => {
     </div>
   )
 
+  // Two instances, deliberately asymmetric: the top bar carries Add New Location plus Check Status,
+  // the bottom is Check Status alone. Add rides the top bar only because it toggles the panel that
+  // opens directly beneath it. `bottom` governs that difference and the marker, nothing else — both
+  // buttons share one handler and behave identically.
+  //
+  // The legacy grounding for this layout, the deviation it carries, and the branches that bypass this
+  // helper (the sub-page view and the context/loading/error shells) are recorded in
+  // defect-293-check-status-bottom-row-schedules-4-6.md.
+  const actionBar = (bottom: boolean) => (
+    <Column
+      sm={4}
+      md={8}
+      lg={16}
+      className={`schedule-4__actions${bottom ? ' schedule-4__actions--bottom' : ''}`}
+      data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
+    >
+      {!bottom && (
+        <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+          Add New Location
+        </Button>
+      )}
+      {/* `!editable` closes DIV-1 / issue #322 for Schedule 4: legacy bound EVERY Check Status instance
+          to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
+          schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
+          Schedules 4 and 8 were the outliers. Schedule 8 is still open; #322 does not close on this alone. */}
+      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+        Check Status
+      </Button>
+    </Column>
+  )
+
   return (
     <div className="app-page schedule-page">
       {header}
@@ -840,7 +892,7 @@ const Schedule4: FC = () => {
           </Column>
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
+          <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
             <InlineNotification
               kind="error"
               lowContrast
@@ -860,7 +912,15 @@ const Schedule4: FC = () => {
           </Column>
         )}
         {checkResult && (
-          <Column sm={4} md={8} lg={16} className="schedule-4__check">
+          // tabIndex={-1} makes this a programmatic focus target only — never in the tab order.
+          <Column
+            sm={4}
+            md={8}
+            lg={16}
+            className="schedule-4__check"
+            ref={verdictRef}
+            tabIndex={-1}
+          >
             {checkResult.messages.map((msg) => (
               <InlineNotification
                 key={`schedule-${msg.key}-${msg.text}`}
@@ -895,14 +955,7 @@ const Schedule4: FC = () => {
           </Column>
         )}
 
-        <Column sm={4} md={8} lg={16} className="schedule-4__actions">
-          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
-            Add New Location
-          </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
-            Check Status
-          </Button>
-        </Column>
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-4__section">
           {locationsTable}
@@ -913,6 +966,9 @@ const Schedule4: FC = () => {
             {panel}
           </Column>
         )}
+
+        {/* The page's bottom row (deviation D) — Check Status alone, always last in the body. */}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

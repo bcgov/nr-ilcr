@@ -184,6 +184,12 @@ seeded delivery Oracle) on **2026-08-17**, branch `test/schedule-4-e2e`, app com
 **Divergences:**
 
 - **DIV-1 — Check Status can still be run after the report has been submitted; the old system did not allow it.**
+  - ✅ **RESOLVED for Schedule 4 on 2026-08-24** (defect #293 code review). `schedule4/index.tsx` now gives both
+    Check Status buttons `disabled={!editable || saving}`, so the deliberately-red S18 scenario in
+    `render-states.feature` passes and its `@discovered-divergence` tag has been dropped. Unit coverage:
+    *"both Check Status buttons are DISABLED outside Draft (DIV-1 / #322)"* in `Schedule4.test.tsx`.
+    ⚠ **Schedule 8 is still open** (`schedule8/index.tsx:780`), so issue #322 does NOT close on this alone.
+    The original analysis is preserved below.
   - **What's wrong:** once the Schedules 1–10 report leaves Draft (Submitted or Verified), Schedule 4 becomes
     read-only — Add New Location, Copy and Delete are all correctly disabled — but the **Check Status** button
     stays clickable.

@@ -330,7 +330,7 @@
             <element kind="textField" x="442" y="88" width="90" height="14" blankWhenNull="true">
               <expression><![CDATA[$F{direction}]]></expression>
             </element>
-            <element kind="staticText" style="bold" x="540" y="90" width="90" height="14">
+            <element kind="staticText" style="bold" x="540" y="88" width="90" height="14">
               <text><![CDATA[Destination:]]></text>
             </element>
             <element kind="textField" x="632" y="88" width="170" height="14" blankWhenNull="true">
