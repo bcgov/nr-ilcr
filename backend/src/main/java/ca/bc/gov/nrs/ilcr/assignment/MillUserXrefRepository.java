@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.assignment;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -12,9 +13,10 @@ import org.springframework.data.repository.query.Param;
  * named-parameter SQL. SQL only — the service derives status, joins {@code THE.MILL} for the mill
  * number and name, and maps to DTOs, so entities never cross the service boundary.
  *
- * <p>Read side only: the assign, reactivate and soft-end writes are not implemented here. Every
- * method selects the full column list rather than {@code *} so a snapshot that drifts from delivery
- * fails here rather than surfacing as a null field far downstream.
+ * <p>Every read selects the full column list rather than {@code *} so a snapshot that drifts from
+ * delivery fails here rather than surfacing as a null field far downstream. The two toggling
+ * updates are guarded by {@code REVISION_COUNT} and report their row count, so a lost update is
+ * detectable rather than silent; nothing here ever deletes a row.
  */
 @org.springframework.stereotype.Repository
 public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, Long> {
@@ -102,4 +104,92 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
         FROM DUAL
       """)
   boolean hasActiveAssignment(@Param("userGuid") String userGuid);
+
+  /**
+   * Create a new ACTIVE assignment for a pair that has no row yet.
+   *
+   * <p>Created active, matching the legacy Users-page path: an administrator assigning a submitter
+   * intends them to be able to report. The composite key means a second call for the same pair
+   * cannot insert a duplicate — it violates the key instead, which the service translates into the
+   * legacy already-associated warning rather than letting it surface as a server error.
+   *
+   * @param millId the {@code ILCR_MILL_ID}
+   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param user the acting administrator's {@code custom:idp_username}, for both audit pairs
+   * @return the number of rows inserted, always 1
+   */
+  @Modifying
+  @Query(
+      """
+      INSERT INTO THE.ILCR_MILL_USER_XREF
+          (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES (:millId, :userGuid, SYSDATE, NULL, 0, :user, SYSDATE, :user, SYSDATE)
+      """)
+  int insertActiveAssignment(
+      @Param("millId") long millId, @Param("userGuid") String userGuid, @Param("user") String user);
+
+  /**
+   * Bring an ended assignment back, in place: set the active date and clear the inactive one.
+   *
+   * <p>Because one pair admits only one row, this reuses the existing row rather than appending, so
+   * the previous assignment period is overwritten and no reactivation history survives. That
+   * matches the legacy activate action exactly.
+   *
+   * @param millId the {@code ILCR_MILL_ID}
+   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param revisionCount the revision the caller last read, for the optimistic-lock check
+   * @param user the acting administrator's {@code custom:idp_username}
+   * @return 1 when the row was updated, 0 when another write got there first
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_USER_XREF
+         SET ACTIVE_DATE = SYSDATE,
+             INACTIVE_DATE = NULL,
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND USER_GUID = :userGuid
+         AND REVISION_COUNT = :revisionCount
+      """)
+  int reactivateAssignment(
+      @Param("millId") long millId,
+      @Param("userGuid") String userGuid,
+      @Param("revisionCount") int revisionCount,
+      @Param("user") String user);
+
+  /**
+   * End an assignment in place: set the inactive date and clear the active one.
+   *
+   * <p>Never a row delete. Clearing the active date is what the legacy deactivate did, and it is
+   * load-bearing — the wire contract promises an ended assignment has no active date, and nothing
+   * in the database enforces that.
+   *
+   * @param millId the {@code ILCR_MILL_ID}
+   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param revisionCount the revision the caller last read, for the optimistic-lock check
+   * @param user the acting administrator's {@code custom:idp_username}
+   * @return 1 when the row was updated, 0 when another write got there first
+   */
+  @Modifying
+  @Query(
+      """
+      UPDATE THE.ILCR_MILL_USER_XREF
+         SET INACTIVE_DATE = SYSDATE,
+             ACTIVE_DATE = NULL,
+             REVISION_COUNT = REVISION_COUNT + 1,
+             UPDATE_USERID = :user,
+             UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = :millId
+         AND USER_GUID = :userGuid
+         AND REVISION_COUNT = :revisionCount
+      """)
+  int endAssignment(
+      @Param("millId") long millId,
+      @Param("userGuid") String userGuid,
+      @Param("revisionCount") int revisionCount,
+      @Param("user") String user);
 }
