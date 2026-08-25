@@ -26,6 +26,10 @@ public interface UserLookupApi {
    * <p>Two directories, two shapes: IDIR is a contains-search over name and username; BCeID
    * business is an exact lookup by username or GUID, because that directory offers no broad search.
    *
+   * <p>Parameters that do not apply to the chosen provider are rejected, not ignored — a silently
+   * discarded criterion answers a narrower question than the caller asked, with no signal that it
+   * was dropped.
+   *
    * @param idp {@code IDIR} (default) or {@code BCEIDBUSINESS}
    * @param firstName IDIR contains-match on first name
    * @param lastName IDIR contains-match on last name
@@ -33,7 +37,8 @@ public interface UserLookupApi {
    * @param userGuid BCeID exact directory GUID
    * @param authentication the caller (must hold {@code MAINTAIN_USERS})
    * @return 200 with the candidates (empty when nothing matches); 400 when no criterion fits the
-   *     chosen directory; 502 when the directory cannot answer
+   *     chosen directory, when an IDIR criterion is shorter than two characters, or when a
+   *     parameter does not apply to the chosen provider; 502 when the directory cannot answer
    */
   @GetMapping("/users/lookup")
   ResponseEntity<List<DirectoryUser>> lookup(
