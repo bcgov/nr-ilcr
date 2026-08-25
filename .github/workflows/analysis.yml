@@ -48,9 +48,10 @@ jobs:
           # They are NOT interchangeable: the same inputs map to DIFFERENT road groups (TSA 01 ->
           # 15 vs 11, TSA 08 -> 10 vs 7, TFL 08 -> 7 vs 10), so "resolving" the duplication by
           # merging them would silently corrupt one schedule's derived, user-visible Road Group.
-          # xmlReportPaths: with the ITs running, the pom's jacoco `merge`/`report-merged` executions
-          # produce the union of surefire and failsafe coverage. Sonar would otherwise keep reading
-          # the unit-only report and still count IT-covered lines as uncovered.
+          # xmlReportPaths: the pom's jacoco `merge`/`report-merged` executions merge whatever exec
+          # files exist (jacoco.exec + jacoco-it.exec). With the ITs moved to reusable-tests.yml's
+          # Integration job, only the surefire exec is produced here, so the "merged" report is the
+          # unit-only coverage described in the NOTE above — the path stays correct either way.
           sonar_args: >
             -Dsonar.organization=bcgov-sonarcloud
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_backend
