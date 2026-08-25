@@ -131,21 +131,27 @@ const BridgeFields: FC<Props> = ({
   const code = (field: CodeField) => {
     const spec = codeSpec(field)
     const items = codeLists[spec.list] as readonly BridgeCodeOption[]
+    const selected = items.find((item) => item.code === form[field]) ?? null
     return (
       <Dropdown<BridgeCodeOption>
         id={`${idPrefix}-${field}`}
         titleText={spec.label}
         label="Select"
         size="sm"
+        // The New/Used descriptions run to 49 characters ("RU-Replacement installation with a Used
+        // structure"), which no cell of a three-across grid can show whole, so the closed control
+        // truncates (#295, ratified). This puts the full text one hover away — Carbon spreads unknown
+        // props onto the wrapper, so `title` covers the label and the control together. The open menu
+        // already wraps app-wide (`styles/_overrides.scss`, added for the shared code selectors), so
+        // the whole description is readable there too — nothing page-local was needed for that half.
+        title={selected?.description}
         items={items as BridgeCodeOption[]}
         itemToString={(item) => item?.description ?? ''}
         // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
         // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
         // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
         // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-        selectedItem={
-          (items.find((item) => item.code === form[field]) ?? null) as BridgeCodeOption | undefined
-        }
+        selectedItem={selected as BridgeCodeOption | undefined}
         disabled={disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}

@@ -4,6 +4,16 @@
   margin-block: 1rem;
 }
 
+// Carbon reserves a QUARTER of every accordion body as right-hand gutter above 640px
+// (@carbon/styles accordion: `padding-inline-end: 25%`) — a sensible measure for the paragraph of
+// prose an accordion usually holds, and 333px of a 1334px row here. The bridge editor is a 27-field
+// data grid, and that gutter was wider than the whole Material/Deliver/Install triple got (#295 R1),
+// which is why a list row was always worse than the Add panel at the same window width. Matched to
+// Carbon's own inline-start padding ($spacing-05) so the body stays symmetrical.
+.schedule-7a__section .cds--accordion__content {
+  padding-inline-end: 1rem;
+}
+
 .schedule-7a__heading {
   margin-block-end: 0.5rem;
 }
@@ -35,6 +45,16 @@
   .cds--label {
     font-size: 0.875rem;
   }
+
+  // Each direct child is one Carbon Column (the attribute block, a cost row, the totals, comments).
+  // Making them QUERY CONTAINERS is what lets the grids inside them size to the room they actually
+  // have: the same 1366px window gives this editor 1288px in the Add panel and 1046px in a list row
+  // with the side-nav rail open, and a media query cannot see that difference — it reads the viewport
+  // (#295 R4). Inline-size containment also stops a grid's intrinsic minimum from pushing the column
+  // wider than its track, which is what used to throw the third attribute column off-screen (#295 R3).
+  > * {
+    container-type: inline-size;
+  }
 }
 
 // Legacy puts each label to the LEFT of its control rather than above it. Carbon stacks by default,
@@ -48,10 +68,23 @@
   .cds--text-input-wrapper,
   .cds--list-box__wrapper {
     display: grid;
-    grid-template-columns: var(--s7a-label-col) 1fr;
+    // `minmax(0, 1fr)`, not `1fr`: a bare `1fr` takes its automatic minimum from the field's
+    // min-content, and a Carbon Dropdown's selected option is `white-space: nowrap`, so the minimum
+    // was the WHOLE string — 402px for "RU-Replacement installation with a Used structure" (a real
+    // code-table value, 49 characters). The track could not shrink to its share, so the control grew
+    // past this cell and painted over the field beside it: `New/Used` sitting across `Expected Life
+    // Span`. With a zero minimum the control keeps to its cell and Carbon's own
+    // `text-overflow: ellipsis` truncates the label instead — the ratified answer (#295), because the
+    // whole description stays readable in the OPEN MENU, which the app already wraps app-wide
+    // (`styles/_overrides.scss`), and in the `title` tooltip `BridgeFields` sets.
+    grid-template-columns: var(--s7a-label-col) minmax(0, 1fr);
     column-gap: 0.5rem;
     align-items: center;
   }
+
+  // The closed control truncates, so the OPEN menu is the one place the whole description has to be
+  // readable — Carbon ellipses it there too, inside a fixed-height row. Let the row grow and the text
+  // wrap. Only the menu: this must never reach the closed control, whose height is part of the grid.
 
   // Carbon spaces the label for the stacked layout; beside the field that margin would push the row
   // taller than the control it labels.
@@ -84,13 +117,20 @@
 }
 
 // The twelve attribute fields, three-across as in legacy. Carbon's 16-column grid cannot express
-// even thirds, so the row is one full-width Column holding its own equal-fraction grid. Steps down
-// to two columns, then one, at the same breakpoints the cost matrix uses.
+// even thirds, so the row is one full-width Column holding its own equal-fraction grid.
 .schedule-7a__field-grid {
   --s7a-label-col: 8rem;
 
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  // Three across while there is room for three, then two, then one — decided by THIS GRID'S OWN
+  // WIDTH, not the viewport's. 24rem per cell is the 8rem label + the 0.5rem gap + 15.5rem (248px) of
+  // field, and 248px is what a 30-character `Name/Location of Bridge` measures at 14px BC Sans (#295
+  // faces 2 and 3: the fixed `repeat(3, 1fr)` this replaces had a 1292px intrinsic minimum, so at
+  // 985px it overflowed instead of reflowing and clipped character 30 of every long location).
+  // `min(24rem, 100%)` caps the floor at the container, so a phone-width column still holds one
+  // column rather than overflowing by the difference. `auto-fit` fills in source order, so legacy's
+  // left-to-right-then-down field sequence — which reporters transcribe against — is unchanged.
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
   // Generous gaps: with the label beside its field, a tight gutter reads as one run-on row and the
   // next field's label crowds the previous field's box. The column gap is the wider of the two
   // because that is the boundary between two separate label/field pairs.
@@ -99,14 +139,6 @@
   // Labels wrap to two lines on some fields; aligning to the top keeps the inputs in a row from
   // drifting apart vertically.
   align-items: start;
-
-  @media (max-width: 66rem) {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  @media (max-width: 42rem) {
-    grid-template-columns: 1fr;
-  }
 }
 
 .schedule-7a__panel-actions {
@@ -116,7 +148,7 @@
 }
 
 // The legacy cost matrix: a row label, the Material/Deliver/Install triple, and one standalone cost
-// on the right. Collapses to a single column on narrow viewports.
+// on the right. Collapses to a single column when the three tracks no longer fit side by side.
 .schedule-7a__cost-row {
   display: grid;
   // The standalone-cost column carries a left label AND its field, so it is wider than it was when
@@ -125,7 +157,13 @@
   gap: 3rem;
   align-items: end;
 
-  @media (max-width: 66rem) {
+  // 64rem (1024px) is the width at which all three tracks still hold their content: 10rem of row
+  // label + the triple's own minimum (three money boxes at their floor plus two 1.5rem gutters,
+  // ~26rem) + 19.75rem for the standalone label and its box + the two 3rem gutters. Below that the
+  // row stacks, because the alternative is what #295 reported — a `1fr` middle track handing the
+  // money boxes 32px each. A CONTAINER query: the width that shrank is the column's, not the window's
+  // (the accordion row and the side-nav rail both change it invisibly to a media query).
+  @container (max-width: 64rem) {
     grid-template-columns: 1fr;
   }
 }
@@ -137,11 +175,19 @@
 
 .schedule-7a__cost-triple {
   display: grid;
+  // `1fr`, not `minmax(0, 1fr)`: an automatic minimum is what lets each track floor at its own
+  // content, and the money input's `min-inline-size` below is that content. Writing a 0 minimum here
+  // would hand the crush back.
   grid-template-columns: repeat(3, 1fr);
-  gap: 3rem;
+  // 1.5rem, down from 3rem: 96px of gutter inside a cell three boxes wide was the difference between
+  // fitting and not at 1366 with the rail open, and these three sit under one shared heading — they
+  // read as one group, so they do not need the same air as two separate label/field pairs.
+  gap: 1.5rem;
 
   // Three cost inputs across a 320px phone leave ~90px each, too narrow for an 8-digit amount.
-  // Every Column on this page declares sm={4}, so mobile is a supported width.
+  // Every Column on this page declares sm={4}, so mobile is a supported width. Deliberately still a
+  // MEDIA query: a phone is a property of the device, and at that width the column and the viewport
+  // are the same thing.
   @media (max-width: 42rem) {
     grid-template-columns: 1fr;
   }
@@ -181,6 +227,18 @@
 // reached from there.
 .schedule-7a__num .cds--text-input {
   text-align: right;
+  // Never narrower than the widest amount the contract allows. Carbon sets `inline-size: 100%` on
+  // its inputs, and a percentage width contributes NOTHING to a grid track's minimum, so before this
+  // floor a `1fr` track could squeeze a cost box down to its own 2rem of padding — the 32px boxes in
+  // #295. 11ch covers "-99,999,999" (the ±99,999,999 cap, grouped, with the sign) and 2rem is
+  // Carbon's inline padding; both in the input's own font, so the floor grows if the font does
+  // instead of being a pixel constant that silently stops being enough.
+  //
+  // Belt, not braces: with the container query above, no track is starved at any width the guard
+  // covers — proved by mutation (removing this line leaves the e2e layout guard green). It is here so
+  // that moving a breakpoint later cannot silently bring the 32px box back, which is precisely how
+  // #295 arrived: a width hand-tuned at one window size in PR #277.
+  min-inline-size: calc(11ch + 2rem);
 }
 
 // Server-computed totals, matching how schedule-3__num / schedule-4__num render a derived value:
