@@ -285,7 +285,10 @@ jobs:
           # user/pass@host:port/service — the python-oracledb bridge
           # (scripts/sch1_db_restore.py) and any DB-level cleanup steps.
           ORACLE_DSN: ${{ env.DB_USER }}/${{ env.DB_PASS }}@localhost:1525/ILCR
-        run: npm run test:gate -- --workers=4
+        # --project=chromium pulls in its `setup` (preflight) dependency
+        # automatically and skips the @smoke project, which the e2e-tests job
+        # above already runs — keeps the two jobs' scopes disjoint.
+        run: npm run test:gate -- --project=chromium --workers=4
 
       - uses: actions/upload-artifact@v7
         if: (! cancelled())
