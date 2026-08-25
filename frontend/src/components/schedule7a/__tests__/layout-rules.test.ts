@@ -22,6 +22,66 @@ import { describe, expect, test } from 'vitest'
  * when one of the five disappears. Widths are verified by a human against the running app; the recipe is
  * in that record's Appendix.
  */
+/**
+ * Every TOP-LEVEL rule whose selector list names `selector`, with its body, found by tracking brace
+ * depth. Replaces the non-greedy `/\.selector \{[\s\S]*?\n\}/` regex the #295 PR review flagged
+ * (SScholefield, seconded by gpascucci).
+ *
+ * The review's stated failure — a nested rule truncating the match — does NOT reproduce as written,
+ * and it is worth saying why rather than leaving the next reader to re-derive it. That regex ends on
+ * `\n}`: a newline followed by a brace in COLUMN 0. A conventionally indented nested close (`  }`)
+ * does not match, so the match runs on to the top-level close and an `@media` after it IS caught.
+ * The regex was right — but right by accident, resting on Prettier's indentation rather than on
+ * anything it states. Close a nested rule at column 0 and it silently goes green.
+ *
+ * Two holes it had that the review did not name, and that this closes with it:
+ *
+ *   - `?? ''` on no match meant a RENAME passed vacuously: `''.not.toContain('@media')` is true.
+ *     A tripwire whose whole job is to fail when a rule disappears was the one thing that could not.
+ *     The caller now asserts the count first.
+ *   - `.schedule-7a__field-grid` names TWO rules in this stylesheet, and the regex only ever saw the
+ *     standalone one. A viewport query added to the grouped
+ *     `.schedule-7a__field-grid, .schedule-7a__cost-secondary { ... }` rule breaks the same
+ *     container-driven reflow and went unchecked. Both are returned and both are asserted.
+ *
+ * Matching the selector as a WHOLE comma-separated entry is what makes that possible, and is also
+ * why this is not the `indexOf(selector)` scan the review suggested: `indexOf` lands on the GROUPED
+ * rule (it comes first in the file), which does not even contain the `grid-template-columns` this
+ * test exists to guard — so that suggestion would have swapped one false-green for another.
+ *
+ * `//` comments are stripped before counting, since this file has one containing braces (`sm={4}`).
+ * Deliberately not a CSS parser: it only has to be right about this file and obvious when it is not.
+ */
+function topLevelRulesNaming(scss: string, selector: string): string[] {
+  const source = scss.replace(/\/\/[^\n]*/g, '')
+  const rules: string[] = []
+  let depth = 0
+  let preludeStart = 0
+  let ruleStart = -1
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i]
+    if (char === '{') {
+      if (depth === 0) {
+        const names = source.slice(preludeStart, i).split(',')
+        ruleStart = names.some((name) => name.trim() === selector) ? preludeStart : -1
+      }
+      depth += 1
+    } else if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        if (ruleStart !== -1) {
+          rules.push(source.slice(ruleStart, i + 1).trim())
+          ruleStart = -1
+        }
+        preludeStart = i + 1
+      }
+    }
+  }
+
+  return rules
+}
+
 describe('Schedule 7A layout rules (source tripwire, not a behaviour test)', () => {
   const source = readFileSync(
     resolve(process.cwd(), 'src/components/schedule7a/index.scss'),
@@ -66,8 +126,22 @@ describe('Schedule 7A layout rules (source tripwire, not a behaviour test)', () 
     expect(source).toContain(
       'grid-template-columns: repeat(auto-fit, minmax(max(min(24.5rem, 100%), (100% - 6rem) / 3), 1fr))',
     )
-    const fieldGrid = /\.schedule-7a__field-grid \{[\s\S]*?\n\}/.exec(source)?.[0] ?? ''
-    expect(fieldGrid).not.toContain('@media')
+    // Brace-balanced, and asserted non-empty first: the regex this replaces degraded to '' on a
+    // rename, and `''.not.toContain('@media')` passes. Both rules that name the grid are checked —
+    // the grouped `.schedule-7a__field-grid, .schedule-7a__cost-secondary` one and this standalone
+    // one — because a viewport query in either would break the same container-driven reflow.
+    const fieldGridRules = topLevelRulesNaming(source, '.schedule-7a__field-grid')
+    expect(
+      fieldGridRules.length,
+      'expected exactly the grouped and standalone .schedule-7a__field-grid rules: fewer means one ' +
+        'was renamed or deleted, more means a third was added and should be checked here too',
+    ).toBe(2)
+    for (const rule of fieldGridRules) {
+      expect(
+        rule,
+        'a .schedule-7a__field-grid rule reintroduced a viewport media query',
+      ).not.toContain('@media')
+    }
   })
 
   test('every label/field wrapper gives its field track a zero minimum (#295 R5)', () => {
