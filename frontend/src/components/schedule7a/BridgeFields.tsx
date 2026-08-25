@@ -138,13 +138,14 @@ const BridgeFields: FC<Props> = ({
         titleText={spec.label}
         label="Select"
         size="sm"
-        // The New/Used descriptions run to 49 characters ("RU-Replacement installation with a Used
-        // structure"), which no cell of a three-across grid can show whole, so the closed control
-        // truncates (#295, ratified). This puts the full text one hover away — Carbon spreads unknown
-        // props onto the wrapper, so `title` covers the label and the control together. The open menu
-        // already wraps app-wide (`styles/_overrides.scss`, added for the shared code selectors), so
-        // the whole description is readable there too — nothing page-local was needed for that half.
-        title={selected?.description}
+        // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
+        // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
+        // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the
+        // control itself (Dropdown.js:275), so the hover text needs nothing from us. Passing `title`
+        // made it worse: Carbon spreads unknown props onto the WRAPPER, and the menu is a descendant of
+        // that wrapper, so the selected option's tooltip floated over the open list — the one place the
+        // whole description is readable. The other reading is the open menu, which the app already wraps
+        // app-wide (`styles/_overrides.scss`, added for the shared code selectors).
         items={items as BridgeCodeOption[]}
         itemToString={(item) => item?.description ?? ''}
         // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
