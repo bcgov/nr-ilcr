@@ -69,7 +69,8 @@ public interface AssignmentApi {
    * @param millId the mill
    * @param request the submitter's directory GUID
    * @param authentication the caller (must hold {@code MAINTAIN_USERS}; drives the audit user)
-   * @return 200 with the assignment and its message; 404 unknown mill; 409 closed mill on a revive
+   * @return 200 with the assignment and its message; 404 unknown mill; 409 closed mill or lost
+   *     concurrent update on a revive
    */
   @PostMapping("/mills/{millId}/submitters")
   ResponseEntity<AssignmentResponse> assign(
@@ -84,7 +85,8 @@ public interface AssignmentApi {
    * @param userGuid the submitter's directory GUID
    * @param request the optimistic-lock token the caller read
    * @param authentication the caller (must hold {@code MAINTAIN_USERS}; drives the audit user)
-   * @return 200 with the ended assignment; 404 when the pair has no assignment; 409 when stale
+   * @return 200 with the ended assignment; 404 when the pair has no assignment row (including an
+   *     unknown mill); 409 when stale or already ended
    */
   @PatchMapping("/mills/{millId}/submitters/{userGuid}")
   ResponseEntity<AssignmentResponse> end(
@@ -102,7 +104,8 @@ public interface AssignmentApi {
    * @param userGuid the submitter's directory GUID
    * @param request the desired state
    * @param authentication the caller (must hold {@code MAINTAIN_USERS}; drives the audit user)
-   * @return 200 with the account and its message; 409 when active assignments remain
+   * @return 200 with the account and its message; 409 when active assignments remain; 404 when
+   *     deactivating a user who has no account row (activation provisions one instead)
    */
   @PatchMapping("/submitters/{userGuid}")
   ResponseEntity<AccountResponse> setAccountActive(

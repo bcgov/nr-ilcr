@@ -65,10 +65,8 @@ public class GlobalExceptionHandler {
       log.debug("Business rule rejection [{}]: {}", ex.getStatus(), ex.getMessageKey());
     }
 
-    // Arguments are passed through rather than hardcoded null: a parameterized key resolved without
-    // them skips MessageFormat, and its {0} placeholders and '' quote escapes would ship verbatim
-    // to
-    // the caller. Exceptions whose key takes no arguments still pass null and are unaffected.
+    // The exception's own arguments, never a hardcoded null — see the BusinessException
+    // three-argument constructor for why a parameterized key must be resolved with them.
     String detail =
         messageSource.getMessage(
             ex.getMessageKey(),

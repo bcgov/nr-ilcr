@@ -123,7 +123,12 @@ public class AssignmentService {
     MillSummary mill = requireMill(millId);
 
     if (users.findUser(userGuid).isEmpty()) {
-      users.insertAccount(userGuid, SUBMITTER_ROLE, SubmitterAccount.INACTIVE, actingUser);
+      try {
+        users.insertAccount(userGuid, SUBMITTER_ROLE, SubmitterAccount.INACTIVE, actingUser);
+      } catch (DataIntegrityViolationException concurrentProvision) {
+        // Another request provisioned this user between the read and the insert. The row exists,
+        // which is all this step needs — the race is no more an error here than it is below.
+      }
     }
 
     Optional<MillUserXrefEntity> existing = assignments.findAssignment(millId, userGuid);
@@ -145,8 +150,13 @@ public class AssignmentService {
     } catch (DataIntegrityViolationException concurrentInsert) {
       // The composite key refused a second row for this pair, so another request assigned it
       // between the read above and this insert. The pair is assigned either way, which is what the
-      // caller wanted, so report it the same way a duplicate click reports.
-      return new Outcome(reload(millId, userGuid, mill), MSG_ALREADY_ASSIGNED);
+      // caller wanted, so report it the same way a duplicate click reports. Only a duplicate leaves
+      // a row to find, though — any other integrity failure keeps its own error rather than
+      // masquerading as already-assigned or not-found.
+      return assignments
+          .findAssignment(millId, userGuid)
+          .map(row -> new Outcome(toSubmitter(row, mill), MSG_ALREADY_ASSIGNED))
+          .orElseThrow(() -> concurrentInsert);
     }
     return new Outcome(reload(millId, userGuid, mill), MSG_ASSIGNED);
   }
@@ -154,20 +164,34 @@ public class AssignmentService {
   /**
    * End a submitter's assignment, leaving the row in place with its active date cleared.
    *
+   * <p>Keyed off the assignment row, not the selectable-mill lookup: an assignment can outlive its
+   * mill's report-status enrollment, and ending it must stay possible or the account deactivation
+   * guard could never be satisfied. The mill is resolved tolerantly for display, as the user list
+   * already does.
+   *
+   * <p>An assignment that is already ended is refused as a conflict rather than re-stamped: the
+   * caller acted on a view that no longer matches the row, and re-stamping would overwrite the
+   * historical end date — something legacy could never do, because its screen only offered
+   * deactivation on rows shown active.
+   *
    * @param millId the mill
    * @param userGuid the directory GUID of the submitter
    * @param revisionCount the revision the caller read
    * @param actingUser the acting administrator's username, for the audit columns
    * @return the ended assignment
-   * @throws MillYearContextNotFoundException when the mill does not exist
    * @throws AssignmentNotFoundException when the pair has no assignment row
-   * @throws StaleRevisionException when a concurrent write changed the row first
+   * @throws StaleRevisionException when the assignment is already ended, or a concurrent write
+   *     changed the row first
    */
   @Transactional
   public MillSubmitter end(long millId, String userGuid, int revisionCount, String actingUser) {
-    MillSummary mill = requireMill(millId);
-    assignments.findAssignment(millId, userGuid).orElseThrow(AssignmentNotFoundException::new);
+    MillUserXrefEntity row =
+        assignments.findAssignment(millId, userGuid).orElseThrow(AssignmentNotFoundException::new);
+    if (!row.isActive()) {
+      throw new StaleRevisionException();
+    }
 
+    MillSummary mill = mills.findSelectableMillById(millId).orElse(null);
     if (assignments.endAssignment(millId, userGuid, revisionCount, actingUser) == 0) {
       throw new StaleRevisionException();
     }
@@ -177,10 +201,16 @@ public class AssignmentService {
   /**
    * Flag a licensee's account active or inactive.
    *
-   * <p>Deactivation is refused while any assignment is still active, evaluated live rather than
-   * from anything read earlier, so a concurrent assignment cannot slip past the guard. Activating a
-   * directory user who has never held an account creates it active — the opposite of what a first
-   * mill assignment does, which is the legacy asymmetry preserved rather than corrected.
+   * <p>Deactivation is refused while any assignment is still active, evaluated live from the
+   * database rather than from anything read earlier in the request. Under read-committed that is
+   * best-effort, not an invariant: an assignment committed between this read and this commit can
+   * still land — the same window the legacy read-then-write had, and the provisioning quirk already
+   * creates an inactive account holding an active mill, so nothing downstream may treat the flag as
+   * consistent with the assignments.
+   *
+   * <p>Activating a directory user who has never held an account creates it active (a recorded
+   * deviation — the legacy screen only acted on listed users). Deactivating one does NOT: a
+   * mistyped GUID must not mint a phantom inactive account, so that answers not-found.
    *
    * @param userGuid the directory GUID ({@code custom:idp_user_id})
    * @param active true to flag the account active
@@ -188,6 +218,7 @@ public class AssignmentService {
    * @return the account and the message describing what happened
    * @throws AccountHasActiveMillsException when deactivating a user who still has active
    *     assignments
+   * @throws AccountNotFoundException when deactivating a user who has no account row
    */
   @Transactional
   public AccountOutcome setAccountActive(String userGuid, boolean active, String actingUser) {
@@ -197,10 +228,19 @@ public class AssignmentService {
 
     String flag = active ? SubmitterAccount.ACTIVE : SubmitterAccount.INACTIVE;
     if (users.setAccountActive(userGuid, flag, actingUser) == 0) {
-      users.insertAccount(userGuid, SUBMITTER_ROLE, flag, actingUser);
+      if (!active) {
+        throw new AccountNotFoundException();
+      }
+      try {
+        users.insertAccount(userGuid, SUBMITTER_ROLE, flag, actingUser);
+      } catch (DataIntegrityViolationException concurrentProvision) {
+        // A concurrent request created the row between the update and this insert; flip it
+        // instead, exactly as if it had existed all along.
+        users.setAccountActive(userGuid, flag, actingUser);
+      }
     }
 
-    IlcrUserEntity account = users.findUser(userGuid).orElseThrow(AssignmentNotFoundException::new);
+    IlcrUserEntity account = users.findUser(userGuid).orElseThrow(AccountNotFoundException::new);
     return new AccountOutcome(
         new SubmitterAccount(
             account.userGuid(), account.activeInd(), account.roleName(), account.revisionCount()),

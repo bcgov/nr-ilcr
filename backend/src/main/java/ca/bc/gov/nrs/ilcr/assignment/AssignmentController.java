@@ -7,7 +7,6 @@ import ca.bc.gov.nrs.ilcr.assignment.dto.AssignmentResponse;
 import ca.bc.gov.nrs.ilcr.assignment.dto.EndAssignmentRequest;
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
 import ca.bc.gov.nrs.ilcr.assignment.dto.SetAccountActiveRequest;
-import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -117,18 +116,22 @@ public class AssignmentController implements AssignmentApi {
 
   /**
    * The acting administrator's identifier for the audit columns — the raw {@code
-   * custom:idp_username} claim, which is what the legacy audit columns held and what fits their
-   * 30-character width. Never the provider-prefixed form, which would not.
+   * custom:idp_username} claim, read without any fallback: every substitute identity (the 32-char
+   * directory GUID, the 36-char {@code sub}) overflows the 30-character audit columns and would
+   * fail as an opaque ORA-12899 deep inside the write, so a real token without the claim is refused
+   * here, where the broken identity contract can be named.
    *
    * <p>With security off there is no token, so the mock principal's name is used instead; that only
    * ever happens in local development.
    */
   private static String actingUser(Authentication authentication) {
     if (authentication instanceof JwtAuthenticationToken jwtAuth) {
-      String username = JwtPrincipalUtil.getIdpUsername(jwtAuth.getToken());
-      if (StringUtils.isNotBlank(username)) {
-        return username;
+      String username = jwtAuth.getToken().getClaimAsString("custom:idp_username");
+      if (StringUtils.isBlank(username)) {
+        throw new IllegalStateException(
+            "token carries no custom:idp_username to stamp the audit columns");
       }
+      return username;
     }
     return authentication.getName();
   }

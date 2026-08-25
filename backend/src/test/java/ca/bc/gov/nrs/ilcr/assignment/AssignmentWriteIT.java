@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.assignment;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -45,13 +46,23 @@ class AssignmentWriteIT extends AbstractOracleIT {
   /** A second seeded ACT mill, used for the multi-mill and closed-mill cases. */
   private static final long OTHER_ACTIVE_MILL = 522L;
 
+  /**
+   * A mill this class creates with a status xref but NO {@code ILCR_MILL_REPORT_STATUS} row — so it
+   * can hold an assignment (the FK needs only the status xref) while being invisible to the
+   * selectable-mill lookup.
+   */
+  private static final long ORPHAN_MILL = 99801L;
+
   // Exactly 32 characters, the width the directory GUID column and the request validation both
   // enforce; a 31-character fixture is rejected at the boundary, not by the database.
   private static final String GUID = "WRITEIT1BBBBCCCCDDDDEEEEFFFF0001";
   private static final String GUID_B = "WRITEIT2BBBBCCCCDDDDEEEEFFFF0002";
 
-  /** The acting administrator's {@code custom:idp_username}, expected in the audit columns. */
-  private static final String ADMIN_USERNAME = "GRPASCUC";
+  /**
+   * The acting administrator's {@code custom:idp_username}, expected in the audit columns. A
+   * synthetic value — a real person's identifier must never be hardcoded.
+   */
+  private static final String ADMIN_USERNAME = "TESTADMN";
 
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
@@ -69,6 +80,9 @@ class AssignmentWriteIT extends AbstractOracleIT {
         "UPDATE THE.ILCR_MILL_STATUS_XREF SET ILCR_MILL_STATUS_CODE = 'ACT'"
             + " WHERE ILCR_MILL_STATUS_XREF_ID = ?",
         OTHER_ACTIVE_MILL);
+    jdbcTemplate.update(
+        "DELETE FROM THE.ILCR_MILL_STATUS_XREF WHERE ILCR_MILL_STATUS_XREF_ID = ?", ORPHAN_MILL);
+    jdbcTemplate.update("DELETE FROM THE.MILL WHERE MILL_ID = ?", ORPHAN_MILL);
   }
 
   @Test
@@ -78,6 +92,11 @@ class AssignmentWriteIT extends AbstractOracleIT {
         .perform(assign(ACTIVE_MILL, GUID))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.messageKey").value("user.activate.mill"))
+        // The resolved text is pinned, not just the key: the mill leads and the user follows, and
+        // the arg orders are documented as non-interchangeable — a swap must fail here.
+        .andExpect(jsonPath("$.message").value(startsWith("Mill ")))
+        .andExpect(
+            jsonPath("$.message").value(containsString("has been activated for user " + GUID)))
         .andExpect(jsonPath("$.assignment.status").value("ACTIVE"))
         .andExpect(jsonPath("$.assignment.activeDate").exists())
         .andExpect(jsonPath("$.assignment.inactiveDate").doesNotExist());
@@ -143,6 +162,9 @@ class AssignmentWriteIT extends AbstractOracleIT {
         .perform(end(ACTIVE_MILL, GUID, 0))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.messageKey").value("user.deactivate.mill"))
+        .andExpect(jsonPath("$.message").value(startsWith("Mill ")))
+        .andExpect(
+            jsonPath("$.message").value(containsString("has been deactivated for user " + GUID)))
         .andExpect(jsonPath("$.assignment.status").value("ENDED"))
         .andExpect(jsonPath("$.assignment.inactiveDate").exists())
         // The contract promises an ended assignment has no active date and no database constraint
@@ -193,6 +215,85 @@ class AssignmentWriteIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("re-ending an already-ended assignment is refused, preserving the end date")
+  void reEndingAnEndedAssignmentIsRefused() throws Exception {
+    mockMvc.perform(assign(ACTIVE_MILL, GUID)).andExpect(status().isOk());
+    mockMvc.perform(end(ACTIVE_MILL, GUID, 0)).andExpect(status().isOk());
+
+    // Even with the CURRENT revision (1, after the end above): the row is already ended, and
+    // re-stamping would silently overwrite the historical end date on an audit-bearing table.
+    mockMvc.perform(end(ACTIVE_MILL, GUID, 1)).andExpect(status().isConflict());
+    assertEquals(1, assignmentRevision(ACTIVE_MILL, GUID));
+  }
+
+  @Test
+  @DisplayName("an assignment on a mill with no report-status enrollment can still be ended")
+  void endingOnAnUnenrolledMillWorks() throws Exception {
+    // A mill with a status xref (so the assignment FK holds) but no ILCR_MILL_REPORT_STATUS row —
+    // invisible to the selectable-mill lookup, exactly the shape legacy delivery data can hold.
+    jdbcTemplate.update(
+        "INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ENTRY_USERID)"
+            + " VALUES (?, 'Orphan Mill', 99801, 'SEED')",
+        ORPHAN_MILL);
+    jdbcTemplate.update(
+        "INSERT INTO THE.ILCR_MILL_STATUS_XREF"
+            + " (ILCR_MILL_STATUS_XREF_ID, ILCR_MILL_STATUS_CODE, ENTRY_USERID)"
+            + " VALUES (?, 'ACT', 'SEED')",
+        ORPHAN_MILL);
+    mockMvc.perform(setActive(GUID, true)).andExpect(status().isOk());
+    jdbcTemplate.update(
+        "INSERT INTO THE.ILCR_MILL_USER_XREF (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, REVISION_COUNT,"
+            + " ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)"
+            + " VALUES (?, ?, SYSDATE, 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
+        ORPHAN_MILL,
+        GUID);
+
+    // The end must key off the assignment row, not the selectable-mill lookup — otherwise this
+    // assignment could never be ended and the deactivation guard below could never be satisfied.
+    mockMvc
+        .perform(end(ORPHAN_MILL, GUID, 0))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.assignment.status").value("ENDED"));
+
+    mockMvc.perform(setActive(GUID, false)).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("listing or ending against a mill that does not exist answers not-found")
+  void operationsOnAnUnknownMillAreNotFound() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/mills/{millId}/submitters", 999_999L).with(admin()))
+        .andExpect(status().isNotFound());
+    mockMvc.perform(end(999_999L, GUID, 0)).andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("an end body that omits the revision is rejected rather than treated as zero")
+  void emptyEndBodyIsRejected() throws Exception {
+    mockMvc.perform(assign(ACTIVE_MILL, GUID)).andExpect(status().isOk());
+
+    mockMvc
+        .perform(
+            patch("/api/v1/mills/{millId}/submitters/{userGuid}", ACTIVE_MILL, GUID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(admin()))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  @DisplayName("deactivating a user who has no account answers not-found and creates nothing")
+  void deactivatingAMissingAccountIsNotFound() throws Exception {
+    mockMvc
+        .perform(setActive(GUID, false))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.detail").value("The requested user account could not be found."));
+
+    // No phantom account: a mistyped GUID must not mint an inactive ILCR_USER row.
+    assertEquals(0, accountRowCount(GUID));
+  }
+
+  @Test
   @DisplayName("reviving an assignment on a closed mill is refused with the legacy message")
   void revivingOnAClosedMillIsRefused() throws Exception {
     mockMvc.perform(assign(OTHER_ACTIVE_MILL, GUID)).andExpect(status().isOk());
@@ -213,6 +314,9 @@ class AssignmentWriteIT extends AbstractOracleIT {
         .perform(setActive(GUID, true))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.messageKey").value("user.activated"))
+        // Formatted, with the GUID in the user position: "User {0} - {1} {2} has been activated."
+        .andExpect(jsonPath("$.message").value(startsWith("User " + GUID)))
+        .andExpect(jsonPath("$.message").value(containsString("has been activated")))
         .andExpect(jsonPath("$.account.activeInd").value("Y"));
 
     // The opposite of what a first assignment does — the legacy asymmetry, not an oversight.
@@ -285,18 +389,29 @@ class AssignmentWriteIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("one submitter holds dated assignments on several mills at once")
+  @DisplayName("one submitter holds dated assignments on several mills, ended only on request")
   void aSubmitterHoldsSeveralAssignments() throws Exception {
     mockMvc.perform(assign(ACTIVE_MILL, GUID)).andExpect(status().isOk());
     mockMvc.perform(assign(OTHER_ACTIVE_MILL, GUID)).andExpect(status().isOk());
+    mockMvc.perform(end(OTHER_ACTIVE_MILL, GUID, 0)).andExpect(status().isOk());
 
+    // The user-side list applies the same ended-rows filter as the mill-side one.
     mockMvc
         .perform(get("/api/v1/submitters/{userGuid}/mills", GUID).with(admin()))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(1))
+        .andExpect(jsonPath("$[0].millId").value(ACTIVE_MILL))
+        .andExpect(jsonPath("$[0].activeDate").exists());
+
+    mockMvc
+        .perform(
+            get("/api/v1/submitters/{userGuid}/mills", GUID)
+                .param("includeEnded", "true")
+                .with(admin()))
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(2))
         .andExpect(jsonPath("$[0].millId").value(ACTIVE_MILL))
-        .andExpect(jsonPath("$[1].millId").value(OTHER_ACTIVE_MILL))
-        .andExpect(jsonPath("$[0].activeDate").exists());
+        .andExpect(jsonPath("$[1].millId").value(OTHER_ACTIVE_MILL));
   }
 
   @Test
@@ -342,6 +457,13 @@ class AssignmentWriteIT extends AbstractOracleIT {
             post("/api/v1/mills/{millId}/submitters", ACTIVE_MILL)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"userGuid\":\"" + GUID + "\"}")
+                .with(submitter()))
+        .andExpect(status().isForbidden());
+    mockMvc
+        .perform(
+            patch("/api/v1/mills/{millId}/submitters/{userGuid}", ACTIVE_MILL, GUID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revisionCount\":0}")
                 .with(submitter()))
         .andExpect(status().isForbidden());
     mockMvc

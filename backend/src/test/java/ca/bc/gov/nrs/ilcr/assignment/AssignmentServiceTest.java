@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.assignment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -11,9 +12,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.assignment.dto.MillSubmitter;
+import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,8 +31,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 class AssignmentServiceTest {
 
   private static final long MILL = 514L;
-  private static final String GUID = "UNITTEST1BBBCCCCDDDDEEEEFFFF001";
-  private static final String ADMIN = "GRPASCUC";
+  // 32 characters, matching the real directory GUID width — a shorter fixture is exactly the
+  // request-boundary trap the story's Debug Log records.
+  private static final String GUID = "UNITTEST1BBBCCCCDDDDEEEEFFFF0001";
+  private static final String ADMIN = "TESTADMN";
 
   private final IlcrUserRepository users = mock(IlcrUserRepository.class);
   private final MillUserXrefRepository assignments = mock(MillUserXrefRepository.class);
@@ -117,6 +122,60 @@ class AssignmentServiceTest {
 
     // Legacy's activate path had no guard, and adding one would block reinstating a user.
     verify(assignments, never()).hasActiveAssignment(anyString());
+  }
+
+  @Test
+  @DisplayName("a revive that loses a concurrent update is refused as stale")
+  void staleReviveIsRefused() {
+    activeMill();
+    when(users.findUser(GUID)).thenReturn(Optional.of(account()));
+    when(assignments.findAssignment(MILL, GUID)).thenReturn(Optional.of(endedAssignment()));
+    // The revision the service just read no longer matches by the time the update runs.
+    when(assignments.reactivateAssignment(MILL, GUID, 1, ADMIN)).thenReturn(0);
+
+    assertThrows(StaleRevisionException.class, () -> service.assign(MILL, GUID, ADMIN));
+  }
+
+  @Test
+  @DisplayName("re-ending an already-ended assignment is refused without writing")
+  void reEndingAnEndedAssignmentIsRefused() {
+    when(assignments.findAssignment(MILL, GUID)).thenReturn(Optional.of(endedAssignment()));
+
+    // Even with the current revision: re-stamping would overwrite the historical end date.
+    assertThrows(StaleRevisionException.class, () -> service.end(MILL, GUID, 1, ADMIN));
+
+    verify(assignments, never()).endAssignment(anyLong(), anyString(), anyInt(), anyString());
+  }
+
+  @Test
+  @DisplayName("an assignment can be ended even when its mill is no longer selectable")
+  void endWorksWhenTheMillIsNotSelectable() {
+    when(mills.findSelectableMillById(MILL)).thenReturn(Optional.empty());
+    when(assignments.findAssignment(MILL, GUID))
+        .thenReturn(Optional.of(activeAssignment()))
+        .thenReturn(Optional.of(endedAssignment()));
+    when(assignments.endAssignment(MILL, GUID, 0, ADMIN)).thenReturn(1);
+
+    MillSubmitter ended = service.end(MILL, GUID, 0, ADMIN);
+
+    // The row must stay endable — otherwise the account deactivation guard, which still counts
+    // this assignment, could never be satisfied. The mill fields simply render absent.
+    assertEquals(MillSubmitter.ENDED, ended.status());
+    assertNull(ended.millNumber());
+    assertNull(ended.millName());
+  }
+
+  @Test
+  @DisplayName("a row whose mill has vanished still renders, with the mill fields absent")
+  void listByUserToleratesAVanishedMill() {
+    when(assignments.findByUser(GUID)).thenReturn(List.of(activeAssignment()));
+    when(mills.findSelectableMillById(MILL)).thenReturn(Optional.empty());
+
+    List<MillSubmitter> rows = service.listByUser(GUID, false);
+
+    assertEquals(1, rows.size());
+    assertNull(rows.get(0).millNumber());
+    assertNull(rows.get(0).millName());
   }
 
   private void activeMill() {
