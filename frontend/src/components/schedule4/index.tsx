@@ -486,17 +486,30 @@ const Schedule4: FC = () => {
     )
   }
 
-  // `scrollToTop` serves the bottom bar (defect #293). The verdict banners render in the
-  // `schedule-4__check` column above the top action bar, so a press from the bottom of a long page would
-  // otherwise look inert. It restores legacy's behaviour rather than adding new: legacy's Check Status was
-  // an ajax="false" full postback (schedule4.xhtml:220) that reloaded the page scrolled to the top with
-  // <p:messages> in view, and its ajax Save on the same page made the same repositioning explicit
-  // (schedule4.xhtml:200-202). Scrolling on press rather than on completion also covers the failure path,
-  // whose banner renders in the same place — `useScheduleMutations` exposes only `onSuccess`.
-  const handleCheckStatus = (scrollToTop: boolean) => {
+  // Focus, not scroll (PR #353 review). The verdict renders in the `schedule-4__check` column at the
+  // TOP of the page while the second Check Status sits at the foot, so a press down there changed
+  // nothing the user could see. An earlier version answered that with `window.scrollTo(0, 0)`, which
+  // moved the viewport but left focus on the now-off-screen button — no announcement for a screen
+  // reader, and the next Tab scrolled straight back down. Focusing the verdict region instead brings
+  // it into view, announces it, and respects prefers-reduced-motion, in one move. `focusVerdictRef`
+  // makes it fire for THIS action only: a Save validation error must not yank focus off the field
+  // the user is correcting.
+  const focusVerdictRef = useRef(false)
+  const verdictRef = useRef<HTMLDivElement>(null)
+  const actionErrorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!focusVerdictRef.current) return
+    if (checkResult === null && saveError === null) return
+    focusVerdictRef.current = false
+    // Whichever landed: the verdict column on success, the "Action failed" column on error.
+    ;(verdictRef.current ?? actionErrorRef.current)?.focus()
+  }, [checkResult, saveError])
+
+  const handleCheckStatus = () => {
     if (saving) return
     clearMessages()
-    if (scrollToTop) window.scrollTo(0, 0)
+    focusVerdictRef.current = true
     checkStatus<Schedule4CheckStatusResponse>({
       fallback: 'Unable to check status.',
       onSuccess: setCheckResult,
@@ -838,25 +851,14 @@ const Schedule4: FC = () => {
     </div>
   )
 
-  // Two instances, deliberately asymmetric — the same shape Schedule 6 uses (schedule6/index.tsx:704-729).
-  // The top bar carries Add New Location plus Check Status; the bottom is Check Status ALONE, which is
-  // legacy's own bottom row (schedule4.xhtml:216-222 put Save/Close on one row and Check Status by itself
-  // on the next). Add rides the top bar only: it toggles the panel that opens directly beneath it, and a
-  // second copy at the page foot would be redundant.
+  // Two instances, deliberately asymmetric: the top bar carries Add New Location plus Check Status,
+  // the bottom is Check Status alone. Add rides the top bar only because it toggles the panel that
+  // opens directly beneath it. `bottom` governs that difference and the marker, nothing else — both
+  // buttons share one handler and behave identically.
   //
-  // Legacy carried that bottom row on BOTH location panels — schedule4NewLocation.xhtml:273-275 and
-  // schedule4ExistingLocation.xhtml:1141-1144 — but on neither in the list (no-panel) view, which is the
-  // real gap. Deviation (D): this is a page-level bar rendered last in the MAIN view, below the locations
-  // table and below the location panel when one is open. It is deliberately NOT folded into the panel's
-  // Save / Back row: Check Status is a whole-schedule read, not a panel action.
-  //
-  // It does NOT render in every branch of this component: the sub-page view (:606-630) and the
-  // contextMissing / isLoading / errorDetail shells (:554-590) return their own trees and bypass this
-  // helper entirely. Legacy's three sub-page files carry no Check Status either, so that is parity, not a
-  // gap — but anyone gating these buttons must remember the sub-page branch routes around `actionBar`.
-  //
-  // `bottom` also drives the scroll — the bottom instance repositions the page to its banners, the top
-  // instance is already beside them.
+  // The legacy grounding for this layout, the deviation it carries, and the branches that bypass this
+  // helper (the sub-page view and the context/loading/error shells) are recorded in
+  // defect-293-check-status-bottom-row-schedules-4-6.md.
   const actionBar = (bottom: boolean) => (
     <Column
       sm={4}
@@ -874,11 +876,7 @@ const Schedule4: FC = () => {
           to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
           schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
           Schedules 4 and 8 were the outliers. Schedule 8 is still open; #322 does not close on this alone. */}
-      <Button
-        kind="tertiary"
-        disabled={!editable || saving}
-        onClick={() => handleCheckStatus(bottom)}
-      >
+      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
         Check Status
       </Button>
     </Column>
@@ -894,7 +892,7 @@ const Schedule4: FC = () => {
           </Column>
         )}
         {saveError && (
-          <Column sm={4} md={8} lg={16}>
+          <Column sm={4} md={8} lg={16} ref={actionErrorRef} tabIndex={-1}>
             <InlineNotification
               kind="error"
               lowContrast
@@ -914,7 +912,15 @@ const Schedule4: FC = () => {
           </Column>
         )}
         {checkResult && (
-          <Column sm={4} md={8} lg={16} className="schedule-4__check">
+          // tabIndex={-1} makes this a programmatic focus target only — never in the tab order.
+          <Column
+            sm={4}
+            md={8}
+            lg={16}
+            className="schedule-4__check"
+            ref={verdictRef}
+            tabIndex={-1}
+          >
             {checkResult.messages.map((msg) => (
               <InlineNotification
                 key={`schedule-${msg.key}-${msg.text}`}

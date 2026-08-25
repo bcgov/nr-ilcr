@@ -271,12 +271,18 @@ Then('the Schedule 4 Add New Location button is enabled', async ({ schedule4Page
   await expect(schedule4Page.addNewLocationButton).toBeEnabled();
 });
 
+// BOTH bars, deliberately. Schedule 4 carries a second Check Status at the foot of the page (defect
+// #293), and the DIV-1 / S18 claim is that the control is unavailable outside Draft — which is only
+// true if the bottom one is shut too. Asserting the top button alone would let a regression on the
+// bottom bar pass the scenario that exists to catch it (PR #353 review).
 Then('the Schedule 4 Check Status button is disabled', async ({ schedule4Page }) => {
   await expect(schedule4Page.checkStatusButton).toBeDisabled();
+  await expect(schedule4Page.bottomCheckStatusButton).toBeDisabled();
 });
 
 Then('the Schedule 4 Check Status button is enabled', async ({ schedule4Page }) => {
   await expect(schedule4Page.checkStatusButton).toBeEnabled();
+  await expect(schedule4Page.bottomCheckStatusButton).toBeEnabled();
 });
 
 Then('the Schedule 4 location list is not displayed', async ({ schedule4Page }) => {

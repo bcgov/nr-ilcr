@@ -937,62 +937,84 @@ describe('Schedule4 context, load + write error, edit, delete and status paths',
     ).toBeInTheDocument()
   })
 
-  test('the bottom Check Status scrolls the page up to its banners, the top one does not (#293)', async () => {
-    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
-    try {
-      server.use(
-        http.get(URL, () => HttpResponse.json(doc())),
-        http.post(CHECK_URL, () =>
-          HttpResponse.json({ outcome: 'MET', messages: [], locations: [] }),
-        ),
-      )
-      renderSchedule4()
-      await screen.findByText('Harbour Dump')
+  test('a Check Status verdict takes focus, so the result is reached from either bar (#293)', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () =>
+        HttpResponse.json({
+          outcome: 'MET',
+          messages: [
+            {
+              key: 'scheduleRequirementsMetMsg',
+              text: 'All Schedule 4 requirements have been met.',
+            },
+          ],
+          locations: [],
+        }),
+      ),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
 
-      // The negative IS assertable, contrary to an earlier note here: TanStack Router's scroll
-      // restoration calls scrollTo({top, left}) with an options object (test-setup.ts:18-20), while
-      // index.tsx calls scrollTo(0, 0) positionally — so matching on (0, 0) never catches the router.
-      // Without this, `handleCheckStatus(bottom)` -> `handleCheckStatus(true)` passes (review 2026-08-24).
-      scrollTo.mockClear()
-      await userEvent.click(topActions().getByRole('button', { name: /check status/i }))
-      await waitFor(() => {
-        expect(scrollTo).not.toHaveBeenCalledWith(0, 0)
-      })
+    // The verdict renders at the TOP of the page; the bottom button sits at the foot. Focus is what
+    // carries the user (and a screen reader) to the result — it replaced a window.scrollTo that moved
+    // the viewport but left focus stranded on the off-screen button (PR #353 review).
+    await userEvent.click(bottomCheckStatus())
 
-      // Legacy parity: its ajax="false" postback reloaded the page at the top with the messages in view.
-      await userEvent.click(bottomCheckStatus())
-      await waitFor(() => {
-        expect(scrollTo).toHaveBeenCalledWith(0, 0)
-      })
-    } finally {
-      // Restore in `finally`: a failed assertion above would otherwise leak the stub into every
-      // remaining test in this file, where the router calls scrollTo on navigation.
-      scrollTo.mockRestore()
-    }
+    const verdict = await screen.findByText('All Schedule 4 requirements have been met.')
+    const region = verdict.closest('.schedule-4__check')
+    expect(region).not.toBeNull()
+    await waitFor(() => {
+      expect(region).toHaveFocus()
+    })
+    // Programmatic target only — never in the tab order.
+    expect(region).toHaveAttribute('tabindex', '-1')
   })
 
-  test('the bottom Check Status scrolls on the FAILURE path too (#293)', async () => {
+  test('a FAILED Check Status moves focus to the error banner too (#293)', async () => {
     const detail = 'Unable to evaluate the schedule right now.'
-    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
-    try {
-      server.use(
-        http.get(URL, () => HttpResponse.json(doc())),
-        http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
-      )
-      renderSchedule4()
-      await screen.findByText('Harbour Dump')
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc())),
+      http.post(CHECK_URL, () => HttpResponse.json({ detail }, { status: 500 })),
+    )
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
 
-      // The scroll fires on PRESS, not in onSuccess, precisely so the error banner — which renders in
-      // the same top-of-page column — is reached too. Moving it into onSuccess passes every other test
-      // in this file (review 2026-08-24), so this is the only guard on that decision.
-      scrollTo.mockClear()
-      await userEvent.click(bottomCheckStatus())
+    // The failure banner renders in the same top-of-page region, so the failure path must reach it as
+    // well — the success path alone would leave a failed check just as invisible as before.
+    await userEvent.click(bottomCheckStatus())
 
-      expect(await screen.findByText(detail)).toBeInTheDocument()
-      expect(scrollTo).toHaveBeenCalledWith(0, 0)
-    } finally {
-      scrollTo.mockRestore()
-    }
+    const banner = await screen.findByText(detail)
+    await waitFor(() => {
+      expect(banner.closest('[tabindex="-1"]')).toHaveFocus()
+    })
+  })
+
+  test('a Save validation error does NOT steal focus from the field being corrected (#293)', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule4()
+    await screen.findByText('Harbour Dump')
+
+    await userEvent.click(screen.getByRole('button', { name: /add new location/i }))
+    await screen.findByText('New Location')
+
+    // Focus-on-banner is armed by Check Status only. A Save that fails validation must leave focus
+    // where the user is typing — yanking it to a banner would be worse than the bug it fixes.
+    const nameField = screen.getByLabelText('Location Name')
+    await userEvent.click(nameField)
+    expect(nameField).toHaveFocus()
+
+    await userEvent.click(
+      within(
+        screen.getByText('New Location').closest('.schedule-4__panel') as HTMLElement,
+      ).getByRole('button', { name: /^save$/i }),
+    )
+
+    // The banner DOES render, and it renders in the very region Check Status focuses — so without the
+    // `focusVerdict` guard this is exactly where focus would be stolen.
+    const banner = await screen.findByText('Please correct the highlighted fields before saving.')
+    expect(banner.closest('[tabindex="-1"]')).not.toBeNull()
+    expect(document.activeElement).not.toHaveAttribute('tabindex', '-1')
   })
 
   test('the bottom Check Status is locked while a check is in flight — one POST per click (#293)', async () => {
