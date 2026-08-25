@@ -390,10 +390,13 @@ class Schedule2WriteIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.editable", is(true)))
         .andExpect(jsonPath("$.revisionCount").doesNotExist());
-    // Idempotent: a second DELETE on the now-empty schedule still returns 200 (never 404).
+    // Idempotent: a second DELETE on the now-empty schedule still returns 200 (never 404) -- but it
+    // must NOT reuse the success text of a delete that removed something (defect #292 code review).
     mockMvc
         .perform(delete(ENDPOINT).param("millId", "625").param("year", "2021"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.message.text", is("Data deleted successfully")));
+        .andExpect(jsonPath("$.message.key", is("noDataToDeleteInfoMsg")))
+        .andExpect(
+            jsonPath("$.message.text", is("No saved data was found, so nothing was deleted")));
   }
 }

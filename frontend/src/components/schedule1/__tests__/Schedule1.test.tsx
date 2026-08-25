@@ -354,6 +354,28 @@ describe('Schedule1 editable page', () => {
     screen.getAllByRole('button', { name: /delete/i }).forEach((b) => expect(b).toBeDisabled())
   })
 
+  test('Delete is disabled when the served document carries no revisionCount (defect #292)', async () => {
+    // Legacy gated Delete on isScheduleOpen() — a persisted summary — as well as on edit rights
+    // (schedule1.xhtml:803-804), and the shared bar now carries that rule via `scheduleSaved`.
+    // Unreachable through this page today (getSchedule1 404s when unsaved), so this pins the rule
+    // rather than a user-visible state: an absent `revisionCount` (Jackson `non_null` omits nulls)
+    // must NOT read as "saved". Schedule 2, whose GET does serve an empty editable document, is
+    // where the missing rule became defect #292.
+    const { revisionCount, ...unsavedDoc } = schedule1Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule1 />)
+
+    await screen.findByText('Standing Tree to Loaded Truck')
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-1__actions')
+    expect(bars).toHaveLength(2)
+    const bottom = within(bars[1])
+    expect(bottom.getByRole('button', { name: 'Delete' })).toBeDisabled()
+    // Entry is untouched — only the destructive action is withheld.
+    expect(bottom.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+  })
+
   test('valid Save PUTs the pinned request and shows the API success message (AC2)', async () => {
     let captured: unknown = null
     server.use(

@@ -34,6 +34,9 @@ public class Schedule2Controller implements Schedule2Api {
 
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
   private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
+  // The idempotent DELETE that removed nothing gets its own message (defect #292 code review): a
+  // no-op must not borrow the success text of a delete that actually removed a record.
+  private static final String MSG_NOTHING_DELETED = "noDataToDeleteInfoMsg";
 
   private final MillContextService millContextService;
   private final Schedule2Service schedule2Service;
@@ -75,8 +78,10 @@ public class Schedule2Controller implements Schedule2Api {
   public ResponseEntity<MessageResponse> deleteSchedule2(
       long millId, int year, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    schedule2Service.deleteSchedule2(millId, year);
-    return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
+    // 200 either way (the DELETE never 404s); the message tells the truth about what happened.
+    boolean removed = schedule2Service.deleteSchedule2(millId, year);
+    return ResponseEntity.ok(
+        new MessageResponse(message(removed ? MSG_DELETED : MSG_NOTHING_DELETED)));
   }
 
   @Override

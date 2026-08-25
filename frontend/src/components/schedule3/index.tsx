@@ -27,6 +27,7 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
+import { isScheduleSaved } from '@/utils/schedule'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -443,6 +444,11 @@ const Schedule3: FC = () => {
   // Save + Check Status + Delete below it (schedule3.xhtml:37-38 vs :420-426), the same shape as
   // Schedule 1. Deleting the whole schedule is the one destructive action on this page, and legacy
   // kept it off the bar a reporter meets first.
+  // Delete is additionally gated on a persisted record, as legacy gated it on isScheduleOpen() as
+  // well as on edit rights. This page is already protected without it — the GET 404s when unsaved and
+  // a delete resets `editable` to false — but that is a side-effect, not a rule, and defect #292
+  // showed what its absence costs on the one page (Schedule 2) that does serve an empty editable
+  // document. The absent-vs-null subtlety lives in `isScheduleSaved`.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-3__actions"
@@ -452,6 +458,7 @@ const Schedule3: FC = () => {
       onCheckStatus={handleCheckStatus}
       onDelete={() => setConfirmDeleteOpen(true)}
       showDelete={showDelete}
+      scheduleSaved={isScheduleSaved(data)}
     />
   )
 

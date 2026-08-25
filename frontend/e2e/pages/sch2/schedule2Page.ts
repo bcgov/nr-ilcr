@@ -24,12 +24,16 @@ import {
  *     severity word in the title (WCAG 2.1 AA — never colour alone).
  *   - Delete on a never-saved schedule is rendered-but-DISABLED, where legacy omitted it from the DOM
  *     entirely. Same user-visible outcome (delete unavailable), different mechanism — see coverage.md.
+ *     The app states the reason in a visually-hidden span ("Available once the schedule is saved"),
+ *     which legacy had no need to do; `deleteUnavailableHint` addresses it.
  *
- * TOP-AND-BOTTOM ACTION BARS: the page renders the same three buttons twice (`actions` is emitted
- * above and below the table), exactly as legacy did. A bare `getByRole('button', {name:'Save'})`
- * therefore resolves TWO elements and would throw in strict mode, so every action getter below is
- * explicit about which bar it drives — `.first()` for the top bar, with `bottomAction()` available so a
- * scenario can prove the bottom bar is wired identically.
+ * TOP-AND-BOTTOM ACTION BARS, DELIBERATELY ASYMMETRIC: the page emits an action bar above and below
+ * the table, but only the BOTTOM one carries Delete — legacy's shape (schedule2.xhtml:35-36 vs
+ * :172-178), restored by defect #292; before that fix Delete was rendered on both. So Save and Check
+ * Status resolve TWO elements (a bare `getByRole` would throw in strict mode) while Delete resolves
+ * ONE, in the bottom bar. Every action getter below is therefore explicit about which bar it drives —
+ * `.first()` for the top bar, `bottomAction()` to prove the bottom bar is wired identically, and
+ * `deleteButton` scoped to `.last()` because the top bar has no Delete to find.
  *
  * Carbon specifics: `TextInput` keeps its `labelText` as the accessible name even under `hideLabel`;
  * the numeric fields are `CommaNumberInput`s, which DISPLAY a grouped value ("50,000") while holding a
@@ -186,10 +190,26 @@ export class Schedule2Page {
    * "Delete" primary button, which carries the same accessible name once the modal is open.
    */
   get deleteButton(): Locator {
-    return this.page.locator('.schedule-2__actions').first().getByRole('button', {
+    // The BOTTOM bar (`.last()`), which is the only bar that carries Delete — see the header note.
+    // Scoped to the action bars so it can never resolve the confirm modal's own "Delete" primary,
+    // and NOT via `bottomAction()`, whose page-wide `.last()` would resolve exactly that.
+    return this.page.locator('.schedule-2__actions').last().getByRole('button', {
       name: ACTION.delete,
       exact: true,
     });
+  }
+
+  /**
+   * The reason a greyed Delete gives ("Available once the schedule is saved"). Rendered only when the
+   * schedule is editable but has never been saved — defect #292 kept legacy's rule (no delete without
+   * a persisted record) while changing the mechanism from "not rendered" to "disabled", and a
+   * disabled Carbon button is not focusable, so the reason has to be stated somewhere.
+   *
+   * It is `cds--visually-hidden`: in the accessibility tree, NOT on the page. `getByText` still finds
+   * it, but do not assert `toBeVisible()` — assert `toBeAttached()` and the `aria-describedby` wiring.
+   */
+  get deleteUnavailableHint(): Locator {
+    return this.page.getByText('Available once the schedule is saved', { exact: true });
   }
 
   async clickSave(): Promise<void> {

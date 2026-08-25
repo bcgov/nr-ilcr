@@ -4,10 +4,12 @@
 **First authored: 2026-08-13** (Story 3.4). Every entry below was verified against the running app and the
 seeded local delivery DB on that date — none are carried forward from another UC on trust.
 
-**Headline: one genuine Schedule 2 bug found (BUG-1, carried as a deliberate RED), and one real
-divergence.** 38 of 39 tests pass; the single red is BUG-1 — the **Delete** button is offered on a schedule
-that has never been saved, contradicting BR-08/S06. It is a Schedule 2 fault (unlike Schedule 11's red,
-which is an app-wide Carbon defect), it was found by this suite, and it is not ours to fix or adjudicate.
+**Headline: one genuine Schedule 2 bug found (BUG-1) — now FIXED and CLOSED — and one real divergence.**
+BUG-1 was the **Delete** button being offered on a schedule that has never been saved, contradicting
+BR-08/S06. It was a Schedule 2 fault (unlike Schedule 11's red, which is an app-wide Carbon defect), it was
+found by this suite, and this suite's diagnosis — absent-vs-null under Jackson `non_null`, fix by comparing
+`== null` — is exactly what shipped in nr-ilcr #292 on 2026-08-24. The deliberate RED that tracked it has
+been retired: the scenario now runs inside `npm run test:gate` as the regression barrier.
 Beyond that, Schedule 2 behaved correctly on every path exercised, including the full derived-figure
 arithmetic, both Check Status arms, the context guards and the rollback-on-failure path.
 
@@ -59,15 +61,29 @@ was changed while authoring this suite.
   - **Priority / env:** p1 · any never-saved Schedule 2 · local seeded delivery DB.
   - **Ticket:** [bcgov/nr-ilcr#292](https://github.com/bcgov/nr-ilcr/issues/292) — *"[BUGFIX]: Schedule 2
     Delete button should be hidden if now Schedule 2 exists."*
-  - **Status:** OPEN — **with the dev.** Triaged and confirmed 2026-08-14: the Schedule 2 dev will fix it
-    when he gets a chance. QA confirms the fix and closes this status line afterwards; the
-    `@discovered-bug` red goes green on its own when the gate is corrected.
-  - **Test:** `render-states.feature` `@discovered-bug @p1 @S06` — "Delete is not offered for a never-saved
-    schedule". A genuine RED that flips green on its own when the gate is fixed. Excluded from the
-    documented gate: `npm run test:gate`.
-  - **Why only one red for two faces:** the post-delete manifestation has the same root cause, so it is
-    noted in a comment in `delete.feature` rather than given its own red — one red per defect keeps the
-    signal readable, and a second copy would also drag the P0 delete journey out of the gate.
+  - **Status:** **CLOSED 2026-08-24 — fixed in nr-ilcr #292** (branch `fix/bugfix-292-schedule2-delete-guard`).
+    The fix is the one this entry proposed: a loose `!= null`, now behind `utils/schedule.isScheduleSaved`
+    so the rule has a single home, plus the response interface typed as the wire actually sends it
+    (`revisionCount?`, and the `CostBlock` members and `comments` likewise, since `non_null` omits those
+    too). Delete also moved to the bottom action bar only, restoring the legacy asymmetry
+    (schedule2.xhtml:35-36 vs :172-178) — which is why this suite's own `deleteButton` locator had to move
+    from `.first()` to `.last()`. **Both faces** are fixed and pinned.
+  - **Test:** `render-states.feature` `@p1 @S06` — "Delete is not offered for a never-saved schedule". The
+    `@discovered-bug` tag is REMOVED, so it now runs in `npm run test:gate` and guards the fix instead of
+    tracking the bug. The second face is pinned in `delete.feature`'s P0 journey, which now asserts that
+    Delete goes unavailable again after a successful delete (that assertion was previously declined
+    precisely because the button stayed enabled).
+  - **What the app fix also had to close, found in its own code review:** the first attempt gated the
+    button correctly but left face 2 reachable — the post-delete reload was the only thing that closed the
+    gate, and the in-flight lock is released when the DELETE settles, not when the reload lands. So during
+    the reload (or forever, if it failed) Delete re-enabled on a deleted record. Now the optimistic-lock
+    token is dropped the instant the delete succeeds. Two Vitest cases cover the delayed and the failed
+    reload; this suite has no equivalent because it cannot delay a response mid-journey.
+  - **Related backend change:** the idempotent no-op DELETE used to answer 200 with *"Data deleted
+    successfully"* for a record that never existed (recorded below as VER-2, correctly, as not a data
+    defect). It now answers 200 with `noDataToDeleteInfoMsg` — *"No saved data was found, so nothing was
+    deleted"* — so the misleading confirmation is gone for every client, not just for the UI whose button
+    is now greyed. See VER-2's note.
 
 _No OTHER bugs found._ Every write, guard, validation and derived figure behaved as the contract specifies.
 For the record, four things were probed directly against the API looking for trouble and each behaved
@@ -258,4 +274,12 @@ omits.
     first place, which is a frontend gating fault. The idempotent endpoint is the correct backend
     behaviour, and it is exactly what makes cleanup safe: the suite restores every mutating anchor by
     calling DELETE unconditionally.
-  - **Status:** CLOSED as verified 2026-08-13.
+  - **Status:** CLOSED as verified 2026-08-13. **Amended 2026-08-24 (nr-ilcr #292):** the verdict on the
+    *status* stands — the 200 is deliberate and the suite's unconditional-DELETE cleanup still depends on
+    it — but the *message* was changed. #292's code review argued that a UI-only gate leaves the misleading
+    confirmation live for every other caller (a second tab, a replayed request, any non-UI client), which
+    the project's own rule that the backend enforces and the frontend advises makes hard to defend. The
+    no-op now answers 200 with `noDataToDeleteInfoMsg` — *"No saved data was found, so nothing was
+    deleted"* — instead of borrowing `dataDeletedSuccesfullyInfoMsg`. Cleanup is unaffected (still 200,
+    still idempotent); only the text differs. If a scenario ever asserts the cleanup DELETE's message,
+    that is the one to expect.

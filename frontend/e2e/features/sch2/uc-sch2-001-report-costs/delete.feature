@@ -30,11 +30,13 @@ Feature: Schedule 2 — delete a saved schedule
     And the Schedule 2 "Less Log Sales cost" field shows ""
     # BR-08 at the source of truth: the summary AND its detail records are gone.
     And no Schedule 2 record is stored
-    # NOT asserted here: that Delete becomes unavailable again once the schedule is gone. It does not —
-    # the same defect as BUG-1 (the `deletable` gate treats an ABSENT revisionCount as "saved"), so the
-    # button stays enabled after a successful delete. One red per defect is the tracking signal, and it
-    # already lives in render-states.feature; a second copy here would only duplicate it and would take
-    # this P0 delete journey out of `npm run test:gate` with it. See defects.md BUG-1.
+    # Delete closes behind itself: with the record gone there is nothing left to delete, so the button
+    # greys out and the hint returns. This assertion USED to be declined here — BUG-1's second face
+    # meant the button stayed enabled after a successful delete, and one red per defect was the
+    # tracking signal. Both faces are fixed (nr-ilcr #292), so the P0 journey now pins the whole cycle
+    # instead of stopping at the delete. See defects.md BUG-1 (CLOSED).
+    And the Schedule 2 Delete action is unavailable
+    And the Schedule 2 delete-unavailable reason is announced
 
   # Dismissing the confirmation must be a genuine no-op, not a delayed delete.
   @p1 @S05

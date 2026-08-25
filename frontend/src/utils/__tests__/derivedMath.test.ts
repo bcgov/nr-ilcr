@@ -318,3 +318,61 @@ describe('regression: fractional entry is coerced to whole dollars for display',
     expect(wholeDollars(100.4)).toBe(100)
   })
 })
+
+describe('an ABSENT figure behaves exactly like a null one (the `non_null` wire)', () => {
+  // The API omits null fields (`default-property-inclusion: non_null`), so a carried figure the server
+  // has nothing for arrives as an ABSENT key, not a null one — an unsaved Schedule 2 serves
+  // `"purchasedWoodOverhead": {}`, and the value reaches these helpers as `undefined`. Every guard is a
+  // LOOSE `== null` for that reason.
+  //
+  // This is a REGRESSION TEST for a bug that reached main on 2026-08-24: with strict `=== null`,
+  // `undefined` walked past the guards into `12345 + undefined`, and Schedule 2 rendered the user a
+  // literal "NaN" — before they had typed anything, on any mill/year whose Schedule 3 figures are
+  // absent. Nothing here may produce NaN.
+
+  test('addN treats an absent operand as nothing to add', () => {
+    expect(addN(12345, undefined)).toBe(12345) // ← the exact NaN case from the defect
+    expect(addN(undefined, 12345)).toBe(12345)
+    expect(addN(undefined, undefined)).toBeNull()
+    expect(addN(undefined, null)).toBeNull()
+  })
+
+  test('subN keeps the asymmetry it has for null: absent minuend → null, absent subtrahend → minuend', () => {
+    expect(subN(undefined, 300)).toBeNull()
+    expect(subN(8000, undefined)).toBe(8000)
+    expect(subN(undefined, undefined)).toBeNull()
+  })
+
+  test('sumN skips absent contributors and stays null when every one is absent', () => {
+    expect(sumN(1000, undefined, 500)).toBe(1500)
+    expect(sumN(undefined, undefined)).toBeNull()
+  })
+
+  test('the per-unit rules and wholeDollars refuse an absent operand rather than dividing by it', () => {
+    expect(perUnitOf(500000, undefined)).toBeNull()
+    expect(perUnitOf(undefined, 10000)).toBeNull()
+    expect(perUnitLegacy(500000, undefined)).toBeNull()
+    expect(perUnitLegacy(undefined, 10000)).toBeNull()
+    expect(wholeDollars(undefined)).toBeNull()
+    expect(scalingPopOf(999999, undefined, 6000000)).toBeNull()
+  })
+
+  test('sumAsZero counts an absent value as 0, like a null one', () => {
+    expect(sumAsZero(1000, undefined, 500)).toBe(1500)
+    expect(sumAsZero(undefined, undefined)).toBe(0)
+  })
+
+  test('no helper returns NaN for any absent/null combination', () => {
+    const operands = [undefined, null, 0, 12345] as const
+    for (const a of operands) {
+      for (const b of operands) {
+        expect(addN(a, b) ?? 0).not.toBeNaN()
+        expect(subN(a, b) ?? 0).not.toBeNaN()
+        expect(sumN(a, b) ?? 0).not.toBeNaN()
+        expect(perUnitOf(a, b) ?? 0).not.toBeNaN()
+        expect(perUnitLegacy(a, b) ?? 0).not.toBeNaN()
+        expect(sumAsZero(a, b)).not.toBeNaN()
+      }
+    }
+  })
+})

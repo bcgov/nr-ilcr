@@ -45,7 +45,10 @@ export default interface Schedule1Response {
   readonly crownVolume: number | null
   // The Schedule 3 Crown Timber volume (BR-03 pre-fill source), read-only. Story 2.3.
   readonly schedule3CrownVolume: number | null
-  readonly revisionCount: number | null
+  // Optional AND nullable (defect #292): null until the schedule is saved, and the app-wide Jackson
+  // `default-property-inclusion: non_null` then omits the key — so readers must use a loose `!= null`.
+  // Unreachable through this page today (the GET 404s when unsaved), typed honestly so it stays safe.
+  readonly revisionCount?: number | null
   readonly comments: string | null
   readonly lineItems: readonly LineItem[]
   readonly silviculture: SilvicultureBlock

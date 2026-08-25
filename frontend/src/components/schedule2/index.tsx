@@ -4,7 +4,6 @@ import type { CostBlock, CheckStatusResponse } from '@/interfaces/Schedule2Respo
 import type Schedule2Request from '@/interfaces/Schedule2Request'
 import { useState } from 'react'
 import {
-  Button,
   Column,
   Grid,
   Modal,
@@ -23,12 +22,14 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
+import { isScheduleSaved } from '@/utils/schedule'
 import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
+import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
 import './index.scss'
@@ -148,7 +149,11 @@ const Schedule2: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-check the gate in the handler, not only in the button's `disabled` (defect #292 code
+    // review): a disabled attribute is presentation, and any other route into this handler — a
+    // mis-wired bar, a programmatic open, the modal's submit — would otherwise fire a DELETE for a
+    // schedule that does not exist. Mirrors handleSave, which also re-validates here.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
@@ -156,13 +161,26 @@ const Schedule2: FC = () => {
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 2.',
       // Schedule 2 never 404s: with the summary gone, a re-GET returns the 200 empty EDITABLE
-      // document (revisionCount null). Reload it so the meta row / form reflect reality and the
+      // document (no revisionCount). Reload it so the meta row / form reflect reality and the
       // Licensee can immediately re-enter data (legacy AF1), while keeping the API delete message.
       // This per-page empty-state lives at the call site (Story 29.6): list/re-GET pages re-seed
       // from the reload, single-doc reset-in-place pages (Schedules 1/3) reset in place instead.
       onSuccess: (delResp) => {
         const deleteMessage = delResp?.message?.text ?? null
-        run(
+        // Drop the optimistic-lock token BEFORE the reload is dispatched, so "this schedule is
+        // saved" becomes false the instant the record is gone (defect #292 code review, face 2).
+        // Schedules 1/3 avoid the whole problem by resetting in place; this is the same move,
+        // narrowed to the token the gate reads.
+        setData((prev) => (prev ? { ...prev, revisionCount: null } : prev))
+        // RETURN the reload so delete→reload is ONE locked operation (PR #351 review). Clearing the
+        // token alone closed the DELETE gate but left the WINDOW open: `run`'s `.finally` released
+        // `saving` when the DELETE settled while this GET was still out, so for the length of the
+        // reload — and permanently if it failed — `saving` was false, `form` still held the
+        // pre-delete values and `revisionCount` was null. Save is gated on `saving`, not on the
+        // persisted-record check, so a click in that window PUT `revisionCount: 0` and RE-CREATED
+        // the schedule with the old figures; the reload then painted an empty document over a row
+        // that now existed. Returning the promise keeps the lock held until the reload settles.
+        return run(
           apiService
             .getAxiosInstance()
             .get<Schedule2Response>(`/v1/schedule2?millId=${millId}&year=${year}`),
@@ -237,9 +255,10 @@ const Schedule2: FC = () => {
   }
 
   const editable = data.editable
-  // Delete targets a persisted summary; an unsaved document (revisionCount null) has nothing to
-  // delete, so gate it exactly like legacy isScheduleOpen() (BR-08 / S06).
-  const deletable = editable && data.revisionCount !== null
+  // Delete targets a persisted summary; an unsaved document has nothing to delete, so gate it exactly
+  // like legacy isScheduleOpen() (BR-08 / S06). The absent-vs-null subtlety that made #292 possible
+  // lives in the shared predicate — read it before touching this line.
+  const scheduleSaved = isScheduleSaved(data)
   // Advisory per-field validation (backend authoritative); drives inline invalid states + Save gate.
   const fieldErrors = editable ? validateSchedule2(form) : {}
 
@@ -323,22 +342,21 @@ const Schedule2: FC = () => {
     </TableRow>
   )
 
-  const actions = (
-    <Column sm={4} md={8} lg={16} className="schedule-2__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
-        Save
-      </Button>
-      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
-        Check Status
-      </Button>
-      <Button
-        kind="danger--tertiary"
-        disabled={!deletable || saving}
-        onClick={() => setConfirmDeleteOpen(true)}
-      >
-        Delete
-      </Button>
-    </Column>
+  // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule and
+  // Save + Check Status + Delete below it (schedule2.xhtml:35-36 vs :172-178), the same shape as
+  // Schedules 1 and 3. Deleting the whole schedule is the one destructive action on this page, and
+  // legacy kept it off the bar a reporter meets first (defect #292 — it used to render on both).
+  const actionBar = (showDelete: boolean) => (
+    <ScheduleActions
+      className="schedule-2__actions"
+      editable={editable}
+      saving={saving}
+      onSave={handleSave}
+      onCheckStatus={handleCheckStatus}
+      onDelete={() => setConfirmDeleteOpen(true)}
+      showDelete={showDelete}
+      scheduleSaved={scheduleSaved}
+    />
   )
 
   return (
@@ -361,7 +379,7 @@ const Schedule2: FC = () => {
             />
           ))}
 
-        {actions}
+        {actionBar(false)}
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
           <TableContainer>
@@ -411,7 +429,7 @@ const Schedule2: FC = () => {
           )}
         </Column>
 
-        {actions}
+        {actionBar(true)}
       </Grid>
 
       {editable && (

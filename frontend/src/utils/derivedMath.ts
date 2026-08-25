@@ -142,6 +142,26 @@ const decToNumber = (d: Dec): number => {
 // ---------------------------------------------------------------------------------------------------
 
 /**
+ * An operand of a derived figure.
+ *
+ * `undefined` is admitted DELIBERATELY, and every guard below tests it with a LOOSE `== null` so it
+ * behaves exactly like `null`. The reason is the wire: the API runs
+ * `default-property-inclusion: non_null`, so a figure the server has nothing for is **omitted**, not
+ * sent as null — an unsaved Schedule 2 serves `"purchasedWoodOverhead": {}` rather than three nulls,
+ * and the carried value reaches these helpers as `undefined`.
+ *
+ * A strict `=== null` therefore lets `undefined` walk straight into the arithmetic, where
+ * `12345 + undefined` is `NaN` and the cell renders the user a literal "NaN". That regression shipped
+ * to main on 2026-08-24 and was caught by the Schedule 2 `blank-fields` e2e scenario, which expected
+ * `8,000` and got `NaN`; the mirror runs on any editable document, and an unsaved schedule is
+ * editable. Same defect family as #292's Delete gate — a strict null test against a field the wire
+ * omits.
+ *
+ * Do not "tidy" any `== null` in this file to `===`.
+ */
+export type Operand = number | null | undefined
+
+/**
  * Round half-AWAY-FROM-ZERO at `decimals` places — Java's `RoundingMode.HALF_UP`.
  *
  * Deliberately not `Math.round` or `toFixed`: both round half-UP toward positive infinity and so
@@ -170,8 +190,8 @@ export const halfUp = (value: number, decimals = 0): number => {
  * The backend's trailing `stripTrailingZeros` / minimum-scale-1 step is a JSON serialization concern
  * only — a JS number carries no scale — so it has no counterpart here.
  */
-export const perUnitOf = (cost: number | null, volume: number | null): number | null => {
-  if (cost === null || volume === null) {
+export const perUnitOf = (cost: Operand, volume: Operand): number | null => {
+  if (cost == null || volume == null) {
     return null
   }
   const a = toDec(cost)
@@ -196,8 +216,8 @@ export const perUnitOf = (cost: number | null, volume: number | null): number | 
  * decimals", so this — not {@link perUnitOf} — is the legacy-faithful rule; Schedules 2 and 4 are the
  * ones that diverge. Do not unify them without changing the backend first.
  */
-export const perUnitLegacy = (cost: number | null, volume: number | null): number | null => {
-  if (cost === null || volume === null) {
+export const perUnitLegacy = (cost: Operand, volume: Operand): number | null => {
+  if (cost == null || volume == null) {
     return null
   }
   const a = toDec(cost)
@@ -222,11 +242,11 @@ export const perUnitLegacy = (cost: number | null, volume: number | null): numbe
  * it shipped that $1 error, which then cascaded into nine other cells (code review 2026-08-21).
  */
 export const scalingPopOf = (
-  scalingHarvest: number | null,
-  popTimberVolume: number | null,
-  overheadVolume: number | null,
+  scalingHarvest: Operand,
+  popTimberVolume: Operand,
+  overheadVolume: Operand,
 ): number | null => {
-  if (scalingHarvest === null || popTimberVolume === null || overheadVolume === null) {
+  if (scalingHarvest == null || popTimberVolume == null || overheadVolume == null) {
     return null
   }
   const harvest = toDec(scalingHarvest)
@@ -251,8 +271,8 @@ export const scalingPopOf = (
  * Distinct from {@link import('./number').roundCost}, which rounds an entered cost before it goes on
  * the wire. Same arithmetic, different purpose: this one never leaves the screen.
  */
-export const wholeDollars = (cost: number | null): number | null =>
-  cost === null ? null : halfUp(cost, 0)
+export const wholeDollars = (cost: Operand): number | null =>
+  cost == null ? null : halfUp(cost, 0)
 
 /**
  * Parse a committed form string for the mirror: {@link toNum} plus a finiteness guard.
@@ -305,14 +325,14 @@ export const isUnusableStrictEntry = (raw: string): boolean =>
  * operand(s). A total with no contributing value stays null — never `0` — so the cell renders `—`
  * rather than a fabricated zero.
  */
-export const addN = (a: number | null, b: number | null): number | null => {
-  if (a === null && b === null) {
+export const addN = (a: Operand, b: Operand): number | null => {
+  if (a == null && b == null) {
     return null
   }
-  if (a === null) {
-    return b
+  if (a == null) {
+    return b ?? null
   }
-  if (b === null) {
+  if (b == null) {
     return a
   }
   return a + b
@@ -323,11 +343,11 @@ export const addN = (a: number | null, b: number | null): number | null => {
  * minuend is null. Note the asymmetry with {@link addN} — a missing subtrahend is "nothing to take
  * away" (keep the minuend), but a missing minuend leaves nothing to subtract FROM (null).
  */
-export const subN = (a: number | null, b: number | null): number | null => {
-  if (a === null) {
+export const subN = (a: Operand, b: Operand): number | null => {
+  if (a == null) {
     return null
   }
-  return b === null ? a : a - b
+  return b == null ? a : a - b
 }
 
 /**
@@ -340,11 +360,11 @@ export const subN = (a: number | null, b: number | null): number | null => {
  * service: Schedule 1's `subtotalCompanyLoggingCost` and Schedule 3's column subtotals seed at zero,
  * whereas Schedule 5's camp totals and Schedule 7A's bridge totals stay blank.
  */
-export const sumN = (...values: readonly (number | null)[]): number | null => {
+export const sumN = (...values: readonly Operand[]): number | null => {
   let total = 0
   let any = false
   for (const value of values) {
-    if (value !== null) {
+    if (value != null) {
       total += value
       any = true
     }
@@ -361,5 +381,5 @@ export const sumN = (...values: readonly (number | null)[]): number | null => {
  * `totalSilvicultureCost` propagates null in the very same document. Transcribe each figure from its
  * service rather than picking one rule for a page.
  */
-export const sumAsZero = (...values: readonly (number | null)[]): number =>
+export const sumAsZero = (...values: readonly Operand[]): number =>
   values.reduce<number>((total, value) => total + (value ?? 0), 0)

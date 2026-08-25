@@ -41,7 +41,10 @@ export default interface Schedule3Response {
   year: number
   trackStatus: string | null
   editable: boolean
-  revisionCount: number | null
+  // Optional AND nullable (defect #292): null until the schedule is saved, and the app-wide Jackson
+  // `default-property-inclusion: non_null` then omits the key — so readers must use a loose `!= null`.
+  // Unreachable through this page today (the GET 404s when unsaved), typed honestly so it stays safe.
+  revisionCount?: number | null
   // Override Harvest ⁄ Total PO&P indicator ("Y"/"N"), from the summary LOCATION column; defaults "N".
   overrideHarvestTotalPop: string | null
   comments: string | null
