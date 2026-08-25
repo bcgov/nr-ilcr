@@ -12,8 +12,8 @@ const PRINT_PATH = '/v1/reports/print'
 const PDF_FILENAME = 'schedules_print.pdf'
 
 // The twelve schedule flags in the legacy PrintSchedulesMB order. Every flag is offered (legacy
-// parity); the backend renders the in-scope sections (5/6/7A/7B/9/11) and accepts the rest for
-// forward-compatibility (no section rendered yet — see PrintRequest).
+// parity); the backend renders the in-scope sections (1/2/3/5/6/7A/7B/8/9/10/11) and accepts the
+// rest (Schedule 4) for forward-compatibility (no section rendered yet — see PrintRequest).
 type ScheduleFlag =
   | 'schedule1'
   | 'schedule2'

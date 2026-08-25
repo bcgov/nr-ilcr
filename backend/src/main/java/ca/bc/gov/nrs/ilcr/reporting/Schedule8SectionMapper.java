@@ -41,7 +41,12 @@ import java.util.Map;
  *       table's numeric pattern was inert on a String-bound field).
  *   <li>Haul direction / dump destination render from the DTO's booleans as {@code Uphill}/{@code
  *       Downhill} and {@code Water}/{@code Land} (best-effort labels for the legacy Y/N
- *       indicators).
+ *       indicators). Because the frozen read DTO exposes these as primitive {@code boolean}, a
+ *       not-entered indicator ({@code UPHILL_DIRECTION_IND}/{@code WATER_DUMP_DESTINATION_IND} null
+ *       in the DB) is knowingly collapsed to the {@code false} label ({@code Downhill}/{@code
+ *       Land}) rather than the {@code "-"} every other absent field uses — a deliberate consequence
+ *       of the frozen contract, not a value the mapper can distinguish. The delivery-DB visual
+ *       check should confirm a sample with the indicator unset against the legacy print.
  * </ul>
  */
 final class Schedule8SectionMapper {
@@ -126,7 +131,8 @@ final class Schedule8SectionMapper {
     row.put("pctOther", SectionFormat.percent(s.otherSkiddingPct()));
     row.put("pctTotal", SectionFormat.percent(s.percentTotal()));
 
-    // Skyline supports — blankWhenNull collapses these rows when they do not apply.
+    // Skyline supports — pre-formatted as "-" when absent (SectionFormat never yields null), so the
+    // template renders a dash in place, like every other optional field, rather than collapsing.
     row.put("slopeDistance", SectionFormat.integer(s.skylineSlopeDistance()));
     row.put("supportNumber", SectionFormat.integer(s.skylineSupportNumber()));
     row.put("supportAvgDist", SectionFormat.measure(s.supportAvgDistance(), "m"));

@@ -17,9 +17,10 @@
   Samples / RateRows subDatasets, so the whole samples <list> is gated once at the band level (where
   the parameter IS visible) rather than per cell. Inside the samples list, the additions / deductions
   sub-blocks are gated by the per-sample displayAddRates / displayDedRates boolean FIELDS (in the
-  Samples subDataset's scope) so an empty list leaks no stray heading (AC-1). removeLineWhenBlank
-  collapses the skyline-support and TSA-vs-TFL rows when they do not apply. LANDSCAPE (842x595) like
-  the sibling sections.
+  Samples subDataset's scope) so an empty list leaks no stray heading (AC-1). Every value arrives
+  pre-formatted ("-" for null — never a real null), so skyline-support and other optional fields
+  render a "-" placeholder like every other absent field in the section rather than collapsing.
+  LANDSCAPE (842x595) like the sibling sections.
 -->
 <jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
     name="schedule8" pageWidth="842" pageHeight="595" orientation="Landscape"
@@ -283,7 +284,8 @@
               <expression><![CDATA[$F{pctTotal}]]></expression>
             </element>
 
-            <!-- Skid type + skyline supports (removeLineWhenBlank collapses inapplicable cells). -->
+            <!-- Skid type + skyline supports. Values are pre-formatted ("-" when absent), so these
+                 render a dash in place rather than collapsing — consistent with every other field. -->
             <element kind="staticText" style="bold" x="0" y="72" width="80" height="14">
               <text><![CDATA[Skid Type:]]></text>
             </element>
@@ -293,19 +295,19 @@
             <element kind="staticText" style="bold" x="300" y="72" width="90" height="14">
               <text><![CDATA[Slope Distance:]]></text>
             </element>
-            <element kind="textField" x="392" y="72" width="80" height="14" removeLineWhenBlank="true" blankWhenNull="true">
+            <element kind="textField" x="392" y="72" width="80" height="14" blankWhenNull="true">
               <expression><![CDATA[$F{slopeDistance}]]></expression>
             </element>
             <element kind="staticText" style="bold" x="490" y="72" width="90" height="14">
               <text><![CDATA[Supports #:]]></text>
             </element>
-            <element kind="textField" x="582" y="72" width="60" height="14" removeLineWhenBlank="true" blankWhenNull="true">
+            <element kind="textField" x="582" y="72" width="60" height="14" blankWhenNull="true">
               <expression><![CDATA[$F{supportNumber}]]></expression>
             </element>
             <element kind="staticText" style="bold" x="650" y="72" width="90" height="14">
               <text><![CDATA[Supp Avg Dist:]]></text>
             </element>
-            <element kind="textField" x="742" y="72" width="60" height="14" removeLineWhenBlank="true" blankWhenNull="true">
+            <element kind="textField" x="742" y="72" width="60" height="14" blankWhenNull="true">
               <expression><![CDATA[$F{supportAvgDist}]]></expression>
             </element>
 

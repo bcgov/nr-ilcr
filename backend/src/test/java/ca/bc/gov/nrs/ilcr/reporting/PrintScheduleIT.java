@@ -30,13 +30,13 @@ import org.springframework.test.web.servlet.MvcResult;
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
  * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
  * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
- * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 11 by
- * V20260816). The PDF text is asserted with pdfbox to prove each selected section's heading and a
- * seeded value rendered, and the PDF outline (top-level bookmarks) is asserted to be exactly the
- * rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09), all-empty (ERR-005), the
- * deferred mill-information-report and the ERR-002/003/004 selection ladder plus the 400/409
- * context guards are pinned here. Security is OFF (isolated from authz — {@link
- * PrintAuthorizationIT}).
+ * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 8 by
+ * V20260822, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
+ * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
+ * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
+ * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
+ * ladder plus the 400/409 context guards are pinned here. Security is OFF (isolated from authz —
+ * {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -363,7 +363,9 @@ class PrintScheduleIT extends AbstractOracleIT {
     // BR-07: "all" expands to every schedule; only the in-scope ones render. Mill 517/2021 has data
     // in every in-scope schedule EXCEPT Schedule 10 (its fixtures are mills 710-716), so the
     // combined PDF carries Schedule 1 (Story 20.5) FIRST, then Schedule 2 (Story 20.6), then
-    // Schedule 3 (Story 20.7), then 5/6/7A/7B/9/11 — Schedule 10 skipped (BR-09).
+    // Schedule 3 (Story 20.7), then 5/6/7A/7B, then Schedule 8 (Story 20.8 — seeded on 517 by
+    // V20260822), then 9/11 — Schedule 10 skipped (BR-09). This is the case that pins BR-08's
+    // Schedule 8 position (between 7B and 9) in a real combined PDF.
     String selection =
         """
         {"allSchedules":true,"printScheduleInformation":true}
@@ -389,10 +391,15 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
     assertThat(text).contains("Schedule 7B:  Culvert Costs");
+    assertThat(text).contains("Schedule 8:  Tree to Truck Costs");
+    // Deep-geometry proof: sample 1's 3rd addition and sample 2's lone addition both rendered, so
+    // the stretch/float of the nested additions/deductions lists across 2 samples held together.
+    assertThat(text).contains("Add Three"); // sample 1, 3rd addition row
+    assertThat(text).contains("Add Solo"); // sample 2's addition row
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
-    // BR-08 fixed order: Schedule 1 sorts ahead of Schedule 2, which sorts ahead of Schedule 3,
-    // which sorts ahead of Schedule 5.
+    // BR-08 fixed order: 1 -> 2 -> 3 -> 5 -> 6 -> 7A -> 7B -> 8 -> 9 -> 11 (Schedule 8 between 7B
+    // and 9, Schedule 10 skipped for lack of data on 517).
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
             ScheduleKey.SCHEDULE_1.bookmarkTitle(),
@@ -402,6 +409,7 @@ class PrintScheduleIT extends AbstractOracleIT {
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7B.bookmarkTitle(),
+            ScheduleKey.SCHEDULE_8.bookmarkTitle(),
             ScheduleKey.SCHEDULE_9.bookmarkTitle(),
             ScheduleKey.SCHEDULE_11.bookmarkTitle());
   }
