@@ -239,12 +239,11 @@ class Schedule3WriteServiceTest {
   @Test
   void save_missingSummary_notDraft_stillNotEditable() {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+    var req = request("N", new BigDecimal("5000"), List.of());
 
     assertThrows(
         ScheduleNotEditableException.class,
-        () ->
-            service.saveSchedule3(
-                MILL, YEAR, request("N", new BigDecimal("5000"), List.of()), true, USER));
+        () -> service.saveSchedule3(MILL, YEAR, req, true, USER));
 
     verify(repository, never()).insertSummary(anyLong(), anyInt(), any(), anyString());
   }

@@ -369,19 +369,19 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
    * longer 404s on a mill/year with no saved data). The MERGE serializes concurrent first-saves so
    * only one row is ever inserted; the summary is then re-read for its id. The freshly-created
    * revision 0 is bumped to 1 by the normal {@link #bumpRevision}.
+   *
+   * <p>The re-read miss raises {@link org.springframework.dao.EmptyResultDataAccessException}
+   * rather than {@code IllegalStateException} on purpose: the service wraps this call in a {@code
+   * DataAccessException} catch that maps create-path failures to {@code ScheduleNotSavedException}
+   * (500 / ERR-004). An {@code IllegalStateException} would slip past that catch and surface as a
+   * generic 500 with a different {@code ProblemDetail} than this javadoc promises (#296 code
+   * review).
    */
   default int insertSummary(long millId, int year, String comments, String user) {
     mergeSummaryRow(millId, year, comments, user);
     return findSummary(millId, year, "1")
         .map(SummaryRow::summaryId)
         .orElseThrow(
-            // EmptyResultDataAccessException, not IllegalStateException: the service wraps this
-            // call
-            // in `catch (DataAccessException)` to map create-path failures to ScheduleNotSaved (500
-            // /
-            // ERR-004). An IllegalStateException would slip past that catch and surface as a
-            // generic
-            // 500 with a different ProblemDetail than the javadoc promises (#296 code review).
             () ->
                 new org.springframework.dao.EmptyResultDataAccessException(
                     "Schedule 1 summary not found immediately after MERGE create", 1));
