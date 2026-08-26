@@ -29,8 +29,13 @@ was changed while authoring this suite.
 
 **Correction 2026-08-26.** This line pointed GAP-3 at **#297**, a duplicate raised twelve minutes before
 #298 and since **closed**. The live ticket is [#298](https://github.com/bcgov/nr-ilcr/issues/298) — the
-number GAP-3's own entry already carried — and the link above is corrected to it. **All three triaged
-items are now fixed and closed:** BUG-1 by nr-ilcr #292, DIV-1 by #291, GAP-3 by #298 (2026-08-26).
+number GAP-3's own entry already carried — and the link above is corrected to it. **Two of the three
+triaged items are closed on GitHub** — BUG-1 by nr-ilcr #292 and DIV-1 by #291, both verified CLOSED.
+**GAP-3 is closed in the code but its ticket is still OPEN:** the covering tests are on
+`fix/bugfix-298-schedule2-error-fallback-tests`, unmerged, and
+[#298](https://github.com/bcgov/nr-ilcr/issues/298) reads OPEN. This sentence originally said all
+three were "fixed and closed", which is the same conflation of *gap closed* with *ticket closed* that
+the correction above exists to fix.
 
 ---
 
@@ -217,10 +222,15 @@ at-rest state.
   - **Test:** `Schedule2.test.tsx` — *"a load failure carrying no detail falls back to the generic load
     message (AC7, defect #298)"* ×3 and *"a DELETE failure carrying no detail falls back to the generic
     delete message and leaves the record intact (AC5, defect #298)"* ×2. Both **mutation-proved**: they
-    fail when the fallback is emptied, and the load case fails even when only its full stop is dropped —
-    the trap that mattered here, because the error panel's *title* is the same words without the period
-    (`index.tsx:248`), so a `findByText(/unable to load/i)` would have matched the title and passed over a
-    deleted branch. The assertion is scoped to `.cds--inline-notification__subtitle`. The sibling *save*
+    fail when the fallback is emptied, and the load case fails even when only its full stop is dropped.
+    **Two claims first written here were corrected by the #298 code review.** (1) An emptied fallback does
+    not render "an empty subtitle" — `errorDetail` becomes falsy, so the error branch is skipped and the
+    page returns `null`: a blank screen, header and all. (2) `findByText(/unable to load/i)` does not
+    "pass over a deleted branch" — it fails both ways (nothing renders, or title and subtitle both match
+    and it throws). The trap needs a *reworded* non-empty fallback. The assertions now compare the whole
+    notification set — count, `kind`, title, subtitle — which also pins the WCAG severity contract that
+    flipping both banners to `kind="success"` used to leave green, and a fourth shape (a blank `detail`)
+    pins `||` against a swap to `??`. The sibling *save*
     fallback (ERR-003) is covered end-to-end by `save-error.feature` `@p1 @S12`; Schedule 2's remaining
     uncovered fallback, `Unable to check status.` (`index.tsx:216`), belongs to
     [#332](https://github.com/bcgov/nr-ilcr/issues/332), not here.
