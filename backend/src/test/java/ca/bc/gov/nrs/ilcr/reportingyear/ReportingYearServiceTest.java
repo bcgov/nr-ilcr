@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.reportingyear;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -77,6 +78,8 @@ class ReportingYearServiceTest {
     assertEquals(HttpStatus.CONFLICT, ex.getStatus());
     assertEquals(
         List.of("noActiveMillsForNewYearMsg", "reportingPeriodNotFoundMsg"), ex.getMessageKeys());
+    assertArrayEquals(new Object[] {"2025", "2026"}, ex.getMessageArgs(0));
+    assertArrayEquals(new Object[0], ex.getMessageArgs(1));
     verify(repository, never()).insertReportingPeriod(anyInt(), any(), any(), anyString());
     verify(repository, never())
         .insertMillReportStatus(anyInt(), anyLong(), any(), any(), any(), anyString());

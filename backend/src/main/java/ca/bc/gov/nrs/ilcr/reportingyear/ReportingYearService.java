@@ -100,7 +100,10 @@ public class ReportingYearService {
             : repository.findActiveMillIdsForRecurringYear(maxYear);
     if (!firstTime && activeMillIds.isEmpty()) {
       throw new MultiMessageException(
-          HttpStatus.CONFLICT, List.of(MSG_NO_ACTIVE_MILLS, MSG_NO_REPORTING_PERIODS));
+          HttpStatus.CONFLICT,
+          List.of(MSG_NO_ACTIVE_MILLS, MSG_NO_REPORTING_PERIODS),
+          new Object[] {String.valueOf(maxYear), String.valueOf(targetYear)},
+          new Object[0]);
     }
 
     // Official start = creation date, end = Dec 31 of the target year — legacy-faithful
