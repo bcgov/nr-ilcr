@@ -2,10 +2,12 @@ package ca.bc.gov.nrs.ilcr.reporting;
 
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Service;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
@@ -327,16 +329,29 @@ public class ReportService {
 
   /**
    * Build the Schedule 3 section (the three-column ledger plus the two itemization sub-documents),
-   * or {@code null} when the mill/year has no Schedule 3 summary. As with Schedule 1, {@code
-   * getSchedule3} / {@code getOtherAcceptableDocument} / {@code getUnacceptableDocument} throw
-   * {@link ScheduleNotFoundException} on an absent summary, so translate that into the BR-09
-   * skip-empty null. Read-only: every read passes {@code callerMayEdit = false} (no BR-09 crown
-   * push).
+   * or {@code null} when the mill/year has no Schedule 3 summary (the BR-09 skip-empty rule).
+   *
+   * <p>The absence check is {@code findSchedule3}, NOT the never-404 {@code getSchedule3}, so the
+   * skip runs off an explicit signal rather than a thrown exception. Being precise about what that
+   * buys, because the first draft of this comment overstated it (#296 code review): HERE it is
+   * defence in depth, not a live fix — the two sub-document reads below still throw on an absent
+   * summary and are still caught, so {@code getSchedule3} would yield the same null section today.
+   * The Schedule 1 sibling is where it genuinely matters: {@code schedule1Section} TOLERATES a
+   * missing Other-Costs document, so a never-404 read there really would emit a blank section.
+   * Read-only: every read passes {@code callerMayEdit = false} (no BR-09 crown push).
    */
   private SectionData schedule3Section(long millId, int year) {
+    Schedule3Response summary = schedule3Service.findSchedule3(millId, year, false).orElse(null);
+    if (summary == null) {
+      log.debug(
+          "Schedule 3 summary not found for mill {} year {} -> skipping section (BR-09)",
+          millId,
+          year);
+      return null;
+    }
     try {
       return Schedule3SectionMapper.map(
-          schedule3Service.getSchedule3(millId, year, false),
+          summary,
           schedule3Service.getOtherAcceptableDocument(millId, year, false),
           schedule3Service.getUnacceptableDocument(millId, year, false));
     } catch (ScheduleNotFoundException e) {
@@ -359,16 +374,17 @@ public class ReportService {
 
   /**
    * Build the Schedule 1 section (the statement plus the itemized Other-Cost-List sub-document), or
-   * {@code null} when the mill/year has no Schedule 1 summary. Unlike the other bean reads, {@code
-   * getSchedule1} / {@code getOtherCostsDocument} throw {@link ScheduleNotFoundException} on an
-   * absent summary, so translate that into the BR-09 skip-empty null rather than letting it abort
-   * the combined render. Read-only: both reads pass {@code callerMayEdit = false}.
+   * {@code null} when the mill/year has no Schedule 1 summary (the BR-09 skip-empty rule).
+   *
+   * <p>The absence check is {@code findSchedule1}, NOT the never-404 {@code getSchedule1} — since
+   * defect #296 the latter serves an EMPTY document for an unsaved Schedule 1, which would put a
+   * blank Schedule 1 section into every combined report for a mill/year that has none. {@code
+   * getOtherCostsDocument} still throws on an absent summary and is still caught below. Read-only:
+   * both reads pass {@code callerMayEdit = false}.
    */
   private SectionData schedule1Section(long millId, int year) {
-    ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response summary;
-    try {
-      summary = schedule1Service.getSchedule1(millId, year, false);
-    } catch (ScheduleNotFoundException e) {
+    Schedule1Response summary = schedule1Service.findSchedule1(millId, year, false).orElse(null);
+    if (summary == null) {
       log.debug(
           "Schedule 1 summary not found for mill {} year {} -> skipping section (BR-09)",
           millId,

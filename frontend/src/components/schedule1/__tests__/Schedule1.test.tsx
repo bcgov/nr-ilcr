@@ -357,10 +357,11 @@ describe('Schedule1 editable page', () => {
   test('Delete is disabled when the served document carries no revisionCount (defect #292)', async () => {
     // Legacy gated Delete on isScheduleOpen() — a persisted summary — as well as on edit rights
     // (schedule1.xhtml:803-804), and the shared bar now carries that rule via `scheduleSaved`.
-    // Unreachable through this page today (getSchedule1 404s when unsaved), so this pins the rule
-    // rather than a user-visible state: an absent `revisionCount` (Jackson `non_null` omits nulls)
-    // must NOT read as "saved". Schedule 2, whose GET does serve an empty editable document, is
-    // where the missing rule became defect #292.
+    // This used to be unreachable through this page ("getSchedule1 404s when unsaved") and pinned
+    // the rule rather than a user-visible state — defect #296 made it a REAL state, because the GET
+    // now serves the empty editable document. An absent `revisionCount` (Jackson `non_null` omits
+    // nulls) must NOT read as "saved". Schedule 2, whose GET always served an empty editable
+    // document, is where the missing rule first became defect #292.
     const { revisionCount, ...unsavedDoc } = schedule1Doc
     expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
     server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
@@ -374,6 +375,72 @@ describe('Schedule1 editable page', () => {
     // Entry is untouched — only the destructive action is withheld.
     expect(bottom.getByRole('button', { name: 'Save' })).toBeEnabled()
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+  })
+
+  test('Other Costs on a never-saved schedule shows ALT-001 and does not navigate (#296)', async () => {
+    // The gate this replaced tested `!data`, which was only ever falsy while the GET 404'd on an
+    // unsaved schedule. Defect #296 removed that 404, so `data` is now truthy here and the gate has
+    // to test SAVED instead — otherwise the click reaches a sub-page whose controller still requires
+    // a summary (validateScheduleViewable, kept deliberately) and 404s. This is that gate.
+    const { revisionCount, ...unsavedDoc } = schedule1Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('Standing Tree to Loaded Truck')
+    mockNavigate.mockClear()
+    await user.click(screen.getByRole('button', { name: /^Subtotal Other Costs\(\d+\):$/ }))
+
+    // Legacy ALT-001, verbatim — and crucially NO navigation to the sub-page.
+    expect(
+      await screen.findByText('The schedule has to be saved before opening other costs'),
+    ).toBeInTheDocument()
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  test('a load error with no ProblemDetail detail falls back to the generic text (#296)', async () => {
+    // `mapLoadErrorDetail` is `detail || 'Unable to load Schedule 1.'` since #296 removed the
+    // client-composed sentence. The fallback arm had no coverage: every error fixture carried a
+    // detail. A body-less failure (502/504 from the gateway, a dropped connection) takes this path.
+    server.use(http.get(URL, () => new HttpResponse(null, { status: 502 })))
+    render(<Schedule1 />)
+
+    expect(await screen.findByText('Unable to load Schedule 1.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+
+  test('a never-saved schedule issues NO DELETE request even if the confirm is reached (#296)', async () => {
+    // The Schedule 3 twin of this was asked for by the PR #361 review; Schedule 1 had the guard but
+    // no test either. It has to target `handleDelete`: the Delete BUTTON only opens the modal
+    // (`onDelete={() => setConfirmDeleteOpen(true)}`) — `handleDelete` is the modal's
+    // `onRequestSubmit` — so the guard is proven by reaching the confirm and asserting nothing goes
+    // to the network. Since #296 the endpoint is idempotent and answers 200, so a stray delete would
+    // announce success for a record that never existed.
+    const { revisionCount, ...unsavedDoc } = schedule1Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    let deleteCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(unsavedDoc)),
+      http.delete(URL, () => {
+        deleteCalled = true
+        return HttpResponse.json({ message: { key: 'x', text: 'x' } })
+      }),
+    )
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('Standing Tree to Loaded Truck')
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-1__actions')
+    expect(bars).toHaveLength(2)
+    // Disabled for a real user; click it anyway to reach the modal — exactly the "any other route
+    // into this handler" the guard exists for.
+    await user.click(within(bars[1]).getByRole('button', { name: /^delete$/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(deleteCalled).toBe(false)
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
   test('valid Save PUTs the pinned request and shows the API success message (AC2)', async () => {
@@ -595,20 +662,22 @@ describe('Schedule1 editable page', () => {
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
-  test('404 not-found shows verbatim ERR-003 (AC / S21)', async () => {
+  // Defect #296 inverted this case. It used to assert that a 404 rendered a sentence composed in the
+  // CLIENT ('No Schedule 1 exists for Mill 514 ...'), which broke AD-8, leaked the internal mill id,
+  // and told the user to do something the app could not do. The backend no longer 404s for an unsaved
+  // schedule at all, so what remains is the plain rule: whatever ProblemDetail text the API sends is
+  // shown verbatim.
+  test('a load error shows the API detail verbatim (AD-8), never a client-composed sentence', async () => {
     server.use(problemHandler(404, 'Schedule not found.'))
-    // Explicit context so the message is deterministic regardless of the dev default mill/year.
+    // Explicit context so the render is deterministic regardless of the dev default mill/year.
     render(
       <MillYearProvider initial={{ millId: 514, year: 2021 }}>
         <Schedule1 />
       </MillYearProvider>,
     )
 
-    expect(
-      await screen.findByText(
-        'No Schedule 1 exists for Mill 514 in Reporting Year 2021. Select another mill/year from Home, or create Schedule 1 data for this context.',
-      ),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Schedule not found.')).toBeInTheDocument()
+    expect(screen.queryByText(/No Schedule 1 exists for Mill/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 

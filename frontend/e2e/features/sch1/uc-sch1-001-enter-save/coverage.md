@@ -107,7 +107,7 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S18 Check Status — empty cost row (warning only) | S18.feature (Alt) | `anyOtherCostEmpty` → `warning.schedule1.checkstatus.subtotalother.costEmpty` warning column | `check-status.feature` `@S18 @p2` (25054/2016: API-added null-cost row) | covered | Precondition row added via the API (null cost); cleaned via DELETE |
 | S19 Mill and reporting year not selected | S19.feature (Exc) | `Schedule1.contextMissing` → ERR-001 banner "Please Select Mill and Reporting Year in the Home Page."; no form | `render-states.feature` `@S19 @p1` | covered | Empty context driven via localStorage (the app's own persisted null context) |
 | S20 Mill not active for reporting year | S20.feature (Exc) | schedule1 GET 409 (mill CLS) → error banner; no form | `render-states.feature` `@S20 @p1` (anchor 13/2017, CLS) | covered | Also covered from the Home side in `../../sec/uc-sec-001-working-context/context-drives-schedule.feature` `@S20` (UC-SEC-001) |
-| S21 Schedule not found | S21.feature (Exc) | schedule1 GET 404 "Schedule not found." → mapped "No Schedule 1 exists for Mill…" banner; no form | `render-states.feature` `@S21 @p1` (anchor 16050/2016, active, no summary) | covered | Frontend re-grounds the 404 detail to a mill/year-specific message |
+| S21 Schedule not started yet | S21.feature (Exc) | schedule1 GET 200 with an EMPTY editable document; blank form, Delete not offered, summary created by the first save | `render-states.feature` `@S21 @p1` (anchor 16050/2016, active, no summary) | covered | **Inverted by defect #296.** Was: GET 404 → a client-composed "No Schedule 1 exists for Mill 16050…" banner and no form, which left no route by which a Schedule 1 could ever be created. Legacy rendered the blank form; Schedule 2 always did |
 | S22 Schedule not editable outside Draft | S22.feature (Exc) | GET 200 editable:false (track ≠ D) → read-only render; Save/Check/Delete disabled, no inputs | `render-states.feature` `@S22 @p1` (anchor 12050/2016, Submitted) | covered | Read-only proven by absent inputs + disabled actions |
 | S23 Save fails due to persistence error | S23.feature (Exc) | `handleSave` catch → error banner; entries retained; no PUT reaches the server | `persistence.feature` `@S23 @p1` (fault-injected 500) | covered | Fault via page.route; read-only anchor, no write lands |
 | S24 Retry save succeeds after transient failure | S24.feature (Alt) | retry after failure → success + persisted; persistent failure keeps failing | `persistence.feature` `@S24 @p1` (×2: recover; not-transient) | covered | Retry-succeeds writes to a dedicated target; snapshot/restore exact |
@@ -121,7 +121,7 @@ symmetric: cost (S03/S04) and volume (S05/S06/S07), each with an out-of-range an
 one-field-per-range shape was the asymmetry that hid the restored 143/144/139/140 fields. Check Status
 covers both arms of its own mirror — success (S14 met) and failure (S15 missing-field, S16 volume-without-
 cost, S17 cost-without-volume, S18 empty-cost-row warning). The four context-guard render states (S19
-no-context, S20 closed-mill, S21 not-found, S22 non-Draft read-only) mirror the S01 editable-write arm.
+no-context, S20 closed-mill, S21 not-started-yet, S22 non-Draft read-only) mirror the S01 editable-write arm.
 Delete (S13) covers the destroy arm; persistence (S23 fail / S24 retry-succeeds + retry-fails) covers both
 arms of the save-failure mirror.
 

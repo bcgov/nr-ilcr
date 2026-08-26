@@ -70,16 +70,13 @@ const SILV_ROWS: { code: number; label: string; key: keyof Schedule1Response['si
 
 type FieldValues = Record<string, string>
 
-const mapLoadErrorDetail = (
-  detail: string | undefined,
-  millId: number | null,
-  year: number | null,
-): string => {
-  if (detail === 'Schedule not found.' && millId != null && year != null) {
-    return `No Schedule 1 exists for Mill ${millId} in Reporting Year ${year}. Select another mill/year from Home, or create Schedule 1 data for this context.`
-  }
-  return detail || 'Unable to load Schedule 1.'
-}
+// The API's ProblemDetail text, verbatim (AD-8). This used to rewrite a 404 'Schedule not found.'
+// into a longer sentence composed HERE — which broke AD-8, interpolated the internal mill id into
+// user-facing text, and advised an action ('create Schedule 1 data for this context') the app had no
+// way to perform. Defect #296 removed the 404 that reached it, so the branch was unreachable as well
+// as wrong. Schedule 3 has always had this shape.
+const mapLoadErrorDetail = (detail: string | undefined): string =>
+  detail || 'Unable to load Schedule 1.'
 
 // Seed editable form state from the loaded document (writable fields only).
 function seedForm(doc: Schedule1Response): FieldValues {
@@ -218,14 +215,22 @@ const Schedule1: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-validate here, not just on the button's `disabled`: a disabled attribute is presentation,
+    // and any other route into this handler (a mis-wired bar, a programmatic open, the modal's
+    // submit) would otherwise fire a DELETE for a schedule that does not exist. Until defect #296
+    // the server made that harmless — it 404'd — but the DELETE is idempotent now and answers 200,
+    // so a stray call would show a success-styled banner for a record that never existed. Schedule 2
+    // has had this gate since #292; Schedules 1/3 relied on the 404 that is gone.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
     clearBanners() // the deleted schedule's check result / save banner are stale
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 1.',
-      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
+      // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
+      // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, landing on
+      // the same state without the extra round trip. Reset to an empty schedule in place (no
       // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
       // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
       onSuccess: (resp) => {
@@ -233,9 +238,14 @@ const Schedule1: FC = () => {
           prev
             ? {
                 ...prev,
-                // The summary is gone; there is nothing to edit or re-save (create-on-open is not
-                // supported), so render the empty schedule read-only and disable the actions.
-                editable: false,
+                // The summary is gone, so the record is unsaved — but it is NOT uneditable. Before
+                // defect #296 this pinned `editable: false` because "a re-GET would 404 and
+                // create-on-open is not supported"; both halves of that are now false. The server
+                // serves a 200 empty EDITABLE document for this exact state and accepts a PUT that
+                // re-creates it, so freezing the form here would strand the Licensee on a read-only
+                // blank page and force a browser reload to re-enter data (legacy AF1 expects
+                // immediate re-entry). `editable` is left as the server last reported it; dropping
+                // `revisionCount` to null is what closes the Delete gate.
                 revisionCount: null,
                 comments: null,
                 lineItems: [],
@@ -267,10 +277,15 @@ const Schedule1: FC = () => {
   }
 
   const handleOtherCosts = () => {
-    // S08: before the schedule is saved/open, opening Other Costs is blocked with ALT-001. In the
-    // current backend model an openable schedule is always saved (GET 404s for no summary), so this
-    // guard is effectively unreachable.
-    if (!data) {
+    // S08: before the schedule is saved, opening Other Costs is blocked with ALT-001.
+    //
+    // Gated on isScheduleSaved, NOT on `!data`. `!data` was written when an openable schedule was
+    // always a saved one (the GET 404'd for no summary), which made this branch unreachable — defect
+    // #296 removed that 404, so `data` is now truthy on a never-saved schedule and the old condition
+    // could never fire again. It has to fire: the sub-page controllers still require a summary
+    // (validateScheduleViewable, deliberately kept — #296 D1), so without this the click lands on a
+    // 404 dead-end instead of the legacy message.
+    if (!data || !isScheduleSaved(data)) {
       setOtherCostsBlockedOpen(true)
       return
     }
@@ -567,10 +582,11 @@ const Schedule1: FC = () => {
   // schedule is the one destructive action on this page, and legacy kept it off the bar a reporter
   // meets first.
   // Delete is additionally gated on a persisted record, as legacy gated it on isScheduleOpen() as
-  // well as on edit rights. This page is already protected without it — the GET 404s when unsaved and
-  // a delete resets `editable` to false — but that is a side-effect, not a rule, and defect #292
-  // showed what its absence costs on the one page (Schedule 2) that does serve an empty editable
-  // document. The absent-vs-null subtlety lives in `isScheduleSaved`.
+  // well as on edit rights. That gate is now LOAD-BEARING, not belt-and-braces: this page used to be
+  // protected incidentally because the GET 404'd when unsaved, and defect #296 removed exactly that
+  // — an unsaved schedule now renders a full editable form, so `isScheduleSaved` is the only thing
+  // standing between a never-saved schedule and a Delete button. The absent-vs-null subtlety lives
+  // in `isScheduleSaved`.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-1__actions"

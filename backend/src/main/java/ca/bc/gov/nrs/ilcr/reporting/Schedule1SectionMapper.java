@@ -29,8 +29,10 @@ import java.util.Map;
  * (139), Subtotal Company Logging (144) and the Total-Silviculture / grand-total rows take their
  * cost + $/m³ from the DTO's derived scalars (which fold in the Schedule 3 pulls), never recomputed
  * here; their VOLUME comes from the corresponding structured line item when present. The
- * absent-summary case throws {@code ScheduleNotFoundException} in the service and is translated to
- * a null skip by the {@code ReportService} dispatch (BR-09).
+ * absent-summary case is signalled by {@code Schedule1Service#findSchedule1} returning an empty
+ * {@code Optional} — NOT by a thrown {@code ScheduleNotFoundException}, which is what it was before
+ * defect #296 made the plain read never 404 — and {@code ReportService} turns that into the BR-09
+ * null skip.
  */
 final class Schedule1SectionMapper {
 

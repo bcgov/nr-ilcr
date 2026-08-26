@@ -86,17 +86,23 @@ class Schedule1ContextGuardIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName(
-      "S21: valid mill/year but no Schedule 1 summary -> 404 with verbatim 'Schedule not found.'")
-  void noScheduleSummary_returns404_verbatimMessage() throws Exception {
-    // Seed (Task 8) MUST include a mill/year that is active but has NO category-1 summary for this
-    // case.
+  @DisplayName("S21: valid mill/year with no Schedule 1 yet -> 200 empty EDITABLE document")
+  void noScheduleSummary_returns200_emptyEditableDocument() throws Exception {
+    // INVERTED by defect #296. This asserted 404 + "Schedule not found." — the defect itself: a
+    // mill/year with no saved data had no form and no way to create one, because the PUT 404'd too.
+    // Mill 515 is ACT with a report-status row 'D' for 2021 and no category-1 summary, which is now
+    // the legitimate unsaved state. `revisionCount` must be ABSENT, not 0: the backend runs
+    // `default-property-inclusion: non_null`, and the client's `isScheduleSaved` reads exactly that
+    // omission to keep Delete closed on a never-saved schedule.
     mockMvc
         .perform(get(ENDPOINT).param("millId", "515").param("year", String.valueOf(SEEDED_YEAR)))
-        .andExpect(status().isNotFound())
-        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(
-            jsonPath("$.detail", is("Schedule not found."))); // ERR-003 / scheduleNotFoundErrorMsg
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.millId", is(515)))
+        .andExpect(jsonPath("$.trackStatus", is("D")))
+        .andExpect(jsonPath("$.editable", is(true)))
+        .andExpect(jsonPath("$.revisionCount").doesNotExist())
+        .andExpect(jsonPath("$.comments").doesNotExist())
+        .andExpect(jsonPath("$.crownVolume").doesNotExist());
   }
 
   // ---- S20: mill closed for the year -> 409 ProblemDetail --------------------------------------
