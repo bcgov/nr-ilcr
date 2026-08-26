@@ -22,6 +22,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Acceptance test — Story 24.3 (UC-CODE-001) Table Maintenance, security ON. Exercises the real
@@ -29,6 +30,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * ILCR_SUBMITTER} is denied 403 (S13) — the opposite of the schedule endpoints. Functional
  * read/write is driven with an admin JWT against the {@code ILCR_UNIT_CODE} seed (V20260812).
  */
+@Transactional
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("/api/v1/code-tables — Table Maintenance (admin-gated, Story 24.3)")
 class CodeTableIT extends AbstractOracleIT {
