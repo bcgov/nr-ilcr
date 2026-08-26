@@ -206,10 +206,14 @@ at-rest state.
     see the Correction under the headline.)
   - **Status:** **CLOSED 2026-08-26** — both cases landed in `Schedule2.test.tsx` on nr-ilcr
     `fix/bugfix-298-schedule2-error-fallback-tests`, and coverage.md's `deferred` row flipped with them.
-    Five Vitest cases, not two: the ticket's single "detail-less error" is three distinct shapes on the
-    wire, so the load case is a `test.each` over all three (dropped connection → no `response` property
-    at all; empty-bodied 500 → `response.data` is `''`; gateway problem+json → every field but `detail`)
-    and the delete case over the first two. Two line numbers in this entry were **stale**: the sites are
+    **Eleven Vitest cases, not two** (counted at PR #364 review, paulushcgcj — this entry said five,
+    which was the implementation-time figure and stale by two rounds of review). The ticket's single
+    "detail-less error" is **four** distinct shapes on the wire — a dropped connection (no `response`
+    property at all), an empty-bodied 500 (`response.data` is `''`), a gateway problem+json (every
+    field but `detail`), and a **blank** `detail` (present but falsy, the only shape that pins `||`
+    against a swap to `??`). Load runs all four and delete runs all four, plus a separate
+    detail-BEARING DELETE case: **9 in `Schedule2.test.tsx`**, and **2** in the new
+    `fallback-strings.test.ts` tripwire. The targeted suite went 43 → **54**. Two line numbers in this entry were **stale**: the sites are
     `index.tsx:60` and `:162`, not `:56`/`:171` — the delete fallback moved when #292 restructured
     `handleDelete` around the delete→reload lock. The "11 tests" count was 25 by the time the fix was
     written (#291 and #292 added cases in between); the claim it supported — no match for `Unable to

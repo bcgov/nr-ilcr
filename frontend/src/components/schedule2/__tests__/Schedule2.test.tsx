@@ -149,11 +149,15 @@ const detailLessFailures: [string, () => Response][] = [
   [BLANK_DETAIL, () => problemBody(500, '')],
 ]
 
-// Delete runs a subset: the gateway body reaches `extractDetail` identically to the empty-bodied 500
-// (proved during the #298 review by running it), and each delete case costs a confirm-modal
-// round-trip. Selected BY NAME, not by `slice(0, 2)` — a positional subset silently changed what
-// delete covered whenever the array above was reordered, and nothing failed (code-review finding).
-const detailLessDeleteFailures = detailLessFailures.filter(([name]) => name !== GATEWAY_NO_DETAIL)
+// Delete runs the SAME four shapes as load. It used to run a subset — first `slice(0, 2)`, which tied
+// delete's coverage to this array's order, then a filter excluding the gateway body on the grounds
+// that it reaches `extractDetail` identically (measured, and true). PR #364 review (SScholefield)
+// asked for the 502 on the write path anyway, and that is the right call for a reason the "no distinct
+// path" argument missed: the equivalence holds for `extractDetail`, but a write reaches it through
+// `useScheduleMutations.remove` → `useScheduleBanners.run`, so the claim being leaned on was about a
+// function two layers below the one under test. Running all four costs one extra modal round-trip and
+// retires both the subset and the argument.
+const detailLessDeleteFailures = detailLessFailures
 
 // Every notification currently rendered, as {kind, title, subtitle}. Asserting the whole set rather
 // than `findByText` on a string is deliberate, for three reasons the #298 review found the hard way:
@@ -176,8 +180,13 @@ const notifications = () =>
     kind: (['error', 'warning', 'info', 'success'] as const).find((k) =>
       el.classList.contains(`cds--inline-notification--${k}`),
     ),
-    title: el.querySelector('.cds--inline-notification__title')?.textContent ?? '',
-    subtitle: el.querySelector('.cds--inline-notification__subtitle')?.textContent ?? '',
+    // Trimmed (PR #364 review, SScholefield): Carbon wraps these in their own elements, so
+    // `textContent` can pick up whitespace from JSX formatting. Nothing carries whitespace today, so
+    // this guards against a template edit breaking the test rather than the page — a false NEGATIVE.
+    // It cannot mask a real failure: trimming never turns wrong text into right text, and a
+    // whitespace-only subtitle is caught by the count/kind assertions regardless.
+    title: el.querySelector('.cds--inline-notification__title')?.textContent?.trim() ?? '',
+    subtitle: el.querySelector('.cds--inline-notification__subtitle')?.textContent?.trim() ?? '',
   }))
 
 describe('Schedule2 page', () => {
