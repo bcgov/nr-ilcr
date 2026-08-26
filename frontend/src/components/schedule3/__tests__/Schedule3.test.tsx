@@ -538,8 +538,17 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    // The values are gone but the FORM STAYS EDITABLE, so a first entry can be re-made immediately
+    // (legacy AF1). This used to assert the input was removed, because the page pinned
+    // `editable: false` on the premise that a re-GET would 404 and the record could not be
+    // re-created — defect #296 made both false, and the #296 code review caught this test still
+    // encoding the old premise.
+    const harvest = await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await waitFor(() => expect(harvest).toHaveValue(''))
+    expect(harvest).toBeEnabled()
+    // Delete is closed the instant the record is gone — the revisionCount gate (defect #292).
     await waitFor(() =>
-      expect(screen.queryByLabelText('Licenses, Fees, Insurance Harvest')).not.toBeInTheDocument(),
+      expect(screen.getAllByRole('button', { name: /^delete$/i })[0]).toBeDisabled(),
     )
   })
 })

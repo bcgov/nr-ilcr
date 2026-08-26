@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
@@ -64,6 +67,22 @@ class Schedule3CheckStatusServiceTest {
     rows.add(volume(118, "1000"));
     rows.add(volume(119, "1000"));
     return rows;
+  }
+
+  /**
+   * Defect #296: Check Status no longer 404s on a mill/year with no summary. Distinct from the
+   * existing empty-document test, which has a summary PRESENT with no detail rows — this is the
+   * absent-summary branch the fix added, including the {@code override} guard that must not NPE.
+   */
+  @Test
+  void checkStatus_noSummary_reportsMissingFields_ratherThanThrowing() {
+    when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
+
+    Schedule3CheckStatusResponse res = service.checkSchedule3Status(MILL, YEAR);
+
+    assertFalse(res.requirementsMet(), "a schedule with nothing entered cannot be complete");
+    assertFalse(res.errors().isEmpty(), "every mandatory field must be reported missing");
+    verify(repository, never()).findDetails(anyInt());
   }
 
   private void stub(String location, List<DetailRow> details) {

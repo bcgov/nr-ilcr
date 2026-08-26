@@ -360,7 +360,9 @@ public class Schedule3Service {
   @Transactional
   public Schedule3Response saveSchedule3(
       long millId, int year, Schedule3Request request, boolean callerMayEdit, String user) {
-    int expectedRevision = request.revisionCount() == null ? -1 : request.revisionCount();
+    // 0, not -1 — see Schedule1Service#saveSchedule1: -1 can never match a freshly-created
+    // summary's REVISION_COUNT 0, and Schedule 2 uses 0 (#296 code review).
+    int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
     int summaryId;
     BigDecimal persistedCrownVolume;
     try {
@@ -436,7 +438,8 @@ public class Schedule3Service {
    */
   @Transactional
   public boolean deleteSchedule3(long millId, int year) {
-    requireDraft(millId, year);
+    // The LOCKING gate, as Schedule 2's delete uses (#296 code review) — see deleteSchedule1.
+    requireDraftForUpdate(millId, year);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
       return false; // idempotent — nothing to remove, and the caller must not claim otherwise

@@ -2,10 +2,12 @@ package ca.bc.gov.nrs.ilcr.reporting;
 
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
 import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
@@ -314,15 +316,17 @@ public class ReportService {
    * Build the Schedule 3 section (the three-column ledger plus the two itemization sub-documents),
    * or {@code null} when the mill/year has no Schedule 3 summary (the BR-09 skip-empty rule).
    *
-   * <p>The absence check is {@code findSchedule3}, NOT the never-404 {@code getSchedule3} — since
-   * defect #296 the latter serves an EMPTY document for an unsaved Schedule 3, which would put a
-   * blank (zero-filled) Schedule 3 section into every combined report for a mill/year that has
-   * none. The two sub-document reads still throw on an absent summary and are still caught here.
+   * <p>The absence check is {@code findSchedule3}, NOT the never-404 {@code getSchedule3}, so the
+   * skip runs off an explicit signal rather than a thrown exception. Being precise about what that
+   * buys, because the first draft of this comment overstated it (#296 code review): HERE it is
+   * defence in depth, not a live fix — the two sub-document reads below still throw on an absent
+   * summary and are still caught, so {@code getSchedule3} would yield the same null section today.
+   * The Schedule 1 sibling is where it genuinely matters: {@code schedule1Section} TOLERATES a
+   * missing Other-Costs document, so a never-404 read there really would emit a blank section.
    * Read-only: every read passes {@code callerMayEdit = false} (no BR-09 crown push).
    */
   private SectionData schedule3Section(long millId, int year) {
-    ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response summary =
-        schedule3Service.findSchedule3(millId, year, false).orElse(null);
+    Schedule3Response summary = schedule3Service.findSchedule3(millId, year, false).orElse(null);
     if (summary == null) {
       log.debug(
           "Schedule 3 summary not found for mill {} year {} -> skipping section (BR-09)",
@@ -351,8 +355,7 @@ public class ReportService {
    * both reads pass {@code callerMayEdit = false}.
    */
   private SectionData schedule1Section(long millId, int year) {
-    ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response summary =
-        schedule1Service.findSchedule1(millId, year, false).orElse(null);
+    Schedule1Response summary = schedule1Service.findSchedule1(millId, year, false).orElse(null);
     if (summary == null) {
       log.debug(
           "Schedule 1 summary not found for mill {} year {} -> skipping section (BR-09)",

@@ -43,6 +43,8 @@ import './index.scss'
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
+// ALT-001, legacy-verbatim and identical to Schedule 1's: both sub-pages require a saved parent.
+const ALT_SAVE_BEFORE_SUB_PAGE = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 const COMMENTS_MAX = 3500
@@ -133,6 +135,7 @@ const Schedule3: FC = () => {
 
   const [saveWarnings, setSaveWarnings] = useState<string[]>([])
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [subPageBlockedOpen, setSubPageBlockedOpen] = useState(false)
   // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
@@ -213,7 +216,13 @@ const Schedule3: FC = () => {
           prev
             ? {
                 ...prev,
-                editable: false,
+                // The summary is gone, so the record is unsaved — but it is NOT uneditable. This
+                // pinned `editable: false` when a re-GET would have 404'd and create-on-open was not
+                // supported; defect #296 made both false. The server serves a 200 empty EDITABLE
+                // document for this state and accepts a PUT that re-creates it, so freezing the form
+                // would strand the Licensee on a read-only blank page and force a browser reload to
+                // re-enter data (legacy AF1 expects immediate re-entry). `editable` is left as the
+                // server last reported it; dropping `revisionCount` is what closes the Delete gate.
                 revisionCount: null,
                 overrideHarvestTotalPop: 'N',
                 comments: null,
@@ -249,6 +258,14 @@ const Schedule3: FC = () => {
   }
 
   const openSubPage = (route: string) => {
+    // Both sub-pages require a SAVED Schedule 3: their controllers still call
+    // validateScheduleViewable (deliberately kept — #296 D1), so opening one from a never-saved
+    // schedule would 404. Schedule 3 never had this gate, because before defect #296 the parent
+    // page itself 404'd when unsaved and the case could not arise. It can now.
+    if (!data || !isScheduleSaved(data)) {
+      setSubPageBlockedOpen(true)
+      return
+    }
     // Navigating away from an editable schedule discards unsaved edits — confirm via a Carbon Modal
     // (legacy confirmNavigationMsg) instead of a native browser dialog. A read-only schedule has
     // nothing to lose, so open directly.
@@ -445,10 +462,11 @@ const Schedule3: FC = () => {
   // Schedule 1. Deleting the whole schedule is the one destructive action on this page, and legacy
   // kept it off the bar a reporter meets first.
   // Delete is additionally gated on a persisted record, as legacy gated it on isScheduleOpen() as
-  // well as on edit rights. This page is already protected without it — the GET 404s when unsaved and
-  // a delete resets `editable` to false — but that is a side-effect, not a rule, and defect #292
-  // showed what its absence costs on the one page (Schedule 2) that does serve an empty editable
-  // document. The absent-vs-null subtlety lives in `isScheduleSaved`.
+  // well as on edit rights. That gate is now LOAD-BEARING, not belt-and-braces: this page used to be
+  // protected incidentally because the GET 404'd when unsaved, and defect #296 removed exactly that
+  // — an unsaved schedule now renders a full editable form, so `isScheduleSaved` is the only thing
+  // standing between a never-saved schedule and a Delete button. The absent-vs-null subtlety lives
+  // in `isScheduleSaved`.
   const actionBar = (showDelete: boolean) => (
     <ScheduleActions
       className="schedule-3__actions"
@@ -648,6 +666,16 @@ const Schedule3: FC = () => {
           onRequestSubmit={confirmLeave}
         >
           <p>{CONFIRM_NAVIGATION}</p>
+        </Modal>
+      )}
+      {subPageBlockedOpen && (
+        <Modal
+          open
+          passiveModal
+          modalHeading="Save required"
+          onRequestClose={() => setSubPageBlockedOpen(false)}
+        >
+          <p>{ALT_SAVE_BEFORE_SUB_PAGE}</p>
         </Modal>
       )}
     </div>

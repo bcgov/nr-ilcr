@@ -332,11 +332,11 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
 
   /**
    * Idempotent create of the empty category-{@code "1"} summary for a mill/year, keyed on
-   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_1_ID). The real THE schema has no unique constraint on that
-   * triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize: under
-   * READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT (permanent
-   * duplicate). Serialization comes from the caller's {@code FOR UPDATE} lock on the parent
-   * report-status row ({@link #findTrackStatusForUpdate}) taken before this MERGE.
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). The real THE schema has no unique constraint on
+   * that triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize:
+   * under READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT
+   * (permanent duplicate). Serialization comes from the caller's {@code FOR UPDATE} lock on the
+   * parent report-status row ({@link #findTrackStatusForUpdate}) taken before this MERGE.
    *
    * <p>The id is drawn from {@code THE.ILCR_REPORT_COMMON_SEQ} — the sequence legacy {@code
    * ILCRReportSummary} uses. {@code ILCR_REPORT_SUMMARY_SEQ} does NOT exist in {@code THE} and
@@ -346,12 +346,12 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
   @Query(
       """
       MERGE INTO THE.ILCR_REPORT_SUMMARY t
-      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '1' AS ILCR_1_ID FROM DUAL) src
+      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '1' AS ILCR_CATEGORY_ID FROM DUAL) src
          ON (t.ILCR_MILL_ID = src.ILCR_MILL_ID
              AND t.REPORT_YEAR = src.REPORT_YEAR
-             AND t.ILCR_1_ID = src.ILCR_1_ID)
+             AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
        WHEN NOT MATCHED THEN
-         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_1_ID,
+         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
                  COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
                  UPDATE_USERID, UPDATE_TIMESTAMP)
          VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '1',
@@ -375,9 +375,16 @@ public interface Schedule1Repository extends Repository<ReportSummary, Long> {
     return findSummary(millId, year, "1")
         .map(SummaryRow::summaryId)
         .orElseThrow(
+            // EmptyResultDataAccessException, not IllegalStateException: the service wraps this
+            // call
+            // in `catch (DataAccessException)` to map create-path failures to ScheduleNotSaved (500
+            // /
+            // ERR-004). An IllegalStateException would slip past that catch and surface as a
+            // generic
+            // 500 with a different ProblemDetail than the javadoc promises (#296 code review).
             () ->
-                new IllegalStateException(
-                    "Schedule 1 summary not found immediately after MERGE create"));
+                new org.springframework.dao.EmptyResultDataAccessException(
+                    "Schedule 1 summary not found immediately after MERGE create", 1));
   }
 
   // ---------------------------------------------------------------------------------------------

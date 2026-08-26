@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -112,6 +114,26 @@ class Schedule3ControllerTest {
     // sub-page tests below deliberately keep the summary-required guard (D1).
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(schedule3Service).deleteSchedule3(MILL_ID, YEAR);
+  }
+
+  /**
+   * Defect #296: the idempotent no-op must NOT claim a delete happened — the #292 rule, which
+   * Schedule 3's controller carried with no test at all until the #296 code review. Without this,
+   * swapping the ternary arms was invisible.
+   */
+  @Test
+  void deleteSchedule3_noOp_saysNothingWasDeleted() {
+    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR)).thenReturn(false);
+    when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("No saved data was found, so nothing was deleted");
+
+    ResponseEntity<MessageResponse> response =
+        controller.deleteSchedule3(MILL_ID, YEAR, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertNotNull(response.getBody());
+    assertEquals(
+        "No saved data was found, so nothing was deleted", response.getBody().message().text());
   }
 
   @Test

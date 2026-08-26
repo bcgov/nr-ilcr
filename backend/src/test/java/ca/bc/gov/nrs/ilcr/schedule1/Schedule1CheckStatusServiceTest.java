@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
@@ -53,6 +56,28 @@ class Schedule1CheckStatusServiceTest {
     lenient()
         .when(messageSource.getMessage(anyString(), any(), anyString(), any(Locale.class)))
         .thenAnswer(i -> i.getArgument(0)); // return the key
+  }
+
+  /**
+   * Defect #296: Check Status no longer 404s on a mill/year with no summary — it reports every
+   * mandatory field missing, which is the honest answer and what Schedule 2 already did.
+   *
+   * <p>Without this test the three new null-guards on the absent-summary path ({@code findDetails}
+   * / {@code findSharedOtherCostsVolume} / {@code findOtherCostRows}) are never entered, so an NPE
+   * there would ship green (#296 code review).
+   */
+  @Test
+  void checkStatus_noSummary_reportsMissingFields_ratherThanThrowing() {
+    when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+
+    Schedule1CheckStatusResponse res = service.checkSchedule1Status(MILL, YEAR);
+
+    assertFalse(res.requirementsMet(), "a schedule with nothing entered cannot be complete");
+    assertFalse(res.errors().isEmpty(), "every mandatory field must be reported missing");
+    // No summary id exists, so none of the detail reads may be attempted.
+    verify(repository, never()).findDetails(anyInt());
+    verify(repository, never()).findSharedOtherCostsVolume(anyInt());
+    verify(repository, never()).findOtherCostRows(anyInt());
   }
 
   private void stub(List<DetailRow> details, BigDecimal sharedVol, List<OtherCostDetailRow> other) {

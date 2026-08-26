@@ -205,20 +205,24 @@ class Schedule1WriteServiceTest {
 
   @Test
   void delete_notDraft_throwsNotEditable() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
     assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule1(MILL, YEAR));
     verify(repository, never()).deleteSchedule(anyInt());
   }
 
   @Test
   void delete_draft_deletesSummary() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
 
     assertTrue(service.deleteSchedule1(MILL, YEAR));
 
     verify(repository).deleteSchedule(SUMMARY_ID);
+    // DELETE must take the LOCKING status read, as Schedule 2's does: without it a delete racing a
+    // first-save reports "nothing was deleted" for a row that then commits (#296 code review).
+    verify(repository).findTrackStatusForUpdate(MILL, YEAR);
+    verify(repository, never()).findTrackStatus(MILL, YEAR);
   }
 
   /**
@@ -229,7 +233,7 @@ class Schedule1WriteServiceTest {
    */
   @Test
   void delete_noSummary_isIdempotentNoOp() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
 
     assertFalse(service.deleteSchedule1(MILL, YEAR));
@@ -284,8 +288,11 @@ class Schedule1WriteServiceTest {
   @Test
   void save_nullRevision_treatedAsFirstWrite() {
     stubDraftSummary();
-    // A null optimistic-lock token means "no prior revision" -> expectedRevision -1 (first write).
-    when(repository.bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER))).thenReturn(1);
+    // A null optimistic-lock token coalesces to 0, matching Schedule 2 — and it has to, now that
+    // this
+    // path can CREATE: a freshly-MERGEd summary starts at REVISION_COUNT 0, which -1 could never
+    // match (#296 code review).
+    when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule1(
         MILL,
@@ -301,12 +308,12 @@ class Schedule1WriteServiceTest {
         true,
         USER);
 
-    verify(repository).bumpRevision(eq(SUMMARY_ID), eq(-1), anyString(), eq(USER));
+    verify(repository).bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER));
   }
 
   @Test
   void delete_persistenceFailure_translatesToScheduleNotSaved() {
-    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
     doThrow(new DataIntegrityViolationException("boom"))

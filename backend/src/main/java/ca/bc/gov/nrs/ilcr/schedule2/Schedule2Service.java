@@ -294,9 +294,9 @@ public class Schedule2Service {
     // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of
     // truth,
     // matching the legacy Schedule2MB which reads the Schedule 3 model), NOT ad-hoc stored-detail
-    // queries. Absent Schedule 3 (no category-'3' summary) → getSchedule3 404s; Schedule 2 never
-    // 404s,
-    // so swallow it and treat every carried figure as null (legacy CoreUtil null-propagation).
+    // queries. Absent Schedule 3 (no category-'3' summary) → findSchedule3 returns empty, and every
+    // carried figure is treated as null (legacy CoreUtil null-propagation). Since defect #296
+    // getSchedule3 no longer 404s, so the existence signal is the Optional, not a caught exception.
     //   purchasedWoodOverhead cost / subtotal PO&P term = Sch3 Subtotal Actual Costs PO&P column
     //     (getPurchasedWoodCal / getSubtotalCost), NOT a persisted "item 135" row.
     //   PO&P + Crown timber volumes = Sch3 popTimber / crownTimber volumes (items 118 / 119).

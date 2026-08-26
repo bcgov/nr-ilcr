@@ -9,8 +9,8 @@
  */
 
 export interface ScheduleKey {
-  millId: number;
-  year: number;
+  millId: number
+  year: number
 }
 
 /**
@@ -19,28 +19,28 @@ export interface ScheduleKey {
  * else may lean on this combo. Found: GET .../schedule1?millId=13050&year=2017 ->
  * {trackStatus:"D", editable:true, lineItems all value-less, otherCosts.count:0} (2026-07-29).
  */
-export const MUTABLE_DRAFT: ScheduleKey = { millId: 13050, year: 2017 };
+export const MUTABLE_DRAFT: ScheduleKey = { millId: 13050, year: 2017 }
 
 /** Mill 13050 dropdown fields (GET /api/v1/mills) — option text is `${millNumber} - ${millName}`. */
-export const MUTABLE_DRAFT_MILL = { millNumber: '999', millName: 'ISP TEST' } as const;
+export const MUTABLE_DRAFT_MILL = { millNumber: '999', millName: 'ISP TEST' } as const
 
 /**
  * The READ-ONLY preflight anchor — a stable, populated editable Draft that no scenario mutates, so
  * preflight can prove the seed is present independently of the mutable target. Found:
  * GET .../schedule1?millId=24050&year=2017 -> {trackStatus:"D", editable:true} (2026-07-29).
  */
-export const READONLY_ANCHOR: ScheduleKey = { millId: 24050, year: 2017 };
+export const READONLY_ANCHOR: ScheduleKey = { millId: 24050, year: 2017 }
 
 /** Mill 24050 dropdown fields (GET /api/v1/mills, 2026-07-29) — option text `${millNumber} - ${millName}`. */
-export const READONLY_ANCHOR_MILL = { millNumber: '7777', millName: 'CGT TEST MILL7' } as const;
+export const READONLY_ANCHOR_MILL = { millNumber: '7777', millName: 'CGT TEST MILL7' } as const
 
 /** Carbon Dropdown option text for a mill (mirrors Home's `millItemToString`). */
 export const millOptionText = (m: { millNumber: string; millName: string }): string =>
-  `${m.millNumber} - ${m.millName}`;
+  `${m.millNumber} - ${m.millName}`
 
 /** The Schedule 1 aggregate endpoint for a (mill, year) — GET read-back / PUT save / DELETE. */
 export const scheduleUrl = (millId: number, year: number): string =>
-  `/api/v1/schedule1?millId=${millId}&year=${year}`;
+  `/api/v1/schedule1?millId=${millId}&year=${year}`
 
 /**
  * Render-state / context-guard anchors (S20–S22), discovered 2026-07-30. Each is a REAL (mill, year)
@@ -61,12 +61,22 @@ export const RENDER_STATE_ANCHORS: Record<
     mill: { millNumber: '45', millName: 'GORMAN BROS. - DOWNIE STREET' },
     expectHttp: 409,
   },
-  // S21 — mill 16050 is active for 2016 and has NO Schedule 1 summary. Since defect #296 that is the
-  // legitimate unsaved state, not an error: GET returns 200 with an empty editable document and the
-  // summary is created by the first save (Schedule 2's shape). It previously returned 404, which the
-  // frontend rewrote into "No Schedule 1 exists for Mill 16050 …" — note the 16050 there: the client
-  // was interpolating the INTERNAL mill id into user-facing text while the tombstone beside it read
-  // mill 514. Both the 404 and that sentence are gone.
+  // S21 — a mill/year that is ACTIVE, has an ILCR_MILL_REPORT_STATUS row of 'D', and has NO Schedule 1
+  // summary. Since defect #296 that is the legitimate unsaved state, not an error: GET returns 200
+  // with an empty EDITABLE document, and the first save creates the summary (Schedule 2's shape). It
+  // previously returned 404, which the frontend rewrote into "No Schedule 1 exists for Mill 16050 …"
+  // — note the 16050: the client was interpolating the INTERNAL mill id into user-facing text while
+  // the tombstone beside it read mill 514. Both the 404 and that sentence are gone.
+  //
+  // ⚠ THIS ANCHOR IS WRONG AND MUST BE RE-GROUNDED BEFORE THE SCH1 SUITE IS RUN (#296 code review).
+  // 16050/2016 has NO report-status row at all — see `fixtures/sec/working-context-test-data.ts:16`
+  // ("s1-10:null, s11:null (no report-status row)") and `fixtures/sch11/schedule11-test-data.ts:179`.
+  // That makes it a 404 at MillContextService guard 1 (unknown mill/year) regardless of this fix, and
+  // the old 404 assertion passed for that reason rather than the one it claimed. It also has no track
+  // status, so `editable` would be false and the inputs the scenario asserts on never render.
+  // Needed instead: ACT + report-status 'D' + no category-1 summary, confirmed against the delivery
+  // DB. The precondition step asserts `expectHttp`, so this fails loudly and by name rather than as a
+  // UI timeout — but it WILL fail until the anchor is replaced.
   'no-schedule': {
     key: { millId: 16050, year: 2016 },
     mill: { millNumber: '514', millName: 'AAA MILLING' },
@@ -79,10 +89,10 @@ export const RENDER_STATE_ANCHORS: Record<
     mill: { millNumber: '987', millName: 'TURTLE DOVE' },
     expectHttp: 200,
   },
-};
+}
 
 /** The in-memory MillYearContext localStorage key (context/millYear/MillYearProvider.tsx). */
-export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
+export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context'
 
 /**
  * Check Status anchors that need an itemized Other-Costs row seeded first (S17/S18). The row is seeded
@@ -106,17 +116,17 @@ export const CHECK_STATUS_SEED_ANCHORS = {
     marker: 'E2E S18 seed',
     cost: null as number | null,
   },
-} as const;
+} as const
 
 /**
  * SUC-002, API-owned (AD-8): the whole-schedule delete confirmation (bundle key
  * `dataDeletedSuccesfullyInfoMsg`). Confirmed live 2026-07-30 (DELETE /api/v1/schedule1).
  */
-export const MSG_DELETED = 'Data deleted successfully';
+export const MSG_DELETED = 'Data deleted successfully'
 
 /** Client-side confirm-Modal chrome for delete (components/schedule1/index.tsx, verbatim). */
-export const CONFIRM_DELETE_HEADING = 'Delete schedule';
-export const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you want to continue?';
+export const CONFIRM_DELETE_HEADING = 'Delete schedule'
+export const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you want to continue?'
 
 /**
  * S13 delete target — a dedicated, populated, editable Draft that ONLY the delete scenario touches.
@@ -125,13 +135,13 @@ export const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you 
  * (round-trip proven byte-identical 2026-07-30). Never share this (mill,year) with another scenario.
  * Found: GET .../schedule1?millId=25052&year=2016 → {trackStatus:"D", editable:true, 9 line items}.
  */
-export const DELETE_ANCHOR: ScheduleKey = { millId: 25052, year: 2016 };
+export const DELETE_ANCHOR: ScheduleKey = { millId: 25052, year: 2016 }
 
 /** Mill 25052 dropdown fields (GET /api/v1/mills, 2026-07-30). */
-export const DELETE_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const;
+export const DELETE_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const
 
 /** Subtotal Other Costs sub-page path (components/schedule1OtherCosts + Schedule1OtherCostsApi). */
-export const OTHER_COSTS_API = '/api/v1/schedule1/other-costs';
+export const OTHER_COSTS_API = '/api/v1/schedule1/other-costs'
 
 /**
  * S24 retry-save target — a dedicated, populated, editable Draft. The successful retry WRITES here, so
@@ -139,10 +149,10 @@ export const OTHER_COSTS_API = '/api/v1/schedule1/other-costs';
  * (scripts/sch1_db_restore.py restore — delete-then-reinsert). Never shared with another scenario.
  * Found: GET .../schedule1?millId=24050&year=2016 → {trackStatus:"D", editable:true, 9 line items}.
  */
-export const RETRY_ANCHOR: ScheduleKey = { millId: 24050, year: 2016 };
+export const RETRY_ANCHOR: ScheduleKey = { millId: 24050, year: 2016 }
 
 /** Mill 24050 dropdown fields (GET /api/v1/mills, 2026-07-30). */
-export const RETRY_ANCHOR_MILL = { millNumber: '7777', millName: 'CGT TEST MILL7' } as const;
+export const RETRY_ANCHOR_MILL = { millNumber: '7777', millName: 'CGT TEST MILL7' } as const
 
 /**
  * Other Costs sub-page anchors (S09–S12), discovered 2026-07-30. Each mutating scenario OWNS a
@@ -178,7 +188,7 @@ export const OTHER_COSTS_ANCHORS = {
     mill: { millNumber: '987', millName: 'TURTLE DOVE' },
     marker: 'E2E inline edit',
   },
-} as const;
+} as const
 
 /**
  * S02 crown pre-fill target — a dedicated, populated, editable Draft whose Schedule 3 carries a Crown
@@ -203,23 +213,23 @@ export const OTHER_COSTS_ANCHORS = {
  *                                    and s3.ILCR_CATEGORY_ID = '3'
  *    where s1.ILCR_CATEGORY_ID = '1';
  */
-export const CROWN_PREFILL_ANCHOR: ScheduleKey = { millId: 22051, year: 2017 };
+export const CROWN_PREFILL_ANCHOR: ScheduleKey = { millId: 22051, year: 2017 }
 
 /** Mill 22051 dropdown fields (GET /api/v1/mills, 2026-08-07). */
 export const CROWN_PREFILL_ANCHOR_MILL = {
   millNumber: '20172',
   millName: 'COVEY CUSTOM CUT',
-} as const;
+} as const
 
 /** The Crown Timber (Sch 3, item 119) volume this anchor's Schedule 3 carries — the pre-filled value. */
-export const CROWN_PREFILL_VOLUME = 325411;
+export const CROWN_PREFILL_VOLUME = 325411
 
 /**
  * WRN-001, API-owned (AD-8): the crown pre-fill advisory carried on the Schedule 1 GET `warnings`
  * (bundle key `crownVolumeSetForSchedule1`, backend/src/main/resources/messages.properties:138).
  */
 export const MSG_CROWN_PREFILL =
-  'The Crown Timber (Sch 3) volume has been set for volume fields. Please check and save schedule.';
+  'The Crown Timber (Sch 3) volume has been set for volume fields. Please check and save schedule.'
 
 /**
  * Clear-a-saved-amount target — a dedicated, populated, editable Draft owned solely by
@@ -231,10 +241,10 @@ export const MSG_CROWN_PREFILL =
  * Found (2026-08-07): GET .../schedule1?millId=25052&year=2017 → {trackStatus:"D", editable:true}.
  * (Mill 25052 year 2017 — a DIFFERENT key from the S13 delete anchor 25052/2016.)
  */
-export const CLEAR_AMOUNTS_ANCHOR: ScheduleKey = { millId: 25052, year: 2017 };
+export const CLEAR_AMOUNTS_ANCHOR: ScheduleKey = { millId: 25052, year: 2017 }
 
 /** Mill 25052 dropdown fields (GET /api/v1/mills, 2026-08-07). */
-export const CLEAR_AMOUNTS_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const;
+export const CLEAR_AMOUNTS_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const
 
 /**
  * Second clear-amounts target, owned solely by the `@discovered-bug` arm. The suite runs fullyParallel,
@@ -243,24 +253,24 @@ export const CLEAR_AMOUNTS_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-
  * cross-scenario value bleed and failed restores). Found: GET .../schedule1?millId=25052&year=2015 →
  * {trackStatus:"D", editable:true}. (Mill 25052 year 2015 — distinct from 25052/2017 and 25052/2016.)
  */
-export const CLEAR_GUARDED_ANCHOR: ScheduleKey = { millId: 25052, year: 2015 };
+export const CLEAR_GUARDED_ANCHOR: ScheduleKey = { millId: 25052, year: 2015 }
 
 /** Mill 25052 dropdown fields — same mill as the other 25052 anchors, different reporting year. */
-export const CLEAR_GUARDED_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const;
+export const CLEAR_GUARDED_ANCHOR_MILL = { millNumber: '9173', millName: 'MRICE-TEST' } as const
 
 /**
  * SUC-001, API-owned (AD-8): the exact success text the backend returns in `message.text` and the UI
  * echoes verbatim. Asserted exactly; never re-typed by the app. Confirmed live (key
  * `dataSavedSuccesfullyInfoMsg`).
  */
-export const MSG_SAVED = 'Data saved successfully';
+export const MSG_SAVED = 'Data saved successfully'
 
 /**
  * SUC-003, API-owned (AD-8): the Check Status "all requirements met" text (bundle key
  * `scheduleRequirementsMetMsg`). Rendered as the success NotificationColumn subtitle
  * (title "Requirements met"). Confirmed live 2026-07-30 (POST /api/v1/schedule1/check-status).
  */
-export const MSG_CHECK_STATUS_MET = 'All requirements for this schedule have been met';
+export const MSG_CHECK_STATUS_MET = 'All requirements for this schedule have been met'
 
 /**
  * Read-only Check Status anchors (S14–S16), discovered 2026-07-30 against the seeded delivery DB via
@@ -302,7 +312,7 @@ export const CHECK_STATUS_ANCHORS: Record<
     key: { millId: 22050, year: 2016 },
     mill: { millNumber: '20171', millName: 'MILES MILLING' },
   },
-};
+}
 
 /**
  * Build a Schedule 1 PUT body that blanks every writable field — used to restore a mutated (mill,year)
@@ -337,5 +347,5 @@ export function emptyScheduleRequest(revisionCount: number): Record<string, unkn
     otherCostsVolume: null,
     forestMgmtAdminVolume: null,
     subtotalCompanyLoggingVolume: null,
-  };
+  }
 }

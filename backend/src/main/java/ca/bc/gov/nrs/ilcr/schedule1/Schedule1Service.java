@@ -114,10 +114,13 @@ public class Schedule1Service {
   @Transactional
   public Schedule1Response saveSchedule1(
       long millId, int year, Schedule1Request request, boolean callerMayEdit, String user) {
-    // -1 for a null token is defense-in-depth only: the DTO's @NotNull makes null unreachable over
-    // HTTP, and the client sends 0 for a new/unsaved schedule (Schedule1Request buildRequest's
-    // `doc.revisionCount ?? 0`), which matches a freshly-created summary's revision 0.
-    int expectedRevision = request.revisionCount() == null ? -1 : request.revisionCount();
+    // 0, not -1, and the value matters now that this path can CREATE: a freshly-MERGEd summary is
+    // inserted at REVISION_COUNT 0, so -1 could never match it and a null token would 409 on a row
+    // created microseconds earlier in the same transaction. The DTO's @NotNull makes null
+    // unreachable
+    // over HTTP (the client sends `doc.revisionCount ?? 0`), so this is defense-in-depth for direct
+    // callers only — but it now matches Schedule 2 exactly (#296 code review), which is the point.
+    int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
     try {
       // Create-on-absent runs INSIDE the try so a persistence failure on the create path
       // (MERGE / sequence fetch) becomes ScheduleNotSaved (500) exactly like the update path,
@@ -160,7 +163,12 @@ public class Schedule1Service {
    */
   @Transactional
   public boolean deleteSchedule1(long millId, int year) {
-    requireDraft(millId, year);
+    // The LOCKING gate, as Schedule 2's delete uses (#296 code review): without it a delete racing
+    // a
+    // concurrent first-save reads no summary under READ COMMITTED, answers "nothing was deleted",
+    // and
+    // the first-save then commits the very row the caller asked to remove.
+    requireDraftForUpdate(millId, year);
     Optional<SummaryRow> summary = repository.findSummary(millId, year, SCHEDULE_1_CATEGORY);
     if (summary.isEmpty()) {
       return false; // idempotent — nothing to remove, and the caller must not claim otherwise
