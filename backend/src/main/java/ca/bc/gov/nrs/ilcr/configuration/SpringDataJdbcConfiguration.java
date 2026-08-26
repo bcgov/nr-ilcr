@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.configuration;
 
-import ca.bc.gov.nrs.ilcr.assignment.MillUserProfileXrefRepository;
+import ca.bc.gov.nrs.ilcr.assignment.IlcrUserRepository;
+import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository;
@@ -50,6 +51,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       Schedule10Repository.class,
       Schedule11Repository.class,
       MillContextRepository.class,
-      MillUserProfileXrefRepository.class
+      IlcrUserRepository.class,
+      MillUserXrefRepository.class
     })
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {}

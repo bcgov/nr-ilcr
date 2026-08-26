@@ -28,5 +28,11 @@ public enum Action {
    * Content surface. ADMIN-only: a SUBMITTER hitting the save API is denied 403. The read for Home
    * rendering is a separate, authenticated (non-admin) endpoint.
    */
-  EDIT_HOME_CONTENT
+  EDIT_HOME_CONTENT,
+  /**
+   * Maintain licensee accounts and their mill assignments (UC-USR-001/002) — the Administration ▸
+   * Users surface. ADMIN-only: a SUBMITTER hitting the assignment or account APIs is denied 403,
+   * because these endpoints decide which mills a submitter may report on.
+   */
+  MAINTAIN_USERS
 }

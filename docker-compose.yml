@@ -16,6 +16,13 @@ services:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-}
+      # NR User Lookup (DL-27). Off by default; the credential is a Vault secret supplied through
+      # an ignored local .env, never a literal here.
+      ILCR_USER_LOOKUP_ENABLED: ${ILCR_USER_LOOKUP_ENABLED:-false}
+      ILCR_USER_LOOKUP_BASE_URL: ${ILCR_USER_LOOKUP_BASE_URL:-}
+      ILCR_USER_LOOKUP_TOKEN_URL: ${ILCR_USER_LOOKUP_TOKEN_URL:-}
+      ILCR_USER_LOOKUP_CLIENT_ID: ${ILCR_USER_LOOKUP_CLIENT_ID:-}
+      ILCR_USER_LOOKUP_CLIENT_SECRET: ${ILCR_USER_LOOKUP_CLIENT_SECRET:-}
     image: *maven-image
     ports: ["8080:8080"]
     healthcheck:

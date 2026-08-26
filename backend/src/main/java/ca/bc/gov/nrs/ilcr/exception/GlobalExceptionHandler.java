@@ -65,9 +65,14 @@ public class GlobalExceptionHandler {
       log.debug("Business rule rejection [{}]: {}", ex.getStatus(), ex.getMessageKey());
     }
 
+    // The exception's own arguments, never a hardcoded null — see the BusinessException
+    // three-argument constructor for why a parameterized key must be resolved with them.
     String detail =
         messageSource.getMessage(
-            ex.getMessageKey(), null, ex.getMessageKey(), LocaleContextHolder.getLocale());
+            ex.getMessageKey(),
+            ex.getMessageArgs(),
+            ex.getMessageKey(),
+            LocaleContextHolder.getLocale());
 
     ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());
     problem.setTitle(ex.getStatus().getReasonPhrase());

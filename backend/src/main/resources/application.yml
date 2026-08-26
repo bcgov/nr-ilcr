@@ -87,6 +87,22 @@ ilcr:
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:false}
     validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}
+  # NR User Lookup API (DL-27) — the directory behind the assignment picker. Off by default and in
+  # every environment until the service account exists; the client credential is a per-environment
+  # Vault secret injected as env vars, never a value in source or in this file.
+  user-lookup:
+    enabled: ${ILCR_USER_LOOKUP_ENABLED:false}
+    base-url: ${ILCR_USER_LOOKUP_BASE_URL:}
+    token-url: ${ILCR_USER_LOOKUP_TOKEN_URL:}
+    client-id: ${ILCR_USER_LOOKUP_CLIENT_ID:}
+    client-secret: ${ILCR_USER_LOOKUP_CLIENT_SECRET:}
+    # Explicit ceilings on the app's only outbound HTTP dependency, which another ministry team
+    # owns. The read timeout is the load-bearing one: a directory that accepts the connection and
+    # then hangs would otherwise pin a servlet thread per picker keystroke until the pool is gone,
+    # taking the local assignments view down with it -- the exact coupling the 502 degradation
+    # exists to prevent. Sized for a directory search, not a report render.
+    connect-timeout: ${ILCR_USER_LOOKUP_CONNECT_TIMEOUT:5s}
+    read-timeout: ${ILCR_USER_LOOKUP_READ_TIMEOUT:10s}
   reporting:
     # Story 29.2 — the Jasper swap-file virtualizer that spills report page objects to disk under a
     # large or combined ("all schedules") fill, so the section object graph never pins the JVM heap.

@@ -34,7 +34,8 @@ public class SchedulePermissions {
             Action.EDIT_SCHEDULE,
             Action.MAINTAIN_CODE_TABLES,
             Action.OPEN_REPORTING_YEAR,
-            Action.EDIT_HOME_CONTENT));
+            Action.EDIT_HOME_CONTENT,
+            Action.MAINTAIN_USERS));
     ROLE_ACTIONS.put(Role.SUBMITTER, EnumSet.of(Action.VIEW_SCHEDULE, Action.EDIT_SCHEDULE));
   }
 
