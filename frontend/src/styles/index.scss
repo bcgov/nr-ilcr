@@ -75,6 +75,7 @@ body {
   .schedule-4__subpage-title,
   .schedule-8__rate-heading,
   .code-tables__heading,
+  .mill-associations__heading,
   .#{$bcgov-prefix}--data-table-header__title {
     font-size: 1.25rem;
   }
@@ -107,6 +108,33 @@ body {
 
   .code-tables__heading {
     margin-bottom: 0.5rem;
+  }
+
+  // Users administration: two stacked panels (User Details, Associated Mills), each led by a
+  // .mill-associations__heading — the same section rhythm Table Maintenance uses above.
+  .mill-associations__section + .mill-associations__section {
+    margin-top: 2rem;
+  }
+
+  .mill-associations__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  // The directory provider + user-id controls share a row, as do the mill picker and its Add
+  // button. Bottom-aligned so the button sits on the control's baseline, not its label's.
+  .mill-associations__picker,
+  .mill-associations__add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  // The not-enabled / no-match notes belong to the picker but read as a full-width line under it.
+  .mill-associations__picker-note {
+    flex-basis: 100%;
+    font-size: 0.875rem;
   }
 
   // The Code List selector is already named by its .code-tables__heading; hide the ComboBox's own
