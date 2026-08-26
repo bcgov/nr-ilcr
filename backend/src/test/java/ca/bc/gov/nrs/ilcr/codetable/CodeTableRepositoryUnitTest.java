@@ -98,6 +98,11 @@ class CodeTableRepositoryUnitTest {
             new CodeTableEntry(
                 "", "New contractual item", LocalDate.of(2020, 1, 1), LocalDate.of(2030, 12, 31)),
             "admin"));
+    org.mockito.Mockito.verify(jdbc)
+        .queryForObject(
+            eq("SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL"),
+            any(SqlParameterSource.class),
+            eq(Integer.class));
   }
 
   @Test

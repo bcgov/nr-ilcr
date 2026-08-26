@@ -39,7 +39,7 @@ class CodeTableRegistryTest {
     CodeTableRegistry contractual = CodeTableRegistry.CONTRACTUAL_ITEM_CODE;
     assertTrue(contractual.contractual());
     assertNull(contractual.table()); // backed by the Schedule 9 cost-item list, not a *_CODE table
-    assertEquals(500, contractual.descriptionMaxLength());
+    assertEquals(120, contractual.descriptionMaxLength());
   }
 
   @Test

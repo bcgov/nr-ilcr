@@ -17,7 +17,7 @@ const TABLES = [
     key: 'CONTRACTUAL_ITEM_CODE',
     label: 'Contractual Item Codes',
     codeMaxLength: 10,
-    descriptionMaxLength: 500,
+    descriptionMaxLength: 120,
     contractual: true,
   },
 ]
@@ -279,6 +279,7 @@ describe('Table Maintenance (Story 24.3)', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Contractual Item Codes' }))
     expect(await screen.findByText('Existing contractual item')).toBeInTheDocument()
     expect(screen.getByLabelText('Code')).toBeDisabled()
+    expect(screen.getByLabelText('Description')).toHaveAttribute('maxlength', '120')
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
 
     await userEvent.type(screen.getByLabelText('Description'), 'New contractual item')

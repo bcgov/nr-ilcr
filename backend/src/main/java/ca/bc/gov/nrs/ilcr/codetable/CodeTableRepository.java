@@ -100,9 +100,7 @@ public class CodeTableRepository {
 
     Integer id =
         jdbc.queryForObject(
-            // The legacy ILCRReportCostItem mapping uses the shared report sequence, despite its
-            // entity-specific generator name.
-            "SELECT THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL FROM DUAL",
+            "SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL",
             new MapSqlParameterSource(),
             Integer.class);
     jdbc.update(

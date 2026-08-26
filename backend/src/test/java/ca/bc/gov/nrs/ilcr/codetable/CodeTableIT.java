@@ -14,7 +14,10 @@ import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -37,6 +40,8 @@ class CodeTableIT extends AbstractOracleIT {
       new CognitoGroupsJwtAuthenticationConverter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
+
+  @Autowired private NamedParameterJdbcTemplate jdbc;
 
   private RequestPostProcessor groups(String... groups) {
     return jwt()
@@ -86,6 +91,11 @@ class CodeTableIT extends AbstractOracleIT {
   @Test
   @DisplayName("admin adds a Contractual Item Code through the Schedule 9 cost-item path")
   void admin_addsContractualItem() throws Exception {
+    Integer sequenceValue =
+        jdbc.queryForObject(
+            "SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL",
+            new MapSqlParameterSource(),
+            Integer.class);
     String body =
         """
         {"code":"","description":"Integration contractual item",\
@@ -98,7 +108,8 @@ class CodeTableIT extends AbstractOracleIT {
                 .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome").value("INSERTED"))
-        .andExpect(jsonPath("$.entries[*].description", hasItem("Integration contractual item")));
+        .andExpect(jsonPath("$.entries[*].description", hasItem("Integration contractual item")))
+        .andExpect(jsonPath("$.entries[*].code", hasItem(String.valueOf(sequenceValue + 1))));
   }
 
   @Test

@@ -4,8 +4,9 @@ import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import org.springframework.http.HttpStatus;
 
 /**
- * Business failures for Home content editing (Story 24.2 / UC-CNT-001): a role's message record
- * missing at load/save (404, ERR-002) or a message exceeding the column cap (400). Carries a {@code
+ * Business failures for Home content editing (Story 24.2 / UC-CNT-001): a message exceeding the
+ * column cap (400). Missing role rows are represented as empty content on read and created by the
+ * administrator save, so partial legacy data remains repairable. Carries a {@code
  * messages.properties} key the {@code GlobalExceptionHandler} resolves (AD-8). Blank-editor
  * rejections use {@code FieldValuesRequiredException} (all blanks reported together, FLD-001).
  */
@@ -15,7 +16,7 @@ public class HomeContentException extends BusinessException {
     super(status, messageKey);
   }
 
-  /** A role's message record does not exist (S10). */
+  /** Retained for callers that need the legacy not-found error key; Home reads no longer use it. */
   public static HomeContentException contentNotFound() {
     return new HomeContentException(HttpStatus.NOT_FOUND, "homeContentNotFoundErrorMsg");
   }

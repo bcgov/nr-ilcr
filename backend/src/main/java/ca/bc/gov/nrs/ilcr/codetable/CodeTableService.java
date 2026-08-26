@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.codetable;
 import ca.bc.gov.nrs.ilcr.codetable.CodeTableRepository.UpsertResult;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableEntry;
 import ca.bc.gov.nrs.ilcr.codetable.dto.CodeTableSummary;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -102,7 +103,8 @@ public class CodeTableService {
     if (!StringUtils.hasText(entry.description())) {
       throw CodeTableException.validation("descriptionRequiredErrorMsg");
     }
-    if (entry.description().length() > table.descriptionMaxLength()) {
+    if (entry.description().getBytes(StandardCharsets.UTF_8).length
+        > table.descriptionMaxLength()) {
       throw CodeTableException.validation("codeTableDescriptionLengthErrorMsg");
     }
     if (entry.effectiveDate() == null) {

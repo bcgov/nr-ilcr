@@ -6,8 +6,6 @@ import ca.bc.gov.nrs.ilcr.homecontent.dto.HomeContentSaveRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -46,23 +44,18 @@ public class HomeContentService {
 
   /** All three role messages for the Content Editing page. */
   public List<HomeContentEntry> readAll() {
-    List<HomeContentEntry> entries = repository.findAll();
-    if (!entries.stream()
-        .map(HomeContentEntry::role)
-        .collect(Collectors.toSet())
-        .containsAll(roles())) {
-      throw HomeContentException.contentNotFound();
-    }
-    return entries;
+    return repository.findAll();
   }
 
   /** The message for one role — the Home render of the viewer's role. */
   public HomeContentEntry readForRole(String role) {
-    return repository.findByRole(role).orElseThrow(HomeContentException::contentNotFound);
-  }
-
-  private static Set<String> roles() {
-    return Set.of(ROLE_LICENSEE, ROLE_AUDITOR, ROLE_ADMIN);
+    return repository
+        .findByRole(role)
+        .orElseGet(
+            () -> {
+              log.warn("No Home content configured for role {}", role);
+              return new HomeContentEntry(role, "");
+            });
   }
 
   /**
@@ -98,8 +91,11 @@ public class HomeContentService {
       if (transformed.getBytes(StandardCharsets.UTF_8).length > MAX_MESSAGE_LENGTH) {
         throw HomeContentException.tooLong();
       }
-      if (repository.updateMessage(message.role(), transformed, user) == 0) {
-        throw HomeContentException.contentNotFound();
+      int affectedRows = repository.upsertMessage(message.role(), transformed, user);
+      if (affectedRows != 1) {
+        throw new IllegalStateException(
+            "Expected exactly one Home content row to be inserted or updated, but affected "
+                + affectedRows);
       }
     }
     log.info("Home content updated (3 role messages) by {}", user);

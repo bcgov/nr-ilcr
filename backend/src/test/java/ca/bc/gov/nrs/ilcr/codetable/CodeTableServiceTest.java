@@ -65,6 +65,51 @@ class CodeTableServiceTest {
   }
 
   @Test
+  void save_contractualItem_requiresExpiry() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "New item", JAN_2020, null),
+                    "alex.admin"));
+
+    assertEquals("expiryDateRequiredErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
+  }
+
+  @Test
+  void save_contractualItem_descriptionOverColumnCap_is400() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "x".repeat(121), JAN_2020, DEC_2030),
+                    "alex.admin"));
+
+    assertEquals("codeTableDescriptionLengthErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
+  }
+
+  @Test
+  void save_contractualItem_multibyteDescriptionOverByteCap_is400() {
+    CodeTableException ex =
+        assertThrows(
+            CodeTableException.class,
+            () ->
+                service.save(
+                    "CONTRACTUAL_ITEM_CODE",
+                    new CodeTableEntry("", "é".repeat(61), JAN_2020, DEC_2030),
+                    "alex.admin"));
+
+    assertEquals("codeTableDescriptionLengthErrorMsg", ex.getMessageKey());
+    verify(repository, never()).upsertContractualItem(any(), any());
+  }
+
+  @Test
   void save_unknownTable_is404_andNeverWrites() {
     CodeTableEntry entry = new CodeTableEntry("M3", "Cubic Metres", JAN_2020, DEC_2030);
     CodeTableException ex =

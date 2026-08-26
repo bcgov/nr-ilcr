@@ -95,6 +95,40 @@ describe('Content Editing (Story 24.2)', () => {
     expect(put).not.toHaveBeenCalled()
   })
 
+  test('a partial role response renders a repairable blank editor', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(ENDPOINT, () =>
+        HttpResponse.json([{ role: 'LICENSEE', messageText: '<p>Lic</p>' }]),
+      ),
+      http.put(ENDPOINT, async ({ request }) => {
+        put(await request.json())
+        return HttpResponse.json({
+          messageKey: 'dataSavedSuccesfullyInfoMsg',
+          message: 'Data saved successfully',
+          entries: SEED,
+        })
+      }),
+    )
+    render(<HomeContent />)
+
+    const auditor = await screen.findByLabelText('Auditor Welcome Message (no current audience)')
+    expect(auditor).toHaveValue('')
+    await userEvent.type(auditor, '<p>Aud</p>')
+    await userEvent.type(
+      await screen.findByLabelText('Administrator Welcome Message'),
+      '<p>Adm</p>',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith({
+      licensee: '<p>Lic</p>',
+      auditor: '<p>Aud</p>',
+      administrator: '<p>Adm</p>',
+    })
+  })
+
   test('an edited message is sent on save', async () => {
     const put = vi.fn()
     server.use(

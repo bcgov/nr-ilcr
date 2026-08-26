@@ -316,6 +316,18 @@ describe('Home — select mill and year (Story 1.3)', () => {
     expect(screen.queryByText('alert(1)')).not.toBeInTheDocument()
   })
 
+  test('missing role welcome message is treated as empty content, not a page error', async () => {
+    server.use(
+      ...listHandlers(),
+      http.get(MINE, () => HttpResponse.json({ role: 'LICENSEE', messageText: '' })),
+    )
+    render(<Home />)
+
+    await screen.findByRole('combobox', { name: /Mill/i })
+    expect(screen.queryByText('Unable to load Home message')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unable to load')).not.toBeInTheDocument()
+  })
+
   test('list-load failure renders the problem detail in an error notification', async () => {
     server.use(
       http.get(
