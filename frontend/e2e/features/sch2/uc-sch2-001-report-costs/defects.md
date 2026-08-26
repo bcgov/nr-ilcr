@@ -23,9 +23,14 @@ null-propagation and the delete contract. Both now sit in *Verified — not a de
 figures, **VER-2** idempotent delete) so the Divergence register lists only live differences.
 
 **Triaged 2026-08-14.** BUG-1 → [#292](https://github.com/bcgov/nr-ilcr/issues/292), DIV-1 →
-[#291](https://github.com/bcgov/nr-ilcr/issues/291), GAP-3 → [#297](https://github.com/bcgov/nr-ilcr/issues/297);
+[#291](https://github.com/bcgov/nr-ilcr/issues/291), GAP-3 → [#298](https://github.com/bcgov/nr-ilcr/issues/298);
 all three sit with the dev, and QA confirms and closes each status line once fixed. No application source
 was changed while authoring this suite.
+
+**Correction 2026-08-26.** This line pointed GAP-3 at **#297**, a duplicate raised twelve minutes before
+#298 and since **closed**. The live ticket is [#298](https://github.com/bcgov/nr-ilcr/issues/298) — the
+number GAP-3's own entry already carried — and the link above is corrected to it. **All three triaged
+items are now fixed and closed:** BUG-1 by nr-ilcr #292, DIV-1 by #291, GAP-3 by #298 (2026-08-26).
 
 ---
 
@@ -192,11 +197,33 @@ at-rest state.
     territory (3.3), not this verification story (3.4); and this suite changes no files outside
     `frontend/e2e/`. Two cases, ~10 lines, beside the existing 11.
   - **Ticket:** [bcgov/nr-ilcr#298](https://github.com/bcgov/nr-ilcr/issues/298) — *"[BUGFIX]: Schedule 2:
-    add unit tests for the two load/delete error fallback messages."*
-  - **Status:** OPEN — with the dev. `deferred` in coverage.md; flips to CLOSED when the two Vitest cases
-    land.
-  - **Test:** none today. The sibling *save* fallback (ERR-003) **is** covered end-to-end by
-    `save-error.feature` `@p1 @S12`, which is why only these two remain.
+    add unit tests for the two load/delete error fallback messages."* (#297 is a closed duplicate of it —
+    see the Correction under the headline.)
+  - **Status:** **CLOSED 2026-08-26** — both cases landed in `Schedule2.test.tsx` on nr-ilcr
+    `fix/bugfix-298-schedule2-error-fallback-tests`, and coverage.md's `deferred` row flipped with them.
+    Five Vitest cases, not two: the ticket's single "detail-less error" is three distinct shapes on the
+    wire, so the load case is a `test.each` over all three (dropped connection → no `response` property
+    at all; empty-bodied 500 → `response.data` is `''`; gateway problem+json → every field but `detail`)
+    and the delete case over the first two. Two line numbers in this entry were **stale**: the sites are
+    `index.tsx:60` and `:162`, not `:56`/`:171` — the delete fallback moved when #292 restructured
+    `handleDelete` around the delete→reload lock. The "11 tests" count was 25 by the time the fix was
+    written (#291 and #292 added cases in between); the claim it supported — no match for `Unable to
+    load` / `Unable to delete` anywhere in the suite — was re-verified and held.
+  - **One correction to this entry's own prescription:** "reject the mocked axios call" describes a
+    pattern this file does not use. `Schedule2.test.tsx` mocks at the **HTTP boundary** with MSW; its only
+    `vi.mock` is TanStack Router. Stubbing axios would have bypassed the `apiService` interceptors that
+    shape the very error object `extractDetail` reads. The cases use MSW, matching this suite's sibling
+    unit files and `Schedule6.test.tsx`, which #332 names as the pattern to copy.
+  - **Test:** `Schedule2.test.tsx` — *"a load failure carrying no detail falls back to the generic load
+    message (AC7, defect #298)"* ×3 and *"a DELETE failure carrying no detail falls back to the generic
+    delete message and leaves the record intact (AC5, defect #298)"* ×2. Both **mutation-proved**: they
+    fail when the fallback is emptied, and the load case fails even when only its full stop is dropped —
+    the trap that mattered here, because the error panel's *title* is the same words without the period
+    (`index.tsx:248`), so a `findByText(/unable to load/i)` would have matched the title and passed over a
+    deleted branch. The assertion is scoped to `.cds--inline-notification__subtitle`. The sibling *save*
+    fallback (ERR-003) is covered end-to-end by `save-error.feature` `@p1 @S12`; Schedule 2's remaining
+    uncovered fallback, `Unable to check status.` (`index.tsx:216`), belongs to
+    [#332](https://github.com/bcgov/nr-ilcr/issues/332), not here.
 
 - **GAP-4 — The validation-error state is not swept by axe here, deliberately.**
   - **What's missing:** Schedule 2's accessibility sweep covers four renders (editable-and-populated,

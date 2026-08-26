@@ -107,6 +107,41 @@ const problemBody = (status: number, detail: string) =>
     headers: { 'Content-Type': 'application/problem+json' },
   })
 
+// The ways a failure reaches `extractDetail` with NO `ProblemDetail.detail`, which is the only
+// condition under which the page's own fallback strings are reachable at all
+// (`utils/error.ts` returns `response?.data?.detail` or `undefined`). Deliberately more than one
+// shape, because they are not the same shape on the wire and they fail the guard at different
+// points: a dropped connection has no `response` property, so `'response' in error` is false; an
+// empty-bodied 500 HAS a response whose `data` is `''`; and a gateway's problem+json can carry
+// every field except `detail`. All three must land on the same fallback (defect #298). The two
+// helpers above cannot express any of them — both REQUIRE a detail — which is part of why these
+// branches went unexercised through 25 tests.
+const detailLessFailures: [string, () => Response][] = [
+  ['a dropped connection', () => HttpResponse.error()],
+  ['an empty-bodied 500', () => new HttpResponse(null, { status: 500 })],
+  [
+    'a gateway problem+json with no detail key',
+    () =>
+      new HttpResponse(JSON.stringify({ title: 'Bad Gateway' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+  ],
+]
+
+// Delete exercises the first two shapes only: once the load case has pinned `extractDetail`'s guard
+// against all three, the gateway body adds no distinct path here — and each delete case costs a
+// confirm-modal round-trip.
+const detailLessDeleteFailures = detailLessFailures.slice(0, 2)
+
+// The load-error panel's SUBTITLE node, specifically (the load-error state renders exactly one
+// notification, so the first match is the panel's). The panel's `title` is
+// `Unable to load Schedule 2` and its subtitle is the fallback `Unable to load Schedule 2.` —
+// the same words differing only by a full stop (index.tsx:248) — so `findByText(/unable to load/i)`
+// matches the TITLE and would pass with `mapLoadError`'s fallback deleted. Scope to the node.
+const notificationSubtitle = () =>
+  document.querySelector('.cds--inline-notification__subtitle')?.textContent
+
 describe('Schedule2 page', () => {
   test('editable:true renders editable inputs for 25/26 + comments; derived blocks read-only (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
@@ -711,6 +746,44 @@ describe('Schedule2 page', () => {
     expect(deleteCount).toBe(1)
   })
 
+  test.each(detailLessDeleteFailures)(
+    'a DELETE failure carrying no detail falls back to the generic delete message and leaves the record intact — %s (AC5, defect #298)',
+    async (_shape, respond) => {
+      // Distinct from the test above: there the DELETE SUCCEEDED and the reload failed (the
+      // `Deleted, but…` string). Here the DELETE itself fails, which is the other fallback entirely
+      // — and the record therefore still exists, so every post-delete consequence must NOT happen.
+      let getCount = 0
+      server.use(
+        http.get(URL, () => {
+          getCount += 1
+          return HttpResponse.json(schedule2Doc)
+        }),
+        http.delete(URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      await screen.findByLabelText('Purchased Log Cost cost')
+      expect(getCount).toBe(1)
+      await user.click(actionBarButtons(/delete/i, 1)[0]!)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+      expect(await screen.findByText('Unable to delete Schedule 2.')).toBeInTheDocument()
+      // `onSuccess` never ran, so the delete→reload chain never started: still the initial GET only.
+      expect(getCount).toBe(1)
+      // Nothing was deleted, so Delete must still be OFFERED — the inverse of defect #292's
+      // post-delete gate, which greys it out only once the record is actually gone. This also
+      // proves the in-flight lock released on the error path; a leaked lock leaves every action
+      // dead until reload.
+      await waitFor(() => expect(actionBarButtons(/delete/i, 1)[0]).toBeEnabled())
+      screen.getAllByRole('button', { name: /^save$/i }).forEach((b) => expect(b).toBeEnabled())
+      // Entered values survive a server-side failure so the action can be retried, not retyped.
+      expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('50,000')
+      expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    },
+  )
+
   test('a never-saved schedule issues NO DELETE request, not merely a disabled button (defect #292)', async () => {
     // The gate has to hold at the request level, the way Save's does (`putCalled === false` above):
     // `disabled` is presentation, and `handleDelete` is what actually must refuse.
@@ -780,6 +853,22 @@ describe('Schedule2 page', () => {
     expect(await screen.findByText(detail)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
+
+  test.each(detailLessFailures)(
+    'a load failure carrying no detail falls back to the generic load message — %s (AC7, defect #298)',
+    async (_shape, respond) => {
+      // The test above proves the verbatim half of this branch; this proves the other half. Without
+      // the fallback the page renders an error panel with an EMPTY subtitle — a red box that says
+      // nothing — in exactly the situations where the app is least healthy.
+      server.use(http.get(URL, respond))
+      render(<Schedule2 />)
+
+      await waitFor(() => expect(notificationSubtitle()).toBe('Unable to load Schedule 2.'))
+      // The load-error state, not a document rendered alongside an error.
+      expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Purchased Log Cost cost')).not.toBeInTheDocument()
+    },
+  )
 
   test('empty context shows verbatim ERR-001 and fires NO request', async () => {
     server.use(

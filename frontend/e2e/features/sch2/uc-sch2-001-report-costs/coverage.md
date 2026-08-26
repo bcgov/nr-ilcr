@@ -164,7 +164,7 @@ recorded rather than silently dropped:
 | *(new)* | `Please correct the highlighted fields before checking status.` | client gate, `index.tsx:187` | `validation.feature` `@p2 @S16` | `covered` |
 | *(new)* | `Entered cost is invalid.` | `validation.ts` integer guard | `validation.feature` `@p2 @S13` | `covered` |
 | *(new)* | `Entered volume entry is invalid.` | `validation.ts` NaN guard | `validation.feature` `@p2 @S14` | `covered` |
-| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail | — | `deferred` — GAP-3 (belongs in Vitest, not E2E; no unit coverage exists today) |
+| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail, `index.tsx:60` / `:162` | `Schedule2.test.tsx` — *"a load failure carrying no detail…"* ×3, *"a DELETE failure carrying no detail…"* ×2 | `covered (Vitest)` — GAP-3 closed by [#298](https://github.com/bcgov/nr-ilcr/issues/298), 2026-08-26. Deliberately unit, not E2E: pure client-side branches, and Vitest gates in CI where this suite does not |
 
 ## Controls (8 in the legacy Field Reference)
 
@@ -263,10 +263,12 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
   Status arms, persistence).
 - **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
   formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
-- **Overall: 16/16 slices covered**, plus every message-catalog row except the two `deferred` fallbacks
-  (GAP-3) and the `blocked` role item (GAP-1). Both remain above the 80% bar.
-- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-3/GAP-4
-  (`deferred`, documented) are the only non-covered items and none is P0/P1-critical.
+- **Overall: 16/16 slices covered**, plus every message-catalog row except the `blocked` role item
+  (GAP-1) — **the two GAP-3 fallbacks are no longer `deferred`**: they were covered in Vitest by
+  [#298](https://github.com/bcgov/nr-ilcr/issues/298) on 2026-08-26, which is where they belong (Vitest
+  gates in CI; this data-backed suite is a manual gate). Above the 80% bar either way.
+- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-4 (`deferred`,
+  documented) are the only non-covered items and neither is P0/P1-critical.
 
 ## Accessibility (NFR1 / Story 3.4 AC2)
 
