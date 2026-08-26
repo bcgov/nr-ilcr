@@ -515,6 +515,44 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
   })
 
+  test('a sub-page on a never-saved schedule shows ALT-001 and does not navigate (#296)', async () => {
+    // Schedule 3 had NO save-required gate on its sub-pages at all — before defect #296 the parent
+    // page itself 404'd when unsaved, so the case could not arise. It can now: the GET serves an
+    // empty editable document while both sub-page controllers still require a summary
+    // (validateScheduleViewable, kept deliberately by #296 D1), so without this gate the click lands
+    // on a 404 dead-end instead of the legacy message.
+    const { revisionCount, ...unsavedDoc } = schedule3Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    mockNavigate.mockClear()
+    await user.click(screen.getByRole('button', { name: /^Subtotal Other Costs \(\d+\):$/ }))
+
+    // Legacy ALT-001, verbatim (the same string Schedule 1 uses) — and no navigation.
+    expect(
+      await screen.findByText('The schedule has to be saved before opening other costs'),
+    ).toBeInTheDocument()
+    expect(mockNavigate).not.toHaveBeenCalled()
+
+    // The same gate covers the second sub-page.
+    await user.click(screen.getByRole('button', { name: /^Included Unacceptable Costs \(\d+\):$/ }))
+    expect(mockNavigate).not.toHaveBeenCalled()
+
+    // It is a passive modal, so dismissing it must return the user to the schedule rather than
+    // leaving the page blocked behind it.
+    const blocked = screen.getByRole('dialog', { name: 'Save required' })
+    await user.click(within(blocked).getByRole('button', { name: /close/i }))
+    await waitFor(() =>
+      expect(
+        screen.queryByText('The schedule has to be saved before opening other costs'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toBeInTheDocument()
+  })
+
   test('a never-saved schedule issues NO DELETE request even if the confirm is reached (#296)', async () => {
     // Asked for by the PR #361 review (paulushcgcj, seconded by SScholefield), and it has to target
     // `handleDelete` specifically: on this page the Delete BUTTON only opens the modal

@@ -377,6 +377,39 @@ describe('Schedule1 editable page', () => {
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
   })
 
+  test('Other Costs on a never-saved schedule shows ALT-001 and does not navigate (#296)', async () => {
+    // The gate this replaced tested `!data`, which was only ever falsy while the GET 404'd on an
+    // unsaved schedule. Defect #296 removed that 404, so `data` is now truthy here and the gate has
+    // to test SAVED instead — otherwise the click reaches a sub-page whose controller still requires
+    // a summary (validateScheduleViewable, kept deliberately) and 404s. This is that gate.
+    const { revisionCount, ...unsavedDoc } = schedule1Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule1 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('Standing Tree to Loaded Truck')
+    mockNavigate.mockClear()
+    await user.click(screen.getByRole('button', { name: /^Subtotal Other Costs\(\d+\):$/ }))
+
+    // Legacy ALT-001, verbatim — and crucially NO navigation to the sub-page.
+    expect(
+      await screen.findByText('The schedule has to be saved before opening other costs'),
+    ).toBeInTheDocument()
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
+  test('a load error with no ProblemDetail detail falls back to the generic text (#296)', async () => {
+    // `mapLoadErrorDetail` is `detail || 'Unable to load Schedule 1.'` since #296 removed the
+    // client-composed sentence. The fallback arm had no coverage: every error fixture carried a
+    // detail. A body-less failure (502/504 from the gateway, a dropped connection) takes this path.
+    server.use(http.get(URL, () => new HttpResponse(null, { status: 502 })))
+    render(<Schedule1 />)
+
+    expect(await screen.findByText('Unable to load Schedule 1.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+  })
+
   test('a never-saved schedule issues NO DELETE request even if the confirm is reached (#296)', async () => {
     // The Schedule 3 twin of this was asked for by the PR #361 review; Schedule 1 had the guard but
     // no test either. It has to target `handleDelete`: the Delete BUTTON only opens the modal
