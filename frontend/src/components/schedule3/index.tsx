@@ -199,7 +199,13 @@ const Schedule3: FC = () => {
   }
 
   const handleDelete = () => {
-    if (saving) {
+    // Re-validate here, not just on the button's `disabled`: a disabled attribute is presentation,
+    // and any other route into this handler (a mis-wired bar, a programmatic open, the modal's
+    // submit) would otherwise fire a DELETE for a schedule that does not exist. Until defect #296
+    // the server made that harmless — it 404'd — but the DELETE is idempotent now and answers 200,
+    // so a stray call would show "Data deleted successfully" for a record that never existed.
+    // Schedule 2 has had this gate since #292; Schedules 1/3 relied on the 404 that is gone.
+    if (saving || !data || !isScheduleSaved(data)) {
       return
     }
     setConfirmDeleteOpen(false)
@@ -207,8 +213,9 @@ const Schedule3: FC = () => {
     setSaveWarnings([])
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 3.',
-      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
-      // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
+      // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
+      // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, which lands
+      // on the same state without the extra round trip. This per-page empty-state lives at the call
       // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
       onSuccess: (resp) => {
         const empty: ThreeColumnTotal = { harvest: null, pop: null, crown: null }

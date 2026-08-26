@@ -493,10 +493,10 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
 
   test('Delete is disabled when the served document carries no revisionCount (defect #292)', async () => {
     // Legacy gated Delete on isScheduleOpen() — a persisted summary — as well as on edit rights, and
-    // the shared bar now carries that rule via `scheduleSaved`. Unreachable through this page today
-    // (getSchedule3 404s when unsaved), so this pins the rule rather than a user-visible state: an
-    // absent `revisionCount` (Jackson `non_null` omits nulls) must NOT read as "saved". Schedule 2,
-    // whose GET does serve an empty editable document, is where the missing rule became defect #292.
+    // the shared bar now carries that rule via `scheduleSaved`. This used to be unreachable through
+    // this page ("getSchedule3 404s when unsaved") and pinned the rule rather than a user-visible
+    // state — defect #296 made it a REAL state, because the GET now serves the empty editable
+    // document. An absent `revisionCount` (Jackson `non_null` omits nulls) must NOT read as "saved".
     const { revisionCount, ...unsavedDoc } = schedule3Doc
     expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
     server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
@@ -513,6 +513,43 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     // Entry is untouched — only the destructive action is withheld.
     expect(bottom.getByRole('button', { name: 'Save' })).toBeEnabled()
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+  })
+
+  test('a never-saved schedule issues NO DELETE request even if the confirm is reached (#296)', async () => {
+    // Asked for by the PR #361 review (paulushcgcj, seconded by SScholefield), and it has to target
+    // `handleDelete` specifically: on this page the Delete BUTTON only opens the modal
+    // (`onDelete={() => setConfirmDeleteOpen(true)}`) — `handleDelete` is the modal's
+    // `onRequestSubmit`. So the guard is proven by reaching the confirm and asserting nothing goes to
+    // the network, not by finding the button unclickable.
+    //
+    // This matters more since #296 than before: the endpoint is idempotent now and answers 200, so a
+    // stray delete on a never-saved schedule would show "Data deleted successfully" for a record that
+    // never existed. Schedule 2 has had the equivalent guard since #292.
+    const { revisionCount, ...unsavedDoc } = schedule3Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    let deleteCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(unsavedDoc)),
+      http.delete(URL, () => {
+        deleteCalled = true
+        return HttpResponse.json({ message: { key: 'x', text: 'x' } })
+      }),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-3__actions')
+    expect(bars).toHaveLength(2)
+    // The button is disabled for a real user; click it anyway to reach the modal, which is exactly
+    // the "any other route into this handler" the guard exists for.
+    await user.click(within(bars[1]).getByRole('button', { name: /^delete$/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    // handleDelete refused: nothing reached the network, and no success banner was shown.
+    expect(deleteCalled).toBe(false)
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
   test('Delete confirms then shows the API message and empties the schedule (SUC-002)', async () => {

@@ -228,7 +228,9 @@ const Schedule1: FC = () => {
     clearBanners() // the deleted schedule's check result / save banner are stale
     remove<{ message?: { text?: string } }>({
       fallback: 'Unable to delete Schedule 1.',
-      // Delete removed the summary; a re-GET would 404, so reset to an empty schedule in place (no
+      // Delete removed the summary. A re-GET no longer 404s (defect #296) — it serves the 200 empty
+      // EDITABLE document — but this page still resets IN PLACE rather than re-fetching, landing on
+      // the same state without the extra round trip. Reset to an empty schedule in place (no
       // re-fetch) and show SUC-002 from the API message. This per-page empty-state lives at the call
       // site (Story 29.6): single-doc Schedules 1/3 reset in place; list pages re-seed from a reload.
       onSuccess: (resp) => {

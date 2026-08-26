@@ -61,25 +61,24 @@ export const RENDER_STATE_ANCHORS: Record<
     mill: { millNumber: '45', millName: 'GORMAN BROS. - DOWNIE STREET' },
     expectHttp: 409,
   },
-  // S21 — a mill/year that is ACTIVE, has an ILCR_MILL_REPORT_STATUS row of 'D', and has NO Schedule 1
-  // summary. Since defect #296 that is the legitimate unsaved state, not an error: GET returns 200
-  // with an empty EDITABLE document, and the first save creates the summary (Schedule 2's shape). It
-  // previously returned 404, which the frontend rewrote into "No Schedule 1 exists for Mill 16050 …"
-  // — note the 16050: the client was interpolating the INTERNAL mill id into user-facing text while
-  // the tombstone beside it read mill 514. Both the 404 and that sentence are gone.
+  // S21 — mill 727 / 2021: ACTIVE, ILCR_MILL_REPORT_STATUS 'D', and NO report summary of any
+  // category. Since defect #296 that is the legitimate unsaved state, not an error: GET returns 200
+  // with an empty EDITABLE document and the first save creates the summary (Schedule 2's shape).
   //
-  // ⚠ THIS ANCHOR IS WRONG AND MUST BE RE-GROUNDED BEFORE THE SCH1 SUITE IS RUN (#296 code review).
-  // 16050/2016 has NO report-status row at all — see `fixtures/sec/working-context-test-data.ts:16`
-  // ("s1-10:null, s11:null (no report-status row)") and `fixtures/sch11/schedule11-test-data.ts:179`.
-  // That makes it a 404 at MillContextService guard 1 (unknown mill/year) regardless of this fix, and
-  // the old 404 assertion passed for that reason rather than the one it claimed. It also has no track
-  // status, so `editable` would be false and the inputs the scenario asserts on never render.
-  // Needed instead: ACT + report-status 'D' + no category-1 summary, confirmed against the delivery
-  // DB. The precondition step asserts `expectHttp`, so this fails loudly and by name rather than as a
-  // UI timeout — but it WILL fail until the anchor is replaced.
+  // RE-GROUNDED 2026-08-26 against the delivery DB (PR #361 review). The previous anchor,
+  // 16050/2016, could never pass: it has ZERO `ILCR_MILL_REPORT_STATUS` rows (verified —
+  // `SELECT COUNT(*) ... WHERE ILCR_MILL_ID=16050 AND REPORT_YEAR=2016` returns 0), so
+  // MillContextService 404s at guard 1 regardless of this fix, and with no track status `editable`
+  // is false so the inputs this scenario asserts on never render. The old 404 assertion passed for
+  // that reason, not the one it claimed.
+  //
+  // 727/2021 is deliberate on two counts: it is the exact mill/year the #296 ticket reproduces
+  // against, and it has no category-3 summary either — which matters, because with a Schedule 3
+  // crown volume present the BR-03 pre-fill would populate the volume fields and "every Schedule 1
+  // amount is blank" would be false (decision D-A).
   'no-schedule': {
-    key: { millId: 16050, year: 2016 },
-    mill: { millNumber: '514', millName: 'AAA MILLING' },
+    key: { millId: 17052, year: 2021 },
+    mill: { millNumber: '727', millName: 'Updated Mill E2E' },
     expectHttp: 200,
   },
   // S22 — mill 12050 / 2016 track is Submitted ("S") → GET 200 but editable:false; the page renders
