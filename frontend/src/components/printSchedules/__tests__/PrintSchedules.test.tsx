@@ -53,10 +53,11 @@ describe('PrintSchedules', () => {
     expect(screen.getByRole('checkbox', { name: 'Schedule 11' })).toBeEnabled()
     // S06 default: Schedule Information is pre-checked.
     expect(screen.getByRole('checkbox', { name: 'Schedule information' })).toBeChecked()
-    // Schedule 1, 2, and 3 are now enabled and available.
+    // Schedule 1 through 4 are enabled and available.
     expect(screen.getByRole('checkbox', { name: 'Schedule 1' })).toBeEnabled()
     expect(screen.getByRole('checkbox', { name: 'Schedule 2' })).toBeEnabled()
     expect(screen.getByRole('checkbox', { name: 'Schedule 3' })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 4' })).toBeEnabled()
     expect(
       screen.getByRole('checkbox', { name: 'Mill information report (coming soon)' }),
     ).toBeDisabled()
@@ -72,14 +73,16 @@ describe('PrintSchedules', () => {
       'Schedule 1',
       'Schedule 2',
       'Schedule 3',
+      'Schedule 4',
       'Schedule 5',
       'Schedule 7B',
+      'Schedule 8',
       'Schedule 9',
       'Schedule 11',
     ]) {
       expect(screen.getByRole('checkbox', { name: label })).toBeChecked()
     }
-    expect(screen.getByRole('checkbox', { name: 'Schedule 8 (coming soon)' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Schedule 4' })).toBeChecked()
   })
 
   it('posts the selection and downloads the PDF on success', async () => {

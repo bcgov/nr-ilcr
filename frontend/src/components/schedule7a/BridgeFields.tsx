@@ -131,21 +131,28 @@ const BridgeFields: FC<Props> = ({
   const code = (field: CodeField) => {
     const spec = codeSpec(field)
     const items = codeLists[spec.list] as readonly BridgeCodeOption[]
+    const selected = items.find((item) => item.code === form[field]) ?? null
     return (
       <Dropdown<BridgeCodeOption>
         id={`${idPrefix}-${field}`}
         titleText={spec.label}
         label="Select"
         size="sm"
+        // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
+        // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
+        // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the
+        // control itself (Dropdown.js:275), so the hover text needs nothing from us. Passing `title`
+        // made it worse: Carbon spreads unknown props onto the WRAPPER, and the menu is a descendant of
+        // that wrapper, so the selected option's tooltip floated over the open list — the one place the
+        // whole description is readable. The other reading is the open menu, which the app already wraps
+        // app-wide (`styles/_overrides.scss`, added for the shared code selectors).
         items={items as BridgeCodeOption[]}
         itemToString={(item) => item?.description ?? ''}
         // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
         // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
         // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
         // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-        selectedItem={
-          (items.find((item) => item.code === form[field]) ?? null) as BridgeCodeOption | undefined
-        }
+        selectedItem={selected as BridgeCodeOption | undefined}
         disabled={disabled}
         invalid={Boolean(errors[field])}
         invalidText={errors[field]}
