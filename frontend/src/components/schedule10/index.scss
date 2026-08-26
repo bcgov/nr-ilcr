@@ -1,4 +1,5 @@
 @use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
 
 // Layout for the Schedule 10 page: a page-summary list with the page editor directly below it, then
 // a road list with the road editor below that. Shaped to the sibling Schedule 8 page — actions
@@ -90,12 +91,26 @@
 }
 
 // Match the Carbon input label (.cds--label) so a read-only field's label reads the same as the
-// editable labels beside it.
+// editable labels beside it. Taken from the `label-01` TOKEN rather than transcribed: the earlier
+// hand-copy carried four of the token's five properties and dropped `letter-spacing: 0.32px`, which
+// is the whole of #366 — Road Group is the only field in the Add/Edit Page panel without a Carbon
+// control, so its label sat 3.2px (4.7%) tighter than the six beside it and read as a different
+// face. A transcribed token cannot drift-check itself; Schedule 6 (schedule6/index.scss:46) already
+// took it from the token, and this follows that precedent.
+//
+// `line-height` restates Carbon, which also overrides the token (16px either way at 12px, pinned so
+// the two cannot drift apart if the token moves).
+//
+// The COLOUR is deliberately NOT Carbon's own `$text-secondary`. `styles/_overrides.scss` repaints
+// labels app-wide to primary through `label.cds--label, legend.cds--label`, and that selector is
+// ELEMENT-qualified: it reaches the six real <label>s in this panel and cannot reach this <span>.
+// Primary is what makes them agree — being faithful to Carbon here would introduce a new mismatch.
 .schedule-10__field-label {
+  @include type-style('label-01');
+
   display: block;
   color: var(--cds-text-primary);
-  font-size: 0.75rem;
-  line-height: 1.33333;
+  line-height: 1rem;
   margin-block-end: $spacing-03;
 }
 
