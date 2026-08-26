@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Button,
   Column,
@@ -84,7 +84,11 @@ const MillAssociations: FC = () => {
   const loadSeqRef = useRef(0)
   const millsSeqRef = useRef(0)
 
-  const loadMills = () => {
+  // Memoised with no dependencies because it genuinely has none: everything it touches is stable
+  // across renders (a ref, the setters, the module-level client). That keeps its identity constant,
+  // so the mount effect below can declare it honestly instead of relying on an empty list — and a
+  // future edit that closes over real state breaks the dependency list rather than going stale.
+  const loadMills = useCallback(() => {
     const seq = ++millsSeqRef.current
     api()
       .get<MillSummary[]>('/v1/mills')
@@ -94,12 +98,12 @@ const MillAssociations: FC = () => {
       .catch((failure: unknown) => {
         if (seq === millsSeqRef.current) setError(extractDetail(failure) || MILLS_FAILED)
       })
-  }
+  }, [])
 
-  // Mount-time load; onSelectUser retries it if this one failed.
+  // Runs once, because `loadMills` is stable; onSelectUser retries it if this one failed.
   useEffect(() => {
     loadMills()
-  }, [])
+  }, [loadMills])
 
   const clearNotifications = () => {
     setMessage(null)
