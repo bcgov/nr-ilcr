@@ -66,48 +66,72 @@ const MillAssociations: FC = () => {
   const [message, setMessage] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The picker's own channel: it clears this on a later successful search, and that clear must not
+  // be able to erase a standing write failure — ERR-002's "listed below" instruction in particular
+  // has to survive the administrator typing their next search (AC5, AC6).
+  const [lookupError, setLookupError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   // Mirrors the selected user for the async guards: a list that resolves after the administrator has
   // moved to another user must not repaint the now-current one's assignments.
   const selectedGuidRef = useRef<string | null>(null)
+  // Synchronous write lock: two clicks in one event burst both read the same render's `busy`, so
+  // state alone cannot close the double-submit window (the second PATCH would carry an already-spent
+  // revisionCount and answer a spurious 409).
+  const busyRef = useRef(false)
+  // Sequenced like the picker's searches: guid equality alone would let an older in-flight list for
+  // the SAME user land after a post-write re-read and repaint pre-write rows.
+  const loadSeqRef = useRef(0)
+  const millsSeqRef = useRef(0)
 
-  useEffect(() => {
-    let active = true
+  const loadMills = () => {
+    const seq = ++millsSeqRef.current
     api()
       .get<MillSummary[]>('/v1/mills')
       .then((response) => {
-        if (active) setMills(response.data)
+        if (seq === millsSeqRef.current) setMills(response.data)
       })
-      .catch((error: unknown) => {
-        if (active) setError(extractDetail(error) || MILLS_FAILED)
+      .catch((failure: unknown) => {
+        if (seq === millsSeqRef.current) setError(extractDetail(failure) || MILLS_FAILED)
       })
-    return () => {
-      active = false
-    }
+  }
+
+  // Mount-time load; onSelectUser retries it if this one failed.
+  useEffect(() => {
+    loadMills()
   }, [])
 
   const clearNotifications = () => {
     setMessage(null)
     setWarning(null)
     setError(null)
+    setLookupError(null)
   }
 
   /**
    * `includeEnded=true` is not optional: the default hides every ended row, and the Activation /
    * Deactivation Date columns and the per-row Activate control exist precisely for those rows.
    */
-  const loadAssignments = (userGuid: string) =>
-    api()
+  const loadAssignments = (userGuid: string) => {
+    const seq = ++loadSeqRef.current
+    return api()
       .get<MillSubmitter[]>(`/v1/submitters/${userGuid}/mills`, { params: { includeEnded: true } })
       .then((response) => {
-        if (selectedGuidRef.current === userGuid) setAssignments(response.data)
+        if (selectedGuidRef.current === userGuid && seq === loadSeqRef.current) {
+          setAssignments(response.data)
+        }
       })
       .catch((failure: unknown) => {
-        if (selectedGuidRef.current === userGuid) {
+        if (selectedGuidRef.current === userGuid && seq === loadSeqRef.current) {
+          // A failed re-read withdraws the write's sentence too: the table still shows pre-write
+          // rows, and "has been activated" standing over them would claim the opposite of what is
+          // on screen.
+          setMessage(null)
+          setWarning(null)
           setError(extractDetail(failure) || ASSIGNMENTS_FAILED)
         }
       })
+  }
 
   const onSelectUser = (user: DirectoryUser | null) => {
     selectedGuidRef.current = user?.userGuid ?? null
@@ -118,20 +142,30 @@ const MillAssociations: FC = () => {
     setAssignments([])
     setSelectedMill(null)
     clearNotifications()
-    if (user) loadAssignments(user.userGuid)
+    if (user) {
+      loadAssignments(user.userGuid)
+      // The mill list is load-bearing (Add and the Mill Status join): a mount-time failure has just
+      // had its banner cleared above, so this is the retry that keeps the panel from opening dead.
+      if (mills.length === 0) loadMills()
+    }
   }
 
   /** One guarded write: lock, clear the banners, then re-read the list from the server on success. */
   const write = <T,>(
-    request: Promise<{ data: T }>,
+    // A factory, not a promise: an axios call built at the call site has already been DISPATCHED
+    // by the time the lock could refuse it — the guard would swallow the response of a request
+    // that went to the server anyway.
+    request: () => Promise<{ data: T }>,
     fallback: string,
     onDone: (data: T) => void,
   ) => {
     const userGuid = selectedGuidRef.current
-    if (busy || !userGuid) return
+    // Checked and set synchronously — see busyRef. `busy` state exists only to drive `disabled`.
+    if (busyRef.current || !userGuid) return
+    busyRef.current = true
     setBusy(true)
     clearNotifications()
-    request
+    request()
       .then((response) => {
         if (selectedGuidRef.current !== userGuid) return undefined
         onDone(response.data)
@@ -150,7 +184,10 @@ const MillAssociations: FC = () => {
         return undefined
       })
       .finally(() => {
-        if (selectedGuidRef.current === userGuid) setBusy(false)
+        // Unconditional: a conditional reset is a stranded-lock path (the 7.3 lesson), and the
+        // picker is disabled while busy, so the guid cannot have changed under a live write.
+        busyRef.current = false
+        setBusy(false)
       })
   }
 
@@ -158,9 +195,10 @@ const MillAssociations: FC = () => {
   const assign = (millId: number) => {
     if (!selectedUser) return
     write(
-      api().post<AssignmentResponse>(`/v1/mills/${millId}/submitters`, {
-        userGuid: selectedUser.userGuid,
-      }),
+      () =>
+        api().post<AssignmentResponse>(`/v1/mills/${millId}/submitters`, {
+          userGuid: selectedUser.userGuid,
+        }),
       ASSIGN_FAILED,
       (data) => {
         // An already-active pair answers 200 having changed nothing. Only the key tells it apart
@@ -173,9 +211,10 @@ const MillAssociations: FC = () => {
 
   const end = (row: MillSubmitter) => {
     write(
-      api().patch<AssignmentResponse>(`/v1/mills/${row.millId}/submitters/${row.userGuid}`, {
-        revisionCount: row.revisionCount,
-      }),
+      () =>
+        api().patch<AssignmentResponse>(`/v1/mills/${row.millId}/submitters/${row.userGuid}`, {
+          revisionCount: row.revisionCount,
+        }),
       END_FAILED,
       (data) => setMessage(data.message),
     )
@@ -184,7 +223,7 @@ const MillAssociations: FC = () => {
   const setAccountActive = (active: boolean) => {
     if (!selectedUser) return
     write(
-      api().patch<AccountResponse>(`/v1/submitters/${selectedUser.userGuid}`, { active }),
+      () => api().patch<AccountResponse>(`/v1/submitters/${selectedUser.userGuid}`, { active }),
       ACCOUNT_FAILED,
       (data) => {
         setAccount(data.account)
@@ -208,6 +247,7 @@ const MillAssociations: FC = () => {
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {warning && <NotificationColumn kind="warning" title="Warning" subtitle={warning} />}
         {error && <NotificationColumn kind="error" title="Error" subtitle={error} />}
+        {lookupError && <NotificationColumn kind="error" title="Error" subtitle={lookupError} />}
 
         <Column sm={4} md={8} lg={16}>
           <div className="mill-associations__section">
@@ -216,7 +256,7 @@ const MillAssociations: FC = () => {
               selected={selectedUser}
               disabled={busy}
               onSelect={onSelectUser}
-              onError={setError}
+              onError={setLookupError}
             />
 
             {selectedUser && (
@@ -286,7 +326,9 @@ const MillAssociations: FC = () => {
                   // nothing (AC3). Hiding those mills would make that answer unreachable.
                   items={mills}
                   itemToString={millLabel}
-                  selectedItem={selectedMill ?? undefined}
+                  // `null`, never `undefined`: an undefined selectedItem flips Carbon to
+                  // uncontrolled, which keeps the PREVIOUS user's mill on screen after a switch.
+                  selectedItem={selectedMill}
                   disabled={busy}
                   onChange={({ selectedItem }) => setSelectedMill(selectedItem ?? null)}
                 />
