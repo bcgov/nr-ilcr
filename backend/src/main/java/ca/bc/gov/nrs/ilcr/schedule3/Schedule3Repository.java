@@ -88,6 +88,82 @@ public interface Schedule3Repository extends Repository<ReportSummary, Long> {
       """)
   Optional<String> findTrackStatus(@Param("millId") long millId, @Param("year") int year);
 
+  /**
+   * Same as {@link #findTrackStatus} but takes a row lock (Oracle {@code FOR UPDATE}) on the
+   * per-mill/year report-status row. The create-on-absent save path uses this so concurrent
+   * first-saves for the same mill/year serialize on this row: the first create inserts the
+   * category-{@code "3"} summary and commits (releasing the lock); the next writer then reads the
+   * now-committed summary so its {@link #mergeSummaryRow} is a no-op. Must run inside the write
+   * {@code @Transactional} to hold the lock until commit. Copied from Schedule 2, which has had
+   * this shape since Story 3.1 (defect #296 brought Schedule 3 onto it).
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_REPORT_STATUS_CODE
+        FROM THE.ILCR_MILL_REPORT_STATUS
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+       FOR UPDATE
+      """)
+  Optional<String> findTrackStatusForUpdate(@Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * Idempotent create of the empty category-{@code "3"} summary for a mill/year, keyed on
+   * (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID). The real THE schema has no unique constraint on
+   * that triple, so on its own {@code MERGE ... WHEN NOT MATCHED THEN INSERT} does NOT serialize:
+   * under READ COMMITTED two concurrent first-saves can both see "not matched" and both INSERT
+   * (permanent duplicate). Serialization comes from the caller's {@code FOR UPDATE} lock on the
+   * parent report-status row ({@link #findTrackStatusForUpdate}) taken before this MERGE.
+   *
+   * <p>The id is drawn from {@code THE.ILCR_REPORT_COMMON_SEQ} — the sequence legacy {@code
+   * ILCRReportSummary} uses. {@code ILCR_REPORT_SUMMARY_SEQ} does NOT exist in {@code THE} and
+   * would {@code ORA-02289} on the first production create.
+   */
+  @Modifying
+  @Query(
+      """
+      MERGE INTO THE.ILCR_REPORT_SUMMARY t
+      USING (SELECT :millId AS ILCR_MILL_ID, :year AS REPORT_YEAR, '3' AS ILCR_CATEGORY_ID FROM DUAL) src
+         ON (t.ILCR_MILL_ID = src.ILCR_MILL_ID
+             AND t.REPORT_YEAR = src.REPORT_YEAR
+             AND t.ILCR_CATEGORY_ID = src.ILCR_CATEGORY_ID)
+       WHEN NOT MATCHED THEN
+         INSERT (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
+                 COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP,
+                 UPDATE_USERID, UPDATE_TIMESTAMP)
+         VALUES (THE.ILCR_REPORT_COMMON_SEQ.NEXTVAL, :year, :millId, '3',
+                 :comments, 0, :user, SYSTIMESTAMP, :user, SYSTIMESTAMP)
+      """)
+  int mergeSummaryRow(
+      @Param("millId") long millId,
+      @Param("year") int year,
+      @Param("comments") String comments,
+      @Param("user") String user);
+
+  /**
+   * Idempotently create a new, empty category-{@code "3"} report summary for a mill/year at {@code
+   * REVISION_COUNT} 0 and return its id (the defect-#296 create-on-absent path — Schedule 3 no
+   * longer 404s on a mill/year with no saved data). The MERGE serializes concurrent first-saves so
+   * only one row is ever inserted; the summary is then re-read for its id. The freshly-created
+   * revision 0 is bumped to 1 by the normal {@link #bumpRevision}.
+   *
+   * <p>The re-read miss raises {@link org.springframework.dao.EmptyResultDataAccessException}
+   * rather than {@code IllegalStateException} on purpose: the service wraps this call in a {@code
+   * DataAccessException} catch that maps create-path failures to {@code ScheduleNotSavedException}
+   * (500 / ERR-004). An {@code IllegalStateException} would slip past that catch and surface as a
+   * generic 500 with a different {@code ProblemDetail} than this javadoc promises (#296 code
+   * review).
+   */
+  default int insertSummary(long millId, int year, String comments, String user) {
+    mergeSummaryRow(millId, year, comments, user);
+    return findSummary(millId, year)
+        .map(SummaryRow::summaryId)
+        .orElseThrow(
+            () ->
+                new org.springframework.dao.EmptyResultDataAccessException(
+                    "Schedule 3 summary not found immediately after MERGE create", 1));
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Write path (Story 4.2) — dumb SQL; the transaction boundary + rules live in Schedule3Service.
   // Cost rows (11 fixed lines) carry COST (VOLUME null); the two timber rows (118/119) carry VOLUME

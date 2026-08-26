@@ -2,9 +2,13 @@ package ca.bc.gov.nrs.ilcr.schedule3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
@@ -48,6 +52,43 @@ class Schedule3ServiceTest {
   /** A volume detail row. */
   private static DetailRow volume(int code, String vol) {
     return new DetailRow(code, new BigDecimal(vol), null, null, null);
+  }
+
+  /**
+   * Defect #296: a mill/year with NO category-3 summary is the unsaved state, not a 404. Note this
+   * is a DIFFERENT case from the existing empty-details test — that one has a summary present with
+   * no rows; this one has no summary at all, which is the branch the fix added.
+   *
+   * <p>The null {@code revisionCount} is load-bearing: it is omitted from the body ({@code
+   * default-property-inclusion: non_null}) and the client's {@code isScheduleSaved} reads that
+   * omission to keep Delete closed on a never-saved schedule.
+   */
+  @Test
+  void getSchedule3_noSummary_servesEmptyEditableDocument() {
+    when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+
+    assertNull(doc.revisionCount(), "an unsaved schedule must carry NO optimistic-lock token");
+    assertNull(doc.comments());
+    assertEquals("N", doc.overrideHarvestTotalPop(), "absent summary falls back to the N default");
+    assertTrue(doc.editable());
+    verify(repository, never()).findDetails(anyInt());
+  }
+
+  /**
+   * The cross-schedule counterpart. This one matters more than Schedule 1's: Schedule 3's subtotals
+   * seed at ZERO, so handing Schedule 2 the empty document instead of an empty Optional would turn
+   * its blank carried figures into $0 (#296 code review).
+   */
+  @Test
+  void findSchedule3_noSummary_isEmpty_whileGetServesADocument() {
+    when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+
+    assertTrue(service.findSchedule3(MILL, YEAR, true).isEmpty());
+    assertNotNull(service.getSchedule3(MILL, YEAR, true), "get must still serve a document");
   }
 
   private void stub(String trackStatus, String location, List<DetailRow> details) {

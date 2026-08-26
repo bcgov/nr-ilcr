@@ -493,10 +493,10 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
 
   test('Delete is disabled when the served document carries no revisionCount (defect #292)', async () => {
     // Legacy gated Delete on isScheduleOpen() — a persisted summary — as well as on edit rights, and
-    // the shared bar now carries that rule via `scheduleSaved`. Unreachable through this page today
-    // (getSchedule3 404s when unsaved), so this pins the rule rather than a user-visible state: an
-    // absent `revisionCount` (Jackson `non_null` omits nulls) must NOT read as "saved". Schedule 2,
-    // whose GET does serve an empty editable document, is where the missing rule became defect #292.
+    // the shared bar now carries that rule via `scheduleSaved`. This used to be unreachable through
+    // this page ("getSchedule3 404s when unsaved") and pinned the rule rather than a user-visible
+    // state — defect #296 made it a REAL state, because the GET now serves the empty editable
+    // document. An absent `revisionCount` (Jackson `non_null` omits nulls) must NOT read as "saved".
     const { revisionCount, ...unsavedDoc } = schedule3Doc
     expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
     server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
@@ -513,6 +513,81 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     // Entry is untouched — only the destructive action is withheld.
     expect(bottom.getByRole('button', { name: 'Save' })).toBeEnabled()
     expect(bottom.getByRole('button', { name: 'Check Status' })).toBeEnabled()
+  })
+
+  test('a sub-page on a never-saved schedule shows ALT-001 and does not navigate (#296)', async () => {
+    // Schedule 3 had NO save-required gate on its sub-pages at all — before defect #296 the parent
+    // page itself 404'd when unsaved, so the case could not arise. It can now: the GET serves an
+    // empty editable document while both sub-page controllers still require a summary
+    // (validateScheduleViewable, kept deliberately by #296 D1), so without this gate the click lands
+    // on a 404 dead-end instead of the legacy message.
+    const { revisionCount, ...unsavedDoc } = schedule3Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    server.use(http.get(URL, () => HttpResponse.json(unsavedDoc)))
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    mockNavigate.mockClear()
+    await user.click(screen.getByRole('button', { name: /^Subtotal Other Costs \(\d+\):$/ }))
+
+    // Legacy ALT-001, verbatim (the same string Schedule 1 uses) — and no navigation.
+    expect(
+      await screen.findByText('The schedule has to be saved before opening other costs'),
+    ).toBeInTheDocument()
+    expect(mockNavigate).not.toHaveBeenCalled()
+
+    // The same gate covers the second sub-page.
+    await user.click(screen.getByRole('button', { name: /^Included Unacceptable Costs \(\d+\):$/ }))
+    expect(mockNavigate).not.toHaveBeenCalled()
+
+    // It is a passive modal, so dismissing it must return the user to the schedule rather than
+    // leaving the page blocked behind it.
+    const blocked = screen.getByRole('dialog', { name: 'Save required' })
+    await user.click(within(blocked).getByRole('button', { name: /close/i }))
+    await waitFor(() =>
+      expect(
+        screen.queryByText('The schedule has to be saved before opening other costs'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(screen.getByLabelText('Licenses, Fees, Insurance Harvest')).toBeInTheDocument()
+  })
+
+  test('a never-saved schedule issues NO DELETE request even if the confirm is reached (#296)', async () => {
+    // Asked for by the PR #361 review (paulushcgcj, seconded by SScholefield), and it has to target
+    // `handleDelete` specifically: on this page the Delete BUTTON only opens the modal
+    // (`onDelete={() => setConfirmDeleteOpen(true)}`) — `handleDelete` is the modal's
+    // `onRequestSubmit`. So the guard is proven by reaching the confirm and asserting nothing goes to
+    // the network, not by finding the button unclickable.
+    //
+    // This matters more since #296 than before: the endpoint is idempotent now and answers 200, so a
+    // stray delete on a never-saved schedule would show "Data deleted successfully" for a record that
+    // never existed. Schedule 2 has had the equivalent guard since #292.
+    const { revisionCount, ...unsavedDoc } = schedule3Doc
+    expect(revisionCount).toBe(3) // guard: the fixture really did carry one to strip
+    let deleteCalled = false
+    server.use(
+      http.get(URL, () => HttpResponse.json(unsavedDoc)),
+      http.delete(URL, () => {
+        deleteCalled = true
+        return HttpResponse.json({ message: { key: 'x', text: 'x' } })
+      }),
+    )
+    render(<Schedule3 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    const bars = document.querySelectorAll<HTMLElement>('.schedule-3__actions')
+    expect(bars).toHaveLength(2)
+    // The button is disabled for a real user; click it anyway to reach the modal, which is exactly
+    // the "any other route into this handler" the guard exists for.
+    await user.click(within(bars[1]).getByRole('button', { name: /^delete$/i }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete schedule' })
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    // handleDelete refused: nothing reached the network, and no success banner was shown.
+    expect(deleteCalled).toBe(false)
+    expect(screen.queryByText(/deleted successfully/i)).not.toBeInTheDocument()
   })
 
   test('Delete confirms then shows the API message and empties the schedule (SUC-002)', async () => {
@@ -538,8 +613,17 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
     await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
 
     expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    // The values are gone but the FORM STAYS EDITABLE, so a first entry can be re-made immediately
+    // (legacy AF1). This used to assert the input was removed, because the page pinned
+    // `editable: false` on the premise that a re-GET would 404 and the record could not be
+    // re-created — defect #296 made both false, and the #296 code review caught this test still
+    // encoding the old premise.
+    const harvest = await screen.findByLabelText('Licenses, Fees, Insurance Harvest')
+    await waitFor(() => expect(harvest).toHaveValue(''))
+    expect(harvest).toBeEnabled()
+    // Delete is closed the instant the record is gone — the revisionCount gate (defect #292).
     await waitFor(() =>
-      expect(screen.queryByLabelText('Licenses, Fees, Insurance Harvest')).not.toBeInTheDocument(),
+      expect(screen.getAllByRole('button', { name: /^delete$/i })[0]).toBeDisabled(),
     )
   })
 })

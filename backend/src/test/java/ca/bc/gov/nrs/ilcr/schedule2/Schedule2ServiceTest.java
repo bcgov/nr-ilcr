@@ -8,7 +8,6 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
@@ -33,8 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * repository + Schedule 3 service — no DB, no Spring. Covers the Schedule2MB formula set, the
  * carried Schedule-3 figures (PO&amp;P/Crown timber volumes + Subtotal Actual Costs PO&amp;P/Crown
  * columns + Silviculture Admin crown, all sourced from the Schedule 3 computed document), null
- * propagation when Schedule 3 is absent (getSchedule3 → 404 → Schedule 2 never 404s), editability,
- * and the unsaved path.
+ * propagation when Schedule 3 is absent (findSchedule3 → empty → carried figures null),
+ * editability, and the unsaved path.
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule2ServiceTest {
@@ -114,13 +113,15 @@ class Schedule2ServiceTest {
     // Sch3: popVol 10000, PO&P actual cost (Subtotal Actual Costs PO&P col) 20000, crownVol 12345,
     // Subtotal Actual Costs Crown col 100000, Silviculture Admin (item 37) crown 5000.
     lenient()
-        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
-        .thenReturn(sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000));
+        .when(schedule3Service.findSchedule3(MILL, YEAR, false))
+        .thenReturn(
+            Optional.of(
+                sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
     // Sch1 computed subtotal company logging (no FMA) = 617250 (subtotalWithFma 617250, FMA 0).
     // Build the Sch1 mock BEFORE the outer stub — nesting when() inside .thenReturn() breaks
     // Mockito.
     Schedule1Response sch1 = sch1Doc(617250L, 0L);
-    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false)).thenReturn(sch1);
+    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.of(sch1));
     lenient()
         .when(repository.findSch1SilvActualSpentCost(MILL, YEAR))
         .thenReturn(Optional.of(20000));
@@ -129,19 +130,19 @@ class Schedule2ServiceTest {
         .thenReturn(Optional.of(8450));
   }
 
-  /** No Schedule 3 (getSchedule3 → 404) and no Schedule 1 cross-figures. */
+  /**
+   * No Schedule 3 and no Schedule 1 cross-figures. Since defect #296 the absence signal is an empty
+   * Optional from find*, not a thrown ScheduleNotFoundException from get* — get* now serves an
+   * EMPTY document whose subtotals seed at ZERO, which would turn these carried figures into $0.
+   */
   private void stubNoCrossSchedule(
       String trackStatus, Optional<SummaryRow> summary, List<DetailRow> details) {
     when(repository.findSummary(MILL, YEAR)).thenReturn(summary);
     summary.ifPresent(
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
-    lenient()
-        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
-        .thenThrow(new ScheduleNotFoundException());
-    lenient()
-        .when(schedule1Service.getSchedule1(MILL, YEAR, false))
-        .thenThrow(new ScheduleNotFoundException());
+    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
   }
 
   private static void eq(String expected, BigDecimal actual) {
@@ -214,13 +215,15 @@ class Schedule2ServiceTest {
                 new DetailRow(26, new BigDecimal("2000"), 100000)));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient()
-        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
-        .thenReturn(sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000));
+        .when(schedule3Service.findSchedule3(MILL, YEAR, false))
+        .thenReturn(
+            Optional.of(
+                sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
     // subtotalWithFma 700000, FMA 82750 -> no-FMA subtotal 617250 (same downstream total as the
     // FMA=0
     // fixture, isolating the subtraction as the only thing under test).
     Schedule1Response sch1 = sch1Doc(700000L, 82750L);
-    lenient().when(schedule1Service.getSchedule1(MILL, YEAR, false)).thenReturn(sch1);
+    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.of(sch1));
     lenient()
         .when(repository.findSch1SilvActualSpentCost(MILL, YEAR))
         .thenReturn(Optional.of(20000));
@@ -271,11 +274,11 @@ class Schedule2ServiceTest {
     // No Sch2 summary but Sch3 data exists -> carried figures still present (AC6).
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(schedule3Service.getSchedule3(MILL, YEAR, false))
-        .thenReturn(sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000));
-    lenient()
-        .when(schedule1Service.getSchedule1(MILL, YEAR, false))
-        .thenThrow(new ScheduleNotFoundException());
+    when(schedule3Service.findSchedule3(MILL, YEAR, false))
+        .thenReturn(
+            Optional.of(
+                sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
+    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
     eq("10000", doc.purchasedWoodOverhead().volume());
     assertEquals(20000, doc.purchasedWoodOverhead().cost());

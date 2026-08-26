@@ -79,6 +79,64 @@ class Schedule1WriteIT extends AbstractOracleIT {
   //      inputs ignored; the two itemized Other-Costs rows (Row A/B) are never touched.
   // --------------
 
+  /**
+   * Defect #296, and the test whose absence let a broken MERGE ship. The first save on a mill/year
+   * with NO category-1 summary must CREATE the row rather than 404.
+   *
+   * <p>This has to be an IT, not a unit test: every Schedule 1 unit test mocks the repository, so
+   * the create SQL is never parsed by Oracle. The original fix shipped `ILCR_1_ID` where the column
+   * is `ILCR_CATEGORY_ID` — a placeholder substitution that corrupted the name — and the whole
+   * mocked suite stayed green while the first save raised ORA-00904. That is the project rule about
+   * mocked tests not being parity evidence, demonstrated.
+   *
+   * <p>Mill 515 is ACT with a report-status row 'D' for 2021 and no category-1 summary.
+   */
+  @Test
+  @DisplayName("#296 — first PUT on a mill/year with no summary CREATES it (no 404, no ORA-00904)")
+  void put_noSummary_createsIt() throws Exception {
+    String where = "ILCR_MILL_ID = 515 AND REPORT_YEAR = 2021 AND ILCR_CATEGORY_ID = '1'";
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY, where),
+        "precondition: mill 515/2021 must start with no category-1 summary");
+
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(validBody(0)) // 0 is the new/unsaved token the client sends
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.revisionCount", is(1))); // created at 0, bumped to 1 by the same write
+
+    assertEquals(
+        1,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY, where),
+        "exactly one category-1 summary must exist after the first save");
+
+    // And it is immediately readable as a saved schedule.
+    mockMvc
+        .perform(get(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.revisionCount", is(1)));
+
+    // Restore 515's no-summary precondition on the shared container (AbstractOracleIT has no
+    // per-test rollback): 515 is ALSO the no-summary READ fixture for the ContextGuard ITs, so a
+    // created summary leaks across IT classes and fails them. Undo through the production DELETE
+    // (515 is Draft, so the gate allows it) rather than raw SQL — the same pattern
+    // Schedule2WriteIT#put_createOnAbsent_insertsSummaryRevBecomesOne established.
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk());
+    assertEquals(
+        0,
+        JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, SUMMARY, where),
+        "cleanup: 515 must be restored to its no-summary state for the read ITs");
+  }
+
   @Test
   @DisplayName(
       "S01/AC2 — 518 Draft PUT persists+recomputes+bumps revision; derived ignored, itemized untouched")
@@ -296,15 +354,21 @@ class Schedule1WriteIT extends AbstractOracleIT {
         0,
         JdbcTestUtils.countRowsInTableWhere(jdbcTemplate, DETAIL, "ILCR_REPORT_SUMMARY_ID = 1019"),
         "all detail rows must be gone (BR-08)");
-    // Re-GET of a mill with no summary is the established empty-schedule state (Story 1.2: 404).
-    // If the team elects a 200 empty-document instead, realign this expectation in dev-story.
+    // REALIGNED by defect #296 — the invitation this comment used to carry ("If the team elects a
+    // 200 empty-document instead, realign this expectation") was taken up. The re-GET now proves
+    // the
+    // delete → blank-editable-form round trip, which is strictly better coverage than the 404 was:
+    // it is what lets a Licensee re-enter data immediately after deleting (legacy AF1).
     mockMvc
         .perform(
             get(ENDPOINT)
                 .param("millId", "519")
                 .param("year", "2021")
                 .accept(MediaType.APPLICATION_JSON))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(true)))
+        .andExpect(jsonPath("$.revisionCount").doesNotExist())
+        .andExpect(jsonPath("$.comments").doesNotExist());
   }
 
   // ---- AC7 (AR11): optimistic concurrency — stale revision -> 409; reload + retry -> 200.

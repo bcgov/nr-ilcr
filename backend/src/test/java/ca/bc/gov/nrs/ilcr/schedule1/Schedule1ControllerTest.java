@@ -36,7 +36,6 @@ class Schedule1ControllerTest {
 
   private static final long MILL_ID = 514L;
   private static final int YEAR = 2021;
-  private static final String CATEGORY = "1";
 
   @Mock private MillContextService millContextService;
 
@@ -61,7 +60,9 @@ class Schedule1ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(doc, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 
   @Test
@@ -81,12 +82,15 @@ class Schedule1ControllerTest {
         controller.saveSchedule1(MILL_ID, YEAR, request, authentication);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(saved).withMessage(any());
   }
 
   @Test
   void deleteSchedule1_delegates_andReturnsDeletedMessage() {
+    when(schedule1Service.deleteSchedule1(MILL_ID, YEAR)).thenReturn(true);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully.");
@@ -96,8 +100,29 @@ class Schedule1ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
     verify(schedule1Service).deleteSchedule1(MILL_ID, YEAR);
+  }
+
+  /**
+   * Defect #296: the idempotent no-op must NOT claim a delete happened — same rule the #292 code
+   * review put on Schedule 2.
+   */
+  @Test
+  void deleteSchedule1_noOp_saysNothingWasDeleted() {
+    when(schedule1Service.deleteSchedule1(MILL_ID, YEAR)).thenReturn(false);
+    when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
+        .thenReturn("No saved data was found, so nothing was deleted");
+
+    ResponseEntity<MessageResponse> response =
+        controller.deleteSchedule1(MILL_ID, YEAR, authentication);
+
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertNotNull(response.getBody());
+    assertEquals(
+        "No saved data was found, so nothing was deleted", response.getBody().message().text());
   }
 
   @Test
@@ -110,6 +135,8 @@ class Schedule1ControllerTest {
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertSame(status, response.getBody());
-    verify(millContextService).validateScheduleViewable(MILL_ID, YEAR, CATEGORY);
+    // validateMillYearActive, NOT validateScheduleViewable — the latter required a category-"1"
+    // summary to exist, which is what made an unsaved Schedule 1 a 404 (defect #296).
+    verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
   }
 }
