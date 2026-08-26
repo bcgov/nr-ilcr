@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
 
 /**
- * A tripwire over the one rule that fixes #366, following the pattern
+ * A tripwire over the TWO rules that fix #366, following the pattern
  * `styles/__tests__/overrides.test.ts` established for SCSS this suite cannot render, and the
  * Schedule 7A `layout-rules.test.ts` tripwire added by the defect #295 review.
  *
@@ -15,9 +15,18 @@ import { describe, expect, test } from 'vitest'
  *   - It therefore asserts RULE TEXT. It fails if the token include is deleted, or the rule renamed,
  *     or the colour swapped to Carbon's `$text-secondary`. It cannot fail on a wrong rendered value.
  *
- * What it is for: #366 was caused by hand-copying four of the five properties of Carbon's `label-01`
- * token and dropping the fifth, so the whole fix is "stop transcribing the token". The cheapest thing
- * that fails loudly when someone transcribes it again is to assert the include is still there.
+ * What it is for: #366 had two causes, and the second one is why the first fix did not close it.
+ *
+ *   1. `schedule10/index.scss` hand-copied four of the five properties of Carbon's `label-01` token
+ *      and dropped `letter-spacing`. Fixed by including the token instead of transcribing it.
+ *   2. `styles/index.scss` sizes EVERY `.cds--label` inside `.schedule-page` at 0.875rem. A
+ *      hand-rolled <span> label is not a `.cds--label`, so it stayed at the token's 12px and read
+ *      2px smaller than the six labels beside it — the difference AMB actually saw. Fixed by listing
+ *      the class in that rule, alongside `.schedule-2__comments-label`, which was already there for
+ *      the same reason.
+ *
+ * Cause 2 is the one a reader is most likely to undo, because the two halves live in different files
+ * and neither looks incomplete on its own.
  * Parity is verified in a browser; the recipe is in
  * `_bmad-output/implementation-artifacts/styling-366-schedule10-label-typography.md` § Appendix.
  */
@@ -38,6 +47,27 @@ describe('Schedule 10 read-only label typography (source tripwire, not a behavio
     expect(rule, '.schedule-10__field-label rule not found').not.toBe('')
     expect(rule).not.toContain('font-size:')
     expect(rule).not.toContain('letter-spacing:')
+  })
+
+  test('the page-level label size rule still lists this class (#366 cause 2)', () => {
+    // `.schedule-page` sets every `.cds--label` to 0.875rem, so on a schedule page a Carbon label is
+    // 14px and the token's 12px is not what any neighbour renders at. A hand-rolled <span> has to be
+    // named in that rule or it silently reads 2px smaller — which is the defect, and which the
+    // schedule10 stylesheet alone cannot express.
+    const appStyles = readFileSync(resolve(process.cwd(), 'src/styles/index.scss'), 'utf8')
+    const at = appStyles.indexOf('.schedule-10__field-label,')
+    expect(at, '.schedule-10__field-label is no longer in src/styles/index.scss').toBeGreaterThan(
+      -1,
+    )
+    expect(
+      appStyles.lastIndexOf('.schedule-page {', at),
+      'the rule naming it is outside the .schedule-page block',
+    ).toBeGreaterThan(-1)
+    // The selector group it sits in has to be the one that SETS the size, not a neighbouring rule.
+    // Matched forward from the class to the group's opening brace rather than by slicing to the next
+    // `}`: the sibling selector is `.#{$bcgov-prefix}--label`, whose interpolation contains braces of
+    // its own, so a naive brace scan stops inside the selector list and never sees the declaration.
+    expect(appStyles).toMatch(/\.schedule-10__field-label,[\s\S]{0,200}?\{\s*font-size: 0\.875rem;/)
   })
 
   test('the label keeps the PRIMARY colour, which Carbon itself does not use', () => {

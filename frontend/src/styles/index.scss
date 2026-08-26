@@ -79,7 +79,12 @@ body {
     font-size: 1.25rem;
   }
 
+  // A hand-rolled label — a read-only field's <span>, which has no control to hang a Carbon <label>
+  // on — is NOT `.cds--label` and so does not pick this up. It has to be listed here by name or it
+  // renders 12px beside 14px labels and reads as a different font, which is exactly what #366
+  // reported on Schedule 10's Road Group. Add new ones to this list.
   .schedule-2__comments-label,
+  .schedule-10__field-label,
   .#{$bcgov-prefix}--label {
     font-size: 0.875rem;
   }
