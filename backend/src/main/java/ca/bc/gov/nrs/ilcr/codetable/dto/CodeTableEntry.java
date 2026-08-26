@@ -32,7 +32,10 @@ import java.time.LocalDate;
  * @param expiryDate last day the code is offered (inclusive); {@code null} = never expires
  */
 public record CodeTableEntry(
-    @NotBlank(message = "{codeRequiredErrorMsg}") @Size(max = 20) String code,
+    // Contractual Item Codes intentionally omit a client-supplied code on insert; the service
+    // allocates the legacy ILCR_REPORT_COST_ITEM identifier. Generic tables still require code at
+    // the service layer.
+    @Size(max = 20) String code,
     @NotBlank(message = "{descriptionRequiredErrorMsg}") @Size(max = 500) String description,
     @NotNull(message = "{effectiveDateRequiredErrorMsg}") LocalDate effectiveDate,
     LocalDate expiryDate) {}

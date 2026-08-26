@@ -32,6 +32,7 @@ class CodeTableIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/code-tables";
   private static final String UNIT_ENTRIES = ENDPOINT + "/UNIT_CODE/entries";
+  private static final String CONTRACTUAL_ENTRIES = ENDPOINT + "/CONTRACTUAL_ITEM_CODE/entries";
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -44,14 +45,14 @@ class CodeTableIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("admin lists the 18 maintainable tables (Contractual excluded)")
+  @DisplayName("admin lists all 19 legacy maintainable tables")
   void admin_listsTables() throws Exception {
     mockMvc
         .perform(get(ENDPOINT).with(groups("ILCR_ADMIN")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(18))
+        .andExpect(jsonPath("$.length()").value(19))
         .andExpect(jsonPath("$[*].key", hasItem("UNIT_CODE")))
-        .andExpect(jsonPath("$[*].key", not(hasItem("CONTRACTUAL_ITEM_CODE"))));
+        .andExpect(jsonPath("$[*].key", hasItem("CONTRACTUAL_ITEM_CODE")));
   }
 
   @Test
@@ -83,6 +84,24 @@ class CodeTableIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("admin adds a Contractual Item Code through the Schedule 9 cost-item path")
+  void admin_addsContractualItem() throws Exception {
+    String body =
+        """
+        {"code":"","description":"Integration contractual item",\
+        "effectiveDate":"2020-01-01","expiryDate":"2030-12-31"}""";
+    mockMvc
+        .perform(
+            put(CONTRACTUAL_ENTRIES)
+                .with(groups("ILCR_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.outcome").value("INSERTED"))
+        .andExpect(jsonPath("$.entries[*].description", hasItem("Integration contractual item")));
+  }
+
+  @Test
   @DisplayName("expiry before effective is rejected 400 and nothing is saved (FLD-005)")
   void invalidDateRange_is400() throws Exception {
     String body =
@@ -107,15 +126,10 @@ class CodeTableIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("blank code is rejected 400 problem+json by @Valid (Story 29.13, uniform shape)")
-  void blankCode_is400FromBeanValidation() throws Exception {
-    // @NotBlank on CodeTableEntry.code fails during request-body binding — BEFORE the controller
-    // and
-    // service run — so the uniform MethodArgumentNotValid handler answers with the same
-    // ProblemDetail
-    // shape every other 400 uses (title "Validation Failed"). The service-layer
-    // codeRequiredErrorMsg
-    // check remains as the authoritative belt-and-suspenders layer for the direct-service path.
+  @DisplayName("blank generic code is rejected 400 problem+json by service validation")
+  void blankCode_is400FromServiceValidation() throws Exception {
+    // Blank code is valid only for Contractual Item Codes, where the server allocates the legacy
+    // cost-item identifier. Generic tables retain the service-layer code-required rule.
     String body =
         """
         {"code":"","description":"Blank code","effectiveDate":"2020-01-01"}""";
@@ -127,7 +141,7 @@ class CodeTableIT extends AbstractOracleIT {
                 .content(body))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-        .andExpect(jsonPath("$.title").value("Validation Failed"))
+        .andExpect(jsonPath("$.title").value("Bad Request"))
         .andExpect(jsonPath("$.detail").value("Code: Value is required."));
   }
 

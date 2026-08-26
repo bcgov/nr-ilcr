@@ -94,7 +94,10 @@ public class ReportingYearService {
     boolean firstTime = maxYear == null;
     int targetYear = firstTime ? resolveFirstTimeYear(requestedYear) : maxYear + 1;
 
-    List<Long> activeMillIds = repository.findActiveMillIds();
+    List<Long> activeMillIds =
+        firstTime
+            ? repository.findActiveMillIds()
+            : repository.findActiveMillIdsForRecurringYear(maxYear);
     if (!firstTime && activeMillIds.isEmpty()) {
       throw new MultiMessageException(
           HttpStatus.CONFLICT, List.of(MSG_NO_ACTIVE_MILLS, MSG_NO_REPORTING_PERIODS));

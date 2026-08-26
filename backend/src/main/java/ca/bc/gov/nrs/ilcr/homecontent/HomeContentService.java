@@ -6,6 +6,8 @@ import ca.bc.gov.nrs.ilcr.homecontent.dto.HomeContentSaveRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -44,12 +46,23 @@ public class HomeContentService {
 
   /** All three role messages for the Content Editing page. */
   public List<HomeContentEntry> readAll() {
-    return repository.findAll();
+    List<HomeContentEntry> entries = repository.findAll();
+    if (!entries.stream()
+        .map(HomeContentEntry::role)
+        .collect(Collectors.toSet())
+        .containsAll(roles())) {
+      throw HomeContentException.contentNotFound();
+    }
+    return entries;
   }
 
-  /** The message for one role — the Home render of the viewer's role (empty text when none). */
+  /** The message for one role — the Home render of the viewer's role. */
   public HomeContentEntry readForRole(String role) {
-    return repository.findByRole(role).orElse(new HomeContentEntry(role, null));
+    return repository.findByRole(role).orElseThrow(HomeContentException::contentNotFound);
+  }
+
+  private static Set<String> roles() {
+    return Set.of(ROLE_LICENSEE, ROLE_AUDITOR, ROLE_ADMIN);
   }
 
   /**

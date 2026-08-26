@@ -28,8 +28,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * cognito:groups → role → action path: {@code OPEN_REPORTING_YEAR} is ADMIN-only, so an {@code
  * ILCR_SUBMITTER} is denied 403 (S13). The recurring open path is driven against the shared seed (a
  * year already exists), proving an ACTIVE mill (990) gets a Draft/Draft report-status row for the
- * new year and a CLOSED mill (991) does not. Each test removes the year it opened in {@link
- * #cleanUp()} so the JVM-wide container stays at its seeded baseline for other IT classes.
+ * new year and a CLOSED mill (991) does not. It also proves an ACTIVE mill (992) without a
+ * current-year status row is excluded, matching the legacy recurring-year query. Each test removes
+ * the year it opened in {@link #cleanUp()} so the JVM-wide container stays at its seeded baseline
+ * for other IT classes.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("/api/v1/admin/reporting-years — Open Reporting Year (admin-gated, Story 24.1)")
@@ -38,6 +40,7 @@ class ReportingYearIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/admin/reporting-years";
   private static final long ACTIVE_MILL = 990L;
   private static final long CLOSED_MILL = 991L;
+  private static final long ACTIVE_MILL_WITHOUT_CURRENT_STATUS = 992L;
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
 
@@ -58,6 +61,9 @@ class ReportingYearIT extends AbstractOracleIT {
       openedYear = null;
     }
     if (seededPeriodYear != null) {
+      jdbc.update(
+          "DELETE FROM THE.ILCR_MILL_REPORT_STATUS WHERE REPORT_YEAR = :year",
+          new MapSqlParameterSource("year", seededPeriodYear));
       jdbc.update(
           "DELETE FROM THE.ILCR_REPORTING_PERIOD WHERE REPORT_YEAR = :year",
           new MapSqlParameterSource("year", seededPeriodYear));
@@ -100,6 +106,12 @@ class ReportingYearIT extends AbstractOracleIT {
     jdbc.update(
         "INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, ENTRY_USERID) VALUES (:year, 'SEED')",
         new MapSqlParameterSource("year", seededPeriodYear));
+    jdbc.update(
+        "INSERT INTO THE.ILCR_MILL_REPORT_STATUS "
+            + "(REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, "
+            + "MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, ENTRY_USERID, UPDATE_USERID) "
+            + "VALUES (:year, :mill, 'D', 'D', 'N', 'SEED', 'SEED')",
+        new MapSqlParameterSource(Map.of("year", seededPeriodYear, "mill", ACTIVE_MILL)));
     int expected = currentMaxYear() + 1;
     openedYear = expected;
 
@@ -123,9 +135,11 @@ class ReportingYearIT extends AbstractOracleIT {
     assertThat(period.get("UPDATE_USERID")).isNotNull();
     assertThat(period.get("UPDATE_TIMESTAMP")).isNotNull();
 
-    // Active mill got a both-tracks-Draft, not-completed row; closed mill got none.
+    // Active mill with a current-year status got a both-tracks-Draft, not-completed row; closed and
+    // active-but-not-present-in-the-current-year status set mills got none.
     assertThat(statusRowCount(ACTIVE_MILL, expected)).isEqualTo(1);
     assertThat(statusRowCount(CLOSED_MILL, expected)).isZero();
+    assertThat(statusRowCount(ACTIVE_MILL_WITHOUT_CURRENT_STATUS, expected)).isZero();
     Map<String, Object> row =
         jdbc.queryForMap(
             "SELECT ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
@@ -140,9 +154,10 @@ class ReportingYearIT extends AbstractOracleIT {
     assertThat(row.get("UPDATE_USERID")).isNotNull();
 
     // Active mill gets one per-category record per schedule category (Draft, reportable-detail Y);
-    // closed mill gets none.
+    // closed and active-but-not-present-in-the-current-year status set mills get none.
     assertThat(categoryRowCount(ACTIVE_MILL, expected)).isEqualTo(11);
     assertThat(categoryRowCount(CLOSED_MILL, expected)).isZero();
+    assertThat(categoryRowCount(ACTIVE_MILL_WITHOUT_CURRENT_STATUS, expected)).isZero();
     Map<String, Object> cat =
         jdbc.queryForMap(
             "SELECT CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND FROM THE.ILCR_REPORT_CATEGORY "

@@ -24,4 +24,14 @@ public class CodeTableException extends BusinessException {
   public static CodeTableException validation(String messageKey) {
     return new CodeTableException(HttpStatus.BAD_REQUEST, messageKey);
   }
+
+  /** A supplied Contractual Item Code is not a numeric cost-item identifier. */
+  public static CodeTableException invalidContractualCode() {
+    return validation("contractualItemCodeInvalidErrorMsg");
+  }
+
+  /** A supplied Contractual Item Code does not identify a category-9 cost item. */
+  public static CodeTableException contractualItemNotFound() {
+    return new CodeTableException(HttpStatus.NOT_FOUND, "contractualItemCodeNotFoundErrorMsg");
+  }
 }

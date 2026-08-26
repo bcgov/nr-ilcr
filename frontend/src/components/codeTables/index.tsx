@@ -58,7 +58,7 @@ const CodeTables: FC = () => {
   // switched tables must not write the previous table's rows into the now-current grid.
   const selectedKeyRef = useRef('')
 
-  // The 18 selectable tables load once on mount.
+  // The 19 legacy tables load once on mount.
   useEffect(() => {
     let active = true
     api()
@@ -115,10 +115,15 @@ const CodeTables: FC = () => {
   }
 
   // Persist one entry (add or edit). On success the grid reloads from the response (single round-trip).
-  const save = (form: CodeEntryForm, requireCode: boolean, onDone: () => void) => {
-    const errors = validateCodeEntry(form, requireCode)
-    if (requireCode) setAddErrors(errors)
-    else setEditErrors(errors)
+  const save = (
+    form: CodeEntryForm,
+    requireCode: boolean,
+    requireExpiry: boolean,
+    onDone: () => void,
+  ) => {
+    const errors = validateCodeEntry(form, requireCode, requireExpiry)
+    if (editingCode !== null) setEditErrors(errors)
+    else setAddErrors(errors)
     if (Object.keys(errors).length > 0 || saving) return
 
     const key = selectedKey
@@ -230,6 +235,7 @@ const CodeTables: FC = () => {
                           labelText="Code"
                           hideLabel
                           size="sm"
+                          disabled={Boolean(selectedTable?.contractual)}
                           maxLength={selectedTable?.codeMaxLength}
                           value={addForm.code}
                           invalid={Boolean(addErrors.code)}
@@ -277,10 +283,15 @@ const CodeTables: FC = () => {
                           size="sm"
                           disabled={saving}
                           onClick={() =>
-                            save(addForm, true, () => {
-                              setAddForm(EMPTY_FORM)
-                              setAddErrors({})
-                            })
+                            save(
+                              addForm,
+                              !selectedTable?.contractual,
+                              Boolean(selectedTable?.contractual),
+                              () => {
+                                setAddForm(EMPTY_FORM)
+                                setAddErrors({})
+                              },
+                            )
                           }
                         >
                           Add
@@ -331,7 +342,9 @@ const CodeTables: FC = () => {
                             <Button
                               size="sm"
                               disabled={saving}
-                              onClick={() => save(editForm, false, () => setEditingCode(null))}
+                              onClick={() =>
+                                save(editForm, false, false, () => setEditingCode(null))
+                              }
                             >
                               Save
                             </Button>
@@ -352,14 +365,16 @@ const CodeTables: FC = () => {
                           <TableCell>{dash(row.effectiveDate)}</TableCell>
                           <TableCell>{dash(row.expiryDate)}</TableCell>
                           <TableCell>
-                            <Button
-                              kind="ghost"
-                              size="sm"
-                              disabled={editingCode !== null || saving}
-                              onClick={() => startEdit(row)}
-                            >
-                              Edit
-                            </Button>
+                            {!selectedTable?.contractual && (
+                              <Button
+                                kind="ghost"
+                                size="sm"
+                                disabled={editingCode !== null || saving}
+                                onClick={() => startEdit(row)}
+                              >
+                                Edit
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ),

@@ -97,10 +97,24 @@ class HomeContentServiceTest {
   }
 
   @Test
-  @DisplayName("readForRole: a missing row yields an entry with null text")
-  void readForRole_missingYieldsNull() {
+  @DisplayName("readForRole: a missing row is a 404")
+  void readForRole_missingIsNotFound() {
     when(repository.findByRole("LICENSEE")).thenReturn(java.util.Optional.empty());
 
-    assertEquals(null, service.readForRole("LICENSEE").messageText());
+    HomeContentException ex =
+        assertThrows(HomeContentException.class, () -> service.readForRole("LICENSEE"));
+    assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+  }
+
+  @Test
+  @DisplayName("readAll: a missing role row is a 404")
+  void readAll_missingRoleIsNotFound() {
+    when(repository.findAll())
+        .thenReturn(
+            java.util.List.of(
+                new ca.bc.gov.nrs.ilcr.homecontent.dto.HomeContentEntry("ADMIN", "<p>A</p>")));
+
+    HomeContentException ex = assertThrows(HomeContentException.class, service::readAll);
+    assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
   }
 }
