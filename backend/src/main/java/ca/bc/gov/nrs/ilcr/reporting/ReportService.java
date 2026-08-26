@@ -8,6 +8,7 @@ import ca.bc.gov.nrs.ilcr.schedule11.Schedule11Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Service;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Service;
 import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
@@ -69,6 +70,7 @@ public class ReportService {
   private final Schedule1Service schedule1Service;
   private final Schedule2Service schedule2Service;
   private final Schedule3Service schedule3Service;
+  private final Schedule4Service schedule4Service;
   private final Schedule5Service schedule5Service;
   private final Schedule6Service schedule6Service;
   private final Schedule7aService schedule7aService;
@@ -96,6 +98,7 @@ public class ReportService {
    * @param schedule2Service the Schedule 2 read (bean-datasource feed, Story 20.6)
    * @param schedule3Service the Schedule 3 read (bean-datasource feed, Story 20.7 — the
    *     three-column ledger + the two itemization sub-documents)
+   * @param schedule4Service the Schedule 4 read (bean-datasource feed, Story 20.9)
    * @param schedule5Service the Schedule 5 read (bean-datasource feed)
    * @param schedule6Service the Schedule 6 read (bean-datasource feed)
    * @param schedule7aService the Schedule 7A read (bean-datasource feed)
@@ -114,6 +117,7 @@ public class ReportService {
       Schedule1Service schedule1Service,
       Schedule2Service schedule2Service,
       Schedule3Service schedule3Service,
+      Schedule4Service schedule4Service,
       Schedule5Service schedule5Service,
       Schedule6Service schedule6Service,
       Schedule7aService schedule7aService,
@@ -127,6 +131,7 @@ public class ReportService {
     this.schedule1Service = schedule1Service;
     this.schedule2Service = schedule2Service;
     this.schedule3Service = schedule3Service;
+    this.schedule4Service = schedule4Service;
     this.schedule5Service = schedule5Service;
     this.schedule6Service = schedule6Service;
     this.schedule7aService = schedule7aService;
@@ -238,6 +243,16 @@ public class ReportService {
               bookmarkTitle,
               schedule3Section(millId, year),
               virtualizer);
+      case SCHEDULE_4 ->
+          fillBean(
+              key,
+              millId,
+              year,
+              options,
+              millTitleBlock,
+              bookmarkTitle,
+              schedule4Section(millId, year),
+              virtualizer);
       case SCHEDULE_5 ->
           fillBean(
               key,
@@ -340,6 +355,19 @@ public class ReportService {
           schedule3Service.getOtherAcceptableDocument(millId, year, false),
           schedule3Service.getUnacceptableDocument(millId, year, false));
     } catch (ScheduleNotFoundException e) {
+      return null;
+    }
+  }
+
+  /** Build the Schedule 4 section, translating an absent document into the combined-print skip. */
+  private SectionData schedule4Section(long millId, int year) {
+    try {
+      return Schedule4SectionMapper.map(schedule4Service.getSchedule4(millId, year, false));
+    } catch (ScheduleNotFoundException e) {
+      log.debug(
+          "Schedule 4 summary not found for mill {} year {} -> skipping section (BR-09)",
+          millId,
+          year);
       return null;
     }
   }

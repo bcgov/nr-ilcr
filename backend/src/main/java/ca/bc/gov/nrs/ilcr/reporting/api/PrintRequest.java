@@ -3,10 +3,9 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
 /**
  * The Print Schedules selection (Epic 20.2). Carries the twelve schedule flags plus the "all"
  * shortcut and the three print options, mirroring the legacy {@code PrintSchedulesMB} screen so the
- * frontend can build the full page while the backend renders only the in-scope sections (1, 2, 3,
- * 5, 6, 7A, 7B, 8, 9, 10, 11). The selected-but-unimplemented Schedule 4 and {@code
- * printMillInformationReport} are accepted for forward-compatibility but produce no section yet
- * (skipped, logged) until their story lands.
+ * frontend can build the full page while the backend renders the selected sections (1, 2, 3, 4, 5,
+ * 6, 7A, 7B, 8, 9, 10, 11). The {@code printMillInformationReport} option remains accepted for
+ * forward-compatibility but is deferred to Epic 19 and produces no rendered section yet.
  *
  * <p>Flags are boxed {@link Boolean} (the request-record convention in this codebase) so Jackson
  * has a property-based creator; the compact constructor defaults any OMITTED flag to {@code false},
@@ -17,7 +16,7 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * @param schedule1 print Schedule 1 (Average Cost of Logging)
  * @param schedule2 print Schedule 2 (Purchased and Private Log Costs and Sales)
  * @param schedule3 print Schedule 3 (Forest Management Administration Costs)
- * @param schedule4 print Schedule 4 (accepted; not rendered in 20.2)
+ * @param schedule4 print Schedule 4 (Special Log Transportation Costs)
  * @param schedule5 print Schedule 5 (Camp and Access Expenses)
  * @param schedule6 print Schedule 6 (Road Management Costs)
  * @param schedule7a print Schedule 7A (Bridge Costs)
@@ -29,7 +28,7 @@ package ca.bc.gov.nrs.ilcr.reporting.api;
  * @param allSchedules select every schedule (BR-07); expanded server-side
  * @param printScheduleInformation render the template body ({@code p_do_print_body})
  * @param printComments render the comments block ({@code p_do_print_comment})
- * @param printMillInformationReport accepted but not rendered in 20.2 (deferred to Epic 19)
+ * @param printMillInformationReport accepted but not rendered (deferred to Epic 19)
  */
 public record PrintRequest(
     Boolean schedule1,

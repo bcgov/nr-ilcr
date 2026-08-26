@@ -12,8 +12,8 @@ const PRINT_PATH = '/v1/reports/print'
 const PDF_FILENAME = 'schedules_print.pdf'
 
 // The twelve schedule flags in the legacy PrintSchedulesMB order. Every flag is offered (legacy
-// parity); the backend renders the in-scope sections (1/2/3/5/6/7A/7B/8/9/10/11) and accepts the
-// rest (Schedule 4) for forward-compatibility (no section rendered yet — see PrintRequest).
+// parity); the backend renders every schedule section except the still-deferred Mill Information
+// report.
 type ScheduleFlag =
   | 'schedule1'
   | 'schedule2'
@@ -28,9 +28,8 @@ type ScheduleFlag =
   | 'schedule10'
   | 'schedule11'
 
-// `renderable` = the backend produces a section today (1/2/3/5/6/7A/7B/8/9/10/11). The rest are shown for legacy
-// parity but disabled with a "(coming soon)" note until their print backend lands, so a selection can't
-// silently no-op (and the server never has to skip a deferred schedule).
+// `renderable` = the backend produces a section today. Deferred choices are shown for legacy parity
+// but disabled with a "(coming soon)" note, so a selection can't silently no-op.
 const SCHEDULES: {
   readonly key: ScheduleFlag
   readonly label: string
@@ -39,7 +38,7 @@ const SCHEDULES: {
   { key: 'schedule1', label: 'Schedule 1', renderable: true },
   { key: 'schedule2', label: 'Schedule 2', renderable: true },
   { key: 'schedule3', label: 'Schedule 3', renderable: true },
-  { key: 'schedule4', label: 'Schedule 4', renderable: false },
+  { key: 'schedule4', label: 'Schedule 4', renderable: true },
   { key: 'schedule5', label: 'Schedule 5', renderable: true },
   { key: 'schedule6', label: 'Schedule 6', renderable: true },
   { key: 'schedule7a', label: 'Schedule 7A', renderable: true },

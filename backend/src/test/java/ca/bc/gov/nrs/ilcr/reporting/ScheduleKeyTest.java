@@ -30,6 +30,7 @@ class ScheduleKeyTest {
             ScheduleKey.SCHEDULE_1,
             ScheduleKey.SCHEDULE_2,
             ScheduleKey.SCHEDULE_3,
+            ScheduleKey.SCHEDULE_4,
             ScheduleKey.SCHEDULE_5,
             ScheduleKey.SCHEDULE_6,
             ScheduleKey.SCHEDULE_7A,
@@ -47,6 +48,9 @@ class ScheduleKeyTest {
         .isLessThan(order.indexOf(ScheduleKey.SCHEDULE_3));
     // The load-bearing 20.7 fact: Schedule 3 renders before Schedule 5 in any combined print.
     assertThat(order.indexOf(ScheduleKey.SCHEDULE_3))
+        .isLessThan(order.indexOf(ScheduleKey.SCHEDULE_4));
+    assertThat(order.indexOf(ScheduleKey.SCHEDULE_4))
+        .isGreaterThan(order.indexOf(ScheduleKey.SCHEDULE_3))
         .isLessThan(order.indexOf(ScheduleKey.SCHEDULE_5));
     // The load-bearing 20.8 fact: Schedule 8 renders after 7B and before 9 in any combined print.
     assertThat(order.indexOf(ScheduleKey.SCHEDULE_8))
@@ -80,6 +84,14 @@ class ScheduleKeyTest {
     assertThat(ScheduleKey.SCHEDULE_3.templatePath()).isEqualTo("reports/schedule3.jrxml");
     assertThat(ScheduleKey.SCHEDULE_3.bookmarkTitle())
         .isEqualTo("Schedule 3: Forest Management Administration Costs");
+  }
+
+  @Test
+  @DisplayName("SCHEDULE_4 is bound to its template + bookmark title")
+  void schedule4_hasTemplateAndBookmark() {
+    assertThat(ScheduleKey.SCHEDULE_4.templatePath()).isEqualTo("reports/schedule4.jrxml");
+    assertThat(ScheduleKey.SCHEDULE_4.bookmarkTitle())
+        .isEqualTo("Schedule 4: Special Log Transportation Costs");
   }
 
   @Test

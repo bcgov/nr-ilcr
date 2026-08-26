@@ -67,6 +67,11 @@ final class SectionFormat {
     return value == null ? DASH : new DecimalFormat("#,##0.00", SYMBOLS).format(value);
   }
 
+  /** A whole-number measurement with thousands separators, or {@code "-"} when null. */
+  static String whole(BigDecimal value) {
+    return value == null ? DASH : new DecimalFormat("#,##0", SYMBOLS).format(value);
+  }
+
   /** A raw integer as text, or {@code "-"} when null. */
   static String integer(Integer value) {
     return value == null ? DASH : String.valueOf(value);

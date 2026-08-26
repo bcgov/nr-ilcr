@@ -32,15 +32,15 @@ import org.springframework.test.web.servlet.MvcResult;
 /**
  * Acceptance test — the combined Print Schedules PDF (Epic 20.2). POST /api/v1/reports/print
  * assembles the selected in-scope schedules into ONE bookmarked PDF, filled from the primary
- * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/5/6/7A/7B/11), on the
+ * datasource (Schedule 9) and the schedule {@code *Service} DTOs (1/2/3/4/5/6/7A/7B/11), on the
  * shared seed: mill 517/2021 carries data for every in-scope schedule except Schedule 10 (Schedule
- * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 8 by
- * V20260823, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to prove each selected
- * section's heading and a seeded value rendered, and the PDF outline (top-level bookmarks) is
- * asserted to be exactly the rendered schedules' titles in order (BR-08/AC9); skip-empty (BR-09),
- * all-empty (ERR-005), the deferred mill-information-report and the ERR-002/003/004 selection
- * ladder plus the 400/409 context guards are pinned here. Security is OFF (isolated from authz —
- * {@link PrintAuthorizationIT}).
+ * 1 added by Story 20.5, Schedule 2 by Story 20.6, Schedule 3 by Story 20.7, Schedule 4 by Story
+ * 20.9, Schedule 8 by V20260823, Schedule 11 by V20260816). The PDF text is asserted with pdfbox to
+ * prove each selected section's heading and a seeded value rendered, and the PDF outline (top-level
+ * bookmarks) is asserted to be exactly the rendered schedules' titles in order (BR-08/AC9);
+ * skip-empty (BR-09), all-empty (ERR-005), the deferred mill-information-report and the
+ * ERR-002/003/004 selection ladder plus the 400/409 context guards are pinned here. Security is OFF
+ * (isolated from authz — {@link PrintAuthorizationIT}).
  */
 @DisplayName("POST /api/v1/reports/print — combined Print Schedules PDF")
 @TestPropertySource(properties = "ilcr.security.enabled=false")
@@ -391,6 +391,8 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(text).contains("Schedule 2:  Purchased/Private Log Costs & Sales");
     assertThat(text).contains("333,000"); // Schedule 2 purchased log cost (517 item 25)
     assertThat(text).contains("Schedule 3:  Forest Management Administration Costs");
+    assertThat(text).contains("Schedule 4:  Special Log Transportation Costs");
+    assertThat(text).contains("Submitted Dump");
     assertThat(text).contains("Schedule 5:  Camp and Access Expense");
     assertThat(text).contains("Schedule 6:  Road Management Costs");
     assertThat(text).contains("Schedule 7A:  Bridge Costs");
@@ -430,13 +432,15 @@ class PrintScheduleIT extends AbstractOracleIT {
     assertThat(pos.get("Ded Two")[1]).isLessThan(pos.get("Ded Three")[1]);
     assertThat(text).contains("Miscellaneous");
     assertThat(text).contains("Schedule 11:  Basic Silviculture");
-    // BR-08 fixed order: 1 -> 2 -> 3 -> 5 -> 6 -> 7A -> 7B -> 8 -> 9 -> 11 (Schedule 8 between 7B
+    // BR-08 fixed order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7A -> 7B -> 8 -> 9 -> 11 (Schedule 8 between
+    // 7B
     // and 9, Schedule 10 skipped for lack of data on 517).
     assertThat(topLevelBookmarks(pdf))
         .containsExactly(
             ScheduleKey.SCHEDULE_1.bookmarkTitle(),
             ScheduleKey.SCHEDULE_2.bookmarkTitle(),
             ScheduleKey.SCHEDULE_3.bookmarkTitle(),
+            ScheduleKey.SCHEDULE_4.bookmarkTitle(),
             ScheduleKey.SCHEDULE_5.bookmarkTitle(),
             ScheduleKey.SCHEDULE_6.bookmarkTitle(),
             ScheduleKey.SCHEDULE_7A.bookmarkTitle(),
@@ -704,12 +708,34 @@ class PrintScheduleIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("only an unimplemented schedule (4) -> 404 'Schedule not found.'")
-  void onlyUnimplementedSchedule_returns404() throws Exception {
-    // Schedule 4 is accepted but has no enum constant (not rendered in Epic 20 yet), so it produces
-    // no section — leaving nothing selected in scope, which is all-empty (ERR-005), not
-    // mill-info-only. (Schedule 8 now renders — Story 20.8 — so it is no longer the unimplemented
-    // example; Schedule 4 is the last one left.)
+  @DisplayName("Schedule 4 (Story 20.9): 514/2021 renders the section + exactly one bookmark")
+  void schedule4_rendersWithOneBookmark() throws Exception {
+    String selection =
+        """
+        {"schedule4":true,"printScheduleInformation":true}
+        """;
+    MvcResult result =
+        streamPdf(
+                post(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body(selection)))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+            .andReturn();
+
+    byte[] pdf = result.getResponse().getContentAsByteArray();
+    String text = extractText(pdf);
+    assertThat(text).contains("Schedule 4:  Special Log Transportation Costs");
+    assertThat(text).contains("Harbour Dump");
+    assertThat(text).contains("100,000");
+    assertThat(topLevelBookmarks(pdf)).containsExactly(ScheduleKey.SCHEDULE_4.bookmarkTitle());
+  }
+
+  @Test
+  @DisplayName("Schedule 4 with no locations -> 404 'Schedule not found.' (BR-09)")
+  void schedule4_emptySchedule_isSkipped() throws Exception {
     String selection =
         """
         {"schedule4":true,"printScheduleInformation":true}
@@ -717,7 +743,7 @@ class PrintScheduleIT extends AbstractOracleIT {
     mockMvc
         .perform(
             post(ENDPOINT)
-                .param("millId", "517")
+                .param("millId", "515")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(selection)))
