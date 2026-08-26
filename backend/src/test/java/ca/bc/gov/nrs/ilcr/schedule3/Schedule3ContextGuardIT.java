@@ -51,14 +51,20 @@ class Schedule3ContextGuardIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("S16: active mill but no Schedule 3 summary -> 404 'Schedule not found.'")
-  void noScheduleSummary_returns404_verbatimMessage() throws Exception {
-    // Mill 515 is ACT with a report-status row but has NO category-3 summary (guard 2 → 404).
+  @DisplayName("S16: active mill with no Schedule 3 yet -> 200 empty EDITABLE document")
+  void noScheduleSummary_returns200_emptyEditableDocument() throws Exception {
+    // INVERTED by defect #296 — see Schedule1ContextGuardIT for the reasoning. Mill 515 is ACT with
+    // a
+    // report-status row 'D' for 2021 and no category-3 summary: the unsaved state, not an error.
+    // `overrideHarvestTotalPop` falls back to the "N" default rather than being omitted.
     mockMvc
         .perform(get(ENDPOINT).param("millId", "515").param("year", "2021"))
-        .andExpect(status().isNotFound())
-        .andExpect(content().contentTypeCompatibleWith(PROBLEM_JSON))
-        .andExpect(jsonPath("$.detail", is("Schedule not found.")));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.trackStatus", is("D")))
+        .andExpect(jsonPath("$.editable", is(true)))
+        .andExpect(jsonPath("$.revisionCount").doesNotExist())
+        .andExpect(jsonPath("$.comments").doesNotExist())
+        .andExpect(jsonPath("$.overrideHarvestTotalPop", is("N")));
   }
 
   @Test

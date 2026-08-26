@@ -45,6 +45,56 @@ class Schedule3WriteIT extends AbstractOracleIT {
     return JsonPath.read(doc, "$.revisionCount");
   }
 
+  /**
+   * Defect #296 — the Schedule 3 twin of {@code Schedule1WriteIT#put_noSummary_createsIt}, and for
+   * the same reason: every Schedule 3 unit test mocks the repository, so the create MERGE's SQL is
+   * never parsed by Oracle. The original fix shipped `ILCR_3_ID` where the column is
+   * `ILCR_CATEGORY_ID` and the mocked suite stayed green while the first save raised ORA-00904.
+   *
+   * <p>Mill 515 is ACT with a report-status row 'D' for 2021 and no category-3 summary.
+   */
+  @Test
+  @DisplayName("#296 — first PUT on a mill/year with no summary CREATES it (no 404, no ORA-00904)")
+  void put_noSummary_createsIt() throws Exception {
+    String body =
+        """
+        { "revisionCount": 0, "comments": "first save", "overrideHarvestTotalPop": "N",
+          "lineItems": [ { "costItemCode": 27, "harvest": 111, "pop": 44 } ],
+          "popTimberVolume": 5000, "crownTimberVolume": 5000 }
+        """;
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .param("millId", "515")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .accept(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(
+            jsonPath("$.revisionCount", is(1))); // created at 0, bumped to 1 by the same write
+
+    // Immediately readable as a saved schedule.
+    mockMvc
+        .perform(get(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.revisionCount", is(1)))
+        .andExpect(jsonPath("$.comments", is("first save")));
+
+    // Restore 515's no-summary precondition on the shared container (AbstractOracleIT has no
+    // per-test rollback): 515 is ALSO the no-summary READ fixture for the ContextGuard ITs, so a
+    // created summary leaks across IT classes and fails them. Undo through the production DELETE
+    // (515 is Draft, so the gate allows it) rather than raw SQL — the same pattern
+    // Schedule2WriteIT#put_createOnAbsent_insertsSummaryRevBecomesOne established.
+    mockMvc
+        .perform(delete(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk());
+    mockMvc
+        .perform(get(ENDPOINT).param("millId", "515").param("year", "2021"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.revisionCount").doesNotExist());
+  }
+
   /** GET the current Schedule 1 document JSON for a mill/year (for the BR-09 push cross-checks). */
   private String getSch1Doc(long millId) throws Exception {
     return mockMvc
@@ -173,15 +223,19 @@ class Schedule3WriteIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("DELETE removes the whole Schedule 3 family (SUC-002); GET then 404")
+  @DisplayName("DELETE removes the whole Schedule 3 family (SUC-002); GET then blank editable form")
   void delete_removesFamily() throws Exception {
     mockMvc
         .perform(delete(ENDPOINT).param("millId", "571").param("year", "2021"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message.key", is("dataDeletedSuccesfullyInfoMsg")));
+    // REALIGNED by defect #296 — was `isNotFound()`. The re-GET proves the delete → blank-editable-
+    // form round trip that lets a Licensee re-enter immediately (legacy AF1).
     mockMvc
         .perform(get(ENDPOINT).param("millId", "571").param("year", "2021"))
-        .andExpect(status().isNotFound());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.editable", is(true)))
+        .andExpect(jsonPath("$.revisionCount").doesNotExist());
   }
 
   @Test

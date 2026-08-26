@@ -107,6 +107,88 @@ const problemBody = (status: number, detail: string) =>
     headers: { 'Content-Type': 'application/problem+json' },
   })
 
+// The failure shapes that reach the page's OWN fallback strings rather than a server-supplied
+// message. Both sites read `extractDetail(err) || fallback` (`index.tsx:60`,
+// `useScheduleBanners.ts:78`) and `extractDetail` returns `response?.data?.detail` or `undefined`
+// (`utils/error.ts`), so the fallback is what the user sees whenever that expression is falsy.
+//
+// FOUR shapes, and the reason is NOT that they take different code paths — an earlier version of
+// this comment claimed that and was wrong (defect #298 code review). `extractDetail` has exactly two
+// paths: the network shape fails the `'response' in error` guard and returns `undefined`; EVERY other
+// shape here passes that guard and returns `undefined` (or `''`) from the same expression. They are
+// listed separately because they are different things a REAL deployment does — a dropped connection,
+// an empty-bodied 500, a gateway that answers in its own JSON dialect, and a backend that sets the
+// key but leaves it blank — and each is a shape a future refactor could break independently.
+//
+// The blank-detail shape is the load-bearing one. Without it the whole set produces only
+// `undefined`, which is the half of `||` that `??` ALSO satisfies — so the suite went green with
+// both sites swapped to `??`, and a present-but-empty `detail` would have rendered a blank subtitle:
+// the exact defect this file exists to prevent. Note `schedule6/index.tsx:163` already uses `??` for
+// the identical concept, so "harmonise Schedule 2 with the reference implementation" is a realistic
+// edit, and `@typescript-eslint/prefer-nullish-coalescing` recommends it. This shape is what makes
+// that edit fail loudly. Do not remove it.
+//
+// The two helpers above cannot express any of these — both REQUIRE a non-empty detail — which is
+// part of why these branches went unexercised through 25 tests.
+const NETWORK_FAILURE = 'a dropped connection' as const
+const EMPTY_500 = 'an empty-bodied 500' as const
+const GATEWAY_NO_DETAIL = 'a gateway problem+json with no detail key' as const
+const BLANK_DETAIL = 'a problem+json whose detail is blank' as const
+
+const detailLessFailures: [string, () => Response][] = [
+  [NETWORK_FAILURE, () => HttpResponse.error()],
+  [EMPTY_500, () => new HttpResponse(null, { status: 500 })],
+  [
+    GATEWAY_NO_DETAIL,
+    () =>
+      new HttpResponse(JSON.stringify({ title: 'Bad Gateway' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+  ],
+  [BLANK_DETAIL, () => problemBody(500, '')],
+]
+
+// Delete runs the SAME four shapes as load. It used to run a subset — first `slice(0, 2)`, which tied
+// delete's coverage to this array's order, then a filter excluding the gateway body on the grounds
+// that it reaches `extractDetail` identically (measured, and true). PR #364 review (SScholefield)
+// asked for the 502 on the write path anyway, and that is the right call for a reason the "no distinct
+// path" argument missed: the equivalence holds for `extractDetail`, but a write reaches it through
+// `useScheduleMutations.remove` → `useScheduleBanners.run`, so the claim being leaned on was about a
+// function two layers below the one under test. Running all four costs one extra modal round-trip and
+// retires both the subset and the argument.
+const detailLessDeleteFailures = detailLessFailures
+
+// Every notification currently rendered, as {kind, title, subtitle}. Asserting the whole set rather
+// than `findByText` on a string is deliberate, for three reasons the #298 review found the hard way:
+//
+//   1. The load panel's TITLE is `Unable to load Schedule 2` and its subtitle is the fallback
+//      `Unable to load Schedule 2.` — the same words, one full stop apart (`index.tsx:248`). A text
+//      query cannot tell them apart reliably.
+//   2. `kind` carries severity, and `NotificationColumn` documents severity as a WCAG 2.1 AA
+//      contract borne by BOTH the kind and an explicit title word. Flipping both fallbacks to
+//      `kind="success"` left the suite green, so nothing pinned the one thing these banners exist
+//      to get right in the worst case.
+//   3. Asserting the COUNT distinguishes "the error state rendered" from "nothing rendered at all".
+//      An emptied fallback makes `errorDetail` falsy, so `if (errorDetail)` is skipped and the page
+//      returns `null` from `if (!data)` — a blank white page, not an empty subtitle. Negative
+//      assertions ("no Save button") pass against that blank page and cannot see the regression.
+const notifications = () =>
+  Array.from(document.querySelectorAll('.cds--inline-notification')).map((el) => ({
+    // Carbon also emits `--low-contrast` on these, so match the kind explicitly rather than
+    // globbing the modifier (a `(\w+)` glob picks up "low" from "low-contrast").
+    kind: (['error', 'warning', 'info', 'success'] as const).find((k) =>
+      el.classList.contains(`cds--inline-notification--${k}`),
+    ),
+    // Trimmed (PR #364 review, SScholefield): Carbon wraps these in their own elements, so
+    // `textContent` can pick up whitespace from JSX formatting. Nothing carries whitespace today, so
+    // this guards against a template edit breaking the test rather than the page — a false NEGATIVE.
+    // It cannot mask a real failure: trimming never turns wrong text into right text, and a
+    // whitespace-only subtitle is caught by the count/kind assertions regardless.
+    title: el.querySelector('.cds--inline-notification__title')?.textContent?.trim() ?? '',
+    subtitle: el.querySelector('.cds--inline-notification__subtitle')?.textContent?.trim() ?? '',
+  }))
+
 describe('Schedule2 page', () => {
   test('editable:true renders editable inputs for 25/26 + comments; derived blocks read-only (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(schedule2Doc)))
@@ -711,6 +793,98 @@ describe('Schedule2 page', () => {
     expect(deleteCount).toBe(1)
   })
 
+  test('a failed DELETE renders the API detail verbatim, not the fallback (AC5, defect #298)', async () => {
+    // The OTHER half of the delete branch, and the half that can actually happen here: the backend
+    // runs `validateMillYearActive` before deleting, so a 409 mill-closed on DELETE is a live path.
+    // Until the #298 code review, no delete fixture in this file carried a `detail` at all — every
+    // one was a success or a detail-less failure — so a regression that dropped `extractDetail` from
+    // the delete path would have shown the generic string for this 409 and nothing would have failed.
+    // The load branch has had this pair since the start (see the 409 mill-closed load test).
+    const detail = 'This Mill is not active for the current Reporting Year.'
+    let getCount = 0
+    server.use(
+      http.get(URL, () => {
+        getCount += 1
+        return HttpResponse.json(schedule2Doc)
+      }),
+      http.delete(URL, () => problemBody(409, detail)),
+    )
+    render(<Schedule2 />)
+    const user = userEvent.setup()
+
+    await screen.findByLabelText('Purchased Log Cost cost')
+    await user.click(actionBarButtons(/delete/i, 1)[0]!)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    // Verbatim (AD-8) — the API's own wording, never the client's fallback.
+    await waitFor(() =>
+      expect(notifications()).toEqual([
+        { kind: 'error', title: 'Action failed', subtitle: detail },
+      ]),
+    )
+    // Same post-failure invariants as the detail-less case: nothing deleted, nothing reloaded.
+    expect(getCount).toBe(1)
+    expect(confirmModalOpen()).toBe(false)
+    await waitFor(() => expect(actionBarButtons(/delete/i, 1)[0]).toBeEnabled())
+  })
+
+  test.each(detailLessDeleteFailures)(
+    'a DELETE failure carrying no detail falls back to the generic delete message and leaves the record intact — %s (AC5, defect #298)',
+    async (_shape, respond) => {
+      // Distinct from the test above: there the DELETE SUCCEEDED and the reload failed (the
+      // `Deleted, but…` string). Here the DELETE itself fails, which is the other fallback entirely
+      // — and the record therefore still exists, so every post-delete consequence must NOT happen.
+      let getCount = 0
+      server.use(
+        http.get(URL, () => {
+          getCount += 1
+          return HttpResponse.json(schedule2Doc)
+        }),
+        http.delete(URL, respond),
+      )
+      render(<Schedule2 />)
+      const user = userEvent.setup()
+
+      const cost = await screen.findByLabelText('Purchased Log Cost cost')
+      expect(getCount).toBe(1)
+      // Enter a value that differs from the fixture, so the "entries survive" assertion below has
+      // something a re-seed would destroy.
+      await user.clear(cost)
+      await user.type(cost, '61000')
+      await user.click(actionBarButtons(/delete/i, 1)[0]!)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+      // The banner, with its severity — not a bare text match. `kind` and the explicit "Action
+      // failed" title are what carry severity to a screen reader (`NotificationColumn`'s WCAG note),
+      // and flipping this to kind="success" used to leave the suite green.
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          { kind: 'error', title: 'Action failed', subtitle: 'Unable to delete Schedule 2.' },
+        ]),
+      )
+      // `onSuccess` never ran, so the delete→reload chain never started: still the initial GET only.
+      expect(getCount).toBe(1)
+      // The confirm dialog is dismissed even though the delete failed — otherwise the user is left
+      // staring at the confirmation with the error banner hidden behind it. `setConfirmDeleteOpen`
+      // fires before dispatch, and moving it into `onSuccess` used to go unnoticed.
+      expect(confirmModalOpen()).toBe(false)
+      // Nothing was deleted, so Delete must still be OFFERED — the inverse of defect #292's
+      // post-delete gate, which greys it out only once the record is actually gone. This also
+      // proves the in-flight lock released on the error path; a leaked lock leaves every action
+      // dead until reload. Both bars are counted (`actionBarButtons`, not a bare `getAllByRole`) so
+      // a page rendering one bar instead of two cannot pass silently.
+      await waitFor(() => expect(actionBarButtons(/delete/i, 1)[0]).toBeEnabled())
+      actionBarButtons(/^save$/i, 2).forEach((b) => expect(b).toBeEnabled())
+      // The value the user CHANGED survives, so the action can be retried and not retyped. It must
+      // be a typed value: asserting the fixture's own 50,000 here proved nothing, because a
+      // regression that re-seeded the form from `data` would reproduce it exactly.
+      expect(screen.getByLabelText('Purchased Log Cost cost')).toHaveValue('61,000')
+      expect(screen.getByLabelText('Less Log Sales volume')).toHaveValue('200')
+    },
+  )
+
   test('a never-saved schedule issues NO DELETE request, not merely a disabled button (defect #292)', async () => {
     // The gate has to hold at the request level, the way Save's does (`putCalled === false` above):
     // `disabled` is presentation, and `handleDelete` is what actually must refuse.
@@ -780,6 +954,34 @@ describe('Schedule2 page', () => {
     expect(await screen.findByText(detail)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
+
+  test.each(detailLessFailures)(
+    'a load failure carrying no detail falls back to the generic load message — %s (AC7, defect #298)',
+    async (_shape, respond) => {
+      // The test above proves the verbatim half of this branch; this proves the other half. What a
+      // missing fallback actually costs the user is the WHOLE PAGE: `mapLoadError` returning ''
+      // makes `errorDetail` falsy, so `if (errorDetail)` (index.tsx:244) never fires and the page
+      // returns null at `if (!data)` (:253) — no panel, no header, a blank white screen. Asserting
+      // the notification SET, kind included, is what distinguishes that from the error state.
+      server.use(http.get(URL, respond))
+      render(<Schedule2 />)
+
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          {
+            kind: 'error',
+            title: 'Unable to load Schedule 2',
+            subtitle: 'Unable to load Schedule 2.',
+          },
+        ]),
+      )
+      // ...and the document is genuinely suppressed rather than rendered beside the error. These are
+      // guaranteed by the early return, so they are a regression tripwire on that structure, not
+      // independent evidence — the assertion above is what carries this test.
+      expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Purchased Log Cost cost')).not.toBeInTheDocument()
+    },
+  )
 
   test('empty context shows verbatim ERR-001 and fires NO request', async () => {
     server.use(

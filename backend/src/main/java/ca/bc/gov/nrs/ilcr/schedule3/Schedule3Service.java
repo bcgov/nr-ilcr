@@ -36,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -163,12 +164,45 @@ public class Schedule3Service {
    * @param year the reporting year
    * @param callerMayEdit whether the caller holds the {@code EDIT_SCHEDULE} action (from the
    *     controller)
-   * @return the aggregate document with all derived values computed server-side
+   * @return the aggregate document (never null; empty/editable when unsaved), all derived values
+   *     computed server-side
    */
   public Schedule3Response getSchedule3(long millId, int year, boolean callerMayEdit) {
-    SummaryRow summary =
-        repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    List<DetailRow> details = repository.findDetails(summary.summaryId());
+    return assemble(millId, year, callerMayEdit, repository.findSummary(millId, year).orElse(null));
+  }
+
+  /**
+   * The existence-aware read for CROSS-SCHEDULE callers ({@code Schedule2Service}'s carried
+   * figures, {@code ReportService}'s BR-09 skip-empty section): empty when the mill/year has no
+   * category-"3" summary, so those callers keep their null-drop / skip-empty behaviour unchanged.
+   *
+   * <p>Before defect #296 this distinction was carried by {@link ScheduleNotFoundException} and
+   * both callers caught it. It matters more here than on Schedule 1: Schedule 3's subtotals seed at
+   * ZERO ({@code sumCostType}), so an empty document reports {@code 0} where an absent one must
+   * report null — serving the empty document from {@code getSchedule3} would have silently turned
+   * Schedule 2's blank carried figures into $0.
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action
+   * @return the aggregate document, or empty when no Schedule 3 summary exists
+   */
+  public Optional<Schedule3Response> findSchedule3(long millId, int year, boolean callerMayEdit) {
+    return repository
+        .findSummary(millId, year)
+        .map(summary -> assemble(millId, year, callerMayEdit, summary));
+  }
+
+  /**
+   * Build the document from an optional summary. {@code summary} null &rarr; the unsaved state: no
+   * detail rows, and null {@code revisionCount} / {@code comments} with the default override. The
+   * null {@code revisionCount} is load-bearing on the client — {@code isScheduleSaved} reads it to
+   * hide Delete on a never-saved schedule (#296 AC3, the #292 rule).
+   */
+  private Schedule3Response assemble(
+      long millId, int year, boolean callerMayEdit, SummaryRow summary) {
+    List<DetailRow> details =
+        summary == null ? List.of() : repository.findDetails(summary.summaryId());
     final String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
     PartitionedDetails partitioned = partitionDetails(details);
@@ -250,16 +284,17 @@ public class Schedule3Service {
         unacceptableRows.size() + (annualRentsHarvest != null && annualRentsHarvest != 0 ? 1 : 0);
 
     boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
-    String override = summary.location() == null ? OVERRIDE_DEFAULT : summary.location();
+    String override =
+        summary == null || summary.location() == null ? OVERRIDE_DEFAULT : summary.location();
 
     return new Schedule3Response(
         millId,
         year,
         trackStatus,
         editable,
-        summary.revisionCount(),
+        summary == null ? null : summary.revisionCount(),
         override,
-        summary.comments(),
+        summary == null ? null : summary.comments(),
         lineItems,
         popTimber,
         crownTimber,
@@ -325,11 +360,21 @@ public class Schedule3Service {
   @Transactional
   public Schedule3Response saveSchedule3(
       long millId, int year, Schedule3Request request, boolean callerMayEdit, String user) {
-    SummaryRow summary = requireEditableSummary(millId, year);
-    int summaryId = summary.summaryId();
-    BigDecimal persistedCrownVolume = persistedVolume(summaryId, CODE_CROWN_TIMBER);
-    int expectedRevision = request.revisionCount() == null ? -1 : request.revisionCount();
+    // 0, not -1 — see Schedule1Service#saveSchedule1: -1 can never match a freshly-created
+    // summary's REVISION_COUNT 0, and Schedule 2 uses 0 (#296 code review).
+    int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
+    int summaryId;
+    BigDecimal persistedCrownVolume;
     try {
+      // Create-on-absent runs INSIDE the try so a persistence failure on the create path
+      // (MERGE / sequence fetch) becomes ScheduleNotSaved (500) exactly like the update path rather
+      // than leaking a raw DataAccessException (which the shared handler maps to 409). The Draft
+      // gate's 409 still propagates — ScheduleNotEditableException is not a DataAccessException.
+      // On a freshly-created summary there are no detail rows, so the persisted crown volume is
+      // null and the BR-09 push below fires on any entered value, which is correct for a first
+      // save.
+      summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+      persistedCrownVolume = persistedVolume(summaryId, CODE_CROWN_TIMBER);
       int bumped =
           repository.bumpRevision(
               summaryId,
@@ -380,13 +425,28 @@ public class Schedule3Service {
 
   /**
    * Delete the whole Schedule 3 row family (summary + all detail rows) for a mill/year (S08).
-   * Enforces the same Draft gate as save.
+   * Enforces the same Draft gate as save. Idempotent since defect #296: a Draft mill/year with no
+   * category-"3" summary is a no-op that still returns 200 (never 404), matching Schedule 2.
+   *
+   * <p>Returns whether anything was actually removed, so the controller can tell a real delete from
+   * the idempotent no-op instead of announcing success for both (the #292 rule, now applied here
+   * too). The 200 is unchanged — only the message differs.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public void deleteSchedule3(long millId, int year) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+  public boolean deleteSchedule3(long millId, int year) {
+    // The LOCKING gate, as Schedule 2's delete uses (#296 code review) — see deleteSchedule1.
+    requireDraftForUpdate(millId, year);
+    Optional<SummaryRow> summary = repository.findSummary(millId, year);
+    if (summary.isEmpty()) {
+      return false; // idempotent — nothing to remove, and the caller must not claim otherwise
+    }
     try {
-      repository.deleteSchedule(summaryId);
+      repository.deleteSchedule(summary.get().summaryId());
+      return true;
     } catch (DataAccessException ex) {
       log.warn(
           "Schedule 3 delete failed for mill {} year {} [{}]",
@@ -887,10 +947,13 @@ public class Schedule3Service {
    * order (AD-8).
    */
   public Schedule3CheckStatusResponse checkSchedule3Status(long millId, int year) {
-    SummaryRow summary =
-        repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    List<DetailRow> details = repository.findDetails(summary.summaryId());
-    boolean override = OVERRIDE_YES.equals(summary.location());
+    // Never 404s since defect #296, matching Schedule 2: an unsaved schedule is checkable, and
+    // every
+    // mandatory field is reported missing — which is the honest answer, not an error.
+    SummaryRow summary = repository.findSummary(millId, year).orElse(null);
+    List<DetailRow> details =
+        summary == null ? List.of() : repository.findDetails(summary.summaryId());
+    boolean override = summary != null && OVERRIDE_YES.equals(summary.location());
 
     Map<Integer, DetailRow> byCode = partitionDetails(details).byCode();
 
@@ -1060,14 +1123,51 @@ public class Schedule3Service {
   }
 
   /**
-   * The Draft-gate guard shared by save and delete (AD-9): track must be Draft; summary must exist.
+   * The Draft-gate guard for the SUB-PAGE writes (Other Acceptable, Unacceptable): track must be
+   * Draft (else 409) and the summary must exist (else 404).
+   *
+   * <p>Deliberately still 404s, and is deliberately no longer used by the main save/delete — both
+   * sub-pages are reachable only from a SAVED Schedule 3 (legacy ALT-001, "The schedule has to be
+   * saved before opening other costs"), so "no summary" there really is not-found. Defect #296
+   * moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
   private SummaryRow requireEditableSummary(long millId, int year) {
-    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    requireDraft(millId, year);
+    return repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
+  }
+
+  /**
+   * The Draft-gate guard for the create-on-absent main save path: the track must be Draft (else
+   * 409), and the category-"3" summary is created when absent, returning its id (defect #296 — the
+   * main Schedule 3 save never 404s). Mirrors {@code Schedule2Service.getOrCreateEditableSummary}.
+   */
+  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
+    requireDraftForUpdate(millId, year);
+    return repository
+        .findSummary(millId, year)
+        .map(SummaryRow::summaryId)
+        .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
+  }
+
+  /** The plain Draft gate (AD-9): the Schedules 1-10 track must be Draft, else 409. */
+  private void requireDraft(long millId, int year) {
+    if (!STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
       throw new ScheduleNotEditableException();
     }
-    return repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
+  }
+
+  /**
+   * The Draft gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
+   * report-status row so concurrent first-saves for the same mill/year serialize on it.
+   * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
+   * category), so without the lock two concurrent first-saves can both see "not matched" in the
+   * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
+   * {@code @Transactional}.
+   */
+  private void requireDraftForUpdate(long millId, int year) {
+    if (!STATUS_DRAFT.equals(repository.findTrackStatusForUpdate(millId, year).orElse(null))) {
+      throw new ScheduleNotEditableException();
+    }
   }
 
   /** Upsert each entered fixed line: Harvest cost always; PO&P cost only for the PO&P lines. */

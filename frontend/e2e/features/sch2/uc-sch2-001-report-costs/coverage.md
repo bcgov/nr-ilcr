@@ -142,7 +142,7 @@ recorded rather than silently dropped:
 | (less) Log Sales cost out of range (wider range) | `S15`, FLD-003, BR-05 | `validation.ts` `ITEM_26_COST` | `validation.feature` `@p1 @S15` outline | `covered` | — |
 | …and an in-range value accepted afterwards (recovery arm) | `S15` recovery | same | `validation.feature` `@p2 @S15` | `covered` | GAP-2 |
 | Multiple field errors reported together on one Save | `S16` | `validateSchedule2` returns a map of ALL invalid fields | `validation.feature` `@p1 @S16` | `covered` | — |
-| Check Status also blocked while a field is invalid | `S16` / legacy `validateClient="true"` | `index.tsx:184` | `validation.feature` `@p2 @S16` | `covered` | — |
+| Check Status also blocked while a field is invalid | `S16` / legacy `validateClient="true"` | `index.tsx:208` | `validation.feature` `@p2 @S16` | `covered` | — |
 
 ## Message catalog
 
@@ -155,16 +155,19 @@ recorded rather than silently dropped:
 | FLD-002 | `Entered volume must be between 0 and 9,999,999.` | same | `validation.feature` `@p1 @S14` | `covered` |
 | FLD-003 | `Entered cost must be between -999,999,999 and 999,999,999.` | same | `validation.feature` `@p1 @S15` | `covered` |
 | FLD-004 | `Purchased/Private Log Costs - Cost: Value Required` | `Schedule2Controller:88-95` prefixes the label onto `missingRequiredFieldMsg` | `check-status.feature` `@p0 @S08` | `covered` |
-| ERR-001 | `Please Select Mill and Reporting Year in the Home Page.` | client-side (no request), `index.tsx:36` | `render-states.feature` `@p1 @S09` | `covered` |
+| ERR-001 | `Please Select Mill and Reporting Year in the Home Page.` | client-side (no request), `index.tsx:40` | `render-states.feature` `@p1 @S09` | `covered` |
 | ERR-002 | `This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.` | API `ProblemDetail.detail` (409) | `render-states.feature` `@p1 @S10` | `covered` |
 | ERR-003 | `Schedule could not be saved.` | page fallback when the API returns no detail | `save-error.feature` `@p1 @S12` | `covered` |
 | ERR-004 | `Schedule not found.` | API `ProblemDetail.detail` (404) | `render-states.feature` `@p2 @S10` | `covered` *(gain)* |
 | STA-001 | read-only state (controls disabled/absent) | `Schedule2Response.editable` | `render-states.feature` `@p1 @S11` | `covered` |
-| *(new)* | `Please correct the highlighted fields before saving.` | client gate, `index.tsx:119` | `validation.feature` `@p1 @S13/@S14/@S15/@S16` | `covered` |
-| *(new)* | `Please correct the highlighted fields before checking status.` | client gate, `index.tsx:187` | `validation.feature` `@p2 @S16` | `covered` |
+| *(new)* | `Please correct the highlighted fields before saving.` | client gate, `index.tsx:136` | `validation.feature` `@p1 @S13/@S14/@S15/@S16` | `covered` |
+| *(new)* | `Please correct the highlighted fields before checking status.` | client gate, `index.tsx:211` | `validation.feature` `@p2 @S16` | `covered` |
 | *(new)* | `Entered cost is invalid.` | `validation.ts` integer guard | `validation.feature` `@p2 @S13` | `covered` |
 | *(new)* | `Entered volume entry is invalid.` | `validation.ts` NaN guard | `validation.feature` `@p2 @S14` | `covered` |
-| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail | — | `deferred` — GAP-3 (belongs in Vitest, not E2E; no unit coverage exists today) |
+| *(new)* | `Unable to load Schedule 2.` / `Unable to delete Schedule 2.` | page fallbacks when the API returns no detail, `index.tsx:60` / `:162` | `Schedule2.test.tsx` — *"a load failure carrying no detail… — %s"* ×4, *"a DELETE failure carrying no detail… — %s"* ×4 and *"a failed DELETE renders the API detail verbatim"* ×1 (`test.each`, so the emitted names carry the shape suffix), plus 2 in `fallback-strings.test.ts` — 11 cases, suite 43 → 54 | `covered (unit)` — GAP-3 closed by [#298](https://github.com/bcgov/nr-ilcr/issues/298), 2026-08-26. Deliberately unit, not E2E: pure client-side branches, and Vitest gates in CI where this suite does not. Label matches the project's existing `covered (unit)` (see `sch11/…/coverage.md:169`) rather than coining a third name for one concept |
+
+| *(new)* | `Unable to check status.` | page fallback when the API returns no detail, `index.tsx:216` | — | `deferred` — the page's fourth owned fallback. Added to this catalog by the #298 code review, which found the verdict below claiming "every row" against a list that omitted it. Assigned to [#332](https://github.com/bcgov/nr-ilcr/issues/332) (the app-wide fallback sweep), explicitly **not** to #298 |
+| *(new)* | `Deleted, but the list could not be refreshed.` | post-delete reload failure, `index.tsx:188` | `Schedule2.test.tsx` — *"a FAILED post-delete reload still closes the Delete gate"* | `covered (unit)` — listed for completeness; it was never a catalog row despite being user-facing |
 
 ## Controls (8 in the legacy Field Reference)
 
@@ -263,10 +266,18 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
   Status arms, persistence).
 - **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
   formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
-- **Overall: 16/16 slices covered**, plus every message-catalog row except the two `deferred` fallbacks
-  (GAP-3) and the `blocked` role item (GAP-1). Both remain above the 80% bar.
-- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth) and GAP-3/GAP-4
-  (`deferred`, documented) are the only non-covered items and none is P0/P1-critical.
+- **Overall: 16/16 slices covered.** On messages: **the two GAP-3 fallbacks are no longer
+  `deferred`** — covered in Vitest by [#298](https://github.com/bcgov/nr-ilcr/issues/298) on
+  2026-08-26, which is where they belong (Vitest gates in CI; this data-backed suite is a manual gate).
+  Two rows remain uncovered: the `blocked` role item (GAP-1) and `Unable to check status.`, the latter
+  **added to the catalog by the #298 code review** — the verdict here previously read "every
+  message-catalog row except GAP-1", measured against a list that silently omitted the page's fourth
+  fallback. Still above the 80% bar.
+- **Verdict: PASS** — no waiver needed. GAP-1 (`blocked`, single-role mock auth), GAP-4 (`deferred`,
+  documented) and `Unable to check status.` (assigned to #332) are the only non-covered items and none
+  is P0/P1-critical. Note this matrix now mixes levels: the GAP-3 row is credited to Vitest inside an
+  E2E coverage table, which is established practice here (`covered (+ backend)`, `covered (unit)`) but
+  is invisible in a percentage.
 
 ## Accessibility (NFR1 / Story 3.4 AC2)
 

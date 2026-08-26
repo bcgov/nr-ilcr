@@ -2,11 +2,15 @@ package ca.bc.gov.nrs.ilcr.schedule1;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
@@ -47,6 +51,51 @@ class Schedule1ServiceTest {
   @Mock private MessageSource messageSource;
 
   @InjectMocks private Schedule1Service service;
+
+  /**
+   * Defect #296: a mill/year with NO category-1 summary is the unsaved state, not a 404 — the
+   * document is served empty and editable so a first entry can be typed and saved.
+   *
+   * <p>The null {@code revisionCount} is the load-bearing assertion, not decoration. The backend
+   * runs {@code default-property-inclusion: non_null}, so a null token is OMITTED from the body,
+   * and the client's {@code isScheduleSaved} reads exactly that omission to keep Delete closed on a
+   * never-saved schedule. If this ever regressed to {@code 0}, the backend suite would stay green
+   * while a Delete button appeared on a schedule that has never existed.
+   */
+  @Test
+  void getSchedule1_noSummary_servesEmptyEditableDocument() {
+    when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
+
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+
+    assertNull(doc.revisionCount(), "an unsaved schedule must carry NO optimistic-lock token");
+    assertNull(doc.comments());
+    assertNull(doc.crownVolume());
+    assertTrue(doc.editable(), "a Draft track + edit rights means the blank form is fillable");
+    assertEquals("D", doc.trackStatus());
+    // No summary means no summary id to read details for.
+    verify(repository, never()).findDetails(anyInt());
+  }
+
+  /**
+   * The cross-schedule counterpart: {@code findSchedule1} must report ABSENCE, because Schedule 2
+   * and the combined report rely on it to keep their carried figures null and their PDF section
+   * skipped. Serving them the empty document instead would turn blanks into $0 (#296 code review).
+   */
+  @Test
+  void findSchedule1_noSummary_isEmpty_whileGetServesADocument() {
+    when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
+    lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+    lenient()
+        .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
+        .thenReturn(new Schedule1Sources(null, null, null));
+
+    assertTrue(service.findSchedule1(MILL, YEAR, true).isEmpty());
+    assertNotNull(service.getSchedule1(MILL, YEAR, true), "get must still serve a document");
+  }
 
   /**
    * Stub the Schedule 1 side (summary + details + track). Schedule 3 defaults to empty (no pull).

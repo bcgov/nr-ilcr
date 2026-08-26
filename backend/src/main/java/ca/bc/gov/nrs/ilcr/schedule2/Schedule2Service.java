@@ -4,7 +4,6 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
@@ -52,12 +51,15 @@ import org.springframework.transaction.annotation.Transactional;
  * silviculture terms are persisted items 1/2; the two Schedule-3 crown operands come from the
  * Schedule 3 document (Subtotal Actual Costs Crown column; item-37 Silviculture Admin crown).
  *
- * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code getSchedule3} raise {@link
- * ScheduleNotFoundException}; Schedule 2 never 404s, so it is swallowed and every carried
- * Schedule-3 figure is treated as null. Null propagation mirrors legacy {@code CoreUtil}: addition
- * returns the non-null operand when one side is null (null only when both null); subtraction
- * returns the minuend when the subtrahend is null (null when the minuend is null); division returns
- * null when either operand is null or the denominator is zero.
+ * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code findSchedule3} return an
+ * empty {@link java.util.Optional}, and every carried Schedule-3 figure is treated as null. (Before
+ * defect #296 the signal was a caught {@code ScheduleNotFoundException}; Schedules 1 and 3 no
+ * longer 404 on an unsaved schedule, so the existence check moved to the {@code find*} reads. Using
+ * the never-404 {@code get*} reads here would be a bug: their subtotals seed at zero, so blank
+ * carried figures would silently become $0.) Null propagation mirrors legacy {@code CoreUtil}:
+ * addition returns the non-null operand when one side is null (null only when both null);
+ * subtraction returns the minuend when the subtrahend is null (null when the minuend is null);
+ * division returns null when either operand is null or the denominator is zero.
  */
 @Service
 @Slf4j
@@ -225,8 +227,8 @@ public class Schedule2Service {
   /**
    * The Draft-gate guard for the create-on-absent save path: the track must be Draft (else 409),
    * and the category-{@code "2"} summary is created when absent (returning its id) — Schedule 2
-   * never 404s. This is the key deviation from {@code Schedule1Service.requireEditableSummary}
-   * (which 404s on a missing summary).
+   * never 404s. This was the key deviation from {@code Schedule1Service.requireEditableSummary};
+   * defect #296 brought Schedules 1 and 3 onto the same shape, so all three now agree.
    */
   private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
     requireDraft(millId, year);
@@ -292,20 +294,19 @@ public class Schedule2Service {
     // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of
     // truth,
     // matching the legacy Schedule2MB which reads the Schedule 3 model), NOT ad-hoc stored-detail
-    // queries. Absent Schedule 3 (no category-'3' summary) → getSchedule3 404s; Schedule 2 never
-    // 404s,
-    // so swallow it and treat every carried figure as null (legacy CoreUtil null-propagation).
+    // queries. Absent Schedule 3 (no category-'3' summary) → findSchedule3 returns empty, and every
+    // carried figure is treated as null (legacy CoreUtil null-propagation). Since defect #296
+    // getSchedule3 no longer 404s, so the existence signal is the Optional, not a caught exception.
     //   purchasedWoodOverhead cost / subtotal PO&P term = Sch3 Subtotal Actual Costs PO&P column
     //     (getPurchasedWoodCal / getSubtotalCost), NOT a persisted "item 135" row.
     //   PO&P + Crown timber volumes = Sch3 popTimber / crownTimber volumes (items 118 / 119).
-    Schedule3Response sch3;
-    try {
-      sch3 = schedule3Service.getSchedule3(millId, year, false);
-    } catch (ScheduleNotFoundException ex) {
-      // Expected when the mill/year has no category-'3' summary — the carried Sch3 figures drop to
-      // null.
+    // findSchedule3 (not getSchedule3) is deliberate: since defect #296 getSchedule3 never 404s and
+    // serves an EMPTY document for an absent Schedule 3, whose subtotals seed at ZERO. Reading that
+    // here would turn these carried figures from blank into $0 on Schedule 2's own screen. The
+    // existence signal that used to be ScheduleNotFoundException now lives in the Optional.
+    Schedule3Response sch3 = schedule3Service.findSchedule3(millId, year, false).orElse(null);
+    if (sch3 == null) {
       log.debug("No Schedule 3 for mill {} year {}; carried Sch3 figures null", millId, year);
-      sch3 = null;
     }
     BigDecimal popTimberVolume = sch3 == null ? null : sch3.popTimber().volume();
     Integer popActualCost = sch3 == null ? null : longToInt(sch3.subtotalActualCosts().pop());
@@ -321,13 +322,10 @@ public class Schedule2Service {
     // so the legacy no-FMA figure is subtotalCompanyLoggingCost − forestMgmtAdminCost. Absent
     // Schedule 1
     // (404) → null (term drops).
-    Schedule1Response sch1;
-    try {
-      sch1 = schedule1Service.getSchedule1(millId, year, false);
-    } catch (ScheduleNotFoundException ex) {
-      // Expected when the mill/year has no Schedule 1 summary — the carried Sch1 terms drop.
+    // findSchedule1 (not getSchedule1) — same reason as findSchedule3 above (defect #296).
+    Schedule1Response sch1 = schedule1Service.findSchedule1(millId, year, false).orElse(null);
+    if (sch1 == null) {
       log.debug("No Schedule 1 for mill {} year {}; carried Sch1 terms null", millId, year);
-      sch1 = null;
     }
     Integer sch1SubtotalLoggingCost = sch1 == null ? null : subtotalLoggingNoFma(sch1);
     // Schedule 1 silviculture actual/accrued $ spent (items 1/2) — the stored terms of the legacy

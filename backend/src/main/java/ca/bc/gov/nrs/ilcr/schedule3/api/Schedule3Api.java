@@ -75,7 +75,8 @@ public interface Schedule3Api {
   /**
    * Check Status (BR-11/BR-03, Story 4.2): validate whether Schedule 3 meets all requirements.
    * Read-only — no status transition, no persistence. Missing {@code VIEW_SCHEDULE} → 403; unknown
-   * mill/year or no summary → 404; closed mill → 409.
+   * mill/year → 404; closed mill → 409. A mill/year with NO summary is NOT a 404 since defect #296
+   * — it is the unsaved state, and check-status reports every mandatory field missing.
    *
    * @param millId the mill id (required)
    * @param year the reporting year (required)

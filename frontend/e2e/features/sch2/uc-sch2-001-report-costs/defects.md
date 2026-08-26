@@ -23,9 +23,19 @@ null-propagation and the delete contract. Both now sit in *Verified — not a de
 figures, **VER-2** idempotent delete) so the Divergence register lists only live differences.
 
 **Triaged 2026-08-14.** BUG-1 → [#292](https://github.com/bcgov/nr-ilcr/issues/292), DIV-1 →
-[#291](https://github.com/bcgov/nr-ilcr/issues/291), GAP-3 → [#297](https://github.com/bcgov/nr-ilcr/issues/297);
+[#291](https://github.com/bcgov/nr-ilcr/issues/291), GAP-3 → [#298](https://github.com/bcgov/nr-ilcr/issues/298);
 all three sit with the dev, and QA confirms and closes each status line once fixed. No application source
 was changed while authoring this suite.
+
+**Correction 2026-08-26.** This line pointed GAP-3 at **#297**, a duplicate raised twelve minutes before
+#298 and since **closed**. The live ticket is [#298](https://github.com/bcgov/nr-ilcr/issues/298) — the
+number GAP-3's own entry already carried — and the link above is corrected to it. **Two of the three
+triaged items are closed on GitHub** — BUG-1 by nr-ilcr #292 and DIV-1 by #291, both verified CLOSED.
+**GAP-3 is closed in the code but its ticket is still OPEN:** the covering tests are on
+`fix/bugfix-298-schedule2-error-fallback-tests`, unmerged, and
+[#298](https://github.com/bcgov/nr-ilcr/issues/298) reads OPEN. This sentence originally said all
+three were "fixed and closed", which is the same conflation of *gap closed* with *ticket closed* that
+the correction above exists to fix.
 
 ---
 
@@ -192,11 +202,42 @@ at-rest state.
     territory (3.3), not this verification story (3.4); and this suite changes no files outside
     `frontend/e2e/`. Two cases, ~10 lines, beside the existing 11.
   - **Ticket:** [bcgov/nr-ilcr#298](https://github.com/bcgov/nr-ilcr/issues/298) — *"[BUGFIX]: Schedule 2:
-    add unit tests for the two load/delete error fallback messages."*
-  - **Status:** OPEN — with the dev. `deferred` in coverage.md; flips to CLOSED when the two Vitest cases
-    land.
-  - **Test:** none today. The sibling *save* fallback (ERR-003) **is** covered end-to-end by
-    `save-error.feature` `@p1 @S12`, which is why only these two remain.
+    add unit tests for the two load/delete error fallback messages."* (#297 is a closed duplicate of it —
+    see the Correction under the headline.)
+  - **Status:** **CLOSED 2026-08-26** — both cases landed in `Schedule2.test.tsx` on nr-ilcr
+    `fix/bugfix-298-schedule2-error-fallback-tests`, and coverage.md's `deferred` row flipped with them.
+    **Eleven Vitest cases, not two** (counted at PR #364 review, paulushcgcj — this entry said five,
+    which was the implementation-time figure and stale by two rounds of review). The ticket's single
+    "detail-less error" is **four** distinct shapes on the wire — a dropped connection (no `response`
+    property at all), an empty-bodied 500 (`response.data` is `''`), a gateway problem+json (every
+    field but `detail`), and a **blank** `detail` (present but falsy, the only shape that pins `||`
+    against a swap to `??`). Load runs all four and delete runs all four, plus a separate
+    detail-BEARING DELETE case: **9 in `Schedule2.test.tsx`**, and **2** in the new
+    `fallback-strings.test.ts` tripwire. The targeted suite went 43 → **54**. Two line numbers in this entry were **stale**: the sites are
+    `index.tsx:60` and `:162`, not `:56`/`:171` — the delete fallback moved when #292 restructured
+    `handleDelete` around the delete→reload lock. The "11 tests" count was 25 by the time the fix was
+    written (#291 and #292 added cases in between); the claim it supported — no match for `Unable to
+    load` / `Unable to delete` anywhere in the suite — was re-verified and held.
+  - **One correction to this entry's own prescription:** "reject the mocked axios call" describes a
+    pattern this file does not use. `Schedule2.test.tsx` mocks at the **HTTP boundary** with MSW; its only
+    `vi.mock` is TanStack Router. Stubbing axios would have bypassed the `apiService` interceptors that
+    shape the very error object `extractDetail` reads. The cases use MSW, matching this suite's sibling
+    unit files and `Schedule6.test.tsx`, which #332 names as the pattern to copy.
+  - **Test:** `Schedule2.test.tsx` — *"a load failure carrying no detail falls back to the generic load
+    message (AC7, defect #298)"* ×3 and *"a DELETE failure carrying no detail falls back to the generic
+    delete message and leaves the record intact (AC5, defect #298)"* ×2. Both **mutation-proved**: they
+    fail when the fallback is emptied, and the load case fails even when only its full stop is dropped.
+    **Two claims first written here were corrected by the #298 code review.** (1) An emptied fallback does
+    not render "an empty subtitle" — `errorDetail` becomes falsy, so the error branch is skipped and the
+    page returns `null`: a blank screen, header and all. (2) `findByText(/unable to load/i)` does not
+    "pass over a deleted branch" — it fails both ways (nothing renders, or title and subtitle both match
+    and it throws). The trap needs a *reworded* non-empty fallback. The assertions now compare the whole
+    notification set — count, `kind`, title, subtitle — which also pins the WCAG severity contract that
+    flipping both banners to `kind="success"` used to leave green, and a fourth shape (a blank `detail`)
+    pins `||` against a swap to `??`. The sibling *save*
+    fallback (ERR-003) is covered end-to-end by `save-error.feature` `@p1 @S12`; Schedule 2's remaining
+    uncovered fallback, `Unable to check status.` (`index.tsx:216`), belongs to
+    [#332](https://github.com/bcgov/nr-ilcr/issues/332), not here.
 
 - **GAP-4 — The validation-error state is not swept by axe here, deliberately.**
   - **What's missing:** Schedule 2's accessibility sweep covers four renders (editable-and-populated,

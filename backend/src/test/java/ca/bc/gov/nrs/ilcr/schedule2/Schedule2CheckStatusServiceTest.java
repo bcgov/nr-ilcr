@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
@@ -46,12 +45,8 @@ class Schedule2CheckStatusServiceTest {
     summary.ifPresent(
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
-    lenient()
-        .when(schedule3Service.getSchedule3(MILL, YEAR, false))
-        .thenThrow(new ScheduleNotFoundException());
-    lenient()
-        .when(schedule1Service.getSchedule1(MILL, YEAR, false))
-        .thenThrow(new ScheduleNotFoundException());
+    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
   }
 
   @Test
