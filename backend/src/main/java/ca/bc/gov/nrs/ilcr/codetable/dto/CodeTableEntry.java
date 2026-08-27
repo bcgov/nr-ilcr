@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.codetable.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.MaxByteLength;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -18,7 +19,7 @@ import java.time.LocalDate;
  * replacement.
  *
  * <p>The {@code @Size} caps are deliberately OUTER BOUNDS — the maximum across every table ({@code
- * CodeTableRegistry}: code ≤ 20, description ≤ 500) — because a record-level annotation carries one
+ * CodeTableRegistry}: code ≤ 20, description ≤ 120) — because a record-level annotation carries one
  * number but the real caps are PER-TABLE ({@code table.codeMaxLength()} / {@code
  * descriptionMaxLength()}). Keeping the annotation at the outer bound means the exact per-table
  * length rejection still comes from {@code validate()} with its verbatim message; the annotation
@@ -32,7 +33,11 @@ import java.time.LocalDate;
  * @param expiryDate last day the code is offered (inclusive); {@code null} = never expires
  */
 public record CodeTableEntry(
-    @NotBlank(message = "{codeRequiredErrorMsg}") @Size(max = 20) String code,
-    @NotBlank(message = "{descriptionRequiredErrorMsg}") @Size(max = 500) String description,
+    // Contractual Item Codes intentionally omit a client-supplied code on insert; the service
+    // allocates the legacy ILCR_REPORT_COST_ITEM identifier. Generic tables still require code at
+    // the service layer.
+    @Size(max = 20) String code,
+    @NotBlank(message = "{descriptionRequiredErrorMsg}") @Size(max = 120, message = "{codeTableDescriptionLengthErrorMsg}") @MaxByteLength(value = 120, charMax = 120, message = "{codeTableDescriptionLengthErrorMsg}")
+        String description,
     @NotNull(message = "{effectiveDateRequiredErrorMsg}") LocalDate effectiveDate,
     LocalDate expiryDate) {}

@@ -6,6 +6,7 @@ export interface CodeTableSummary {
   label: string
   codeMaxLength: number
   descriptionMaxLength: number
+  contractual?: boolean
 }
 
 /** One row of a code table: the code, its description, and the effective/expiry window (ISO dates). */

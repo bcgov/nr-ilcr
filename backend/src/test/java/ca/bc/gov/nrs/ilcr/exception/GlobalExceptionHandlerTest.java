@@ -3,6 +3,7 @@ package ca.bc.gov.nrs.ilcr.exception;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
@@ -199,6 +200,23 @@ class GlobalExceptionHandlerTest {
             new MockHttpServletRequest("PUT", "/api/v1/schedule7b/culverts"));
 
     assertThat(detailOf(response)).isEqualTo("Entered number of pieces is invalid.");
+  }
+
+  @Test
+  @DisplayName("multi-message responses resolve per-message legacy arguments")
+  void multiMessageArgumentsAreResolved() {
+    var response =
+        handler.handleMultiMessage(
+            new MultiMessageException(
+                org.springframework.http.HttpStatus.CONFLICT,
+                List.of("noActiveMillsForNewYearMsg", "reportingPeriodNotFoundMsg"),
+                new Object[] {"2025", "2026"},
+                new Object[0]),
+            new MockHttpServletRequest("POST", "/api/v1/reporting-years"));
+
+    assertThat(detailOf(response))
+        .isEqualTo(
+            "Any active Mill found for the current Reporting Year 2025 to generate a new Reporting Year 2026.; No reporting periods were found.");
   }
 
   private static HttpMessageNotReadableException notReadable(String causeMessage) {

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.reportingyear;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,7 +47,7 @@ class ReportingYearServiceTest {
   @DisplayName("recurring: creates max+1 and a Draft/Draft/not-completed row per active mill (S01)")
   void recurring_createsNextYearForActiveMills() {
     when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.findActiveMillIds()).thenReturn(List.of(11L, 22L));
+    when(repository.findActiveMillIdsForRecurringYear(2025)).thenReturn(List.of(11L, 22L));
 
     OpenReportingYearResult result = service.open(null, USER);
 
@@ -69,7 +70,7 @@ class ReportingYearServiceTest {
       "recurring + zero active mills: rejected with INF-001 + ERR-002, nothing created (S03)")
   void recurring_zeroActiveMills_createsNothing() {
     when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.findActiveMillIds()).thenReturn(List.of());
+    when(repository.findActiveMillIdsForRecurringYear(2025)).thenReturn(List.of());
 
     MultiMessageException ex =
         assertThrows(MultiMessageException.class, () -> service.open(null, USER));
@@ -77,6 +78,8 @@ class ReportingYearServiceTest {
     assertEquals(HttpStatus.CONFLICT, ex.getStatus());
     assertEquals(
         List.of("noActiveMillsForNewYearMsg", "reportingPeriodNotFoundMsg"), ex.getMessageKeys());
+    assertArrayEquals(new Object[] {"2025", "2026"}, ex.getMessageArgs(0));
+    assertArrayEquals(new Object[0], ex.getMessageArgs(1));
     verify(repository, never()).insertReportingPeriod(anyInt(), any(), any(), anyString());
     verify(repository, never())
         .insertMillReportStatus(anyInt(), anyLong(), any(), any(), any(), anyString());
@@ -143,7 +146,7 @@ class ReportingYearServiceTest {
   @DisplayName("concurrent open that loses the period PK race is mapped to 409 (not a 500)")
   void concurrentOpen_mappedToConflict() {
     when(repository.findMaxReportYear()).thenReturn(2025);
-    when(repository.findActiveMillIds()).thenReturn(List.of(5L));
+    when(repository.findActiveMillIdsForRecurringYear(2025)).thenReturn(List.of(5L));
     doThrow(new DataIntegrityViolationException("ORA-00001 PK_ILCR_REPORTING_PERIOD"))
         .when(repository)
         .insertReportingPeriod(eq(2026), any(), any(), eq(USER));

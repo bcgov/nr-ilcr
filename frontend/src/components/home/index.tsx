@@ -79,9 +79,10 @@ const Home: FC = () => {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [saveErrors, setSaveErrors] = useState<string[]>([])
-  // Role-specific welcome message (Story 24.2 / UC-CNT-001, FR3 tie). Best-effort: a failure just
-  // hides the section, never blocks the picker.
+  // Role-specific welcome message (Story 24.2 / UC-CNT-001, FR3 tie). A failure is surfaced without
+  // blocking the mill/year picker.
   const [roleMessage, setRoleMessage] = useState<string | null>(null)
+  const [roleMessageError, setRoleMessageError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -89,10 +90,15 @@ const Home: FC = () => {
       .getAxiosInstance()
       .get<HomeContentEntry>('/v1/home-content/mine')
       .then((response) => {
-        if (active) setRoleMessage(response.data.messageText)
+        if (active) {
+          setRoleMessage(response.data.messageText)
+          setRoleMessageError(null)
+        }
       })
-      .catch(() => {
-        // No welcome message to show — leave the section hidden.
+      .catch((error: unknown) => {
+        if (active) {
+          setRoleMessageError(extractDetail(error) || 'Unable to load the Home message.')
+        }
       })
     return () => {
       active = false
@@ -208,6 +214,17 @@ const Home: FC = () => {
               lowContrast
               title="Unable to load"
               subtitle={loadError}
+            />
+          </Column>
+        )}
+
+        {roleMessageError && (
+          <Column sm={4} md={8} lg={16}>
+            <InlineNotification
+              kind="error"
+              lowContrast
+              title="Unable to load Home message"
+              subtitle={roleMessageError}
             />
           </Column>
         )}

@@ -27,7 +27,7 @@ public enum CodeTableRegistry {
   /**
    * Special case (BR-08): maintained by description only, backed by the Schedule 9 cost-item list.
    */
-  CONTRACTUAL_ITEM_CODE("Contractual Item Codes", null, 10, 500, true),
+  CONTRACTUAL_ITEM_CODE("Contractual Item Codes", null, 10, 120, true),
   CONTRACTUAL_SOURCE_CODE("Contractual Source Codes", "ILCR_CONTRACTUAL_SOURCE_CODE", 20, 120),
   CULVERT_TYPE_CODE("Culvert Type Codes", "ILCR_CULVERT_TYPE_CODE", 20, 120),
   DECK_CODE("Deck Codes", "ILCR_DECK_CODE", 10, 120),

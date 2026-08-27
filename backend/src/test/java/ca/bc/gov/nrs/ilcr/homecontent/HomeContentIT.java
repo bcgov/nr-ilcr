@@ -108,6 +108,79 @@ class HomeContentIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("a missing role row is inserted and its audit fields are initialized")
+  void missingRoleRowIsRepaired() throws Exception {
+    jdbc.update(
+        "DELETE FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+        new MapSqlParameterSource("role", "AUDITOR"));
+
+    String body =
+        """
+        {"licensee":"<p>Repair L</p>","auditor":"<p>Repair A</p>","administrator":"<p>Repair Adm</p>"}""";
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(groups("ILCR_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.entries[*].role", hasItem("AUDITOR")));
+
+    Integer revision =
+        jdbc.queryForObject(
+            "SELECT REVISION_COUNT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+            new MapSqlParameterSource("role", "AUDITOR"),
+            Integer.class);
+    String entryUser =
+        jdbc.queryForObject(
+            "SELECT ENTRY_USERID FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+            new MapSqlParameterSource("role", "AUDITOR"),
+            String.class);
+    assertThat(revision).isZero();
+    assertThat(entryUser).isNotBlank();
+  }
+
+  @Test
+  @DisplayName("a late save validation failure leaves earlier role updates unchanged")
+  void lateValidationFailureIsAtomic() throws Exception {
+    String beforeLicensee =
+        jdbc.queryForObject(
+            "SELECT MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+            new MapSqlParameterSource("role", "LICENSEE"),
+            String.class);
+    String beforeAuditor =
+        jdbc.queryForObject(
+            "SELECT MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+            new MapSqlParameterSource("role", "AUDITOR"),
+            String.class);
+    String body =
+        "{\"licensee\":\"<p>Would roll back</p>\",\"auditor\":\"<p>Would roll back</p>\",\"administrator\":\""
+            + "x".repeat(4100)
+            + "\"}";
+
+    mockMvc
+        .perform(
+            put(ENDPOINT)
+                .with(groups("ILCR_ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest());
+
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+                new MapSqlParameterSource("role", "LICENSEE"),
+                String.class))
+        .isEqualTo(beforeLicensee);
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT MESSAGE_TEXT FROM THE.ILCR_ROLE WHERE ILCR_ROLE_NAME = :role",
+                new MapSqlParameterSource("role", "AUDITOR"),
+                String.class))
+        .isEqualTo(beforeAuditor);
+  }
+
+  @Test
   @DisplayName(
       "admin saves all three atomically (transform + audit); /mine reflects the caller role")
   void admin_savesAndMineReflectsRole() throws Exception {

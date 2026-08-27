@@ -7,6 +7,12 @@ package ca.bc.gov.nrs.ilcr.codetable.dto;
  * @param label the human-readable dropdown label
  * @param codeMaxLength per-table code length cap
  * @param descriptionMaxLength per-table description length cap
+ * @param contractual true for the Schedule 9-backed description-only table
  */
 public record CodeTableSummary(
-    String key, String label, int codeMaxLength, int descriptionMaxLength) {}
+    String key, String label, int codeMaxLength, int descriptionMaxLength, boolean contractual) {
+
+  public CodeTableSummary(String key, String label, int codeMaxLength, int descriptionMaxLength) {
+    this(key, label, codeMaxLength, descriptionMaxLength, false);
+  }
+}

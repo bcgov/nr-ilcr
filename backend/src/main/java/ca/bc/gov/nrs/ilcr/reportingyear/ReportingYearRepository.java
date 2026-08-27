@@ -58,6 +58,24 @@ public class ReportingYearRepository {
   }
 
   /**
+   * The active mills already enrolled in the current reporting year. This is the recurring-year
+   * query from legacy {@code ILCRMillStatusXref.NAMED_QUERIES.getActiveMills}: a mill must still be
+   * {@code ACT} and have a report-status row for the current year before it is carried forward.
+   */
+  public List<Long> findActiveMillIdsForRecurringYear(int currentYear) {
+    return jdbc.queryForList(
+        "SELECT msx.ILCR_MILL_STATUS_XREF_ID "
+            + "FROM THE.ILCR_MILL_STATUS_XREF msx "
+            + "JOIN THE.ILCR_MILL_REPORT_STATUS mrs "
+            + "ON mrs.ILCR_MILL_ID = msx.ILCR_MILL_STATUS_XREF_ID "
+            + "AND mrs.REPORT_YEAR = :currentYear "
+            + "WHERE msx.ILCR_MILL_STATUS_CODE = 'ACT' "
+            + "ORDER BY msx.ILCR_MILL_STATUS_XREF_ID",
+        new MapSqlParameterSource("currentYear", currentYear),
+        Long.class);
+  }
+
+  /**
    * Insert the reporting period row for the new year: official start = the creation date, official
    * end = December 31 of that year (BR-06). {@code ENTRY_/UPDATE_USERID}, both timestamps, and
    * {@code REVISION_COUNT} are all NOT NULL in delivery, so all are stamped explicitly.

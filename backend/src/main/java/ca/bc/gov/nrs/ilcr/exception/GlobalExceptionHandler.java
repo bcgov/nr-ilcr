@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -432,12 +433,16 @@ public class GlobalExceptionHandler {
     log.info("Multi-message business rejection ({}): {}", ex.getStatus(), ex.getMessageKeys());
 
     var messages =
-        ex.getMessageKeys().stream()
-            .map(
-                key ->
+        IntStream.range(0, ex.getMessageKeys().size())
+            .mapToObj(
+                index ->
                     new FieldMessage(
-                        key,
-                        messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale())))
+                        ex.getMessageKeys().get(index),
+                        messageSource.getMessage(
+                            ex.getMessageKeys().get(index),
+                            ex.getMessageArgs(index),
+                            ex.getMessageKeys().get(index),
+                            LocaleContextHolder.getLocale())))
             .toList();
 
     ProblemDetail problem = ProblemDetail.forStatus(ex.getStatus());

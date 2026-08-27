@@ -47,9 +47,15 @@ public class HomeContentService {
     return repository.findAll();
   }
 
-  /** The message for one role — the Home render of the viewer's role (empty text when none). */
+  /** The message for one role — the Home render of the viewer's role. */
   public HomeContentEntry readForRole(String role) {
-    return repository.findByRole(role).orElse(new HomeContentEntry(role, null));
+    return repository
+        .findByRole(role)
+        .orElseGet(
+            () -> {
+              log.warn("No Home content configured for role {}", role);
+              return new HomeContentEntry(role, "");
+            });
   }
 
   /**
@@ -85,8 +91,11 @@ public class HomeContentService {
       if (transformed.getBytes(StandardCharsets.UTF_8).length > MAX_MESSAGE_LENGTH) {
         throw HomeContentException.tooLong();
       }
-      if (repository.updateMessage(message.role(), transformed, user) == 0) {
-        throw HomeContentException.contentNotFound();
+      int affectedRows = repository.upsertMessage(message.role(), transformed, user);
+      if (affectedRows != 1) {
+        throw new IllegalStateException(
+            "Expected exactly one Home content row to be inserted or updated, but affected "
+                + affectedRows);
       }
     }
     log.info("Home content updated (3 role messages) by {}", user);

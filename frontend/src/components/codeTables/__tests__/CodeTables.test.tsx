@@ -8,10 +8,18 @@ import type { CodeTableEntry } from '@/interfaces/CodeTable'
 
 const BASE = 'http://localhost:3000/api/v1/code-tables'
 const UNIT_ENTRIES = `${BASE}/UNIT_CODE/entries`
+const CONTRACTUAL_ENTRIES = `${BASE}/CONTRACTUAL_ITEM_CODE/entries`
 
 const TABLES = [
   { key: 'UNIT_CODE', label: 'Unit Codes', codeMaxLength: 10, descriptionMaxLength: 120 },
   { key: 'SKID_TYPE_CODE', label: 'Skid Type Codes', codeMaxLength: 3, descriptionMaxLength: 120 },
+  {
+    key: 'CONTRACTUAL_ITEM_CODE',
+    label: 'Contractual Item Codes',
+    codeMaxLength: 10,
+    descriptionMaxLength: 120,
+    contractual: true,
+  },
 ]
 
 const SEED: CodeTableEntry[] = [
@@ -239,5 +247,55 @@ describe('Table Maintenance (Story 24.3)', () => {
     await selectUnitCodes()
     // M3 never expires (expiryDate null) → em dash.
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('contractual items use description-only add with required dates and no edit action', async () => {
+    const put = vi.fn()
+    server.use(
+      http.get(BASE, () => HttpResponse.json(TABLES)),
+      http.get(CONTRACTUAL_ENTRIES, () =>
+        HttpResponse.json([
+          {
+            code: '108',
+            description: 'Existing contractual item',
+            effectiveDate: '2020-01-01',
+            expiryDate: '2030-12-31',
+          },
+        ]),
+      ),
+      http.put(CONTRACTUAL_ENTRIES, async ({ request }) => {
+        put(await request.json())
+        return HttpResponse.json({
+          outcome: 'INSERTED',
+          messageKey: 'dataSavedSuccesfullyInfoMsg',
+          message: 'Data saved successfully',
+          entries: [],
+        })
+      }),
+    )
+    render(<CodeTables />)
+
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Code List' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Contractual Item Codes' }))
+    expect(await screen.findByText('Existing contractual item')).toBeInTheDocument()
+    expect(screen.getByLabelText('Code')).toBeDisabled()
+    expect(screen.getByLabelText('Description')).toHaveAttribute('maxlength', '120')
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Description'), 'New contractual item')
+    fireEvent.change(screen.getByLabelText('Effective Date'), { target: { value: '2020-01-01' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(await screen.findByText('Expiry Date: Value is required.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Expiry Date'), { target: { value: '2030-12-31' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(put).toHaveBeenCalledWith({
+      code: '',
+      description: 'New contractual item',
+      effectiveDate: '2020-01-01',
+      expiryDate: '2030-12-31',
+    })
   })
 })

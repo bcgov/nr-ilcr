@@ -85,4 +85,35 @@ class CodeTableRepositoryUnitTest {
         IllegalArgumentException.class,
         () -> repository.upsert(CodeTableRegistry.CONTRACTUAL_ITEM_CODE, ENTRY));
   }
+
+  @Test
+  void contractual_insert_allocatesIdentifierFromCostItemSequence() {
+    when(jdbc.queryForObject(anyString(), any(SqlParameterSource.class), eq(Integer.class)))
+        .thenReturn(1000);
+    when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+
+    assertEquals(
+        UpsertResult.INSERTED,
+        repository.upsertContractualItem(
+            new CodeTableEntry(
+                "", "New contractual item", LocalDate.of(2020, 1, 1), LocalDate.of(2030, 12, 31)),
+            "admin"));
+    org.mockito.Mockito.verify(jdbc)
+        .queryForObject(
+            eq("SELECT THE.ILCR_REPORT_COST_ITEM_SEQ.NEXTVAL FROM DUAL"),
+            any(SqlParameterSource.class),
+            eq(Integer.class));
+  }
+
+  @Test
+  void contractual_update_requiresAnExistingCategory9Item() {
+    when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+
+    assertEquals(
+        UpsertResult.UPDATED,
+        repository.upsertContractualItem(
+            new CodeTableEntry(
+                "108", "Renamed item", LocalDate.of(2020, 1, 1), LocalDate.of(2030, 12, 31)),
+            "admin"));
+  }
 }

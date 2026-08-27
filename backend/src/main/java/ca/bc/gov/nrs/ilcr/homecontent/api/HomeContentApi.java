@@ -42,8 +42,8 @@ public interface HomeContentApi {
 
   /**
    * Save all three role messages atomically. Any blank editor → 400 with all blanks reported
-   * together (FLD-001) and nothing saved; a message over the column cap → 400; a missing role row →
-   * 404.
+   * together (FLD-001) and nothing saved; a message over the column cap → 400. Missing role rows
+   * are created by the save so an administrator can repair partial legacy data.
    *
    * @param request the three messages
    * @param authentication the caller (must hold {@code EDIT_HOME_CONTENT}; drives the audit user)
