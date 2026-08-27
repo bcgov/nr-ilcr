@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
@@ -16,9 +18,11 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -44,7 +48,27 @@ class MillContextServiceTest {
   // Mockito (only unused STUBS fail). @InjectMocks wires it through the two-arg constructor.
   @Mock private MessageSource messageSource;
 
+  // Story 5.7: the shared guards now call validateMillAccess, which checks the caller's role.
+  @Mock private JwtRoleChecker roleChecker;
+
   @InjectMocks private MillContextService service;
+
+  @BeforeEach
+  void bypassMillScopeAsAdmin() {
+    // The mill/year guard tests below exercise the status/summary decision table, not Story 5.7
+    // mill-scope; default the caller to ADMIN so validateMillAccess bypasses. Lenient: the
+    // listMills
+    // tests (which pass isAdmin explicitly) never consult the role checker. Mill-scope enforcement
+    // itself is proven end-to-end in MillScopeEnforcementIT.
+    lenient().when(roleChecker.hasConcreteRole(anyString())).thenReturn(true);
+  }
+
+  @Test
+  void validateMillAccess_admin_bypasses_withoutTouchingTheXref() {
+    // roleChecker→true (admin) from @BeforeEach: returns before any repository read (strict Mockito
+    // proves userHasActiveAssignment is never called — no stub for it here).
+    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
 
   @Test
   void unknownContext_throwsScheduleNotFound() {

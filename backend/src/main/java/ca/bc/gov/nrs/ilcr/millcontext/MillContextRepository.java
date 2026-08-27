@@ -133,6 +133,32 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
   List<SelectableMillEntity> findMillEntitiesForUser(@Param("userGuid") String userGuid);
 
   /**
+   * Whether a submitter is ACTIVELY associated to a specific mill (Story 5.7 per-endpoint
+   * enforcement). Same active predicate as {@link #findMillEntitiesForUser(String)} — {@code
+   * INACTIVE_DATE IS NULL AND ACTIVE_DATE IS NOT NULL} — so the per-endpoint gate and the Home list
+   * agree on "active". Used by {@link MillContextService} to 403 a submitter who targets a mill
+   * they are not associated to (a forged/guessed {@code millId}). Admins bypass this check (tied to
+   * no mill); this method is never consulted for them.
+   *
+   * @param millId the mill id the caller is trying to reach
+   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID
+   * @return true when an active {@code ILCR_MILL_USER_XREF} row exists for the pair
+   */
+  @Query(
+      """
+      SELECT CASE WHEN EXISTS (
+               SELECT 1
+                 FROM THE.ILCR_MILL_USER_XREF u
+                WHERE u.ILCR_MILL_ID = :millId
+                  AND u.USER_GUID = :userGuid
+                  AND u.INACTIVE_DATE IS NULL
+                  AND u.ACTIVE_DATE IS NOT NULL)
+             THEN 1 ELSE 0 END
+        FROM DUAL
+      """)
+  boolean userHasActiveAssignment(@Param("millId") long millId, @Param("userGuid") String userGuid);
+
+  /**
    * The selectable mill with this id — same join and enrollment predicate as {@link
    * #findAllMills()} (legacy {@code getMills()} parity: status xref present AND at least one {@code
    * ILCR_MILL_REPORT_STATUS} row for any year). Empty when the id is unknown or the mill is not
