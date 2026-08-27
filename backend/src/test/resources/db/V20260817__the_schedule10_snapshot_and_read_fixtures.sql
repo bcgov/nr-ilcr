@@ -3,7 +3,7 @@
 -- Shape is DELIVERY-FAITHFUL: every column type, precision and nullability below was read from
 -- ALL_TAB_COLUMNS on the real-data image (ghcr.io/cgi-bc/nr-mof-oracle-ilcr-real-test-data-seeded,
 -- 2026-08-14, Story 11.1 Task 1 gate (i)). NO DDL for these two tables existed anywhere in the repo
--- before this migration -- R__cost_detail_bridge_culvert_fks.sql:55 said "S10 is not built".
+-- before this migration -- R__90_cost_detail_bridge_culvert_fks.sql:55 said "S10 is not built".
 --
 -- Audit columns are DATE and NOT NULL with NO column defaults, so an insert that skips
 -- REVISION_COUNT or the audit quartet fails HERE exactly as it would in delivery (the Schedule 1
