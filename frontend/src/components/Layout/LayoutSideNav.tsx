@@ -7,12 +7,16 @@ import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import { isNavigationMenu, visibleNavigationItems } from '@/routes/-navigation'
 
 const LayoutSideNav: FC = () => {
-  const { closeSideNav, isSideNavExpanded } = useLayout()
+  const { closeSideNav, isLargeViewport, isSideNavExpanded } = useLayout()
   const location = useLocation()
   const { hasRole } = useAuth()
   // Admin-only items (Administration) are hidden entirely for non-admins; the server still enforces
   // the 403 (MAINTAIN_CODE_TABLES), so this is UX, not the security boundary.
   const visibleItems = visibleNavigationItems(hasRole(ILCR_ROLES.admin))
+  // At lg+ the nav sits beside the page, so it stays open across navigations — that is the whole
+  // point of #316. Below lg it is an overlay ON TOP of the page just navigated to, so it still
+  // closes; leaving it open there would hide the destination behind the menu after every click.
+  const handleNavigate = isLargeViewport ? undefined : closeSideNav
 
   return (
     <SideNav expanded={isSideNavExpanded} isPersistent={isSideNavExpanded} isChildOfHeader>
@@ -34,7 +38,7 @@ const LayoutSideNav: FC = () => {
                     as={Link}
                     to={sub.path}
                     isActive={sub.path === location.pathname}
-                    onClick={closeSideNav}
+                    onClick={handleNavigate}
                   >
                     {sub.name}
                   </SideNavMenuItem>
@@ -49,7 +53,7 @@ const LayoutSideNav: FC = () => {
               to={item.path}
               isActive={item.path === location.pathname}
               renderIcon={item.icon}
-              onClick={closeSideNav}
+              onClick={handleNavigate}
             >
               {item.name}
             </SideNavLink>

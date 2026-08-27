@@ -19,6 +19,43 @@ window.amplifyConfig = { mockUser: true }
 // it so router-driven tests don't emit "Not implemented" noise.
 globalThis.scrollTo = () => {}
 
+// jsdom doesn't implement window.matchMedia; LayoutProvider uses it to decide whether the side nav
+// starts expanded (Carbon's `lg` breakpoint). The stub reports a NARROW viewport by default, so any
+// test that doesn't care keeps the pre-#316 collapsed shell. Tests that do care call
+// setLargeViewport(true) before rendering, or crossViewportBreakpoint() to simulate a resize across
+// the breakpoint — the registered `change` listeners are invoked exactly as the browser would.
+type MediaQueryChangeListener = (event: MediaQueryListEvent) => void
+
+let isLargeViewport = false
+const viewportListeners = new Set<MediaQueryChangeListener>()
+
+export function setLargeViewport(matches: boolean): void {
+  isLargeViewport = matches
+}
+
+export function crossViewportBreakpoint(matches: boolean): void {
+  isLargeViewport = matches
+  for (const listener of viewportListeners) {
+    listener({ matches } as MediaQueryListEvent)
+  }
+}
+
+window.matchMedia = ((query: string) => ({
+  matches: isLargeViewport,
+  media: query,
+  onchange: null,
+  addEventListener: (_type: string, listener: MediaQueryChangeListener) => {
+    viewportListeners.add(listener)
+  },
+  removeEventListener: (_type: string, listener: MediaQueryChangeListener) => {
+    viewportListeners.delete(listener)
+  },
+  // Deprecated MediaQueryList API — present so the object type-checks, unused by the app.
+  addListener: () => {},
+  removeListener: () => {},
+  dispatchEvent: () => false,
+})) as typeof window.matchMedia
+
 // jsdom doesn't implement Element.scrollIntoView; Carbon's Dropdown calls it on the highlighted item
 // when an open dropdown already has a selection, throwing inside its effect. Stub it so editing a
 // page/sample with a pre-selected code value can open its dropdowns in tests.
@@ -129,4 +166,9 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterAll(() => server.close())
 
 // Reset handlers after each test `important for test isolation`
-afterEach(() => server.resetHandlers())
+afterEach(() => {
+  server.resetHandlers()
+  // The viewport is global state like the MSW handlers — reset it or one test's `lg` leaks forward.
+  isLargeViewport = false
+  viewportListeners.clear()
+})
