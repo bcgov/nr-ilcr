@@ -134,6 +134,23 @@ test('preflight: Schedule 1 mutable target resolves (empty, editable Draft)', as
       `(the S01 save test writes here and restores it). ${REGROUND}`,
   ).toBeTruthy();
 
+  // Empty means NULL-valued, not row-less. The page renders line items 12-18 only from `lineItems`
+  // entries (components/schedule1/index.tsx), so S01's first fill (#vol-12) needs the rows to EXIST.
+  // Since defect #296 a detail-less target still GETs 200 as an editable Draft, so only this check
+  // stands between a thin seed and S01 timing out mid-suite on an input that never renders (it did:
+  // until 2026-08-27 the seed carried no detail rows, S01 failed every first attempt, and its own
+  // teardown blank-PUT healed the anchor so the retry passed — a permanent fail-once).
+  const missingRows = [12, 13, 14, 15, 16, 17, 18].filter(
+    (code) => !(doc.lineItems ?? []).some((li) => li.costItemCode === code),
+  );
+  expect(
+    missingRows.length === 0,
+    `[preflight] mutable target ${at} has no stored detail row for line item(s) ${missingRows.join(
+      ', ',
+    )} — the form cannot render their inputs, so S01's first fill will time out. Seed NULL-valued ` +
+      `rows for them (db-e2e/R__80_e2e_anchor_seed.sql). ${REGROUND}`,
+  ).toBeTruthy();
+
   // Guardrail against silent seed destruction. S01 writes here and its cleanup blanks the writable
   // fields, which is lossless ONLY if the target started empty. Split the check so the message is
   // actionable: DESTRUCTIBLE fields are a real data-loss / precondition risk (hard fail); ADVISORY

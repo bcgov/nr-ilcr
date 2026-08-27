@@ -1,4 +1,5 @@
 @use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/type' as *;
 
 // Layout for the Schedule 10 page: a page-summary list with the page editor directly below it, then
 // a road list with the road editor below that. Shaped to the sibling Schedule 8 page — actions
@@ -89,13 +90,42 @@
   flex: 0 0 12rem;
 }
 
-// Match the Carbon input label (.cds--label) so a read-only field's label reads the same as the
-// editable labels beside it.
+// A read-only field's label. Road Group is the only field in the Add/Edit Page panel with no Carbon
+// control to hang a <label> on, so this <span> has to be made to read like the six labels beside it
+// (#366). It takes its METRICS from the `label-01` token and its SIZE from styles/index.scss — see
+// below; both halves are needed and neither file looks incomplete on its own.
+//
+// Scoped claim, because the old comment here overclaimed and that is how #366 survived review:
+// this matches Carbon's `.cds--label` on the four type properties and on colour. It does NOT
+// replicate Carbon's `@include reset`, its `display: inline-block` (this is `block`, inside a flex
+// column) or its `vertical-align: baseline` — none of which affect how the text reads here.
+//
+// `$label-01` declares FOUR properties: font-size, font-weight, line-height, letter-spacing. The
+// hand-copy this replaces carried TWO of them — font-size and line-height — and dropped
+// letter-spacing; font-weight happened to match by inheritance from the body, so the only visible
+// difference from the token was the missing 0.32px of tracking. Including the token instead of
+// restating it is the fix: a transcription cannot drift-check itself.
+//
+// `line-height: 1rem` is LOAD-BEARING, not a restatement. Carbon's `.cds--label` overrides the
+// token's unitless 1.33333 with a hard 1rem, and on a `.schedule-page` route this label computes at
+// 14px — where 1.33333 would give 18.67px, two-thirds of a line taller than its row-mates. Deleting
+// it reintroduces #366 in vertical rhythm instead of tracking.
+//
+// The COLOUR is deliberately NOT Carbon's own `$text-secondary`. `styles/_overrides.scss` repaints
+// labels app-wide to primary through `label.#{$bcgov-prefix}--label, legend...`, and that selector
+// is ELEMENT-qualified: it reaches the six real <label>s in this panel and cannot reach this <span>.
+// Primary is what makes them agree HERE — Schedules 4 and 6 use secondary for their read-only
+// labels, so this is a decision local to a `.schedule-page` route, not an app-wide rule.
+//
+// Schedule 6 (schedule6/index.scss:46) is the precedent for TAKING THE TOKEN, and only for that:
+// it is not a `.schedule-page` route, so the same include renders 12px secondary there against
+// 14px primary here.
 .schedule-10__field-label {
+  @include type-style('label-01');
+
   display: block;
   color: var(--cds-text-primary);
-  font-size: 0.75rem;
-  line-height: 1.33333;
+  line-height: 1rem;
   margin-block-end: $spacing-03;
 }
 

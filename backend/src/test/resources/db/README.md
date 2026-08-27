@@ -62,6 +62,13 @@ two such branches merge:
    `90_` when the first prefixed seed lands beside it.
 2. **Fixture ID ranges.** Namespace seed entities by track so PKs can't overlap:
 
+   **The e2e anchor seed claims ids too.** `../db-e2e/R__80_e2e_anchor_seed.sql` (applied only by
+   the CI e2e job's Flyway run, never by the `*IT` suite — see its header) owns mills **13** and
+   **9050–25054** (sparse — the exact list is in its header), summaries **3001–3199**, cost-report
+   details **4001–4499**, transportation reports **4801–4899**, silviculture reports **9351–9399**,
+   biogeo catalogue ids **40, 171, 8850–8869**, and reporting years **2015–2019**. Treat those
+   ranges as taken when claiming blocks here, and vice versa.
+
    | Track                     | `MILL_ID` block | Notes                                        |
    | ------------------------- | --------------- | -------------------------------------------- |
    | Schedule 1 / core context | 514–517         | seeded in `V2` (shared read context)         |
