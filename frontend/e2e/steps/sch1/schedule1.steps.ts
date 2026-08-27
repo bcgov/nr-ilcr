@@ -523,11 +523,22 @@ When('I delete Schedule 1 and confirm the prompt', async ({ schedule1Page }) => 
   await schedule1Page.confirmDelete()
 })
 
-Then('the Schedule 1 should no longer exist', async ({ request, world }) => {
-  // Prove the delete persisted through the real write path: the summary is gone (GET 404). Poll —
+Then('the Schedule 1 should no longer be saved', async ({ request, world }) => {
+  // Prove the delete persisted through the real write path. The GET no longer 404s for a missing
+  // summary (defect #296 serves the 200 empty EDITABLE document instead), so "deleted" is that
+  // document's own signal: a null revisionCount — the server's not-saved marker, the same field the
+  // client's isScheduleSaved reads to close the Delete gate — with zero stored detail rows. Poll —
   // the DELETE + in-place redisplay is UI-triggered, so the commit can trail the click.
   const { millId, year } = world.scheduleKey!
-  await expect.poll(async () => (await request.get(scheduleUrl(millId, year))).status()).toBe(404)
+  await expect
+    .poll(async () => {
+      const res = await request.get(scheduleUrl(millId, year))
+      if (!res.ok()) return `GET -> HTTP ${res.status()}`
+      const doc = (await res.json()) as { revisionCount: number | null; lineItems: unknown[] }
+      if (doc.revisionCount === null && doc.lineItems.length === 0) return 'deleted'
+      return `revisionCount=${doc.revisionCount}, lineItems=${doc.lineItems.length}`
+    })
+    .toBe('deleted')
 })
 
 Then('the Schedule 1 data should be unchanged', async ({ request, world }) => {
