@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.support;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -8,12 +9,14 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.oracle.OracleContainer;
@@ -54,6 +57,29 @@ public abstract class AbstractOracleIT {
 
   /** Shared MockMvc for subclasses, wired through the full Spring Security filter chain. */
   protected MockMvc mockMvc;
+
+  /**
+   * The canonical test submitter GUID (32-char {@code custom:idp_user_id}), seeded by {@code
+   * V20260827} as ACTIVELY associated to EVERY seeded mill. Story 5.7 per-endpoint mill-scope
+   * enforcement 403s a submitter not associated to the mill they target; security-ON schedule ITs
+   * that assert submitter access use {@link #submitter()} so their caller can actually reach the
+   * test mill.
+   */
+  protected static final String CANONICAL_SUBMITTER_GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
+
+  /**
+   * A real-JWT {@code ILCR_SUBMITTER} principal carrying {@link #CANONICAL_SUBMITTER_GUID} — the
+   * canonical submitter associated to every seeded mill. Use this in security-ON ITs that assert a
+   * submitter can reach a schedule/mill-context endpoint (it passes Story 5.7 mill-scope for any
+   * seeded mill). For the DENIED case, use a JWT with an unassociated GUID.
+   *
+   * @return the request post-processor injecting the canonical submitter principal
+   */
+  protected static RequestPostProcessor canonicalSubmitter() {
+    return jwt()
+        .jwt(j -> j.claim("custom:idp_user_id", CANONICAL_SUBMITTER_GUID))
+        .authorities(new SimpleGrantedAuthority("SUBMITTER"));
+  }
 
   @BeforeEach
   void setUpMockMvc() {
