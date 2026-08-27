@@ -139,7 +139,7 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"generalComments\":null,\"records\":[]}")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 
@@ -173,7 +173,7 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"generalComments\":null,\"records\":[]}")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));
   }
@@ -190,7 +190,7 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict()); // 409 not-editable — authz passed, no mutation
   }
 
@@ -222,7 +222,7 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .with(csrf())
                 .param("millId", "662")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 }

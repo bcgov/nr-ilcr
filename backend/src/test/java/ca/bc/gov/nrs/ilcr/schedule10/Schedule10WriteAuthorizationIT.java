@@ -184,7 +184,7 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
                 .param("millId", "719")
                 .param("year", "2021")
                 .with(csrf())
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk());
   }
 
@@ -202,7 +202,7 @@ class Schedule10WriteAuthorizationIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(PAGE_BODY)
                 .with(csrf())
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 }
