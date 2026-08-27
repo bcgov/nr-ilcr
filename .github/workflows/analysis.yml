@@ -23,19 +23,19 @@ jobs:
       contents: read
       pull-requests: write
     runs-on: ubuntu-24.04
-    # Raised from 15 to cover the Testcontainers Oracle pull + start the ITs now add.
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: bcgov/action-test-and-analyse-java@7c7309721cae054b3e837c723afa4efb4b1a256d # v1.1.0
         name: Backend Coverage
         with:
-          # skip.integration.tests: the pom defaults it to true, so `verify` ran surefire only and
-          # every *IT.java suite — authorization, persistence and validation against a real Oracle —
-          # was skipped in CI (AR17). The failsafe suites need only Docker, which the GitHub runner
-          # provides: AbstractOracleIT starts one gvenzl/oracle-free container per JVM and applies
-          # the test snapshot with Flyway's Java API.
+          # Unit tests only (the pom defaults skip.integration.tests to true).
+          # The *IT acceptance suite moved to reusable-tests.yml's Integration
+          # job (mvn -P integration-test), so it runs against every PR/test
+          # deploy alongside the deployed-env probe. NOTE: Sonar's coverage is
+          # therefore unit-only — lines covered solely by the ITs count as
+          # uncovered here.
           commands: |
-            mvn -B -ntp -Dskip.integration.tests=false verify
+            mvn -B -ntp verify
           dir: backend
           java-cache: maven
           java-distribution: temurin
@@ -48,9 +48,10 @@ jobs:
           # They are NOT interchangeable: the same inputs map to DIFFERENT road groups (TSA 01 ->
           # 15 vs 11, TSA 08 -> 10 vs 7, TFL 08 -> 7 vs 10), so "resolving" the duplication by
           # merging them would silently corrupt one schedule's derived, user-visible Road Group.
-          # xmlReportPaths: with the ITs running, the pom's jacoco `merge`/`report-merged` executions
-          # produce the union of surefire and failsafe coverage. Sonar would otherwise keep reading
-          # the unit-only report and still count IT-covered lines as uncovered.
+          # xmlReportPaths: the pom's jacoco `merge`/`report-merged` executions merge whatever exec
+          # files exist (jacoco.exec + jacoco-it.exec). With the ITs moved to reusable-tests.yml's
+          # Integration job, only the surefire exec is produced here, so the "merged" report is the
+          # unit-only coverage described in the NOTE above — the path stays correct either way.
           sonar_args: >
             -Dsonar.organization=bcgov-sonarcloud
             -Dsonar.projectKey=bcgov-sonarcloud_nr-ilcr_backend

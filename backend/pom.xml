@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -115,6 +115,51 @@
             <properties>
                 <skip.unit.tests>true</skip.unit.tests>
             </properties>
+        </profile>
+        <profile>
+            <!-- CI e2e database reset (reusable-tests.yml e2e-full job): applies the
+                 test-scope Flyway chain PLUS the e2e-only anchor seed (db-e2e/, which the
+                 *IT suite must never load — see that file's header) to the shared
+                 tools-namespace Oracle (database/openshift.deploy.yml) through a
+                 port-forward:
+                   mvn -P e2e-db flyway:clean flyway:migrate \
+                     -Dflyway.url=jdbc:oracle:thin:@//localhost:1525/ILCR \
+                     -Dflyway.user=$DB_USER -Dflyway.password=$DB_PASS
+                 (credentials read at job time from the deployment's own OpenShift
+                 Secret, <name>-tools-database).
+                 clean+migrate at job start is what makes the shared long-lived DB start
+                 every run from the identical fixture state. Versions resolve from the
+                 Spring Boot parent (flyway.version / oracle-database.version) so the plugin
+                 always matches the flyway-core the ITs run. -->
+            <id>e2e-db</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-maven-plugin</artifactId>
+                        <version>${flyway.version}</version>
+                        <configuration>
+                            <locations>
+                                <location>filesystem:src/test/resources/db</location>
+                                <location>filesystem:src/test/resources/db-e2e</location>
+                            </locations>
+                            <cleanDisabled>false</cleanDisabled>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>org.flywaydb</groupId>
+                                <artifactId>flyway-database-oracle</artifactId>
+                                <version>${flyway.version}</version>
+                            </dependency>
+                            <dependency>
+                                <groupId>com.oracle.database.jdbc</groupId>
+                                <artifactId>ojdbc11</artifactId>
+                                <version>${oracle-database.version}</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 
@@ -542,7 +587,7 @@
                     <dependency>
                         <groupId>com.puppycrawl.tools</groupId>
                         <artifactId>checkstyle</artifactId>
-                        <version>13.11.0</version>
+                        <version>14.0.0</version>
                     </dependency>
                 </dependencies>
                 <configuration>
