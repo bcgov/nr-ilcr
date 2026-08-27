@@ -299,7 +299,20 @@ describe('the page panel', () => {
   test('renders the derived road group read-only, not as an input', async () => {
     renderSchedule10()
     await openPagePanel()
-    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    // The class is asserted, not just the text. It is what carries the typography that makes this
+    // <span> read like the six Carbon labels beside it, and that typography comes from TWO
+    // stylesheets (#366): `label-01` metrics in schedule10/index.scss, and the size from the
+    // `.schedule-page` rule in styles/index.scss, which sets every label on the page to 0.875rem
+    // and which a hand-rolled <span> only picks up by being named in it.
+    //
+    // This one line is ALL the automated protection that fix has, deliberately. A source-level SCSS
+    // tripwire was written for it and then deleted: it could not have caught #366 (the original rule
+    // existed and looked fine — its number was wrong relative to another file), and the review of it
+    // found three of its assertions could not fail at all. A 2px label is caught by the next person
+    // who opens the page, which is how this was found and how the fix was signed off. What no eye
+    // catches is a rename here, silently detaching the span from both rules — so that is what this
+    // pins, and it is the half of the contract jsdom can actually see.
+    expect(await screen.findByText('Road Group')).toHaveClass('schedule-10__field-label')
     expect(screen.getByText('11')).toBeInTheDocument()
     // Derived values render as TEXT so a screen reader announces a value, not a dead control.
     expect(screen.queryByLabelText('Road Group')).not.toBeInTheDocument()
