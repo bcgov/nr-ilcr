@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.security;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
@@ -71,15 +73,24 @@ class AdminActionAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN passes the gate on the admin actions")
+  @DisplayName("ILCR_ADMIN passes the gate and reaches real data on the admin actions")
   void admin_allowedOnAdminActions() throws Exception {
-    // The gate opens (not 403). Code-tables + reporting-years reliably return 200 against the
-    // shared
-    // snapshot; the point here is that authorization succeeds for the admin role.
-    mockMvc.perform(get(CODE_TABLES).with(groups("ILCR_ADMIN"))).andExpect(status().isOk());
-    mockMvc.perform(get(REPORTING_YEARS).with(groups("ILCR_ADMIN"))).andExpect(status().isOk());
+    // Not merely "not 403": assert a real JSON payload (never application/problem+json), with
+    // actual
+    // rows for code-tables, so a 200-with-empty-body / masked-error regression cannot pass this off
+    // as "admin allowed".
+    mockMvc
+        .perform(get(CODE_TABLES).with(groups("ILCR_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+        .andExpect(jsonPath("$.length()", greaterThanOrEqualTo(1)));
+    mockMvc
+        .perform(get(REPORTING_YEARS).with(groups("ILCR_ADMIN")))
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
     mockMvc
         .perform(get(HOME_CONTENT).with(groups("ILCR_ADMIN")))
-        .andExpect(status().is(org.springframework.http.HttpStatus.OK.value()));
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
   }
 }

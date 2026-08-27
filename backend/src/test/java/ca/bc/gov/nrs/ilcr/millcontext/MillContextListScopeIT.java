@@ -42,6 +42,10 @@ class MillContextListScopeIT extends AbstractOracleIT {
   // 32 chars — the directory-GUID column width (custom:idp_user_id).
   private static final String GUID = "SCOPEIT1BBBBCCCCDDDDEEEEFFFF0001";
   private static final String GUID_NONE = "SCOPEIT2BBBBCCCCDDDDEEEEFFFF0002";
+  // A DIFFERENT submitter, used to prove cross-user isolation: a mill actively assigned to this
+  // user must NOT appear in GUID's list (the WHERE USER_GUID predicate actually partitions by
+  // user).
+  private static final String GUID_OTHER = "SCOPEIT3BBBBCCCCDDDDEEEEFFFF0003";
 
   private static final RequestPostProcessor SUBMITTER =
       jwt()
@@ -61,8 +65,12 @@ class MillContextListScopeIT extends AbstractOracleIT {
   @AfterEach
   void cleanSeed() {
     jdbcTemplate.update(
-        "DELETE FROM THE.ILCR_MILL_USER_XREF WHERE USER_GUID IN (?, ?)", GUID, GUID_NONE);
-    jdbcTemplate.update("DELETE FROM THE.ILCR_USER WHERE USER_GUID IN (?, ?)", GUID, GUID_NONE);
+        "DELETE FROM THE.ILCR_MILL_USER_XREF WHERE USER_GUID IN (?, ?, ?)",
+        GUID,
+        GUID_NONE,
+        GUID_OTHER);
+    jdbcTemplate.update(
+        "DELETE FROM THE.ILCR_USER WHERE USER_GUID IN (?, ?, ?)", GUID, GUID_NONE, GUID_OTHER);
   }
 
   private void seedUser(String guid) {
@@ -110,6 +118,11 @@ class MillContextListScopeIT extends AbstractOracleIT {
     seedActive(GUID, 514L); // ACT mill — associated
     seedActive(GUID, 516L); // CLS mill — associated; closed still shown (S06)
     seedEnded(GUID, 515L); // ended assignment — must be excluded
+    // Cross-user isolation: mill 517 is actively assigned to a DIFFERENT submitter. Its absence
+    // from GUID's list proves the USER_GUID predicate partitions by user (not just "any active
+    // assignment") — a query dropping `AND USER_GUID = :userGuid` would wrongly surface it here.
+    seedUser(GUID_OTHER);
+    seedActive(GUID_OTHER, 517L);
 
     mockMvc
         .perform(get("/api/v1/mills").with(SUBMITTER).accept(MediaType.APPLICATION_JSON))
@@ -118,7 +131,8 @@ class MillContextListScopeIT extends AbstractOracleIT {
         // Associated active mills present…
         .andExpect(jsonPath("$[?(@.millId == 514)].millStatusCode", contains("ACT")))
         .andExpect(jsonPath("$[?(@.millId == 516)].millStatusCode", contains("CLS")))
-        // …ended assignment (515) and never-assigned mill (517) absent.
+        // …ended assignment (515) absent, and mill 517 — actively assigned to ANOTHER user —
+        // absent.
         .andExpect(jsonPath("$[?(@.millId == 515)]").isEmpty())
         .andExpect(jsonPath("$[?(@.millId == 517)]").isEmpty());
   }

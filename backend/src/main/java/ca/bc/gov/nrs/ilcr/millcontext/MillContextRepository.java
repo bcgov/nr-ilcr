@@ -91,7 +91,11 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
    * active convention is {@code INACTIVE_DATE IS NULL} (a toggled-in-place row clears the active
    * date when ended) — the two select the same rows given the mutual-exclusivity invariant ({@link
    * ca.bc.gov.nrs.ilcr.assignment.MillUserXrefEntity#isActive()}). Ordered by mill number
-   * ascending.
+   * ascending. Active is {@code INACTIVE_DATE IS NULL AND ACTIVE_DATE IS NOT NULL} — both
+   * predicates, so a never-activated (both-dates-null) row is NOT treated as active (legacy {@code
+   * activeDate <> null} parity). The legacy {@code ILCR_USER} join is elided: {@code USER_GUID} is
+   * a column on {@code ILCR_MILL_USER_XREF}, so no join to {@code ILCR_USER} is needed to filter by
+   * user.
    *
    * <p>Closed ({@code CLS}) mills a submitter is assigned to are INCLUDED — no status filter, same
    * as {@link #findAllMills()} (S06 reachability). Recorded deviation from legacy: the {@code
@@ -120,6 +124,7 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
           ON u.ILCR_MILL_ID = m.MILL_ID
        WHERE u.USER_GUID = :userGuid
          AND u.INACTIVE_DATE IS NULL
+         AND u.ACTIVE_DATE IS NOT NULL
          AND EXISTS (SELECT 1
                        FROM THE.ILCR_MILL_REPORT_STATUS s
                       WHERE s.ILCR_MILL_ID = m.MILL_ID)

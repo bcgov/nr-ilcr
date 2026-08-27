@@ -394,15 +394,28 @@ public class GlobalExceptionHandler {
    */
   static String deniedAuditMessage(
       Authentication authentication, HttpServletRequest request, String reason) {
-    String actor = (authentication != null) ? authentication.getName() : "anonymous";
+    String name = (authentication != null) ? authentication.getName() : null;
+    String actor = (name != null && !name.isBlank()) ? sanitize(name) : "anonymous";
     return "Authorization denied: actor="
         + actor
         + " action=\""
-        + request.getMethod()
+        + sanitize(request.getMethod())
         + " "
-        + request.getRequestURI()
+        + sanitize(request.getRequestURI())
         + "\" reason="
-        + reason;
+        + sanitize(reason);
+  }
+
+  /**
+   * Neutralize log-forging control characters (CR/LF) and the field delimiter (double-quote) in any
+   * caller-influenced value before it enters the single-line audit record, so a crafted URI or
+   * message cannot inject a fake log line. Null renders as {@code "null"} (never an NPE).
+   */
+  private static String sanitize(String value) {
+    if (value == null) {
+      return "null";
+    }
+    return value.replaceAll("[\\r\\n\"]", "_");
   }
 
   /**

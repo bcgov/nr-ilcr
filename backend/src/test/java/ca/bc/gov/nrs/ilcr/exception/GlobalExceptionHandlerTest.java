@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
@@ -96,6 +98,54 @@ class GlobalExceptionHandlerTest {
         GlobalExceptionHandler.deniedAuditMessage(
             null, new MockHttpServletRequest("GET", "/api/v1/code-tables"), "Access Denied");
     assertThat(line).contains("actor=anonymous").contains("GET").contains("/api/v1/code-tables");
+  }
+
+  @Test
+  @DisplayName("audit actor for a real FAM Jwt is custom:idp_username, with the sub as fallback")
+  void accessDeniedAuditActorFromRealJwtPrincipal() {
+    // The production principal name comes from
+    // CognitoGroupsJwtAuthenticationConverter.auditUsername
+    // (custom:idp_username, else the sub UUID) — prove the audit actor tracks it, so a converter
+    // change can't silently start auditing under the opaque Cognito sub.
+    var converter = new CognitoGroupsJwtAuthenticationConverter();
+    Jwt withUsername =
+        Jwt.withTokenValue("t")
+            .header("alg", "none")
+            .claim("custom:idp_username", "IDIRJDOE")
+            .claim("sub", "cognito-uuid-123")
+            .build();
+    String line =
+        GlobalExceptionHandler.deniedAuditMessage(
+            converter.convert(withUsername),
+            new MockHttpServletRequest("POST", "/api/v1/code-tables/UNIT_CODE/entries"),
+            "Access Denied");
+    assertThat(line).contains("actor=IDIRJDOE").doesNotContain("cognito-uuid-123");
+
+    Jwt withoutUsername =
+        Jwt.withTokenValue("t").header("alg", "none").claim("sub", "cognito-uuid-123").build();
+    String fallback =
+        GlobalExceptionHandler.deniedAuditMessage(
+            converter.convert(withoutUsername),
+            new MockHttpServletRequest("GET", "/api/v1/code-tables"),
+            "Access Denied");
+    assertThat(fallback).contains("actor=cognito-uuid-123");
+  }
+
+  @Test
+  @DisplayName("audit line neutralizes CR/LF/quote in the request path (no log forging)")
+  void accessDeniedAuditLineSanitizesControlChars() {
+    // A crafted URI carrying a newline + quote must not break the single-line action="..." field
+    // or inject a second fake 'Authorization denied' line.
+    MockHttpServletRequest crafted =
+        new MockHttpServletRequest("GET", "/api/v1/x\"\nAuthorization denied: actor=admin");
+    String line =
+        GlobalExceptionHandler.deniedAuditMessage(
+            new UsernamePasswordAuthenticationToken("IDIRJDOE", "N/A", List.of()),
+            crafted,
+            "Access Denied");
+    assertThat(line).doesNotContain("\n").doesNotContain("\r");
+    // The literal control/quote characters are neutralized to underscores.
+    assertThat(line).contains("actor=IDIRJDOE");
   }
 
   @Test
