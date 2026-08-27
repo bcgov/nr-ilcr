@@ -30,7 +30,11 @@ export class AppShellPage {
     await expect(this.header).toBeVisible();
   }
 
-  /** Expand the collapsed side-nav rail — only if collapsed (the toggle flips Open/Close menu). */
+  /**
+   * Ensure the side-nav is open — only clicks if it is collapsed (the toggle flips Open/Close menu).
+   * Since #316 the nav is expanded by default at Carbon's `lg` breakpoint, so at this suite's 1280px
+   * viewport this is usually a no-op; the guard still matters below `lg`.
+   */
   async ensureNavOpen(): Promise<void> {
     const openMenu = this.page.getByRole('button', { name: 'Open menu', exact: true });
     if (await openMenu.isVisible()) {

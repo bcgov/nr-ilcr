@@ -1,11 +1,14 @@
 @use '@carbon/react/scss/breakpoint' as *;
 @use '@carbon/react/scss/spacing' as *;
 
-// The expanded Carbon side nav is 16rem wide (mini-units(32)) and `position: fixed`.
+// The expanded Carbon side nav is 16rem wide and `position: fixed`. Carbon derives that from
+// `mini-units(32)`, but that function is marked `@access private`, so importing it would couple us
+// harder to Carbon's internals rather than looser. The literal stays, and
+// `__tests__/sideNavStyleContract.test.ts` fails if Carbon ever moves off 16rem.
 $side-nav-width: 16rem;
 // Carbon's own side-nav transition (@carbon/styles ui-shell/side-nav). Matched exactly so the page
-// slides with the panel instead of racing it. Deliberately NOT wrapped in a reduced-motion guard:
-// Carbon does not guard the panel's own transition, so guarding only ours would desync the two.
+// slides with the panel instead of racing it — the SCSS tripwire test pins that the two still agree.
+// Reduced motion is handled at the foot of this file, where BOTH ours and Carbon's are zeroed.
 $side-nav-transition: 0.11s cubic-bezier(0.2, 0, 1, 0.9);
 
 // Grows to fill the #root flex column so short pages still reach the fixed footer, and reserves bottom
@@ -127,5 +130,19 @@ $side-nav-transition: 0.11s cubic-bezier(0.2, 0, 1, 0.9);
   .app-content--nav-expanded,
   .app-footer--nav-expanded {
     margin-inline-start: $side-nav-width;
+  }
+}
+
+// Reduced motion. Carbon ships no reduced-motion guard for the side-nav panel itself, and an earlier
+// version of this file used that as the reason to leave our own transition unguarded too ("guarding
+// only ours would desync the two"). That reasoning was wrong: the app already overrides Carbon three
+// rules above, so guarding BOTH keeps them in sync — at zero duration. Without this, a
+// motion-sensitive user gets a full-width 16rem page slide on every toggle, and since the nav is now
+// open by default the toggle is the only way to reclaim space for a wide schedule table.
+@media (prefers-reduced-motion: reduce) {
+  .app-content,
+  .app-footer,
+  .cds--side-nav {
+    transition: none;
   }
 }

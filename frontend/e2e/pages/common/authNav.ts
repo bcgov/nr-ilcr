@@ -32,16 +32,20 @@ export async function openApp(page: Page): Promise<void> {
 
 /**
  * Navigate the primary side-nav (client-side, so the in-memory MillYearContext set on Home survives —
- * a full page.goto() would reload the SPA and reset it). The rail defaults collapsed; a top-level item
- * is a link, a group (e.g. "Schedules") is an expandable button holding the schedule links. Reused by
- * every schedule domain.
+ * a full page.goto() would reload the SPA and reset it). A top-level item is a link, a group (e.g.
+ * "Schedules") is an expandable button holding the schedule links. Reused by every schedule domain.
+ *
+ * Since #316 the nav is EXPANDED BY DEFAULT at Carbon's `lg` breakpoint (>=1056px) and stays open
+ * across navigation, so at this suite's pinned 1280px viewport the "Open menu" branch below is
+ * normally skipped. The guard is kept, not deleted: it still applies below `lg`, and it is what let
+ * this helper survive the #316 default change without an edit.
  */
 export async function navigateViaSideNav(
   page: Page,
   opts: { group?: string; link: string },
 ): Promise<void> {
-  // The header toggle's label flips Open/Close menu, so only click it when the rail is collapsed —
-  // a blind click would collapse an already-open rail.
+  // The header toggle's label flips Open/Close menu, so only click it when the nav is collapsed —
+  // a blind click would collapse an already-open nav (which, since #316, is the default at lg+).
   const openMenu = page.getByRole('button', { name: 'Open menu', exact: true });
   if (await openMenu.isVisible()) {
     await openMenu.click();

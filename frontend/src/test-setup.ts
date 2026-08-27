@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
 
@@ -22,33 +22,69 @@ globalThis.scrollTo = () => {}
 // jsdom doesn't implement window.matchMedia; LayoutProvider uses it to decide whether the side nav
 // starts expanded (Carbon's `lg` breakpoint). The stub reports a NARROW viewport by default, so any
 // test that doesn't care keeps the pre-#316 collapsed shell. Tests that do care call
-// setLargeViewport(true) before rendering, or crossViewportBreakpoint() to simulate a resize across
-// the breakpoint — the registered `change` listeners are invoked exactly as the browser would.
+// setLargeViewport(true) before rendering, or crossViewportBreakpoint() to simulate a resize.
+//
+// The stub is deliberately query-AWARE. An earlier version answered every query with the viewport
+// flag, which meant `setLargeViewport(true)` also told Carbon that `(prefers-color-scheme: dark)` and
+// `(max-width: 20rem)` matched — Carbon's Theme, Tabs, PageHeader and PaginationNav all call
+// matchMedia, so a future test could have silently exercised the wrong branch and asserted nothing.
+const LARGE_VIEWPORT_QUERY = '(min-width: 66rem)'
+
 type MediaQueryChangeListener = (event: MediaQueryListEvent) => void
 
 let isLargeViewport = false
-const viewportListeners = new Set<MediaQueryChangeListener>()
+// Keyed by query so a crossing notifies only the listeners that registered for THAT query.
+const viewportListeners = new Set<{ query: string; listener: MediaQueryChangeListener }>()
 
+function matchesQuery(query: string): boolean {
+  return query === LARGE_VIEWPORT_QUERY ? isLargeViewport : false
+}
+
+/** Set the viewport BEFORE rendering. Throws if listeners already exist — see crossViewportBreakpoint. */
 export function setLargeViewport(matches: boolean): void {
+  if (viewportListeners.size > 0) {
+    throw new Error(
+      'setLargeViewport() was called after a component subscribed to matchMedia, where it is a silent ' +
+        'no-op for already-mounted consumers. Call it before render(), or use crossViewportBreakpoint() ' +
+        'to simulate a resize.',
+    )
+  }
   isLargeViewport = matches
 }
 
+/** Simulate the viewport crossing Carbon's `lg` breakpoint, notifying only that query's listeners. */
 export function crossViewportBreakpoint(matches: boolean): void {
   isLargeViewport = matches
-  for (const listener of viewportListeners) {
-    listener({ matches } as MediaQueryListEvent)
+  for (const { query, listener } of viewportListeners) {
+    if (query === LARGE_VIEWPORT_QUERY) {
+      listener({ matches } as MediaQueryListEvent)
+    }
   }
 }
 
+/** Registered-listener count, so a test can prove the provider actually unsubscribes on unmount. */
+export function activeViewportListenerCount(): number {
+  return viewportListeners.size
+}
+
 window.matchMedia = ((query: string) => ({
-  matches: isLargeViewport,
+  // A getter, not a snapshot: real MediaQueryList objects report the CURRENT state, so code that
+  // re-reads `mql.matches` after a crossing (rather than trusting `event.matches`) must see the new
+  // value. A snapshot here would make a correct production fix look like a test failure.
+  get matches() {
+    return matchesQuery(query)
+  },
   media: query,
   onchange: null,
   addEventListener: (_type: string, listener: MediaQueryChangeListener) => {
-    viewportListeners.add(listener)
+    viewportListeners.add({ query, listener })
   },
   removeEventListener: (_type: string, listener: MediaQueryChangeListener) => {
-    viewportListeners.delete(listener)
+    for (const entry of viewportListeners) {
+      if (entry.listener === listener && entry.query === query) {
+        viewportListeners.delete(entry)
+      }
+    }
   },
   // Deprecated MediaQueryList API — present so the object type-checks, unused by the app.
   addListener: () => {},
@@ -168,7 +204,13 @@ afterAll(() => server.close())
 // Reset handlers after each test `important for test isolation`
 afterEach(() => {
   server.resetHandlers()
-  // The viewport is global state like the MSW handlers — reset it or one test's `lg` leaks forward.
+})
+
+// The viewport is global state like the MSW handlers, so it resets between tests. Reset in BEFORE-each
+// rather than after: a `beforeAll(() => setLargeViewport(true))` block would otherwise silently expire
+// after its first test. Listeners are NOT cleared blindly — React unmount is what should remove them,
+// and wiping the Set here would destroy the evidence a leak regression leaves behind
+// (see the unsubscribe assertion in LayoutSideNav.test.tsx).
+beforeEach(() => {
   isLargeViewport = false
-  viewportListeners.clear()
 })

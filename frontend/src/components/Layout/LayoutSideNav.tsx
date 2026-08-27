@@ -7,7 +7,7 @@ import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import { isNavigationMenu, visibleNavigationItems } from '@/routes/-navigation'
 
 const LayoutSideNav: FC = () => {
-  const { closeSideNav, isLargeViewport, isSideNavExpanded } = useLayout()
+  const { closeSideNav, dismissSideNav, isLargeViewport, isSideNavExpanded } = useLayout()
   const location = useLocation()
   const { hasRole } = useAuth()
   // Admin-only items (Administration) are hidden entirely for non-admins; the server still enforces
@@ -17,9 +17,23 @@ const LayoutSideNav: FC = () => {
   // point of #316. Below lg it is an overlay ON TOP of the page just navigated to, so it still
   // closes; leaving it open there would hide the destination behind the menu after every click.
   const handleNavigate = isLargeViewport ? undefined : closeSideNav
+  // Carbon routes BOTH its Escape handler and its onBlur handler through `onToggle`, and the blur
+  // path fires on every focus exit — including clicking a nav link. Honour only the keyboard
+  // dismissal, or the nav would slam shut the instant the user tabs or clicks away from it.
+  const handleToggle = (event: { type?: string } | undefined, isExpanded: boolean) => {
+    if (!isExpanded && event?.type === 'keydown') {
+      dismissSideNav()
+    }
+  }
 
   return (
-    <SideNav expanded={isSideNavExpanded} isPersistent={isSideNavExpanded} isChildOfHeader>
+    <SideNav
+      expanded={isSideNavExpanded}
+      isPersistent={isSideNavExpanded}
+      isChildOfHeader
+      onToggle={handleToggle}
+      onOverlayClick={dismissSideNav}
+    >
       <SideNavItems>
         {visibleItems.map((item) => {
           if (isNavigationMenu(item)) {
