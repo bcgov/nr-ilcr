@@ -17,11 +17,32 @@
 #     citing V30__ilcr_mill_user_profile_xref.sql as one of three clean files, two days after
 #     PR #356 deleted it.)
 #
-# Baseline captured at nr-ilcr main 3be15fe, 2026-08-27 -- 45 entries. Generated, not hand-typed:
+# NOT ALL 45 ARE PRE-DECISION. Three post-date it, and two of those are in breach of convention 1a
+# as already written:
 #
-#   for f in V*.sql; do grep -qiE 'insert[[:space:]]+into' "$f" && echo "$f"; done
+#   V20260821__tsa_tsb_code_table_dates_and_seeds.sql   landed 38 minutes BEFORE the decision merged
+#   V20260822__seed_schedule6_correction_fixtures.sql   landed 2026-08-24, 53 INSERTs  <-- violation
+#   V20260823__seed_print_schedule8_combined_fixture.sql landed 2026-08-25, 11 INSERTs <-- violation
 #
-# Blank lines and #-comments are ignored. See db/README.md conventions 1 and 1a.
+# Those last two are the files that proved the convention needed a machine check at all, so the
+# baseline exempts the very violations that motivated it. That is a deliberate scoping call, not an
+# oversight: the guard exists to stop the NEXT one, and retro-converting fixtures 115 IT classes read
+# from is a different and riskier piece of work. They are the obvious first withdrawals from this
+# list. Recorded here rather than left for a reader to discover (code review, 2026-08-27).
+#
+# Baseline captured at nr-ilcr main 3be15fe, 2026-08-27 -- 45 entries. Generated, not hand-typed.
+# This command matches what FlywayMigrationConventionTest.containsSeedDml() does -- all three INSERT
+# forms plus MERGE, and comments stripped so a "-- INSERT INTO ... (moved to R__30_)" header does not
+# count. An earlier version of this recipe grepped only 'insert into' over raw text; it produced the
+# same 45 today but would have disagreed with the check the moment a MERGE-based fixture landed:
+#
+#   for f in V*.sql; do
+#     sed -e 's:--.*::' "$f" | tr '\n' ' ' | sed -e 's:/\*[^*]*\*/: :g' \
+#       | grep -qiE 'insert[[:space:]]+(into|all|first)|merge[[:space:]]+into' && echo "$f"
+#   done
+#
+# Blank lines and #-comments are ignored -- leading or trailing, so an inline note after a filename
+# is fine. A duplicated entry FAILS the build. See db/README.md conventions 1 and 1a.
 V10__seed_schedule2_read_fixtures.sql
 V11__seed_schedule2_write_fixtures.sql
 V13__schedule4_transportation_report_and_read_fixtures.sql
