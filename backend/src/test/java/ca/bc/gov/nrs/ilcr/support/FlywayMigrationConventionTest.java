@@ -311,16 +311,23 @@ class FlywayMigrationConventionTest {
                 + "is written some other way, teach this parser about it rather than leaving it "
                 + "silently vacuous.");
 
-    List<String> missing =
-        entries.stream().filter(name -> !Files.isRegularFile(MIGRATION_DIR.resolve(name))).toList();
+    List<String> unusable =
+        entries.stream()
+            .map(
+                name ->
+                    localDdlEntryProblem(name) == null
+                        ? null
+                        : name + " -> " + localDdlEntryProblem(name))
+            .filter(java.util.Objects::nonNull)
+            .toList();
 
     assertTrue(
-        missing.isEmpty(),
+        unusable.isEmpty(),
         () ->
-            "scripts/apply-local-ddl.sh lists migrations that do not exist in "
+            "scripts/apply-local-ddl.sh lists entries that are not usable migrations in "
                 + MIGRATION_DIR
                 + ":\n"
-                + bullets(missing)
+                + bullets(unusable)
                 + "\n\nThat script runs under `set -euo pipefail` and `cat`s each entry, so a "
                 + "stale name does not degrade — it aborts the whole run, and the migrations after "
                 + "it are never applied. The developer sees a broken local database and reasonably "
@@ -328,7 +335,37 @@ class FlywayMigrationConventionTest {
                 + "This happened: PR #356 replaced V30__ilcr_mill_user_profile_xref.sql with "
                 + "V20260825__the_ilcr_user_and_mill_user_xref.sql and left the array pointing at "
                 + "the deleted file.\n"
-                + "If you renamed a migration, update the array in the same commit.");
+                + "If you renamed a migration, update the array in the same commit.\n"
+                + "Entries must be a bare migration filename living in "
+                + MIGRATION_DIR
+                + " — existence alone is not enough, because a traversal path resolves to a real "
+                + "file that is not a migration at all.");
+  }
+
+  /**
+   * Returns null when the entry is a usable migration, else the specific reason.
+   *
+   * <p>Existence alone is NOT the script's contract, and checking only that was a real hole (raised
+   * in review on PR #372). {@code apply-local-ddl.sh} pipes every entry through {@code cat} into
+   * {@code sqlplus}, so an entry that escapes the migration directory — {@code
+   * ../../../../../scripts/apply-local-ddl.sh}, an absolute path, anything carrying {@code ..} —
+   * satisfies a bare {@code Files.isRegularFile} check and feeds a NON-SQL file to the database.
+   * Verified before fixing: with that traversal path as the sole array entry, the check passed.
+   *
+   * <p>So the guard now asserts what the script actually needs: a bare filename, shaped like a
+   * Flyway migration, present in {@code db/}.
+   */
+  private static String localDdlEntryProblem(String name) {
+    if (name.contains("/") || name.contains("\\")) {
+      return "is a path, not a bare filename in " + MIGRATION_DIR;
+    }
+    if (!VERSIONED.matcher(name).matches() && !REPEATABLE.matcher(name).matches()) {
+      return "is not a Flyway migration filename (V<version>__<desc>.sql or R__<desc>.sql)";
+    }
+    if (!Files.isRegularFile(MIGRATION_DIR.resolve(name))) {
+      return "does not exist in " + MIGRATION_DIR;
+    }
+    return null;
   }
 
   /**
@@ -646,6 +683,20 @@ class FlywayMigrationConventionTest {
       assertTrue(parseMigrationsArray("MIGRATIONS=()").isEmpty());
       assertFalse(arrayHasContent("MIGRATIONS=()"), "an empty array is legal, not vacuous");
       assertTrue(parseMigrationsArray("NOTHING_HERE=(\"V1__a.sql\")").isEmpty());
+    }
+
+    @Test
+    void localDdlEntriesMustBeBareMigrationFilenamesInTheMigrationDirectory() {
+      // (bypass) existence alone passed a traversal path; the script cats each entry into sqlplus.
+      assertNull(localDdlEntryProblem("V20260825__the_ilcr_user_and_mill_user_xref.sql"));
+      assertTrue(
+          localDdlEntryProblem("../../../../../scripts/apply-local-ddl.sh").contains("is a path"),
+          "(bypass) a traversal path resolves to a real file and used to pass");
+      assertTrue(localDdlEntryProblem("/etc/passwd").contains("is a path"));
+      assertTrue(localDdlEntryProblem("sub/V1__x.sql").contains("is a path"));
+      assertTrue(localDdlEntryProblem("..").contains("not a Flyway migration filename"));
+      assertTrue(localDdlEntryProblem("README.md").contains("not a Flyway migration filename"));
+      assertTrue(localDdlEntryProblem("V99__never_existed.sql").contains("does not exist"));
     }
 
     @Test
