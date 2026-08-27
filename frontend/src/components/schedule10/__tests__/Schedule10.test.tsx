@@ -299,7 +299,12 @@ describe('the page panel', () => {
   test('renders the derived road group read-only, not as an input', async () => {
     renderSchedule10()
     await openPagePanel()
-    expect(await screen.findByText('Road Group')).toBeInTheDocument()
+    // The class is asserted, not just the text: it is what carries the typography that makes this
+    // <span> read like the six Carbon labels beside it, and it is styled from TWO stylesheets
+    // (#366). `label-typography.test.ts` guards both rules but reads only SCSS, so a rename here
+    // would leave every one of its assertions green while the label went back to looking wrong.
+    // This is the one half of that contract jsdom CAN see — a class attribute, not a computed style.
+    expect(await screen.findByText('Road Group')).toHaveClass('schedule-10__field-label')
     expect(screen.getByText('11')).toBeInTheDocument()
     // Derived values render as TEXT so a screen reader announces a value, not a dead control.
     expect(screen.queryByLabelText('Road Group')).not.toBeInTheDocument()
