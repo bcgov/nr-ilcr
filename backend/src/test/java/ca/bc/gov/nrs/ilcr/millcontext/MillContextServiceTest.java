@@ -85,6 +85,31 @@ class MillContextServiceTest {
     assertDoesNotThrow(() -> service.validateScheduleViewable(514L, YEAR, CATEGORY));
   }
 
+  // ---- listMills (Story 5.5): caller-scoped Home mill list ----
+
+  @Test
+  void listMills_admin_returnsAllMills_ignoringGuid() {
+    // Admin is tied to no mill: all listable mills incl. closed (findAllMills), guid irrelevant.
+    when(repository.findAllMills()).thenReturn(List.of(MILL_514, MILL_516));
+    assertEquals(List.of(MILL_514, MILL_516), service.listMills(true, "any-guid-ignored"));
+  }
+
+  @Test
+  void listMills_submitter_returnsOnlyActivelyAssociatedMills_closedIncluded() {
+    // Submitter sees only their active associations — here a single CLOSED mill (S06: still shown).
+    when(repository.findMillsForUser("GUID-1")).thenReturn(List.of(MILL_516));
+    assertEquals(List.of(MILL_516), service.listMills(false, "GUID-1"));
+  }
+
+  @Test
+  void listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed() {
+    // No resolvable identity (e.g. the dev mock principal, no custom:idp_user_id): EMPTY, never
+    // all.
+    // Strict Mockito proves no repository read happens (no findAllMills / findMillsForUser stub).
+    assertTrue(service.listMills(false, "   ").isEmpty());
+    assertTrue(service.listMills(false, null).isEmpty());
+  }
+
   // ---- resolveWorkingContext (Story 1.2): Home semantics, distinct from the guards above ----
 
   private static final MillSummary MILL_514 = new MillSummary(514L, "514", "AAA Milling", "ACT");

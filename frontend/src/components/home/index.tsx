@@ -165,7 +165,9 @@ const Home: FC = () => {
           return
         }
         // AR11: the working context is client-side now; a successful resolve makes this selection the
-        // source of context, replacing the 514/2021 default.
+        // source of context, replacing the scaffold default (millYearDefaults). Story 5.5: the mill
+        // list is server-scoped to the caller, so the pre-select above (line ~124) already operates on
+        // the user's own mills — a submitter can only ever save a mill that is actually theirs.
         setContext(response.data.millId, response.data.reportYear)
         // SUC-001 verbatim from the API message (AD-8), never hardcoded.
         setSaveMessage(response.data.message?.text ?? null)

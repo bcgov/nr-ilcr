@@ -23,6 +23,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -54,9 +55,12 @@ class MillContextListIT extends AbstractOracleIT {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  // Home lists are post-login (O4): an authenticated caller is required, no specific role
-  // (no @PreAuthorize, no per-user filter yet — that arrives with Epic 5).
-  private static final RequestPostProcessor AUTH = jwt();
+  // Story 5.5: the mill list is now caller-scoped. An ADMIN is tied to no mill and sees every
+  // enrolled mill incl. closed (legacy admin getMills()), so these all-mills / ordering assertions
+  // use an ADMIN principal. Submitter scoping (only actively-associated mills) is covered by
+  // MillContextListScopeIT. The reporting-years list is not user-scoped — ADMIN is fine there too.
+  private static final RequestPostProcessor AUTH =
+      jwt().authorities(new SimpleGrantedAuthority("ADMIN"));
 
   // Security on -> oauth2ResourceServer().jwt() requires a JwtDecoder bean at config time; the
   // jwt() post-processor injects the principal so the decoder is never called — the mock only

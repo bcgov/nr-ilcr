@@ -41,14 +41,31 @@ public class MillContextService {
   }
 
   /**
-   * The mills offered on the Home page (Story 1.1, BR-02). Unfiltered read — closed mills included,
-   * no per-user association filter (deferred to the auth story, AR4) — so no validation logic here;
-   * the {@code validate*} guards above are untouched.
+   * The mills offered on the Home page, scoped to the caller (Story 5.5, UC-SEC-001/UC-SEC-003).
    *
-   * @return every mill, ordered by mill number ascending
+   * <p>An {@code ILCR_ADMIN} is tied to no mill and sees every listable mill INCLUDING closed
+   * (DL-22, legacy admin {@code getMills()} → {@link MillContextRepository#findAllMills()}). An
+   * {@code ILCR_SUBMITTER} sees ONLY mills they are actively associated to (legacy {@code
+   * getMills(userGuid)} → {@link MillContextRepository#findMillsForUser(String)}); closed
+   * associated mills still appear (no status filter, S06). A submitter whose identity cannot be
+   * resolved — a blank {@code custom:idp_user_id}, e.g. the dev mock principal, which carries no
+   * directory GUID — sees an EMPTY list: fail-closed, never all-mills (a submitter must never see
+   * mills that aren't theirs). Replaces the Story 1.1 unfiltered read now that real identity exists
+   * (AR4).
+   *
+   * @param isAdmin whether the caller holds {@code ILCR_ADMIN}
+   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID (blank if
+   *     unavailable)
+   * @return the caller-scoped mills, ordered by mill number ascending
    */
-  public List<MillSummary> listMills() {
-    return repository.findAllMills();
+  public List<MillSummary> listMills(boolean isAdmin, String userGuid) {
+    if (isAdmin) {
+      return repository.findAllMills();
+    }
+    if (userGuid == null || userGuid.isBlank()) {
+      return List.of();
+    }
+    return repository.findMillsForUser(userGuid);
   }
 
   /**
