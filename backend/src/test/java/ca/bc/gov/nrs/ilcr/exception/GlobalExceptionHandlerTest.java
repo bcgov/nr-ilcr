@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
@@ -12,6 +13,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
@@ -64,6 +66,36 @@ class GlobalExceptionHandlerTest {
     ProblemDetail problem = response.getBody();
     assertThat(problem).isNotNull();
     return problem.getDetail();
+  }
+
+  @Test
+  @DisplayName("access denied audit line carries actor + action, and never a credential/token")
+  void accessDeniedAuditLineCarriesActorAndAction() {
+    // Story 5.4 AC4/NFR3: the denial audit line names the actor + action (timestamp is the log
+    // line's own), and never the credential or a token.
+    String line =
+        GlobalExceptionHandler.deniedAuditMessage(
+            new UsernamePasswordAuthenticationToken("IDIRJDOE", "N/A", List.of()),
+            new MockHttpServletRequest("POST", "/api/v1/code-tables/UNIT_CODE/entries"),
+            "Access Denied");
+
+    assertThat(line)
+        .contains("Authorization denied")
+        .contains("IDIRJDOE")
+        .contains("POST")
+        .contains("/api/v1/code-tables/UNIT_CODE/entries");
+    // The credential ("N/A") is never logged; nor is any bearer token (NFR3).
+    assertThat(line).doesNotContain("N/A");
+    assertThat(line.toLowerCase(Locale.ROOT)).doesNotContain("bearer");
+  }
+
+  @Test
+  @DisplayName("access denied audit line renders an unauthenticated caller as 'anonymous'")
+  void accessDeniedAuditLineAnonymousWhenNoAuth() {
+    String line =
+        GlobalExceptionHandler.deniedAuditMessage(
+            null, new MockHttpServletRequest("GET", "/api/v1/code-tables"), "Access Denied");
+    assertThat(line).contains("actor=anonymous").contains("GET").contains("/api/v1/code-tables");
   }
 
   @Test
