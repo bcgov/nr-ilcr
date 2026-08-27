@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
@@ -74,7 +73,7 @@ class FlywayMigrationVersionUniquenessTest {
         filesByVersion.entrySet().stream()
             .filter(entry -> entry.getValue().size() > 1)
             .map(entry -> "  V" + entry.getKey() + " -> " + entry.getValue())
-            .collect(Collectors.toList());
+            .toList();
 
     assertTrue(
         collisions.isEmpty(),

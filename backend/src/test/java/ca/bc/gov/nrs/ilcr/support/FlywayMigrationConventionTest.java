@@ -1,7 +1,6 @@
 package ca.bc.gov.nrs.ilcr.support;
 
 import static java.util.stream.Collectors.joining;
-import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -169,7 +168,7 @@ class FlywayMigrationConventionTest {
             .filter(entry -> !grandfathered.contains(entry.getKey()))
             .filter(entry -> containsSeedDml(read(entry.getValue())))
             .map(Map.Entry::getKey)
-            .collect(toList());
+            .toList();
 
     assertTrue(
         offenders.isEmpty(),
@@ -294,7 +293,7 @@ class FlywayMigrationConventionTest {
    * job.
    */
   @Test
-  void applyLocalDdlScriptNamesOnlyMigrationsThatExist() throws IOException {
+  void applyLocalDdlScriptNamesOnlyMigrationsThatExist() {
     assumeTrue(
         Files.isRegularFile(LOCAL_DDL_SCRIPT),
         "no ../scripts/apply-local-ddl.sh here — module-only build context, check skipped");
@@ -313,9 +312,7 @@ class FlywayMigrationConventionTest {
                 + "silently vacuous.");
 
     List<String> missing =
-        entries.stream()
-            .filter(name -> !Files.isRegularFile(MIGRATION_DIR.resolve(name)))
-            .collect(toList());
+        entries.stream().filter(name -> !Files.isRegularFile(MIGRATION_DIR.resolve(name))).toList();
 
     assertTrue(
         missing.isEmpty(),
@@ -411,7 +408,7 @@ class FlywayMigrationConventionTest {
                   String name = fileNameOf(relative);
                   return !VERSIONED.matcher(name).matches() && !REPEATABLE.matcher(name).matches();
                 })
-            .collect(toList());
+            .toList();
 
     assertTrue(
         unclassified.isEmpty(),
@@ -586,9 +583,11 @@ class FlywayMigrationConventionTest {
       // (bypass) block-before-line stripping paired the opener on line 1 with the closer on line 3.
       assertTrue(
           containsSeedDml(
-              "-- Ratio note: cost/*unit* is stored pre-split.\n"
-                  + "INSERT INTO THE.MILL (MILL_ID) VALUES (1);\n"
-                  + "-- End of header. Multiplier a*/b applies.\n"));
+              """
+              -- Ratio note: cost/*unit* is stored pre-split.
+              INSERT INTO THE.MILL (MILL_ID) VALUES (1);
+              -- End of header. Multiplier a*/b applies.
+              """));
     }
 
     @Test
