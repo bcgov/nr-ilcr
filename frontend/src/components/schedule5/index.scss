@@ -56,8 +56,9 @@
 // legacy gave them with its `header` style class.
 .schedule-5__section-row td {
   font-weight: 600;
-  // Calculated subtotal/total band (#312 Overall 5) — same accent layer as the other schedules.
-  background: var(--cds-layer-accent-01);
+  // Subtotal/section band (#312 Overall 5) — intermediate subtotals, so a LIGHTER grey than the
+  // schedules whose band is the actual total (--cds-layer-accent-01). Theme-aware via color-mix.
+  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
 }
 
 // Legacy pads the four Equipment and Supplies rows with non-breaking spaces to sit them under their

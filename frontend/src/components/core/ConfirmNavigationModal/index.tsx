@@ -1,6 +1,7 @@
 import type { FC, ReactNode } from 'react'
 import { Button, ComposedModal, ModalBody, ModalFooter, ModalHeader } from '@carbon/react'
 import { ArrowRight, Close } from '@carbon/icons-react'
+import './index.scss'
 
 // The schedule -> supplementary-screen navigation confirm (#312 Overall 11): "make the cancel and
 // continue buttons into regular sized buttons (with icons)". Carbon's base `<Modal>` only takes
@@ -34,7 +35,13 @@ const ConfirmNavigationModal: FC<ConfirmNavigationModalProps> = ({
   // gives the dialog its accessible name: base <Modal> derived it from `modalHeading`, but
   // <ComposedModal> does NOT auto-label from the <ModalHeader> title, so screen readers (and
   // getByRole('dialog', { name })) would otherwise find an unnamed dialog.
-  <ComposedModal open={open} onClose={onCancel} size="sm" aria-label={heading}>
+  <ComposedModal
+    open={open}
+    onClose={onCancel}
+    size="sm"
+    aria-label={heading}
+    className="confirm-nav-modal"
+  >
     <ModalHeader title={heading} />
     <ModalBody>
       <p>{children}</p>

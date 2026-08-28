@@ -1,0 +1,16 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// #312 Overall 11 refinement: Carbon's ComposedModal footer stretches each button to 50% width and a
+// full 4rem (64px) height — they "fill" the modal. Make Cancel/Continue read as REGULAR buttons:
+// right-aligned, natural (content) width, standard button height, with a comfortable gap.
+.confirm-nav-modal .cds--modal-footer {
+  justify-content: flex-end;
+  gap: $spacing-05;
+  padding: $spacing-05;
+}
+
+.confirm-nav-modal .cds--modal-footer .cds--btn {
+  flex: 0 0 auto;
+  max-inline-size: none;
+  block-size: auto;
+}
