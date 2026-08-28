@@ -16,9 +16,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
@@ -832,10 +832,9 @@ const Schedule4: FC = () => {
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
-        <TextArea
+        <CommentsTextArea
           id="location-comments"
           labelText="If you have any additional comments, please enter them here:"
-          enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}
           onChange={(event) => setPanelComments(event.target.value)}

@@ -1080,13 +1080,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured!.generalComments).toBeNull()
   })
 
-  test('the General Comment counter is Carbon’s n/3500 (AC5, deviation G)', async () => {
+  test('the General Comment counter shows characters remaining (AC5, #312 Overall 10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ generalComments: null }))))
     render(<Schedule6 />)
 
     const region = await waitFor(() => commentsRegion())
     expect(within(region).getByLabelText('General Comments').tagName).toBe('TEXTAREA')
-    expect(within(region).getByText('0/3500')).toBeInTheDocument()
+    expect(within(region).getByText('3500 characters remaining')).toBeInTheDocument()
   })
 
   test('the per-record Comments field caps at 400, not legacy’s 3500 (deviation E)', async () => {
@@ -1098,7 +1098,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // The column is ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE); a 3500 cap here would walk
     // the user straight into a server rejection (legacy's own textareas did exactly that).
     expect(within(panel).getByLabelText('Comments')).toHaveAttribute('maxlength', '400')
-    expect(within(panel).getByText('0/400')).toBeInTheDocument()
+    expect(within(panel).getByText('400 characters remaining')).toBeInTheDocument()
   })
 
   test('missing mill/year context short-circuits before any GET (AC7 / S06)', async () => {

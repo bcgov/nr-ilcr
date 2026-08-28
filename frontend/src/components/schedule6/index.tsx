@@ -18,9 +18,9 @@ import {
   Grid,
   InlineNotification,
   Modal,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -314,11 +314,10 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         <FieldValue label="$ / m³" value={costPerVolume} numeric />
       </dl>
       <div className="schedule-6__comments">
-        <TextArea
+        <CommentsTextArea
           id={`${idPrefix}-comments`}
           labelText="Comments"
           rows={2}
-          enableCounter
           // 400, not legacy's maxlength=3500: the per-record comment lands in
           // ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE) (deviation E).
           maxCount={RECORD_COMMENTS_MAX_LENGTH}
@@ -975,11 +974,10 @@ const Schedule6: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-6__section">
           <section aria-label="General Comments">
-            <TextArea
+            <CommentsTextArea
               id="general-comments"
               labelText="General Comments"
               rows={5}
-              enableCounter
               // 3500 is the legacy UI cap over a 4000-wide column — a different, wider column than
               // the per-record comment's 400 (deviation E).
               maxCount={GENERAL_COMMENTS_MAX_LENGTH}

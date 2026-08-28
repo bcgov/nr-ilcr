@@ -780,16 +780,16 @@ describe('Schedule 7A page', () => {
     expect(entryFor(captured, 7001)?.otherCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit', async () => {
+  test('the comments counter shows characters remaining (#312 Overall 10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
     await openBridge(user, 1)
 
-    // Carbon's counter is used-of-limit. 'Spans the north fork' is 20 characters.
-    expect(screen.getByText('20/3500')).toBeInTheDocument()
+    // Remaining, not used-of-limit (legacy wording). 'Spans the north fork' is 20 characters.
+    expect(screen.getByText('3480 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('21/3500')).toBeInTheDocument()
+    expect(screen.getByText('3479 characters remaining')).toBeInTheDocument()
   })
 
   test('Check Status renders per-bridge failures and no schedule banner on mixed results (AC6)', async () => {

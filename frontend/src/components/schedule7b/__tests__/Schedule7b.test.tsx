@@ -1044,18 +1044,18 @@ describe('Schedule 7B page', () => {
     expect(entryFor(captured, 7801)?.installCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit, and typing stops at the cap', async () => {
+  test('the comments counter shows characters remaining, and typing stops at the cap', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7b />)
     await openCulvert(user, 1)
 
-    // Carbon's counter is used-of-limit, matching the 7A twin (legacy's own counterTemplate counted
-    // down — a recorded deviation, decided by the team). 'Main haul road' is 14 characters.
-    expect(screen.getByText('14/3500')).toBeInTheDocument()
+    // Remaining, counting down — restores legacy's own counterTemplate (#312 Overall 10). 'Main haul
+    // road' is 14 characters, so 3500 - 14 = 3486 remain.
+    expect(screen.getByText('3486 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('15/3500')).toBeInTheDocument()
-    // Carbon applies maxLength alongside the counter, reproducing legacy's hard `maxlength="3500"`.
+    expect(screen.getByText('3485 characters remaining')).toBeInTheDocument()
+    // The hard cap is still applied via maxLength, reproducing legacy's `maxlength="3500"`.
     expect(field('Comments')).toHaveAttribute('maxLength', '3500')
   })
 

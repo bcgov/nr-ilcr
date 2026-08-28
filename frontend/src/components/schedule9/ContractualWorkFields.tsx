@@ -1,5 +1,6 @@
 import type { FC } from 'react'
-import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
+import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { CodeDescription, Schedule9CodeLists } from '@/interfaces/Schedule9Response'
 import { numStrFixed } from '@/utils/number'
 import type { MaskedField, RecordErrors, RecordFormValues } from './validation'
@@ -153,14 +154,13 @@ const ContractualWorkFields: FC<Props> = ({
 
       {/* Comments spans its own row (legacy gives it a full-width row of its own). */}
       <Column sm={4} md={8} lg={16}>
-        <TextArea
+        <CommentsTextArea
           id={`${idPrefix}-comments`}
           labelText="Comments"
           rows={7}
           // enableCounter + maxCount also applies the hard maxLength, so typing stops at the cap.
           // Capped at 2000 — the backend column/DTO limit — NOT the legacy screen's 3500 (deviation):
           // the counter must not allow text the save would reject.
-          enableCounter
           maxCount={COMMENTS_MAX_LENGTH}
           disabled={disabled}
           value={form.comments}

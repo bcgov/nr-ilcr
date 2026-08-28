@@ -14,8 +14,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -410,11 +410,10 @@ const Schedule2: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-2__section">
           {editable ? (
-            <TextArea
+            <CommentsTextArea
               id="comments"
               className="schedule-2__comments-field"
               labelText="If you have any additional comments, please enter them here:"
-              enableCounter
               maxCount={COMMENTS_MAX}
               value={form[F_COMMENTS] ?? ''}
               onChange={setField(F_COMMENTS)}

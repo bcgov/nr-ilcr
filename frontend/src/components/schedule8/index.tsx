@@ -18,9 +18,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
@@ -734,10 +734,9 @@ const Schedule8: FC = () => {
           <span>{form.comments || '—'}</span>
         </div>
       ) : (
-        <TextArea
+        <CommentsTextArea
           id="page-comments"
           labelText="If you have any additional comments, please enter them here:"
-          enableCounter
           maxCount={3500}
           value={form.comments}
           onChange={setComments}
