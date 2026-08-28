@@ -13,7 +13,7 @@ import { NAVIGATION_BUDGET } from './settle';
  */
 
 /** The app name rendered as the Carbon Header aria-label — proves the shell mounted. */
-const APP_NAME = 'Interior Logging Cost Reports (ILCR)';
+const APP_NAME = 'Interior Logging Cost Report (ILCR)';
 
 /**
  * Open the app at Home (`/`). Security is off, so no login step is needed.
