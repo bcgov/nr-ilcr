@@ -19,6 +19,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { Add } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -868,7 +869,7 @@ const Schedule4: FC = () => {
       data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
     >
       {!bottom && (
-        <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+        <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
           Add New Location
         </Button>
       )}

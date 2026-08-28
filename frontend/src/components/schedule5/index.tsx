@@ -30,6 +30,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { Add } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -1368,6 +1369,7 @@ const Schedule5: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-5__actions">
           <Button
             kind="primary"
+            renderIcon={Add}
             disabled={!editable || saving}
             onClick={() =>
               panelOpen && panelDirty ? setPendingSwitch({ kind: 'new' }) : openNew()
