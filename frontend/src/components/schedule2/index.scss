@@ -46,6 +46,8 @@
 // (Subtotal, Net Purchased, Total Average).
 .schedule-2__section-start td {
   border-block-start: 0.125rem solid var(--cds-border-strong);
+  // Calculated subtotal/total band (#312 Overall 5) — same accent layer as the other schedules.
+  background: var(--cds-layer-accent-01);
 }
 
 .schedule-2__actions {
