@@ -68,11 +68,13 @@
 
 .#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
-  // Global button height: 40px for every size variant (sm/md/lg and icon-only). Overriding Carbon's
-  // layout height token — which drives BOTH the min-block-size and the centering padding-block — keeps
-  // the label/icon vertically centered at any size, unlike a raw min-height override that would push
-  // sm/lg labels off-centre.
-  --cds-layout-size-height-local: 2.5rem;
+  // Global button height: 48px (Carbon `lg` / 3rem) for every size variant (sm/md/lg and icon-only),
+  // matching the CSP/ISP default control height (Story 30.2 / #312; nr-csp report-form-size mixin
+  // default = 3rem). Overriding Carbon's layout height token — which drives BOTH the min-block-size
+  // and the centering padding-block — keeps the label/icon vertically centered at any size, unlike a
+  // raw min-height override that would push sm/lg labels off-centre. Dense schedule tables compact
+  // this back to 40px below (see the `.cds--data-table` block).
+  --cds-layout-size-height-local: 3rem;
 }
 
 .#{variables.$bcgov-prefix}--text-input,
@@ -87,10 +89,11 @@
 }
 
 // Global field height: normalize every single-line control (text inputs, dropdowns/combo boxes,
-// selects, date pickers) to 32px regardless of the Carbon `size` prop, so fields line up across the
-// schedule forms. Without this a `size`-less CodeComboBox (Carbon defaults it to md/40px) stands 8px
-// taller than the sm inputs beside it, and Schedule 8's page editor (all md) is taller than
-// Schedules 2/4/9 (all sm).
+// selects, date pickers) to 48px (Carbon `lg` / 3rem) regardless of the Carbon `size` prop, so
+// fields line up AND match the CSP/ISP default (Story 30.2 / #312; nr-csp report-form-size mixin
+// default = 3rem). Without a single token every `size`-less control would fall to Carbon's own
+// default and mis-align (a `size`-less CodeComboBox at md/40px stood 8px taller than the sm inputs
+// beside it). Buttons above use the same 3rem, so buttons match fields (#312 Overall 9).
 //
 // NOTE (SScholefield review): `--cds-layout-size-height-local` is an internal Carbon variable. A
 // minor Carbon update could rename it and silently revert field heights (tracked as a style-pinning
@@ -103,13 +106,35 @@
 .#{variables.$bcgov-prefix}--list-box,
 .#{variables.$bcgov-prefix}--list-box__field,
 .#{variables.$bcgov-prefix}--search {
-  --cds-layout-size-height-local: 2rem;
+  --cds-layout-size-height-local: 3rem;
 }
 
-// Carbon's DatePicker does not consume the layout height token, hardcoding height to 40px
-// in @carbon/styles. We override its block-size directly to match the 32px (2rem) standard.
+// Carbon's DatePicker does not consume the layout height token, hardcoding height in @carbon/styles.
+// We override its block-size directly to match the 48px (3rem) standard.
 .#{variables.$bcgov-prefix}--date-picker__input {
-  block-size: 2rem;
+  block-size: 3rem;
+}
+
+// Dense schedule tables — compact to 40px (Carbon `md` / 2.5rem). The data-entry schedules pack
+// many inline controls per row and are denser than any CSP report screen, so they take CSP's own
+// COMPACT size (the size CSP reserves for its one dense page, R13 AdHocReporting: report-form-size(
+// 2.5rem)). Story 30.2 / #312 decision (Scho, 2026-08-28): 48px default app-wide, 40px inside the
+// schedule tables. Scoped to `.cds--data-table` so a control's height follows its context — table
+// cells 40px, page-level fields + the Save/Check-Status action bar stay 48px. Row-action buttons
+// (Delete) inside the table also compact to 40px, keeping buttons = fields within the row.
+.#{variables.$bcgov-prefix}--data-table {
+  .#{variables.$bcgov-prefix}--text-input,
+  .#{variables.$bcgov-prefix}--select-input,
+  .#{variables.$bcgov-prefix}--list-box,
+  .#{variables.$bcgov-prefix}--list-box__field,
+  .#{variables.$bcgov-prefix}--search,
+  .#{variables.$bcgov-prefix}--btn {
+    --cds-layout-size-height-local: 2.5rem;
+  }
+
+  .#{variables.$bcgov-prefix}--date-picker__input {
+    block-size: 2.5rem;
+  }
 }
 
 .#{variables.$bcgov-prefix}--list-box__menu,
