@@ -31,6 +31,7 @@ import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule1 } from './validation'
 import { deriveSchedule1, enteredFromForm } from './derived'
@@ -747,16 +748,14 @@ const Schedule1: FC = () => {
 
       {/* Discard-unsaved-edits confirm before leaving an editable schedule for Other Costs. */}
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={confirmNavOpen}
-          modalHeading="Leave Schedule 1"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmNavOpen(false)}
-          onRequestSubmit={openOtherCosts}
+          heading="Leave Schedule 1"
+          onCancel={() => setConfirmNavOpen(false)}
+          onContinue={openOtherCosts}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
-        </Modal>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
       )}
 
       {/* ALT-001: schedule must be saved before Other Costs can open (informational, single action). */}
