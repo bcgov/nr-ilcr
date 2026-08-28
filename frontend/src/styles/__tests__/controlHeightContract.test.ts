@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { describe, expect, test } from 'vitest'
 
 /**
  * Source-level tripwire for the Story 30.2 control-height contract (#312).
