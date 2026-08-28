@@ -136,7 +136,7 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
                 .with(csrf())
                 .param("millId", "672")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.outcome", is("MET")));
   }
@@ -152,7 +152,7 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
                 .with(csrf())
                 .param("millId", "676")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk());
   }
 
@@ -168,7 +168,7 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 
@@ -196,7 +196,7 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
                 .with(csrf())
                 .param("millId", "676")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 }

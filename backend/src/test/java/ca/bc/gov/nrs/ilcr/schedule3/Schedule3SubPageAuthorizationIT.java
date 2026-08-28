@@ -86,7 +86,7 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
             get(OTHER_ACCEPTABLE)
                 .param("millId", MILL)
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -171,7 +171,7 @@ class Schedule3SubPageAuthorizationIT extends AbstractOracleIT {
             get(UNACCEPTABLE)
                 .param("millId", MILL)
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 

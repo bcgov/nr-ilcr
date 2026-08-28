@@ -118,10 +118,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
   void submitter_passesAuthorizationOnRead() throws Exception {
     mockMvc
         .perform(
-            get(ENDPOINT)
-                .param("millId", "514")
-                .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+            get(ENDPOINT).param("millId", "514").param("year", "2021").with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -158,7 +155,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
                 .param("millId", "514")
                 .param("year", "2021")
                 .accept(MediaType.APPLICATION_JSON)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk());
   }
 
@@ -277,7 +274,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
             delete(CULVERTS + "/999999")
                 .param("millId", "514")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isNotFound());
   }
 
@@ -303,7 +300,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
 
     mockMvc
@@ -331,7 +328,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
                     "comments": null, "revisionCount": 0}}
                 ]}
                 """)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
 
     // Nothing was mutated by any of the three.

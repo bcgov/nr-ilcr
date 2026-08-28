@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
@@ -16,15 +18,24 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
  * Unit test for the mill/year guard decisions (AD-4). Mocked repository — no DB, no Spring. Covers
@@ -44,7 +55,77 @@ class MillContextServiceTest {
   // Mockito (only unused STUBS fail). @InjectMocks wires it through the two-arg constructor.
   @Mock private MessageSource messageSource;
 
+  // Story 5.7: the shared guards now call validateMillAccess, which checks the caller's role.
+  @Mock private JwtRoleChecker roleChecker;
+
   @InjectMocks private MillContextService service;
+
+  @BeforeEach
+  void bypassMillScopeAsAdmin() {
+    // The mill/year guard tests below exercise the status/summary decision table, not Story 5.7
+    // mill-scope; default the caller to ADMIN so validateMillAccess bypasses. Lenient: the
+    // listMills
+    // tests (which pass isAdmin explicitly) never consult the role checker. Mill-scope enforcement
+    // itself is proven end-to-end in MillScopeEnforcementIT.
+    lenient().when(roleChecker.hasConcreteRole(anyString())).thenReturn(true);
+  }
+
+  @AfterEach
+  void clearSecurityContext() {
+    SecurityContextHolder.clearContext();
+  }
+
+  private void authenticateJwtWithGuid(String guid) {
+    Jwt jwt =
+        Jwt.withTokenValue("t").header("alg", "none").claim("custom:idp_user_id", guid).build();
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(new JwtAuthenticationToken(jwt));
+    SecurityContextHolder.setContext(ctx);
+  }
+
+  @Test
+  void validateMillAccess_admin_bypasses_withoutTouchingTheXref() {
+    // roleChecker→true (admin) from @BeforeEach: returns before any repository read (strict Mockito
+    // proves userHasActiveAssignment is never called — no stub for it here).
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterAssociated_isAllowed() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("SUBGUID");
+    when(repository.userHasActiveAssignment(514L, "SUBGUID")).thenReturn(true);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterNotAssociated_isDenied() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("SUBGUID");
+    when(repository.userHasActiveAssignment(514L, "SUBGUID")).thenReturn(false);
+    assertThrows(AccessDeniedException.class, () -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_submitterBlankGuid_isDenied_failClosed() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    authenticateJwtWithGuid("   "); // no resolvable custom:idp_user_id
+    // Strict Mockito proves the xref is never consulted — blank guid is denied before the query.
+    assertThrows(AccessDeniedException.class, () -> service.validateMillAccess(514L));
+  }
+
+  @Test
+  void validateMillAccess_mockNonJwtPrincipal_isExempt() {
+    when(roleChecker.hasConcreteRole("ADMIN")).thenReturn(false);
+    // Security-off dev mock: a non-Jwt principal carries no directory GUID — AC6 exemption, no
+    // throw,
+    // no xref read (strict Mockito).
+    SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+    ctx.setAuthentication(
+        new UsernamePasswordAuthenticationToken("dev-submitter", "N/A", List.of()));
+    SecurityContextHolder.setContext(ctx);
+    assertDoesNotThrow(() -> service.validateMillAccess(514L));
+  }
 
   @Test
   void unknownContext_throwsScheduleNotFound() {

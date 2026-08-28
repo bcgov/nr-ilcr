@@ -87,7 +87,7 @@ class ReportAuthorizationIT extends AbstractOracleIT {
                 .param("millId", SEEDED_MILL)
                 .param("year", SEEDED_YEAR)
                 .accept(MediaType.APPLICATION_PDF)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(content().contentType(MediaType.APPLICATION_PDF));
   }

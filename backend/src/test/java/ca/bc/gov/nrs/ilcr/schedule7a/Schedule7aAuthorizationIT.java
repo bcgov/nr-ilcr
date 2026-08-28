@@ -99,10 +99,7 @@ class Schedule7aAuthorizationIT extends AbstractOracleIT {
   void submitter_passesAuthorization() throws Exception {
     mockMvc
         .perform(
-            get(ENDPOINT)
-                .param("millId", "514")
-                .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+            get(ENDPOINT).param("millId", "514").param("year", "2021").with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -209,7 +206,7 @@ class Schedule7aAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isNotFound());
   }
 
@@ -236,7 +233,7 @@ class Schedule7aAuthorizationIT extends AbstractOracleIT {
             post(CHECK_STATUS)
                 .param("millId", "514")
                 .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 }
