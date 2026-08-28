@@ -26,13 +26,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 public interface MillContextApi {
 
   /**
-   * List the mills offered for selection, ordered by mill number ascending (BR-02) — exact legacy
-   * {@code getMills()} semantics: a mill is listed iff it has its status xref AND at least one
-   * {@code ILCR_MILL_REPORT_STATUS} row (ever enrolled in reporting; 2026-07-21 review decision).
-   * Closed mills are included — no status filter, no per-user association filter — so the list is
-   * identical for every caller (AR4 deferral).
+   * List the mills offered for selection, ordered by mill number ascending (BR-02), SCOPED to the
+   * authenticated caller (Story 5.5, AR4 now delivered). An {@code ILCR_ADMIN} sees every enrolled
+   * mill including closed (legacy admin {@code getMills()} semantics: status xref AND at least one
+   * {@code ILCR_MILL_REPORT_STATUS} row; no status filter). An {@code ILCR_SUBMITTER} sees only
+   * mills they are actively associated to (legacy {@code getMills(userGuid)}); closed associated
+   * mills are still included. The list is therefore no longer identical for every caller.
    *
-   * @return 200 with the mill list as {@link MillSummary} items
+   * @return 200 with the caller-scoped mill list as {@link MillSummary} items
    */
   @GetMapping("/mills")
   ResponseEntity<List<MillSummary>> listMills();

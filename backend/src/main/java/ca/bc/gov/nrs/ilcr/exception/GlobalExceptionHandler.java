@@ -19,6 +19,8 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -363,7 +365,11 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<ProblemDetail> handleAccessDenied(
       AccessDeniedException ex, HttpServletRequest request) {
-    log.warn("Access denied: {}", ex.getMessage());
+    // Audited denial event (FR2/DL-6): actor + action, timestamp implicit in the log line.
+    log.warn(
+        "{}",
+        deniedAuditMessage(
+            SecurityContextHolder.getContext().getAuthentication(), request, ex.getMessage()));
 
     ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
     problem.setTitle(HttpStatus.FORBIDDEN.getReasonPhrase());
@@ -373,6 +379,43 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.FORBIDDEN)
         .contentType(MediaType.APPLICATION_PROBLEM_JSON)
         .body(problem);
+  }
+
+  /**
+   * Builds the audited authorization-denial line (Story 5.4 AC4/FR2/DL-6): actor + the attempted
+   * action (HTTP method + path). The actor is the principal NAME (FAM {@code custom:idp_username},
+   * or the mock {@code dev-*}), never a token; NO request body, cost data, or token is included
+   * (NFR3/AD-11). Package-private + pure so the content is unit-tested without capturing logs.
+   *
+   * @param authentication the current authentication (may be null for an unauthenticated caller)
+   * @param request the denied request
+   * @param reason the framework's access-denied message (generic; carries no data)
+   * @return the single-line audit message
+   */
+  static String deniedAuditMessage(
+      Authentication authentication, HttpServletRequest request, String reason) {
+    String name = (authentication != null) ? authentication.getName() : null;
+    String actor = (name != null && !name.isBlank()) ? sanitize(name) : "anonymous";
+    return "Authorization denied: actor="
+        + actor
+        + " action=\""
+        + sanitize(request.getMethod())
+        + " "
+        + sanitize(request.getRequestURI())
+        + "\" reason="
+        + sanitize(reason);
+  }
+
+  /**
+   * Neutralize log-forging control characters (CR/LF) and the field delimiter (double-quote) in any
+   * caller-influenced value before it enters the single-line audit record, so a crafted URI or
+   * message cannot inject a fake log line. Null renders as {@code "null"} (never an NPE).
+   */
+  private static String sanitize(String value) {
+    if (value == null) {
+      return "null";
+    }
+    return value.replaceAll("[\\r\\n\"]", "_");
   }
 
   /**

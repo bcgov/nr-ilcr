@@ -84,6 +84,55 @@ public interface MillContextRepository extends Repository<SelectableMillEntity, 
   List<Integer> findAllReportYearValues();
 
   /**
+   * The mills a submitter is ACTIVELY associated to, for the Home selection list (Story 5.5,
+   * UC-SEC-001 BR-02) — legacy {@code getMills(userGuid)} parity: {@code MILL ⋈
+   * ILCR_MILL_STATUS_XREF ⋈ ILCR_MILL_USER_XREF} on the caller's {@code USER_GUID} where the
+   * assignment is active. The legacy predicate was {@code imux.activeDate <> null}; the new-app
+   * active convention is {@code INACTIVE_DATE IS NULL} (a toggled-in-place row clears the active
+   * date when ended) — the two select the same rows given the mutual-exclusivity invariant ({@link
+   * ca.bc.gov.nrs.ilcr.assignment.MillUserXrefEntity#isActive()}). Ordered by mill number
+   * ascending. Active is {@code INACTIVE_DATE IS NULL AND ACTIVE_DATE IS NOT NULL} — both
+   * predicates, so a never-activated (both-dates-null) row is NOT treated as active (legacy {@code
+   * activeDate <> null} parity). The legacy {@code ILCR_USER} join is elided: {@code USER_GUID} is
+   * a column on {@code ILCR_MILL_USER_XREF}, so no join to {@code ILCR_USER} is needed to filter by
+   * user.
+   *
+   * <p>Closed ({@code CLS}) mills a submitter is assigned to are INCLUDED — no status filter, same
+   * as {@link #findAllMills()} (S06 reachability). Recorded deviation from legacy: the {@code
+   * EXISTS ILCR_MILL_REPORT_STATUS} enrollment predicate (present in legacy admin {@code
+   * getMills()} but NOT in legacy {@code getMills(userGuid)}) is kept here so the submitter list is
+   * a subset of the selectable-mill set ({@link #findSelectableMillById(long)}), i.e. every listed
+   * mill is selectable — avoiding a list-then-404 the new-app "selectable" definition would
+   * otherwise create.
+   *
+   * @param userGuid the caller's raw {@code custom:idp_user_id} directory GUID
+   * @return the actively-associated, selectable mills as {@link MillSummary}, mill number ascending
+   */
+  default List<MillSummary> findMillsForUser(String userGuid) {
+    return findMillEntitiesForUser(userGuid).stream()
+        .map(e -> new MillSummary(e.millId(), e.millNumber(), e.millName(), e.millStatusCode()))
+        .toList();
+  }
+
+  @Query(
+      """
+      SELECT m.MILL_ID, m.MILL_NUMBER, m.MILL_NAME, x.ILCR_MILL_STATUS_CODE
+        FROM THE.MILL m
+        JOIN THE.ILCR_MILL_STATUS_XREF x
+          ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
+        JOIN THE.ILCR_MILL_USER_XREF u
+          ON u.ILCR_MILL_ID = m.MILL_ID
+       WHERE u.USER_GUID = :userGuid
+         AND u.INACTIVE_DATE IS NULL
+         AND u.ACTIVE_DATE IS NOT NULL
+         AND EXISTS (SELECT 1
+                       FROM THE.ILCR_MILL_REPORT_STATUS s
+                      WHERE s.ILCR_MILL_ID = m.MILL_ID)
+       ORDER BY m.MILL_NUMBER, m.MILL_ID
+      """)
+  List<SelectableMillEntity> findMillEntitiesForUser(@Param("userGuid") String userGuid);
+
+  /**
    * The selectable mill with this id — same join and enrollment predicate as {@link
    * #findAllMills()} (legacy {@code getMills()} parity: status xref present AND at least one {@code
    * ILCR_MILL_REPORT_STATUS} row for any year). Empty when the id is unknown or the mill is not

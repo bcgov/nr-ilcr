@@ -165,7 +165,12 @@ const Home: FC = () => {
           return
         }
         // AR11: the working context is client-side now; a successful resolve makes this selection the
-        // source of context, replacing the 514/2021 default.
+        // source of context, replacing the scaffold default (millYearDefaults). Story 5.5: the mill
+        // LIST is server-scoped to the caller, so the pre-select above (line ~124) operates on the
+        // user's own mills. NOTE: list-scoping is a UX affordance, NOT write authorization — a
+        // submitter could still resolve/save a forged millId. Per-endpoint submitter↔mill
+        // enforcement on the mill-context/schedule endpoints is the follow-up (Story 5.7); until it
+        // lands, the scoped list must not be relied on for access control.
         setContext(response.data.millId, response.data.reportYear)
         // SUC-001 verbatim from the API message (AD-8), never hardcoded.
         setSaveMessage(response.data.message?.text ?? null)
