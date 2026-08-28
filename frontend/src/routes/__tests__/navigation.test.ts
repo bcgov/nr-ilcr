@@ -20,22 +20,29 @@ describe('visibleNavigationItems', () => {
     ])
   })
 
-  test('Administration (admin-only) is hidden from non-admins; everything else stays', () => {
+  test('the admin-only areas are hidden from non-admins; everything else stays', () => {
     expect(names(false)).not.toContain('Administration')
-    // The rest of the IA is unchanged for a submitter.
+    // Generate Reports holds the ministry mill reports, which a Licensee never had access to.
+    expect(names(false)).not.toContain('Generate Reports')
     expect(names(false)).toEqual([
       'Home',
       'Schedules',
       'Check Status',
-      'Generate Reports',
       'Print Schedules',
       'Submissions',
     ])
   })
 
-  test('exactly one item is admin-gated, and it is Administration', () => {
+  test('exactly two items are admin-gated: Administration and Generate Reports', () => {
     const gated = NAVIGATION_ITEMS.filter((item) => item.adminOnly)
-    expect(gated.map((item) => item.name)).toEqual(['Administration'])
+    expect(gated.map((item) => item.name)).toEqual(['Administration', 'Generate Reports'])
+  })
+
+  test('Generate Reports is a menu whose only item is the Mill Information Report', () => {
+    const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
+    expect(reports?.items).toEqual([
+      { name: 'Mill Information Report', path: '/mill-information-report' },
+    ])
   })
 
   test('Schedule 10 sits between Schedule 9 and Schedule 11, and is not admin-only', () => {
@@ -61,6 +68,7 @@ describe('admin-only paths (route guard source)', () => {
       '/code-tables',
       '/home-content',
       '/mill-associations',
+      '/mill-information-report',
       '/open-reporting-year',
     ])
   })
@@ -70,6 +78,7 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/mill-associations')).toBe(true)
     expect(isAdminOnlyPath('/open-reporting-year')).toBe(true)
     expect(isAdminOnlyPath('/home-content')).toBe(true)
+    expect(isAdminOnlyPath('/mill-information-report')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
     expect(isAdminOnlyPath('/')).toBe(false)
   })

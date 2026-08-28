@@ -20,7 +20,7 @@ export const ROUTES = {
   openReportingYear: '/open-reporting-year',
   homeContent: '/home-content',
   millAssociations: '/mill-associations',
-  generateReports: '/generate-reports',
+  millInformationReport: '/mill-information-report',
   printSchedules: '/print-schedules',
   submissions: '/submissions',
 } as const
@@ -53,8 +53,8 @@ export const isNavigationMenu = (item: NavigationItem): item is NavigationMenu =
 // Top-level information architecture, aligned to the legacy menu (menu.xhtml): Home, Schedules,
 // Check Status, Administration, Generate Reports, Print Schedules — plus Submissions (the modern
 // file-upload area, not in legacy). Administration is admin-gated (LayoutSideNav filters on the
-// ILCR_ADMIN role); Check Status / Generate Reports / Print Schedules are scaffolded placeholders
-// until their modernization slices land.
+// ILCR_ADMIN role), as is Generate Reports. Check Status and Print Schedules are scaffolded
+// placeholders until their modernization slices land.
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     // Story 1.3: '/' renders the Home (Mill and Reporting Year) page — legacy has no Dashboard
@@ -100,9 +100,12 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     ],
   },
   {
+    // Generate Reports is the ministry reporting area and is administrator-only: legacy required both
+    // the generateReports and millReport actions to render it, and a Licensee held neither.
     icon: Report,
     name: 'Generate Reports',
-    path: ROUTES.generateReports,
+    adminOnly: true,
+    items: [{ name: 'Mill Information Report', path: ROUTES.millInformationReport }],
   },
   {
     icon: Printer,

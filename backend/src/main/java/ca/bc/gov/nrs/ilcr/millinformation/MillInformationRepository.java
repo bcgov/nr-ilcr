@@ -1,0 +1,75 @@
+package ca.bc.gov.nrs.ilcr.millinformation;
+
+import java.util.List;
+import org.springframework.data.jdbc.repository.query.Query;
+import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.query.Param;
+
+/**
+ * Reads every mill's Mill Information content for one reporting year (AD-3: repository interface +
+ * {@code @Table} record entity + explicit {@code @Query} named-parameter SQL). SQL only — decisions
+ * live in {@link MillInformationService}.
+ *
+ * <p>ONE query for the whole year, not one per mill. Legacy re-queried the mill, its status xref,
+ * its client location and both contacts inside a per-row loop ({@code
+ * MillReportStatusDAO.getReport}); at 17 mills that is 85 round trips to build one PDF. The join
+ * below is the same data in a single pass, and it is what keeps the report's cost flat as mills are
+ * added.
+ */
+@org.springframework.stereotype.Repository
+public interface MillInformationRepository extends Repository<MillInformationRowEntity, Long> {
+
+  /**
+   * Every mill with a report-status row for the year, with its information, milestones, ownership
+   * and contacts. Unscoped by design — the Administrator report covers all mills (BR-01), so there
+   * is deliberately no user or mill predicate here.
+   *
+   * <p>{@code ILCR_MILL_STATUS_XREF} joins on {@code ILCR_MILL_STATUS_XREF_ID = MILL.MILL_ID}: the
+   * xref shares its primary key with the mill, which is also why the view's {@code ILCR_MILL_ID}
+   * addresses both. Everything beyond the xref is LEFT joined because the delivery data is sparse
+   * there. Ordered by mill number so the PDF's section order is stable and human-meaningful rather
+   * than following the view's physical order.
+   *
+   * @param year the reporting year
+   * @return one row per mill, ordered by mill number
+   */
+  @Query(
+      """
+      SELECT v.ILCR_MILL_ID,
+             m.MILL_NUMBER,
+             m.MILL_NAME,
+             x.ILCR_MILL_STATUS_CODE,
+             z.DESCRIPTION      AS REGION_DESCRIPTION,
+             cl.CLIENT_LOCN_NAME,
+             cl.ADDRESS_1,
+             cl.ADDRESS_2,
+             cl.CITY,
+             cl.POSTAL_CODE,
+             x.HEAD_OFFICE_CONTACT_IND,
+             ho.CONTACT_NAME    AS HEAD_OFFICE_CONTACT_NAME,
+             ho.BUSINESS_PHONE  AS HEAD_OFFICE_PHONE,
+             dv.CONTACT_NAME    AS DIVISION_CONTACT_NAME,
+             dv.BUSINESS_PHONE  AS DIVISION_PHONE,
+             v.MILL_STATUS_OPEN_DATE,
+             v.MILL_STATUS_DRAFT_DATE,
+             v.MILL_STATUS_SUBMIT_DATE,
+             v.MILL_STATUS_VERIFY_DATE
+        FROM THE.ILCR_MILL_REPORT_STATUS_RPT_VW v
+        JOIN THE.MILL m
+          ON m.MILL_ID = v.ILCR_MILL_ID
+        JOIN THE.ILCR_MILL_STATUS_XREF x
+          ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
+        LEFT JOIN THE.ISP_SELL_PRICE_ZONE_CODE z
+          ON z.ISP_SELL_PRICE_ZONE_CODE = m.ISP_SELL_PRICE_ZONE_CODE
+        LEFT JOIN THE.CLIENT_LOCATION cl
+          ON cl.CLIENT_NUMBER = m.CLIENT_NUMBER
+         AND cl.CLIENT_LOCN_CODE = m.CLIENT_LOCN_CODE
+        LEFT JOIN THE.CLIENT_CONTACT ho
+          ON ho.CLIENT_CONTACT_ID = x.HEAD_OFFICE_CONTACT_ID
+        LEFT JOIN THE.CLIENT_CONTACT dv
+          ON dv.CLIENT_CONTACT_ID = x.DIVISION_CONTACT_ID
+       WHERE v.REPORT_YEAR = :year
+       ORDER BY m.MILL_NUMBER, v.ILCR_MILL_ID
+      """)
+  List<MillInformationRowEntity> findSectionRows(@Param("year") int year);
+}

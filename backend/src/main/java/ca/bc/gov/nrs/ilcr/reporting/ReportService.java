@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.millinformation.MillInformationService;
+import ca.bc.gov.nrs.ilcr.millinformation.dto.MillInformationSection;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Service;
@@ -19,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,12 +82,18 @@ public class ReportService {
   private final Schedule9Service schedule9Service;
   private final Schedule10Service schedule10Service;
   private final Schedule11Service schedule11Service;
+  private final MillInformationService millInformationService;
   private final ReportVirtualizerFactory virtualizerFactory;
 
   /**
-   * Compiled templates, built on first use and cached (boot-safe); keyed by {@link ScheduleKey}.
+   * Compiled templates, built on first use and cached (boot-safe); keyed by classpath template
+   * path.
+   *
+   * <p>Keyed by PATH rather than by {@link ScheduleKey} because not every report is a schedule —
+   * the Mill Information report has no place in that enum, whose iteration order IS the combined
+   * print's fixed section order (BR-08).
    */
-  private final Map<ScheduleKey, JasperReport> compiledTemplates = new ConcurrentHashMap<>();
+  private final Map<String, JasperReport> compiledTemplates = new ConcurrentHashMap<>();
 
   /**
    * Constructs a new ReportService.
@@ -109,6 +118,7 @@ public class ReportService {
    *     — through the service, not the repository)
    * @param schedule10Service the Schedule 10 read (bean-datasource feed, Story 20.4)
    * @param schedule11Service the Schedule 11 read (bean-datasource feed)
+   * @param millInformationService the Mill Information read (all mills for one reporting year)
    * @param virtualizerFactory builds the per-render Jasper swap-file virtualizer (Story 29.2) so a
    *     large or combined fill spills page objects to disk instead of pinning them on the heap
    */
@@ -126,6 +136,7 @@ public class ReportService {
       Schedule9Service schedule9Service,
       Schedule10Service schedule10Service,
       Schedule11Service schedule11Service,
+      MillInformationService millInformationService,
       ReportVirtualizerFactory virtualizerFactory) {
     this.dataSource = dataSource;
     this.schedule1Service = schedule1Service;
@@ -138,6 +149,7 @@ public class ReportService {
     this.schedule7bService = schedule7bService;
     this.schedule8Service = schedule8Service;
     this.schedule9Service = schedule9Service;
+    this.millInformationService = millInformationService;
     this.schedule10Service = schedule10Service;
     this.schedule11Service = schedule11Service;
     this.virtualizerFactory = virtualizerFactory;
@@ -183,6 +195,72 @@ public class ReportService {
       if (!ownershipTransferred) {
         virtualizer.cleanup();
       }
+    }
+  }
+
+  /**
+   * The Mill Information report's classpath template. Not a {@link ScheduleKey} — it is not a
+   * schedule.
+   */
+  private static final String MILL_INFORMATION_TEMPLATE = "reports/mill-information.jrxml";
+
+  /**
+   * Render the Mill Information report for one reporting year: every mill with a report-status row
+   * for that year, one section each, combined into a single PDF (BR-01/BR-05).
+   *
+   * <p>One fill per mill rather than one fill over an all-mills datasource, which is the legacy
+   * shape ({@code ILCRPrintService.getMillReportPrintStream} adds one JasperPrint per mill and
+   * exports the list). It is what gives each mill its own title block and its own first page, and
+   * it lets the outline anchor stay a fill parameter as in every other template here.
+   *
+   * <p>A year with no mills yields no PDF. Legacy's {@code !mills.isEmpty()} guard produced no file
+   * and no message at all — an evidence gap recorded in UC-MRPT-003 EF1 — so rather than invent a
+   * message this takes the documented failure path (ERR-001).
+   *
+   * @param year the reporting year
+   * @return the filled report, ready to stream (the caller closes it after export)
+   */
+  public RenderedReport renderMillInformation(int year) {
+    List<MillInformationSection> sections = millInformationService.findSections(year);
+    if (sections.isEmpty()) {
+      log.error("No mill carries a report status for year {} — no report to produce", year);
+      throw new MillInformationReportException();
+    }
+    JRSwapFileVirtualizer virtualizer = virtualizerFactory.create();
+    boolean ownershipTransferred = false;
+    try {
+      List<JasperPrint> prints = new ArrayList<>();
+      for (MillInformationSection section : sections) {
+        prints.add(fillMillInformation(section, year, virtualizer));
+      }
+      log.info("Rendered {} mill information sections for year {}", prints.size(), year);
+      RenderedReport report = new RenderedReport(prints, virtualizer);
+      ownershipTransferred = true;
+      return report;
+    } finally {
+      if (!ownershipTransferred) {
+        virtualizer.cleanup();
+      }
+    }
+  }
+
+  /**
+   * Fill one mill's section. Always exactly one detail row, so there is no skip-empty case here.
+   */
+  private JasperPrint fillMillInformation(
+      MillInformationSection section, int year, JRSwapFileVirtualizer virtualizer) {
+    Map<String, Object> params = new HashMap<>();
+    params.put("year", year);
+    params.put("p_do_print_body", Boolean.TRUE);
+    params.put("bookmarkTitle", MillInformationSectionMapper.bookmarkTitle(section));
+    params.put(JRParameter.REPORT_VIRTUALIZER, virtualizer);
+    SectionData data = MillInformationSectionMapper.map(section);
+    try {
+      return JasperFillManager.fillReport(
+          template(MILL_INFORMATION_TEMPLATE), params, new JRMapCollectionDataSource(data.rows()));
+    } catch (JRException e) {
+      log.error("Mill Information fill failed for mill {} year {}", section.millId(), year, e);
+      throw new MillInformationReportException();
     }
   }
 
@@ -483,7 +561,12 @@ public class ReportService {
 
   /** The compiled template for a schedule, loaded on first use and cached (boot-safe). */
   private JasperReport template(ScheduleKey key) {
-    return compiledTemplates.computeIfAbsent(key, ReportService::load);
+    return template(key.templatePath());
+  }
+
+  /** The compiled template at a classpath {@code .jrxml} path, loaded on first use and cached. */
+  private JasperReport template(String templatePath) {
+    return compiledTemplates.computeIfAbsent(templatePath, ReportService::load);
   }
 
   /**
@@ -493,8 +576,8 @@ public class ReportService {
    * never compiles a report. The {@code .jrxml} stays the source of truth; only the extension
    * swaps.
    */
-  private static JasperReport load(ScheduleKey key) {
-    String path = key.templatePath().replaceAll("\\.jrxml$", ".jasper");
+  private static JasperReport load(String templatePath) {
+    String path = templatePath.replaceAll("\\.jrxml$", ".jasper");
     try (InputStream in = new ClassPathResource(path).getInputStream()) {
       return (JasperReport) JRLoader.loadObject(in);
     } catch (IOException | JRException e) {

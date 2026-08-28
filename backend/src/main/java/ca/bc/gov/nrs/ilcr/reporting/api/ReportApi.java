@@ -81,4 +81,25 @@ public interface ReportApi {
       @RequestParam(required = false) String year,
       @Valid @RequestBody PrintRequest request,
       Authentication authentication);
+
+  /**
+   * Download the Mill Information report for a reporting year as a PDF: every mill with a report
+   * status for that year, one section each, in a single {@code mills_print.pdf}.
+   *
+   * <p>This endpoint deliberately takes NO {@code millId} and runs NO mill/year context guard. The
+   * legacy page carried no Home working context — its {@code areMillYearSelected()} render guard is
+   * commented out — and the report covers every mill by definition, so there is no context to
+   * validate. Do not "align" it with the sibling endpoints above.
+   *
+   * <p>Guards: missing/blank/non-numeric {@code year} → 400 {@code Report Year: Value is
+   * required.}; a year no mill reports on, or any failure while building → 500 {@code
+   * undefinedError} with no file. Without {@code GENERATE_MILL_REPORTS} → 403; anonymous → 401.
+   *
+   * @param year the reporting year (optional raw String, so the guard owns the rejection text)
+   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)
+   * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
+   */
+  @GetMapping("/mill-information")
+  ResponseEntity<StreamingResponseBody> getMillInformationPdf(
+      @RequestParam(required = false) String year, Authentication authentication);
 }

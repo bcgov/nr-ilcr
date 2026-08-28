@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
+import ca.bc.gov.nrs.ilcr.util.LegacyDateText;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -257,16 +258,12 @@ public class MillContextService {
   }
 
   /**
-   * Strip the legacy 3-character sort prefix from a view date string (mirrors {@code
-   * UserSessionMB.java:374} {@code substring(3)}); blank/absent remainder → null (the frontend
-   * renders null as {@code Not Initiated}, Story 1.4).
+   * Strip the legacy 3-character sort prefix from a view date string; blank/absent remainder → null
+   * (the frontend renders null as {@code Not Initiated}, Story 1.4). Delegates to the shared rule
+   * so the Home banner and the Mill Information report can never disagree about the same date.
    */
   private String stripDatePrefix(String raw) {
-    if (raw == null || raw.length() <= 3) {
-      return null;
-    }
-    String rest = raw.substring(3);
-    return rest.isBlank() ? null : rest;
+    return LegacyDateText.stripPrefix(raw);
   }
 
   private Long parseAsLong(String value) {
