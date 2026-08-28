@@ -18,7 +18,57 @@ two such branches merge:
   `support/FlywayMigrationVersionUniquenessTest` (a fast `surefire` unit test — no container — so the
   clash is caught at PR time, not at IT boot).
 - **Seed-data collisions** — two branches `INSERT` the same `MILL_ID` or `ILCR_REPORT_COST_ITEM_ID`
-  primary key → `ORA-00001` at migrate time. Not machine-guarded yet; avoided by the ID ranges below.
+  primary key → `ORA-00001` at migrate time. **Still not machine-guarded**; avoided by the ID ranges
+  below and by nothing else. Same blast radius as a version collision, from a different cause —
+  do not read the guards below as covering it.
+
+### What is machine-checked, and what is still discipline
+
+Two fast `surefire` classes in `support/`, no container, both failing at PR time:
+
+| check | class | test |
+| --- | --- | --- |
+| no two migrations claim one version | `FlywayMigrationVersionUniquenessTest` | `everyFlywayVersionIsClaimedByExactlyOneMigration` |
+| a NEW `V__` carries no seed rows | `FlywayMigrationConventionTest` | `newVersionedMigrationsCarryNoSeedData` |
+| every `R__` has a two-digit prefix | `FlywayMigrationConventionTest` | `everyRepeatableMigrationCarriesATwoDigitOrderingPrefix` |
+| the grandfathering list has not rotted | `FlywayMigrationConventionTest` | `theGrandfatheringManifestDoesNotRot` |
+| every `.sql` here is a real migration | `FlywayMigrationConventionTest` | `everySqlFileIsEitherVersionedOrRepeatable` |
+| `apply-local-ddl.sh` names real files\* | `FlywayMigrationConventionTest` | `applyLocalDdlScriptNamesOnlyMigrationsThatExist` |
+| the detectors themselves still work | `FlywayMigrationConventionTest` | `DetectorContracts` (8 cases) |
+
+\* **This one does not run everywhere.** It self-skips when `../scripts` is absent, which is the
+case inside the backend Docker image build — `backend/Dockerfile` copies only `pom.xml`, `.mvn` and
+`src`, then runs `mvn package` with unit tests on. Everywhere with a full checkout (your machine,
+`analysis.yml`, the CI test job) it runs.
+
+`DetectorContracts` is the answer to "what checks the checker?" Every filesystem check above passes
+**vacuously** on a compliant tree, so a regex edit that quietly narrows one leaves the suite green
+and protecting nothing. The 2026-08-27 review of #367 found four live bypasses exactly that way. The
+nested class asserts the predicates directly — no files, no I/O — so each fix stays fixed.
+
+**Still discipline, checked by nobody:** the fixture ID ranges in convention 2; whether an `R__`
+prefix is in the *right* band — the check enforces two digits from **10 to 99**, so `81`–`89`, which
+belongs to neither documented band, passes just as a wrong band does; whether a *grandfathered*
+`V__` file grows new `INSERT`s (the check reads the tree, not the diff); **whether the manifest
+grows** — "shrink-only" is a review rule, and appending a line is a legitimate, deliberately visible
+way to turn a red build green; seed rows written as `CREATE TABLE … AS SELECT`; and whether an `R__`
+migration is genuinely idempotent. All of these are spelled out in `FlywayMigrationConventionTest`'s
+class docstring — read it before assuming coverage.
+
+**The guards read `src/`; Flyway reads `target/`. Run `mvn clean` after ANY migration rename.**
+`AbstractOracleIT` loads `classpath:db`, which resolves to `target/test-classes/db` — a build output,
+not this directory. Maven's resource copy adds files but never removes them, so a rename leaves BOTH
+names behind and a delete leaves the deleted one. Two real instances:
+
+- After PR #356 deleted `V30__ilcr_mill_user_profile_xref.sql`, a stale `target/…/V30__…` survived on
+  developer machines. Harmless in effect — that file's DDL is additive and guarded.
+- **Worse:** #367's rename of `R__cost_detail_bridge_culvert_fks.sql` → `R__90_…` left *both* copies
+  in `target/`. Flyway treats them as two different repeatables and applies **both**, and the file
+  issues four named `ADD CONSTRAINT` statements — so the second application fails and takes the whole
+  IT suite down at boot. Nothing in `src/` is wrong; only the stale build output is.
+
+Reading `src/` is the right call for a check that runs at PR time. But if a local IT failure makes no
+sense against this directory, `mvn clean` before believing it.
 
 ## Conventions
 
@@ -35,14 +85,37 @@ two such branches merge:
 
    Verified on Flyway 12.4.0: repeatables apply **after every versioned migration**, in
    **lexicographic order of description** — so the numeric prefix is what fixes FK ordering, and
-   digits sort before letters.
+   digits sort before letters. The prefix is **enforced**: `FlywayMigrationConventionTest` fails any
+   `R__` file that does not match `R__<two digits>_<lower_snake>.sql` with the prefix at 10 or above.
+
+   Two digits, not one, and here is the actual reason: a one-digit prefix sorts **after** every
+   two-digit prefix from `10` to `49`, because `"5 seed"` > `"10 seed"` on the first character. So
+   `R__5_…` would jump past the `10`–`49` seeds it was probably meant to precede. *(An earlier
+   revision of this paragraph said `R__5_` sorts after `R__90_`. That is false — `'5'` < `'9'`, so it
+   sorts before. The rule was right and its worked example was inverted; corrected 2026-08-27 after
+   code review, and now asserted in `DetectorContracts` so prose cannot drift from arithmetic again.)*
 
 1a. **Only DDL keeps a version.** `V<next>__<name>.sql` for adding or altering tables. Take the next
    free integer after the highest `V` on `main` plus any in-flight PR you know about; on a duplicate,
    bump *your* (newer) migration and never renumber someone else's merged one.
    `FlywayMigrationVersionUniquenessTest` catches a clash at PR time rather than at IT boot. **Keep
    `INSERT`s out of these files** — putting seed rows in a new `V__` reopens the collision this
-   convention exists to close.
+   convention exists to close, and `FlywayMigrationConventionTest` now **fails the build** if you do.
+
+   The 45 files that already carried seed rows when the guard was written are grandfathered by name
+   in `grandfathered-seeded-versions.txt`, beside this README. That list is **shrink-only**: removing
+   a line is the record that a fixture moved to `R__`, and a line naming a file that no longer exists
+   — or no longer contains `INSERT`s — fails the build rather than sitting there as cover. Adding a
+   line also turns a red build green; that is deliberately possible and deliberately conspicuous, an
+   exemption to argue for in review rather than an enforced prohibition.
+
+   **Three of the 45 are not pre-decision, and that is worth knowing.** `V20260821` landed 38 minutes
+   before the decision merged; `V20260822` (53 `INSERT`s) and `V20260823` (11) landed four and five
+   days *after* it, in breach of convention 1a as already written. They are grandfathered anyway —
+   the guard was built to stop the *next* one, not to force a retroactive conversion of fixtures the
+   IT suite depends on — but they are precisely the files that proved the convention needed a machine
+   check, so the baseline includes the violations that motivated it. Converting them is the obvious
+   first withdrawal from this list.
 
    *(Historical note, kept because it is the reason for the rule above: timestamp versions were tried
    and did NOT remove the race. Proven 2026-08-13, when three branches reached for the same two days
@@ -56,11 +129,20 @@ two such branches merge:
    the container **fresh per JVM** (no `withReuse`), so every repeatable applies exactly once per run.
    The only residual case is editing an `R__` file against a container you are deliberately reusing —
    which needs a clean container, the same caveat every DDL fixture here already carries.
-   `R__cost_detail_bridge_culvert_fks.sql` is the worked example of the `90+` band: it declares the
+   `R__90_cost_detail_bridge_culvert_fks.sql` is the worked example of the `90+` band: it declares the
    delivery FKs on `ILCR_COST_REPORT_DETAIL` after every schedule's fixtures have populated their
-   per-report column. It predates the prefix convention and still carries no number; it should gain
-   `90_` when the first prefixed seed lands beside it.
+   per-report column. It predates the prefix convention and **carried no number until #367 renamed
+   it** — it had been sorting last among repeatables by ASCII accident (`c` sorts after any digit),
+   which happened to be the order it needs. The prefix makes that explicit, and it is what lets the
+   `R__` check above apply with no exceptions.
 2. **Fixture ID ranges.** Namespace seed entities by track so PKs can't overlap:
+
+   **The e2e anchor seed claims ids too.** `../db-e2e/R__80_e2e_anchor_seed.sql` (applied only by
+   the CI e2e job's Flyway run, never by the `*IT` suite — see its header) owns mills **13** and
+   **9050–25054** (sparse — the exact list is in its header), summaries **3001–3199**, cost-report
+   details **4001–4499**, transportation reports **4801–4899**, silviculture reports **9351–9399**,
+   biogeo catalogue ids **40, 171, 8850–8869**, and reporting years **2015–2019**. Treat those
+   ranges as taken when claiming blocks here, and vice versa.
 
    | Track                     | `MILL_ID` block | Notes                                        |
    | ------------------------- | --------------- | -------------------------------------------- |

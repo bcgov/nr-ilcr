@@ -83,3 +83,64 @@ Option 2 is not a lesser Option 3; it is the **first step Option 3 needs anyway*
 2. **Adding a constraint, index or FK over data others seed?** `R__9x_<name>.sql`.
 3. **Adding or altering a table?** `V<next>__<name>.sql`, and keep `INSERT`s out of it.
 4. **Never** put seed rows in a new `V__` file — that reopens the collision.
+
+---
+
+## Follow-up 2026-08-27 — the machine check exists, and the rename happened
+
+Recorded as an appendix rather than as edits above. Nothing in the sections before this line has been
+changed: they were true when written, and the "Not renamed in this PR" note at § Consequences is part
+of why this one was needed.
+
+**The convention was losing.** Measured against `main` @ `3be15fe` on 2026-08-27, seven days after
+this decision was accepted (`13e8be2`, 2026-08-20 15:44 PDT):
+
+- **two new versioned seed files landed** — `V20260822__seed_schedule6_correction_fixtures.sql` (53
+  `INSERT`s, 2026-08-24) and `V20260823__seed_print_schedule8_combined_fixture.sql` (11, 2026-08-25);
+- **zero `R__` seed files were created.** The one `R__` file on the tree predates this decision by a
+  week and was written for `#277`'s FK-ordering problem, not for this one.
+
+Adoption was not slow, it was nil. Neither violation caused a collision, so nothing was red — the
+point is that this decision had bought nothing measurable without a mechanism, exactly as its own
+closing paragraph warned ("it needs an owner, or the convention rests on the same README discipline
+that failed five times"). [bcgov/nr-ilcr#367](https://github.com/bcgov/nr-ilcr/issues/367) is that
+owner.
+
+**What shipped** (`FlywayMigrationConventionTest`, a sibling to the uniqueness test rather than an
+extension of it, so that class's stated scope stays true):
+
+1. a new `V__` file containing `INSERT INTO` / `INSERT ALL` / `MERGE INTO` fails, unless named in
+   `backend/src/test/resources/db/grandfathered-seeded-versions.txt`;
+2. every `R__` file must match `R__<two digits>_<lower_snake>.sql`, prefix ≥ 10;
+3. the manifest is **shrink-only** — a line naming a missing file, or one that no longer contains
+   seed rows, fails;
+4. every filename in `scripts/apply-local-ddl.sh`'s `MIGRATIONS=(…)` array must exist.
+
+**The rename was performed.** `R__cost_detail_bridge_culvert_fks.sql` →
+`R__90_cost_detail_bridge_culvert_fks.sql`, so check 2 applies with no exceptions. § Consequences
+above set the precondition as "when the first prefixed seed lands beside it"; that precondition was
+**not** met — no prefixed `R__` exists yet. It was renamed anyway, because check 2 needs it and the
+rename is behaviourally inert: it is the only `R__` file, so there is nothing to sort against, and
+`AbstractOracleIT` builds the container fresh per JVM with no persisted `flyway_schema_history`, so
+the new description simply applies once as before. Stated rather than glossed, because the earlier
+note's reasoning was sound and this is a deliberate departure from it.
+
+**The measured baseline differed from the one #367 was filed with.** The issue said 45 versioned
+files, 42 with `INSERT`s, clean = `V1`/`V12`/`V30`. Actual at `3be15fe`: **49 files, 45 with
+`INSERT`s, clean = `V1`/`V12`/`V20260825`/`V20260826`** — `V30` had been deleted by PR #356 two days
+before the issue was written. The manifest is generated from the tree, not transcribed, and check 3
+exists partly because of this: a hand-copied baseline goes stale faster than anyone expects.
+
+**Side finding, fixed here.** `scripts/apply-local-ddl.sh:19` still listed the deleted
+`V30__ilcr_mill_user_profile_xref.sql`. Under `set -euo pipefail` that script aborted for anyone
+recreating their local seeded-Oracle container, and its replacement `V20260825` was never applied —
+a broken local database that reads as an image problem rather than a stale script. Same bug class as
+the rename (a migration filename hardcoded outside `db/`), which is how it surfaced; check 4 is the
+five-line guard that would have caught it on the PR that broke it.
+
+**Four things the check does not do**, stated here as well as in its docstring so they are not
+rediscovered later: a *grandfathered* file may still gain new `INSERT`s (tree, not diff — deliberate,
+since an edit to an existing file is visible in review and a new file is not); **P2 is still
+unguarded**, as § Consequences already said; a *wrong* `R__` prefix passes, because classifying
+data-versus-constraint from SQL needs heuristics that would need their own allowlist; and `R__`
+idempotency is unchecked, which is moot only while the container stays fresh per JVM.

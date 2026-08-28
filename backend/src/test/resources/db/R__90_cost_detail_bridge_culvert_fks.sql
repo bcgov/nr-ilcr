@@ -8,7 +8,14 @@
 -- V20260815 to schedule 9's write fixtures — because a version number is a scarce shared resource and
 -- "highest" is only knowable at merge time. A repeatable migration has no version to collide with and
 -- stays last no matter how many V-migrations land after it. FlywayMigrationVersionUniquenessTest
--- deliberately ignores R__ files (its regex matches V-versioned names only).
+-- deliberately ignores R__ files (its regex matches V-versioned names only); its sibling
+-- FlywayMigrationConventionTest is the one that reads this filename.
+--
+-- The 90_ prefix (added by #367) is what makes "stays last" a rule rather than an accident. Flyway
+-- orders repeatables lexicographically by description, and before the rename this file sorted last
+-- only because 'c' happens to follow every digit. Band 90+ is for constraints, FKs and indexes that
+-- must land after the data in bands 10-80; FlywayMigrationConventionTest enforces that every R__
+-- file carries a two-digit prefix, though it cannot check that 90 was the right band to pick.
 --
 -- Safe to re-run: the IT container is created fresh per JVM (AbstractOracleIT has no withReuse), so
 -- this applies exactly once per run. Flyway re-runs a repeatable migration only when its checksum
