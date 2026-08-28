@@ -33,6 +33,7 @@ import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import { useCommittedValues } from '@/hooks/useCommittedValues'
 import { validateSchedule3 } from './validation'
 import { deriveSchedule3, enteredFromForm } from './derived'
@@ -663,16 +664,14 @@ const Schedule3: FC = () => {
 
       {/* Discard-unsaved-edits confirm before leaving an editable schedule for a sub-page. */}
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={pendingRoute !== null}
-          modalHeading="Leave Schedule 3"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setPendingRoute(null)}
-          onRequestSubmit={confirmLeave}
+          heading="Leave Schedule 3"
+          onCancel={() => setPendingRoute(null)}
+          onContinue={confirmLeave}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
-        </Modal>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
       )}
       {subPageBlockedOpen && (
         <Modal
