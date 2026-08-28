@@ -580,7 +580,7 @@ class Schedule6WriteServiceTest {
 
     InOrder order = inOrder(repository);
     // Parent-first would pass against a constraint-less test schema and raise ORA-02292 in
-    // delivery — the exact defect R__cost_detail_bridge_culvert_fks.sql exists to catch.
+    // delivery — the exact defect R__90_cost_detail_bridge_culvert_fks.sql exists to catch.
     order.verify(repository).deleteCostDetailsFor(8336);
     order.verify(repository).deleteRoadReport(8336, MILL, YEAR);
     order.verify(repository).insertPlaceholder(9600, MILL, YEAR, "the general comment", USER);
