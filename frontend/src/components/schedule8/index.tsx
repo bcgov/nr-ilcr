@@ -21,7 +21,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
-import { Add } from '@carbon/icons-react'
+import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
@@ -632,6 +632,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={editable ? Edit : View}
                       onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
                     >
                       {editable ? 'Edit' : 'View'}
@@ -639,6 +640,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={Copy}
                       disabled={!editable || saving}
                       onClick={() => openCopy(page)}
                     >
@@ -647,6 +649,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="danger--ghost"
                       size="sm"
+                      renderIcon={TrashCan}
                       disabled={!editable || saving}
                       onClick={() => setConfirmDelete(page)}
                     >

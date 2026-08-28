@@ -19,7 +19,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
-import { Add } from '@carbon/icons-react'
+import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -698,6 +698,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={editable ? Edit : View}
                       onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
                     >
                       {editable ? 'Edit' : 'View'}
@@ -705,6 +706,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={Copy}
                       disabled={!editable || saving}
                       onClick={() => openCopy(location)}
                     >
@@ -713,6 +715,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="danger--ghost"
                       size="sm"
+                      renderIcon={TrashCan}
                       disabled={!editable || saving}
                       onClick={() => setConfirmDelete(location)}
                     >

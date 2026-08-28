@@ -26,6 +26,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { Edit, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -470,10 +471,22 @@ const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdi
     <TableCell>{row.comments ?? ''}</TableCell>
     {editable && (
       <TableCell>
-        <Button kind="ghost" size="sm" disabled={actionsDisabled} onClick={onEdit}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={Edit}
+          disabled={actionsDisabled}
+          onClick={onEdit}
+        >
           Edit
         </Button>
-        <Button kind="danger--ghost" size="sm" disabled={actionsDisabled} onClick={onDelete}>
+        <Button
+          kind="danger--ghost"
+          size="sm"
+          renderIcon={TrashCan}
+          disabled={actionsDisabled}
+          onClick={onDelete}
+        >
           Delete
         </Button>
       </TableCell>

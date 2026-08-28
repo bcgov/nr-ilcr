@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add } from '@carbon/icons-react'
+import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type {
@@ -611,6 +611,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={editable ? Edit : View}
                               disabled={saving || isOpen}
                               onClick={() => openPage(page, editable)}
                             >
@@ -619,6 +620,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="danger--ghost"
                               size="sm"
+                              renderIcon={TrashCan}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => setDeleteTarget({ kind: 'page', page })}
                             >
@@ -627,6 +629,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={Copy}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => copyPage(page)}
                             >
