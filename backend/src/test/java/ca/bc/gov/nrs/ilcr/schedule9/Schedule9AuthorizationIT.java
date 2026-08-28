@@ -79,7 +79,7 @@ class Schedule9AuthorizationIT extends AbstractOracleIT {
             get(ENDPOINT)
                 .param("millId", SEEDED_MILL)
                 .param("year", SEEDED_YEAR)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful())
         .andExpect(jsonPath("$.editable", is(true)));
   }

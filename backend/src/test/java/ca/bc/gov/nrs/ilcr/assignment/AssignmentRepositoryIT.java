@@ -136,7 +136,12 @@ class AssignmentRepositoryIT extends AbstractOracleIT {
     insertAssignment(MILL_514, GUID_D, newer, null); // active, ties B on date -> GUID decides
 
     List<String> order =
-        assignments.findByMill(MILL_514).stream().map(MillUserXrefEntity::userGuid).toList();
+        assignments.findByMill(MILL_514).stream()
+            .map(MillUserXrefEntity::userGuid)
+            // Ignore the shared Story 5.7 canonical-submitter fixture (R__70 associates it to
+            // every mill incl. 514); this test asserts the ORDER of its own seeded rows.
+            .filter(guid -> !guid.equals(CANONICAL_SUBMITTER_GUID))
+            .toList();
 
     assertEquals(List.of(GUID_B, GUID_D, GUID_A, GUID_C), order);
   }

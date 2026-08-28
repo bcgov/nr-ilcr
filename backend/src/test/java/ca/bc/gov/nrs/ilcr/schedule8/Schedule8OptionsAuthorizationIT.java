@@ -58,9 +58,7 @@ class Schedule8OptionsAuthorizationIT extends AbstractOracleIT {
   @Test
   @DisplayName("ILCR_SUBMITTER group -> passes authz (200)")
   void submitter_passesAuthorization() throws Exception {
-    mockMvc
-        .perform(get(ENDPOINT).with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
-        .andExpect(status().isOk());
+    mockMvc.perform(get(ENDPOINT).with(canonicalSubmitter())).andExpect(status().isOk());
   }
 
   @Test

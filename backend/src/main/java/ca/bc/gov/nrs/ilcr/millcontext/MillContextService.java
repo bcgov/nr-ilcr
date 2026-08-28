@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.millcontext;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
@@ -8,12 +9,18 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
+import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,10 +41,58 @@ public class MillContextService {
 
   private final MillContextRepository repository;
   private final MessageSource messageSource;
+  private final JwtRoleChecker roleChecker;
 
-  public MillContextService(MillContextRepository repository, MessageSource messageSource) {
+  /**
+   * Creates the mill-context service.
+   *
+   * @param repository the mill/context reads
+   * @param messageSource the bundle for server-resolved messages (AD-8)
+   * @param roleChecker resolves the caller's role for Story 5.7 mill-scope enforcement
+   */
+  public MillContextService(
+      MillContextRepository repository, MessageSource messageSource, JwtRoleChecker roleChecker) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.roleChecker = roleChecker;
+  }
+
+  /**
+   * Per-endpoint mill-scope enforcement (Story 5.7, closing 5.5 AC1/FR3). A submitter may only
+   * reach a mill they are ACTIVELY associated to; a forged/guessed {@code millId} is rejected with
+   * 403 (audited via {@code GlobalExceptionHandler.handleAccessDenied}, Story 5.4). Called from the
+   * shared guards so every mill-scoped endpoint inherits it without a per-controller check (AD-4).
+   *
+   * <ul>
+   *   <li><b>Admin</b> ({@code ILCR_ADMIN}) bypasses — tied to no mill (DL-22).
+   *   <li><b>Real submitter</b> (a FAM {@code Jwt} principal): denied unless {@code
+   *       userHasActiveAssignment(millId, idp_user_id)}; a blank GUID is denied (fail-closed).
+   *   <li><b>Mock principal</b> (security off — a non-{@code Jwt} token with no directory GUID):
+   *       the check is skipped. Recorded AC6 exemption: the mock is dev-only and the startup guard
+   *       forbids it in a deployed environment (FR1), so mill-scope enforcement is exercised by
+   *       real identities only. A production principal is always a {@code Jwt}.
+   * </ul>
+   *
+   * @param millId the mill the caller is trying to reach
+   * @throws AccessDeniedException 403 — a real submitter not actively associated to {@code millId}
+   */
+  public void validateMillAccess(long millId) {
+    if (roleChecker.hasConcreteRole(Role.ADMIN.name())) {
+      return;
+    }
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    Object principal = (auth != null) ? auth.getPrincipal() : null;
+    if (!(principal instanceof Jwt jwt)) {
+      return; // mock/security-off (AC6 exemption) — no real directory identity to scope by
+    }
+    String userGuid = JwtPrincipalUtil.getIdpUserId(jwt);
+    if (userGuid == null
+        || userGuid.isBlank()
+        || !repository.userHasActiveAssignment(millId, userGuid)) {
+      // Mill/user only — never a token or cost data (NFR3/AD-11).
+      log.info("Mill-scope 403: submitter not associated to millId={}", millId);
+      throw new AccessDeniedException("Mill is not associated to the caller.");
+    }
   }
 
   /**
@@ -122,6 +177,8 @@ public class MillContextService {
         repository
             .findSelectableMillById(millId)
             .orElseThrow(MillYearContextNotFoundException::new);
+    validateMillAccess(
+        millId); // Story 5.7: a submitter can only resolve/save context for own mill.
     if (!repository.reportingYearExists(year)) {
       throw new MillYearContextNotFoundException();
     }
@@ -292,6 +349,7 @@ public class MillContextService {
    * @throws MillClosedException 409 — mill not active ({@code ACT}) for the year (ERR-002)
    */
   public void validateMillYearActive(long millId, int year) {
+    validateMillAccess(millId); // Story 5.7: submitter↔mill scope, before any per-year read.
     String millStatus =
         repository
             .findMillStatusCodeForYear(millId, year)

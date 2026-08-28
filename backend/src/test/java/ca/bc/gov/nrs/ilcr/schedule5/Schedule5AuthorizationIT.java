@@ -78,7 +78,7 @@ class Schedule5AuthorizationIT extends AbstractOracleIT {
             get(ENDPOINT)
                 .param("millId", SEEDED_MILL)
                 .param("year", SEEDED_YEAR)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful())
         // Asserting the flag, not just the status, is what proves the controller's EDIT_SCHEDULE
         // lookup reaches the response through the real security chain. It cannot prove the FALSE

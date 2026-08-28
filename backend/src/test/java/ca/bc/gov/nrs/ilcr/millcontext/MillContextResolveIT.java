@@ -4,7 +4,6 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -46,9 +45,10 @@ class MillContextResolveIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/mill-context";
   private static final String MILL_REQUIRED = "Mill: Value is required.";
   private static final String YEAR_REQUIRED = "Reporting Year: Value is required.";
-  // Home is post-login (O4): the endpoint needs an authenticated caller, not a specific role
-  // (no @PreAuthorize, no per-user filter yet — that arrives with Epic 5).
-  private static final RequestPostProcessor AUTH = jwt();
+  // Story 5.7: mill-context resolve now enforces submitter↔mill scope, so the caller must be
+  // associated to the mill it resolves — use the canonical submitter (associated to every seeded
+  // mill by R__70). Was a bare jwt() before per-endpoint enforcement existed.
+  private static final RequestPostProcessor AUTH = canonicalSubmitter();
 
   @MockitoBean private JwtDecoder jwtDecoder;
 

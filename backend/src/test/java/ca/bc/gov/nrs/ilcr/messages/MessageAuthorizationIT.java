@@ -77,7 +77,7 @@ class MessageAuthorizationIT extends AbstractOracleIT {
             get(ENDPOINT)
                 .param("key", COPY_KEY)
                 .param("arg", "Cedar Flats Camp")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.key").value(COPY_KEY))
         .andExpect(
