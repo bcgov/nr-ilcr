@@ -19,7 +19,10 @@ jobs:
   integration-tests:
     name: Integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Covers the deployed-env probe below PLUS the backend *IT suite (moved
+    # here from analysis.yml): Testcontainers Oracle pull + start + 115 IT
+    # classes.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -62,62 +65,212 @@ jobs:
           npm ci
           node src/main.js
 
+      - uses: actions/setup-java@v5
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # The backend *IT acceptance suite (authorization, persistence,
+      # validation against a real Oracle) — moved here from analysis.yml so
+      # the Integration job owns all integration testing. AbstractOracleIT
+      # starts one gvenzl/oracle-free Testcontainer per JVM and applies the
+      # test snapshot (classpath:db) with Flyway's Java API; only Docker is
+      # needed, which the runner provides. The `integration-test` profile
+      # runs failsafe only (unit tests stay in analysis.yml's Sonar job).
+      - name: Backend integration tests (Testcontainers Oracle)
+        working-directory: backend
+        run: mvn -B -ntp -P integration-test verify
+
   e2e-tests:
+    # The COMPLETE playwright-bdd suite (frontend/e2e): the @smoke app-shell
+    # project, the `setup` preflight anchor checks, and the data-backed
+    # chromium scenarios, all in one job. It does NOT test the deployed PR
+    # env: mock auth only engages on localhost (`isMockAuth()` double-gates on
+    # `isLocalHost()`, src/env.ts) and several scenarios need direct DB
+    # access, so the whole stack runs on the runner —
+    # frontend (Vite :3000, mock auth) + backend (:8080) — against the
+    # shared TOOLS-namespace Oracle (database/openshift.deploy.yml, deployed by
+    # reusable-deploy's deploy-database job — which the `tests` call sites
+    # already sequence after), reached via `oc port-forward` (routes can't
+    # carry SQL*Net). Data comes from the backend's test-scope Flyway chain
+    # plus the e2e-only anchor seed (backend/src/test/resources/db-e2e/),
+    # reset with flyway:clean+migrate at the start of every run. That reset is
+    # why the concurrency group below only needs to QUEUE runs, never clean up
+    # after them — and it WIPES the tools database each run, which is fine by
+    # design (its template declares the data ephemeral / migration-rebuilt);
+    # nothing else may treat that DB as durable. Gate is `npm run test:gate`
+    # (plain `npm test` exits 1 by design on the known @discovered-* reds —
+    # see e2e/README.md).
     name: E2E
-    # The e2e suite is the self-contained playwright-bdd project under frontend/e2e (it retired the old
-    # raw-Playwright frontend/e2e). Only the DATA-INDEPENDENT `@smoke` project runs here: it aborts /api,
-    # so it needs neither the seeded delivery Oracle nor the pinned fixtures the deployed env lacks. The
-    # full data-backed suite (setup + chromium — SCH1/SEC) is a LOCAL/manual gate; see frontend/e2e/README.md.
-    #
-    # The smoke runs against a LOCAL Vite server on localhost, NOT the deployed PR URL. Since Story 1.2
-    # turned auth on, mock auth is (by design) disabled off-localhost — `isMockAuth()` double-gates on
-    # `isLocalHost()` (src/env.ts) — so an anonymous visit to a deployed host correctly bounces to the
-    # FAM/Cognito Hosted UI and never renders the shell. On localhost with the repo-default
-    # `{ mockUser: true }` config the shell renders client-side, keeping this smoke auth- AND
-    # backend-independent (the scenarios still abort every /api call).
-    defaults:
-      run:
-        working-directory: frontend/e2e
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 60
+    concurrency:
+      group: e2e-tools-oracle
     steps:
       - uses: actions/checkout@v7
         name: Checkout
+
+      - name: Install oc
+        run: |
+          curl -sSfL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oc
+
+      - name: Port-forward the tools-namespace Oracle
+        env:
+          OC_SERVER: ${{ vars.OC_SERVER }}
+          OC_TOKEN: ${{ secrets.OC_TOKEN_TOOLS }}
+          OC_NAMESPACE: ${{ secrets.OC_NAMESPACE_TOOLS }}
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          oc login --token="$OC_TOKEN" --server="$OC_SERVER"
+          # First boot creates the ILCR PDB + app user; give it the same
+          # headroom the template's startupProbe allows.
+          oc -n "$OC_NAMESPACE" rollout status "deployment/$NAME-tools-database" --timeout=600s
+          # App credentials come from the deployment's own Secret
+          # (<name>-tools-database, written by database/openshift.deploy.yml) —
+          # single source of truth, nothing hardcoded here. Only the password
+          # is masked: the username would mask an ordinary word in every log.
+          # tr -d '\r\n': a secret pasted with a stray CR/LF (Windows clipboard)
+          # otherwise splits the chain — the in-step ALTER USER below would set
+          # "pass\r" while GITHUB_ENV's parser strips the CR, so every later
+          # login sends "pass" and gets ORA-01017. Sanitizing once here makes
+          # the ALTER, the env round-trip, and every login byte-identical.
+          DB_USER=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_USER}' | base64 -d | tr -d '\r\n')
+          DB_PASS=$(oc -n "$OC_NAMESPACE" get secret "$NAME-tools-database" -o jsonpath='{.data.ORACLEDB_PASSWORD}' | base64 -d | tr -d '\r\n')
+          echo "::add-mask::$DB_PASS"
+          echo "DB_USER=$DB_USER" >> "$GITHUB_ENV"
+          echo "DB_PASS=$DB_PASS" >> "$GITHUB_ENV"
+          # Ensure the app user in the ILCR PDB matches EXACTLY the credential
+          # bytes this job just read. The image's boot-time createAppUser pipes
+          # the password through an UNQUOTED shell heredoc, so special
+          # characters ('"', '$', backtick, ...) can make it fail or store
+          # different bytes — observed as a persistent ORA-01017 even on a
+          # freshly restarted pod. Setting it here as SYSDBA (OS-auth, which
+          # the database Dockerfile's UID remap preserves) makes boot-time
+          # quirks and future Secret rotations irrelevant. The SQL travels
+          # over stdin — the password never appears in argv or the log.
+          # SET DEFINE OFF is load-bearing: an '&' in the password is otherwise
+          # a sqlplus substitution variable — it silently swallows the rest of
+          # the password AND the next line, "succeeds", and stores garbage
+          # (this is also exactly how the image's boot-time createAppUser
+          # mangles such passwords, which is why this step exists). The
+          # ACCOUNT UNLOCK clears any FAILED_LOGIN_ATTEMPTS lock left behind
+          # by earlier mismatched-password runs.
+          DB_PASS_SQL="${DB_PASS//\"/\"\"}"
+          oc -n "$OC_NAMESPACE" exec -i "deploy/$NAME-tools-database" -- sqlplus -S / as sysdba <<EOF
+          SET DEFINE OFF
+          WHENEVER SQLERROR EXIT SQL.SQLCODE
+          ALTER SESSION SET CONTAINER=ILCR;
+          CREATE USER IF NOT EXISTS $DB_USER IDENTIFIED BY "$DB_PASS_SQL" DEFAULT TABLESPACE USERS QUOTA UNLIMITED ON USERS;
+          GRANT DB_DEVELOPER_ROLE TO $DB_USER;
+          ALTER USER $DB_USER IDENTIFIED BY "$DB_PASS_SQL" ACCOUNT UNLOCK;
+          exit;
+          EOF
+          echo "App user $DB_USER ensured in PDB ILCR."
+          # Respawn loop: a port-forward can drop mid-run, and a dead tunnel
+          # otherwise surfaces as confusing scenario timeouts. Dies with the job.
+          ( while true; do
+              oc -n "$OC_NAMESPACE" port-forward "svc/$NAME-tools-database" 1525:1521 || true
+              sleep 2
+            done ) &
+          timeout 120 bash -c 'until (echo > /dev/tcp/127.0.0.1/1525) 2>/dev/null; do sleep 2; done'
+          echo "Oracle listener reachable on localhost:1525"
+
+      - uses: actions/setup-java@v5
+        name: Setup Java
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Reset and seed database (Flyway clean + migrate)
+        working-directory: backend
+        # ILCR is the extra PDB database/openshift.deploy.yml creates;
+        # DB_USER/DB_PASS were read from its Secret — and the app user was
+        # (re)aligned to those exact bytes — in the port-forward step. Retries
+        # cover transients only (a fresh pod accepting TCP before the PDB
+        # opens, a port-forward reconnect mid-migrate).
+        run: |
+          for i in 1 2 3 4 5; do
+            mvn -B -ntp -P e2e-db flyway:clean flyway:migrate \
+              -Dflyway.url="jdbc:oracle:thin:@//localhost:1525/ILCR" \
+              -Dflyway.user="$DB_USER" -Dflyway.password="$DB_PASS" && exit 0
+            echo "Flyway attempt $i failed; retrying in 20s..."
+            sleep 20
+          done
+          exit 1
+
+      - name: Start backend
+        working-directory: backend
+        env:
+          SERVER_PORT: "8080"
+          # `local` has no on-profile document in application.yml — any
+          # NON-openshift profile works here. It must not be `openshift`:
+          # DeployedSecurityGuard (@Profile("openshift")) refuses exactly this
+          # job's ILCR_SECURITY_ENABLED=false + ILCR_DATASOURCE_ENABLED=true
+          # combination, which is safe on a runner but an auth bypass on a pod.
+          SPRING_PROFILES_ACTIVE: local
+          ILCR_SECURITY_ENABLED: "false"
+          ILCR_DATASOURCE_ENABLED: "true"
+          SPRING_DATASOURCE_URL: jdbc:oracle:thin:@//localhost:1525/ILCR
+          LOG_LEVEL: INFO
+        # DB_USER/DB_PASS are runtime values (written to GITHUB_ENV by the
+        # port-forward step), so they are consumed as shell variables — the
+        # documented pattern for values created during the run.
+        run: |
+          export SPRING_DATASOURCE_USERNAME="$DB_USER"
+          export SPRING_DATASOURCE_PASSWORD="$DB_PASS"
+          mvn -B -ntp spring-boot:run > "$RUNNER_TEMP/backend.log" 2>&1 &
+          npx --yes wait-on -t 300000 http-get://localhost:8080/api/health \
+            || { tail -n 100 "$RUNNER_TEMP/backend.log"; exit 1; }
+
       - uses: actions/setup-node@v7
         name: Setup Node
         with:
           node-version: 24
-          cache: "npm"
-          cache-dependency-path: frontend/e2e/package-lock.json
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend/e2e/package-lock.json
+
+      - name: Start frontend (localhost, mock auth)
+        working-directory: frontend
+        env:
+          BACKEND_URL: http://localhost:8080
+        run: |
+          npm ci
+          npm run dev -- --port 3000 &
+          npx --yes wait-on -t 120000 http://localhost:3000
+
       - name: Install e2e dependencies
+        working-directory: frontend/e2e
         run: |
           npm ci
           npx playwright install --with-deps chromium
+          npm run setup:python
 
-      - name: Install frontend
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run smoke (data-independent, localhost mock auth)
-        working-directory: frontend
+      - name: Run full suite (gate)
+        working-directory: frontend/e2e
         env:
           CI: "true"
+        # No --project filter: all three projects run — smoke (shell, no DB),
+        # setup (preflight anchors), chromium (data-backed scenarios).
+        # ORACLE_DSN (user/pass@host:port/service) feeds the python-oracledb
+        # bridge (scripts/sch1_db_restore.py) and any DB-level cleanup steps;
+        # composed in shell because DB_USER/DB_PASS are runtime values from
+        # GITHUB_ENV (see the backend step).
         run: |
-          # Serve the app on localhost so mock auth engages (isMockAuth() requires localhost); the
-          # @smoke scenarios abort /api, so no backend is needed. No E2E_BASE_URL → the Playwright
-          # config defaults baseURL to http://localhost:3000.
-          npm run dev -- --port 3000 &
-          DEV_PID=$!
-          npx --yes wait-on -t 120000 http://localhost:3000
-          ( cd e2e && npm test -- --project=smoke --reporter=html )
-          kill "$DEV_PID" 2>/dev/null || true
+          export ORACLE_DSN="$DB_USER/$DB_PASS@localhost:1525/ILCR"
+          npm run test:gate -- --workers=4
 
       - uses: actions/upload-artifact@v7
         if: (! cancelled())
         name: upload results
         with:
-          name: playwright-report-smoke
-          path: "./frontend/e2e/playwright-report" # path from current folder
+          name: playwright-report
+          path: ./frontend/e2e/playwright-report
           retention-days: 7
 
   load-tests:

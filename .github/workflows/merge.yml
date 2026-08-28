@@ -45,6 +45,9 @@ jobs:
     if: needs.deploy-test.result == 'success'
     needs: [deploy-test]
     uses: ./.github/workflows/reusable-tests.yml
+    # inherit: the e2e-full job needs OC_NAMESPACE_TOOLS/OC_TOKEN_TOOLS for the
+    # tools-namespace Oracle it port-forwards to.
+    secrets: inherit
     with:
       target: test
 

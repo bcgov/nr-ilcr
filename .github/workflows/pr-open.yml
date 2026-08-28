@@ -32,8 +32,10 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        package: [backend, frontend]
-    timeout-minutes: 10
+        package: [backend, frontend, database]
+    # database is a rare, large build (Oracle base image); backend/frontend
+    # stay well under the old 10 minute cap
+    timeout-minutes: 15
     steps:
       - uses: bcgov/action-builder-ghcr@cb2629351c87dd1c2130073e4ebb7233a9653a63 # v4.4.1
         with:
@@ -57,13 +59,20 @@ jobs:
     with:
       target: ${{ needs.init.outputs.zone }}
       tag: ${{ github.event.pull_request.head.sha }}
-      triggers: ('backend/', 'frontend/', 'common/', '.github/workflows/')
+      # database/ included so a database-only PR still deploys (deploy-database
+      # reuses this list) and runs the test stage — otherwise the new image is
+      # built but never rolled out or exercised, and the documented tools-DB
+      # recovery (delete the deployment, re-run) silently no-ops.
+      triggers: ('backend/', 'frontend/', 'common/', 'database/', '.github/workflows/')
 
   tests:
      name: Tests
      if: needs.deploys.result == 'success' && needs.deploys.outputs.triggered == 'true'
      needs: [deploys, init]
      uses: ./.github/workflows/reusable-tests.yml
+     # inherit: the e2e-full job needs OC_NAMESPACE_TOOLS/OC_TOKEN_TOOLS for the
+     # tools-namespace Oracle it port-forwards to.
+     secrets: inherit
      with:
        target: ${{ needs.init.outputs.zone }}
 

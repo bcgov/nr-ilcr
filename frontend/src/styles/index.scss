@@ -61,13 +61,21 @@ body {
   max-inline-size: 100%;
 }
 
-// Consistent typography across Schedules 2/4/8 and their sub-pages (scoped to .schedule-page so it
-// does not leak to other routes): main headers — panel/section headings + Carbon table titles — at
-// 1.25rem; row + field labels — Carbon input labels, including Comments — at 0.875rem. So equivalent
-// headers (e.g. "Existing Locations" and "Edit Location") and equivalent labels (e.g. "Location Name"
-// and the edit-grid row labels) match across the schedules. Sizes are in rem (not px) so they scale
-// with the browser's font-size setting (WCAG 1.4.4); only the size is set, leaving Carbon's weight and
-// line-height intact, so a full type-style token is intentionally not used here.
+// Consistent typography on `.schedule-page` routes — Schedules 2, 4, 8 and 10 and their sub-pages,
+// plus the home content, open-reporting-year and code-table screens; scoped to that class so it does
+// not leak to routes that keep Carbon's own sizes (Schedules 1, 3, 5, 6, 7A, 7B, 9, 11 do). Main
+// headers — panel/section headings + Carbon table titles — at 1.25rem; row + field labels, Carbon
+// input labels included, at 0.875rem. So equivalent headers (e.g. "Existing Locations" and "Edit
+// Location") and equivalent labels (e.g. "Location Name" and the edit-grid row labels) match across
+// the schedules. Sizes are in rem (not px) so they scale with the browser's font-size setting
+// (WCAG 1.4.4).
+//
+// THIS RULE SETS ONLY THE SIZE, deliberately, leaving weight, leading and tracking to whatever
+// declared the label — for a Carbon label that is Carbon's own `label-01` include. That is why no
+// type-style token is used HERE, and it is not an argument against using one where a label is
+// declared: `.schedule-10__field-label` takes its other four properties from `label-01` precisely so
+// this rule only has to override the one property it owns. (#366 code review — the earlier wording
+// read as a house rule against type-style tokens, which Schedules 6 and 10 both contradict.)
 .schedule-page {
   .schedule-2__heading,
   .schedule-4__heading,
@@ -80,7 +88,12 @@ body {
     font-size: 1.25rem;
   }
 
+  // A hand-rolled label — a read-only field's <span>, which has no control to hang a Carbon <label>
+  // on — is NOT `.cds--label` and so does not pick this up. It has to be listed here by name or it
+  // renders 12px beside 14px labels and reads as a different font, which is exactly what #366
+  // reported on Schedule 10's Road Group. Add new ones to this list.
   .schedule-2__comments-label,
+  .schedule-10__field-label,
   .#{$bcgov-prefix}--label {
     font-size: 0.875rem;
   }
