@@ -737,7 +737,8 @@ const Schedule8: FC = () => {
         <TextArea
           id="page-comments"
           labelText="If you have any additional comments, please enter them here:"
-          maxLength={3500}
+          enableCounter
+          maxCount={3500}
           value={form.comments}
           onChange={setComments}
         />
