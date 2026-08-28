@@ -260,6 +260,30 @@ describe('LayoutSideNav — default state and persistence (#316)', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open menu' }))
   })
 
+  test('Escape outside the header is left alone — a Carbon Modal keeps its own Escape', async () => {
+    setLargeViewport(true)
+    const { container } = renderShell()
+
+    // A Carbon Modal traps focus inside its own dialog, so scoping our window-level handler to
+    // `.cds--header` is what stops the side nav swallowing the Escape that should close the dialog.
+    const outside = container.querySelector('.app-content') as HTMLElement
+    outside.setAttribute('tabindex', '-1')
+    outside.focus()
+    await userEvent.keyboard('{Escape}')
+
+    expect(isExpanded()).toBe(true)
+  })
+
+  test('a key other than Escape does not close the nav', async () => {
+    setLargeViewport(true)
+    renderShell()
+
+    screen.getByRole('button', { name: 'Close menu' }).focus()
+    await userEvent.keyboard('{ArrowDown}')
+
+    expect(isExpanded()).toBe(true)
+  })
+
   test('the provider unsubscribes from matchMedia on unmount', () => {
     setLargeViewport(true)
     const { unmount } = renderShell()

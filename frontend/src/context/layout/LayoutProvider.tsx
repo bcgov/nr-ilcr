@@ -7,11 +7,13 @@ import LayoutContext from './LayoutContext'
 // Exported so the SCSS tripwire test can assert the two really do still agree.
 export const LARGE_VIEWPORT_QUERY = '(min-width: 66rem)'
 
+// No `typeof window.matchMedia !== 'function'` guard. One was here, justified as "a degraded nav
+// beats a blank page" — but it protected nothing: Carbon's own SideNav calls `window.matchMedia`
+// unguarded in this same tree (`@carbon/react/lib/internal/useMatchMedia.js:28`), so a browser
+// without the API blanks the page regardless. The guard only bought false comfort and an untestable
+// branch. The story's implementation note called this exactly right: prefer the test stub, because a
+// runtime guard that exists only for tests hides real breakage.
 function matchesLargeViewport(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false
-  }
-
   return window.matchMedia(LARGE_VIEWPORT_QUERY).matches
 }
 
@@ -41,10 +43,6 @@ export default function LayoutProvider({ children }: { children: ReactNode }) {
   const hasManualPreferenceRef = useRef(false)
 
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return
-    }
-
     const query = window.matchMedia(LARGE_VIEWPORT_QUERY)
 
     // Called both from the `change` listener and once immediately after subscribing. The
