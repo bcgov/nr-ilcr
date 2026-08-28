@@ -47,7 +47,7 @@ class MillContextResolveIT extends AbstractOracleIT {
   private static final String YEAR_REQUIRED = "Reporting Year: Value is required.";
   // Story 5.7: mill-context resolve now enforces submitter↔mill scope, so the caller must be
   // associated to the mill it resolves — use the canonical submitter (associated to every seeded
-  // mill by V20260827). Was a bare jwt() before per-endpoint enforcement existed.
+  // mill by R__70). Was a bare jwt() before per-endpoint enforcement existed.
   private static final RequestPostProcessor AUTH = canonicalSubmitter();
 
   @MockitoBean private JwtDecoder jwtDecoder;

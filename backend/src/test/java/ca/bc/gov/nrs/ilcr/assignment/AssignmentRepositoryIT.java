@@ -138,7 +138,7 @@ class AssignmentRepositoryIT extends AbstractOracleIT {
     List<String> order =
         assignments.findByMill(MILL_514).stream()
             .map(MillUserXrefEntity::userGuid)
-            // Ignore the shared Story 5.7 canonical-submitter fixture (V20260827 associates it to
+            // Ignore the shared Story 5.7 canonical-submitter fixture (R__70 associates it to
             // every mill incl. 514); this test asserts the ORDER of its own seeded rows.
             .filter(guid -> !guid.equals(CANONICAL_SUBMITTER_GUID))
             .toList();

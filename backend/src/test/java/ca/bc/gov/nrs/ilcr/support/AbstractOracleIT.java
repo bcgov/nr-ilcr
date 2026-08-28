@@ -59,11 +59,11 @@ public abstract class AbstractOracleIT {
   protected MockMvc mockMvc;
 
   /**
-   * The canonical test submitter GUID (32-char {@code custom:idp_user_id}), seeded by {@code
-   * V20260827} as ACTIVELY associated to EVERY seeded mill. Story 5.7 per-endpoint mill-scope
-   * enforcement 403s a submitter not associated to the mill they target; security-ON schedule ITs
-   * that assert submitter access use {@link #canonicalSubmitter()} so their caller can actually
-   * reach the test mill.
+   * The canonical test submitter GUID (32-char {@code custom:idp_user_id}), seeded by {@code R__70}
+   * as ACTIVELY associated to EVERY seeded mill. Story 5.7 per-endpoint mill-scope enforcement 403s
+   * a submitter not associated to the mill they target; security-ON schedule ITs that assert
+   * submitter access use {@link #canonicalSubmitter()} so their caller can actually reach the test
+   * mill.
    */
   protected static final String CANONICAL_SUBMITTER_GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
 
