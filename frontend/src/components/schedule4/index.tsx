@@ -19,6 +19,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -697,6 +698,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={editable ? Edit : View}
                       onClick={() => openEditOrView(location, editable ? 'edit' : 'view')}
                     >
                       {editable ? 'Edit' : 'View'}
@@ -704,6 +706,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={Copy}
                       disabled={!editable || saving}
                       onClick={() => openCopy(location)}
                     >
@@ -712,6 +715,7 @@ const Schedule4: FC = () => {
                     <Button
                       kind="danger--ghost"
                       size="sm"
+                      renderIcon={TrashCan}
                       disabled={!editable || saving}
                       onClick={() => setConfirmDelete(location)}
                     >
@@ -868,7 +872,7 @@ const Schedule4: FC = () => {
       data-testid={bottom ? 'schedule-4-bottom-actions' : 'schedule-4-top-actions'}
     >
       {!bottom && (
-        <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+        <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
           Add New Location
         </Button>
       )}
@@ -876,7 +880,12 @@ const Schedule4: FC = () => {
           to disableReportEdits() (schedule4.xhtml:43 and :220-221, schedule4NewLocation.xhtml:275,
           schedule4ExistingLocation.xhtml:1144), and the other seven schedules already include the term —
           Schedules 4 and 8 were the outliers. Schedule 8 is still open; #322 does not close on this alone. */}
-      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+      <Button
+        kind="tertiary"
+        renderIcon={CheckmarkOutline}
+        disabled={!editable || saving}
+        onClick={handleCheckStatus}
+      >
         Check Status
       </Button>
     </Column>

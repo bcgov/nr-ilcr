@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type {
@@ -572,10 +573,15 @@ const Schedule10: FC = () => {
         {banners}
 
         <Column sm={4} md={8} lg={16} className="schedule-10__actions">
-          <Button kind="primary" disabled={controlsDisabled} onClick={openNewPage}>
+          <Button kind="primary" renderIcon={Add} disabled={controlsDisabled} onClick={openNewPage}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={controlsDisabled} onClick={checkStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={controlsDisabled}
+            onClick={checkStatus}
+          >
             Check Status
           </Button>
         </Column>
@@ -610,6 +616,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={editable ? Edit : View}
                               disabled={saving || isOpen}
                               onClick={() => openPage(page, editable)}
                             >
@@ -618,6 +625,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="danger--ghost"
                               size="sm"
+                              renderIcon={TrashCan}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => setDeleteTarget({ kind: 'page', page })}
                             >
@@ -626,6 +634,7 @@ const Schedule10: FC = () => {
                             <Button
                               kind="ghost"
                               size="sm"
+                              renderIcon={Copy}
                               disabled={controlsDisabled || isOpen}
                               onClick={() => copyPage(page)}
                             >

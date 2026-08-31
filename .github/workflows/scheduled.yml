@@ -97,6 +97,27 @@ jobs:
       pages: write
     uses: bcgov/quickstart-openshift-helpers/.github/workflows/.schema-spy.yml@a11ad3d1b9288fb40757c4314a62eb86ff227931 # v1.2.1
 
+  # k6 load tests, moved out of reusable-tests.yml so they no longer run on
+  # every PR/merge. They hit the always-on TEST deployment (same target the
+  # ZAP job uses) — 20 VUs for 5 minutes against each of backend/frontend.
+  load-tests:
+    name: Load Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        name: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
+      - uses: grafana/run-k6-action@de51a7390bdf0ac85a3bef493691bd71d4c7c158 # v1.4.0
+        env:
+          BACKEND_URL: https://${{ github.event.repository.name }}-test.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}/api
+          FRONTEND_URL: https://${{ github.event.repository.name }}-test.${{ vars.OPENSHIFT_APPS_DOMAIN || 'apps.gold.devops.gov.bc.ca' }}
+        with:
+          path: ./common/tests/load/${{ matrix.name }}-test.js
+          flags: --vus 20 --duration 300s
+
   # Run sequentially to reduce chances of rate limiting
   zap:
     name: ZAP Scans

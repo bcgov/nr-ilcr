@@ -394,6 +394,26 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(screen.getByLabelText('Camp Name')).toHaveValue('')
   })
 
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText('Cedar Flats Camp')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new camp/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+  })
+
   test('read-only collapses the row actions to a single View (deviation (B))', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', editable: false }))))
     render(<Schedule5 />)

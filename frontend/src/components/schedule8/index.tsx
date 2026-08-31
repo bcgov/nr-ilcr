@@ -21,6 +21,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
@@ -631,6 +632,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={editable ? Edit : View}
                       onClick={() => openEditOrView(page, editable ? 'edit' : 'view')}
                     >
                       {editable ? 'Edit' : 'View'}
@@ -638,6 +640,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={Copy}
                       disabled={!editable || saving}
                       onClick={() => openCopy(page)}
                     >
@@ -646,6 +649,7 @@ const Schedule8: FC = () => {
                     <Button
                       kind="danger--ghost"
                       size="sm"
+                      renderIcon={TrashCan}
                       disabled={!editable || saving}
                       onClick={() => setConfirmDelete(page)}
                     >
@@ -786,10 +790,15 @@ const Schedule8: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-8__actions">
-          <Button kind="primary" disabled={!editable || saving} onClick={openNew}>
+          <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={saving}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
         </Column>
