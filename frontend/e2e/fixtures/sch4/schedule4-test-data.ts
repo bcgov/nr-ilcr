@@ -518,7 +518,7 @@ export const FLD = {
   /** FLD-002 — category Cost, `costValidatorErrorMsg`. */
   categoryCost: 'Entered cost must be between -99,999,999 and 99,999,999.',
   /** FLD-003 — Distance, `distanceValidatorErrorMsg` (same band on the grid and the sub-pages). */
-  distance: 'Entered distance must be between 0 and 999,999.',
+  distance: 'Entered distance must be between 0 and 999,999.9.',
   /** Sub-page Volume, `volume6DigitValidatorErrorMsg` (the legacy `volSize="6"` variant). */
   rowVolume: 'Entered volume must be between 0 and 999,999.',
   /** Sub-page Cost, `costSize7ValidatorErrorMsg` (the legacy `costSize="7"` variant). */

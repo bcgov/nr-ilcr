@@ -20,9 +20,11 @@ export const CAMP_MESSAGES = {
   campNameMaxLength: 'Camp Name must be 30 characters or fewer.',
   isolatedCampRequired: 'Isolated Camp is required.',
   commentsMaxLength: 'Comments must be 3500 characters or fewer.',
-  // The message understates its own bound by 0.9 — the validator accepts up to 999,999.9 while the
-  // text says 999,999. Both are kept exactly as legacy has them rather than "corrected" here.
-  distanceRange: 'Entered distance must be between 0 and 999,999.',
+  // Legacy's text understated its own bound by 0.9 — the validator accepts up to 999,999.9 while
+  // the text said 999,999. The Ministry confirmed the BOUND and ruled the TEXT the defect (PR #370,
+  // 2026-08-27: the value is in km), so this states the real bound. Mirrors the backend's
+  // `distanceValidatorErrorMsg`; the two must stay identical.
+  distanceRange: 'Entered distance must be between 0 and 999,999.9.',
   sizeRange: 'Entered number of persons must be between 1 and 999.',
   volumeRange: 'Entered volume must be between 0 and 9,999,999.',
   volumeInvalid: 'Entered volume entry is invalid.',

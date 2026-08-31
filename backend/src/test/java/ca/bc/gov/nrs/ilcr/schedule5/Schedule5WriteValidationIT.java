@@ -233,16 +233,15 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   // ---- FLD-002: the numeric ranges (S15) -------------------------------------------------------
 
   @Test
-  @DisplayName("distance: 0.0 and 999999.9 are IN, -0.1 and 999999.91 are out (deviation (H))")
+  @DisplayName("distance: 0.0 and 999999.9 are IN, -0.1 and 999999.91 are out")
   void distanceRange() throws Exception {
-    String text = "Entered distance must be between 0 and 999,999.";
+    String text = "Entered distance must be between 0 and 999,999.9.";
     expectRejected("\"roadDistanceToOperatingArea\": -0.1", text);
     expectRejected("\"roadDistanceToOperatingArea\": 999999.91", text);
-    // The message UNDERSTATES the bound by 0.9 and that is preserved:
-    // ILCRDistanceValidator.java:16-17
-    // enforces 999999.9, and Task 1 gate (vii) found real data sitting exactly on it, so clamping
-    // to
-    // the message's 999,999 would reject stored rows.
+    // The bound is 999999.9 (ILCRDistanceValidator.java:16-17) and real data sits exactly on it, so
+    // clamping to the legacy message's "999,999" would reject stored rows. The Ministry confirmed
+    // the bound and ruled the MESSAGE the defect (PR #370, 2026-08-27: the value is in KM), so the
+    // text now states the real bound. Deviation (H) is closed — the bound never moved.
     expectAccepted("\"roadDistanceToOperatingArea\": 999999.9");
     expectAccepted("\"roadDistanceToOperatingArea\": 0.0");
   }
@@ -255,7 +254,7 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // and report success with a number the licensee never typed (the 25.2 lesson).
     expectRejected(
         "\"roadDistanceToOperatingArea\": 42.555",
-        "Entered distance must be between 0 and 999,999.");
+        "Entered distance must be between 0 and 999,999.9.");
   }
 
   @Test

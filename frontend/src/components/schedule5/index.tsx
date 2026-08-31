@@ -65,8 +65,11 @@ import './index.scss'
 // hardcoded, which is why there is no copy literal here.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's p:dataTable (schedule5.xhtml:51) sets no emptyMessage, so PrimeFaces rendered its
-// default — reproduced verbatim rather than inventing a placeholder.
-const EMPTY_LIST = 'No records found.'
+// generic default, "No records found." — a DELIBERATE departure from that verbatim text, ruled by
+// the Ministry on PR #370 (2026-08-27): "Display a blank page. If possible, have a message such as
+// no camps or something similar." Named for what the table holds, matching the house pattern in
+// schedule7a/7b/9. Do not "restore" the legacy string — the departure is business-sanctioned.
+const EMPTY_LIST = 'No camps have been added.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 // CFM-004. Hardcoded with the other three confirms rather than resolved through GET /v1/messages —

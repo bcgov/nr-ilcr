@@ -232,7 +232,7 @@ class Schedule4SubPageIT extends AbstractOracleIT {
   void post_distanceOver_returns400() throws Exception {
     expect400(
         rowBody("TOWING", "Bad Dist", "1000000", 100, 5000, null),
-        "Entered distance must be between 0 and 999,999.");
+        "Entered distance must be between 0 and 999,999.9.");
   }
 
   @Test

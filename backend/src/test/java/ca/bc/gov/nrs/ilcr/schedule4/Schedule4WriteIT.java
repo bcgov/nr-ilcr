@@ -319,7 +319,7 @@ class Schedule4WriteIT extends AbstractOracleIT {
   void put_distanceOver_returns400() throws Exception {
     expect400(
         body(8001, revisionOf(8001), "Existing Dump", cat(47, 200, 8000, "1000000")),
-        "Entered distance must be between 0 and 999,999.");
+        "Entered distance must be between 0 and 999,999.9.");
   }
 
   @Test
