@@ -1595,7 +1595,9 @@ describe('Schedule 5 inline validation timing', () => {
     expect(
       await screen.findByText('Entered number of persons must be between 1 and 999.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Entered distance must be between 0 and 999,999.9.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Entered distance must be between 0 and 999,999.9.'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Entered cost must be between 0 and 9,999,999.')).toBeInTheDocument()
     await flushAsync()
     expect(put).toBe(false)

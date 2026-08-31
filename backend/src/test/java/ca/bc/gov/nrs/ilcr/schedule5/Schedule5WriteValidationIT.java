@@ -28,19 +28,26 @@ import org.springframework.test.context.TestPropertySource;
  * S12/S15; BR-05/BR-07).
  *
  * <p>Every bound in the story's § VALIDATION table is exercised on BOTH sides, and every expected
- * string is the LEGACY bundle text, byte-for-byte. Three of the ranges are deliberate oddities that
- * a uniform implementation would smooth over, and each is asserted here rather than described:
+ * string is the LEGACY bundle text, byte-for-byte — with ONE sanctioned exception, the distance
+ * message below. Three of the ranges are deliberate oddities that a uniform implementation would
+ * smooth over, and each is asserted here rather than described:
  *
  * <ul>
  *   <li>{@code wagesAndBenefits.cost} validates at &plusmn;99,999,999 while its siblings validate
  *       at &plusmn;9,999,999 — the {@code costSize} attribute is missing from that one input in
- *       BOTH legacy pages (deviation (F), an Open Question for the Ministry).
+ *       BOTH legacy pages (deviation (F), <strong>RATIFIED by the Ministry</strong> on PR #370,
+ *       2026-08-27: "Keep it as is, as this is somewhat on purpose." The wider range is DELIBERATE;
+ *       tightening it to match the siblings would break the assertion below on purpose).
  *   <li>{@code recoveries.cost} is 0-FLOORED and capped at the legacy MESSAGE's 9,999,999, not at
  *       the wider {@code NUMBER(8,0)} column (deviation (G) — the call {@code deferred-work.md:245}
  *       handed this story, resolved as "the legacy message wins").
- *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9 while its message SAYS
- *       "999,999" (deviation (H)). Real delivery data sits exactly on 999999.9, so clamping to the
- *       message would reject stored rows.
+ *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9, and its message now SAYS
+ *       "999,999.9" to match. <strong>Deviation (H) is CLOSED:</strong> the legacy text understated
+ *       its own bound by 0.9, and the Ministry confirmed the bound and ruled the TEXT the defect
+ *       (PR #370, 2026-08-27 — the value is in kilometres, which is why it carries a decimal). Real
+ *       delivery data sits exactly on 999999.9, so clamping to the old message would have rejected
+ *       stored rows. The bound never moved; only {@code distanceValidatorErrorMsg} did, and the
+ *       assertion below expects the corrected text.
  * </ul>
  *
  * <p>Every test in this class asserts a REJECTION, so nothing here mutates — which is what lets it
