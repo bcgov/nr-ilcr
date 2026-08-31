@@ -1080,13 +1080,13 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(captured!.generalComments).toBeNull()
   })
 
-  test('the General Comment counter is Carbon’s n/3500 (AC5, deviation G)', async () => {
+  test('the General Comment counter shows characters remaining (AC5, #312 Overall 10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ generalComments: null }))))
     render(<Schedule6 />)
 
     const region = await waitFor(() => commentsRegion())
     expect(within(region).getByLabelText('General Comments').tagName).toBe('TEXTAREA')
-    expect(within(region).getByText('0/3500')).toBeInTheDocument()
+    expect(within(region).getByText('3500 characters remaining')).toBeInTheDocument()
   })
 
   test('the per-record Comments field caps at 400, not legacy’s 3500 (deviation E)', async () => {
@@ -1098,7 +1098,7 @@ describe('Schedule 6 page (Story 8.3)', () => {
     // The column is ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE); a 3500 cap here would walk
     // the user straight into a server rejection (legacy's own textareas did exactly that).
     expect(within(panel).getByLabelText('Comments')).toHaveAttribute('maxlength', '400')
-    expect(within(panel).getByText('0/400')).toBeInTheDocument()
+    expect(within(panel).getByText('400 characters remaining')).toBeInTheDocument()
   })
 
   test('missing mill/year context short-circuits before any GET (AC7 / S06)', async () => {
@@ -1943,5 +1943,32 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(
       screen.queryByRole('region', { name: 'Add Road Maintenance report' }),
     ).not.toBeInTheDocument()
+  })
+})
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 6 action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Save, Check Status and the Add toggle all carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule6 />)
+
+    // Both bars render Save + Check Status; every instance must be iconed, not just the first.
+    for (const name of [/^save$/i, /check status/i]) {
+      for (const button of await screen.findAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+
+    // The add trigger is one control whose label toggles, so its icon has to toggle with it.
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    const closeToggle = screen.getByRole('button', { name: 'Close' })
+    expect(closeToggle.querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
   })
 })

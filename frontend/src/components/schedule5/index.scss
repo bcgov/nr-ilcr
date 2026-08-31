@@ -54,8 +54,20 @@
 
 // The three section header rows (Camp Expenses / Access Expenses / Total Expense) carry the weight
 // legacy gave them with its `header` style class.
-.schedule-5__section-row td {
-  font-weight: 600;
+// Bold only the section LABEL cell (#312 Overall 5, bold): this row also carries the repeated
+// "Volume (m³) / Cost $ / $/m³" captions, which should NOT be over-weighted (code review 2026-08-31).
+// NO background here — a section header is not a calculated row; the band lives on __derived-row.
+.schedule-5__section-row td:first-child {
+  font-weight: 700;
+}
+
+// The four server-derived rows — Camp Sub-Total, Camp Total, Access Expense Total, Camp and Access
+// (`validation.ts` GRID_ROWS, `kind: 'derived'`). These are what #312 Overall 5 asks to shade.
+// Intermediate subtotals rather than one grand total, so a LIGHTER grey than the schedules whose band
+// IS the actual total (full --cds-layer-accent-01). color-mix keeps it theme-aware.
+.schedule-5__derived-row td {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
 }
 
 // Legacy pads the four Equipment and Supplies rows with non-breaking spaces to sit them under their

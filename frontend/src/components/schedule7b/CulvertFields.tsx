@@ -1,5 +1,6 @@
 import type { FC } from 'react'
-import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
+import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { CulvertCodeLists, CulvertCodeOption } from '@/interfaces/Schedule7bResponse'
 import { numStrGroup } from '@/utils/number'
 import type { CulvertErrors, CulvertFormValues, CostField, MaskedField } from './validation'
@@ -147,7 +148,7 @@ const CulvertFields: FC<Props> = ({
       {/* Comments keeps its label ABOVE the field: legacy gives it a row of its own spanning the grid
           (schedule7B.xhtml:214-231), not the label-beside-field treatment of the nine cells above. */}
       <Column sm={4} md={8} lg={16}>
-        <TextArea
+        <CommentsTextArea
           id={`${idPrefix}-comments`}
           labelText="Comments"
           // Legacy sized this box `rows="10"` (schedule7B.xhtml:221,490) — ten rows, not the two its
@@ -160,7 +161,6 @@ const CulvertFields: FC<Props> = ({
           // used-of-limit ("14/3500") rather than legacy's `{0} characters remaining.` — Carbon's
           // built-in direction, matched to the Schedule 7A twin at the team's call (recorded
           // deviation).
-          enableCounter
           maxCount={COMMENTS_MAX_LENGTH}
           disabled={disabled}
           value={form.comments}

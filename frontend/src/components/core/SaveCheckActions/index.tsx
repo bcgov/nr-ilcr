@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column } from '@carbon/react'
+import { CheckmarkOutline, Save } from '@carbon/icons-react'
 
 type SaveCheckActionsProps = {
   /** Modifier class for the actions Column, e.g. {@code 'schedule-7b__actions'}. */
@@ -26,10 +27,15 @@ const SaveCheckActions: FC<SaveCheckActionsProps> = ({
   onCheckStatus,
 }) => (
   <Column sm={4} md={8} lg={16} className={className}>
-    <Button kind="primary" disabled={saveDisabled} onClick={onSave}>
+    <Button kind="primary" renderIcon={Save} disabled={saveDisabled} onClick={onSave}>
       Save
     </Button>
-    <Button kind="tertiary" disabled={checkDisabled} onClick={onCheckStatus}>
+    <Button
+      kind="tertiary"
+      renderIcon={CheckmarkOutline}
+      disabled={checkDisabled}
+      onClick={onCheckStatus}
+    >
       Check Status
     </Button>
   </Column>

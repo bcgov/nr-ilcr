@@ -150,6 +150,12 @@ body {
     font-size: 0.875rem;
   }
 
+  // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire
+  // screen width — cap it to a content-appropriate width, left-aligned under its heading.
+  .code-tables__selector {
+    max-width: 24rem;
+  }
+
   // The Code List selector is already named by its .code-tables__heading; hide the ComboBox's own
   // label so "Code List" is not shown twice. Kept in the accessibility tree (visually-hidden, not
   // display:none) so the selector retains its accessible name for screen readers.

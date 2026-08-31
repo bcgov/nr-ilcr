@@ -46,6 +46,13 @@
 // (Subtotal, Net Purchased, Total Average).
 .schedule-2__section-start td {
   border-block-start: 0.125rem solid var(--cds-border-strong);
+  // Bold the subtotal labels (#312 Overall 5, bold) so each summary row reads as a summary.
+  font-weight: 700;
+  // Subtotal/section band (#312 Overall 5). These are intermediate subtotals (not a single grand
+  // total), so shade them a LIGHTER grey than the schedules whose band IS the actual total (which use
+  // the full --cds-layer-accent-01). color-mix keeps it theme-aware (a light tint of the accent over
+  // the page background).
+  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
 }
 
 .schedule-2__actions {

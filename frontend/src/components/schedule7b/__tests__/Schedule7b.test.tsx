@@ -1044,18 +1044,18 @@ describe('Schedule 7B page', () => {
     expect(entryFor(captured, 7801)?.installCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit, and typing stops at the cap', async () => {
+  test('the comments counter shows characters remaining, and typing stops at the cap', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7b />)
     await openCulvert(user, 1)
 
-    // Carbon's counter is used-of-limit, matching the 7A twin (legacy's own counterTemplate counted
-    // down — a recorded deviation, decided by the team). 'Main haul road' is 14 characters.
-    expect(screen.getByText('14/3500')).toBeInTheDocument()
+    // Remaining, counting down — restores legacy's own counterTemplate (#312 Overall 10). 'Main haul
+    // road' is 14 characters, so 3500 - 14 = 3486 remain.
+    expect(screen.getByText('3486 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('15/3500')).toBeInTheDocument()
-    // Carbon applies maxLength alongside the counter, reproducing legacy's hard `maxlength="3500"`.
+    expect(screen.getByText('3485 characters remaining')).toBeInTheDocument()
+    // The hard cap is still applied via maxLength, reproducing legacy's `maxlength="3500"`.
     expect(field('Comments')).toHaveAttribute('maxLength', '3500')
   })
 
@@ -1137,5 +1137,29 @@ describe('Schedule 7B page', () => {
     await waitFor(() => {
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
+  })
+})
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 7B action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Save, Check Status and the Add toggle all carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule7b />)
+
+    for (const name of [/^save$/i, /check status/i]) {
+      for (const button of await screen.findAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
   })
 })

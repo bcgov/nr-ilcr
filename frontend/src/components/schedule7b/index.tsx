@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useCallback, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, Close, TrashCan } from '@carbon/icons-react'
 import type Schedule7bResponse from '@/interfaces/Schedule7bResponse'
 import type { Culvert, Schedule7bCheckStatusResponse } from '@/interfaces/Schedule7bResponse'
 import type CulvertRequest from '@/interfaces/Schedule7bRequest'
@@ -435,6 +435,8 @@ const Schedule7b: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-7b__actions">
           <Button
             kind="primary"
+            // The icon tracks the label: this one control both opens and closes the add panel.
+            renderIcon={showAddPanel ? Close : Add}
             disabled={controlsDisabled}
             // Legacy toggled the tooltip with the label: `title="Close"` / `"Add Culvert Report"`
             // (schedule7B.xhtml:56), which says what the button opens where the one-word label cannot.
@@ -465,7 +467,12 @@ const Schedule7b: FC = () => {
               onMask={maskAddField}
             />
             <div className="schedule-7b__panel-actions">
-              <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={controlsDisabled}
+                onClick={handleAdd}
+              >
                 Add Report
               </Button>
             </div>
