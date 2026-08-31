@@ -106,6 +106,28 @@ class MillInformationSectionMapperTest {
   }
 
   @Test
+  @DisplayName("a value that is present but blank is treated as absent, not printed as whitespace")
+  void whitespaceOnlyValuesAreTreatedAsAbsent() {
+    // Oracle VARCHAR2 columns happily hold "   ", and the report view's milestone columns arrive as
+    // prefix-only strings that strip down to whitespace. Both must fall back like a true null does,
+    // or a section shows a blank gap where it should show "-" (or nothing) consistently.
+    MillInformationSection blanks =
+        new MillInformationSection(
+            730, "7300", "MILL", true, "  ", "  ", "  ", "  ", "  ", "  ", "  ", "  ", "  ", "  ",
+            "  ", "  ", "  ", "  ", "  ");
+
+    Map<String, String> row = row(blanks);
+
+    assertThat(row)
+        .extractingByKeys(
+            "millAddress1", "millCity", "millRegion", "headOfficeName", "divisionName")
+        .containsOnly("-");
+    assertThat(row)
+        .extractingByKeys("openDate", "draftStatusDate", "ownerClientName", "contactIndicator")
+        .containsOnly("");
+  }
+
+  @Test
   @DisplayName("a phone that is not exactly ten characters passes through unformatted")
   void nonTenDigitPhonePassesThrough() {
     MillInformationSection section = sectionWithHeadOfficePhone("250555121");
