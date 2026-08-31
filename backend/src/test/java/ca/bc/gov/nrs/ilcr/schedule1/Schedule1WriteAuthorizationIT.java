@@ -97,7 +97,7 @@ class Schedule1WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 }

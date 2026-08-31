@@ -62,7 +62,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "SBS")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -79,7 +79,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "sbs")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[*].label", contains("SBSdk", "SBSmc2", "SBSwk1a")));
@@ -92,7 +92,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "SBSm")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(1)))
@@ -107,7 +107,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "   ")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", is(empty())));
@@ -117,10 +117,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
   @DisplayName("absent q param -> 200 empty list")
   void absentTerm_returnsEmptyList() throws Exception {
     mockMvc
-        .perform(
-            get(ENDPOINT)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
-                .accept(MediaType.APPLICATION_JSON))
+        .perform(get(ENDPOINT).with(canonicalSubmitter()).accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", is(empty())));
   }
@@ -135,7 +132,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "%")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", is(empty())));
@@ -143,7 +140,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "SB_")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", is(empty())));
@@ -157,7 +154,7 @@ class Schedule11BiogeoCatalogueIT extends AbstractOracleIT {
         .perform(
             get(ENDPOINT)
                 .param("q", "ZZQ")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER")))
+                .with(canonicalSubmitter())
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(50)))

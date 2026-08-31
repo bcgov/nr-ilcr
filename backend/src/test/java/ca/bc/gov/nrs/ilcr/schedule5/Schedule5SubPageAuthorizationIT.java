@@ -65,7 +65,7 @@ class Schedule5SubPageAuthorizationIT extends AbstractOracleIT {
   }
 
   private RequestPostProcessor submitter() {
-    return jwtWithGroups(List.of("ILCR_SUBMITTER"));
+    return canonicalSubmitter();
   }
 
   private RequestPostProcessor noGroup() {

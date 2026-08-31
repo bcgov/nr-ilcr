@@ -72,10 +72,7 @@ class Schedule11AuthorizationIT extends AbstractOracleIT {
   void submitter_passesAuthorization() throws Exception {
     mockMvc
         .perform(
-            get(ENDPOINT)
-                .param("millId", "610")
-                .param("year", "2021")
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+            get(ENDPOINT).param("millId", "610").param("year", "2021").with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 

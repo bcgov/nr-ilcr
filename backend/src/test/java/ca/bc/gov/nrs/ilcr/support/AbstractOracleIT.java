@@ -1,9 +1,11 @@
 package ca.bc.gov.nrs.ilcr.support;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 
+import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.oracle.OracleContainer;
@@ -54,6 +57,39 @@ public abstract class AbstractOracleIT {
 
   /** Shared MockMvc for subclasses, wired through the full Spring Security filter chain. */
   protected MockMvc mockMvc;
+
+  /**
+   * The canonical test submitter GUID (32-char {@code custom:idp_user_id}), seeded by {@code R__70}
+   * as ACTIVELY associated to EVERY seeded mill. Story 5.7 per-endpoint mill-scope enforcement 403s
+   * a submitter not associated to the mill they target; security-ON schedule ITs that assert
+   * submitter access use {@link #canonicalSubmitter()} so their caller can actually reach the test
+   * mill.
+   */
+  protected static final String CANONICAL_SUBMITTER_GUID = "CANONSUBMITTERBBBBCCCCDDDD000001";
+
+  private static final CognitoGroupsJwtAuthenticationConverter CANONICAL_CONVERTER =
+      new CognitoGroupsJwtAuthenticationConverter();
+
+  /**
+   * A real-JWT {@code ILCR_SUBMITTER} principal carrying {@link #CANONICAL_SUBMITTER_GUID} — the
+   * canonical submitter associated to every seeded mill. Authorities come through the production
+   * {@link CognitoGroupsJwtAuthenticationConverter} (a {@code cognito:groups} of {@code
+   * ILCR_SUBMITTER}), so the converter path is exercised exactly as before, and the {@code
+   * custom:idp_user_id} claim lets the caller pass Story 5.7 mill-scope for any seeded mill. Use
+   * this wherever a security-ON IT asserts a submitter can REACH a schedule/mill-context endpoint
+   * (the drop-in for the old {@code jwtWithGroups(List.of("ILCR_SUBMITTER"))}). For the DENIED
+   * case, use an unassociated GUID.
+   *
+   * @return the request post-processor injecting the canonical submitter principal
+   */
+  protected static RequestPostProcessor canonicalSubmitter() {
+    return jwt()
+        .jwt(
+            j ->
+                j.claim("custom:idp_user_id", CANONICAL_SUBMITTER_GUID)
+                    .claim("cognito:groups", java.util.List.of("ILCR_SUBMITTER")))
+        .authorities(j -> CANONICAL_CONVERTER.convert(j).getAuthorities());
+  }
 
   @BeforeEach
   void setUpMockMvc() {

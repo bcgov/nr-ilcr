@@ -87,7 +87,7 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -139,7 +139,7 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ROW_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -170,7 +170,7 @@ class Schedule4WriteAuthorizationIT extends AbstractOracleIT {
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(ROW_BODY)
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().isNotFound());
   }
 }

@@ -61,7 +61,7 @@ class Schedule8CheckStatusAuthorizationIT extends AbstractOracleIT {
                 .param("millId", "600")
                 .param("year", "2021")
                 .with(csrf())
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -88,7 +88,7 @@ class Schedule8CheckStatusAuthorizationIT extends AbstractOracleIT {
                 .param("millId", "600")
                 .param("year", "2021")
                 .with(csrf())
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 }

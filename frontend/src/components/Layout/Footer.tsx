@@ -14,8 +14,14 @@ const FOOTER_LINKS: readonly { label: string; href: string }[] = [
 // unit render outside the Vite pipeline); Vite/Vitest inline the real version in every normal build.
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
 
-const Footer: FC = () => (
-  <footer className="app-footer">
+// `className` carries the side-nav inset modifier from the layout shell. The footer is
+// `position: fixed`, so no ancestor can offset it — the class has to land on the element itself.
+type Props = {
+  readonly className?: string
+}
+
+const Footer: FC<Props> = ({ className }) => (
+  <footer className={className ? `app-footer ${className}` : 'app-footer'}>
     <span className="app-footer__version">ILCR v{APP_VERSION}</span>
     <nav className="app-footer__links" aria-label="Footer">
       {FOOTER_LINKS.map((link) => (

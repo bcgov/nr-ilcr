@@ -23,7 +23,7 @@ const Dashboard: FC = () => {
       <Grid fullWidth className="app-page__header">
         <PageTitle
           title="ILCR Workspace"
-          subtitle="Interior Logging Cost Reports — modernization workspace."
+          subtitle="Interior Logging Cost Report — modernization workspace."
         />
       </Grid>
 

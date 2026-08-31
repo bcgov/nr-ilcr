@@ -73,7 +73,7 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
             get(ENDPOINT)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 
@@ -115,7 +115,7 @@ class Schedule4AuthorizationIT extends AbstractOracleIT {
             post(CHECK_STATUS)
                 .param("millId", String.valueOf(SEEDED_MILL))
                 .param("year", String.valueOf(SEEDED_YEAR))
-                .with(jwtWithGroups(List.of("ILCR_SUBMITTER"))))
+                .with(canonicalSubmitter()))
         .andExpect(status().is2xxSuccessful());
   }
 }
