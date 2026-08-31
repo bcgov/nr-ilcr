@@ -195,22 +195,50 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     with no prompt. A user can now destroy an itemized cost with one mis-click and no undo.
   - **It is also now internally inconsistent:** the whole-schedule delete (S13) KEPT its "Delete
     schedule" confirm Modal, so the same app confirms the large destructive action and not the small one.
-  - **Action — with the Schedule 1 developer (2026-08-07).** Walked through with him as part of the QA
-    review of this UC; when he gets a chance he'll look into it and raise a ticket if it is confirmed.
-    Restoring the prompt means changing the shared `EditableSubPageLayout` / `useEditableCostRows`
-    components either way — the behaviour does not live on the Schedule 1 pages themselves.
-  - **Next step — double-check against the legacy app.** The sidecar evidence is strong
-    (`technical.md:102,154`, `detailed.md:66`), but that is captured source, not the running system, so the
-    dev needs to investigate whether legacy actually prompts. If it does, this is a parity regression to fix
-    in the shared components; if it does not, the sidecars need correcting — which is worth knowing on its own.
-  - **If it is confirmed a defect:** S12 should flip from its current GREEN (re-grounded to the
-    no-confirm behaviour) to a genuinely-failing `@discovered-divergence` red tracking the missing
-    prompt until it is restored. Not done yet — the behaviour under test is real, so an honest red waits
-    on the ruling rather than pre-empting it.
-  - **Priority / env:** p1 · local seeded DB.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll double-check it against legacy when he gets a chance.
-    Found 2026-08 (EditableSubPage rewrite); legacy-source-confirmed 2026-08-07.
-  - **Test:** `other-costs.feature` `@S12 @p1` — GREEN (re-grounded).
+  - **The open question is CLOSED against the legacy SOURCE (2026-08-26), not the sidecars.** This entry
+    previously deferred to the Schedule 1 dev to check "whether legacy actually prompts", because the
+    evidence was captured sidecars (`technical.md:102,154`, `detailed.md:66`) rather than legacy code.
+    Checked directly while triaging the same defect on Schedule 3: `webapp/schedule1OtherCosts.xhtml:94-96`
+    carries `<p:confirm header="Confirmation" message="#{msg.confirmDeleteMsg}" icon="ui-icon-alert"/>` on
+    the per-row Delete `p:commandButton`, and `messages.properties:31` resolves that key to *"This will
+    delete the current record. Do you want to continue?"*. The sidecars were right; nothing needs
+    correcting there.
+  - **SAME DEFECT AS SCHEDULE 3 DIV-5 — one ticket, one fix.** The behaviour is in the shared
+    `useEditableCostRows.removeRow` -> `persist(next, 'delete')` (`hooks/useEditableCostRows.ts:270-283`),
+    so all three pages built on it are affected: Schedule 1 Other Costs and both Schedule 3 cost
+    sub-pages. Legacy prompted on all three (`schedule3SubtotalOtherCosts.xhtml:94-96`,
+    `schedule3IncludedUnacceptableCosts.xhtml:80-82`). Eight other row-level deletes in the app still
+    confirm (Schedules 4, 5, 7A, 7B, 8, 9, 10, 11), which is what makes this a defect rather than a
+    house style.
+  - **The re-grounding was the WRONG CALL — ruled by the repo owner 2026-08-26.** From 2026-08-07 this
+    scenario asserted the app's actual no-confirm behaviour and passed. Re-grounding a scenario onto a
+    divergence makes the suite *ratify* the defect instead of tracking it: the green here is why the
+    regression sat unticketed for three weeks, and it is also why Schedule 3's suite had to rediscover
+    it independently. Corrected — S12 now asserts the legacy guarantee and is a tracked red. The rule
+    this entry now carries: re-ground a scenario onto changed *design*, never onto a suspected defect;
+    where the legacy guarantee is in doubt, the honest state is a tagged red, not a green.
+  - **Ticket:** [bcgov/nr-ilcr#362](https://github.com/bcgov/nr-ilcr/issues/362) — *"Deleting an itemized
+    cost row on the Schedule 1 and 3 cost sub-pages destroys it with no confirmation, unlike legacy and
+    every other schedule"*, labelled `bug`, filed by the repo owner 2026-08-26. Repro verified on the
+    extract anchor **727 Updated Mill E2E / 2017** (millId 17052) with no test-data patch applied: a row
+    added and saved, then removed, produced **0 dialogs** and was already gone after a reload — on both
+    this page and Schedule 3's. The filed issue deliberately omits two things this register keeps, as
+    the register is their home: why the suites missed it (the re-grounding above), and the
+    related-ticket comparison (#292 CLOSED — Schedule 2's Delete *button* hidden when no schedule
+    exists; #296 — Schedule 1 and 3 empty data set. Neither concerns confirming a destructive action).
+  - **Priority / env:** p1 · local seeded DB · Chrome. Real data loss, but bounded: the click is
+    deliberate and the row can be retyped, so it is not p0.
+  - **Status:** OPEN — confirmed and triaged by raising a ticket. Dev to gate
+    `useEditableCostRows.removeRow` behind a confirmation in the shared `EditableSubPageLayout` (the
+    `components/core/ConfirmDeleteModal` primitive already exists), without disturbing the
+    whole-schedule Delete or the "Leave Schedule 1" prompt; QA re-verifies and closes this entry and
+    Schedule 3's DIV-5 together when the fix lands. Found 2026-08 (EditableSubPage rewrite);
+    legacy-source-confirmed 2026-08-07 (sidecars) and 2026-08-26 (legacy code); ticketed 2026-08-26.
+  - **Test:** `other-costs.feature` `@S12 @p1 @discovered-divergence` — **RED on purpose** since
+    2026-08-26. Asserts that Remove asks first and that the row survives until the prompt is answered;
+    it does not pin any modal chrome, so it goes green on its own when the confirmation is restored, with
+    no test change needed. The seeded row is cleaned by the marker registry whichever way the assertion
+    goes, so the red leaves no residue (verified: anchor 9050/2017 clean after the run).
 
 - **DIV-4 — RETRACTED (author error): inline edits DO get client-side validation, and match legacy.**
   - **What it claimed:** that editing a row already in the list skipped browser-side validation, so an
@@ -275,6 +303,36 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     only that inputs are absent and actions disabled. `not-applicable (E2E, current scope)` in
     coverage.md; revisit with the submission/review UC.
 
+- **DIV-6 — Check Status judges the SAVED schedule and ignores unsaved on-screen edits (APP-WIDE, 11 of 12
+  schedules).**
+  - **This entry is a POINTER, on purpose.** The full analysis — what legacy did, why the rewrite cannot,
+    the app-wide sweep and the fix direction — lives in **ONE** place:
+    **`sch3/defects.md` DIV-6** (`features/sch3/uc-sch3-001-report-admin-costs/defects.md`). Do not restate it here. Two copies
+    of the same reasoning diverged inside a single session on ilcr-bmad PR #92, and this register carries
+    only the facts that are genuinely local to Schedule 1.
+  - **What's wrong, in one line:** Check Status reports on the last saved Schedule 1 and silently ignores
+    anything typed since, so a reporter can be told the schedule is complete while a mandatory value is
+    empty on screen — or told to fix something they have just fixed.
+  - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
+    affected schedule. One fix turns all of these green.
+  - **Local facts (this is what belongs here):**
+    - **Scenarios:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S27` (the false-GREEN arm —
+      clear a mandatory volume) and `@S28` (the false-RED arm — supply a flagged one). Both arms are needed:
+      they fail in OPPOSITE directions.
+    - **Anchors:** the existing READ-ONLY Check Status fixtures, shared as this suite already shares them —
+      `requirements-met` (24050/2017, `requirementsMet: true` at rest) for S27, and
+      `missing-line-item-volume` (24051/2016, 22 errors at rest) for S28. Typing without saving writes
+      nothing, which each scenario proves with the unchanged revision token.
+    - **Re-grounding note:** S28 asserts only that ITS OWN field's error stops being reported, not that the
+      schedule becomes met — the anchor's other 21 values are genuinely still missing.
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
+    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
+    re-verifies and closes this entry when the fix lands. The scenarios assert the CORRECT behaviour, so they
+    go green on their own, at which point their tags and `[DISCOVERED …]` title markers come off together.
+    No test change is needed. Added 2026-08-27.
+  - **Test:** `check-status-unsaved.feature` ×2 — both RED by design.
+
 **Coverage gaps (not tested yet — no app problem):**
 
 - **GAP-1 — There is no role-dependent Schedule 1 behaviour to cover yet.** _(reworded 2026-08-07 — the
@@ -309,14 +367,28 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
   - **Status:** CLOSED 2026-08-07.
   - **Test:** `crown-prefill.feature` `@S02 @p1 @WRN-001` — GREEN. Asserts the WRN-001 advisory, all 13 pre-filled volume fields, that the shared Other-Costs volume is excluded from the pre-filled set, and that nothing is persisted until the user saves.
 
-- **GAP-3 — S08 (open Other Costs before first save) is unreachable in the current backend model.**
-  - **Why not:** The legacy guard blocked opening Other Costs before Schedule 1 was saved. In the new app an openable schedule is always already saved (the GET 404s when no summary exists), so `Schedule1.handleOtherCosts`'s `!data` branch (the ALT-001 "save first" Modal) cannot be produced through the UI against real data.
-  - **It is unreachable by construction, not for want of data (proved 2026-08-07).** No seed patch or
-    probe can produce it, because the requirement is self-contradictory within one render:
-    `index.tsx:341` is `if (!data) { return null }`, and the "Subtotal Other Costs(N):" button that calls
-    `handleOtherCosts` is rendered *below* that guard. So triggering the `if (!data)` branch at
-    `index.tsx:261` needs `data` to be null, while clicking the button that reaches it needs `data` to be
-    non-null. Dead code — the component's own comment already says "effectively unreachable".
+- **GAP-3 — S08 (open Other Costs before first save) was unreachable dead code. Defect #296 REWIRED the
+  branch and made it live; the gap is now CLOSED by a test.**
+  - **CLOSED 2026-08-27 — and the reasoning below expired rather than being wrong.** #296 makes an unsaved
+    Schedule 1 serve a 200 empty editable document, so `data` is truthy on a never-saved schedule and the
+    old `!data` condition could never fire again. Rylan re-gated it on saved-ness instead —
+    `if (!data || !isScheduleSaved(data))` (`components/schedule1/index.tsx:288`) — and his commit comment
+    at `:280-287` cites this slice by name, explaining that the sub-page controllers still require a
+    summary (`validateScheduleViewable`, deliberately kept, #296 D1) so without the gate the click would
+    land on a 404 dead-end. So the branch is now reachable by an ordinary user action, and the legacy
+    guarantee is testable. Covered by `save-first-gate.feature` `@p1 @S08`, GREEN — the verbatim message
+    plus the refusal to navigate. The `not-applicable (E2E)` row in coverage.md moved to `covered`.
+  - **The lesson worth keeping:** "unreachable by construction" is a claim about *today's* construction. It
+    was true and proved when written, and a fix elsewhere silently falsified it. Schedule 3's S18/S19 and
+    its DIV-3 entry expired the same way, on the same day, from the same fix.
+  - **Why it was unreachable, as proved 2026-08-07** *(historical — superseded above)*: the legacy guard
+    blocked opening Other Costs before Schedule 1 was saved, and in the new app an openable schedule was
+    always already saved (the GET 404'd when no summary existed). The requirement was self-contradictory
+    within one render: `if (!data) { return null }` sat ABOVE the "Subtotal Other Costs(N):" button that
+    calls `handleOtherCosts`, so triggering the `!data` branch needed `data` to be null while clicking the
+    button that reaches it needed `data` to be non-null. Dead code — the component's own comment said
+    "effectively unreachable". (Those line numbers have since moved: the `return null` guard is
+    `index.tsx:360` today.)
   - **Not related to BUG-3** (a different register — see the id legend at the top). While that 500 still
     existed, it did not expose this branch either: `data` was null, so the component rendered the error
     state and the button never existed — BUG-3 stopped the page rendering rather than reaching this guard.
@@ -328,12 +400,14 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     confirm) and none forces a null-data state. The BR-06 hits in
     `Schedule1OtherCostsServiceTest`/`Schedule1OtherCostsIT` are about the shared-volume **inheritance**
     rule, not the save-before-open gate. So this branch is currently covered by nothing, at any level.
-  - **Future action:** with the Schedule 1 dev, who'll look into it when he gets a chance — either delete the
-    dead branch (a guard that cannot fire is a maintenance trap) or, if it is being kept for a future backend
-    model with create-on-open, add the component test that mounts `Schedule1` with a forced null-data state.
-    Either way it is not an E2E concern.
-  - **Status:** OPEN — with the Schedule 1 dev, who'll look into it when he gets a chance. Re-verified 2026-08-07.
-  - **Test:** none, at any level — `not-applicable (E2E; unreachable by construction)` in coverage.md.
+  - **What happened to the "future action":** it asked the Schedule 1 dev to either delete the dead branch
+    or unit-test it with a forced null-data state. He did neither, and the third option was the right one —
+    #296 gave the branch a real trigger, so it needed re-gating rather than deleting. Nothing is outstanding.
+  - **Status:** CLOSED (covered) 2026-08-27. Raised 2026-08-07 and re-verified then; made reachable by #296
+    (2026-08-26); closed by writing the E2E scenario 2026-08-27.
+  - **Test:** `save-first-gate.feature` `@p1 @S08` — GREEN. Mirrors `sch3`'s `save-first-gate.feature`,
+    which covers the same behaviour on the other schedule #296 touched (and where the second sub-page's
+    wording is still wrong — sch3 DIV-7).
 
 **Spec gaps (the Gherkin is missing scenarios its own docs list):**
 
@@ -356,6 +430,69 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     all GREEN. The rejects run on the validate anchor and each proves a zero-write with the spy. (An earlier DIV-4 claiming inline edits skip client-side validation was RETRACTED — it was a misreading; validation is uniform with Add.)
 
 **Verified — not a defect:**
+
+_(Entries in this register are unnumbered unless something cross-references them — VER-1 below is cited
+from a step comment, so it carries an id.)_
+
+- **VER-1 — The delete read-back asserted `lineItems.length === 0`, which passes in CI and fails locally.
+  Found 2026-08-28; the app is correct and the assertion was wrong.** The `S13` delete scenario went red
+  on merging `main`, on `And the Schedule 1 should no longer be saved`: `revisionCount=undefined,
+  lineItems=9`.
+  - **What's wrong, in plain terms:** nothing, for any user. The delete works. The test was reading the
+    wrong thing to prove it, and only one of our two databases exposed that.
+  - **The delete genuinely worked.** Watched at the DB through the scenario: summary 3564 and all 13 of
+    its detail rows present, then **gone**, then restored by the teardown. `revisionCount` absent is the
+    correct "not saved" signal, exactly what `utils/schedule.ts isScheduleSaved` reads.
+  - **Why nine line items still came back:** `lineItems` is the SERVED projection, not a store readout.
+    When Schedule 1 holds no volumes and its Schedule 3 carries a Crown Timber volume, the server
+    pre-fills all nine codes from it — `Schedule1Service:686` `prefill = sch3CrownVolume != null &&
+    allVolumesEmpty(details)` (BR-09 / WRN-001, and this suite's own `crown-prefill.feature` covers it).
+    The delete target 25052/2016 has precisely that Schedule 3: summary 3563, item 119 volume 1111. So
+    the response carries nine pre-filled rows **before and after** the delete, and the clause could never
+    be satisfied there. (Its stored rows all carried volume 1111 too — someone had saved after a
+    pre-fill — so the shape is identical either side of the delete.)
+  - **Why it looked correct to whoever wrote it — and the part worth remembering:** the CI Flyway seed
+    (`db-e2e/R__80_e2e_anchor_seed.sql`) gives 25052/2016 **no category-3 summary at all**, so there is no
+    crown volume to pre-fill from and `lineItems` really is empty in CI. The assertion therefore **passes
+    in CI and fails locally against the real extract**. That is the environment-split failure
+    `preflight/ci-seed-parity.setup.ts` was written to prevent, arriving in the one direction that gate
+    cannot see: it compares openability — a mill, a status row, a reporting year — not whether a
+    NEIGHBOURING schedule on the same mill-year holds data that changes this one's served document. The
+    seed's header claims the two databases hold "identical states" so the unmodified suite passes against
+    either; this is a counter-example to that claim, and it is now noted in both files.
+  - **Fix:** the clause is gone, with the measurement recorded at `steps/sch1/schedule1.steps.ts`.
+    `revisionCount == null` is the whole assertion, which is also what the step is named for. Proving the
+    detail rows went too would need a DB read, not this projection; the rows are deleted in one
+    repository call with the summary (`Schedule1Repository.deleteSchedule` → `deleteDetailsBySummary` then
+    `deleteSummary`), so the summary's absence is sufficient evidence through the API.
+  - **Status:** CLOSED 2026-08-28 — assertion corrected, no app change. `delete.feature` `@S13 @p1` GREEN;
+    the sch1 domain re-run afterwards was **204 passed, 6 tracked `@discovered-*` reds, none untagged**
+    (that grep spans sch11 too, since `@sch1` prefixes `@sch11`).
+
+- **The #296 fix left TWO stale assertions in THIS suite, red on `main` before this branch
+  touched them. Re-grounded 2026-08-26 against legacy; no app defect.**
+  - **What was stale:** defect #296 ("open a blank, usable form when nothing is saved yet", `main`
+    `60c24dd`) deliberately removed the 404 for an unsaved or just-deleted Schedule 1 — the GET now serves
+    a 200 empty EDITABLE document so the reporter can start over. Two places still asserted the old
+    behaviour: `Then the Schedule 1 should no longer exist` polled for a GET **404**
+    (`steps/sch1/schedule1.steps.ts`), and `delete.feature` asserted the post-delete form was
+    **read-only** with **all actions disabled**. Measured on the merge commit before any edit: this suite
+    ran **163 passed / 1 failed**, the failure being `@delete @S13`.
+  - **Re-grounded against LEGACY, not against the fix's description** — the discipline the S12 episode
+    taught. `Schedule1MB`'s delete mirrors Schedule 3's (`Schedule3MB.delete():125-136`): delete, re-read
+    the schedule, stay on the page. Editability is gated on the track status / role
+    (`disableReportEdits()` → `userSessionMB.disableUserInput()`), never on summary existence, and Delete
+    renders only while the summary exists (`schedule3.xhtml:426` is the Schedule 3 twin). So a blank
+    EDITABLE form with Delete withdrawn IS legacy behaviour; the pre-#296 read-only strand was the
+    divergence.
+  - **What it asserts now:** the steps #296's own suite work added but never wired into `delete.feature` —
+    `the Schedule 1 input form is displayed`, `every Schedule 1 amount is blank`, `the Schedule 1 Delete
+    action is not offered` — and "no longer exists" now means UNSAVED (`revisionCount` absent), the
+    predicate the app itself uses (`utils/schedule.ts isScheduleSaved`).
+  - **Worth passing to whoever owns #296:** their PR merged with this suite red on `main`.
+  - **Status:** CLOSED (re-grounded) 2026-08-26. Suite state after: **164 passed, 1 deliberate
+    `@discovered-divergence` red** (DIV-3 / #362), no untagged failures. (`delete.feature` `@S13 @p1` —
+    GREEN.)
 
 - **Accessibility (AC4 / NFR1): zero WCAG 2.1 AA violations.** `@axe-core/playwright` (tags `wcag2a` + `wcag2aa` + `wcag21a` + `wcag21aa`) ran against the Schedule 1 page (24050/2017) and the Other Costs sub-page (17052/2016) → **zero violations** on both, so no triage/dispositions are required. (`accessibility.feature`, verified 2026-07-30; still green 2026-08-07.) If a future change introduces a violation, the axe helper prints each rule + node + help URL for a recorded disposition.
 

@@ -42,6 +42,17 @@ export class OtherCostsPage {
     return this.page.getByRole('button', { name: 'Back', exact: true }).first();
   }
 
+  /**
+   * ANY dialog on the sub-page. Used by S12 (DIV-3 / bcgov#362) to assert that removing a row asks for
+   * confirmation first — deliberately NOT pinned to a particular heading or body text, because the
+   * chrome a fix would use is the developer's choice (the repo already has `ConfirmDeleteModal`). What
+   * the legacy guarantee requires is that SOMETHING asks before the row is destroyed. Same shape as
+   * `Schedule3SubPage.anyDialog`, since one fix in the shared hook turns both suites green.
+   */
+  get anyDialog(): Locator {
+    return this.page.getByRole('dialog');
+  }
+
   /** Readiness anchor after navigating in from Schedule 1. */
   async expectLoaded(): Promise<void> {
     await expect(this.table).toBeVisible();

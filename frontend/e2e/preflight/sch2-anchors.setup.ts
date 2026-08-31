@@ -7,6 +7,8 @@ import {
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
   CHECK_MISSING_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
   DELETE_ANCHOR,
   DELETE_UNAVAILABLE_ANCHOR,
   GUARD_ANCHORS,
@@ -51,6 +53,11 @@ const EDITABLE_DRAFT_ANCHORS: { name: string; anchor: Sch2Anchor }[] = [
   { name: 'cancel-delete', anchor: CANCEL_DELETE_ANCHOR },
   { name: 'saved-incomplete', anchor: SAVED_INCOMPLETE_ANCHOR },
   { name: 'a11y', anchor: A11Y_ANCHOR },
+  // BR-12 / #359 — both are SEEDED anchors (real-test-data-patches/sch2/unsaved-check-anchors.sql), so
+  // these two checks double as the patch's own applied-ness guard: if the patch was not applied they 404
+  // here with one clear message rather than failing inside a scenario.
+  { name: 'check-unsaved-violation (S17)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
+  { name: 'check-unsaved-fix (S18)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
 ];
 
 for (const { name, anchor } of EDITABLE_DRAFT_ANCHORS) {

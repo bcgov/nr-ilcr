@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { navigateViaSideNav } from '../common/authNav';
 import { fieldError } from '../common/carbonHelpers';
+import { clickAwaitingCheckStatus } from '../common/checkStatus';
 import {
   ACTION,
   CONFIRM_DELETE,
@@ -216,8 +217,11 @@ export class Schedule2Page {
     await this.saveButton.click();
   }
 
+  /** Press Check Status, settling on the server's answer when one is sent — see `clickAwaitingCheckStatus`. */
   async clickCheckStatus(): Promise<void> {
-    await this.checkStatusButton.click();
+    await clickAwaitingCheckStatus(this.page, '/schedule2/check-status', () =>
+      this.checkStatusButton.click(),
+    );
   }
 
   /** Open the delete confirm modal. */

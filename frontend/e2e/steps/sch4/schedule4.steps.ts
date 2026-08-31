@@ -590,6 +590,18 @@ Then('no Schedule 4 location named {string} is stored', async ({ request, world 
     .toBe(true);
 });
 
+/**
+ * SUBSET assertion — "these listed categories hold these amounts". Correct for verifying VALUES.
+ *
+ * WRONG FOR REMOVAL. Both sides of the comparison are built from `table.hashes()`, so this step can only
+ * ever see the categories the table names: a category that should have been deleted and is still stored is
+ * invisible to it. That is precisely how BUG-4 (a cleared category silently retained) passed a scenario
+ * literally titled "Clearing a distance category removes it".
+ *
+ * If the point of your assertion is that something is GONE, use
+ * `the stored Schedule 4 location {string} has exactly these categories:` (or `… has no stored categories`)
+ * below, whose actual side enumerates the stored collection and therefore fails on an unexpected survivor.
+ */
 Then('the stored Schedule 4 location {string} is:', async ({ request, world }, name, table: { hashes: () => Record<string, string>[] }) => {
   // Poll the whole read-back: the save is fired by a UI click, so the commit can trail the success
   // banner by a tick.

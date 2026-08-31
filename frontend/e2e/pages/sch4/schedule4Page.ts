@@ -1,6 +1,7 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { navigateViaSideNav } from '../common/authNav';
 import { byId, fieldError } from '../common/carbonHelpers';
+import { clickAwaitingCheckStatus } from '../common/checkStatus';
 import { escapeRegExp } from '../common/urlMatch';
 import {
   ACTION,
@@ -217,8 +218,11 @@ export class Schedule4Page {
     await expect(this.panel).toBeVisible();
   }
 
+  /** Press Check Status, settling on the server's answer when one is sent — see `clickAwaitingCheckStatus`. */
   async clickCheckStatus(): Promise<void> {
-    await this.checkStatusButton.click();
+    await clickAwaitingCheckStatus(this.page, '/schedule4/check-status', () =>
+      this.checkStatusButton.click(),
+    );
   }
 
   // ---- the location panel (New / Edit / Copy / View) ------------------------------------------------

@@ -46,6 +46,32 @@ export type World = {
    */
   sch2MutationsBefore?: number;
 
+  // --- sch3 ---
+  // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
+  // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 3 unchanged.
+  /** The anchor key the scenario named, so later steps and cleanup need not repeat it. */
+  sch3AnchorKey?: string;
+  /**
+   * The Schedule 3 `revisionCount` read at open, re-checked after a rejected action to PROVE the
+   * optimistic-lock token never moved, i.e. no write happened.
+   */
+  sch3RevisionAtOpen?: number | null;
+  /**
+   * Schedule 3 mutating-request tally captured mid-scenario, so a later reject can prove NO FURTHER
+   * write was sent even when an earlier step in the same scenario legitimately saved.
+   */
+  sch3MutationsBefore?: number;
+  /** The sub-page currently open, by its table title — so later steps need not repeat the label. */
+  sch3SubPageTitle?: string;
+  /** The description of the sub-page row the scenario created, read back by later Thens. */
+  sch3RowDescription?: string;
+  /**
+   * Browser `alert` messages captured during the scenario (ALT-001, the Annual Rents S111 alert). The
+   * handler has to be registered BEFORE the action — Playwright auto-dismisses an unhandled dialog —
+   * so the When collects and a later Then asserts.
+   */
+  sch3Alerts?: string[];
+
   // --- sch4 ---
   // NOTE: the (mill, year) and Home option text use the SHARED `scheduleKey` / `millOption` above, so
   // the promoted common step (steps/common/home-context.steps.ts) serves Schedule 4 unchanged.

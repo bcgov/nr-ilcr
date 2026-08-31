@@ -1,3 +1,4 @@
+import { clickAwaitingCheckStatus } from '../../pages/common/checkStatus';
 import { settleBeforeReadingSpy } from '../../pages/common/settle';
 import { Given, When, Then, expect } from '../fixtures';
 import {
@@ -9,6 +10,8 @@ import {
   BEC_POPULATED_PREFIX,
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
   CHECK_MISSING_ACTUAL_ANCHOR,
   CHECK_MISSING_PLANNED_ANCHOR,
   CORRECTION_ANCHOR,
@@ -57,6 +60,12 @@ const MUTATING_ANCHORS: Record<string, { anchor: Sch11Anchor; marker: string }> 
   'cancel-delete': { anchor: CANCEL_DELETE_ANCHOR, marker: MARKER.cancelDelete },
   persist: { anchor: PERSIST_ANCHOR, marker: MARKER.persist },
   'check-met': { anchor: CHECK_MET_ANCHOR, marker: MARKER.checkMet },
+  // BR-12 / #359 — seeded by real-test-data-patches/sch11/unsaved-check-anchors.sql.
+  'check-unsaved-violation': {
+    anchor: CHECK_UNSAVED_VIOLATION_ANCHOR,
+    marker: MARKER.checkUnsavedViolation,
+  },
+  'check-unsaved-fix': { anchor: CHECK_UNSAVED_FIX_ANCHOR, marker: MARKER.checkUnsavedFix },
   'check-missing-actual': {
     anchor: CHECK_MISSING_ACTUAL_ANCHOR,
     marker: MARKER.checkMissingActual,
@@ -446,8 +455,12 @@ When('I cancel the delete', async ({ schedule11Page }) => {
   await schedule11Page.cancelDelete();
 });
 
-When('I run Check Status', async ({ schedule11Page }) => {
-  await schedule11Page.checkStatusButton.click();
+When('I run Check Status', async ({ schedule11Page, page }) => {
+  // Settle on the server's answer when one is sent, so a following absence assertion cannot pass against
+  // a DOM that has not re-rendered — see `pages/common/checkStatus.ts` for why it is best-effort.
+  await clickAwaitingCheckStatus(page, '/schedule11/check-status', () =>
+    schedule11Page.checkStatusButton.click(),
+  );
 });
 
 When('I note the Schedule 11 mutation count', async ({ world, schedule11MutationSpy }) => {

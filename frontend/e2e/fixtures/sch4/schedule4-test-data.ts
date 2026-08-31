@@ -169,6 +169,15 @@ export const ANCHORS: Record<string, Sch4AnchorSpec> = {
   'check-distance': at(MILL_7777, 24050, 2019, 'S29 (re-grounded) — Distance is not enforced'),
   'check-comments': at(MILL_7777, 24050, 2020, 'S30 (re-grounded) — Comments are a soft gate'),
   'check-issue-label': at(MILL_7777, 24050, 2021, 'Divergence #2 — the issue does not name the category'),
+  // BR-12 / #359 — Check Status must judge the OPEN PANEL, not the last saved location.
+  //
+  // SEEDED, not discovered: this mill-year has no report-status row in the extract, so
+  // `real-test-data-patches/sch4/unsaved-check-anchors.sql` adds one (Draft). That patch's header records
+  // why nothing else was available — 114 (mill, year) keys are already pinned across the six fixtures,
+  // Home only offers reporting years 2015-2021, and every unclaimed openable pair in that range is
+  // non-Draft, which disables Check Status. A first attempt reused 12050/2015 and preflight caught it:
+  // that pair is `nav-subpage-back`, declared across four lines, which a line-based search misses.
+  'check-unsaved': at(MILL_760, 9050, 2015, 'S33/S34 — Check Status vs an unsaved panel edit (#359)'),
 
   // --- the unsaved-change / recompute divergences ---------------------------------------------------
   'nav-dirty-panel': at(MILL_9171, 25050, 2016, 'S12 / Divergence #3 — closing a dirty panel must warn'),

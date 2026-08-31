@@ -127,7 +127,7 @@ Feature: Schedule 4 — edit a saved location
   # was never checked. It now uses the EXACT-set step, which fails while the cleared category persists.
   # ---------------------------------------------------------------------------------------------------
   @p0 @S02 @discovered-bug
-  Scenario: Clearing a distance category removes it and leaves the rest of the location intact
+  Scenario: Clearing a distance category removes it and leaves the rest of the location intact [DISCOVERED BUG — a category cleared to empty is silently discarded; defects.md BUG-4 / issue #335]
     Given the Schedule 4 anchor "clear-category" is an editable Draft with no locations
     And the Schedule 4 location "E2E Cleared Category" is already saved with:
       | category          | distance | volume | cost |
@@ -160,7 +160,7 @@ Feature: Schedule 4 — edit a saved location
   # Both halves are asserted here so the fix cannot satisfy one and break the other.
   # ---------------------------------------------------------------------------------------------------
   @p0 @S02 @discovered-bug
-  Scenario: Clearing a fixed category's amounts persists, one field at a time and then entirely
+  Scenario: Clearing a fixed category's amounts persists, one field at a time and then entirely [DISCOVERED BUG — a category cleared to empty is silently discarded; defects.md BUG-4 / issue #335]
     Given the Schedule 4 anchor "clear-fixed" is an editable Draft with no locations
     And the Schedule 4 location "E2E Clear Fixed" is already saved with:
       | category          | distance | volume | cost |

@@ -13,6 +13,38 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
 
 **Divergences:**
 
+- **BUG-1 — Home fails WCAG 1.4.3 on the admin-authored welcome message. Found 2026-08-21, split into its
+  own scenarios 2026-08-24.** The two Home axe sweeps report `color-contrast` on the SAME two nodes,
+  `p:nth-child(1) > .headerUnderline` and `p:nth-child(2) > span`, measured against white:
+
+    | Text | Colour | Ratio | WCAG 1.4.3 (4.5:1) |
+    |---|---|---|---|
+    | "Administrator Welcome Message" | `rgb(51, 204, 0)` | **2.15:1** | FAIL |
+    | "Administrator Role" | `rgb(204, 51, 204)` | **4.27:1** | FAIL |
+
+  - **This is CONTENT, not app CSS — the distinction that governs everything else here.** Those colours are
+    inline `style` attributes inside the welcome message an administrator authors, stored raw in
+    `THE.ILCR_ROLE.MESSAGE_TEXT` and rendered by `home/index.tsx:233` through `dangerouslySetInnerHTML` +
+    `sanitizeHtml`. DOMPurify's defaults strip scripts and handlers but KEEP `style`, so authored colours
+    reach the page and axe measures them. The values above are legacy-migrated seed data.
+  - **A GREEN HERE WILL NOT PROVE THE FIX.** Unlike every other `@discovered-bug` in this suite, the red
+    depends on DB content rather than on app code: editing the welcome message also turns it green. That is
+    not hypothetical — it happened on 2026-08-21, when the message was edited through the app's TipTap
+    editor, whose StarterKit carries no colour mark and therefore silently discarded every colour on save;
+    the reds vanished until the database container was rebuilt and the seed restored. Anyone reading a green
+    here must confirm WHICH of the two causes produced it.
+  - **The app-level defect is the absence of a constraint,** not these two particular colours. Nothing stops
+    an administrator authoring any colour, so NFR1 cannot be guaranteed for this page as built. Agreed
+    direction (2026-08-24): add a contrast constraint on authored content. Until that lands, these two
+    scenarios stay red and excluded from `test:gate`.
+  - **Why the scans are their own scenarios.** Until 2026-08-24 each sweep was the last step of a journey
+    scenario, so this colour failed `@p0` "select a mill and an opened reporting year and save
+    successfully" — and, carrying no `@discovered-*` tag, made `npm run test:gate` red. Splitting them
+    keeps both journeys in the gate and green while the contrast stays tracked rather than skipped or
+    ignored. Skipping was rejected outright: it would have dropped the `@p0` save journey to hide a colour.
+  - **Test:** `working-context.feature` `@a11y @discovered-bug` ×2 (landing, and banner-populated).
+  - **Status:** OPEN — confirmed, and the fix is scheduled as a contrast constraint on authored content.
+
 - **DIV-1 — The Home page no longer shows a role-specific notice.**
   - **What's wrong:** Legacy `home.xhtml` rendered a "User Role Specific Message Section" — a per-role
     notice looked up by the user's role (BR-07), and UC-SEC-001 S01 asserts it appears. The new Home
@@ -155,3 +187,36 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
   the exact text is unchanged). bcgov's `tombstone.spec.ts` (S01 display / S03 switch / S06 closed / S07
   no-status) is ported here as `schedule-tombstone.feature` (on Schedule 2), verified green incl. axe.
   An app design move, not a defect — recorded so the ported source is traceable.
+- **VER-1 — the tombstone a11y sweep was FLAKY (≈1 run in 4) and blamed Schedule 2 for BUG-1. Suite
+  defect, fixed 2026-08-26; the app is fine.** `@S01 @a11y` failed intermittently with
+  `color-contrast` "on Schedule 2 tombstone", on the same two nodes as BUG-1
+  (`p:nth-child(1) > .headerUnderline`, `p:nth-child(2) > span`).
+  - **What actually happened:** the sweep ran on **Home**, not on Schedule 2. Client-side navigation
+    flips the URL before the route's content swaps — while Schedule 2 resolved, the router kept Home
+    mounted, so `window.location` already read `/schedule-2` while the DOM was still Home-after-Save.
+    `SchedulePage.open()` gated on exactly those two things, and both were satisfied by Home: the URL,
+    and a visible `region[name="Working context"]` — which Home's PageTitle-hosted ContextBanner renders
+    with the SAME landmark and the SAME `WorkingContextLines` text once a context is saved. The tombstone
+    line assertions then passed against Home's banner, and axe scanned Home, where the admin-authored
+    welcome message lives.
+  - **Proof (from the failing run's trace, not inference):** the axe payload reports
+    `environmentData.url = http://localhost:3000/schedule-2` with `fromFrame: false`, yet the scanned DOM
+    contained Home's `h1 "Mill and Reporting Year"` and `Administrator Welcome Message` and **no**
+    Schedule 2 content (no "Purchased", no "Check Status"). The failing node ancestry
+    (`… > div:nth-child(2) > div:nth-child(2) > div > p:nth-child(1) > span`) is byte-identical to the
+    `Home (banner populated after Save)` sweep's, and differs from the `Home (landing)` sweep's only by
+    the success banner that Save inserts.
+  - **Why the existing guard missed it:** the URL check was added for this very trap (PR #5 review — "a
+    nav that silently stayed on Home would let the tombstone assertions pass falsely"), but a URL is not
+    a rendering guarantee under client-side routing.
+  - **Fix:** `pages/common/schedulePage.ts` — gate `open()` on the route-specific tombstone heading
+    (`heading[level=1][name="Schedule 2"]`, which the outgoing Home page cannot satisfy), and scope
+    `context` to `.schedule-tombstone` so Home's identically-labelled banner can never satisfy a
+    tombstone assertion. Verified: the a11y scenario failed **2 of 8** repeats before, and **32 of 32**
+    tombstone runs passed after.
+  - **Why it matters beyond this scenario:** BUG-1's authored-content contrast is real but belongs to
+    **Home**. Any a11y sweep that can scan a stale Home DOM inherits it and reports it against the wrong
+    page — which is how a tracked, tagged red turned into an **untagged** one that breaks
+    `npm run test:gate` on a page that is actually clean. Readiness anchors for client-side navigation
+    must be route-specific, never a shared landmark.
+  - **Status:** CLOSED 2026-08-26 (suite fix; no app change, no ticket).

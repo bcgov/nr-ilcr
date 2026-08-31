@@ -80,6 +80,31 @@ export const PERSIST_ANCHOR: Sch11Anchor = { key: { millId: 24051, year: 2020 },
 /** S04 — seed a location carrying BOTH costs, then Check Status reports all requirements met. */
 export const CHECK_MET_ANCHOR: Sch11Anchor = { key: { millId: 24051, year: 2021 }, mill: MILL_8888 };
 
+/**
+ * S21/S22 — BR-12 / #359: Check Status must judge what is on screen, not the last saved data.
+ *
+ * SEEDED, not discovered (`real-test-data-patches/sch11/unsaved-check-anchors.sql`). Both scenarios seed a
+ * location, so each needs a mill-year no other scenario writes to, and the extract had none left: 114
+ * (mill, year) keys are already pinned across the six fixtures, Home only offers reporting years 2015-2021,
+ * and every unclaimed openable pair in that range is non-Draft (which disables Check Status).
+ *
+ * Reusing `check-met` / `check-missing-actual` was tried FIRST and is unsafe: their Givens add a location
+ * through the API, so a second scenario on either collides with S04/S05 under `fullyParallel` — observed as
+ * red tests on 2026-08-27.
+ *
+ * WHAT "UNSAVED" MEANS HERE. Schedule 11 has no page-level Save (DIV-1); the unsaved state is a row sitting
+ * in the INLINE EDITOR with typed-but-unconfirmed values. See the feature file for why the upstream slices'
+ * `addActualCost` (the Add panel) cannot express the rule.
+ */
+export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch11Anchor = {
+  key: { millId: 10050, year: 2015 },
+  mill: MILL_2121,
+};
+export const CHECK_UNSAVED_FIX_ANCHOR: Sch11Anchor = {
+  key: { millId: 10050, year: 2016 },
+  mill: MILL_2121,
+};
+
 /** S05 — seed a location with a NULL actual cost, then Check Status flags it. */
 export const CHECK_MISSING_ACTUAL_ANCHOR: Sch11Anchor = {
   key: { millId: 10050, year: 2017 },
@@ -367,6 +392,9 @@ export const MARKER = {
   persist: 'E2E S09 persist',
   checkMet: 'E2E S04 met',
   checkMissingActual: 'E2E S05 noactual',
+  // BR-12 / #359 — own markers so a seeded row can never be confused with S04's or S05's.
+  checkUnsavedViolation: 'E2E S21 unsaved',
+  checkUnsavedFix: 'E2E S22 unsaved',
   checkMissingPlanned: 'E2E S06 noplanned',
   trackIndependence: 'E2E S10 indep',
   a11y: 'E2E a11y row',

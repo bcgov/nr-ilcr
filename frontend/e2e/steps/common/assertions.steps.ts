@@ -80,6 +80,13 @@ Then('I should see the message {string}', async ({ page }, message) => {
   await expect(page.getByText(message).first()).toBeVisible();
 });
 
+Then('I should not see the error {string}', async ({ page }, message) => {
+  // Same mechanism as "I should not see the message" below — kept as its own phrasing because the BR-12
+  // unsaved-edit arms assert that a Check Status ERROR has stopped being reported, and calling that a
+  // "message" in a feature file reads as though a success banner were meant.
+  await expect(page.getByText(message)).toHaveCount(0);
+});
+
 Then('I should not see the message {string}', async ({ page }, message) => {
   // Absence assertion — for a message that is CONDITIONAL on a branch not taken (e.g. Schedule 11's
   // SUC-003 "requirements met", which must NOT appear alongside a Check Status failure). `toHaveCount(0)`

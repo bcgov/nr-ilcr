@@ -149,6 +149,36 @@ at-rest state.
     `components/schedule{1,2,3,4}/__tests__/derived.test.ts` and each page's `#291` tests, with
     expectations transcribed from the backend service tests.
 
+- **DIV-2 — Check Status judges the SAVED schedule and ignores unsaved on-screen edits (APP-WIDE, 11 of 12
+  schedules).**
+  - **This entry is a POINTER, on purpose.** The full analysis — what legacy did, why the rewrite cannot,
+    the app-wide sweep and the fix direction — lives in **ONE** place:
+    **`sch3/defects.md` DIV-6** (`features/sch3/uc-sch3-001-report-admin-costs/defects.md`). Do not restate it here. Two copies
+    of the same reasoning diverged inside a single session on ilcr-bmad PR #92, so this register carries only
+    what is genuinely local to Schedule 2.
+  - **What's wrong, in one line:** Check Status reports on the last saved Schedule 2 and silently ignores
+    anything typed since, so the purchased-log cost can be empty on screen while the schedule is reported
+    complete — or supplied on screen and still reported missing.
+  - **Ticket:** [bcgov/nr-ilcr#359](https://github.com/bcgov/nr-ilcr/issues/359) — the same ticket for every
+    affected schedule. One fix turns all of these green.
+  - **Local facts (this is what belongs here):**
+    - **Scenarios:** `check-status-unsaved.feature` `@discovered-divergence @p1 @S17` (the false-GREEN arm)
+      and `@S18` (the false-RED arm). Both are needed: they fail in OPPOSITE directions.
+    - **Anchors:** two SEEDED, dedicated mill-years — `check-unsaved-violation` (23052/2015) and
+      `check-unsaved-fix` (23052/2016), created by
+      `real-test-data-patches/sch2/unsaved-check-anchors.sql`. That patch's header records why the extract
+      could not supply them. Reusing `check-met` / `saved-incomplete` was tried first and collides with
+      S07/S08 under `fullyParallel`, because their Givens seed through the API.
+    - **Re-grounding note:** Schedule 2 renders Check Status issues as **warning** notifications, not errors
+      (unlike Schedules 1 and 3), so these scenarios assert "the warning" — matching S08.
+  - **Priority / env:** p1 · local seeded DB · Chrome.
+  - **Status:** OPEN — confirmed and triaged against the shared ticket. Dev to send the on-screen values with
+    the check-status request and evaluate those, following Schedule 6's `Schedule6CheckRequest`; QA
+    re-verifies and closes this entry when the fix lands. The scenarios assert the CORRECT behaviour, so they
+    go green on their own, at which point their tags and `[DISCOVERED …]` title markers come off together.
+    No test change is needed. Added 2026-08-27.
+  - **Test:** `check-status-unsaved.feature` ×2 — both RED by design.
+
 ---
 
 ## Coverage gap
@@ -196,8 +226,10 @@ at-rest state.
     and without the stack. E2E would need a second route-interception fixture, take ~10s per scenario, and
     prove strictly less.
   - **And unlike the backend ITs, Vitest DOES gate:** CI runs `npm run test:cov` (`analysis.yml`), so a
-    regression in these fallbacks would fail the build — which an E2E test could not claim, since the
-    data-backed suite is a manual gate (see GAP-5).
+    regression in these fallbacks would fail the build. (This bullet used to add "which an E2E test could
+    not claim, since the data-backed suite is a manual gate" — no longer true since upstream #327 runs the
+    full suite on every PR. The placement argument above is unaffected: it rests on cost and on where a
+    route-interception fallback belongs, not on which suite gates.)
   - **Where it belongs — NOT here.** A component test on `components/schedule2` is Schedule 2 story
     territory (3.3), not this verification story (3.4); and this suite changes no files outside
     `frontend/e2e/`. Two cases, ~10 lines, beside the existing 11.
@@ -266,8 +298,10 @@ at-rest state.
   - **Test:** four clean sweeps in `accessibility.feature`; the fifth state intentionally not swept.
 
 - **GAP-5 — CLOSED 2026-08-14, not pursued: a stale domain list in a CI workflow comment.**
-  - `.github/workflows/reusable-tests.yml` describes the manual gate by naming domains, so the list
-    goes stale each time a suite lands. Cosmetic only — the job greps `@smoke` and is unaffected.
+  - `.github/workflows/reusable-tests.yml` described the manual gate by naming domains, so the list
+    went stale each time a suite lands. Cosmetic only — the job greps `@smoke` and was unaffected.
+  - **Moot since 2026-08-28:** upstream #327 rewrote that comment block wholesale (the job now runs the
+    full suite, no domain enumeration), so the stale list is gone without anyone editing it for its own sake.
   - **Closed deliberately.** Editing a shared CI file pulls in reviewers for a comment that changes no
     behaviour. Not worth the churn; whoever is next in that file can drop the enumeration if they care.
   - **Status:** CLOSED — won't pursue. No action owed by anyone.
@@ -279,8 +313,10 @@ at-rest state.
 > The requirements/Gherkin do not describe behaviour the app genuinely has. These feed back to the BA,
 > not to the dev team.
 
-**None — nothing is owed here.** Every one of the 16 slices in the catalogue has a feature file, and the
-21 scenarios match the slice descriptions (including the recovery arms for S09, S10, S12, S13, S14 and
+**None — nothing is owed here.** Every one of the 18 slices in the catalogue has a feature file (S17/S18
+were added upstream 2026-08-27 by ilcr-bmad PR #92 and are correct as written — they are `deferred` for
+coverage reasons, not a spec problem), and the 21 scenarios projected from S01–S16 match the slice
+descriptions (including the recovery arms for S09, S10, S12, S13, S14 and
 S15). The reconciliation in `coverage.md` found no scenario the source documents list but the Gherkin
 omits.
 
