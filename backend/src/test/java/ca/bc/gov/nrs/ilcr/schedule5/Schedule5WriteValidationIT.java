@@ -30,7 +30,8 @@ import org.springframework.test.context.TestPropertySource;
  * <p>Every bound in the story's § VALIDATION table is exercised on BOTH sides, and every expected
  * string is the LEGACY bundle text, byte-for-byte — with ONE sanctioned exception, the distance
  * message below. Three of the ranges are deliberate oddities that a uniform implementation would
- * smooth over, and each is asserted here rather than described:
+ * smooth over, and each is asserted here rather than described. The Ministry rulings cited below
+ * are recorded in full in {@code docs/decisions/camps-and-access-expenses.md}:
  *
  * <ul>
  *   <li>{@code wagesAndBenefits.cost} validates at &plusmn;99,999,999 while its siblings validate

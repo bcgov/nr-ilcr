@@ -38,13 +38,13 @@ import java.math.BigDecimal;
  * ILCRDistanceValidator.java:16-17}), and real delivery data sits EXACTLY on it. Legacy's {@code
  * distanceValidatorErrorMsg} said "999,999", understating its own bound by 0.9. <strong>Deviation
  * (H) is CLOSED:</strong> the Ministry confirmed the bound and ruled the MESSAGE the defect (PR
- * #370, 2026-08-27 — the value is in kilometres, which is why it carries a decimal), so the bundle
- * text now reads "999,999.9". The bound below never moved. {@code sizeOfCamp} is 1–999 on {@code
- * CAMP_SIZE_CAPACITY NUMBER(3)}; {@code associatedCampVolume} is 0–9,999,999 on {@code
- * ASSOCIATED_CAMP_VOLUME NUMBER(7)} with {@code fraction = 0}, so a fractional volume is REJECTED
- * rather than truncated the way legacy's {@code intValue()} truncates it ({@code
- * Schedule5DAO.java:376}). Each {@code @Digits} integer cap is one wider than its magnitude bound
- * so an over-range value trips exactly one constraint.
+ * #370, 2026-08-27 — the value is in kilometres, which is why it carries a decimal; ruling 1 of
+ * {@code docs/decisions/camps-and-access-expenses.md}), so the bundle text now reads "999,999.9".
+ * The bound below never moved. {@code sizeOfCamp} is 1–999 on {@code CAMP_SIZE_CAPACITY NUMBER(3)};
+ * {@code associatedCampVolume} is 0–9,999,999 on {@code ASSOCIATED_CAMP_VOLUME NUMBER(7)} with
+ * {@code fraction = 0}, so a fractional volume is REJECTED rather than truncated the way legacy's
+ * {@code intValue()} truncates it ({@code Schedule5DAO.java:376}). Each {@code @Digits} integer cap
+ * is one wider than its magnitude bound so an over-range value trips exactly one constraint.
  *
  * <p>{@code campName} and {@code isolatedCamp} are the only required fields (BR-02/BR-05, FLD-001).
  * FLD-001 has NO legacy text — it was the JSF container default, never overridden ({@code

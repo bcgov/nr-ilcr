@@ -41,9 +41,10 @@ import java.math.BigDecimal;
  * wagesAndBenefits}, whose input is missing the {@code costSize} attribute its ten siblings carry
  * (deviation (F) — <strong>RATIFIED by the Ministry</strong> on PR #370, 2026-08-27: "Keep it as
  * is, as this is somewhat on purpose." The wider range is DELIBERATE, not an oversight; do not
- * tighten it to match the siblings). The two NARROWER per-field ranges cannot be expressed here —
- * one record type cannot vary a constraint by which property holds it — so {@code Schedule5Service}
- * enforces them with their own verbatim message keys: &plusmn;9,999,999 / {@code
+ * tighten it to match the siblings — ruling 2 of {@code
+ * docs/decisions/camps-and-access-expenses.md}). The two NARROWER per-field ranges cannot be
+ * expressed here — one record type cannot vary a constraint by which property holds it — so {@code
+ * Schedule5Service} enforces them with their own verbatim message keys: &plusmn;9,999,999 / {@code
  * costSize7ValidatorErrorMsg} for the eight ordinary categories, and 0–9,999,999 / {@code
  * costValidatorSchedule9ErrorMsg} for {@code recoveries} (deviation (G)). Both surface as the same
  * 400 {@code ProblemDetail} shape this constraint would.
