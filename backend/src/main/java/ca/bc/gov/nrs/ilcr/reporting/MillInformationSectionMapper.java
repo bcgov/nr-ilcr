@@ -93,10 +93,11 @@ final class MillInformationSectionMapper {
     if (value == null || value.isBlank()) {
       return ABSENT;
     }
-    if (value.length() != PHONE_DIGITS) {
-      return value;
+    String trimmed = value.trim();
+    if (trimmed.length() != PHONE_DIGITS || !trimmed.chars().allMatch(Character::isDigit)) {
+      return trimmed;
     }
     return String.format(
-        "(%s) %s-%s", value.substring(0, 3), value.substring(3, 6), value.substring(6, 10));
+        "(%s) %s-%s", trimmed.substring(0, 3), trimmed.substring(3, 6), trimmed.substring(6, 10));
   }
 }

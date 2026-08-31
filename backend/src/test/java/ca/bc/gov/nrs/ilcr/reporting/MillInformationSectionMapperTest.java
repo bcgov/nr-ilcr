@@ -136,6 +136,24 @@ class MillInformationSectionMapperTest {
   }
 
   @Test
+  @DisplayName("a ten-character phone that is not ten digits is shown as stored, not fabricated")
+  void tenCharacterNonNumericPhoneIsNotFormatted() {
+    // BUSINESS_PHONE is VARCHAR2(10) with no format constraint. Legacy tested length alone and then
+    // sliced, turning " 250555121" into "( 25) 055-5121" — a number that looks real and is not.
+    assertThat(row(sectionWithHeadOfficePhone(" 250555121")))
+        .containsEntry("headOfficePhone", "250555121");
+    assertThat(row(sectionWithHeadOfficePhone("250-555-12")))
+        .containsEntry("headOfficePhone", "250-555-12");
+  }
+
+  @Test
+  @DisplayName("surrounding whitespace does not stop a real ten-digit number formatting")
+  void paddedTenDigitPhoneStillFormats() {
+    assertThat(row(sectionWithHeadOfficePhone(" 2505551212 ")))
+        .containsEntry("headOfficePhone", "(250) 555-1212");
+  }
+
+  @Test
   @DisplayName("a blank phone becomes \"-\" rather than an empty cell")
   void blankPhoneBecomesDash() {
     MillInformationSection section = sectionWithHeadOfficePhone("   ");
