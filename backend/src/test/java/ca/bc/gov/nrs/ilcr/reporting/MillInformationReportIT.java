@@ -44,8 +44,6 @@ class MillInformationReportIT extends AbstractOracleIT {
   private static final String ENDPOINT = "/api/v1/reports/mill-information";
   private static final String PROBLEM_JSON = "application/problem+json";
   private static final String YEAR_REQUIRED = "Report Year: Value is required.";
-  private static final String UNDEFINED_ERROR =
-      "ILCR has found an unhandled error/exception. Please refer to application log files.";
   private static final String YEAR_NOT_OPEN = "Report Year is not an open reporting period.";
 
   /** Every mill R__40 and V9 put in the 2021 report, in mill-id order. */
@@ -149,8 +147,10 @@ class MillInformationReportIT extends AbstractOracleIT {
     // delivery rows carry. The prefix must never reach the page, and legacy left these EMPTY rather
     // than substituting "-" (its null sweep mapped absent to ""), so a dash here is a parity break.
     String sparse = sectionFor(pdfText(2021), "MILL INFO SPARSE");
-    assertThat(sparse).doesNotContain("D: ").doesNotContain("S: ").doesNotContain("V: ");
     assertThat(sparse)
+        .doesNotContain("D: ")
+        .doesNotContain("S: ")
+        .doesNotContain("V: ")
         .doesNotContain("Draft: -")
         .doesNotContain("Submitted: -")
         .doesNotContain("Verified: -");

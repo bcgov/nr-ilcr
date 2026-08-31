@@ -166,9 +166,7 @@ public class ReportService {
    * @return the filled report, ready to stream to the response (the caller closes it after export)
    */
   public RenderedReport renderSchedule9(long millId, int year) {
-    JRSwapFileVirtualizer virtualizer = virtualizerFactory.create();
-    boolean ownershipTransferred = false;
-    try {
+    try (VirtualizerHandle handle = new VirtualizerHandle(virtualizerFactory.create())) {
       // Schedule 9 fills from its embedded-SQL template and carries its own title block, so the
       // resolved bean-section title block is irrelevant here (passed null, ignored by
       // fillSchedule9).
@@ -182,21 +180,19 @@ public class ReportService {
               PrintOptions.showEverything(),
               null,
               null,
-              virtualizer);
+              handle.virtualizer());
       if (print == null) {
         throw new ScheduleNotFoundException();
       }
-      RenderedReport report = new RenderedReport(List.of(print), virtualizer);
-      ownershipTransferred = true;
-      return report;
-    } finally {
-      // The empty-schedule 404 or any fill failure produces no PDF, so clean the swap file here;
-      // otherwise ownership passes to the RenderedReport, which the streaming caller closes.
-      if (!ownershipTransferred) {
-        virtualizer.cleanup();
-      }
+      return handle.transferTo(List.of(print));
     }
   }
+
+  /** Fill parameter gating the report body; the templates read it in printWhenExpressions. */
+  private static final String PARAM_PRINT_BODY = "p_do_print_body";
+
+  /** Fill parameter carrying a section's PDF outline title, or null to suppress its anchor. */
+  private static final String PARAM_BOOKMARK_TITLE = "bookmarkTitle";
 
   /**
    * The Mill Information report's classpath template. Not a {@link ScheduleKey} — it is not a
@@ -227,21 +223,13 @@ public class ReportService {
       log.error("No mill carries a report status for year {} — no report to produce", year);
       throw new MillInformationReportException();
     }
-    JRSwapFileVirtualizer virtualizer = virtualizerFactory.create();
-    boolean ownershipTransferred = false;
-    try {
+    try (VirtualizerHandle handle = new VirtualizerHandle(virtualizerFactory.create())) {
       List<JasperPrint> prints = new ArrayList<>();
       for (MillInformationSection section : sections) {
-        prints.add(fillMillInformation(section, year, virtualizer));
+        prints.add(fillMillInformation(section, year, handle.virtualizer()));
       }
       log.info("Rendered {} mill information sections for year {}", prints.size(), year);
-      RenderedReport report = new RenderedReport(prints, virtualizer);
-      ownershipTransferred = true;
-      return report;
-    } finally {
-      if (!ownershipTransferred) {
-        virtualizer.cleanup();
-      }
+      return handle.transferTo(prints);
     }
   }
 
@@ -252,8 +240,8 @@ public class ReportService {
       MillInformationSection section, int year, JRSwapFileVirtualizer virtualizer) {
     Map<String, Object> params = new HashMap<>();
     params.put("year", year);
-    params.put("p_do_print_body", Boolean.TRUE);
-    params.put("bookmarkTitle", MillInformationSectionMapper.bookmarkTitle(section));
+    params.put(PARAM_PRINT_BODY, Boolean.TRUE);
+    params.put(PARAM_BOOKMARK_TITLE, MillInformationSectionMapper.bookmarkTitle(section));
     params.put(JRParameter.REPORT_VIRTUALIZER, virtualizer);
     SectionData data = MillInformationSectionMapper.map(section);
     try {
@@ -534,9 +522,9 @@ public class ReportService {
     Map<String, Object> params = new HashMap<>();
     params.put("millId", millId);
     params.put("year", year);
-    params.put("p_do_print_body", options.printBody());
+    params.put(PARAM_PRINT_BODY, options.printBody());
     params.put("p_do_print_comment", options.printComment());
-    params.put("bookmarkTitle", bookmarkTitle);
+    params.put(PARAM_BOOKMARK_TITLE, bookmarkTitle);
     params.put(JRParameter.REPORT_VIRTUALIZER, virtualizer);
     try (Connection connection = dataSource.getConnection()) {
       return JasperFillManager.fillReport(template(ScheduleKey.SCHEDULE_9), params, connection);
@@ -554,9 +542,9 @@ public class ReportService {
     Map<String, Object> params = new HashMap<>();
     params.put("millTitleBlock", millTitleBlock);
     params.put("year", year);
-    params.put("p_do_print_body", options.printBody());
+    params.put(PARAM_PRINT_BODY, options.printBody());
     params.put("p_do_print_comment", options.printComment());
-    params.put("bookmarkTitle", bookmarkTitle);
+    params.put(PARAM_BOOKMARK_TITLE, bookmarkTitle);
     return params;
   }
 
@@ -583,6 +571,45 @@ public class ReportService {
       return (JasperReport) JRLoader.loadObject(in);
     } catch (IOException | JRException e) {
       throw new ReportGenerationException("Failed to load the compiled report template " + path, e);
+    }
+  }
+
+  /**
+   * Owns a fill's virtualizer until a {@link RenderedReport} takes it over.
+   *
+   * <p>The swap file has exactly one owner at a time. Until the report exists that owner is this
+   * handle, so a fill that throws — or an empty result that never becomes a PDF — still releases
+   * it. Once {@link #transferTo} hands the virtualizer to the report, the streaming caller closes
+   * it and this handle has nothing left to release.
+   *
+   * <p>This replaces a {@code boolean ownershipTransferred} plus {@code finally} in both render
+   * methods. Same behaviour, but the transfer is now a method call rather than a flag a future edit
+   * could forget to set.
+   */
+  private static final class VirtualizerHandle implements AutoCloseable {
+
+    private JRSwapFileVirtualizer virtualizer;
+
+    VirtualizerHandle(JRSwapFileVirtualizer virtualizer) {
+      this.virtualizer = virtualizer;
+    }
+
+    JRSwapFileVirtualizer virtualizer() {
+      return virtualizer;
+    }
+
+    /** Hand the virtualizer to a report, which becomes responsible for closing it. */
+    RenderedReport transferTo(List<JasperPrint> sections) {
+      RenderedReport report = new RenderedReport(sections, virtualizer);
+      virtualizer = null;
+      return report;
+    }
+
+    @Override
+    public void close() {
+      if (virtualizer != null) {
+        virtualizer.cleanup();
+      }
     }
   }
 }

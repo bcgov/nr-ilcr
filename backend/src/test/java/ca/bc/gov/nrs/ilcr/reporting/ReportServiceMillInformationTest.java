@@ -81,8 +81,9 @@ class ReportServiceMillInformationTest {
   @DisplayName("a year with no mills produces no report and raises the undefinedError 500")
   void emptyYearRaisesReportException() {
     when(millInformationService.findSections(1999)).thenReturn(List.of());
+    ReportService service = service();
 
-    assertThatThrownBy(() -> service().renderMillInformation(1999))
+    assertThatThrownBy(() -> service.renderMillInformation(1999))
         .isInstanceOf(MillInformationReportException.class)
         .extracting(e -> ((MillInformationReportException) e).getStatus())
         .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -147,8 +148,11 @@ class ReportServiceMillInformationTest {
       }
     }
 
-    assertThat(text).contains("SPARSE MILL - 7320").contains("Active:").contains("No");
-    assertThat(text).doesNotContain("null");
+    assertThat(text)
+        .contains("SPARSE MILL - 7320")
+        .contains("Active:")
+        .contains("No")
+        .doesNotContain("null");
   }
 
   private static MillInformationSection section(long id, String name, String number) {
