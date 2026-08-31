@@ -20,7 +20,7 @@ import {
   TextInput,
   Tooltip,
 } from '@carbon/react'
-import { Information } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Information } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
@@ -598,10 +598,15 @@ const SamplePage: FC<SamplePageProps> = ({
         <Button kind="secondary" onClick={requestBack}>
           Back to pages
         </Button>
-        <Button kind="primary" disabled={!editable || busy} onClick={openNew}>
+        <Button kind="primary" renderIcon={Add} disabled={!editable || busy} onClick={openNew}>
           Add New Sample
         </Button>
-        <Button kind="tertiary" disabled={busy} onClick={handleCheckStatus}>
+        <Button
+          kind="tertiary"
+          renderIcon={CheckmarkOutline}
+          disabled={busy}
+          onClick={handleCheckStatus}
+        >
           Check Status
         </Button>
       </div>

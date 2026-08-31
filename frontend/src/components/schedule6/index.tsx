@@ -21,6 +21,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
+import { Add, CheckmarkOutline, Close, Save } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -374,7 +375,7 @@ const AddPanel: FC<AddPanelProps> = ({
       onFieldChange={onFieldChange}
       onRateCommit={onRateCommit}
     />
-    <Button kind="primary" disabled={disabled} onClick={onSubmit}>
+    <Button kind="primary" renderIcon={Add} disabled={disabled} onClick={onSubmit}>
       Add Report
     </Button>
   </section>
@@ -820,19 +821,26 @@ const Schedule6: FC = () => {
   // beneath it, and legacy's bottom bar carried no add control.
   const actionBar = (includeAdd: boolean) => (
     <Column sm={4} md={8} lg={16} className="schedule-6__actions">
-      <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
+      <Button kind="primary" renderIcon={Save} disabled={!editable || saving} onClick={handleSave}>
         Save
       </Button>
       {/* Deviation (H): the API needs only VIEW_SCHEDULE, but legacy gates the button on
           disableReportEdits() (schedule6.xhtml:229,526) — legacy-faithful. Gated on THAT only: legacy
           never disabled Check Status while unsaved input sat on screen (schedule6.xhtml:226-229), and
           the modern body now posts the on-screen values itself instead of needing the DB to agree. */}
-      <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+      <Button
+        kind="tertiary"
+        renderIcon={CheckmarkOutline}
+        disabled={!editable || saving}
+        onClick={handleCheckStatus}
+      >
         Check Status
       </Button>
       {includeAdd && (
         <Button
           kind="tertiary"
+          // The icon tracks the label: this one control both opens and closes the entry panel.
+          renderIcon={showAdd ? Close : Add}
           disabled={entryLocked}
           onClick={() => {
             setShowAdd((prev) => !prev)

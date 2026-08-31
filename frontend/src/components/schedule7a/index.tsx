@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useCallback, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid, Pagination } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, Close, TrashCan } from '@carbon/icons-react'
 import type Schedule7aResponse from '@/interfaces/Schedule7aResponse'
 import type { Bridge, Schedule7aCheckStatusResponse } from '@/interfaces/Schedule7aResponse'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
@@ -459,6 +459,8 @@ const Schedule7a: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-7a__actions">
           <Button
             kind="primary"
+            // The icon tracks the label: this one control both opens and closes the add panel.
+            renderIcon={showAddPanel ? Close : Add}
             disabled={controlsDisabled}
             onClick={() => {
               clearBanners()
@@ -490,7 +492,12 @@ const Schedule7a: FC = () => {
               onGroup={groupAddField}
             />
             <div className="schedule-7a__panel-actions">
-              <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={controlsDisabled}
+                onClick={handleAdd}
+              >
                 Add Report
               </Button>
             </div>
