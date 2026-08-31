@@ -30,7 +30,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -1396,6 +1396,7 @@ const Schedule5: FC = () => {
               a verdict must never be shown that contradicts visible unsaved input. */}
           <Button
             kind="tertiary"
+            renderIcon={CheckmarkOutline}
             disabled={!editable || saving || panelOpen}
             onClick={handleCheckStatus}
           >

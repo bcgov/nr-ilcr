@@ -113,6 +113,26 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(within(totalsRow).getByText('290.46')).toBeInTheDocument()
   })
 
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule11 />)
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/^add$/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+  })
+
   test('zero locations render an empty table + blank (not 0) footer totals, no error (AC1)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))))
     render(<Schedule11 />)
