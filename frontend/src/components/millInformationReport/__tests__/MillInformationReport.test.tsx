@@ -7,8 +7,8 @@ import MillInformationReport from '@/components/millInformationReport'
 import { triggerDownload } from '@/utils/download'
 import type * as DownloadUtil from '@/utils/download'
 
-// Keep the real extractBlobDetail (the error path exercises it); mock only the download side effect,
-// which cannot run in jsdom.
+// Mock only the download side effect, which cannot run in jsdom. extractBlobDetail is left real,
+// though the transport-error path below reaches its non-blob branch rather than its blob branch.
 vi.mock('@/utils/download', async (importOriginal) => ({
   ...(await importOriginal<typeof DownloadUtil>()),
   triggerDownload: vi.fn(),
@@ -48,7 +48,7 @@ describe('Mill Information Report', () => {
     expect(screen.getByRole('option', { name: '2019' })).toBeInTheDocument()
   })
 
-  test('generates the report for the defaulted year', async () => {
+  test('generates the report for the defaulted year and downloads mills_print.pdf', async () => {
     const requested = vi.fn()
     yearsRespond(OPEN_YEARS)
     reportRespondsWithPdf(requested)
@@ -58,8 +58,8 @@ describe('Mill Information Report', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
     await waitFor(() => expect(requested).toHaveBeenCalledWith('2021'))
-    // The download itself is a browser side effect; jsdom cannot deliver an axios blob response, so
-    // what is assertable here is that the request went out carrying the selected year.
+    await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1))
+    expect(downloaded.mock.calls[0][1]).toBe('mills_print.pdf')
     expect(screen.queryByText(YEAR_REQUIRED)).not.toBeInTheDocument()
   })
 
@@ -92,9 +92,10 @@ describe('Mill Information Report', () => {
 
   test('a generation failure shows the error and the held year survives for the retry', async () => {
     yearsRespond(OPEN_YEARS)
-    // A transport-level failure rather than a problem+json body: axios delivers an error body as a
-    // Blob under responseType:'blob', and jsdom cannot read one, so a JSON 500 never settles here.
-    // The catch path being exercised is the same one either way.
+    // A transport-level failure rather than a problem+json body. Under responseType:'blob' this
+    // MSW/undici build fails to construct a Response from a body, which is the same defect that
+    // currently reddens three PrintSchedules tests on untouched code; the catch path exercised is
+    // the same either way, and the verbatim wire text is pinned in MillInformationReportIT.
     server.use(http.get(REPORT_ENDPOINT, () => HttpResponse.error()))
     render(<MillInformationReport />)
 
@@ -112,6 +113,29 @@ describe('Mill Information Report', () => {
     reportRespondsWithPdf(retried)
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
     await waitFor(() => expect(retried).toHaveBeenCalledWith('2021'))
+  })
+
+  test('the year cannot be changed while a report is generating', async () => {
+    yearsRespond(OPEN_YEARS)
+    let release: (() => void) | undefined
+    server.use(
+      http.get(REPORT_ENDPOINT, async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4').buffer, {
+          headers: { 'Content-Type': 'application/pdf' },
+        })
+      }),
+    )
+    render(<MillInformationReport />)
+
+    const select = await screen.findByLabelText('Report Year')
+    await waitFor(() => expect(select).toHaveValue('2021'))
+    await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    await waitFor(() => expect(select).toBeDisabled())
+    release?.()
   })
 
   test('a failed year load surfaces an error', async () => {

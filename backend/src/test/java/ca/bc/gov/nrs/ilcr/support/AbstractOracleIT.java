@@ -42,11 +42,7 @@ public abstract class AbstractOracleIT {
   static final OracleContainer ORACLE =
       new OracleContainer("gvenzl/oracle-free:23.9-slim-faststart")
           .withUsername("THE")
-          .withPassword("THE")
-          .waitingFor(
-              org.testcontainers.containers.wait.strategy.Wait.forLogMessage(
-                      ".*DATABASE IS READY TO USE!.*\\s", 1)
-                  .withStartupTimeout(java.time.Duration.ofMinutes(15)));
+          .withPassword("THE");
 
   static {
     ORACLE.start();

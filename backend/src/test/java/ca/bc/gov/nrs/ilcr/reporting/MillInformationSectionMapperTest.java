@@ -67,6 +67,7 @@ class MillInformationSectionMapperTest {
     assertThat(row)
         .containsEntry("mill", "MILL INFO NO CLIENT - 7320")
         .containsEntry("millActive", "No");
+    // Address, region and contact fields fall back to "-", as legacy substituted them explicitly.
     assertThat(row)
         .extractingByKeys(
             "millAddress1",
@@ -74,17 +75,34 @@ class MillInformationSectionMapperTest {
             "millCity",
             "millPostalCode",
             "millRegion",
-            "openDate",
-            "draftStatusDate",
-            "submittedStatusDate",
-            "verifiedStatusDate",
-            "ownerClientName",
-            "contactIndicator",
             "headOfficeName",
             "headOfficePhone",
             "divisionName",
             "divisionPhone")
         .containsOnly("-");
+    // Milestones, ownership name and the contact indicator fall back to EMPTY: legacy never dashed
+    // these, it let its null sweep map them to "". A dash here is a visible parity break.
+    assertThat(row)
+        .extractingByKeys(
+            "openDate",
+            "draftStatusDate",
+            "submittedStatusDate",
+            "verifiedStatusDate",
+            "ownerClientName",
+            "contactIndicator")
+        .containsOnly("");
+  }
+
+  @Test
+  @DisplayName("a null mill name or number never reaches the heading or the bookmark as \"null\"")
+  void nullMillIdentityIsSubstituted() {
+    MillInformationSection nameless =
+        new MillInformationSection(
+            730, null, null, true, null, null, null, null, null, null, null, null, null, null, null,
+            null, null, null, null);
+
+    assertThat(row(nameless)).containsEntry("mill", "- - -");
+    assertThat(MillInformationSectionMapper.bookmarkTitle(nameless)).isEqualTo("- - -");
   }
 
   @Test

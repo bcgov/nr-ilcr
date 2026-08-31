@@ -33,6 +33,7 @@ const MillInformationReport: FC = () => {
     api()
       .get<ReportingYear[]>('/v1/reporting-years')
       .then((response) => {
+        setLoadError(null)
         setYears(response.data)
         // The list arrives year-descending, so the first entry is the most recent opened period.
         setSelectedYear(response.data.length > 0 ? String(response.data[0].reportYear) : '')
@@ -47,7 +48,11 @@ const MillInformationReport: FC = () => {
     // No year to send means no reporting period has ever been opened. Reject here with the same text
     // the server would return rather than making a request that cannot succeed.
     if (selectedYear === '') {
-      setError(YEAR_REQUIRED)
+      // When the year list itself failed to load, that banner is the real story — adding "Report
+      // Year: Value is required." on top would blame the user for a choice never offered.
+      if (!loadError) {
+        setError(YEAR_REQUIRED)
+      }
       return
     }
     setBusy(true)
@@ -80,7 +85,9 @@ const MillInformationReport: FC = () => {
           id="mill-information-report-year"
           labelText="Report Year"
           value={selectedYear}
-          disabled={years.length === 0}
+          // Locked while a report builds: changing it mid-flight would leave the screen showing one
+          // year while the file that lands was built for another, with nothing to reveal the swap.
+          disabled={busy || years.length === 0}
           onChange={(event) => setSelectedYear(event.target.value)}
         >
           {years.length === 0 && <SelectItem value="" text="" />}

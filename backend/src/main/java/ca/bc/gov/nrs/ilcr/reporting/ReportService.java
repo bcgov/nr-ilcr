@@ -213,9 +213,10 @@ public class ReportService {
    * exports the list). It is what gives each mill its own title block and its own first page, and
    * it lets the outline anchor stay a fill parameter as in every other template here.
    *
-   * <p>A year with no mills yields no PDF. Legacy's {@code !mills.isEmpty()} guard produced no file
-   * and no message at all — an evidence gap recorded in UC-MRPT-003 EF1 — so rather than invent a
-   * message this takes the documented failure path (ERR-001).
+   * <p>A year with no mills yields no PDF via ERR-001. By the time this runs the caller has already
+   * rejected any year that is not an OPEN reporting period, so reaching here means an opened year
+   * genuinely has no mill report statuses — a data problem, not a bad request, and the one case
+   * legacy's {@code !mills.isEmpty()} guard covered with no message at all (UC-MRPT-003 EF1).
    *
    * @param year the reporting year
    * @return the filled report, ready to stream (the caller closes it after export)

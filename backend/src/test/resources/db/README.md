@@ -156,6 +156,9 @@ sense against this directory, `mvn clean` before believing it.
    | Schedule 5 sub-pages      | **690–693**     | `V20260814`                                   |
    | Schedule 9                | **700–706**     | `V20260815`                                  |
    | Schedule 10               | **710–716**     | `V20260817`                                  |
+   | Schedule 10 write         | **717–723**     | `V20260818`                                  |
+   | Schedule 6 correction     | **724–726**     | `V20260822`                                  |
+   | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
 
    **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
    note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its

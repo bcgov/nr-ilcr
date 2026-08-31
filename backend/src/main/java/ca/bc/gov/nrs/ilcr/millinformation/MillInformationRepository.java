@@ -24,11 +24,20 @@ public interface MillInformationRepository extends Repository<MillInformationRow
    * and contacts. Unscoped by design — the Administrator report covers all mills (BR-01), so there
    * is deliberately no user or mill predicate here.
    *
-   * <p>{@code ILCR_MILL_STATUS_XREF} joins on {@code ILCR_MILL_STATUS_XREF_ID = MILL.MILL_ID}: the
+   * <p>The Active flag comes from the VIEW's {@code ILCR_MILL_STATUS_CODE}, not the xref's. They
+   * are different facts: the view's is the mill's status FOR THAT REPORTING YEAR, the xref's is its
+   * status today. Legacy reads the view ({@code MillReportStatusDAO.getReport} takes it off the
+   * {@code ILCRMillReportStatusRptOv} row), and taking the xref's would make a reprint of a 2021
+   * report change once the mill closed.
+   *
+   * <p>{@code ILCR_MILL_STATUS_XREF} joins on {@code ILCR_MILL_STATUS_XREF_ID = MILL.MILL_ID} — the
    * xref shares its primary key with the mill, which is also why the view's {@code ILCR_MILL_ID}
-   * addresses both. Everything beyond the xref is LEFT joined because the delivery data is sparse
-   * there. Ordered by mill number so the PDF's section order is stable and human-meaningful rather
-   * than following the view's physical order.
+   * addresses both. It is LEFT joined, like everything beyond it: a mill with a report-status row
+   * but no xref row must still appear, because the report's contract is every mill (BR-01), and an
+   * inner join would delete it silently.
+   *
+   * <p>Ordered by mill id, matching legacy's {@code findILCRMillReportStatusRptOv} ({@code Order By
+   * rep.ilcr_mill_id}), so the section sequence reproduces the legacy document.
    *
    * @param year the reporting year
    * @return one row per mill, ordered by mill number
@@ -38,7 +47,7 @@ public interface MillInformationRepository extends Repository<MillInformationRow
       SELECT v.ILCR_MILL_ID,
              m.MILL_NUMBER,
              m.MILL_NAME,
-             x.ILCR_MILL_STATUS_CODE,
+             v.ILCR_MILL_STATUS_CODE,
              z.DESCRIPTION      AS REGION_DESCRIPTION,
              cl.CLIENT_LOCN_NAME,
              cl.ADDRESS_1,
@@ -57,7 +66,7 @@ public interface MillInformationRepository extends Repository<MillInformationRow
         FROM THE.ILCR_MILL_REPORT_STATUS_RPT_VW v
         JOIN THE.MILL m
           ON m.MILL_ID = v.ILCR_MILL_ID
-        JOIN THE.ILCR_MILL_STATUS_XREF x
+        LEFT JOIN THE.ILCR_MILL_STATUS_XREF x
           ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
         LEFT JOIN THE.ISP_SELL_PRICE_ZONE_CODE z
           ON z.ISP_SELL_PRICE_ZONE_CODE = m.ISP_SELL_PRICE_ZONE_CODE
@@ -69,7 +78,7 @@ public interface MillInformationRepository extends Repository<MillInformationRow
         LEFT JOIN THE.CLIENT_CONTACT dv
           ON dv.CLIENT_CONTACT_ID = x.DIVISION_CONTACT_ID
        WHERE v.REPORT_YEAR = :year
-       ORDER BY m.MILL_NUMBER, v.ILCR_MILL_ID
+       ORDER BY v.ILCR_MILL_ID
       """)
   List<MillInformationRowEntity> findSectionRows(@Param("year") int year);
 }

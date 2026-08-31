@@ -87,25 +87,34 @@ public class ReportController implements ReportApi {
       String year, Authentication authentication) {
     // No MillContextService call here, deliberately: this report has no mill and no working context
     // (BR-08). The year is the only input, and it is the only thing to validate.
-    int reportYear = requireYear(year);
+    int reportYear = requireOpenYear(year);
     RenderedReport report = reportService.renderMillInformation(reportYear);
-    return pdfResponse("mills_print.pdf", 0, reportYear, report);
+    return pdfResponse("mills_print.pdf", null, reportYear, report);
   }
 
   /**
-   * Parse the required report year. Absent, blank and non-numeric all collapse to the same
-   * rejection: the legacy control was a dropdown of opened periods, so any value that is not a year
-   * means no year was chosen.
+   * Parse and validate the report year. Absent, blank and non-numeric collapse to one rejection —
+   * the legacy control was a dropdown of opened periods, so any value that is not a year means no
+   * year was chosen. A parseable year that is not an OPEN period is rejected separately: without
+   * that check {@code year=0} or a mistyped {@code 202} would reach the report, find no mills and
+   * surface as {@code undefinedError}, which reads as a system fault rather than a bad selection.
    */
-  private static int requireYear(String year) {
+  private int requireOpenYear(String year) {
     if (year == null || year.isBlank()) {
       throw new ReportYearRequiredException();
     }
+    int parsed;
     try {
-      return Integer.parseInt(year.trim());
+      parsed = Integer.parseInt(year.trim());
     } catch (NumberFormatException e) {
       throw new ReportYearRequiredException();
     }
+    boolean open =
+        millContextService.listReportingYears().stream().anyMatch(y -> y.reportYear() == parsed);
+    if (!open) {
+      throw new ReportYearNotOpenException();
+    }
+    return parsed;
   }
 
   /**
@@ -125,7 +134,7 @@ public class ReportController implements ReportApi {
    * timeout produces the same truncated shape.
    */
   private static ResponseEntity<StreamingResponseBody> pdfResponse(
-      String filename, long millId, int year, RenderedReport report) {
+      String filename, Long millId, int year, RenderedReport report) {
     StreamingResponseBody body =
         out -> {
           try (report) {
@@ -133,9 +142,8 @@ public class ReportController implements ReportApi {
           } catch (RuntimeException e) {
             log.error(
                 "Report export failed after the response was committed for mill {} year {} ({}) — "
-                    + "the client received a truncated PDF (mill 0 = a report that is not "
-                    + "mill-scoped)",
-                millId,
+                    + "the client received a truncated PDF",
+                millId == null ? "n/a (not mill-scoped)" : millId,
                 year,
                 filename,
                 e);

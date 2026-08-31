@@ -15,8 +15,15 @@ import java.util.Map;
  */
 final class MillInformationSectionMapper {
 
-  /** What legacy printed wherever the delivery data had nothing. */
+  /** What legacy printed wherever an address, region or contact field had nothing. */
   private static final String ABSENT = "-";
+
+  /**
+   * What legacy printed for an absent milestone date, ownership name or contact indicator: nothing.
+   * Those three never went through the dash substitution — they fell to {@code ""} via the null
+   * sweep at the end of {@code MillReportStatusReport.createReportDataSource}.
+   */
+  private static final String BLANK = "";
 
   private static final int PHONE_DIGITS = 10;
 
@@ -30,7 +37,7 @@ final class MillInformationSectionMapper {
    */
   static SectionData map(MillInformationSection section) {
     Map<String, Object> row = new HashMap<>();
-    row.put("mill", section.millName() + " - " + section.millNumber());
+    row.put("mill", millTitle(section));
     row.put("millAddress1", orDash(section.address1()));
     row.put("millAddress2", orDash(section.address2()));
     row.put("millCity", orDash(section.city()));
@@ -38,26 +45,43 @@ final class MillInformationSectionMapper {
     row.put("millRegion", orDash(section.region()));
     // Legacy renders the ACT/CLS status code as a plain Yes/No on the report.
     row.put("millActive", section.active() ? "Yes" : "No");
-    row.put("openDate", orDash(section.openDate()));
-    row.put("draftStatusDate", orDash(section.draftDate()));
-    row.put("submittedStatusDate", orDash(section.submitDate()));
-    row.put("verifiedStatusDate", orDash(section.verifyDate()));
-    row.put("ownerClientName", orDash(section.clientName()));
-    row.put("contactIndicator", orDash(section.headOfficeContactIndicator()));
+    row.put("openDate", orBlank(section.openDate()));
+    row.put("draftStatusDate", orBlank(section.draftDate()));
+    row.put("submittedStatusDate", orBlank(section.submitDate()));
+    row.put("verifiedStatusDate", orBlank(section.verifyDate()));
+    row.put("ownerClientName", orBlank(section.clientName()));
+    row.put("contactIndicator", orBlank(section.headOfficeContactIndicator()));
     row.put("headOfficeName", orDash(section.headOfficeContactName()));
     row.put("headOfficePhone", phone(section.headOfficePhone()));
     row.put("divisionName", orDash(section.divisionContactName()));
     row.put("divisionPhone", phone(section.divisionPhone()));
+    // No section-level parameters: every value this report shows is per-mill and rides the row.
+    // Passing an empty map rather than inventing one keeps the fill from silently ignoring
+    // parameters a later change might add here without wiring them through ReportService.
     return new SectionData(List.of(row), Map.of());
   }
 
-  /** The PDF outline title for a mill's section. */
+  /** The PDF outline title for a mill's section — the same text as the section heading. */
   static String bookmarkTitle(MillInformationSection section) {
-    return section.millName() + " - " + section.millNumber();
+    return millTitle(section);
+  }
+
+  /**
+   * {@code name - number}, the legacy heading. Both halves are nullable in {@code THE.MILL}, and
+   * concatenating them raw would print the literal "null" into a heading and a PDF bookmark, so
+   * each is substituted before joining.
+   */
+  private static String millTitle(MillInformationSection section) {
+    return orDash(section.millName()) + " - " + orDash(section.millNumber());
   }
 
   private static String orDash(String value) {
     return value == null || value.isBlank() ? ABSENT : value;
+  }
+
+  /** Absent → empty, the legacy null sweep. */
+  private static String orBlank(String value) {
+    return value == null || value.isBlank() ? BLANK : value;
   }
 
   /**

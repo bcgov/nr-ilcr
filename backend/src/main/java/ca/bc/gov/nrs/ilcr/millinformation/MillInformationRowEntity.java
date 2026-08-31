@@ -12,10 +12,11 @@ import org.springframework.data.relational.core.mapping.Table;
  * <p>The driving table is the report-status view, which is what makes the report year the only
  * input: a mill appears in the report exactly when it has a row there for the selected year.
  *
- * <p>Everything outboard of {@code MILL} is joined LEFT and every such column is nullable. That is
- * not defensive coding — on the delivery image only 4 of 17 mills carry contacts, one carries no
- * postal code, and {@code ISP_SELL_PRICE_ZONE_CODE} is empty outright, so the absent case is the
- * common one. The mapper substitutes {@code "-"} for each.
+ * <p>Everything outboard of {@code MILL} — the status xref included — is joined LEFT, and every
+ * such column is nullable. That is not defensive coding: on the delivery image only 4 of 17 mills
+ * carry contacts, one carries no postal code, and {@code ISP_SELL_PRICE_ZONE_CODE} is empty
+ * outright, so the absent case is the common one. The mapper substitutes {@code "-"} for the
+ * address, region and contact fields, and leaves the milestone dates blank as legacy did.
  *
  * <p>The four milestone columns arrive with their legacy three-character prefix still attached;
  * {@link MillInformationService} strips it. Mapped by {@code THE} column name — this never crosses
@@ -24,7 +25,8 @@ import org.springframework.data.relational.core.mapping.Table;
  * @param millId the mill id ({@code ILCR_MILL_ID}), also the status-xref primary key
  * @param millNumber the mill number
  * @param millName the mill name
- * @param millStatusCode {@code ACT}/{@code CLS} from the status xref
+ * @param millStatusCode {@code ACT}/{@code CLS} for the REPORTING YEAR, from the view — not the
+ *     mill's status today, which is what the xref carries
  * @param regionDescription the selling-price zone description; nullable
  * @param clientLocationName the ownership client name; nullable
  * @param address1 client location address line 1; nullable

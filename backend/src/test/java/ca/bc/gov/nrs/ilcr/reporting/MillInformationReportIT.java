@@ -8,8 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import java.util.List;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +46,16 @@ class MillInformationReportIT extends AbstractOracleIT {
   private static final String YEAR_REQUIRED = "Report Year: Value is required.";
   private static final String UNDEFINED_ERROR =
       "ILCR has found an unhandled error/exception. Please refer to application log files.";
+  private static final String YEAR_NOT_OPEN = "Report Year is not an open reporting period.";
+
+  /** Every mill R__40 and V9 put in the 2021 report, in mill-id order. */
+  private static final List<String> SECTION_TITLES =
+      List.of(
+          "AAA Milling - 514",
+          "MILL INFO FULL - 7300",
+          "MILL INFO SPARSE - 7310",
+          "MILL INFO NO CLIENT - 7320",
+          "MILL INFO CLOSED SINCE - 7330");
 
   @Test
   @DisplayName("2021 -> 200 application/pdf, %PDF body, mills_print.pdf attachment")
@@ -62,28 +75,36 @@ class MillInformationReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("the PDF carries one section per mill, with populated and \"-\" fallback content")
-  void pdfCarriesEveryMillSection() throws Exception {
+  @DisplayName("the PDF carries one section per mill, in mill-id order, with no mill missing")
+  void pdfCarriesEverySectionInOrder() throws Exception {
     String text = pdfText(2021);
 
-    // Every seeded mill for the year gets its own section (BR-01/BR-05).
-    assertThat(text)
-        .contains("MILL INFO FULL - 7300")
-        .contains("MILL INFO SPARSE - 7310")
-        .contains("MILL INFO NO CLIENT - 7320");
+    // Order matters and is legacy's (ORDER BY ILCR_MILL_ID), so this asserts the sequence rather
+    // than mere presence — dropping the ORDER BY, or narrowing a join so a mill disappears, fails.
+    assertThat(text).containsSubsequence(SECTION_TITLES.toArray(String[]::new));
+    // A count, so adding an unrelated seeded mill to 2021 is a deliberate act rather than a silent
+    // one. "Schedule Status" appears exactly once per rendered section.
+    assertThat(text.split("Schedule Status", -1)).hasSize(SECTION_TITLES.size() + 1);
+  }
 
-    // Static section chrome, proving layout parity survived the port.
-    assertThat(text)
+  @Test
+  @DisplayName("static section chrome survives the port")
+  void sectionChromeIsPreserved() throws Exception {
+    assertThat(pdfText(2021))
         .contains("Government of British Columbia")
         .contains("2021 Annual Interior Logging Cost Report")
         .contains("Mill Information")
         .contains("Timber Pricing Branch")
         .contains("Schedule Status")
-        .contains("Ownership Information")
-        .contains("Contacts");
+        .contains("Contacts")
+        .contains("Head Office")
+        .contains("Division");
+  }
 
-    // Mill 730: populated address, region, ownership, formatted head-office phone, all milestones.
-    assertThat(text)
+  @Test
+  @DisplayName("a populated mill shows its address, region, ownership and formatted phone")
+  void populatedMillRendersItsContent() throws Exception {
+    assertThat(pdfText(2021))
         .contains("100 MAIN STREET")
         .contains("CRANBROOK")
         .contains("V1C1A1")
@@ -95,11 +116,44 @@ class MillInformationReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("a milestone holding only its legacy prefix renders blank, never \"D: \"")
+  @DisplayName("Active reflects the REPORTING YEAR's status, not the mill's status today")
+  void activeFlagIsPerReportingYear() throws Exception {
+    // Mill 733 is ACT for 2021 in the report view but CLS on its status xref (closed since).
+    // Reading
+    // the xref would print "No" and would silently rewrite history on every reprint.
+    String text = pdfText(2021);
+
+    assertThat(sectionFor(text, "MILL INFO CLOSED SINCE")).contains("Active:").contains("Yes");
+    // Mill 732 is CLS for the year itself, so it must read No — proving the flag is read at all.
+    assertThat(sectionFor(text, "MILL INFO NO CLIENT")).contains("Active:").contains("No");
+  }
+
+  @Test
+  @DisplayName("one PDF outline bookmark per mill, titled and ordered like the sections")
+  void outlineCarriesOneBookmarkPerMill() throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdfBytes(2021))) {
+      PDDocumentOutline outline = document.getDocumentCatalog().getDocumentOutline();
+      assertThat(outline).isNotNull();
+      List<String> titles = new java.util.ArrayList<>();
+      for (PDOutlineItem item : outline.children()) {
+        titles.add(item.getTitle());
+      }
+      assertThat(titles).containsExactlyElementsOf(SECTION_TITLES);
+    }
+  }
+
+  @Test
+  @DisplayName("an unreached milestone renders blank — not the raw prefix, and not a dash")
   void prefixOnlyMilestoneRendersBlank() throws Exception {
     // Mill 731's draft/submit/verify are seeded as "D: " / "S: " / "V: ", the shape 80 of the 118
-    // delivery rows carry. The three-character prefix must never reach the page.
-    assertThat(pdfText(2021)).doesNotContain("D: ").doesNotContain("S: ").doesNotContain("V: ");
+    // delivery rows carry. The prefix must never reach the page, and legacy left these EMPTY rather
+    // than substituting "-" (its null sweep mapped absent to ""), so a dash here is a parity break.
+    String sparse = sectionFor(pdfText(2021), "MILL INFO SPARSE");
+    assertThat(sparse).doesNotContain("D: ").doesNotContain("S: ").doesNotContain("V: ");
+    assertThat(sparse)
+        .doesNotContain("Draft: -")
+        .doesNotContain("Submitted: -")
+        .doesNotContain("Verified: -");
   }
 
   @Test
@@ -142,22 +196,54 @@ class MillInformationReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("a year no mill reports on -> 500 undefinedError and no file")
-  void yearWithNoMills_surfacesUndefinedError() throws Exception {
+  @DisplayName("a year that is not an open reporting period -> 400, not a 500 system fault")
+  void yearNotOpen_rejects() throws Exception {
+    // 1999 parses fine but was never opened. Before this guard it reached the report, found no
+    // mills, and surfaced as undefinedError — telling the administrator the system had broken.
     mockMvc
         .perform(get(ENDPOINT).param("year", "1999").accept(MediaType.APPLICATION_PDF))
-        .andExpect(status().isInternalServerError())
-        .andExpect(jsonPath("$.detail").value(UNDEFINED_ERROR));
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.detail").value(YEAR_NOT_OPEN));
   }
 
-  private String pdfText(int year) throws Exception {
+  @Test
+  @DisplayName("a nonsense year -> 400, never a 500")
+  void nonsenseYear_rejects() throws Exception {
+    for (String year : new String[] {"0", "-1", "99999"}) {
+      mockMvc
+          .perform(get(ENDPOINT).param("year", year).accept(MediaType.APPLICATION_PDF))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.detail").value(YEAR_NOT_OPEN));
+    }
+  }
+
+  private byte[] pdfBytes(int year) throws Exception {
     MvcResult result =
         streamPdf(
                 get(ENDPOINT).param("year", String.valueOf(year)).accept(MediaType.APPLICATION_PDF))
             .andExpect(status().isOk())
             .andReturn();
-    try (PDDocument document = Loader.loadPDF(result.getResponse().getContentAsByteArray())) {
+    return result.getResponse().getContentAsByteArray();
+  }
+
+  private String pdfText(int year) throws Exception {
+    try (PDDocument document = Loader.loadPDF(pdfBytes(year))) {
       return new PDFTextStripper().getText(document);
     }
+  }
+
+  /**
+   * The extracted text of the one section naming {@code millTitle}, so an assertion can be scoped
+   * to a single mill rather than the whole document.
+   *
+   * <p>Splitting on the title band rather than searching from the heading is deliberate: the
+   * outline anchor is a white text field carrying the same mill title, and it sits at the TOP of
+   * the title band, so a naive indexOf finds the anchor and slices an empty section.
+   */
+  private static String sectionFor(String text, String millTitle) {
+    return java.util.Arrays.stream(text.split("Government of British Columbia"))
+        .filter(section -> section.contains(millTitle))
+        .reduce((first, second) -> second)
+        .orElseThrow(() -> new AssertionError("no section found for " + millTitle));
   }
 }
