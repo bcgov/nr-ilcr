@@ -148,6 +148,14 @@ public class Schedule5Service {
   /**
    * The Schedule 5 document for a validated mill/year.
    *
+   * <p>A valid mill/year holding no camps is a 200 with an EMPTY list, never a 404 — the 404
+   * belongs solely to a missing {@code ILCR_MILL_REPORT_STATUS} row and is raised upstream by
+   * {@code MillContextService.validateMillYearActive}. Legacy cannot reach its own not-found branch
+   * here at all ({@code Schedule5DAO.getCampReports} returns {@code Query.list()}, an empty list
+   * and never null), and the Ministry confirmed the behaviour on PR #370, 2026-08-27 (ruling 4 of
+   * {@code docs/decisions/camps-and-access-expenses.md}). The page renders a "no camps" empty state
+   * over this empty list; that is presentation, and it does NOT change the contract below.
+   *
    * @param millId the validated mill id
    * @param year the validated reporting year
    * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (AD-9: combined with the
@@ -966,8 +974,10 @@ public class Schedule5Service {
    *
    * <p>{@code wagesAndBenefits} is deliberately absent: its input is missing the {@code costSize}
    * attribute in BOTH pages, so legacy validates it at the default &plusmn;99,999,999 — which
-   * {@code CategoryEntry} already enforces declaratively (deviation (F), an Open Question for the
-   * Ministry, preserved verbatim rather than "fixed").
+   * {@code CategoryEntry} already enforces declaratively (deviation (F), <strong>RATIFIED by the
+   * Ministry</strong> on PR #370, 2026-08-27: "Keep it as is, as this is somewhat on purpose."
+   * Adding it to the standard-range checks below would CONTRADICT that ruling — ruling 2 of {@code
+   * docs/decisions/camps-and-access-expenses.md}).
    *
    * <p>{@code otherCampExpenses}/{@code otherAccessExpenses} are absent too: this path writes
    * {@code null} for their cost regardless of what was sent (§ ITEM WRITE MAP), because those costs

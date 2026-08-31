@@ -28,19 +28,27 @@ import org.springframework.test.context.TestPropertySource;
  * S12/S15; BR-05/BR-07).
  *
  * <p>Every bound in the story's § VALIDATION table is exercised on BOTH sides, and every expected
- * string is the LEGACY bundle text, byte-for-byte. Three of the ranges are deliberate oddities that
- * a uniform implementation would smooth over, and each is asserted here rather than described:
+ * string is the LEGACY bundle text, byte-for-byte — with ONE sanctioned exception, the distance
+ * message below. Three of the ranges are deliberate oddities that a uniform implementation would
+ * smooth over, and each is asserted here rather than described. The Ministry rulings cited below
+ * are recorded in full in {@code docs/decisions/camps-and-access-expenses.md}:
  *
  * <ul>
  *   <li>{@code wagesAndBenefits.cost} validates at &plusmn;99,999,999 while its siblings validate
  *       at &plusmn;9,999,999 — the {@code costSize} attribute is missing from that one input in
- *       BOTH legacy pages (deviation (F), an Open Question for the Ministry).
+ *       BOTH legacy pages (deviation (F), <strong>RATIFIED by the Ministry</strong> on PR #370,
+ *       2026-08-27: "Keep it as is, as this is somewhat on purpose." The wider range is DELIBERATE;
+ *       tightening it to match the siblings would break the assertion below on purpose).
  *   <li>{@code recoveries.cost} is 0-FLOORED and capped at the legacy MESSAGE's 9,999,999, not at
  *       the wider {@code NUMBER(8,0)} column (deviation (G) — the call {@code deferred-work.md:245}
  *       handed this story, resolved as "the legacy message wins").
- *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9 while its message SAYS
- *       "999,999" (deviation (H)). Real delivery data sits exactly on 999999.9, so clamping to the
- *       message would reject stored rows.
+ *   <li>{@code roadDistanceToOperatingArea} is enforced at 999999.9, and its message now SAYS
+ *       "999,999.9" to match. <strong>Deviation (H) is CLOSED:</strong> the legacy text understated
+ *       its own bound by 0.9, and the Ministry confirmed the bound and ruled the TEXT the defect
+ *       (PR #370, 2026-08-27 — the value is in kilometres, which is why it carries a decimal). Real
+ *       delivery data sits exactly on 999999.9, so clamping to the old message would have rejected
+ *       stored rows. The bound never moved; only {@code distanceValidatorErrorMsg} did, and the
+ *       assertion below expects the corrected text.
  * </ul>
  *
  * <p>Every test in this class asserts a REJECTION, so nothing here mutates — which is what lets it
@@ -233,16 +241,15 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
   // ---- FLD-002: the numeric ranges (S15) -------------------------------------------------------
 
   @Test
-  @DisplayName("distance: 0.0 and 999999.9 are IN, -0.1 and 999999.91 are out (deviation (H))")
+  @DisplayName("distance: 0.0 and 999999.9 are IN, -0.1 and 999999.91 are out")
   void distanceRange() throws Exception {
-    String text = "Entered distance must be between 0 and 999,999.";
+    String text = "Entered distance must be between 0 and 999,999.9.";
     expectRejected("\"roadDistanceToOperatingArea\": -0.1", text);
     expectRejected("\"roadDistanceToOperatingArea\": 999999.91", text);
-    // The message UNDERSTATES the bound by 0.9 and that is preserved:
-    // ILCRDistanceValidator.java:16-17
-    // enforces 999999.9, and Task 1 gate (vii) found real data sitting exactly on it, so clamping
-    // to
-    // the message's 999,999 would reject stored rows.
+    // The bound is 999999.9 (ILCRDistanceValidator.java:16-17) and real data sits exactly on it, so
+    // clamping to the legacy message's "999,999" would reject stored rows. The Ministry confirmed
+    // the bound and ruled the MESSAGE the defect (PR #370, 2026-08-27: the value is in KM), so the
+    // text now states the real bound. Deviation (H) is closed — the bound never moved.
     expectAccepted("\"roadDistanceToOperatingArea\": 999999.9");
     expectAccepted("\"roadDistanceToOperatingArea\": 0.0");
   }
@@ -255,7 +262,7 @@ class Schedule5WriteValidationIT extends AbstractOracleIT {
     // and report success with a number the licensee never typed (the 25.2 lesson).
     expectRejected(
         "\"roadDistanceToOperatingArea\": 42.555",
-        "Entered distance must be between 0 and 999,999.");
+        "Entered distance must be between 0 and 999,999.9.");
   }
 
   @Test

@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@/test-utils'
+import { render, screen, waitFor, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import Schedule8 from '@/components/schedule8'
@@ -176,6 +176,28 @@ describe('Schedule8 page level', () => {
     expect(screen.getByText(/Page # 2/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add new page/i })).toBeEnabled()
     expect(screen.getAllByRole('button', { name: /^edit$/i }).length).toBeGreaterThan(0)
+  })
+
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    renderSchedule8()
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText(/Page # 1 -TSA: TSA1 -CP: CP1/)).closest(
+      'tr',
+    ) as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new page/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
   })
 
   test('Add New Page opens the editor with editable inputs', async () => {
@@ -615,6 +637,21 @@ describe('Schedule8 sample level', () => {
     await userEvent.click(screen.getByRole('button', { name: /TtT Samples \(1\)/i }))
     await screen.findByRole('button', { name: /add new sample/i })
   }
+
+  // Story 30.3 / #312 Overall 6, extended to the sample level for the #381 review (paulushcgcj):
+  // 30.3 iconed the PAGE-level bar, leaving the sample bar's identically-labelled Add New / Check
+  // Status text-only. The Back-to-pages control is deliberately not asserted — panel Back/Close
+  // navigation is the follow-up scope, not this story's.
+  test('the sample bar\u2019s Add New Sample and Check Status carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openSamples()
+
+    for (const name of [/add new sample/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+  })
 
   test('the TtT Samples link opens the sample list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))

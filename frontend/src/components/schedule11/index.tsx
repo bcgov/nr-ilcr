@@ -26,6 +26,8 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import { Add, CheckmarkOutline, Edit, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -470,10 +472,22 @@ const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdi
     <TableCell>{row.comments ?? ''}</TableCell>
     {editable && (
       <TableCell>
-        <Button kind="ghost" size="sm" disabled={actionsDisabled} onClick={onEdit}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={Edit}
+          disabled={actionsDisabled}
+          onClick={onEdit}
+        >
           Edit
         </Button>
-        <Button kind="danger--ghost" size="sm" disabled={actionsDisabled} onClick={onDelete}>
+        <Button
+          kind="danger--ghost"
+          size="sm"
+          renderIcon={TrashCan}
+          disabled={actionsDisabled}
+          onClick={onDelete}
+        >
           Delete
         </Button>
       </TableCell>
@@ -873,7 +887,12 @@ const Schedule11: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-11__actions">
-          <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={!editable || saving}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
         </Column>
@@ -948,17 +967,21 @@ const Schedule11: FC = () => {
                   legacy gave it (cols="75", xhtml:140-141) instead of being squeezed into the
                   wrap flow beside the short numeric inputs. */}
               <div className="schedule-11__add-comments">
-                <TextArea
+                <CommentsTextArea
                   id="add-comments"
                   labelText="Comments"
-                  enableCounter
                   maxCount={COMMENTS_MAX_LENGTH}
                   disabled={saving}
                   value={addForm.comments}
                   onChange={(e) => setAddField('comments', e.target.value)}
                 />
               </div>
-              <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={saving || editingId !== null}
+                onClick={handleAdd}
+              >
                 Add
               </Button>
             </div>

@@ -73,8 +73,8 @@ Feature: Schedule 4 — invalid location entries are rejected
       | Lakeside Dry Dump | volume   | -1         | Entered volume must be between 0 and 9,999,999.          |
       | Lakeside Dry Dump | cost     | 100000000  | Entered cost must be between -99,999,999 and 99,999,999. |
       | Lakeside Dry Dump | cost     | -100000000 | Entered cost must be between -99,999,999 and 99,999,999. |
-      | Truck Barge/Ferry | distance | 1000000    | Entered distance must be between 0 and 999,999.          |
-      | Truck Barge/Ferry | distance | -1         | Entered distance must be between 0 and 999,999.          |
+      | Truck Barge/Ferry | distance | 1000000    | Entered distance must be between 0 and 999,999.9.        |
+      | Truck Barge/Ferry | distance | -1         | Entered distance must be between 0 and 999,999.9.        |
 
   # The bounds themselves must be INCLUSIVE — an off-by-one in either direction would otherwise reject a
   # legitimate figure, and no scenario above would notice.

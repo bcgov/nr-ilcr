@@ -41,7 +41,10 @@ export const VALIDATION_MESSAGES = {
   nameEmpty: 'Location Name can not be empty. Please enter a description.',
   volume: 'Entered volume must be between 0 and 9,999,999.',
   cost: 'Entered cost must be between -99,999,999 and 99,999,999.',
-  distance: 'Entered distance must be between 0 and 999,999.',
+  // Shares `distanceValidatorErrorMsg` with Schedule 5, which enforces the identical 0.0–999,999.9
+  // band (DISTANCE above). Legacy's text understated the bound by 0.9 on BOTH schedules; the
+  // Ministry ruled the text the defect on PR #370 (2026-08-27), so both now state the real bound.
+  distance: 'Entered distance must be between 0 and 999,999.9.',
   required: 'Value Required',
 } as const
 

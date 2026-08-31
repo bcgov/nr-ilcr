@@ -15,7 +15,7 @@ export class AppShellPage {
 
   /** Carbon Header, aria-labelled with the app name — proves the shell mounted. */
   get header(): Locator {
-    return this.page.getByRole('banner', { name: 'Interior Logging Cost Reports (ILCR)' });
+    return this.page.getByRole('banner', { name: 'Interior Logging Cost Report (ILCR)' });
   }
 
   /** Mock-user selector — dev/security-off header chrome (client-side, not fetched). */

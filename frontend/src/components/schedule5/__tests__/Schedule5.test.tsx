@@ -342,11 +342,11 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
     expect(within(table).queryByText('42.5')).not.toBeInTheDocument()
   })
 
-  test('zero camps render the legacy empty message, Add New Camp still enabled', async () => {
+  test('zero camps render the empty message, Add New Camp still enabled', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ camps: [] }))))
     render(<Schedule5 />)
 
-    expect(await screen.findByText('No records found.')).toBeInTheDocument()
+    expect(await screen.findByText('No camps have been added.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add new camp/i })).toBeEnabled()
   })
 
@@ -392,6 +392,26 @@ describe('Schedule 5 camps table (AC1, AC2)', () => {
 
     expect(await screen.findByText('New Camp Details')).toBeInTheDocument()
     expect(screen.getByLabelText('Camp Name')).toHaveValue('')
+  })
+
+  // Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the
+  // accessible name as the label text, so a by-name lookup still finds the button AND proves the
+  // decorative icon is there — a later edit that drops an icon fails here.
+  test('every primary and row action button carries its decorative icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    render(<Schedule5 />)
+
+    // Row-scoped on purpose: the delete-confirm Modal stays mounted while the page is editable,
+    // so the document also holds its closed footer's "Delete", which is deliberately icon-free.
+    const iconRow = (await screen.findByText('Cedar Flats Camp')).closest('tr') as HTMLElement
+    for (const name of [/^edit$/i, /^copy$/i, /^delete$/i]) {
+      expect(within(iconRow).getByRole('button', { name }).querySelector('svg')).not.toBeNull()
+    }
+    for (const name of [/add new camp/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
   })
 
   test('read-only collapses the row actions to a single View (deviation (B))', async () => {
@@ -1516,7 +1536,7 @@ describe('Schedule 5 inline validation timing', () => {
     const distance = screen.getByLabelText('Road Distance to Operating Area (km)')
     await user.clear(distance)
     await user.type(distance, '1000000')
-    expect(screen.queryByText('Entered distance must be between 0 and 999,999.')).toBeNull()
+    expect(screen.queryByText('Entered distance must be between 0 and 999,999.9.')).toBeNull()
   })
 
   test('editing a reported field clears its message, and the next blur restores it', async () => {
@@ -1595,7 +1615,9 @@ describe('Schedule 5 inline validation timing', () => {
     expect(
       await screen.findByText('Entered number of persons must be between 1 and 999.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Entered distance must be between 0 and 999,999.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Entered distance must be between 0 and 999,999.9.'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Entered cost must be between 0 and 9,999,999.')).toBeInTheDocument()
     await flushAsync()
     expect(put).toBe(false)
@@ -2117,7 +2139,7 @@ describe('Schedule 5 unsaved-data confirms fire only when the panel is dirty', (
     await user.click(within(del).getByRole('button', { name: /^yes$/i }))
 
     // Panel still seated on a camp the document no longer carries → baseline unprovable → confirm.
-    await waitFor(() => expect(screen.getByText('No records found.')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('No camps have been added.')).toBeInTheDocument())
     expect(screen.getByLabelText('Camp Name')).toBeInTheDocument()
     await user.click(panelButton(/^close$/i))
     await expectCloseIntercepted(user)

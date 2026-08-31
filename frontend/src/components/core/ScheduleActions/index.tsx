@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column } from '@carbon/react'
+import { CheckmarkOutline, Save, TrashCan } from '@carbon/icons-react'
 
 // One id is safe: at most one bar renders the hint (only the Delete-bearing instance can, and a page
 // renders that once). Stable so `aria-describedby` can point at it.
@@ -52,10 +53,22 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
   scheduleSaved,
 }) => (
   <Column sm={4} md={8} lg={16} className={className}>
-    <Button kind="primary" size="md" disabled={!editable || saving} onClick={onSave}>
+    <Button
+      kind="primary"
+      size="md"
+      renderIcon={Save}
+      disabled={!editable || saving}
+      onClick={onSave}
+    >
       Save
     </Button>
-    <Button kind="tertiary" size="md" disabled={!editable || saving} onClick={onCheckStatus}>
+    <Button
+      kind="tertiary"
+      size="md"
+      renderIcon={CheckmarkOutline}
+      disabled={!editable || saving}
+      onClick={onCheckStatus}
+    >
       Check Status
     </Button>
     {showDelete && (
@@ -63,6 +76,7 @@ const ScheduleActions: FC<ScheduleActionsProps> = ({
         <Button
           kind="danger--tertiary"
           size="md"
+          renderIcon={TrashCan}
           disabled={!editable || !scheduleSaved || saving}
           onClick={onDelete}
           /* Described only when the hint below is actually rendered, so assistive tech never

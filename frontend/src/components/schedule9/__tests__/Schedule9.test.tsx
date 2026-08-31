@@ -472,3 +472,29 @@ describe('Schedule9 — code-review coverage additions', () => {
     expect(recordPanel(9101).getByLabelText('Company ID')).toBeDisabled()
   })
 })
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 9 action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Check Status, the Add toggle and Add Record carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    renderPage()
+    await settle()
+
+    // Check Status is Schedule 9's only page-level action and renders above AND below the list.
+    for (const button of screen.getAllByRole('button', { name: /check status/i })) {
+      expect(button.querySelector('svg')).not.toBeNull()
+    }
+
+    // The add trigger is one control whose label toggles, so its icon has to toggle with it, and
+    // Add Record exists only once the panel it opens is on screen.
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Record' }).querySelector('svg')).not.toBeNull()
+  })
+})

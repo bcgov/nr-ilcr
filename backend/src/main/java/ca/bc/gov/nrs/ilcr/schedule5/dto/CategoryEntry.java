@@ -39,12 +39,15 @@ import java.math.BigDecimal;
  * <p>{@code cost} is declared here at the WIDEST legal Schedule 5 bound, &plusmn;99,999,999: that
  * is both the delivery {@code COST NUMBER(8,0)} capacity and the real enforced range of {@code
  * wagesAndBenefits}, whose input is missing the {@code costSize} attribute its ten siblings carry
- * (deviation (F)). The two NARROWER per-field ranges cannot be expressed here — one record type
- * cannot vary a constraint by which property holds it — so {@code Schedule5Service} enforces them
- * with their own verbatim message keys: &plusmn;9,999,999 / {@code costSize7ValidatorErrorMsg} for
- * the eight ordinary categories, and 0–9,999,999 / {@code costValidatorSchedule9ErrorMsg} for
- * {@code recoveries} (deviation (G)). Both surface as the same 400 {@code ProblemDetail} shape this
- * constraint would.
+ * (deviation (F) — <strong>RATIFIED by the Ministry</strong> on PR #370, 2026-08-27: "Keep it as
+ * is, as this is somewhat on purpose." The wider range is DELIBERATE, not an oversight; do not
+ * tighten it to match the siblings — ruling 2 of {@code
+ * docs/decisions/camps-and-access-expenses.md}). The two NARROWER per-field ranges cannot be
+ * expressed here — one record type cannot vary a constraint by which property holds it — so {@code
+ * Schedule5Service} enforces them with their own verbatim message keys: &plusmn;9,999,999 / {@code
+ * costSize7ValidatorErrorMsg} for the eight ordinary categories, and 0–9,999,999 / {@code
+ * costValidatorSchedule9ErrorMsg} for {@code recoveries} (deviation (G)). Both surface as the same
+ * 400 {@code ProblemDetail} shape this constraint would.
  *
  * <p>Whole dollars: {@code cost} is an {@code Integer}, so a fractional cost must be REJECTED
  * rather than truncated (AC6). Jackson's {@code ACCEPT_FLOAT_AS_INT} would silently truncate it

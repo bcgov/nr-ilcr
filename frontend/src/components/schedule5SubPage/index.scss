@@ -30,7 +30,9 @@
   }
 
   &__totals {
-    font-weight: 600;
+    // 700 to match the parent schedule5 totals (code review 2026-08-31); this sub-page mirrors
+    // components/schedule5, whose section/total rows are bold.
+    font-weight: 700;
   }
 
   &__actions {

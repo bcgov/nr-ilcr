@@ -27,9 +27,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -65,8 +66,11 @@ import './index.scss'
 // hardcoded, which is why there is no copy literal here.
 const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's p:dataTable (schedule5.xhtml:51) sets no emptyMessage, so PrimeFaces rendered its
-// default — reproduced verbatim rather than inventing a placeholder.
-const EMPTY_LIST = 'No records found.'
+// generic default, "No records found." — a DELIBERATE departure from that verbatim text, ruled by
+// the Ministry on PR #370 (2026-08-27): "Display a blank page. If possible, have a message such as
+// no camps or something similar." Named for what the table holds, matching the house pattern in
+// schedule7a/7b/9. Do not "restore" the legacy string — the departure is business-sanctioned.
+const EMPTY_LIST = 'No camps have been added.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
 // CFM-004. Hardcoded with the other three confirms rather than resolved through GET /v1/messages —
@@ -302,7 +306,11 @@ const DerivedGridRow: FC<{
   readonly label: string
   readonly amount?: CategoryAmount
 }> = ({ label, amount }) => (
-  <TableRow>
+  // The calculated-total band (#312 Overall 5) belongs HERE, on the derived rows — Camp Sub-Total,
+  // Camp Total, Access Expense Total, Camp and Access. It shipped on `schedule-5__section-row` for
+  // one commit, which is the SECTION HEADER row ("Camp Expenses" plus the repeated column captions),
+  // i.e. the exact opposite of a calculated row (PR #381 review).
+  <TableRow className="schedule-5__derived-row">
     <TableCell>{label}</TableCell>
     <TableCell className="schedule-5__num">{fmtVolume(amount?.volume)}</TableCell>
     <TableCell className="schedule-5__num">{fmtCost(amount?.cost)}</TableCell>
@@ -1182,7 +1190,12 @@ const Schedule5: FC = () => {
       // AC collapses the column to a single View and Schedule 6 set the same precedent, so the inert
       // control is dropped. Net user-reachable behaviour is identical (deviation (B)).
       return (
-        <Button kind="ghost" size="sm" onClick={() => openEditOrView(camp, 'view')}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={View}
+          onClick={() => openEditOrView(camp, 'view')}
+        >
           View
         </Button>
       )
@@ -1192,6 +1205,7 @@ const Schedule5: FC = () => {
         <Button
           kind="ghost"
           size="sm"
+          renderIcon={Edit}
           disabled={saving}
           onClick={() =>
             panelOpen && panelDirty
@@ -1204,6 +1218,7 @@ const Schedule5: FC = () => {
         <Button
           kind="danger--ghost"
           size="sm"
+          renderIcon={TrashCan}
           disabled={saving}
           onClick={() => setConfirmDelete(camp)}
         >
@@ -1211,7 +1226,13 @@ const Schedule5: FC = () => {
         </Button>
         {/* Legacy attaches no confirm to Copy in either editable column, so an open panel is
             replaced without one — copyCamp() calls addNewCamp() directly. */}
-        <Button kind="ghost" size="sm" disabled={saving} onClick={() => openCopy(camp)}>
+        <Button
+          kind="ghost"
+          size="sm"
+          renderIcon={Copy}
+          disabled={saving}
+          onClick={() => openCopy(camp)}
+        >
           Copy
         </Button>
       </>
@@ -1281,10 +1302,9 @@ const Schedule5: FC = () => {
 
       <div className="schedule-5__comments">
         <h4 className="schedule-5__comments-heading">{COMMENTS_HEADING}</h4>
-        <TextArea
+        <CommentsTextArea
           id="camp-comments"
           labelText="Comments"
-          enableCounter
           maxCount={COMMENTS_MAX_LENGTH}
           value={form.comments}
           readOnly={readOnlyPanel}
@@ -1368,6 +1388,7 @@ const Schedule5: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-5__actions">
           <Button
             kind="primary"
+            renderIcon={Add}
             disabled={!editable || saving}
             onClick={() =>
               panelOpen && panelDirty ? setPendingSwitch({ kind: 'new' }) : openNew()
@@ -1382,6 +1403,7 @@ const Schedule5: FC = () => {
               a verdict must never be shown that contradicts visible unsaved input. */}
           <Button
             kind="tertiary"
+            renderIcon={CheckmarkOutline}
             disabled={!editable || saving || panelOpen}
             onClick={handleCheckStatus}
           >

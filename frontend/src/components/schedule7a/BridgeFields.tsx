@@ -1,5 +1,6 @@
 import type { FC } from 'react'
-import { Column, Dropdown, Grid, TextArea, TextInput } from '@carbon/react'
+import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { Bridge, BridgeCodeLists, BridgeCodeOption } from '@/interfaces/Schedule7aResponse'
 import { numStrGroup } from '@/utils/number'
 import type { BridgeErrors, BridgeFormValues, CodeField, CostField } from './validation'
@@ -263,12 +264,11 @@ const BridgeFields: FC<Props> = ({
       <Column sm={4} md={8} lg={16}>
         <div className="schedule-7a__cost-row">
           <span className="schedule-7a__cost-label">Comments</span>
-          <TextArea
+          <CommentsTextArea
             id={`${idPrefix}-comments`}
             labelText="Comments"
             hideLabel
             rows={2}
-            enableCounter
             maxCount={COMMENTS_MAX_LENGTH}
             disabled={disabled}
             value={form.comments}
