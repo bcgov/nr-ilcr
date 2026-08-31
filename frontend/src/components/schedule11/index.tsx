@@ -26,6 +26,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, CheckmarkOutline, Edit, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
@@ -966,10 +967,9 @@ const Schedule11: FC = () => {
                   legacy gave it (cols="75", xhtml:140-141) instead of being squeezed into the
                   wrap flow beside the short numeric inputs. */}
               <div className="schedule-11__add-comments">
-                <TextArea
+                <CommentsTextArea
                   id="add-comments"
                   labelText="Comments"
-                  enableCounter
                   maxCount={COMMENTS_MAX_LENGTH}
                   disabled={saving}
                   value={addForm.comments}

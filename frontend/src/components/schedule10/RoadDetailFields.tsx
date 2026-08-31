@@ -1,5 +1,6 @@
 import type { FC, ReactNode } from 'react'
-import { Select, SelectItem, TextArea, TextInput } from '@carbon/react'
+import { Select, SelectItem, TextInput } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import type { CodeDescription, Schedule10CodeLists } from '@/interfaces/Schedule10Response'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import type { ComboMatchMode } from '@/components/core/CodeComboBox'
@@ -295,11 +296,10 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
             <p className="schedule-10__field-value">{form.comments === '' ? '—' : form.comments}</p>
           </>
         ) : (
-          <TextArea
+          <CommentsTextArea
             id={id('comments')}
             labelText="If you have any comments, please enter them here:"
             rows={5}
-            enableCounter
             maxCount={COMMENTS_MAX}
             value={form.comments}
             disabled={disabled}

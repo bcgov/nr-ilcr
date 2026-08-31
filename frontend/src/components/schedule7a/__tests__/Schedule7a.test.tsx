@@ -780,16 +780,16 @@ describe('Schedule 7A page', () => {
     expect(entryFor(captured, 7001)?.otherCost).toBe(1234567)
   })
 
-  test('the comments counter counts UP toward the 3500 limit', async () => {
+  test('the comments counter shows characters remaining (#312 Overall 10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     const user = userEvent.setup()
     render(<Schedule7a />)
     await openBridge(user, 1)
 
-    // Carbon's counter is used-of-limit. 'Spans the north fork' is 20 characters.
-    expect(screen.getByText('20/3500')).toBeInTheDocument()
+    // Remaining, not used-of-limit (legacy wording). 'Spans the north fork' is 20 characters.
+    expect(screen.getByText('3480 characters remaining')).toBeInTheDocument()
     await user.type(field('Comments'), '!')
-    expect(screen.getByText('21/3500')).toBeInTheDocument()
+    expect(screen.getByText('3479 characters remaining')).toBeInTheDocument()
   })
 
   test('Check Status renders per-bridge failures and no schedule banner on mixed results (AC6)', async () => {
@@ -1196,5 +1196,31 @@ describe('Schedule 7A page', () => {
     await waitFor(() => {
       expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
     })
+  })
+})
+
+// Story 30.3 / #312 Overall 6. `renderIcon` puts an <svg> inside the button and leaves the accessible
+// name as the label text, so a by-name lookup still finds the button AND proves the decorative icon is
+// there — a later edit that drops an icon fails here. Added for the #381 review (paulushcgcj): this
+// page's action bar and add-new trigger were still text-only after 30.3 reached the shared bars.
+describe('Schedule 7A action icons (Story 30.3 / #312 Overall 6)', () => {
+  test('Save, Check Status and the Add toggle all carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    const user = userEvent.setup()
+    render(<Schedule7a />)
+
+    // Save + Check Status come from the shared SaveCheckActions bar, which legacy renders both above
+    // and below the list — so assert every instance.
+    for (const name of [/^save$/i, /check status/i]) {
+      for (const button of await screen.findAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+
+    const toggle = screen.getByRole('button', { name: 'Add' })
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
   })
 })

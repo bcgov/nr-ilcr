@@ -180,7 +180,9 @@
 // from the data rows (mirrors the Schedule 4 sub-page totals row).
 .schedule-8__totals-row td {
   border-block-start: 0.0625rem solid var(--cds-border-strong);
-  font-weight: 600;
+  font-weight: 700;
+  // Calculated total band (#312 Overall 5) — same accent layer as the other schedules.
+  background: var(--cds-layer-accent-01);
 }
 
 // Each rate table (Additions / Deductions) is a bordered card with a bold titled divider and a wide

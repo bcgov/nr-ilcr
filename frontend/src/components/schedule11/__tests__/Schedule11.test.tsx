@@ -579,16 +579,16 @@ describe('Schedule 11 page (Story 25.3)', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
-  test('Comments is a TextArea with the 3500 counter (AC11 / BR-10)', async () => {
+  test('Comments is a TextArea with a 3500 characters-remaining counter (AC11 / BR-10)', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc({ locations: [], totals: {} }))))
     render(<Schedule11 />)
     const user = userEvent.setup()
 
     const comments = await screen.findByLabelText('Comments')
     expect(comments.tagName).toBe('TEXTAREA')
-    expect(screen.getByText('0/3500')).toBeInTheDocument()
+    expect(screen.getByText('3500 characters remaining')).toBeInTheDocument()
     await user.type(comments, 'hello')
-    expect(screen.getByText('5/3500')).toBeInTheDocument()
+    expect(screen.getByText('3495 characters remaining')).toBeInTheDocument()
   })
 
   test('Check Status all-met renders SUC-004 and SUC-003 (AC7)', async () => {

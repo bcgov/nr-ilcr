@@ -58,6 +58,12 @@
   // border would win, so this has to be the wider of the two to survive the collapse.
   tr.schedule-1__grand-total-row td {
     border-block-start: 2px solid var(--cds-border-strong-01);
+    // Bold the grand-total labels/values so the summary row reads as a summary (#312 Overall 5, bold),
+    // matching the 700-weight sub-page and Schedule 11 totals.
+    font-weight: 700;
+    // Shade the calculated grand-total row (#312 Overall 5) on the same accent layer the sub-page
+    // and Schedule 11 totals use, so it reads as a summary band, distinct from the edit highlight.
+    background: var(--cds-layer-accent-01);
   }
 }
 

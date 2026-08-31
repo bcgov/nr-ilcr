@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Button, Column, Grid, Modal } from '@carbon/react'
+import { Button, Column, Grid } from '@carbon/react'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
@@ -141,16 +142,14 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
       </Grid>
 
       {editable && (
-        <Modal
+        <ConfirmNavigationModal
           open={confirmBackOpen}
-          modalHeading="Leave page"
-          primaryButtonText="Continue"
-          secondaryButtonText="Cancel"
-          onRequestClose={() => setConfirmBackOpen(false)}
-          onRequestSubmit={confirmBack}
+          heading="Leave page"
+          onCancel={() => setConfirmBackOpen(false)}
+          onContinue={confirmBack}
         >
-          <p>{CONFIRM_NAVIGATION}</p>
-        </Modal>
+          {CONFIRM_NAVIGATION}
+        </ConfirmNavigationModal>
       )}
     </div>
   )

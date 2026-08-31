@@ -1,0 +1,23 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// #312 Overall 11: make the confirm-dialog Cancel/Continue read like the page's REGULAR Save/Back
+// buttons. Carbon's ComposedModal footer stretches each button to 50% width and forces a fixed 64px
+// height, so they "fill" the modal. Instead:
+//   - the footer height is AUTO (not the fixed 64px) so its padding grows the box instead of eating
+//     into a fixed height and clipping the left (Cancel) button — that clipping is what hid Cancel;
+//   - buttons size to their content width (flex) and to the standard button height
+//     (--cds-layout-size-height-local = the same 48px as Save/Back), right-aligned with a gap.
+.confirm-nav-modal .cds--modal-footer {
+  block-size: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-04;
+  padding: $spacing-05;
+}
+
+.confirm-nav-modal .cds--modal-footer .cds--btn {
+  flex: 0 1 auto;
+  block-size: var(--cds-layout-size-height-local);
+  min-block-size: var(--cds-layout-size-height-local);
+  max-inline-size: none;
+}

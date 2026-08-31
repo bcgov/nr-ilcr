@@ -638,6 +638,21 @@ describe('Schedule8 sample level', () => {
     await screen.findByRole('button', { name: /add new sample/i })
   }
 
+  // Story 30.3 / #312 Overall 6, extended to the sample level for the #381 review (paulushcgcj):
+  // 30.3 iconed the PAGE-level bar, leaving the sample bar's identically-labelled Add New / Check
+  // Status text-only. The Back-to-pages control is deliberately not asserted — panel Back/Close
+  // navigation is the follow-up scope, not this story's.
+  test('the sample bar\u2019s Add New Sample and Check Status carry their icon', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(doc())))
+    await openSamples()
+
+    for (const name of [/add new sample/i, /check status/i]) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect(button.querySelector('svg')).not.toBeNull()
+      }
+    }
+  })
+
   test('the TtT Samples link opens the sample list', async () => {
     server.use(http.get(URL, () => HttpResponse.json(doc())))
     await openSamples()

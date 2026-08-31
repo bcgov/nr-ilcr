@@ -16,9 +16,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
@@ -29,6 +29,7 @@ import { getRouteApi } from '@tanstack/react-router'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
+import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import {
   ALL_CATEGORIES,
   isLocationFormValid,
@@ -832,10 +833,9 @@ const Schedule4: FC = () => {
           <p className="schedule-4__comments">{panelComments || '—'}</p>
         </div>
       ) : (
-        <TextArea
+        <CommentsTextArea
           id="location-comments"
           labelText="If you have any additional comments, please enter them here:"
-          enableCounter
           maxCount={COMMENTS_MAX}
           value={panelComments}
           onChange={(event) => setPanelComments(event.target.value)}
@@ -994,16 +994,15 @@ const Schedule4: FC = () => {
         </Modal>
       )}
 
-      <Modal
+      <ConfirmNavigationModal
         open={navConfirm !== null}
-        modalHeading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
-        primaryButtonText={navConfirm?.kind === 'new' ? 'Save and continue' : 'Continue'}
-        secondaryButtonText="Cancel"
-        onRequestClose={() => setNavConfirm(null)}
-        onRequestSubmit={confirmNav}
+        heading={navConfirm?.kind === 'new' ? 'Save before continuing' : 'Unsaved changes'}
+        continueLabel={navConfirm?.kind === 'new' ? 'Save and continue' : 'Continue'}
+        onCancel={() => setNavConfirm(null)}
+        onContinue={confirmNav}
       >
-        <p>{navConfirm?.kind === 'new' ? NAV_SAVE_FIRST : NAV_UNSAVED_LOST}</p>
-      </Modal>
+        {navConfirm?.kind === 'new' ? NAV_SAVE_FIRST : NAV_UNSAVED_LOST}
+      </ConfirmNavigationModal>
     </div>
   )
 }

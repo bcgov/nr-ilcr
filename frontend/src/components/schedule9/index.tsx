@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import { useCallback, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid } from '@carbon/react'
 import { Pagination } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, TrashCan } from '@carbon/icons-react'
 import type Schedule9Response from '@/interfaces/Schedule9Response'
 import type {
   ContractualWorkRecord,
@@ -298,7 +298,12 @@ const Schedule9: FC = () => {
   // button follows legacy in disabling alongside the write controls outside Draft.
   const checkStatusButton = (key: string) => (
     <Column key={key} sm={4} md={8} lg={16} className="schedule-9__actions">
-      <Button kind="tertiary" disabled={controlsDisabled} onClick={handleCheckStatus}>
+      <Button
+        kind="tertiary"
+        renderIcon={CheckmarkOutline}
+        disabled={controlsDisabled}
+        onClick={handleCheckStatus}
+      >
         Check Status
       </Button>
     </Column>
@@ -320,6 +325,8 @@ const Schedule9: FC = () => {
         <Column sm={4} md={8} lg={16} className="schedule-9__actions">
           <Button
             kind="primary"
+            // The icon tracks the label: this one control both opens and closes the add panel.
+            renderIcon={showAddPanel ? Close : Add}
             disabled={controlsDisabled}
             title={showAddPanel ? 'Close' : 'Add Contractual Work Record'}
             onClick={() => {
@@ -346,7 +353,12 @@ const Schedule9: FC = () => {
               onMask={maskAddField}
             />
             <div className="schedule-9__panel-actions">
-              <Button kind="primary" disabled={controlsDisabled} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={controlsDisabled}
+                onClick={handleAdd}
+              >
                 Add Record
               </Button>
             </div>

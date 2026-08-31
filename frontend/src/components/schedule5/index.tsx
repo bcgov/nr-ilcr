@@ -27,9 +27,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TextArea,
   TextInput,
 } from '@carbon/react'
+import CommentsTextArea from '@/components/core/CommentsTextArea'
 import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -306,7 +306,11 @@ const DerivedGridRow: FC<{
   readonly label: string
   readonly amount?: CategoryAmount
 }> = ({ label, amount }) => (
-  <TableRow>
+  // The calculated-total band (#312 Overall 5) belongs HERE, on the derived rows — Camp Sub-Total,
+  // Camp Total, Access Expense Total, Camp and Access. It shipped on `schedule-5__section-row` for
+  // one commit, which is the SECTION HEADER row ("Camp Expenses" plus the repeated column captions),
+  // i.e. the exact opposite of a calculated row (PR #381 review).
+  <TableRow className="schedule-5__derived-row">
     <TableCell>{label}</TableCell>
     <TableCell className="schedule-5__num">{fmtVolume(amount?.volume)}</TableCell>
     <TableCell className="schedule-5__num">{fmtCost(amount?.cost)}</TableCell>
@@ -1298,10 +1302,9 @@ const Schedule5: FC = () => {
 
       <div className="schedule-5__comments">
         <h4 className="schedule-5__comments-heading">{COMMENTS_HEADING}</h4>
-        <TextArea
+        <CommentsTextArea
           id="camp-comments"
           labelText="Comments"
-          enableCounter
           maxCount={COMMENTS_MAX_LENGTH}
           value={form.comments}
           readOnly={readOnlyPanel}
