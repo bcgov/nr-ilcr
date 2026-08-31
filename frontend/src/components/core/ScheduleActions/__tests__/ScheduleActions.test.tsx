@@ -79,4 +79,15 @@ describe('ScheduleActions', () => {
     expect(screen.queryByText(HINT)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
   })
+
+  test('each action carries a decorative icon (Story 30.3 / #312 Overall 6)', () => {
+    render(<ScheduleActions {...props} />)
+
+    // renderIcon adds an <svg> inside the button; the accessible name stays the label text (the icon
+    // is decorative), so selecting by name still works AND the icon is present.
+    for (const name of ['Save', 'Check Status', 'Delete']) {
+      const button = screen.getByRole('button', { name })
+      expect(button.querySelector('svg')).not.toBeNull()
+    }
+  })
 })
