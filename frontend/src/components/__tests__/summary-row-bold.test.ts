@@ -23,16 +23,43 @@ const ROOT = resolve(process.cwd(), 'src/components')
 // The blocks contain no nested braces, so a `{[^}]*font-weight: 700}` match is exact.
 const SUMMARY_ROWS: ReadonlyArray<{ file: string; selector: string; label: string }> = [
   // Rows this change set/raised to 700.
-  { file: 'schedule1/index.scss', selector: 'tr.schedule-1__grand-total-row td', label: 'Sch1 grand total' },
-  { file: 'schedule2/index.scss', selector: '.schedule-2__section-start td', label: 'Sch2 subtotal bands' },
+  {
+    file: 'schedule1/index.scss',
+    selector: 'tr.schedule-1__grand-total-row td',
+    label: 'Sch1 grand total',
+  },
+  {
+    file: 'schedule2/index.scss',
+    selector: '.schedule-2__section-start td',
+    label: 'Sch2 subtotal bands',
+  },
   { file: 'schedule4/index.scss', selector: '.schedule-4__totals-row td', label: 'Sch4 totals' },
-  // Sch5 is scoped to the label cell (the row also holds repeated Volume/Cost/$ captions).
-  { file: 'schedule5/index.scss', selector: '.schedule-5__section-row td:first-child', label: 'Sch5 section label' },
+  // Sch5 section HEADER: bold on the label cell only (the row also holds the repeated
+  // Volume/Cost/$ captions). No band — a header is not a calculated row.
+  {
+    file: 'schedule5/index.scss',
+    selector: '.schedule-5__section-row td:first-child',
+    label: 'Sch5 section label',
+  },
+  // Sch5's actual calculated rows, which carry the band (PR #381 review).
+  {
+    file: 'schedule5/index.scss',
+    selector: '.schedule-5__derived-row td',
+    label: 'Sch5 derived totals',
+  },
   { file: 'schedule5SubPage/index.scss', selector: '&__totals', label: 'Sch5 sub-page totals' },
   { file: 'schedule8/index.scss', selector: '.schedule-8__totals-row td', label: 'Sch8 totals' },
   // Rows relied on as "already 700" — pin the baseline the story's completeness claim depends on.
-  { file: 'schedule1OtherCosts/index.scss', selector: '.schedule-1-other-costs__totals td', label: 'Sch1 Other Costs totals' },
-  { file: 'schedule3SubPage/index.scss', selector: '.schedule-3-sub__totals td', label: 'Sch3 sub-page totals' },
+  {
+    file: 'schedule1OtherCosts/index.scss',
+    selector: '.schedule-1-other-costs__totals td',
+    label: 'Sch1 Other Costs totals',
+  },
+  {
+    file: 'schedule3SubPage/index.scss',
+    selector: '.schedule-3-sub__totals td',
+    label: 'Sch3 sub-page totals',
+  },
   { file: 'schedule11/index.scss', selector: '.schedule-11__totals td', label: 'Sch11 totals' },
   { file: 'core/SubPanel/index.scss', selector: '.sub-panel__title', label: 'Sub-panel title bar' },
 ]
@@ -44,12 +71,15 @@ function selectorPattern(selector: string): RegExp {
 }
 
 describe('Shaded summary rows stay bold (source tripwire, not a behaviour test — Story 30.5 / #312 Overall 5)', () => {
-  test.each(SUMMARY_ROWS)('$label ($file) keeps font-weight: 700 on `$selector`', ({ file, selector }) => {
-    const source = readFileSync(resolve(ROOT, file), 'utf8').replace(/\/\/[^\n]*/g, '')
-    expect(
-      source,
-      `${file}: the summary-row rule "${selector}" must carry font-weight: 700 — a shaded total/subtotal ` +
-        `row lost its bold, re-opening #312 Overall 5`,
-    ).toMatch(selectorPattern(selector))
-  })
+  test.each(SUMMARY_ROWS)(
+    '$label ($file) keeps font-weight: 700 on `$selector`',
+    ({ file, selector }) => {
+      const source = readFileSync(resolve(ROOT, file), 'utf8').replace(/\/\/[^\n]*/g, '')
+      expect(
+        source,
+        `${file}: the summary-row rule "${selector}" must carry font-weight: 700 — a shaded total/subtotal ` +
+          `row lost its bold, re-opening #312 Overall 5`,
+      ).toMatch(selectorPattern(selector))
+    },
+  )
 })

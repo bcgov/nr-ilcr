@@ -303,7 +303,11 @@ const DerivedGridRow: FC<{
   readonly label: string
   readonly amount?: CategoryAmount
 }> = ({ label, amount }) => (
-  <TableRow>
+  // The calculated-total band (#312 Overall 5) belongs HERE, on the derived rows — Camp Sub-Total,
+  // Camp Total, Access Expense Total, Camp and Access. It shipped on `schedule-5__section-row` for
+  // one commit, which is the SECTION HEADER row ("Camp Expenses" plus the repeated column captions),
+  // i.e. the exact opposite of a calculated row (PR #381 review).
+  <TableRow className="schedule-5__derived-row">
     <TableCell>{label}</TableCell>
     <TableCell className="schedule-5__num">{fmtVolume(amount?.volume)}</TableCell>
     <TableCell className="schedule-5__num">{fmtCost(amount?.cost)}</TableCell>
