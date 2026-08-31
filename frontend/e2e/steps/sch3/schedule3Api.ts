@@ -282,13 +282,9 @@ export async function getSchedule1(
   return (await res.json()) as Sch1VolumeProbe;
 }
 
-/** The raw status of a schedule1 GET — the WRN-002 precondition asserts a 404 ("not opened"). */
-export async function schedule1Status(
-  request: APIRequestContext,
-  { millId, year }: ScheduleKey,
-): Promise<number> {
-  return (await request.get(schedule1Url(millId, year))).status();
-}
+// `schedule1Status()` was DELETED here on 2026-08-31 (raised in PR #402 review): it was callerless, and
+// its doc still promised that a 404 means "Schedule 1 not opened" — a proxy defect #296 inverted, which
+// is the whole reason `schedule1IsSaved` below exists. Use that.
 
 /**
  * Whether a Schedule 3 has ever been SAVED for this mill/year — the category-3 summary exists.
@@ -466,6 +462,19 @@ export async function restoreAnchor(
   if (after.otherAcceptableCount !== 0) {
     residue.push(`otherAcceptableCount=${after.otherAcceptableCount}`);
   }
+  // BOTH sub-page counts, not just the other-acceptable one. Until 2026-08-31 (raised in PR #402
+  // review) a leftover item-38 row survived this "fails loud" teardown and surfaced instead as a
+  // whole-domain failure in `preflight/sch3-anchors.setup.ts` ("every mutating Schedule 3 anchor is
+  // EMPTY at rest", which DOES check it) — one whole run away from the scenario that caused it, i.e.
+  // exactly the opposite of the fail-at-the-cause property the rest of this file is built on.
+  //
+  // Safe to assert unconditionally even though the count is not a plain row count: `Schedule3Service`
+  // adds +1 when the Annual Rents harvest is present and non-zero (`Schedule3Response`'s own javadoc
+  // says so). The blanking PUT above has already nulled Annual Rents, so that term cannot fire here and
+  // 0 really does mean "no item-38 rows left".
+  if (after.unacceptableCount !== 0) {
+    residue.push(`unacceptableCount=${after.unacceptableCount}`);
+  }
   expect(
     residue,
     `Schedule 3 anchor ${key.millId}/${key.year} is not back to empty after cleanup — the seeded DB is left mutated`,
@@ -482,6 +491,15 @@ export async function restoreAnchor(
  * Blank every Schedule 1 volume the BR-09 push can have written, through Schedule 1's own PUT, then
  * prove none is left. Only ever called for the `crown-applied` anchor, whose Schedule 1 is itself a
  * patched empty summary (so "no stored volume" IS its at-rest state).
+ *
+ * THAT PRECONDITION IS NOW ASSERTED, NOT ASSUMED (2026-08-31, raised in PR #402 review). The PUT below
+ * is WIDER than the push it undoes — it nulls every line volume AND cost, both silviculture blocks, the
+ * shared Other-Costs volume and the comments — so on a Schedule 1 holding real reporter data this is a
+ * destructive write, and the only thing standing between the two was this comment.
+ * `preflight/sch3-anchors.setup.ts` now carries "the crown-applied anchor Schedule 1 is EMPTY at rest,
+ * not merely saved", which fails the whole run before a browser opens if that ever stops being true.
+ * Do not widen the caller to another anchor without extending that gate (or teaching this function to
+ * snapshot and restore, the way `steps/sch1/schedule1DbRestore.ts` does).
  */
 export async function clearSchedule1Volumes(
   request: APIRequestContext,

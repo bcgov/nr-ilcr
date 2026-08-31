@@ -36,7 +36,6 @@ import {
   schedule1IsSaved,
   schedule3IsSaved,
   schedule1PushedVolumes,
-  schedule1Status,
   schedule1Volumes,
   schedule3Status,
   totalValues,

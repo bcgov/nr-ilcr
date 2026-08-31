@@ -9,7 +9,7 @@ import path from 'path';
  * that knows only some of them under-counts SILENTLY:
  *
  *  - Until 2026-08-24 the cross-domain guard in `sch4-anchors.setup.ts` matched only the object-literal
- *    forms, so it saw sch4's four guard anchors and none of its 48 table anchors, and none of sch3's 14
+ *    forms, so it saw sch4's four guard anchors and none of its 48 table anchors, and none of sch3's 17
  *    either.
  *  - Both of the regexes it then used required `millId` and `year` to be ADJACENT properties. The `sec`
  *    fixture interleaves `millNumber` / `millName` between them, so all five of its anchors were

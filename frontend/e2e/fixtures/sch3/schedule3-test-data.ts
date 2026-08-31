@@ -32,11 +32,31 @@
  * CROSS-DOMAIN. Sharing a (mill, year) with sch1 or sch2 would not be ordinary parallel hygiene — it
  * would be a genuine data race: Schedule 1 pulls its item-143 / item-139 costs FROM Schedule 3,
  * Schedule 2 carries its purchased-log volume and wood overhead FROM Schedule 3, and the BR-09 Crown
- * Timber push WRITES Schedule 1's own volume rows. So no anchor below is pinned by sch1, sch2 or sec
- * (checked pair-by-pair). Some are also pinned by **sch4** or **sch11**, which is safe structurally
- * rather than by convention: no backend path links Schedule 3 to Schedule 4 or 11
+ * Timber push WRITES Schedule 1's own volume rows. So no MUTATING anchor below is pinned by sch1, sch2
+ * or sec (checked pair-by-pair with `preflight/anchor-keys.ts scanAnchorKeys`, not by eye). Some are
+ * also pinned by **sch4** or **sch11**, which is safe structurally rather than by convention: no backend
+ * path links Schedule 3 to Schedule 4 or 11
  * (`grep -rl Schedule3Service backend/src/main/java` → schedule1, schedule2, schedule5, reporting only),
  * and those suites write category-"4"/"11" rows this one never reads.
+ *
+ * THE ONE sch1 SHARE, AND WHY IT IS THE READ-ONLY ANCHOR (adjudicated 2026-08-31, PR #402 review).
+ * `check-empty` sits on 17052/2021, which is also sch1's `no-schedule` render-state anchor
+ * (`fixtures/sch1/schedule1-test-data.ts`) and sch4's `persistence`. That pair CANNOT be avoided
+ * cheaply — 17052/2021 is one of the few mill-years this suite can seed a Schedule 3 on, and sch1 pins
+ * it deliberately because it is the mill-year defect #296 reproduces against. It is safe only because
+ * the sch3 side is READ-ONLY and PERMANENTLY EMPTY: with no stored Schedule 3 amounts,
+ * `Schedule1Service` derives a null `forestMgmtAdminCost` / `silvicultureAdminCrownCost` and its BR-09
+ * volume pre-fill never arms (`sch3CrownVolume != null`), so sch1's "every Schedule 1 amount is blank"
+ * (S21) and its never-saved save-first gate (S08) both stay true.
+ *
+ * `retry` USED TO SIT HERE and was moved to 22050/2019 in the same change. It is mutating, and its
+ * scenario ends with a successful save of the full happy-path set INCLUDING a Crown Timber volume of
+ * 150,000 — which arms exactly that pre-fill and would have reddened sch1 S21/S08 whenever the two ran
+ * concurrently under `fullyParallel`. The two anchors were swapped rather than re-grounded onto a new
+ * mill-year because both 17052/2021 and 22050/2019 are already seeded, Draft and empty, so the swap
+ * needs no new data on either database. `preflight/sch3-anchors.setup.ts` now also asserts that `retry`
+ * has NO saved Schedule 1, so a future move onto a Schedule-1-bearing mill-year fails before a browser
+ * opens instead of writing rows this suite's teardown does not restore.
  *
  * CLEANUP CONTRACT. A mutating scenario is restored by PUTting the EMPTY document back (all line items
  * null, both volumes null, comments null, Override "N") and re-reading to prove it — see
@@ -92,8 +112,10 @@ const at = (mill: MillRef, millId: number, year: number, purpose: string): Sch3A
  * A `.feature` names an anchor by its KEY here (`Given the Schedule 3 anchor "happy-path" …`), so this
  * table is the single place a (mill, year) is chosen, documented and re-grounded.
  *
- * All 16 entries below carry a patched (empty or seeded) category-3 summary; `preflight` re-asserts
- * each one's Draft track, `editable: true` and at-rest contents before a browser opens.
+ * All 17 entries below carry a patched (empty or seeded) category-3 summary — the same 17 mill-years
+ * `real-test-data-patches/sch3/draft-anchors.sql` and the CI seed's Schedule 3 block list, one for one.
+ * `preflight` re-asserts each one's Draft track, `editable: true` and at-rest contents before a
+ * browser opens. (The `RENDER_STATE_ANCHORS` below are NOT patched — they are real extract rows.)
  */
 export const ANCHORS: Record<string, Sch3Anchor> = {
   // --- MUTATING: one dedicated (mill, year) per scenario ---------------------------------------------
@@ -104,7 +126,7 @@ export const ANCHORS: Record<string, Sch3Anchor> = {
   'crown-not-opened': at(MILL_727, 17052, 2018, 'S07 — BR-09 crown push with NO Schedule 1 (WRN-002)'),
   'other-acceptable': at(MILL_727, 17052, 2019, 'S04 — itemize other-acceptable costs on the sub-page'),
   unacceptable: at(MILL_727, 17052, 2020, 'S05 — itemize included-unacceptable costs on the sub-page'),
-  retry: at(MILL_727, 17052, 2021, 'S17 — a failed save, then a successful retry'),
+  retry: at(MILL_20171, 22050, 2019, 'S17 — a failed save, then a successful retry'),
   'row-delete-confirm': at(
     MILL_9175,
     25054,
@@ -120,7 +142,9 @@ export const ANCHORS: Record<string, Sch3Anchor> = {
 
   // --- READ-ONLY: never written to, so scenarios may share them -------------------------------------
   validate: at(MILL_20171, 22050, 2018, 'S02/S20-S24 — client-rejected entry and the S111 alert; never written'),
-  'check-empty': at(MILL_20171, 22050, 2019, 'S10 — Check Status on an empty schedule (every field missing)'),
+  // 17052/2021 is ALSO sch1's `no-schedule` anchor and sch4's `persistence` — see "THE ONE sch1
+  // SHARE" above. Safe here and nowhere else in this table, because nothing ever writes to it.
+  'check-empty': at(MILL_727, 17052, 2021, 'S10 — Check Status on an empty schedule (every field missing)'),
   'check-harvest-pop': at(MILL_20171, 22050, 2020, 'S11 — seeded Wages/Salaries Harvest 40,000 < PO&P 50,000'),
   'check-override': at(MILL_20171, 22050, 2021, 'S12 — the same violations with Override "Y" (suppressed)'),
   'check-oa-pop': at(MILL_20173, 23050, 2017, 'S12 mirror — a seeded other-acceptable Total 1,000 < PO&P 2,500'),

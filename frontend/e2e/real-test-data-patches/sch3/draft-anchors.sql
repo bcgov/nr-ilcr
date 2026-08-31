@@ -66,14 +66,26 @@
 --   identically to an app-created schedule.
 --
 -- ANCHOR CHOICE / CROSS-DOMAIN SAFETY
--- Every (mill, year) below is pinned by AT MOST the sch4 or sch11 fixtures, and
--- never by sch1 / sch2 / sec (checked pair-by-pair, not mill-by-mill). That is
--- safe in both directions and structurally, not just by convention: no backend
--- code path links Schedule 3 to Schedule 4 or Schedule 11 (`grep -rl
--- Schedule3Service backend/src/main/java` -> schedule1, schedule2, schedule5,
--- reporting only), Schedule 4 writes category-"4" TRANSPORTATION_REPORT rows and
--- Schedule 11 writes category-"11" rows, and this suite writes only category-3
--- rows plus (on ONE anchor) the patched category-1 Schedule 1.
+-- Every MUTATING (mill, year) below is pinned by AT MOST the sch4 or sch11
+-- fixtures, and never by sch1 / sch2 / sec (checked pair-by-pair with
+-- frontend/e2e/preflight/anchor-keys.ts, not by eye).
+--
+-- ONE EXCEPTION, and it is a READ-ONLY anchor: 17052/2021 is also sch1's
+-- `no-schedule` render-state anchor. It carries `check-empty`, which is never
+-- written, so the empty summary this file inserts leaves every Schedule 1 figure
+-- null (Schedule 1 derives its Forest Mgmt Admin / Silviculture Admin costs FROM
+-- Schedule 3) and never arms the BR-09 volume pre-fill. The MUTATING `retry`
+-- anchor sat here until 2026-08-31 and was swapped with `check-empty` in PR #402
+-- review: its save carries a Crown Timber volume of 150,000, which DOES arm that
+-- pre-fill and reddened sch1's S21/S08 whenever the two ran concurrently.
+--
+-- THE sch4 / sch11 SHARES are safe in both directions and structurally, not just
+-- by convention: no backend code path links Schedule 3 to Schedule 4 or Schedule
+-- 11 (`grep -rl Schedule3Service backend/src/main/java` -> schedule1, schedule2,
+-- schedule5, reporting only), Schedule 4 writes category-"4"
+-- TRANSPORTATION_REPORT rows and Schedule 11 writes category-"11" rows, and this
+-- suite writes only category-3 rows plus (on ONE anchor) the patched category-1
+-- Schedule 1.
 --
 -- IDEMPOTENT: every insert is guarded on its own existence check, so re-running
 -- is a no-op. `steps/sch3/schedule3DbRestore.ts` still re-runs this file at
@@ -119,9 +131,9 @@ BEGIN
     SELECT 17052,      2018,     'N',     'N'      FROM DUAL UNION ALL  -- crown-not-opened
     SELECT 17052,      2019,     'N',     'N'      FROM DUAL UNION ALL  -- other-acceptable
     SELECT 17052,      2020,     'N',     'N'      FROM DUAL UNION ALL  -- unacceptable
-    SELECT 17052,      2021,     'N',     'N'      FROM DUAL UNION ALL  -- retry
+    SELECT 17052,      2021,     'N',     'N'      FROM DUAL UNION ALL  -- check-empty       (read-only)
     SELECT 22050,      2018,     'N',     'N'      FROM DUAL UNION ALL  -- validate          (read-only)
-    SELECT 22050,      2019,     'N',     'N'      FROM DUAL UNION ALL  -- check-empty       (read-only)
+    SELECT 22050,      2019,     'N',     'N'      FROM DUAL UNION ALL  -- retry
     SELECT 22050,      2020,     'N',     'N'      FROM DUAL UNION ALL  -- check-harvest-pop (read-only)
     SELECT 22050,      2021,     'Y',     'N'      FROM DUAL UNION ALL  -- check-override    (read-only)
     SELECT 23050,      2017,     'N',     'N'      FROM DUAL UNION ALL  -- check-oa-pop      (read-only)

@@ -698,11 +698,17 @@ deliberately excluded was re-checked against the new app rather than inherited �
 - **VER-3 — "Schedule 3 doesn't show the save-first modal like Schedule 1 does." It does. The mill-year it
   was tested on already had a SAVED Schedule 3. Re-checked live 2026-08-27; DIV-3 stays CLOSED.**
   - **How the confusion arises, and it will arise again:** on **727/2021** Schedule 1 has never been saved
-    (`revisionCount` absent) while Schedule 3 has been saved **43 times** — it is this suite's `retry`
-    anchor, seeded by `draft-anchors.sql` and re-saved by every `save-error` run. So on one screen the gate
-    fires and on the other it correctly does not, on what looks like the same mill-year. That anchor is also
-    the mill-year defect #296 reproduces, which is why sch1's `no-schedule` was deliberately re-grounded
-    onto it — so it is the single most likely pair to be compared by hand.
+    (`revisionCount` absent) while Schedule 3 **has** been saved — that mill-year carries a category-3
+    summary seeded by `draft-anchors.sql`, and at the time this was investigated it was this suite's
+    `retry` anchor, re-saved by every `save-error` run (43 revisions). So on one screen the gate fires and
+    on the other it correctly does not, on what looks like the same mill-year. That anchor is also the
+    mill-year defect #296 reproduces, which is why sch1's `no-schedule` was deliberately re-grounded onto
+    it — so it is the single most likely pair to be compared by hand.
+    - **Update 2026-08-31 (PR #402 review):** 727/2021 now carries the READ-ONLY `check-empty` anchor
+      instead. `retry` was moved to 22050/2019 because it is mutating and its save carries a Crown Timber
+      volume, which arms Schedule 1's BR-09 volume pre-fill on a mill-year sch1 pins as "every Schedule 1
+      amount is blank" (S21). The confusion this entry describes is unchanged — Schedule 3 is still saved
+      there and Schedule 1 still is not — only the revision count is now stable rather than climbing.
   - **Evidence the gate is present on Schedule 3** (captured DOM from the S19 red on the genuinely
     never-saved `never-started` anchor, 24051/2015 = *Mill 8888 CGI TEST MILL8*): `dialog "Save required"` →
     `heading "Save required"` → `paragraph: The schedule has to be saved before opening other costs`. Note

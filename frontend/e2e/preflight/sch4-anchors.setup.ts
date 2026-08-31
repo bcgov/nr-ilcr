@@ -289,8 +289,14 @@ const SCH3_SCH4_KEYS = [
   '17052/2018',
   '17052/2019',
   '17052/2020',
-  '17052/2021',
+  // 17052/2021 is deliberately NOT here — it is shared with sch1 as well, so the blanket
+  // "different schedules" reason above does not cover it. It has its own entry in the map below.
   '22050/2018',
+  // sch3 'retry' (S17) + sch4 'per-unit-after-save'. Both MUTATING, same shape as 12050/2018 below —
+  // except that sch3's save here DOES carry a Crown Timber volume, so the BR-09 push runs. It can only
+  // WRITE into a Schedule 1 that has been saved, and `sch3-anchors.setup.ts` asserts this mill-year has
+  // none (so the push answers WRN-002 and stores nothing). Schedule 4 is untouched by it either way: it
+  // owns category-"4" TRANSPORTATION_REPORT rows, which BR-09 never reaches.
   '22050/2019',
   '22050/2020',
   '22050/2021',
@@ -352,8 +358,22 @@ const SHARED_ACROSS_DOMAINS = new Map<string, string>([
       + 'line items and Other Costs. This is the narrowest margin of the five — both sit on the 1-10 '
       + 'track — so if a Schedule 1 scenario ever starts WRITING this anchor, this exemption must go.',
   ],
-  // The sch3 <-> sch4 shares (14 keys, one reason — see the note above).
+  // The sch3 <-> sch4 shares (16 keys, one reason — see the note above; 17052/2021 is the 17th sch3
+  // anchor on a sch4 report and is adjudicated separately, immediately below).
   ...SCH3_SCH4_KEYS.map((key) => [key, SCH3_SCH4_SHARED] as [string, string]),
+  // The one three-domain share, and the only sch1 <-> sch3 share in the suite.
+  [
+    '17052/2021',
+    "sch1 'no-schedule' (S21 render-state + S08 save-first gate — read-only) + sch3 'check-empty' "
+      + "(S10 — read-only) + sch4 'persistence' (mutating). ADJUDICATED 2026-08-31 (PR #402): sch1 and "
+      + 'sch3 genuinely contend — Schedule 1 derives its Forest Mgmt Admin / Silviculture Admin costs '
+      + 'FROM Schedule 3 and pre-fills its nine volume codes from a Schedule 3 Crown Timber volume '
+      + '(BR-09) — so this share is safe ONLY because the sch3 side is read-only and permanently EMPTY: '
+      + 'a Schedule 3 with no stored amounts leaves every Schedule 1 figure null and never arms the '
+      + "pre-fill, which is exactly what sch1's two scenarios assert. sch3's MUTATING `retry` anchor "
+      + 'used to sit here and was moved to 22050/2019 for that reason. If a sch3 scenario ever starts '
+      + 'WRITING this anchor, this exemption must go.',
+  ],
   // The one sch3 <-> sch11 share.
   [
     '24051/2015',
@@ -372,7 +392,7 @@ test('preflight: Cross-domain anchors are globally distinct', async () => {
   // It handles both object-literal property orders AND the positional `at(MILL_x, millId, year, …)`
   // builder that sch3 and sch4 use for their anchor TABLES. Until 2026-08-24 this guard matched only
   // the object literals, so it saw sch4's four guard anchors and NONE of its 48 table anchors — and
-  // none of sch3's 14 either: it ran, passed, and was blind to most of the keys it exists to compare
+  // none of sch3's 17 either: it ran, passed, and was blind to most of the keys it exists to compare
   // (the dead-check class VER-8 records, one level down). It also THROWS on a domain whose fixture it
   // cannot find, rather than skipping it, for the same reason. Two consumers re-deriving that regex
   // would reopen the hole, which is why it is one module.

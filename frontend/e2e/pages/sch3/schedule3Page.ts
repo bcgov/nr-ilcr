@@ -208,11 +208,24 @@ export class Schedule3Page {
     return { harvest: await cell(1), pop: await cell(2), crown: await cell(3) };
   }
 
-  /** A subtotal/total row's three money cells, addressed by the row's own label. */
+  /**
+   * A subtotal/total row's three money cells, addressed by the row's own label.
+   *
+   * The cell count is asserted before the cells are read (added 2026-08-31, raised in PR #402 review).
+   * `texts[1].trim()` on a row that rendered fewer cells — a column added or removed, or
+   * `filter({ hasText })` matching a differently-shaped row — throws `Cannot read properties of
+   * undefined (reading 'trim')` from inside the caller's `expect.poll`, which reports a JS error rather
+   * than the "the row shape changed" message the rest of this file takes care to produce.
+   */
   async totalCells(rowLabel: string): Promise<[string, string, string]> {
     const row = this.costTable.locator('tbody tr').filter({ hasText: rowLabel });
     await expect(row, `no Schedule 3 total row matched "${rowLabel}"`).toHaveCount(1);
     const texts = await row.locator('td').allInnerTexts();
+    expect(
+      texts.length,
+      `the Schedule 3 total row "${rowLabel}" rendered ${texts.length} cell(s) — this reads label + `
+        + 'Harvest + PO&P + Crown, so the cost table\'s shape changed. Re-ground the page object.',
+    ).toBeGreaterThanOrEqual(4);
     return [
       texts[1].trim().replaceAll(',', ''),
       texts[2].trim().replaceAll(',', ''),
@@ -224,6 +237,14 @@ export class Schedule3Page {
   async overheadCells(rowLabel: string): Promise<[string, string, string]> {
     const row = this.overheadTable.locator('tbody tr').filter({ hasText: rowLabel });
     await expect(row, `no Total Overhead row matched "${rowLabel}"`).toHaveCount(1);
+    // Same guard as `totalCells`, for the same reason. Here a missing `td` would instead surface as a
+    // locator timeout on `nth(2)` / `nth(3)` — slower, and it names the cell rather than the shape.
+    // Auto-waiting and exact: every row of this table is label + volume + cost + $/m³.
+    await expect(
+      row.locator('td'),
+      `the Total Overhead row "${rowLabel}" does not render exactly 4 cells (label + volume + cost + `
+        + "$/m³) — the overhead table's shape changed. Re-ground the page object.",
+    ).toHaveCount(4);
     const volumeCell = row.locator('td').nth(1);
     const volumeInput = volumeCell.locator('input');
     const volume =

@@ -22,10 +22,16 @@
 # so there is no Continue path to assert. Mirrors `sch3`'s `save-first-gate.feature`, which covers the same
 # behaviour on the other schedule #296 touched.
 #
-# ANCHOR. The existing read-only `no-schedule` render-state anchor (16050/2016) — a Draft, active mill-year
-# that has never been saved, already asserted by preflight and already used by S21. This scenario clicks a
-# link that refuses to navigate and writes nothing, so the anchor keeps its never-saved state and no
-# cleanup is needed.
+# ANCHOR. The existing read-only `no-schedule` render-state anchor — mill 727 / 2021 (17052/2021), a Draft,
+# active mill-year that has never been saved, already asserted by preflight and already used by S21. This
+# scenario clicks a link that refuses to navigate and writes nothing, so the anchor keeps its never-saved
+# state and no cleanup is needed.
+#
+# DO NOT "correct" THAT KEY TO 16050/2016. An earlier version of this header said 16050/2016, which is the
+# `no-schedule` GUARD anchor of sch11 / sec — a mill-year with NO ILCR_MILL_REPORT_STATUS row at all, so
+# schedule1 404s there and `Then the Schedule 1 input form is displayed` cannot pass. The distinction is
+# recorded in preflight/ci-seed-parity.setup.ts DELIBERATELY_ABSENT; the same mis-attribution was
+# corrected there once already.
 
 @sch1 @UC-SCH1-001 @save-first-gate
 Feature: Report Average Cost of Logging (Schedule 1) — Other Costs requires a saved schedule
