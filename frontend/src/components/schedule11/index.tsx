@@ -26,7 +26,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
-import { Edit, TrashCan } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Edit, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -886,7 +886,12 @@ const Schedule11: FC = () => {
         )}
 
         <Column sm={4} md={8} lg={16} className="schedule-11__actions">
-          <Button kind="tertiary" disabled={!editable || saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={!editable || saving}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
         </Column>
@@ -971,7 +976,12 @@ const Schedule11: FC = () => {
                   onChange={(e) => setAddField('comments', e.target.value)}
                 />
               </div>
-              <Button kind="primary" disabled={saving || editingId !== null} onClick={handleAdd}>
+              <Button
+                kind="primary"
+                renderIcon={Add}
+                disabled={saving || editingId !== null}
+                onClick={handleAdd}
+              >
                 Add
               </Button>
             </div>

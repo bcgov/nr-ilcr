@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type {
@@ -576,7 +576,12 @@ const Schedule10: FC = () => {
           <Button kind="primary" renderIcon={Add} disabled={controlsDisabled} onClick={openNewPage}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={controlsDisabled} onClick={checkStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={controlsDisabled}
+            onClick={checkStatus}
+          >
             Check Status
           </Button>
         </Column>

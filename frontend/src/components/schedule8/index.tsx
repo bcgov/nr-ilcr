@@ -21,7 +21,7 @@ import {
   TextArea,
   TextInput,
 } from '@carbon/react'
-import { Add, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
@@ -793,7 +793,12 @@ const Schedule8: FC = () => {
           <Button kind="primary" renderIcon={Add} disabled={!editable || saving} onClick={openNew}>
             Add New Page
           </Button>
-          <Button kind="tertiary" disabled={saving} onClick={handleCheckStatus}>
+          <Button
+            kind="tertiary"
+            renderIcon={CheckmarkOutline}
+            disabled={saving}
+            onClick={handleCheckStatus}
+          >
             Check Status
           </Button>
         </Column>
