@@ -113,6 +113,13 @@ const EnhancedDropdown: FC<EnhancedDropdownProps> = ({
     titleText={label}
     hideLabel={hideLabel}
     label="Select"
+    // Deliberately NO `size` prop: field height is owned app-wide by the global
+    // --cds-layout-size-height-local override (styles/_overrides.scss, Story 30.2 / #312 — 48px
+    // page-level, 40px inside .cds--data-table). Passing size="sm" here does NOT shrink a
+    // TextInput or ComboBox (neither has a size rule that touches block-size, so both keep
+    // reading the token) but it DOES shrink a Dropdown: `.cds--dropdown--sm` hardcodes
+    // `block-size: 2rem` directly, which outranks the token at equal specificity by source
+    // order. That left this one control 32px beside its 48px neighbours.
     items={ENHANCED_ITEMS as unknown as EnhancedItem[]}
     itemToString={(item) => item?.label ?? ''}
     selectedItem={ENHANCED_ITEMS.find((item) => item.value === value) ?? null}
@@ -205,6 +212,7 @@ const BiogeoComboBox: FC<BiogeoComboBoxProps> = ({
       // aria-label while titleText is set.
       titleText={hideLabel ? undefined : label}
       aria-label={label}
+      // No `size` prop, same as EnhancedDropdown — the global height override owns this.
       placeholder="Type to search"
       disabled={disabled}
       items={items}
