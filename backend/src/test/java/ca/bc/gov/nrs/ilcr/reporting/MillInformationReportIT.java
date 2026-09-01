@@ -157,13 +157,21 @@ class MillInformationReportIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("the associated-user tables are absent — no GUID reaches the page")
-  void associatedUserTablesAreNotRendered() throws Exception {
+  @DisplayName("the associated-user sections keep their legacy frame but carry no rows")
+  void associatedUserSectionsAreFramedButEmpty() throws Exception {
     String text = pdfText(2021);
 
+    // The legacy frame is kept — both headings and their separating rules — so the document holds
+    // its shape and the gap is visible rather than a silently missing section.
+    assertThat(text).contains("Submitter/Licensee's Delegate").contains("Associated Auditor(s)");
+
+    // But no user ROW is rendered. "Email:" and "Phone Number:" exist only inside those two tables
+    // (the mill block's own label is "Name:"), so their absence is what proves the tables are
+    // empty.
+    // And no raw GUID reaches the page, which is the outcome the descope exists to prevent.
     assertThat(text)
-        .doesNotContain("Associated Auditor")
-        .doesNotContain("Submitter/Licensee")
+        .doesNotContain("Email:")
+        .doesNotContain("Phone Number:")
         .doesNotContain(CANONICAL_SUBMITTER_GUID);
   }
 
