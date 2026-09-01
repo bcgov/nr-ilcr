@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millinformation.dto.MillInformationSection;
+import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.BadSqlGrammarException;
 
 /**
  * Unit tests for the entity → DTO projection.
@@ -31,6 +33,8 @@ class MillInformationServiceTest {
   @Test
   @DisplayName("every column lands in its own field, and the date prefixes are stripped")
   void projectionIsFieldAccurate() {
+    when(repository.findZoneDescriptions())
+        .thenReturn(List.of(new ZoneDescriptionEntity("Z1", "Kootenay")));
     when(repository.findSectionRows(2021)).thenReturn(List.of(row("ACT")));
 
     MillInformationSection section = service.findSections(2021).getFirst();
@@ -38,7 +42,7 @@ class MillInformationServiceTest {
     assertThat(section.millId()).isEqualTo(730);
     assertThat(section.millNumber()).isEqualTo("number");
     assertThat(section.millName()).isEqualTo("name");
-    assertThat(section.region()).isEqualTo("region");
+    assertThat(section.region()).isEqualTo("Kootenay");
     assertThat(section.clientName()).isEqualTo("clientName");
     assertThat(section.address1()).isEqualTo("address1");
     assertThat(section.address2()).isEqualTo("address2");
@@ -102,6 +106,21 @@ class MillInformationServiceTest {
   }
 
   @Test
+  @DisplayName("an unreadable zone table costs the Region only, not the whole report")
+  void missingZoneTableDegradesToNoRegion() {
+    // ISP_SELL_PRICE_ZONE_CODE is reached through a PUBLIC synonym that is dangling on the FTA dev
+    // database, so Oracle answers ORA-00942. The report must still render.
+    when(repository.findZoneDescriptions())
+        .thenThrow(new BadSqlGrammarException("select", "select 1", new SQLException("ORA-00942")));
+    when(repository.findSectionRows(2021)).thenReturn(List.of(row("ACT")));
+
+    MillInformationSection section = service.findSections(2021).getFirst();
+
+    assertThat(section.region()).isNull();
+    assertThat(section.millName()).isEqualTo("name");
+  }
+
+  @Test
   @DisplayName("no rows for the year yields no sections rather than an error")
   void emptyYearYieldsNoSections() {
     when(repository.findSectionRows(1999)).thenReturn(List.of());
@@ -116,7 +135,7 @@ class MillInformationServiceTest {
         "number",
         "name",
         statusCode,
-        "region",
+        "Z1",
         "clientName",
         "address1",
         "address2",

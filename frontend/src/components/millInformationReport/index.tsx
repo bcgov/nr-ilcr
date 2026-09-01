@@ -1,9 +1,9 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
-import { Button, Column, Grid, Select, SelectItem } from '@carbon/react'
-import { Report } from '@carbon/icons-react'
+import { Button, Column, Grid, InlineNotification, Select, SelectItem } from '@carbon/react'
+import { Download } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
-import NotificationColumn from '@/components/core/NotificationColumn'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { extractDetail } from '@/utils/error'
 import { extractBlobDetail, triggerDownload } from '@/utils/download'
 import type ReportingYear from '@/interfaces/ReportingYear'
@@ -15,12 +15,16 @@ const PDF_FILENAME = 'mills_print.pdf'
 const YEAR_REQUIRED = 'Report Year: Value is required.'
 
 /**
- * Mill Information Report. Administrators pick a report year and download a PDF covering every mill
- * — one section per mill — for that year.
+ * Mill Information Report (UC-MRPT-003). Administrators pick a report year and download a PDF
+ * covering every mill — one section per mill — for that year.
+ *
+ * <p>Built on the Print Schedules page's shape (tombstone, grid, inline notifications, a single
+ * action row) so the two report surfaces read as siblings. It carries the legacy screen's content —
+ * the explanatory note and the "Report Year:" selector — without the legacy panel chrome.
  *
  * <p>Unlike the schedule pages this one takes NO mill/year working context: it neither reads nor
- * needs the Home selection, which is why there is no context guard or tombstone here. The year list
- * holds only opened reporting periods, newest first, and the newest is pre-selected.
+ * needs the Home selection, which is why there is no context guard here. The year list holds only
+ * opened reporting periods, newest first, and the newest is pre-selected.
  */
 const MillInformationReport: FC = () => {
   const [years, setYears] = useState<ReportingYear[]>([])
@@ -68,45 +72,72 @@ const MillInformationReport: FC = () => {
   }
 
   return (
-    <Grid className="mill-information-report">
-      <Column sm={4} md={8} lg={16}>
-        <h1 className="mill-information-report__heading">Mill Information Report</h1>
-        <p className="mill-information-report__intro">
-          Generates a PDF covering every mill for the selected report year, with each mill&apos;s
-          information, reporting status milestones, ownership and contacts.
-        </p>
-      </Column>
-
-      {loadError && <NotificationColumn kind="error" title="Error" subtitle={loadError} />}
-      {error && <NotificationColumn kind="error" title="Error" subtitle={error} />}
-
-      <Column sm={4} md={4} lg={6}>
-        <Select
-          id="mill-information-report-year"
-          labelText="Report Year"
-          value={selectedYear}
-          // Locked while a report builds: changing it mid-flight would leave the screen showing one
-          // year while the file that lands was built for another, with nothing to reveal the swap.
-          disabled={busy || years.length === 0}
-          onChange={(event) => setSelectedYear(event.target.value)}
-        >
-          {years.length === 0 && <SelectItem value="" text="" />}
-          {years.map((year) => (
-            <SelectItem
-              key={year.reportYear}
-              value={String(year.reportYear)}
-              text={String(year.reportYear)}
+    <div className="app-page">
+      <ScheduleTombstone title="Mill Information Report" />
+      <Grid fullWidth className="app-page__body">
+        <Column sm={4} md={8} lg={16} className="mill-information-report">
+          {loadError && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              title="Error"
+              subtitle={loadError}
+              onCloseButtonClick={() => setLoadError(null)}
             />
-          ))}
-        </Select>
-      </Column>
+          )}
+          {error && (
+            <InlineNotification
+              kind="error"
+              lowContrast
+              title="Report failed"
+              subtitle={error}
+              onCloseButtonClick={() => setError(null)}
+            />
+          )}
 
-      <Column sm={4} md={8} lg={16}>
-        <Button renderIcon={Report} onClick={generate} disabled={busy}>
-          {busy ? 'Generating…' : 'Generate Report'}
-        </Button>
-      </Column>
-    </Grid>
+          {/*
+            Legacy reads "the mill's associated with the current logged in user". Under DL-23 the
+            Administrator variant is the target and the report is unscoped, so that wording would
+            misdescribe what this build produces.
+          */}
+          <p className="mill-information-report__note">
+            The Mill Information Report created will include a report on every mill.
+          </p>
+          {/*
+            Legacy also promises "the information of the licensees and auditors currently associated
+            with each mill". Those tables are descoped — the app cannot resolve a person's name from
+            a stored USER_GUID — so promising them here would be a claim the PDF does not honour.
+          */}
+          <p className="mill-information-report__note">
+            The report will list the mill&apos;s information and the status history of each mill.
+          </p>
+
+          <Select
+            id="mill-information-report-year"
+            className="mill-information-report__year"
+            labelText="Report Year:"
+            value={selectedYear}
+            disabled={busy || years.length === 0}
+            onChange={(event) => setSelectedYear(event.target.value)}
+          >
+            {years.length === 0 && <SelectItem value="" text="" />}
+            {years.map((year) => (
+              <SelectItem
+                key={year.reportYear}
+                value={String(year.reportYear)}
+                text={String(year.reportYear)}
+              />
+            ))}
+          </Select>
+
+          <div className="mill-information-report__actions">
+            <Button renderIcon={Download} onClick={generate} disabled={busy}>
+              {busy ? 'Generating…' : 'Generate Report'}
+            </Button>
+          </div>
+        </Column>
+      </Grid>
+    </div>
   )
 }
 

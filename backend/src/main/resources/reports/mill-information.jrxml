@@ -1,33 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Mill Information report — JasperReports 7 template (AD-16), ported from the legacy
-  src/jasper-reports/MillInformation.jrxml with its portrait A4 geometry and section order preserved
-  (FR9 column/section parity; redesign latitude rides DL-20).
+  src/jasper-reports/MillInformation.jrxml.
 
-  Filled from a bean datasource: one row per mill, so the detail band IS the per-mill section and a
-  17-mill year renders 17 of them. All values arrive PRE-FORMATTED as Strings with "-" already
-  substituted for absent data, matching how legacy built its JRMapCollectionDataSource — the template
-  binds String fields and formats nothing itself.
+  The geometry below is transcribed from the legacy template element by element — every x/y/width and
+  every bold/plain style — rather than reinterpreted, because FR9's parity minimum is the layout a
+  ministry reader already knows. Notably legacy right-aligns its labels into a narrow left gutter and
+  runs the mill block and the Schedule Status block as two side-by-side columns, with horizontal rules
+  separating the four sections. An earlier pass rebuilt this as a single left-aligned stack, which
+  carried the same data in a visibly different document.
 
-  The legacy Submitter/Licensee's Delegate and Associated Auditor(s) tables are deliberately absent.
-  Nothing in the system can turn a stored USER_GUID into a person's name: ILCR_USER holds no name, and
-  the directory offers GUID lookup for BCeID only, so those tables could only have printed raw GUIDs.
-  They return once name resolution exists.
+  Filled from a bean datasource: one row per mill, so the detail band IS the per-mill section. All
+  values arrive PRE-FORMATTED as Strings with "-" (address/region/contact) or "" (milestones,
+  ownership, indicator) already substituted, matching legacy's own null handling.
+
+  The two associated-user tables are present as headings and rules but carry no rows: nothing in the
+  app can resolve a person's name from a stored USER_GUID (ILCR_USER holds none, and the directory
+  offers GUID lookup for BCeID only), so their content is descoped pending a name-resolution
+  decision. The frame is kept so the document keeps legacy's shape and the gap is visible rather than
+  a silently missing section.
 -->
 <jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
     name="mill-information" pageWidth="595" pageHeight="842"
     whenNoDataType="AllSectionsNoDetail" columnWidth="555" leftMargin="20" rightMargin="20"
     topMargin="30" bottomMargin="30">
+  <!--
+    Legacy's Arial10b / Arial10 pair: labels bold, values plain.
+
+    Legacy sized every label box to ARIAL's metrics. The engine's default sans is wider, so three
+    right-aligned labels clip at legacy's exact widths — "Submitted:" rendered as "Submitte" and
+    "Active:" lost its colon. Setting a Helvetica font was tried and does NOT help: JasperReports
+    measures with AWT at fill time, Helvetica is not an installed face, so it falls back to the same
+    wide default and only the PDF text would have changed. The three labels are widened LEFTWARD
+    instead, holding their right edge at x=473 so every value column stays exactly where legacy put
+    it. Each is marked below.
+  -->
   <style name="bold" bold="true"/>
   <parameter name="year" class="java.lang.Integer"/>
-  <!-- Defaulted so a caller that omits it cannot silently blank the report body: a null Boolean
-       evaluates falsey in every printWhenExpression below. -->
+  <!--
+    Defaulted so a caller that omits it cannot silently blank the report body: a null Boolean
+    evaluates falsey in the band's printWhenExpression below.
+  -->
   <parameter name="p_do_print_body" class="java.lang.Boolean">
     <defaultValueExpression><![CDATA[Boolean.TRUE]]></defaultValueExpression>
   </parameter>
-  <!-- The per-mill PDF outline title. Legacy emitted one bookmark per mill via batch-mode export
-       (SchedulesPrinter sets setCreatingBatchModeBookmarks(true)); an in-template anchor reproduces
-       that and, unlike batch mode, still emits for a year that holds a single mill. -->
+  <!--
+    The per-mill PDF outline title. Legacy emitted one bookmark per mill via batch-mode export
+    (SchedulesPrinter sets setCreatingBatchModeBookmarks(true)); an in-template anchor reproduces
+    that and, unlike batch mode, still emits for a year that holds a single mill.
+  -->
   <parameter name="bookmarkTitle" class="java.lang.String"/>
   <field name="mill" class="java.lang.String"/>
   <field name="millAddress1" class="java.lang.String"/>
@@ -47,151 +68,185 @@
   <field name="divisionName" class="java.lang.String"/>
   <field name="divisionPhone" class="java.lang.String"/>
   <title height="31">
-      <!-- White text field carrying the outline anchor, as every schedule template does; suppressed
-           when no title is passed. The title has to stay as the VISIBLE expression: an element that
-           renders nothing emits no anchor, and the PDF then has no outline at all. The cost is an
-           invisible duplicate of the heading that text extraction picks up — shared with the sibling
-           templates, and why the IT's section slicer takes the LAST matching block. -->
-      <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
-          bookmarkLevel="1" blankWhenNull="true">
-        <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
-        <expression><![CDATA[$P{bookmarkTitle}]]></expression>
-        <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
-      </element>
-      <element kind="staticText" style="bold" x="0" y="0" width="555" height="15" hTextAlign="Center">
-        <text><![CDATA[Government of British Columbia]]></text>
-      </element>
-      <element kind="textField" x="0" y="15" width="555" height="15" hTextAlign="Center">
-        <expression><![CDATA[$P{year} + " Annual Interior Logging Cost Report"]]></expression>
-      </element>
+    <!--
+      White text field carrying the outline anchor. The title has to stay as the VISIBLE expression:
+      an element that renders nothing emits no anchor, and the PDF then has no outline at all. White
+      on white keeps it invisible; the IT's section slicer accounts for the extraction artefact.
+    -->
+    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
+        bookmarkLevel="1" blankWhenNull="true">
+      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
+      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
+      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
+    </element>
+    <element kind="staticText" style="bold" x="0" y="0" width="553" height="15" hTextAlign="Center">
+      <text><![CDATA[Government of British Columbia]]></text>
+    </element>
+    <!-- Legacy splits the year and the report name into two elements at these exact offsets. -->
+    <element kind="textField" x="194" y="15" width="34" height="15">
+      <expression><![CDATA[$P{year}]]></expression>
+    </element>
+    <!--
+      ONE deliberate deviation from legacy's geometry: legacy sets width=136 here, which is too narrow
+      for this string at Arial 10 — its own production output clips to "Annual Interior Logging"
+      mid-phrase. The x offset is legacy's; only the width is widened so the report's own title is
+      readable. Reverting to 136 reproduces the clip exactly, if strict parity is preferred.
+    -->
+    <element kind="staticText" style="bold" x="228" y="15" width="220" height="15" hTextAlign="Left">
+      <text><![CDATA[Annual Interior Logging Cost Report]]></text>
+    </element>
   </title>
   <pageHeader height="30">
-      <element kind="staticText" style="bold" x="0" y="0" width="300" height="15">
-        <text><![CDATA[Mill Information]]></text>
-      </element>
-      <element kind="staticText" x="353" y="0" width="202" height="15" hTextAlign="Right">
-        <text><![CDATA[Timber Pricing Branch]]></text>
-      </element>
+    <!-- Both plain in legacy (Arial10), despite the visual weight difference a scaled render suggests. -->
+    <element kind="staticText" x="0" y="0" width="400" height="15">
+      <text><![CDATA[Mill Information]]></text>
+    </element>
+    <element kind="staticText" x="400" y="0" width="153" height="15" hTextAlign="Right">
+      <text><![CDATA[Timber Pricing Branch]]></text>
+    </element>
   </pageHeader>
   <detail>
-    <band height="265">
+    <band height="307">
       <!-- Legacy gates the ENTIRE section on this flag, not just the status block. -->
       <printWhenExpression><![CDATA[$P{p_do_print_body}]]></printWhenExpression>
-      <element kind="textField" style="bold" x="0" y="0" width="353" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{mill}]]></expression>
-      </element>
-      <!-- Legacy stamps the generation time inside each mill's section, not in the page header. -->
-      <element kind="textField" x="353" y="0" width="202" height="15" hTextAlign="Right" pattern="MMMMM dd, yyyy HH:mm:ss">
+
+      <!-- Generation stamp: legacy places it at y=-15, so it prints in the header gutter above the row. -->
+      <element kind="textField" x="400" y="-15" width="153" height="15" hTextAlign="Right"
+          pattern="MMMMM dd, yyyy HH:mm:ss">
         <expression><![CDATA[new java.util.Date()]]></expression>
       </element>
 
-      <element kind="staticText" x="0" y="22" width="90" height="15">
-        <text><![CDATA[Address:]]></text>
+      <!-- Header row: mill identity left, the Active flag hard right. -->
+      <element kind="textField" style="bold" x="0" y="0" width="360" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{mill}]]></expression>
       </element>
-      <element kind="textField" x="95" y="22" width="250" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{millAddress1}]]></expression>
-      </element>
-      <element kind="textField" x="95" y="37" width="250" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{millAddress2}]]></expression>
-      </element>
-      <element kind="staticText" x="0" y="52" width="90" height="15">
-        <text><![CDATA[City:]]></text>
-      </element>
-      <element kind="textField" x="95" y="52" width="250" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{millCity}]]></expression>
-      </element>
-      <element kind="staticText" x="0" y="67" width="90" height="15">
-        <text><![CDATA[Postal Code:]]></text>
-      </element>
-      <element kind="textField" x="95" y="67" width="250" height="15" blankWhenNull="true">
-        <expression><![CDATA[$F{millPostalCode}]]></expression>
-      </element>
-      <element kind="staticText" x="0" y="82" width="90" height="15">
-        <text><![CDATA[Region:]]></text>
-      </element>
-      <element kind="textField" x="95" y="82" width="250" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{millRegion}]]></expression>
-      </element>
-      <element kind="staticText" x="0" y="97" width="90" height="15">
+      <!-- widened from legacy x=437 w=36: clipped the colon under this engine's default font -->
+      <element kind="staticText" style="bold" x="425" y="0" width="48" height="15" hTextAlign="Right">
         <text><![CDATA[Active:]]></text>
       </element>
-      <element kind="textField" x="95" y="97" width="250" height="15" blankWhenNull="true">
+      <element kind="textField" x="476" y="0" width="70" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{millActive}]]></expression>
       </element>
 
-      <element kind="staticText" style="bold" x="0" y="119" width="200" height="15">
+      <!-- Left column: ownership name, then the mill's address block. Labels right-aligned into the gutter. -->
+      <element kind="staticText" style="bold" x="0" y="27" width="80" height="15" hTextAlign="Right">
+        <text><![CDATA[Name:]]></text>
+      </element>
+      <element kind="textField" x="82" y="27" width="214" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{ownerClientName}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="44" width="80" height="15" hTextAlign="Right">
+        <text><![CDATA[Address:]]></text>
+      </element>
+      <element kind="textField" x="82" y="44" width="335" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{millAddress1}]]></expression>
+      </element>
+      <element kind="textField" x="82" y="59" width="335" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{millAddress2}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="74" width="80" height="15" hTextAlign="Right">
+        <text><![CDATA[City:]]></text>
+      </element>
+      <element kind="textField" x="82" y="74" width="280" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{millCity}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="90" width="80" height="15" hTextAlign="Right">
+        <text><![CDATA[Postal Code:]]></text>
+      </element>
+      <element kind="textField" x="82" y="90" width="96" height="15" blankWhenNull="true">
+        <expression><![CDATA[$F{millPostalCode}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="0" y="106" width="80" height="15" hTextAlign="Right">
+        <text><![CDATA[Region:]]></text>
+      </element>
+      <element kind="textField" x="82" y="106" width="280" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{millRegion}]]></expression>
+      </element>
+
+      <!-- Right column: the four status milestones, beside the address block rather than beneath it. -->
+      <element kind="staticText" style="bold" x="415" y="44" width="137" height="15" hTextAlign="Center">
         <text><![CDATA[Schedule Status]]></text>
       </element>
-      <element kind="staticText" x="0" y="136" width="90" height="15">
+      <element kind="staticText" style="bold" x="431" y="59" width="42" height="15" hTextAlign="Right">
         <text><![CDATA[Open:]]></text>
       </element>
-      <element kind="textField" x="95" y="136" width="160" height="15" blankWhenNull="true">
+      <element kind="textField" x="476" y="59" width="70" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{openDate}]]></expression>
       </element>
-      <element kind="staticText" x="280" y="136" width="90" height="15">
+      <element kind="staticText" style="bold" x="431" y="74" width="42" height="15" hTextAlign="Right">
         <text><![CDATA[Draft:]]></text>
       </element>
-      <element kind="textField" x="375" y="136" width="160" height="15" blankWhenNull="true">
+      <element kind="textField" x="476" y="74" width="70" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{draftStatusDate}]]></expression>
       </element>
-      <element kind="staticText" x="0" y="151" width="90" height="15">
+      <!-- widened from legacy x=415 w=58: rendered as "Submitte" -->
+      <element kind="staticText" style="bold" x="403" y="90" width="70" height="15" hTextAlign="Right">
         <text><![CDATA[Submitted:]]></text>
       </element>
-      <element kind="textField" x="95" y="151" width="160" height="15" blankWhenNull="true">
+      <element kind="textField" x="476" y="90" width="70" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{submittedStatusDate}]]></expression>
       </element>
-      <element kind="staticText" x="280" y="151" width="90" height="15">
+      <!-- widened from legacy x=431 w=42: rendered as "Verifie" -->
+      <element kind="staticText" style="bold" x="419" y="106" width="54" height="15" hTextAlign="Right">
         <text><![CDATA[Verified:]]></text>
       </element>
-      <element kind="textField" x="375" y="151" width="160" height="15" blankWhenNull="true">
+      <element kind="textField" x="476" y="106" width="70" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{verifiedStatusDate}]]></expression>
       </element>
 
-      <element kind="staticText" x="0" y="190" width="90" height="15">
-        <text><![CDATA[Name:]]></text>
-      </element>
-      <element kind="textField" x="95" y="190" width="440" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{ownerClientName}]]></expression>
-      </element>
+      <element kind="line" x="2" y="124" width="550" height="1"/>
 
-      <element kind="staticText" style="bold" x="0" y="212" width="200" height="15">
+      <!-- Contacts: the head-office indicator sits inline beside the heading, unlabelled, as in legacy. -->
+      <element kind="staticText" style="bold" x="2" y="131" width="70" height="15" hTextAlign="Left">
         <text><![CDATA[Contacts]]></text>
       </element>
-      <element kind="staticText" style="bold" x="0" y="229" width="90" height="15">
-        <text><![CDATA[Head Office]]></text>
-      </element>
-      <element kind="textField" x="95" y="229" width="200" height="15" blankWhenNull="true" textAdjust="StretchHeight">
-        <expression><![CDATA[$F{headOfficeName}]]></expression>
-      </element>
-      <element kind="textField" x="300" y="229" width="120" height="15" blankWhenNull="true">
-        <expression><![CDATA[$F{headOfficePhone}]]></expression>
-      </element>
-      <element kind="textField" x="500" y="229" width="35" height="15" blankWhenNull="true">
+      <element kind="textField" x="76" y="131" width="180" height="15" blankWhenNull="true">
         <expression><![CDATA[$F{contactIndicator}]]></expression>
       </element>
-      <element kind="staticText" style="bold" x="0" y="244" width="90" height="15">
+      <element kind="staticText" style="bold" x="2" y="150" width="70" height="15" hTextAlign="Right">
+        <text><![CDATA[Head Office]]></text>
+      </element>
+      <element kind="textField" x="76" y="150" width="180" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+        <expression><![CDATA[$F{headOfficeName}]]></expression>
+      </element>
+      <element kind="textField" x="76" y="165" width="180" height="15" hTextAlign="Left" blankWhenNull="true">
+        <expression><![CDATA[$F{headOfficePhone}]]></expression>
+      </element>
+      <element kind="staticText" style="bold" x="298" y="150" width="70" height="15" hTextAlign="Right">
         <text><![CDATA[Division]]></text>
       </element>
-      <element kind="textField" x="95" y="244" width="200" height="15" blankWhenNull="true" textAdjust="StretchHeight">
+      <element kind="textField" x="372" y="150" width="180" height="15" blankWhenNull="true" textAdjust="StretchHeight">
         <expression><![CDATA[$F{divisionName}]]></expression>
       </element>
-      <element kind="textField" x="300" y="244" width="120" height="15" blankWhenNull="true">
+      <element kind="textField" x="372" y="165" width="180" height="15" hTextAlign="Left" blankWhenNull="true">
         <expression><![CDATA[$F{divisionPhone}]]></expression>
       </element>
+
+      <element kind="line" x="2" y="183" width="550" height="1"/>
+      <element kind="staticText" style="bold" x="0" y="187" width="200" height="15" hTextAlign="Left">
+        <text><![CDATA[Submitter/Licensee's Delegate]]></text>
+      </element>
+
+      <element kind="line" x="2" y="241" width="550" height="1"/>
+      <element kind="staticText" style="bold" x="2" y="248" width="200" height="15" hTextAlign="Left">
+        <text><![CDATA[Associated Auditor(s)]]></text>
+      </element>
+
+      <element kind="line" x="2" y="302" width="550" height="1"/>
     </band>
   </detail>
   <pageFooter height="15">
-      <element kind="staticText" x="400" y="0" width="40" height="15" hTextAlign="Right">
-        <text><![CDATA[Page:]]></text>
-      </element>
-      <element kind="textField" x="445" y="0" width="60" height="15" hTextAlign="Right" evaluationTime="Now">
-        <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
-      </element>
-      <element kind="staticText" x="507" y="0" width="15" height="15" hTextAlign="Center">
-        <text><![CDATA[of]]></text>
-      </element>
-      <element kind="textField" x="524" y="0" width="31" height="15" evaluationTime="Report">
-        <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
-      </element>
+    <element kind="staticText" x="454" y="0" width="32" height="15">
+      <text><![CDATA[Page:]]></text>
+    </element>
+    <element kind="textField" x="488" y="0" width="22" height="15" hTextAlign="Center" evaluationTime="Now">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
+    <element kind="staticText" x="510" y="0" width="21" height="15" hTextAlign="Center">
+      <text><![CDATA[of]]></text>
+    </element>
+    <element kind="textField" x="531" y="0" width="22" height="15" hTextAlign="Center" evaluationTime="Report">
+      <expression><![CDATA[$V{PAGE_NUMBER}]]></expression>
+    </element>
   </pageFooter>
 </jasperReport>

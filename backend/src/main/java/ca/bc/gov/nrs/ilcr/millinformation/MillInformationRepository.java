@@ -48,7 +48,7 @@ public interface MillInformationRepository extends Repository<MillInformationRow
              m.MILL_NUMBER,
              m.MILL_NAME,
              v.ILCR_MILL_STATUS_CODE,
-             z.DESCRIPTION      AS REGION_DESCRIPTION,
+             m.ISP_SELL_PRICE_ZONE_CODE AS REGION_CODE,
              cl.CLIENT_LOCN_NAME,
              cl.ADDRESS_1,
              cl.ADDRESS_2,
@@ -68,8 +68,6 @@ public interface MillInformationRepository extends Repository<MillInformationRow
           ON m.MILL_ID = v.ILCR_MILL_ID
         LEFT JOIN THE.ILCR_MILL_STATUS_XREF x
           ON x.ILCR_MILL_STATUS_XREF_ID = m.MILL_ID
-        LEFT JOIN THE.ISP_SELL_PRICE_ZONE_CODE z
-          ON z.ISP_SELL_PRICE_ZONE_CODE = m.ISP_SELL_PRICE_ZONE_CODE
         LEFT JOIN THE.CLIENT_LOCATION cl
           ON cl.CLIENT_NUMBER = m.CLIENT_NUMBER
          AND cl.CLIENT_LOCN_CODE = m.CLIENT_LOCN_CODE
@@ -81,4 +79,24 @@ public interface MillInformationRepository extends Repository<MillInformationRow
        ORDER BY v.ILCR_MILL_ID
       """)
   List<MillInformationRowEntity> findSectionRows(@Param("year") int year);
+
+  /**
+   * The selling-price zone code to description lookup, read SEPARATELY from the section rows.
+   *
+   * <p>It is not joined into {@link #findSectionRows} on purpose. {@code ISP_SELL_PRICE_ZONE_CODE}
+   * is a shared ministry table reached through a PUBLIC synonym, and on the FTA development
+   * database that synonym is dangling: the underlying table is absent, so ANY reference to it fails
+   * the whole statement at parse time with ORA-00942, join type notwithstanding. Joined in, one
+   * missing code table took down the entire report; read apart, a mill simply shows "-" for its
+   * region, which is the fallback that field already has. Region is a display description, not
+   * report data.
+   *
+   * @return one row per zone code
+   */
+  @Query(
+      """
+      SELECT ISP_SELL_PRICE_ZONE_CODE, DESCRIPTION
+        FROM THE.ISP_SELL_PRICE_ZONE_CODE
+      """)
+  List<ZoneDescriptionEntity> findZoneDescriptions();
 }

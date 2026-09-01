@@ -43,7 +43,7 @@ describe('Mill Information Report', () => {
     yearsRespond(OPEN_YEARS)
     render(<MillInformationReport />)
 
-    const select = await screen.findByLabelText('Report Year')
+    const select = await screen.findByLabelText('Report Year:')
     await waitFor(() => expect(select).toHaveValue('2021'))
     expect(screen.getByRole('option', { name: '2019' })).toBeInTheDocument()
   })
@@ -54,7 +54,7 @@ describe('Mill Information Report', () => {
     reportRespondsWithPdf(requested)
     render(<MillInformationReport />)
 
-    await waitFor(() => expect(screen.getByLabelText('Report Year')).toHaveValue('2021'))
+    await waitFor(() => expect(screen.getByLabelText('Report Year:')).toHaveValue('2021'))
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
     await waitFor(() => expect(requested).toHaveBeenCalledWith('2021'))
@@ -69,7 +69,7 @@ describe('Mill Information Report', () => {
     reportRespondsWithPdf(requested)
     render(<MillInformationReport />)
 
-    const select = await screen.findByLabelText('Report Year')
+    const select = await screen.findByLabelText('Report Year:')
     await waitFor(() => expect(select).toHaveValue('2021'))
     await userEvent.selectOptions(select, '2019')
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
@@ -83,7 +83,7 @@ describe('Mill Information Report', () => {
     reportRespondsWithPdf(requested)
     render(<MillInformationReport />)
 
-    await waitFor(() => expect(screen.getByLabelText('Report Year')).toBeDisabled())
+    await waitFor(() => expect(screen.getByLabelText('Report Year:')).toBeDisabled())
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
     expect(await screen.findByText(YEAR_REQUIRED)).toBeInTheDocument()
@@ -99,7 +99,7 @@ describe('Mill Information Report', () => {
     server.use(http.get(REPORT_ENDPOINT, () => HttpResponse.error()))
     render(<MillInformationReport />)
 
-    await waitFor(() => expect(screen.getByLabelText('Report Year')).toHaveValue('2021'))
+    await waitFor(() => expect(screen.getByLabelText('Report Year:')).toHaveValue('2021'))
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
     // An error banner appears and no file is produced. The VERBATIM undefinedError text is a wire
@@ -107,7 +107,7 @@ describe('Mill Information Report', () => {
     expect(await screen.findByText('Unable to generate the report.')).toBeInTheDocument()
     expect(downloaded).not.toHaveBeenCalled()
     // The selection is untouched, so pressing Generate again retries the year that was held.
-    expect(screen.getByLabelText('Report Year')).toHaveValue('2021')
+    expect(screen.getByLabelText('Report Year:')).toHaveValue('2021')
 
     const retried = vi.fn()
     reportRespondsWithPdf(retried)
@@ -130,7 +130,7 @@ describe('Mill Information Report', () => {
     )
     render(<MillInformationReport />)
 
-    const select = await screen.findByLabelText('Report Year')
+    const select = await screen.findByLabelText('Report Year:')
     await waitFor(() => expect(select).toHaveValue('2021'))
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 

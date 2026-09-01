@@ -27,7 +27,8 @@ import org.springframework.data.relational.core.mapping.Table;
  * @param millName the mill name
  * @param millStatusCode {@code ACT}/{@code CLS} for the REPORTING YEAR, from the view — not the
  *     mill's status today, which is what the xref carries
- * @param regionDescription the selling-price zone description; nullable
+ * @param regionCode the selling-price zone code; nullable. Its DESCRIPTION is resolved separately
+ *     by {@code MillInformationRepository.findZoneDescriptions}
  * @param clientLocationName the ownership client name; nullable
  * @param address1 client location address line 1; nullable
  * @param address2 client location address line 2; nullable
@@ -49,7 +50,7 @@ public record MillInformationRowEntity(
     @Column("MILL_NUMBER") String millNumber,
     @Column("MILL_NAME") String millName,
     @Column("ILCR_MILL_STATUS_CODE") String millStatusCode,
-    @Column("REGION_DESCRIPTION") String regionDescription,
+    @Column("REGION_CODE") String regionCode,
     @Column("CLIENT_LOCN_NAME") String clientLocationName,
     @Column("ADDRESS_1") String address1,
     @Column("ADDRESS_2") String address2,
