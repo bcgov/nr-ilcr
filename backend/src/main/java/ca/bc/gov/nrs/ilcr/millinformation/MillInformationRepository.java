@@ -91,6 +91,12 @@ public interface MillInformationRepository extends Repository<MillInformationRow
    * region, which is the fallback that field already has. Region is a display description, not
    * report data.
    *
+   * <p><b>Two consumers.</b> Besides {@link MillInformationService}, {@code
+   * ca.bc.gov.nrs.ilcr.millreportstatus.MillReportStatusService} borrows THIS method for the Mill
+   * Status Report table's Region column (Story 19.2) — deliberately, so there is one definition of
+   * the read that has to survive a dangling PUBLIC synonym rather than two copies that can drift.
+   * Renaming or narrowing it while working on 19.1 breaks 19.2 as well.
+   *
    * @return one row per zone code
    */
   @Query(

@@ -59,13 +59,18 @@ const OtherCostsPage: FC = () => {
 
   // Client-side column sort, matching legacy schedule1OtherCosts.xhtml (Description / Volume / Cost
   // sortable; the derived $/m³ column is not). See useRowSort for the snapshot-on-click semantics.
-  const sort = useRowSort(rows, {
-    description: (row) => row.description,
-    // Volume is the single shared Other-Costs volume (identical on every row), so sorting by it is a
-    // no-op in practice — kept sortable for legacy parity (the legacy column carried sortBy volume).
-    volume: () => editor.data?.volume ?? null,
-    cost: (row) => toNum(row.values.cost ?? ''),
-  })
+  const sort = useRowSort(
+    rows,
+    {
+      description: (row) => row.description,
+      // Volume is the single shared Other-Costs volume (identical on every row), so sorting by it is
+      // a no-op in practice — kept sortable for legacy parity (the legacy column carried sortBy
+      // volume).
+      volume: () => editor.data?.volume ?? null,
+      cost: (row) => toNum(row.values.cost ?? ''),
+    },
+    (row) => row.key,
+  )
 
   return (
     <EditableSubPageLayout
