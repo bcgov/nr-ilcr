@@ -124,7 +124,9 @@ const SubPageRaceHarness = () => {
 
 const renderSubPage = (kind: 'CAMP' | 'ACCESS' = 'CAMP', onBack = vi.fn()) =>
   render(
-    <MillYearProvider>
+    // Seeded explicitly: the provider no longer supplies a default context, and these scenarios
+    // assert the mill/year that reaches the wire (see the DEFAULT_MILL_ID assertions below).
+    <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
       <Schedule5SubPage campId={8700} kind={kind} onBack={onBack} />
     </MillYearProvider>,
   )

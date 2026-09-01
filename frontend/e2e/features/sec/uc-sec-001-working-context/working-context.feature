@@ -9,10 +9,13 @@
 #    writes nothing. The observable outcome is SUC-001 + the working-context banner (ContextBanner.tsx),
 #    the modern #subMenu. Nothing to clean up; scenarios are parallel-safe.
 #  - VALIDATION is backend-authoritative (the app posts empty params, the server returns the 400). The
-#    empty-dropdown slices S04/S05/S08 are NOT UI-reproducible on current data because the mount default
-#    (13050/2017) is present in both lists, so both dropdowns pre-select and Carbon has no clear control
-#    — covered at the contract level instead (see coverage.md / defects.md). S02 (single-mill pre-select)
-#    is not-applicable on the 21-mill delivery data.
+#    empty-dropdown slices S04/S05/S08 were logged NOT UI-reproducible because MillYearProvider seeded a
+#    13050/2017 mount default, so both dropdowns always pre-selected and Carbon has no clear-to-placeholder
+#    control — they were covered at the contract level instead (see coverage.md / defects.md). That default
+#    is GONE as of commit e37649b (a first-ever visit now lands with no context), so an empty dropdown IS
+#    reachable in the UI and those three slices are re-openable as UI scenarios — NOT done here; this file
+#    only re-grounds the landing state the removal changed. S02 (single-mill pre-select) is still
+#    not-applicable on the 21-mill delivery data.
 
 @sec @UC-SEC-001
 Feature: Establish Working Context (Home) — select a mill and reporting year
@@ -24,9 +27,9 @@ Feature: Establish Working Context (Home) — select a mill and reporting year
     Given I am on the Home page
 
   @S01 @landing @p1
-  Scenario: Landing populates the lists and pre-selects the default context
+  Scenario: Landing populates the lists and asks the user to choose a context
     Then the mill and reporting-year option lists are populated
-    And the working context is pre-selected on landing
+    And no working context is selected on landing
 
   @S01 @SUC-001 @p0
   Scenario: Select a mill and an opened reporting year and save successfully
@@ -34,7 +37,6 @@ Feature: Establish Working Context (Home) — select a mill and reporting year
     And I save the working context
     Then I should see the message "Data saved successfully"
     And the working-context banner shows the "open with status" context
-    And the working-context banner no longer shows the "default" context
 
   # ---------------------------------------------------------------------------------------------------
   # The two Home axe sweeps below used to be the LAST STEP of the two journey scenarios above. They were

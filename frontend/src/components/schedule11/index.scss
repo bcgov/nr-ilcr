@@ -58,6 +58,43 @@
   flex-wrap: wrap;
 }
 
+// Give every Add-panel control the SAME width so the row reads as one set of fields. Without
+// this each control sized to its own content, which left the Yes/No Enhanced dropdown a
+// fraction of the width of the text inputs beside it — the one control that visibly stuck out.
+// The rule targets the flex children rather than adding wrapper divs: Carbon already wraps each
+// control in its own block (.cds--form-item / .cds--dropdown__wrapper / .cds--list-box__wrapper),
+// and the inner input/button is width:100% of that. Sibling precedent: .schedule-8__field.
+// 11rem holds every numeric field in full (NAR max 999999.9, costs max -99,999,999); Location
+// is maxLength=30, so only its longest values scroll at the tail.
+.schedule-11__add-fields > * {
+  flex: 0 0 11rem;
+}
+
+// Carbon's BASE `.cds--dropdown` rule hardcodes `block-size: 2.5rem` (40px) outright
+// (@carbon/styles/css/styles.css:16808) instead of reading --cds-layout-size-height-local. A
+// Dropdown root carries `.cds--dropdown` AND `.cds--list-box` on the same element, both at
+// specificity (0,1,0) — and the `.cds--dropdown` rule sits AFTER the `.cds--list-box` rule (:10715)
+// that the global 48px override drives through that token. So source order hands the win to
+// Carbon's 40px, and the app-wide height normalization in styles/_overrides.scss (Story 30.2 /
+// #312) silently does not reach a Dropdown: this one control rendered 8px shorter than the
+// TextInputs and the ComboBox beside it, which under the row's `align-items: flex-end` also
+// dragged its label out of line with theirs.
+//
+// Set block-size directly (the only thing that outranks a direct declaration) and read the token
+// rather than restating 48px, so this stays pinned to the app standard if that decision changes.
+// Specificity (0,2,0) beats Carbon's (0,1,0).
+//
+// Scoped to the Add panel because that is the only place the gap shows: the inline table editor gets
+// away with it by coincidence, Carbon's hardcoded 2.5rem being exactly the 40px the override already
+// wants inside `.cds--data-table`.
+//
+// This is an app-wide Carbon gap, not a Schedule 11 one; fixing it centrally means editing
+// styles/_overrides.scss, which this branch does not own.
+.schedule-11__add-fields .cds--dropdown {
+  block-size: var(--cds-layout-size-height-local);
+  max-block-size: var(--cds-layout-size-height-local);
+}
+
 // Ported from legacy's cols="75" (xhtml:141) as a ch cap rather than a pixel width: it
 // scales with the font and keeps comment lines at a readable measure on wide viewports,
 // while still filling narrow ones.
