@@ -13,6 +13,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 import Schedule9 from '@/components/schedule9'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
+import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
 import type ContractualWorkRecordRequest from '@/interfaces/Schedule9Request'
 import type { ContractualWorkRecord } from '@/interfaces/Schedule9Response'
 
@@ -75,7 +76,9 @@ const verbatim = getDefaultNormalizer({ collapseWhitespace: false, trim: false }
 
 const renderPage = () =>
   render(
-    <MillYearProvider>
+    // Seeded explicitly: the provider no longer supplies a default context, and every scenario here
+    // needs a working context for the page to render content rather than the mill/year guard.
+    <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
       <Schedule9 />
     </MillYearProvider>,
   )

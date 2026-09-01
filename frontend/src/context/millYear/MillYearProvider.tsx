@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import MillYearContext from './MillYearContext'
-import { DEFAULT_MILL_ID, DEFAULT_YEAR } from './millYearDefaults'
 
 type Props = {
   children: ReactNode
-  // Optional seed for tests (e.g. the S19 empty-context case). Defaults to DEFAULT_MILL_ID/YEAR.
+  // Optional explicit seed, used by tests that need a known context without going through Home.
+  // Absent, the context starts EMPTY unless local storage holds a previous selection.
   initial?: { millId: number | null; year: number | null }
 }
 
@@ -16,8 +16,14 @@ type StoredContext = { millId: number | null; year: number | null }
 const isValidNullableNumber = (value: unknown): value is number | null =>
   value === null || typeof value === 'number'
 
+// No working context until the user picks one on Home. This used to seed the 13050/2017 dev default,
+// which meant the app ALWAYS had a context: Home's AC4/S03 reflection then displayed it, so the
+// "Select Mill" / "Select Reporting Year" placeholders were unreachable and a new user landed on
+// someone else's mill. The default was a scaffold from before the Home selector existed.
+// A previous selection still returns via local storage (readStoredContext), so this only changes a
+// first-ever visit — the AC4/S03 reflection of a saved context is untouched.
 function getDefaultContext(): StoredContext {
-  return { millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }
+  return { millId: null, year: null }
 }
 
 function readStoredContext(): StoredContext {

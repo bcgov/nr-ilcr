@@ -7,10 +7,12 @@ describe('useMillYear', () => {
     window.localStorage.clear()
   })
 
-  test('provider supplies the 13050/2017 dev defaults', () => {
+  // No dev-default seed: a first-ever visit has NO working context, so Home shows its
+  // "Select Mill" / "Select Reporting Year" placeholders instead of someone else's mill.
+  test('provider starts with no context when nothing is stored', () => {
     const { result } = renderHook(() => useMillYear(), { wrapper: MillYearProvider })
-    expect(result.current.millId).toBe(13050)
-    expect(result.current.year).toBe(2017)
+    expect(result.current.millId).toBeNull()
+    expect(result.current.year).toBeNull()
   })
 
   test('persists mill/year to local storage when context changes', () => {
