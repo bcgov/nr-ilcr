@@ -22,7 +22,10 @@ Then(
     await expect(appShell.navLink('Home')).toBeVisible();
     await expect(appShell.navGroup('Schedules')).toBeVisible();
     await expect(appShell.navLink('Check Status')).toBeVisible();
-    await expect(appShell.navLink('Generate Reports')).toBeVisible();
+    // Generate Reports is a GROUP, not a link: story 19.1 gave it the Mill Information Report as a
+    // sub-item, so Carbon renders it as an expandable toggle (a button) like Schedules. It is also
+    // admin-gated now — visible here because the default mock user (MOCK_USERS[0]) is the admin.
+    await expect(appShell.navGroup('Generate Reports')).toBeVisible();
     await expect(appShell.navLink('Print Schedules')).toBeVisible();
     await expect(appShell.navLink('Submissions')).toBeVisible();
   },
