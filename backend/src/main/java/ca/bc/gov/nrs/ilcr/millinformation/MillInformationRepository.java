@@ -40,7 +40,7 @@ public interface MillInformationRepository extends Repository<MillInformationRow
    * rep.ilcr_mill_id}), so the section sequence reproduces the legacy document.
    *
    * @param year the reporting year
-   * @return one row per mill, ordered by mill number
+   * @return one row per mill, ordered by mill id (legacy's order — note mill id is NOT mill number)
    */
   @Query(
       """

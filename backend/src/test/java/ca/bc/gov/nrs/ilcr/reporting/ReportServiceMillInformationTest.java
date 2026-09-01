@@ -78,15 +78,19 @@ class ReportServiceMillInformationTest {
   }
 
   @Test
-  @DisplayName("a year with no mills produces no report and raises the undefinedError 500")
-  void emptyYearRaisesReportException() {
+  @DisplayName("an open year with no mills is its own 404, not the catch-all 500")
+  void emptyYearRaisesNoMillsNotFound() {
+    // The caller has already rejected any year that is not open, so reaching here means a year WAS
+    // opened and no mill was initialised against it: a data condition, not a fault. Sharing
+    // undefinedError would tell an administrator the system is broken and raise the 5xx rate for
+    // something nobody needs to fix in code.
     when(millInformationService.findSections(1999)).thenReturn(List.of());
     ReportService service = service();
 
     assertThatThrownBy(() -> service.renderMillInformation(1999))
-        .isInstanceOf(MillInformationReportException.class)
-        .extracting(e -> ((MillInformationReportException) e).getStatus())
-        .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        .isInstanceOf(MillInformationNoMillsException.class)
+        .extracting(e -> ((MillInformationNoMillsException) e).getStatus())
+        .isEqualTo(HttpStatus.NOT_FOUND);
   }
 
   @Test

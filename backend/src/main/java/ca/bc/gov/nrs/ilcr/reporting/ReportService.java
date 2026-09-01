@@ -209,10 +209,11 @@ public class ReportService {
    * exports the list). It is what gives each mill its own title block and its own first page, and
    * it lets the outline anchor stay a fill parameter as in every other template here.
    *
-   * <p>A year with no mills yields no PDF via ERR-001. By the time this runs the caller has already
-   * rejected any year that is not an OPEN reporting period, so reaching here means an opened year
-   * genuinely has no mill report statuses — a data problem, not a bad request, and the one case
-   * legacy's {@code !mills.isEmpty()} guard covered with no message at all (UC-MRPT-003 EF1).
+   * <p>A year with no mills yields no PDF and a 404 of its own ({@link
+   * MillInformationNoMillsException}). By the time this runs the caller has already rejected any
+   * year that is not an OPEN reporting period, so reaching here means an opened year genuinely has
+   * no mill report statuses — a data condition, not a fault, which is why it does not share the
+   * catch-all {@code undefinedError} that a real render failure raises.
    *
    * @param year the reporting year
    * @return the filled report, ready to stream (the caller closes it after export)
@@ -220,8 +221,10 @@ public class ReportService {
   public RenderedReport renderMillInformation(int year) {
     List<MillInformationSection> sections = millInformationService.findSections(year);
     if (sections.isEmpty()) {
-      log.error("No mill carries a report status for year {} — no report to produce", year);
-      throw new MillInformationReportException();
+      // WARN, not ERROR: the year is open and simply has no mills initialised against it. Nobody
+      // needs to fix code for this, so it must not raise the 5xx rate or page anyone.
+      log.warn("No mill carries a report status for year {} — nothing to render", year);
+      throw new MillInformationNoMillsException();
     }
     try (VirtualizerHandle handle = new VirtualizerHandle(virtualizerFactory.create())) {
       List<JasperPrint> prints = new ArrayList<>();
@@ -241,7 +244,6 @@ public class ReportService {
     Map<String, Object> params = new HashMap<>();
     params.put("year", year);
     params.put(PARAM_PRINT_BODY, Boolean.TRUE);
-    params.put(PARAM_BOOKMARK_TITLE, MillInformationSectionMapper.bookmarkTitle(section));
     params.put(JRParameter.REPORT_VIRTUALIZER, virtualizer);
     SectionData data = MillInformationSectionMapper.map(section);
     try {

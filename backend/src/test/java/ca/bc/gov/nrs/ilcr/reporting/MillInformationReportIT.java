@@ -86,6 +86,21 @@ class MillInformationReportIT extends AbstractOracleIT {
   }
 
   @Test
+  @DisplayName("each mill's heading is stamped once, not duplicated by a hidden anchor field")
+  void headingIsNotDuplicated() throws Exception {
+    // The outline anchor rides the visible heading. If it is ever moved back onto a hidden white
+    // textField, every title lands in the page twice — invisible on screen, but picked up by text
+    // extraction, copy/paste and screen readers.
+    String text = pdfText(2021);
+
+    for (String title : SECTION_TITLES) {
+      assertThat(text.split(java.util.regex.Pattern.quote(title), -1))
+          .as("occurrences of %s", title)
+          .hasSize(2);
+    }
+  }
+
+  @Test
   @DisplayName("static section chrome survives the port")
   void sectionChromeIsPreserved() throws Exception {
     assertThat(pdfText(2021))
@@ -244,14 +259,15 @@ class MillInformationReportIT extends AbstractOracleIT {
    * The extracted text of the one section naming {@code millTitle}, so an assertion can be scoped
    * to a single mill rather than the whole document.
    *
-   * <p>Splitting on the title band rather than searching from the heading is deliberate: the
-   * outline anchor is a white text field carrying the same mill title, and it sits at the TOP of
-   * the title band, so a naive indexOf finds the anchor and slices an empty section.
+   * <p>A plain first-match split is enough because the outline anchor now rides the visible
+   * heading: each mill title appears exactly ONCE in the extracted text. It previously appeared
+   * twice — the hidden anchor field duplicated it — and this method had to take the last match to
+   * compensate.
    */
   private static String sectionFor(String text, String millTitle) {
     return java.util.Arrays.stream(text.split("Government of British Columbia"))
         .filter(section -> section.contains(millTitle))
-        .reduce((first, second) -> second)
+        .findFirst()
         .orElseThrow(() -> new AssertionError("no section found for " + millTitle));
   }
 }

@@ -40,6 +40,19 @@ class ReportExceptionsTest {
   }
 
   @Test
+  @DisplayName("an open year with no mills is a 404 with its own key, never undefinedError")
+  void millInformationNoMills() {
+    MillInformationNoMillsException exception = new MillInformationNoMillsException();
+
+    assertThat(exception.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+    assertThat(exception.getMessageKey()).isEqualTo("millInformationNoMillsErrorMsg");
+    // Must not collapse into the catch-all: one means "no data for that year", the other means
+    // "something broke", and only the second should ever raise an alert.
+    assertThat(exception.getMessageKey())
+        .isNotEqualTo(new MillInformationReportException().getMessageKey());
+  }
+
+  @Test
   @DisplayName("a failed build is a 500 carrying the legacy undefinedError key")
   void millInformationReportFailure() {
     MillInformationReportException exception = new MillInformationReportException();

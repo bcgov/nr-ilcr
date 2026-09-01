@@ -13,6 +13,10 @@ const api = () => apiService.getAxiosInstance()
 const REPORT_PATH = '/v1/reports/mill-information'
 const PDF_FILENAME = 'mills_print.pdf'
 const YEAR_REQUIRED = 'Report Year: Value is required.'
+// Distinct from YEAR_REQUIRED on purpose: when the years list loads successfully and is EMPTY, no
+// reporting period has ever been opened. Telling the administrator their Report Year is required
+// blames them for a choice the page never offered. Raised in review on PR #401.
+const NO_OPEN_YEAR = 'No reporting period has been opened.'
 
 /**
  * Mill Information Report (UC-MRPT-003). Administrators pick a report year and download a PDF
@@ -52,10 +56,11 @@ const MillInformationReport: FC = () => {
     // No year to send means no reporting period has ever been opened. Reject here with the same text
     // the server would return rather than making a request that cannot succeed.
     if (selectedYear === '') {
-      // When the year list itself failed to load, that banner is the real story — adding "Report
-      // Year: Value is required." on top would blame the user for a choice never offered.
+      // Three different situations, three different answers. A failed load already has its own
+      // banner, so say nothing more; an empty list means nothing was ever opened; only a genuinely
+      // unselected year is the user's to fix.
       if (!loadError) {
-        setError(YEAR_REQUIRED)
+        setError(years.length === 0 ? NO_OPEN_YEAR : YEAR_REQUIRED)
       }
       return
     }

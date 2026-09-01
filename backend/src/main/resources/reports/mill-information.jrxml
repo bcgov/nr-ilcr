@@ -44,12 +44,6 @@
   <parameter name="p_do_print_body" class="java.lang.Boolean">
     <defaultValueExpression><![CDATA[Boolean.TRUE]]></defaultValueExpression>
   </parameter>
-  <!--
-    The per-mill PDF outline title. Legacy emitted one bookmark per mill via batch-mode export
-    (SchedulesPrinter sets setCreatingBatchModeBookmarks(true)); an in-template anchor reproduces
-    that and, unlike batch mode, still emits for a year that holds a single mill.
-  -->
-  <parameter name="bookmarkTitle" class="java.lang.String"/>
   <field name="mill" class="java.lang.String"/>
   <field name="millAddress1" class="java.lang.String"/>
   <field name="millAddress2" class="java.lang.String"/>
@@ -68,17 +62,6 @@
   <field name="divisionName" class="java.lang.String"/>
   <field name="divisionPhone" class="java.lang.String"/>
   <title height="31">
-    <!--
-      White text field carrying the outline anchor. The title has to stay as the VISIBLE expression:
-      an element that renders nothing emits no anchor, and the PDF then has no outline at all. White
-      on white keeps it invisible; the IT's section slicer accounts for the extraction artefact.
-    -->
-    <element kind="textField" x="0" y="0" width="300" height="15" forecolor="#FFFFFF" mode="Transparent"
-        bookmarkLevel="1" blankWhenNull="true">
-      <printWhenExpression><![CDATA[$P{bookmarkTitle} != null]]></printWhenExpression>
-      <expression><![CDATA[$P{bookmarkTitle}]]></expression>
-      <anchorNameExpression><![CDATA[$P{bookmarkTitle}]]></anchorNameExpression>
-    </element>
     <element kind="staticText" style="bold" x="0" y="0" width="553" height="15" hTextAlign="Center">
       <text><![CDATA[Government of British Columbia]]></text>
     </element>
@@ -117,8 +100,18 @@
       </element>
 
       <!-- Header row: mill identity left, the Active flag hard right. -->
-      <element kind="textField" style="bold" x="0" y="0" width="360" height="15" blankWhenNull="true">
+      <!--
+        The PDF outline anchor rides the VISIBLE heading rather than an invisible white field beside
+        the title. Legacy emitted one bookmark per mill via batch-mode export; the sibling schedule
+        templates reproduce that with a hidden textField duplicating the section title, which stamps
+        the heading into the page twice — extraction, copy/paste and screen readers all see it, and
+        the IT needed a slicing workaround to tell the two copies apart. Anchoring the element that
+        already renders the string removes both problems. Raised in review on PR #401.
+      -->
+      <element kind="textField" style="bold" x="0" y="0" width="360" height="15" blankWhenNull="true"
+          bookmarkLevel="1">
         <expression><![CDATA[$F{mill}]]></expression>
+        <anchorNameExpression><![CDATA[$F{mill}]]></anchorNameExpression>
       </element>
       <!-- widened from legacy x=437 w=36: clipped the colon under this engine's default font -->
       <element kind="staticText" style="bold" x="425" y="0" width="48" height="15" hTextAlign="Right">

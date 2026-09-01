@@ -58,6 +58,11 @@ describe('Mill Information Report', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
     await waitFor(() => expect(requested).toHaveBeenCalledWith('2021'))
+    // NOTE: this assertion fails LOCALLY and passes in CI. Under responseType:'blob' this MSW/undici
+    // build cannot construct a Response from a body ("object.stream is not a function"), which also
+    // reddens three PrintSchedules tests on untouched code. It is kept because it is correct and is
+    // the only frontend check on the mills_print.pdf filename; do not delete it to make a local run
+    // green. Not marked test.fails, which would invert the problem and break CI, where it passes.
     await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1))
     expect(downloaded.mock.calls[0][1]).toBe('mills_print.pdf')
     expect(screen.queryByText(YEAR_REQUIRED)).not.toBeInTheDocument()
@@ -77,7 +82,7 @@ describe('Mill Information Report', () => {
     await waitFor(() => expect(requested).toHaveBeenCalledWith('2019'))
   })
 
-  test('no opened year: generating is rejected with the required-field message and no request', async () => {
+  test('no opened year: says nothing was opened, rather than blaming the user, and makes no request', async () => {
     const requested = vi.fn()
     yearsRespond([])
     reportRespondsWithPdf(requested)
@@ -86,7 +91,9 @@ describe('Mill Information Report', () => {
     await waitFor(() => expect(screen.getByLabelText('Report Year:')).toBeDisabled())
     await userEvent.click(screen.getByRole('button', { name: 'Generate Report' }))
 
-    expect(await screen.findByText(YEAR_REQUIRED)).toBeInTheDocument()
+    // Not "Report Year: Value is required." — nothing was ever offered to select.
+    expect(await screen.findByText('No reporting period has been opened.')).toBeInTheDocument()
+    expect(screen.queryByText(YEAR_REQUIRED)).not.toBeInTheDocument()
     expect(requested).not.toHaveBeenCalled()
   })
 

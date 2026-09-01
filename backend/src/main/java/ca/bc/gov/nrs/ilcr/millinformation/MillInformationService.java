@@ -40,13 +40,14 @@ public class MillInformationService {
   }
 
   /**
-   * Every mill's section content for the reporting year, ordered by mill number.
+   * Every mill's section content for the reporting year, ordered by mill id — legacy's order, and
+   * NOT the same as mill number (fixture mill 730 carries mill number 7300).
    *
    * <p>An empty list means no mill has a report-status row for that year — a real outcome for a
    * year that was never opened, and the caller's signal that there is no report to produce.
    *
    * @param year the reporting year
-   * @return one section per mill; empty when the year has no mills
+   * @return one section per mill in mill-id order; empty when the year has no mills
    */
   public List<MillInformationSection> findSections(int year) {
     Map<String, String> regions = zoneDescriptions();

@@ -86,8 +86,15 @@ final class MillInformationSectionMapper {
 
   /**
    * Format a stored phone number as {@code (250) 555-1212}, matching the legacy {@code
-   * ILCRPhoneNumberConverter}. Anything that is not exactly ten characters is passed through
-   * untouched — legacy did the same rather than guess at a format it did not recognise.
+   * ILCRPhoneNumberConverter}. Anything that is not ten DIGITS is passed through trimmed but
+   * otherwise unaltered.
+   *
+   * <p>Two deliberate departures from legacy, both raised in review on PR #401. Legacy tested
+   * LENGTH and then sliced blindly, so a ten-character value that is not ten digits became a
+   * fabricated number — {@code " 250555121"} rendered as {@code "( 25) 055-5121"}, which reads as
+   * real on a ministry report. And the pass-through is trimmed, which legacy's was not, so a short
+   * value stored with padding does not render with a leading gap. {@code BUSINESS_PHONE} is a
+   * {@code VARCHAR2(10)} with no format constraint, so both states are reachable.
    */
   private static String phone(String value) {
     if (value == null || value.isBlank()) {

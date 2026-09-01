@@ -91,9 +91,15 @@ public interface ReportApi {
    * commented out — and the report covers every mill by definition, so there is no context to
    * validate. Do not "align" it with the sibling endpoints above.
    *
-   * <p>Guards: missing/blank/non-numeric {@code year} → 400 {@code Report Year: Value is
-   * required.}; a year no mill reports on, or any failure while building → 500 {@code
-   * undefinedError} with no file. Without {@code GENERATE_MILL_REPORTS} → 403; anonymous → 401.
+   * <p>Guards, in the order they run: missing/blank/non-numeric {@code year} → <b>400</b> {@code
+   * Report Year: Value is required.}; a parseable year that is not an OPEN reporting period →
+   * <b>400</b> {@code Report Year is not an open reporting period.}; an open year no mill has a
+   * report status for → <b>404</b> {@code No mill has a report status for the selected Report
+   * Year.}; a genuine failure while building → <b>500</b> {@code undefinedError}. No file is
+   * produced in any of those cases. Without {@code GENERATE_MILL_REPORTS} → 403; anonymous → 401.
+   *
+   * <p>The rejections are deliberately distinct: only the 500 means something is broken, so only it
+   * belongs in the error rate.
    *
    * @param year the reporting year (optional raw String, so the guard owns the rejection text)
    * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)

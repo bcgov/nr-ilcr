@@ -147,10 +147,12 @@ class MillInformationSectionMapperTest {
   }
 
   @Test
-  @DisplayName("surrounding whitespace does not stop a real ten-digit number formatting")
-  void paddedTenDigitPhoneStillFormats() {
-    assertThat(row(sectionWithHeadOfficePhone(" 2505551212 ")))
-        .containsEntry("headOfficePhone", "(250) 555-1212");
+  @DisplayName("a padded value is trimmed rather than rendered with a leading gap")
+  void paddedValueIsTrimmed() {
+    // Not " 2505551212 ": BUSINESS_PHONE is VARCHAR2(10), so ten digits leave no room for padding
+    // and that input cannot exist in delivery. What CAN exist is a short value stored with padding.
+    assertThat(row(sectionWithHeadOfficePhone("  250-5551  ")))
+        .containsEntry("headOfficePhone", "250-5551");
   }
 
   @Test
