@@ -151,17 +151,48 @@ export class Schedule4SubPage {
 
   /**
    * The row whose Description is `description`, resolved by INDEX from the live descriptions above.
-   * Throws when it is absent, so a mistyped description in a `.feature` fails loudly rather than
-   * matching nothing.
+   * Fails loudly when it is absent, so a mistyped description in a `.feature` says which rows DO exist
+   * instead of matching nothing. That listing now comes from `expect.poll`'s own `Received:` dump of the
+   * descriptions array rather than from a hand-built `listed: …` message — same information, but worth
+   * knowing it is the assertion's output and not this method's, so a future refactor away from `poll`
+   * has to restore it deliberately.
+   *
+   * WHY IT RETRIES (added 2026-08-21, raised in review): reading the descriptions is a one-shot snapshot,
+   * so a lookup issued while React is still committing a row would resolve to "absent" and fail
+   * immediately — no auto-waiting, unlike a plain locator. That has never been observed (the sub-page
+   * awaits its table before any lookup, the rows arrive in the same commit as that table, and 1,542
+   * parallel stress executions produced zero failures here), but "never observed" is not the same as
+   * "cannot happen": a step that reads straight after a mutation is exactly the window.
+   *
+   * The retry is deliberately on the MISS path only. The happy path still does exactly ONE pass over the
+   * rows — polling unconditionally would re-read every row's `inputValue()` on every lookup, which is a
+   * real cost on a 15-row category table, for a case that by definition has already succeeded.
+   *
+   * NOT `dataRows().filter(...)` (the reviewer's suggestion, and the obvious way to get auto-waiting for
+   * free): in edit mode the Description lives in an `<input>`, so `filter({ hasText })` cannot see it at
+   * all, and `filter({ has: input[value="…"] })` matches the ATTRIBUTE — the exact dependency
+   * `rowDescriptions` above documents as rejected, because it makes the negative assertions pass silently
+   * the day React stops mirroring the value. Retrying the live read keeps auto-waiting's benefit without
+   * reintroducing that.
    */
   async row(label: string, description: string): Promise<Locator> {
-    const index = (await this.rowDescriptions(label)).indexOf(description);
-    if (index < 0) {
-      throw new Error(
-        `Schedule 4 ${label} has no row described "${description}" — listed: ${(await this.rowDescriptions(label)).join(', ') || '(none)'}`,
-      );
+    let descriptions = await this.rowDescriptions(label);
+    if (!descriptions.includes(description)) {
+      // EXPLICIT SHORT BUDGET, not the config default. `playwright.config.ts` sets
+      // `expect: { timeout: 10_000 }`, and two of this method's three call sites are already INSIDE an
+      // outer `expect.poll` carrying that same 10s — `steps/sch4/subPage.steps.ts` wraps `rowValues()`,
+      // which calls this. Inheriting the default would let this inner poll consume the outer poll's whole
+      // deadline on a genuine miss: the outer never gets a second iteration, and its message (the
+      // `[description, distance, volume, cost, $/m³]` legend written for exactly that failure) is replaced
+      // by this one. 2s is ample for a React commit while leaving the outer poll most of its budget.
+      await expect
+        .poll(async () => (descriptions = await this.rowDescriptions(label)), {
+          timeout: 2_000,
+          message: `Schedule 4 ${label} has no row described "${description}"`,
+        })
+        .toContain(description);
     }
-    return this.dataRows(label).nth(index);
+    return this.dataRows(label).nth(descriptions.indexOf(description));
   }
 
   /**

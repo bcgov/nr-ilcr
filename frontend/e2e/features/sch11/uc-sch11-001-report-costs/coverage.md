@@ -2,7 +2,7 @@
 
 > New to these files? See [`coverage-guide.md`](../../../coverage-guide.md) at the e2e root for the column + status-flag legend.
 
-Sources reconciled: `UC-SCH11-001-S01..S20.feature` (20 slices; `../../../../tests/UC-SCH11-001/gherkin/`)
+Sources reconciled: `UC-SCH11-001-S01..S22.feature` (22 slices; `../../../../tests/UC-SCH11-001/gherkin/`)
 + `UC-SCH11-001-slices.md` (control/message/field matrix) + `UC-SCH11-001-technical.md` (message/error
 catalog: ERR-001..003, ALT-001, WRN-001, STA-001, CNT-001, FLD-001..004, SUC-001..004, ASY-001), against
 the app's real write path (`schedule11/api/Schedule11Api.java` GET/POST/PUT/DELETE + `check-status`,
@@ -27,8 +27,16 @@ S14–S19 entry rejection (`validation.feature`); the correct-and-retry recovery
 **validation-error** state, carries a genuine pre-existing violation and is therefore a deliberate RED
 (`accessibility.feature` `@discovered-bug`) rather than a clean pass.
 
-**Every one of the 20 slices is dispositioned `covered`.** 29 scenarios: 28 green + **1 deliberate
-`@discovered-bug` RED** tracking a pre-existing, app-wide accessibility defect (defects.md
+**All 22 slices are `covered`.** The last two to land were **S21/S22**, the Check-Status-on-unsaved-edits
+arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
+`@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
+**DIV-5**, a pointer; the analysis lives once, in `sch3/defects.md` DIV-6. **Read DIV-5's re-grounding note
+before touching them:** Schedule 11 has no page-level Save, so the unsaved state is a row in the INLINE
+EDITOR, not the Add panel the upstream slices name.
+
+28 scenarios / **31 tests** after
+Scenario-Outline expansion: 28 green + **3 deliberate REDs** — S21/S22 above, plus the pre-existing
+`@discovered-bug` tracking an app-wide accessibility defect (defects.md
 BUG-1 — Carbon's validation-error markup is never announced to assistive technology; it
 affects every schedule page and is already recorded in `deferred-work.md`, which asked for exactly this
 red check). A clean run is `npm run test:gate` (the script regenerates the features first and excludes
@@ -81,7 +89,8 @@ VER-1–VER-4. Two of them (`S15` Enhanced, `S18` NAR range) are the exact strin
 work. **The comments in `validation.ts` should now be updated to drop the PROVISIONAL label**
 (GAP-7, now CLOSED — the dev accepted the follow-up; the labels may still be in `validation.ts` until she lands it).
 
-Suite state: **28 green + 1 intentional red** (the `@discovered-bug` accessibility check above). The
+Suite state: **31 tests — 28 green + 3 intentional reds** (the `@discovered-bug` accessibility check above,
+plus S21/S22's two `@discovered-divergence` arms for #359; re-measured 2026-08-27). The
 whole-suite clean run `npm run test:gate` is green; the two excluded reds
 are this UC's accessibility bug and Schedule 1's pre-existing `clear-amounts` bug — both genuine,
 pre-existing app defects with `defects.md` entries, neither masked or weakened.

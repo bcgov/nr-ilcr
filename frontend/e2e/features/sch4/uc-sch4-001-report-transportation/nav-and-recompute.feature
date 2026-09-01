@@ -1,9 +1,13 @@
-# UC-SCH4-001-S12 (NAV-001) and BR-05's post-save refresh — four DELIBERATELY RED divergences
+# UC-SCH4-001-S12 (NAV-001) and BR-05's post-save refresh — two divergences, THREE scenarios still red
 #
 # Both are filed in this UC's defects.md and TICKETED (DIV-3 → issue #324, DIV-4 → the pre-existing issue
-# #291), and both were reproduced in a real
-# browser on 2026-08-17 before being written as tests. Playwright isolates tests, so an honest red costs no
-# other coverage; run `npm run test:gate` for a "fresh failures only" pass.
+# #291), and both were reproduced in a real browser on 2026-08-17 before being written as tests. Playwright
+# isolates tests, so an honest red costs no other coverage; run `npm run test:gate` for a "fresh failures
+# only" pass.
+#
+# STATE 2026-08-27: **DIV-4 is FIXED** — its two scenarios (S01/S02) are green and their tag is retired.
+# DIV-3's three scenarios (S12 ×3) are still red. This header said "four DELIBERATELY RED divergences"
+# after the DIV-4 fix had already landed; corrected.
 #
 # The scenarios assert the CORRECT (re-grounded) behaviour, so each flips to green the moment the app is
 # fixed — at which point the @discovered-divergence tag comes off.
@@ -116,8 +120,14 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
     Then the Schedule 4 "Lakeside Dry Dump" "cost" cell shows "1,000"
 
   # ---------------------------------------------------------------------------------------------------
-  # DIV-4 — DELIBERATELY RED. See this UC's defects.md (DIV-4) and the pre-existing issue #291
-  # ("Automatic Recalculation for Schedule 1, 2, 3 and 4").
+  # DIV-4 — FIXED and GREEN since issue #291's fix landed (`6e86d7a`, "automatic recalculation of derived
+  # figures during data entry"). It went green on its own exactly as designed, so only the
+  # @discovered-divergence tag was dropped — no assertion was edited. Verified 2026-08-27; both scenarios
+  # are now ordinary regression guards. See this UC's defects.md (DIV-4, closed).
+  #
+  # The original analysis follows.
+  #
+  # See the pre-existing issue #291 ("Automatic Recalculation for Schedule 1, 2, 3 and 4").
   #
   # The recomputed $/m³ is not shown on the panel that just saved. Both S01 and S02 assert it explicitly
   # ("the lakeSideDryDumpCostVolume field shows the recomputed / recalculated cost-per-volume"), and BR-05
@@ -130,8 +140,8 @@ Feature: Schedule 4 — unsaved-change warnings and the post-save recompute
   #
   # So the figure is right in the database and stale on screen until the location is reopened.
   # ---------------------------------------------------------------------------------------------------
-  @p1 @S01 @S02 @discovered-divergence
-  Scenario: The recomputed $/m³ appears on the panel that saved it [DISCOVERED DIVERGENCE — stale until reopened; defects.md DIV-4 / issue #291]
+  @p1 @S01 @S02
+  Scenario: The recomputed $/m³ appears on the panel that saved it
     Given the Schedule 4 anchor "per-unit-after-save" is an editable Draft with no locations
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 4

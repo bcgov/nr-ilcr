@@ -11,6 +11,7 @@ import {
   CROWN_PREFILL_VOLUME,
   DELETE_ANCHOR,
   DELETE_ANCHOR_MILL,
+  MSG_SAVE_BEFORE_OTHER_COSTS,
   MUTABLE_DRAFT,
   MUTABLE_DRAFT_MILL,
   READONLY_ANCHOR,
@@ -183,6 +184,28 @@ Then('the Schedule 1 input form is displayed', async ({ schedule1Page }) => {
 })
 
 /**
+ * S08, the save-first gate. Clicks WITHOUT dismissing anything: the ordinary `openOtherCosts` helper
+ * asserts and answers the "Leave Schedule 1" discard prompt, which on a never-saved schedule would never
+ * appear — and asserting it would mask the gate this scenario exists to prove.
+ */
+When('I try to open the Schedule 1 Other Costs sub-page without saving', async ({ schedule1Page }) => {
+  await schedule1Page.clickOtherCostsExpectingGate()
+})
+
+Then('Schedule 1 tells me to save first', async ({ schedule1Page }) => {
+  await expect(
+    schedule1Page.saveRequiredDialog.getByText(MSG_SAVE_BEFORE_OTHER_COSTS, { exact: true }),
+    'the save-first gate no longer carries legacy schedule1.xhtml:497 verbatim',
+  ).toBeVisible()
+})
+
+/** The gate must REFUSE the navigation, not merely warn about it — that is the guarantee, not the modal. */
+Then('I am still on Schedule 1', async ({ page, schedule1Page }) => {
+  await expect(page).toHaveURL(/\/schedule-1$/)
+  await expect(schedule1Page.companyLoggingTable).toBeVisible()
+})
+
+/**
  * Defect #296 AC1: an unsaved Schedule 1 renders as an EMPTY form, not an error.
  *
  * EVERY editable amount, not a representative one — the earlier version checked `#vol-12` alone under
@@ -229,6 +252,19 @@ When('I enter the following Schedule 1 amounts:', async ({ schedule1Page }, data
   for (const row of dataTable.hashes()) {
     await schedule1Page.enterAmount(row['line item'], row['volume'], row['cost'])
   }
+})
+
+/**
+ * BR-12 / DIV-6 arms. Its own steps rather than the `I enter the following Schedule 1 amounts:` table,
+ * because that helper skips empty values by design (a blank cell means "leave alone") and clearing is the
+ * whole point of the false-GREEN arm.
+ */
+When('I clear the {string} volume', async ({ schedule1Page }, label) => {
+  await schedule1Page.setVolume(label, '')
+})
+
+When('I enter {string} into the {string} volume', async ({ schedule1Page }, value, label) => {
+  await schedule1Page.setVolume(label, value)
 })
 
 When('I enter Schedule 1 comments {string}', async ({ schedule1Page }, text) => {
@@ -527,18 +563,31 @@ Then('the Schedule 1 should no longer be saved', async ({ request, world }) => {
   // Prove the delete persisted through the real write path. The GET no longer 404s for a missing
   // summary (defect #296 serves the 200 empty EDITABLE document instead), so "deleted" is that
   // document's own signal: no revisionCount — the server's not-saved marker, the same field the
-  // client's isScheduleSaved reads to close the Delete gate — with zero stored detail rows. Checked
-  // loosely (`== null`) exactly as that helper does: the serializer OMITS the null field, so it
-  // arrives as undefined (the absent-vs-null rule behind defect #292). Poll — the DELETE +
-  // in-place redisplay is UI-triggered, so the commit can trail the click.
+  // client's isScheduleSaved reads to close the Delete gate. Checked loosely (`== null`) exactly as
+  // that helper does: the serializer OMITS the null field, so it arrives as undefined (the
+  // absent-vs-null rule behind defect #292). Poll — the DELETE + in-place redisplay is UI-triggered,
+  // so the commit can trail the click.
+  //
+  // `lineItems.length === 0` WAS also asserted here and is deliberately gone (2026-08-28). It cannot
+  // work on this anchor, and it is not a store readout at all: `lineItems` is the SERVED projection,
+  // and when Schedule 1 holds no volumes while its Schedule 3 carries a Crown Timber volume the server
+  // pre-fills all nine codes from it (`Schedule1Service` :686-694, `prefill = sch3CrownVolume != null
+  // && allVolumesEmpty(details)`, BR-09/WRN-001). The delete target 25052/2016 has exactly that
+  // Schedule 3 (item 119 volume 1111), so the response carries nine pre-filled rows BEFORE and AFTER
+  // the delete — measured — and the clause could never be satisfied.
+  // Worth knowing WHY it looked correct: the CI Flyway seed gives 25052/2016 no category-3 summary at
+  // all, so there is no crown volume to pre-fill from and `lineItems` really is empty there. The
+  // assertion therefore PASSES in CI and FAILS locally against the real extract — the environment-split
+  // failure `preflight/ci-seed-parity.setup.ts` exists to prevent, in the one direction that gate
+  // cannot see (it compares openability, not neighbouring-schedule data). Recorded as sch1 VER-1.
   const { millId, year } = world.scheduleKey!
   await expect
     .poll(async () => {
       const res = await request.get(scheduleUrl(millId, year))
       if (!res.ok()) return `GET -> HTTP ${res.status()}`
-      const doc = (await res.json()) as { revisionCount?: number | null; lineItems: unknown[] }
-      if (doc.revisionCount == null && doc.lineItems.length === 0) return 'deleted'
-      return `revisionCount=${doc.revisionCount}, lineItems=${doc.lineItems.length}`
+      const doc = (await res.json()) as { revisionCount?: number | null }
+      if (doc.revisionCount == null) return 'deleted'
+      return `still saved: revisionCount=${doc.revisionCount}`
     })
     .toBe('deleted')
 })

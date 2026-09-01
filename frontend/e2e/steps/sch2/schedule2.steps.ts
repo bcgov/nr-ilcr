@@ -8,6 +8,8 @@ import {
   CANCEL_DELETE_ANCHOR,
   CHECK_MET_ANCHOR,
   CHECK_MISSING_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
   CLIENT,
   DELETE_ANCHOR,
   DELETE_UNAVAILABLE_ANCHOR,
@@ -62,6 +64,9 @@ const ANCHORS: Record<string, Sch2Anchor> = {
   'cancel-delete': CANCEL_DELETE_ANCHOR,
   'saved-incomplete': SAVED_INCOMPLETE_ANCHOR,
   a11y: A11Y_ANCHOR,
+  // BR-12 / #359 — seeded by real-test-data-patches/sch2/unsaved-check-anchors.sql.
+  'check-unsaved-violation': CHECK_UNSAVED_VIOLATION_ANCHOR,
+  'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
 };
 
 const namedAnchor = (name: string): Sch2Anchor => {

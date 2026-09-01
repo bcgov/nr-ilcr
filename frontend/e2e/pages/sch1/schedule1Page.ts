@@ -1,5 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test'
 import { navigateViaSideNav } from '../common/authNav'
+import { clickAwaitingCheckStatus } from '../common/checkStatus'
 import { MILL_YEAR_STORAGE_KEY, MSG_SAVED } from '../../fixtures/sch1/schedule1-test-data'
 
 /**
@@ -136,6 +137,23 @@ export class Schedule1Page {
     await this.field('#comments').fill(text)
   }
 
+  /**
+   * Set or EMPTY one line item's volume. Separate from `enterAmount`, which deliberately skips empty
+   * strings so a blank cell in its data table means "leave this field alone" — that makes it unable to
+   * clear a field, which is exactly what the BR-12 unsaved-edit arms need (see
+   * `check-status-unsaved.feature`). Blurs after typing, so the value is committed the way a reporter
+   * leaving the field would commit it.
+   */
+  async setVolume(label: string, value: string): Promise<void> {
+    const ids = FIELD_IDS[label]
+    if (!ids) {
+      throw new Error(`Unknown Schedule 1 line item label: "${label}"`)
+    }
+    const input = this.field(ids.vol)
+    await input.fill(value)
+    await input.blur()
+  }
+
   /** Resolve a single field label — a NAMED_FIELDS key, or "<line item> volume"/"<line item> cost". */
   fieldIdFor(label: string): string {
     const named = NAMED_FIELDS[label]
@@ -189,9 +207,14 @@ export class Schedule1Page {
     return this.page.getByRole('button', { name: 'Check Status' }).first()
   }
 
-  /** Run BR-07 Check Status (POST /check-status). Result renders as success/error/warning columns. */
+  /**
+   * Run Check Status (POST /check-status), settling on the server's answer when one is sent — see
+   * `clickAwaitingCheckStatus`. Result renders as success/error/warning columns.
+   */
   async checkStatus(): Promise<void> {
-    await this.checkStatusButton.click()
+    await clickAwaitingCheckStatus(this.page, '/schedule1/check-status', () =>
+      this.checkStatusButton.click(),
+    )
   }
 
   /** The Delete action (ScheduleActions): danger button, disabled unless editable. */
@@ -261,5 +284,22 @@ export class Schedule1Page {
     const dialog = this.page.getByRole('dialog', { name: 'Leave Schedule 1' })
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: 'Continue' }).click()
+  }
+
+  /**
+   * The S08 save-first gate's `passiveModal` (`index.tsx:767`). Distinct from the "Leave Schedule 1"
+   * discard prompt above: this one refuses the navigation outright and has no Continue button. Reachable
+   * only on a never-saved schedule, which defect #296 made possible — see `save-first-gate.feature`.
+   */
+  get saveRequiredDialog(): Locator {
+    return this.page.getByRole('dialog', { name: 'Save required' })
+  }
+
+  /**
+   * Click the Other Costs link WITHOUT answering any dialog. Separate from `openOtherCosts` on purpose:
+   * that helper asserts and dismisses the discard prompt, which would mask the save-first gate entirely.
+   */
+  async clickOtherCostsExpectingGate(): Promise<void> {
+    await this.otherCostsButton.click()
   }
 }

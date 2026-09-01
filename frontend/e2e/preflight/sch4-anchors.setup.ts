@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 // so this one-file bug took 39 scenarios out of the run on any branch, not just Schedule 4's.
 // Same ESM-safe idiom already used by `sch11-anchors.setup.ts`.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+import { collectAnchorKeys, fixtureFiles } from './anchor-keys';
 import {
   ANCHORS,
   GUARD_ANCHORS,
@@ -247,40 +248,179 @@ test('preflight: Schedule 4 mutating anchors are used in at most one feature fil
   ).toEqual([]);
 });
 
+/**
+ * (mill, year) keys that ARE shared across domains on purpose, with the reason. Anything shared and NOT
+ * listed here fails the guard below.
+ *
+ * WHY AN ALLOW-LIST AND NOT A BARE "no key twice" RULE: the anchor key is a (mill, year) REPORT, but a
+ * report holds every schedule. Two domains sharing a key only actually contend when they write the same
+ * schedule's rows, or when one changes the track status the other depends on. A flat rule would forbid
+ * cases that cannot collide, and the fixtures carry no uniform mutating/read-only flag to derive it from —
+ * so the exemptions are enumerated with their justification, the same shape as the designated-shared
+ * `validation` anchor in the guard above.
+ *
+ * Each entry was adjudicated 2026-08-24 when this guard was first made to run (see VER-8):
+ */
+/**
+ * Why every sch3 anchor sits on a report sch4 also pins, and why that is safe. Adjudicated 2026-08-24
+ * when UC-SCH3-001 was authored.
+ *
+ * Schedule 3 has NO create path in the rewrite — it can only be opened where a category-3
+ * `ILCR_REPORT_SUMMARY` already exists — and all 15 mill-years that DO open it in the extract are
+ * already pinned by sch1/sch2 (see `fixtures/sch3/schedule3-test-data.ts`). Those two domains genuinely
+ * contend with Schedule 3 (Schedule 1 pulls items 143/139 FROM Schedule 3, Schedule 2 carries figures
+ * FROM it, and the BR-09 crown push WRITES Schedule 1's volume rows), so sch3 seeds its own anchors on
+ * mill-years pinned by sch4 instead.
+ *
+ * That share cannot collide, structurally rather than by convention: no backend path links Schedule 3 to
+ * Schedule 4 (`grep -rl Schedule3Service backend/src/main/java` → schedule1, schedule2, schedule5,
+ * reporting only). Schedule 4 writes category-"4" `TRANSPORTATION_REPORT` rows; Schedule 3 writes
+ * category-"3" summary/detail rows. Neither can move a figure the other asserts on, and neither changes
+ * the Draft track status they both require.
+ */
+const SCH3_SCH4_SHARED =
+  'sch3 anchor + sch4 anchor on the same report, different schedules — see the note above this map.';
+
+const SCH3_SCH4_KEYS = [
+  '16050/2017',
+  '16050/2019',
+  '16050/2020',
+  '16050/2021',
+  '17052/2018',
+  '17052/2019',
+  '17052/2020',
+  // 17052/2021 is deliberately NOT here — it is shared with sch1 as well, so the blanket
+  // "different schedules" reason above does not cover it. It has its own entry in the map below.
+  '22050/2018',
+  // sch3 'retry' (S17) + sch4 'per-unit-after-save'. Both MUTATING, same shape as 12050/2018 below —
+  // except that sch3's save here DOES carry a Crown Timber volume, so the BR-09 push runs. It can only
+  // WRITE into a Schedule 1 that has been saved, and `sch3-anchors.setup.ts` asserts this mill-year has
+  // none (so the push answers WRN-002 and stores nothing). Schedule 4 is untouched by it either way: it
+  // owns category-"4" TRANSPORTATION_REPORT rows, which BR-09 never reaches.
+  '22050/2019',
+  '22050/2020',
+  '22050/2021',
+  '23050/2017',
+  '23050/2018',
+  '23050/2019',
+  '25054/2017',
+  // sch3 'stale-edit' (GAP-2, the optimistic-lock scenario) + sch4 'truck-rehaul'. Same reason as the
+  // rest of this list, and the narrowest case of it: BOTH anchors are mutating. Still structurally
+  // safe — sch3 writes category-3 summary/detail rows and sch4 writes category-4
+  // TRANSPORTATION_REPORT rows, and the sch3 scenario deliberately touches no Crown Timber volume, so
+  // it cannot reach Schedule 1 either.
+  '12050/2018',
+];
+
+/**
+ * Why every `sec` anchor is safe to share, and why five of them appeared here only on 2026-08-28.
+ *
+ * The `sec` (Home / working context) fixture interleaves `millNumber` and `millName` between `millId`
+ * and `year`, and both regexes this guard used until then required the two to be ADJACENT — so all five
+ * sec anchors were invisible to it from the day it was written. Nothing was wrong with the anchors; the
+ * scan could not see them. Fixed in `preflight/anchor-keys.ts` (it now pairs `millId` with the `year` in
+ * its own enclosing braces), which surfaced these five for adjudication.
+ *
+ * All five are safe, and structurally rather than by convention. sec writes NOTHING: Home's "Save" is a
+ * resolve — `GET /api/v1/mill-context` — so no sec scenario can move anything. And nothing the other
+ * side writes can move what sec reads: sec asserts the mill number/name and the two TRACK STATUS banner
+ * lines, and the only code in the whole backend that writes `ILCR_MILL_REPORT_STATUS` is
+ * `ReportingYearRepository` (the admin open-year flow, Story 24.1) — no schedule save touches it, and
+ * nothing writes `ILCR_MILL_REPORT_STATUS_RPT_VW` at all, which is where the banner DATE comes from
+ * (verified 2026-08-28 by sweeping backend/src/main/java for writes to both).
+ */
+const SEC_READ_ONLY =
+  'sec asserts only the mill number/name and the two track-status banner lines; it writes nothing, and '
+  + 'no schedule save can move a track code or a banner date — see the note above this map.';
+
+const SHARED_ACROSS_DOMAINS = new Map<string, string>([
+  // The three guard anchors. Each exists to make a GET fail in a specific way and is held read-only by
+  // construction — a closed mill and a missing schedule cannot be written to at all.
+  ['13/2017', 'closed-mill guard (HTTP 409) — read-only in sch1, sch2, sch11 and sec'],
+  ['16050/2016', 'no-schedule guard (HTTP 404) — read-only in sch1, sch11 and sec'],
+  ['12050/2016', 'submitted/non-Draft guard — read-only in sch1 and sch11'],
+  // The three sec shares where the other side DOES write. Same reason for all three.
+  ['13050/2017', `sch1 MUTABLE_DRAFT (the S01 write target) + sec DEFAULT_CONTEXT. ${SEC_READ_ONLY}`],
+  ['12050/2017', `sch1 Other-Costs inline-edit anchor + sec OPEN_WITH_STATUS. ${SEC_READ_ONLY}`],
+  ['9050/2019', `sch4 'validation-recovery' (mutating) + sec OPEN_ALT. ${SEC_READ_ONLY}`],
+  // The two mixed pairs: a read-only Check Status fixture in sch1 alongside a mutating anchor in another
+  // domain. Safe because the writer writes a DIFFERENT schedule's rows than the reader reads.
+  [
+    '24051/2016',
+    "sch1 'missing-line-item-volume' (read-only S15 Check Status fixture) + sch11 MULTI_ADD_ANCHOR "
+      + '(mutating). Schedule 11 is the independent silviculture track: its writes cannot alter the '
+      + 'Schedule 1 line items the fixture asserts on.',
+  ],
+  [
+    '22050/2016',
+    "sch1 'other-costs-volume-without-cost' (read-only S15/S16 Check Status fixture) + sch2 "
+      + 'HAPPY_PATH_ANCHOR (mutating). Schedule 2 writes its own cost items; the fixture reads Schedule 1 '
+      + 'line items and Other Costs. This is the narrowest margin of the five — both sit on the 1-10 '
+      + 'track — so if a Schedule 1 scenario ever starts WRITING this anchor, this exemption must go.',
+  ],
+  // The sch3 <-> sch4 shares (16 keys, one reason — see the note above; 17052/2021 is the 17th sch3
+  // anchor on a sch4 report and is adjudicated separately, immediately below).
+  ...SCH3_SCH4_KEYS.map((key) => [key, SCH3_SCH4_SHARED] as [string, string]),
+  // The one three-domain share, and the only sch1 <-> sch3 share in the suite.
+  [
+    '17052/2021',
+    "sch1 'no-schedule' (S21 render-state + S08 save-first gate — read-only) + sch3 'check-empty' "
+      + "(S10 — read-only) + sch4 'persistence' (mutating). ADJUDICATED 2026-08-31 (PR #402): sch1 and "
+      + 'sch3 genuinely contend — Schedule 1 derives its Forest Mgmt Admin / Silviculture Admin costs '
+      + 'FROM Schedule 3 and pre-fills its nine volume codes from a Schedule 3 Crown Timber volume '
+      + '(BR-09) — so this share is safe ONLY because the sch3 side is read-only and permanently EMPTY: '
+      + 'a Schedule 3 with no stored amounts leaves every Schedule 1 figure null and never arms the '
+      + "pre-fill, which is exactly what sch1's two scenarios assert. sch3's MUTATING `retry` anchor "
+      + 'used to sit here and was moved to 22050/2019 for that reason. If a sch3 scenario ever starts '
+      + 'WRITING this anchor, this exemption must go.',
+  ],
+  // The one sch3 <-> sch11 share.
+  [
+    '24051/2015',
+    "sch3 'never-started' (the DIV-1 divergence anchor — read-only, and deliberately NOT seeded: its "
+      + 'whole point is that Schedule 3 does not exist there) + sch11 ADD_ANCHOR (mutating). Nothing '
+      + 'sch11 does can create a category-3 summary, so the 404 the sch3 scenario asserts is invariant '
+      + "under Schedule 11's writes.",
+  ],
+]);
+
 test('preflight: Cross-domain anchors are globally distinct', async () => {
   const fixturesDir = path.join(HERE, '../fixtures');
-  const fixtureFiles = fs.readdirSync(fixturesDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && e.name !== 'common')
-    .map((e) => path.join(fixturesDir, e.name, `${e.name === 'sec' ? 'working-context' : e.name === 'sch7a' ? 'schedule7a' : e.name === 'sch7b' ? 'schedule7b' : e.name === 'sch9' ? 'schedule9' : e.name === 'sch6' ? 'schedule6' : e.name === 'sch5' ? 'schedule5' : e.name === 'sch10' ? 'schedule10' : e.name === 'sch8' ? 'schedule8' : e.name}-test-data.ts`))
-    .filter((f) => fs.existsSync(f));
 
-  const allKeys = new Map<string, string[]>();
+  // The scan itself lives in `preflight/anchor-keys.ts`, shared with the CI-seed-parity gate.
+  //
+  // It handles both object-literal property orders AND the positional `at(MILL_x, millId, year, …)`
+  // builder that sch3 and sch4 use for their anchor TABLES. Until 2026-08-24 this guard matched only
+  // the object literals, so it saw sch4's four guard anchors and NONE of its 48 table anchors — and
+  // none of sch3's 17 either: it ran, passed, and was blind to most of the keys it exists to compare
+  // (the dead-check class VER-8 records, one level down). It also THROWS on a domain whose fixture it
+  // cannot find, rather than skipping it, for the same reason. Two consumers re-deriving that regex
+  // would reopen the hole, which is why it is one module.
+  const files = fixtureFiles(fixturesDir);
+  const allKeys = collectAnchorKeys(fixturesDir);
 
-  for (const file of fixtureFiles) {
-    const domainName = path.basename(path.dirname(file));
-    const content = fs.readFileSync(file, 'utf8');
-    const matches = content.matchAll(/millId:\s*(\d+),\s*year:\s*(\d+)/g);
-    for (const match of matches) {
-      const key = `${match[1]}/${match[2]}`;
-      if (!allKeys.has(key)) {
-        allKeys.set(key, []);
-      }
-      const list = allKeys.get(key)!;
-      if (!list.includes(domainName)) {
-        list.push(domainName);
-      }
-    }
-  }
+  // Prove the scan actually saw every domain — the failure this guard had was silent under-scanning, so
+  // assert the inputs before asserting the property.
+  expect(
+    files.length,
+    `the cross-domain guard scanned ${files.length} fixture file(s): ${files
+      .map((f) => f.domain)
+      .join(', ')}`,
+  ).toBeGreaterThanOrEqual(6);
+  expect(allKeys.size, 'the cross-domain guard found no (mill, year) keys at all — it is not scanning')
+    .toBeGreaterThan(0);
 
-  const duplicates: string[] = [];
-  for (const [key, domains] of allKeys.entries()) {
-    if (domains.length > 1) {
-      duplicates.push(`anchor "${key}" shared across: ${domains.join(', ')}`);
+  const unexpected: string[] = [];
+  for (const [key, keyDomains] of allKeys.entries()) {
+    if (keyDomains.length > 1 && !SHARED_ACROSS_DOMAINS.has(key)) {
+      unexpected.push(`anchor "${key}" shared across: ${keyDomains.join(', ')}`);
     }
   }
 
   expect(
-    duplicates,
-    `Cross-domain anchors must be globally distinct to prevent test runner parallel collision — duplicated: ${duplicates.join('; ')}`,
+    unexpected,
+    'Cross-domain anchors must be globally distinct to prevent test-runner parallel collision. A key that '
+      + 'is genuinely safe to share belongs in SHARED_ACROSS_DOMAINS above WITH its reason — '
+      + `unexpected: ${unexpected.join('; ')}`,
   ).toEqual([]);
 });

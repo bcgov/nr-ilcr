@@ -62,7 +62,7 @@ Feature: Report Basic Silviculture Costs (Schedule 11) — accessibility
   # test:gate` excludes it from a clean run. See defects.md BUG-1.
   # ==================================================================================================
   @discovered-bug @p1
-  Scenario: The validation-error state announces its errors to assistive technology
+  Scenario: The validation-error state announces its errors to assistive technology [DISCOVERED BUG — app-wide, validation errors are never announced; defects.md BUG-1]
     Given the Schedule 11 validate-only anchor is an editable Draft
     And I have selected that mill and reporting year on the Home page
     When I open Schedule 11

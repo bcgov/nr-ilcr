@@ -5,12 +5,20 @@
 # /api/v1/schedule1/other-costs; success text is the API's verbatim SUC-002 (AD-8). Add validation is
 # advisory client-side (components/schedule1OtherCosts/validation.ts) mirroring the backend DTO.
 #
-# S12 PARITY NOTE (2026-08-07): legacy required a PrimeFaces confirm dialog (`confirmDeleteMsg`) before
-# removing a row — technical.md:102,154 and detailed.md:66. The shared EditableSubPage rewrite dropped it,
-# so Remove now deletes immediately. This scenario is re-grounded to the app's ACTUAL behaviour and is
-# GREEN, but the missing prompt is a parity regression confirmed against the legacy SOURCE and now with
-# the Schedule 1 developer (defects.md DIV-3), who'll double-check it against the legacy app when he gets a
-# chance. If it is confirmed, this scenario flips to a @discovered-divergence red.
+# S12 IS NOW A TRACKED RED (2026-08-26) — ticket bcgov/nr-ilcr#362, defects.md DIV-3.
+# Legacy required a PrimeFaces confirm dialog (`confirmDeleteMsg`) before removing a row; the shared
+# EditableSubPage rewrite dropped it, so Remove deletes immediately. From 2026-08-07 to 2026-08-26 this
+# scenario was RE-GROUNDED to the app's actual no-confirm behaviour and passed — which was the wrong
+# call, and the repo owner has since ruled it so: re-grounding a scenario onto a divergence makes the
+# suite ratify the defect instead of tracking it, and the green hid the regression for three weeks.
+# The open question that deferral rested on ("does legacy actually prompt?") is now closed against the
+# legacy SOURCE, not the sidecars: `webapp/schedule1OtherCosts.xhtml:94-96` carries
+# `<p:confirm message="#{msg.confirmDeleteMsg}">` on the per-row Delete. So the scenario now asserts the
+# legacy guarantee and fails until it is restored.
+#
+# SHARED, NOT SCHEDULE-1-SPECIFIC. The behaviour lives in `useEditableCostRows.removeRow` ->
+# `persist(next, 'delete')`, so Schedule 3's two cost sub-pages have the same defect (`sch3` DIV-5,
+# `row-delete-confirm.feature`). ONE ticket covers all three pages, and one fix turns all of them green.
 #
 # Each mutating scenario owns a DEDICATED editable Draft (S09 add → 25050/2017; S12 remove → 9050/2017) and
 # self-cleans its rows via the API cleanup registry (marker-keyed). S12 seeds its row through the real API
@@ -65,16 +73,19 @@ Feature: Report Average Cost of Logging (Schedule 1) — maintain Subtotal Other
       | cost out of range  | 150000000 | Entered cost must be between -99,999,999 and 99,999,999. |
       | non-numeric cost   | abc       | Entered cost is invalid.                                |
 
-  # PARITY CHANGE (bcgov EditableSubPage rewrite): the per-row delete-confirmation modal was removed —
-  # Remove now deletes immediately and persists the whole set. Re-grounded to that behavior; flagged for
-  # BA review (the legacy per-row confirm no longer exists in the app).
-  @S12 @p1
-  Scenario: Remove an Other Cost line item
+  # DIVERGENCE — this scenario is DELIBERATELY RED. It reproduces defects.md DIV-3, tracked upstream as
+  # bcgov/nr-ilcr#362, and stays failing until the confirmation is restored. Do not weaken it, skip it,
+  # or "fix" it by asserting the current behaviour: the failing state IS the tracking signal. Filter it
+  # out of a fresh-failures run with `npm run test:gate`.
+  #
+  # It asserts the LEGACY guarantee — Remove asks first (`confirmDeleteMsg`), and the row survives until
+  # the prompt is answered — not any particular modal chrome, which is the fixer's choice.
+  @S12 @p1 @discovered-divergence
+  Scenario: Removing an Other Cost line item asks for confirmation before deleting it [DISCOVERED DIVERGENCE — the row delete has no confirmation; defects.md DIV-3 / issue #362]
     Given an itemized Other Cost line item exists to remove
     And I have selected that mill and reporting year on the Home page
     And I open Schedule 1
     When I open the Other Costs sub-page
     And I delete the Other Cost "E2E S12 remove"
-    Then I should see the message "Data deleted successfully"
-    And the Other Cost "E2E S12 remove" is no longer in the Other Costs list
-    And the Other Cost "E2E S12 remove" is not persisted
+    Then the Other Costs sub-page asks me to confirm the removal
+    And the Other Cost "E2E S12 remove" is still persisted

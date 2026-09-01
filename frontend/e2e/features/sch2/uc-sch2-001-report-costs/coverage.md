@@ -2,7 +2,8 @@
 
 > New to these files? See [`coverage-guide.md`](../../../coverage-guide.md) at the e2e root for the column + status-flag legend.
 
-Sources reconciled: `UC-SCH2-001-S01..S16.feature` (16 slices, 21 scenarios) + `UC-SCH2-001-slices.md`
+Sources reconciled: `UC-SCH2-001-S01..S18.feature` (18 slices, 21 scenarios for S01–S16) +
+`UC-SCH2-001-slices.md`
 (control/message/field/rule matrix
 and its Gap Analysis Summary) + `UC-SCH2-001-detailed.md` + `UC-SCH2-001-technical.md` (message catalog:
 SUC-001..003, FLD-001..004, ERR-001..004, STA-001), against the app's real write path
@@ -39,8 +40,18 @@ S13–S16 entry rejection (`validation.feature`); the save round-trip surviving 
 (`persistence.feature`); and WCAG 2.1 AA (NFR1) across four structurally distinct renders
 (`accessibility.feature`).
 
-**Every one of the 16 slices is dispositioned `covered`.** 33 scenarios (39 tests after Scenario-Outline
-expansion). **All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
+**All 18 slices are `covered`.** The last two to land were **S17/S18**, the Check-Status-on-unsaved-edits
+arms added upstream 2026-08-27 by ilcr-bmad PR #92 and covered the same day by two deliberate
+`@discovered-divergence` reds against [#359](https://github.com/bcgov/nr-ilcr/issues/359) — see defects.md
+**DIV-2**, a pointer; the analysis for that app-wide divergence (11 of 12 schedules; Schedule 6 is the only
+correct implementation) lives once, in `sch3/defects.md` DIV-6.
+
+> ### Suite state — the ONE place this is recorded
+> **35 scenarios / 41 tests after Scenario-Outline expansion: 39 green + 2 deliberate
+> `@discovered-divergence` REDs** (S17/S18 / DIV-2 — Check Status on unsaved edits, #359). Measured from the
+> generated specs and a full run on **2026-08-27**. This suite had no tracked reds at all until these two.
+
+**All green as of 2026-08-24:** the one deliberate `@discovered-bug` RED — Delete offered on a
 schedule that has never been saved (defects.md **BUG-1**, BR-08/S06) — was fixed in nr-ilcr #292, so its tag
 is removed and the scenario now runs in the gate as the regression barrier. The suite's own `deleteButton`
 locator moved from the top bar to the bottom one at the same time, because #292 also restored legacy's
@@ -65,7 +76,7 @@ reading the matrix below:
 | Check Status success / missing (S07, S08) | `check-status.feature` ×3 | `covered` |
 | written after implementation per AD-10 (verification, not red phase) | 3.1–3.3 were `done` before this suite was authored | satisfied |
 | axe: zero violations **or** triaged disposition (NFR1) | `accessibility.feature` — 4 clean renders; the 5th is GAP-4's recorded disposition | `covered` |
-| CI: wired into the pipeline **or** documented as a manual gate | `reusable-tests.yml` runs the data-independent `@smoke` project; the data-backed suite is a documented manual gate in `e2e/README.md` | satisfied (manual-gate branch) |
+| CI: wired into the pipeline **or** documented as a manual gate | `reusable-tests.yml` runs the FULL suite on every PR since upstream #327 (2026-08-28) — `smoke`, `setup` and `chromium` against the shared tools-namespace Oracle, gated on `npm run test:gate`. This row previously read "manual gate"; it is now the pipeline branch of the AC | satisfied (pipeline branch) |
 
 > **Note on the issue's stated context (`514/2021`).** #78 describes the local setup as "context 514/2021";
 > that is an example working context for bringing the stack up, not a constraint on which records the
@@ -266,9 +277,11 @@ Audited against the skill's `quality-and-coverage-gates.md` §A on 2026-08-13. *
   Status arms, persistence).
 - **P1: 100%** of P1 items covered — 17 scenarios, **all green** since nr-ilcr #292 closed BUG-1; the
   formerly-excluded BR-08/S06 scenario now runs inside the gate rather than counting as covered-while-red.
-- **Overall: 16/16 slices covered.** On messages: **the two GAP-3 fallbacks are no longer
+- **Overall: 18/18 slices covered** (S17/S18, the unsaved-edit arms, covered 2026-08-27 by two deliberate
+  reds against #359 — see the header). On messages: **the two GAP-3 fallbacks are no longer
   `deferred`** — covered in Vitest by [#298](https://github.com/bcgov/nr-ilcr/issues/298) on
-  2026-08-26, which is where they belong (Vitest gates in CI; this data-backed suite is a manual gate).
+  2026-08-26, which is where they belong (a route-interception fallback is a component concern, and Vitest
+  needs no database to prove it).
   Two rows remain uncovered: the `blocked` role item (GAP-1) and `Unable to check status.`, the latter
   **added to the catalog by the #298 code review** — the verdict here previously read "every
   message-catalog row except GAP-1", measured against a list that silently omitted the page's fourth

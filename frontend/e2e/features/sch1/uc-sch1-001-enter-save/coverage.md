@@ -2,7 +2,13 @@
 
 > New to these files? See [`coverage-guide.md`](../../../coverage-guide.md) at the e2e root for the column + status-flag legend.
 
-Sources reconciled: `UC-SCH1-001-S01..S24.feature` (24 slices; `../../../../tests/UC-SCH1-001/gherkin/`)
+Sources reconciled: `UC-SCH1-001-S01..S28.feature` (28 slices; `../../../../tests/UC-SCH1-001/gherkin/`).
+S25/S26 were derived 2026-08-07 (the per-row inline edit, a spec gap this suite found); **S27/S28 arrived
+upstream 2026-08-27 with ilcr-bmad PR #92** — the two Check-Status-on-unsaved-edits arms, **covered the same
+day** by two deliberate `@discovered-divergence` reds tracking
+[#359](https://github.com/bcgov/nr-ilcr/issues/359) (defects.md **DIV-6**, a pointer; the analysis for that
+app-wide divergence lives once, in `sch3/defects.md` DIV-6). Note the catalogue also carries a
+COARSER business-value numbering (`S1`/`S2`/`S3`) in the high-level UC; those are not these
 + `UC-SCH1-001-slices.md` (control/message matrix) + `UC-SCH1-001-technical.md` (message/error catalog),
 against the app's real write path (`schedule1/api/Schedule1Api.java` PUT/GET/DELETE + `dto/Schedule1Request.java`
 validators + `components/schedule1/index.tsx`).
@@ -16,10 +22,15 @@ render states S19–S22 (`render-states.feature`); delete S13 (`delete.feature`)
 S09–S12 (`other-costs.feature`); **Other Costs inline edit (`other-costs-inline-edit.feature`, slices
 S25/S26)**; **clearing a saved amount (`clear-amounts.feature`)**; persistence + retry S23–S24
 (`persistence.feature`); and WCAG 2.1 AA accessibility on the Schedule 1 page + Other Costs sub-page
-(`accessibility.feature`, AC4/NFR1 — zero violations). **Every slice is now dispositioned**: the last
-outstanding one, **S08** (open-Other-Costs-before-save), was reclassified 2026-08-07 from `deferred` to
-`not-applicable (E2E)` — it is unreachable by construction, not awaiting a fixture. See defects.md
-GAP-3.
+(`accessibility.feature`, AC4/NFR1 — zero violations); and **S08 the save-first gate on Other Costs**
+(`save-first-gate.feature`).
+
+**Disposition: all 28 slices `covered`.** The last two to land were **S27/S28**, the
+Check-Status-on-unsaved-edits arms, covered 2026-08-27 by two deliberate reds against
+[#359](https://github.com/bcgov/nr-ilcr/issues/359).
+**S08 was the last of the original 24 to land:** `deferred` until 2026-08-07, then `not-applicable (E2E)` as
+unreachable dead code, and **covered from 2026-08-27** once defect #296 gave the branch a real trigger. See
+defects.md GAP-3 (closed).
 
 **2026-08-07 re-review.** The app moved underneath this matrix and it was re-reconciled end to end
 against the current write path, the slice matrix, and the message catalog. What changed:
@@ -47,9 +58,42 @@ this matrix:
   blocked the clear; with BUG-2 fixed, an ordinary user action reaches it, so its row moves from
   `not-applicable (E2E)` to `covered` — guarded by a reopen at the end of the clear-amounts scenario.
 
-Suite state: **green — 57 passed, 0 failed, no `@discovered-*` reds remain** (two consecutive full runs
-2026-08-11). `--grep-invert @discovered-bug` is no longer needed for a clean CI run, since there is no
-longer an intentional red to filter out.
+> ### Suite state — the ONE place this is recorded
+> **30 scenarios / 42 tests after Scenario-Outline expansion: 39 green + 3 deliberate
+> `@discovered-divergence` REDs** — S12 / DIV-3 (row delete confirm, #362) and **S27/S28 / DIV-6** (Check
+> Status on unsaved edits, #359). Measured from the generated specs and a full run on **2026-08-27**.
+>
+> Counts used to be restated three times in this section, from three different runs and on two different
+> denominators (57 was this UC alone; 163 and 164 included the 126-check preflight, which has itself grown).
+> A reader could not tell which was current. Re-measure with
+> `npx playwright test --list --project=chromium` and edit **this block only**. No whole-suite total is
+> written down anywhere by design — the e2e [`README.md`](../../../README.md) gives the command.
+>
+> One scenario in `sec` also carries `@UC-SCH1-001` (`context-drives-schedule.feature:27`, the closed-mill
+> consequence = S20), so a tag-based grep reports 40 for sch1's folder and 41 across the tag. Both are
+> right; the 40 above is this folder.
+
+A clean run needs `npm run test:gate`, which excludes every `@discovered-*` red.
+
+**What moved the numbers, in order (history — the state above is current):**
+- **2026-08-11** — BUG-2/BUG-3 fixed, the last red retired, suite fully green.
+- **2026-08-26 — S12 became a tracked red again, and not because of a new defect but a corrected test.**
+  The per-row delete confirmation legacy required is missing (defects.md **DIV-3**, ticket
+  [#362](https://github.com/bcgov/nr-ilcr/issues/362), one ticket with Schedule 3's DIV-5 since both sit on
+  the shared `useEditableCostRows`). S12 had been *re-grounded* onto the app's no-confirm behaviour on
+  2026-08-07 and passed for three weeks; the repo owner ruled that the wrong call — re-grounding onto a
+  suspected defect makes the suite ratify it — so the scenario now asserts the legacy guarantee and fails
+  until the prompt is restored.
+- **2026-08-26 (later the same day) — defect #296 merged, and S13 needed re-grounding.** The fix removes
+  the 404 for an unsaved or just-deleted Schedule 1 and stops rendering it read-only, so `delete.feature`'s
+  post-delete assertions were stale and briefly failed on the merge commit. S13 now asserts a blank
+  EDITABLE form with Delete withdrawn — which is what legacy did (delete, re-read, stay on the page;
+  editability gated on the track status, Delete on summary existence) — and "no longer exists" means
+  UNSAVED rather than 404. See defects.md, *Verified — not a defect*.
+- **2026-08-27 — S08 gained its first test ever** (`save-first-gate.feature`), +1 scenario. The same #296
+  fix that broke S13's proxy turned S08's dead `!data` branch into a live saved-ness gate, so the legacy
+  save-first message became reachable and testable. That closed defects.md **GAP-3**, which had recorded
+  it as permanently unreachable dead code.
 
 Note on snapshot/restore cleanup: four scenarios now leave changes the app's own blank-fields PUT cannot
 undo, so each snapshots its dedicated target to the `E2E_BAK_SCH1_*` tables and re-inserts the rows
@@ -92,11 +136,11 @@ plus "no backup … snapshot was never taken" restore failures). A real run only
 | S05 Volume out of 7-digit range rejected | S05.feature (Exc); FLD-002 | `validation.ts` `VOLUME_7_DIGIT` ±9,999,999 (vol-12..18, sil 1/2/139/140) → inline error; `handleSave` gate | `validation.feature` `@S05 @FLD-002 @p1` (Outline ×4: line item, silv 1, silv 139, silv 140) | covered | Widened 2026-08-07 to the restored 139/140 volumes. Entry-mechanism divergence — see defects.md |
 | S06 Volume out of 8-digit range rejected | S06.feature (Exc); FLD-003 | `validation.ts` `VOLUME_8_DIGIT` ±99,999,999 (`otherCostsVolume`, `vol-143`, `vol-144`) → inline error; `handleSave` gate | `validation.feature` `@S06 @FLD-003 @p1` (Outline ×3 — all three editable 8-digit volumes) | covered | Widened 2026-08-07: legacy's three editable 8-digit fields are editable again (DIV-2 retired), so all three are now exercised rather than one |
 | S07 Non-numeric volume rejected | S07.feature (Exc); FLD-005 | `validation.ts` `volumeInvalid` (`Number(raw)` NaN) → inline error; `handleSave` gate | `validation.feature` `@S07 @FLD-005 @p1` | covered | Entry-mechanism divergence — see defects.md |
-| S08 Open Other Costs before first save | S08.feature (Exc) | `Schedule1.handleOtherCosts` `!data` branch (`index.tsx:261`) → ALT-001 "Save required" Modal (`:698`) | — | not-applicable (E2E; unreachable by construction) | Dead code: `index.tsx:341` returns null when `!data`, and the button that calls the branch renders below that guard — so it needs `data` to be both null and non-null. Covered by NO test at any level (`ALT_SAVE_BEFORE_OTHER_COSTS` never appears in a test). Dev call: delete the branch or add a forced-null-data component test — defects.md GAP-3 |
+| S08 Open Other Costs before first save | S08.feature (Exc) | `Schedule1.handleOtherCosts` gated on `!data \|\| !isScheduleSaved(data)` (`index.tsx:288`) → "Save required" Modal (`:767`) carrying legacy `schedule1.xhtml:497` verbatim | `save-first-gate.feature` `@S08 @p1` (anchor 16050/2016, never saved) | covered | **Was `not-applicable (E2E; unreachable by construction)` until 2026-08-27.** The branch really was dead — gated on `!data`, below a `return null` on `!data` — until defect #296 made an unsaved schedule render a form and Rylan re-gated it on saved-ness, citing this slice (`index.tsx:280-287`). Read-only scenario: the click is refused, so nothing is written. Closed defects.md GAP-3 |
 | S09 Add line item on Other Costs sub-page | S09.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=save`) → SUC-002; row added + count updates | `other-costs.feature` `@S09 @p1` (add target 25050/2017) | covered | Add now persists the whole set (2026-08 EditableSubPage rewrite); original delivery-DB insert 500 — defects.md BUG-1 (historical) |
 | S10 Other cost line without description | S10.feature (Exc) | `validateOtherCost` `descriptionRequired` → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S10 @p1` | covered | Re-grounded FLD-006 message to the new bundle |
 | S11 Other cost line invalid cost | S11.feature (Exc) | `validateOtherCost` cost range / non-numeric → inline error; Add blocked (no mutating PUT) | `other-costs.feature` `@S11 @p1` (Outline: out-of-range; non-numeric) | covered | — |
-| S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" deletes immediately (no confirm modal) + persists the set | `other-costs.feature` `@S12 @p1` (remove target 9050/2017) | covered (+ parity) | Precondition row added via the API; removed through the UI. Delete-confirm modal removed by the 2026-08 EditableSubPage rewrite; legacy DID confirm (technical.md:102,154) so this is a parity regression — with the Schedule 1 dev, who'll double-check it against the legacy app when he gets a chance. See defects.md DIV-3 |
+| S12 Remove an additional line item | S12.feature (Alt) | `Schedule1OtherCostsApi.saveOtherCosts` (whole-set PUT, `intent=delete`) → SUC-002; icon-only "Remove" deletes immediately (no confirm modal) + persists the set | `other-costs.feature` `@S12 @p1 @discovered-divergence` (remove target 9050/2017) | divergence | **RED on purpose since 2026-08-26** — defects.md **DIV-3**, ticket [#362](https://github.com/bcgov/nr-ilcr/issues/362). Precondition row added via the API; the scenario now asserts the legacy `confirmDeleteMsg` prompt and that the row survives until it is answered. It had been re-grounded onto the app's no-confirm behaviour and passing since 2026-08-07 — the wrong call (a suite must not ratify a divergence), corrected once the legacy source confirmed the prompt (`schedule1OtherCosts.xhtml:94-96`). Same shared hook as Schedule 3's DIV-5; one fix turns both green |
 | S25 Per-row inline edit of an existing Other Cost — valid edit + BR-06 shared volume | **UC-SCH1-001-S25.feature** (derived 2026-08-07; split out of S09) | `useEditableCostRows.setRowDescription`/`setRowValue` + `handleSave` → whole-set `PUT …?intent=save` | `other-costs-inline-edit.feature` `@S25 @p1` (target 12050/2017) | covered | Covers both halves of the edit (cost and description) plus BR-06: the row exposes only description + cost as editable, and the volume cell shows the shared value |
 | S26 Per-row inline edit rejected — blank description / invalid cost | **UC-SCH1-001-S26.feature** (derived 2026-08-07; split out of S10/S11) | `useEditableCostRows.persist` validates every row and returns before sending; `OtherCostSaveRequest` re-validates server-side | `other-costs-inline-edit.feature` `@S26 @FLD-006 @p1` + Outline `@S26 @FLD-001`/`@FLD-004` (validate anchor 17052/2016) | covered | Mirrors S10/S11's shape (description = scenario, cost = Outline). Validate-only: each proves a zero-write with `otherCostsSpy`, so the shared anchor is never modified |
 | Shared Other-Costs row with a null volume (GET robustness) | Found while building the S02 precondition; legacy rendered this state fine and flagged it at Check Status (FLD-010) | `Schedule1Service.toOtherCosts` — row selected before mapping to its nullable volume | `clear-amounts.feature` `@p1` (the closing reopen of the five-field scenario) | covered | Was `not-applicable (E2E)` while BUG-2 made the state unreachable. **Fixed 2026-08-11** in the same commit as BUG-2, as this entry required (issue #261). Fixing BUG-2 made the state reachable by ordinary user action, so it is now guarded E2E: clear the shared volume, reopen, and the page must render instead of 500 |

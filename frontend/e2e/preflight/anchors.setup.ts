@@ -100,7 +100,7 @@ function classifyMutableTarget(doc: ScheduleDoc): TargetFindings {
  */
 
 const REGROUND =
-  'Re-ground: reload the real extract (README step 1), evict the reference-data cache or restart the ' +
+  'Re-ground: reload the real extract (README, "Seeded Oracle DB"), evict the reference-data cache or restart the ' +
   'backend, then re-verify the pinned Schedule 1 anchors in fixtures/sch1/schedule1-test-data.ts.';
 
 async function getDraft(
