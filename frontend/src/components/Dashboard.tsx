@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid, Tag, Tile } from '@carbon/react'
+import { ArrowRight } from '@carbon/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import useAuth from '@/context/auth/useAuth'
 import PageTitle from '@/components/core/PageTitle'
@@ -46,7 +47,11 @@ const Dashboard: FC = () => {
           <Tile>
             <h3>Schedules</h3>
             <p>Open Schedule 1 for the mill and reporting year in context.</p>
-            <Button kind="primary" onClick={() => navigate({ to: '/schedule-1' })}>
+            <Button
+              kind="primary"
+              renderIcon={ArrowRight}
+              onClick={() => navigate({ to: '/schedule-1' })}
+            >
               Open Schedule 1
             </Button>
           </Tile>

@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Button, Column, Dropdown, Grid, InlineNotification } from '@carbon/react'
+import { Save } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import LoadingScreen from '@/components/core/LoadingScreen'
@@ -289,7 +290,7 @@ const Home: FC = () => {
         </Column>
 
         <Column sm={4} md={8} lg={16} className="home__actions">
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         </Column>

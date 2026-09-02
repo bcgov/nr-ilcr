@@ -13,6 +13,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Add, Close, Edit, Save } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -282,6 +283,7 @@ const CodeTables: FC = () => {
                         <Button
                           size="sm"
                           disabled={saving}
+                          renderIcon={Add}
                           onClick={() =>
                             save(
                               addForm,
@@ -342,6 +344,7 @@ const CodeTables: FC = () => {
                             <Button
                               size="sm"
                               disabled={saving}
+                              renderIcon={Save}
                               onClick={() =>
                                 save(editForm, false, false, () => setEditingCode(null))
                               }
@@ -352,6 +355,7 @@ const CodeTables: FC = () => {
                               kind="ghost"
                               size="sm"
                               disabled={saving}
+                              renderIcon={Close}
                               onClick={() => setEditingCode(null)}
                             >
                               Cancel
@@ -370,6 +374,7 @@ const CodeTables: FC = () => {
                                 kind="ghost"
                                 size="sm"
                                 disabled={editingCode !== null || saving}
+                                renderIcon={Edit}
                                 onClick={() => startEdit(row)}
                               >
                                 Edit

@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import type Schedule10Response from '@/interfaces/Schedule10Response'
 import type {
@@ -623,7 +623,7 @@ const Schedule10: FC = () => {
                               {editable ? 'Edit' : 'View'}
                             </Button>
                             <Button
-                              kind="danger--ghost"
+                              kind="danger--tertiary"
                               size="sm"
                               renderIcon={TrashCan}
                               disabled={controlsDisabled || isOpen}
@@ -697,12 +697,13 @@ const Schedule10: FC = () => {
                 <Button
                   kind="primary"
                   disabled={controlsDisabled || pagePanelMode === 'view'}
+                  renderIcon={Save}
                   onClick={() => savePage(pages)}
                 >
                   Save
                 </Button>
                 {/* Close discards silently, as legacy does — only the two level changes confirm. */}
-                <Button kind="secondary" onClick={closePagePanel}>
+                <Button kind="secondary" renderIcon={Close} onClick={closePagePanel}>
                   Close
                 </Button>
               </div>

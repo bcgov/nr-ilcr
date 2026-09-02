@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { Add, CheckmarkOutline, Misuse } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import DirectoryPicker from '@/components/millAssociations/DirectoryPicker'
@@ -290,6 +291,7 @@ const MillAssociations: FC = () => {
                             size="sm"
                             disabled={busy}
                             aria-label="Activate account"
+                            renderIcon={CheckmarkOutline}
                             onClick={() => setAccountActive(true)}
                           >
                             Activate
@@ -301,6 +303,7 @@ const MillAssociations: FC = () => {
                             size="sm"
                             disabled={busy}
                             aria-label="Deactivate account"
+                            renderIcon={Misuse}
                             onClick={() => setAccountActive(false)}
                           >
                             Deactivate
@@ -339,6 +342,7 @@ const MillAssociations: FC = () => {
                 <Button
                   size="sm"
                   disabled={busy || !selectedMill}
+                  renderIcon={Add}
                   onClick={() => selectedMill && assign(selectedMill.millId)}
                 >
                   Add
@@ -377,6 +381,7 @@ const MillAssociations: FC = () => {
                               size="sm"
                               disabled={busy}
                               aria-label={`Deactivate mill ${dash(row.millNumber)}`}
+                              renderIcon={Misuse}
                               onClick={() => end(row)}
                             >
                               Deactivate
@@ -388,6 +393,7 @@ const MillAssociations: FC = () => {
                               size="sm"
                               disabled={busy}
                               aria-label={`Activate mill ${dash(row.millNumber)}`}
+                              renderIcon={CheckmarkOutline}
                               onClick={() => assign(row.millId)}
                             >
                               Activate

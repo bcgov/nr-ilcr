@@ -22,7 +22,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Close, Save } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -441,9 +441,10 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       // Carbon's own outlined danger kind — a red border and red label that invert to a solid red
       // fill on hover/focus — so the outline comes from Carbon's tokens rather than a border rule
       // this page would have to maintain against theme changes. Already the repo's pattern for a
-      // Delete: `core/ScheduleActions` uses the same kind (index.tsx:77). NOTE this makes Schedule 6
-      // the only PER-ROW delete that is outlined; every other schedule's row delete is still
-      // `danger--ghost`.
+      // Delete: `core/ScheduleActions` uses the same kind (index.tsx:77).
+      //
+      // This used to be the ONLY per-row delete that was outlined; #411 made every row delete in the
+      // app match it, so the treatment is now the app-wide standard rather than this page's exception.
       kind="danger--tertiary"
       size="sm"
       title={DELETE_BUTTON_TITLE}
@@ -454,6 +455,7 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       // the row's own "Road Maintenance report Id: N" accordion title (final-review M8).
       aria-label={`${DELETE_BUTTON_TITLE} ${String(ordinal)}`}
       disabled={deleteDisabled}
+      renderIcon={TrashCan}
       onClick={onDelete}
     >
       {DELETE_BUTTON_LABEL}

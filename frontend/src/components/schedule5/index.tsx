@@ -30,7 +30,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Copy, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -1222,7 +1222,7 @@ const Schedule5: FC = () => {
           Edit
         </Button>
         <Button
-          kind="danger--ghost"
+          kind="danger--tertiary"
           size="sm"
           renderIcon={TrashCan}
           disabled={saving}
@@ -1327,12 +1327,18 @@ const Schedule5: FC = () => {
         {/* Legacy renders Save DISABLED in the read-only state rather than removing it (AC11,
             review decision 2026-08-11); Close stays enabled — it is the only way out of a View
             panel, the one place the AC's "everything disabled" cannot be taken literally. */}
-        <Button kind="primary" disabled={!editable || readOnlyPanel || saving} onClick={handleSave}>
+        <Button
+          kind="primary"
+          disabled={!editable || readOnlyPanel || saving}
+          renderIcon={Save}
+          onClick={handleSave}
+        >
           Save
         </Button>
         <Button
           kind="secondary"
           disabled={saving}
+          renderIcon={Close}
           // The `readOnlyPanel` test this replaces is subsumed: a view panel is never dirty.
           onClick={() => (panelDirty ? setConfirmClose(true) : closePanel())}
         >

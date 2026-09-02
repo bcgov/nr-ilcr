@@ -23,6 +23,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Add, ArrowLeft, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { extractDetail } from '@/utils/error'
@@ -443,7 +444,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
           }}
         />
       </div>
-      <Button kind="primary" disabled={!editable || saving} onClick={handleAdd}>
+      <Button kind="primary" disabled={!editable || saving} renderIcon={Add} onClick={handleAdd}>
         Add
       </Button>
     </div>
@@ -558,6 +559,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
                     kind="ghost"
                     size="sm"
                     disabled={!editable || saving}
+                    renderIcon={TrashCan}
                     onClick={() => {
                       setConfirmDeleteRow(row)
                     }}
@@ -611,10 +613,15 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
               :127-129). That dead duplicate is dropped (deviation (K), the 7.3 (L) precedent); the
               single Save is rendered disabled instead, so the control a licensee expects is still
               there and visibly unavailable. */}
-          <Button kind="primary" disabled={!editable || saving} onClick={handleSave}>
+          <Button
+            kind="primary"
+            disabled={!editable || saving}
+            renderIcon={Save}
+            onClick={handleSave}
+          >
             Save
           </Button>
-          <Button kind="secondary" disabled={saving} onClick={requestBack}>
+          <Button kind="secondary" disabled={saving} renderIcon={ArrowLeft} onClick={requestBack}>
             Back
           </Button>
         </Column>
