@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -52,13 +53,57 @@ public class MillInformationService {
    */
   public List<MillInformationSection> findSections(int year) {
     Map<String, String> regions = zoneDescriptions();
+    // null mill predicate = every mill. Passing null here rather than calling a second query is
+    // what keeps the all-mills report and the per-mill drill-down incapable of drifting — see
+    // MillInformationRepository#findSectionRows.
     List<MillInformationSection> sections =
-        repository.findSectionRows(year).stream()
+        repository.findSectionRows(year, null).stream()
             .map(row -> toSection(row, region(regions, row)))
             .toList();
     // Count only. Contact names, phone numbers and addresses are personal data (AD-11/NFR3).
     log.info("Read {} mill information sections for year {}", sections.size(), year);
     return sections;
+  }
+
+  /**
+   * ONE mill's section content for the reporting year — the per-mill drill-down (Story 19.3,
+   * UC-MRPT-002 S02 / UC-MRPT-004 S02) launched from the Mill Status Report table.
+   *
+   * <p>Deliberately the same read, the same Region lookup and the same {@code toSection} projection
+   * as {@link #findSections(int)}, differing only in the mill predicate. That is the parity
+   * contract: the section this returns must be byte-identical to the one the all-mills PDF renders
+   * for the same mill, and it can only stay so while there is one projection to change.
+   *
+   * <p>An empty {@link java.util.Optional} means this mill has no report-status row for that year —
+   * a real outcome (a mill added after the year was initialised, or a year the mill never reported
+   * in), and the caller's signal to answer 404 rather than produce an empty PDF.
+   *
+   * <p><b>Takes the FIRST row, and that is not laziness.</b> {@code ILCR_MILL_REPORT_STATUS_RPT_VW}
+   * is a view, not a table, so nothing constrains it to one row per (year, mill) — {@code
+   * MillContextRepository.findStatusDates} documents the same fact and takes first-row semantics
+   * for it, as legacy did with {@code get(0)}. The all-mills report renders whatever the view
+   * yields; here the contract is one mill, one section, so a duplicate must produce one section
+   * rather than an arbitrary-length PDF.
+   *
+   * <p>Which row that is, is <b>reproducible</b>, and it is the QUERY that makes it so. {@code
+   * findSectionRows} orders by mill id and then by every view column the section projects, so the
+   * first row is the same one on every execution. Do not shorten that {@code ORDER BY} to mill id
+   * alone: {@code findFirst} would then return whatever Oracle's plan emitted, and two consecutive
+   * drill-downs of one mill could show the administrator different addresses or contacts. See
+   * {@link MillInformationRepository#findSectionRows}.
+   *
+   * @param millId the mill to report on — the mill id from the status table's clicked row, NOT the
+   *     mill number
+   * @param year the reporting year
+   * @return the mill's section, or empty when it has no report-status row for the year
+   */
+  public Optional<MillInformationSection> findSection(long millId, int year) {
+    Map<String, String> regions = zoneDescriptions();
+    List<MillInformationRowEntity> rows = repository.findSectionRows(year, millId);
+    // Mill id and year only, and a count. Everything else on this row is personal data
+    // (AD-11/NFR3): client name, contact names, phone numbers, addresses.
+    log.info("Read {} mill information row(s) for mill {} year {}", rows.size(), millId, year);
+    return rows.stream().findFirst().map(row -> toSection(row, region(regions, row)));
   }
 
   /**

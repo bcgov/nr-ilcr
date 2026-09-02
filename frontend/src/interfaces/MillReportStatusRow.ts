@@ -16,11 +16,21 @@
  * both shapes, and every read of these fields must therefore go through `??`.
  */
 export default interface MillReportStatusRow {
-  /** The mill id — the React row key. NOT the mill number, and never rendered. */
+  /**
+   * The mill id — the React row key, and the drill-down's path parameter (Story 19.3). NOT the mill
+   * number.
+   *
+   * Not normally rendered. It IS shown, as a last resort, when a mill has neither a name nor a
+   * number: the Mill cell's control still has to carry a visible label, and the drill-down filename
+   * falls back to it for the same reason (the backend applies the identical fallback).
+   */
   readonly millId: number
   /** Mill Number — the first (sortable) column. */
   readonly millNumber?: string | null
-  /** Mill (licensee) name — the second sortable column. Plain text; the drill-down is Story 19.3. */
+  /**
+   * Mill (licensee) name — the second sortable column, and the label of the drill-down control that
+   * downloads this mill's own Mill Information PDF (Story 19.3).
+   */
   readonly millName?: string | null
   /** Selling-price zone description, or null when absent/unreadable — the page renders `-`. */
   readonly region?: string | null

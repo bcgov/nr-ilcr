@@ -17,14 +17,20 @@ package ca.bc.gov.nrs.ilcr.millreportstatus.dto;
  * what decodes that letter. They are not prefix-stripped anywhere on this surface, and a {@code
  * null} must render as an empty line — never the text {@code null}.
  *
- * <p>Carries NO personal data. Legacy's shared {@code MillReportStatusType} also held addresses,
- * contact names, phones and emails for the drill-down PDF; none of that belongs on a status table
- * (AD-11/NFR3), and the drill-down is Story 19.3.
+ * <p>Carries NO personal data, and the drill-down does not change that. Legacy's shared {@code
+ * MillReportStatusType} also held addresses, contact names, phones and emails, because the same
+ * object fed the per-mill PDF; none of that belongs on a status table (AD-11/NFR3). Story 19.3's
+ * drill-down instead sends only {@code millId} back to {@code GET
+ * /api/v1/reports/mill-information/{millId}}, which re-reads the mill server-side — so the personal
+ * data stays out of this payload and off the wire to the table.
  *
- * @param millId the mill id — the React row key and the arrival-order sort key; NOT the mill number
+ * @param millId the mill id — the React row key, the arrival-order sort key, and the drill-down's
+ *     path parameter; NOT the mill number
  * @param millNumber the mill number, the table's first (sortable) column
- * @param millName the mill (licensee) name, the second sortable column. Plain text: the legacy
- *     {@code p:commandLink} drill-down is Story 19.3 and is out of scope here
+ * @param millName the mill (licensee) name, the second sortable column, and the label of the
+ *     drill-down control that downloads this mill's own Mill Information PDF (Story 19.3, the
+ *     legacy {@code p:commandLink}). Nullable, so the page falls back to {@code millNumber} then
+ *     {@code millId} for that label
  * @param region the selling-price zone DESCRIPTION, or {@code null} when the code is absent or the
  *     lookup table cannot be read; the page renders {@code "-"} then, as legacy did
  * @param active whether the mill was ACTIVE IN THIS REPORTING YEAR (the view's {@code

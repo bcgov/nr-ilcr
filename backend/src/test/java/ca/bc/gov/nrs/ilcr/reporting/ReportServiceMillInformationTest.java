@@ -20,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Service;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Service;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -38,6 +39,11 @@ import org.springframework.http.HttpStatus;
  * database connection, so the whole render is exercisable without Oracle. The integration tests
  * prove the endpoint end to end; these prove the rendering logic itself, which is otherwise only
  * reachable through a container the coverage analysis never runs.
+ *
+ * <p>Both render entry points are here: the all-mills report for a year (Story 19.1) and the
+ * per-mill drill-down (Story 19.3). They are deliberately the same renderer over a list of one, and
+ * {@code drillDownSectionMatchesTheAllMillsSection} is where that sameness stops being an argument
+ * and becomes an assertion.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ReportService — Mill Information render")
@@ -158,6 +164,166 @@ class ReportServiceMillInformationTest {
         .contains("No")
         .doesNotContain("null");
   }
+
+  @Test
+  @DisplayName("a mill with no row for the year is its own 404, distinct from the no-mills one")
+  void absentMillRaisesMillNotFound() {
+    // Not MillInformationNoMillsException: that one says the YEAR is empty, and saying it here
+    // would be false on its face — the administrator is reading a table of the year's mills while
+    // the message claims none exist. And not the catch-all either: an open year with no row for one
+    // mill is a data condition, not a fault, so it must not raise the 5xx rate.
+    when(millInformationService.findSection(999, 2021)).thenReturn(java.util.Optional.empty());
+    ReportService service = service();
+
+    assertThatThrownBy(() -> service.renderMillInformation(999L, 2021))
+        .isInstanceOf(MillInformationMillNotFoundException.class)
+        .extracting(e -> ((MillInformationMillNotFoundException) e).getStatus())
+        .isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("the drill-down renders exactly ONE section — the mill asked for, and no other")
+  void drillDownRendersOnlyTheRequestedMill() throws Exception {
+    when(millInformationService.findSection(731, 2021))
+        .thenReturn(java.util.Optional.of(section(731, "SECOND MILL", "7310")));
+
+    ReportService.MillDrillDown drillDown = service().renderMillInformation(731L, 2021);
+    // The mill NUMBER travels back for the parity filename; the endpoint is keyed by the id.
+    assertThat(drillDown.millNumber()).isEqualTo("7310");
+
+    byte[] pdf;
+    try (RenderedReport report = drillDown.report()) {
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      report.writeTo(out);
+      pdf = out.toByteArray();
+    }
+
+    assertThat(new String(pdf, 0, 4)).isEqualTo("%PDF");
+    try (PDDocument document = Loader.loadPDF(pdf)) {
+      // ONE fill, so one page — where the all-mills report of two mills produces two.
+      assertThat(document.getNumberOfPages()).isEqualTo(1);
+      String text = new PDFTextStripper().getText(document);
+      assertThat(text).contains("SECOND MILL - 7310");
+      // No other mill leaks in. The read is what scopes this, and a predicate that silently stopped
+      // binding would show up here as a second section rather than as a passing test.
+      assertThat(text).doesNotContain("FIRST MILL");
+    }
+  }
+
+  @Test
+  @DisplayName("a drilled mill still at Opened/Draft renders blank milestones, never a crash (S08)")
+  void drillDownWithNoMilestonesStillRenders() throws Exception {
+    // The recorded fix for legacy's latent NPE. MillReportStatusReport.java:96-99 called
+    // .substring(2) on all four milestone strings with no null guard, so drilling into a mill whose
+    // milestones are NULL in the view — fixture mill 732 — threw before a byte was written. Here
+    // every milestone routes through LegacyDateText.stripPrefix and then the mapper's blank
+    // substitution, so the crash is unreachable BY CONSTRUCTION. That is exactly why it is
+    // asserted:
+    // 19.1's own tests all render mill 730, which is fully dated, so nothing proved this until now.
+    MillInformationSection openedOnly =
+        new MillInformationSection(
+            732,
+            "7320",
+            "MILL INFO NO CLIENT",
+            false,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+    when(millInformationService.findSection(732, 2021))
+        .thenReturn(java.util.Optional.of(openedOnly));
+
+    String text;
+    try (RenderedReport report = service().renderMillInformation(732L, 2021).report()) {
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      report.writeTo(out);
+      try (PDDocument document = Loader.loadPDF(out.toByteArray())) {
+        text = new PDFTextStripper().getText(document);
+      }
+    }
+
+    // A PDF, with the section's chrome intact...
+    assertThat(text).contains("MILL INFO NO CLIENT - 7320").contains("Schedule Status");
+    // ...and the milestone lines BLANK: never the word "null", never a raw prefix, and never the
+    // "-" the address/contact fields use (legacy's null sweep left these empty).
+    assertThat(text)
+        .doesNotContain("null")
+        .doesNotContain("D: ")
+        .doesNotContain("Draft: -")
+        .doesNotContain("Submitted: -")
+        .doesNotContain("Verified: -");
+  }
+
+  @Test
+  @DisplayName("the drill-down and the all-mills report render that mill's section IDENTICALLY")
+  void drillDownSectionMatchesTheAllMillsSection() throws Exception {
+    // The story's parity acceptance criterion, proven rather than argued: same template, same
+    // mapper, same projection, so the same mill's page must come out the same. Compared as
+    // extracted
+    // TEXT, which is what a reader would compare — byte equality would fail on the PDF's own
+    // creation metadata, not on content.
+    MillInformationSection first = section(730, "FIRST MILL", "7300");
+    MillInformationSection second = section(731, "SECOND MILL", "7310");
+    when(millInformationService.findSections(2021)).thenReturn(List.of(first, second));
+    when(millInformationService.findSection(731, 2021)).thenReturn(java.util.Optional.of(second));
+    ReportService service = service();
+
+    String allMills;
+    try (RenderedReport report = service.renderMillInformation(2021)) {
+      allMills = textOf(report);
+    }
+    String drillDown;
+    try (RenderedReport report = service.renderMillInformation(731L, 2021).report()) {
+      drillDown = textOf(report);
+    }
+
+    // The all-mills text holds both pages; the drill-down holds exactly the second mill's page.
+    assertThat(allMills).contains(drillDown);
+    assertThat(drillDown).contains("SECOND MILL - 7310").doesNotContain("FIRST MILL");
+  }
+
+  /**
+   * The extracted text of a rendered report, exported through the real PDF exporter, with the
+   * template's generation timestamp normalised away.
+   *
+   * <p><b>Why the timestamp has to go, and why removing it does not weaken the parity
+   * assertion.</b> Every section stamps the moment it was FILLED ({@code September 02, 2026
+   * 14:18:59}). The comparison above renders the same mill twice, a fraction of a second apart, so
+   * whenever those two fills straddle a clock second the texts differ by one digit and a
+   * containment check fails — for a reason that has nothing to do with the mill. This was a real
+   * flake in this test, not a hypothetical: it passed twice and then failed on the third full run.
+   *
+   * <p>The timestamp is document chrome — when the PDF was produced — not mill content, and it is
+   * the ONLY thing normalised. Everything the story actually claims is identical between the two
+   * outputs (the heading, all nineteen fields, the milestone lines, the section chrome, the
+   * associated-user frame, the page footer) is still compared verbatim. Loosening the assertion to
+   * a few `contains` calls on individual fields, which was the alternative, would have been the
+   * weakening.
+   */
+  private static String textOf(RenderedReport report) throws Exception {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    report.writeTo(out);
+    try (PDDocument document = Loader.loadPDF(out.toByteArray())) {
+      return PRINT_TIMESTAMP
+          .matcher(new PDFTextStripper().getText(document))
+          .replaceAll("<generated>");
+    }
+  }
+
+  /** The template's {@code MMMM dd, yyyy HH:mm:ss} generation stamp, one per rendered section. */
+  private static final Pattern PRINT_TIMESTAMP =
+      Pattern.compile("[A-Z][a-z]+ \\d{2}, \\d{4} \\d{2}:\\d{2}:\\d{2}");
 
   private static MillInformationSection section(long id, String name, String number) {
     return new MillInformationSection(

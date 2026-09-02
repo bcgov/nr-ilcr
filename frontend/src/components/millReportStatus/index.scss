@@ -35,6 +35,43 @@
     font-size: 0.875rem;
   }
 
+  // The Mill cell's drill-down (Story 19.3). It is a ghost Button — the house in-table affordance,
+  // as Schedule 1's Other Costs and Schedule 8's TtT Samples use — restyled to read as the LINK
+  // legacy's p:commandLink was, because the cell sits in a column of plain text values and a
+  // button-shaped control there would misrepresent the row as an action bar. Only the appearance
+  // changes: it stays a <button>, since activating it fetches a blob rather than following a URL.
+  //
+  // The negative inline margin cancels Carbon's ghost-button padding so the label starts on the same
+  // left edge as every other cell's text; without it the Mill column is visibly indented from Mill
+  // Number and Region.
+  &__mill-link {
+    min-block-size: auto;
+    padding-block: 0;
+    padding-inline: 0;
+    margin-inline-start: 0;
+    text-align: start;
+    text-decoration: underline;
+
+    // Carbon's ghost button paints its own hover/focus background across the whole control. Kept
+    // transparent so the cell does not flash a filled block on hover; the focus OUTLINE is
+    // deliberately untouched, because it is the only keyboard-visible indicator of where focus is.
+    &:hover,
+    &:active {
+      background-color: transparent;
+    }
+
+    // aria-disabled, not :disabled — the control keeps its real `disabled` attribute OFF so
+    // activating it never blurs a keyboard user to <body> (see the component). That means Carbon's
+    // own disabled styling never applies and this rule has to supply the whole affordance: dimmed
+    // and not-allowed, but still underlined, because the underline is what says "this is the
+    // drill-down" and the state is temporary.
+    &[aria-disabled='true'] {
+      text-decoration: underline;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+
   // One milestone per line inside a track cell. The min height is what keeps the four lines aligned
   // across rows when a milestone is absent: an unreached milestone renders as an EMPTY line (never
   // the text "null", and never a dash), and an empty div would otherwise collapse to zero height and

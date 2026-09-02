@@ -237,6 +237,77 @@ public class ReportService {
   }
 
   /**
+   * Render the per-mill drill-down: ONE mill's Mill Information section for one reporting year, as
+   * its own PDF (Story 19.3, UC-MRPT-002 S02 / UC-MRPT-004 S02).
+   *
+   * <p>Deliberately NOT a second renderer. This is {@link #renderMillInformation(int)} with a list
+   * of one — same template, same {@link MillInformationSectionMapper}, same {@link
+   * VirtualizerHandle} — which is exactly legacy's shape: {@code
+   * ILCRPrintService.getMillReportStatusPrintStream} calls {@code addMillReportStatus} ONCE where
+   * {@code getMillReportPrintStream} loops it over every mill ({@code
+   * ILCRPrintService.java:213-220,230-249}), both then exporting through the same printer. The
+   * parity requirement for this story is that a mill's section be identical in the two outputs, so
+   * the sameness has to be structural rather than asserted.
+   *
+   * <p>A mill with no report-status row for the year yields no PDF and a 404 of its own ({@link
+   * MillInformationMillNotFoundException}) — see that class for why it is not the all-mills
+   * no-mills 404 and not the catch-all.
+   *
+   * <p><b>Milestones a mill has not reached render BLANK, and it cannot be otherwise here.</b> That
+   * is the recorded fix for legacy's latent NPE: {@code MillReportStatusReport.java:96-99} called
+   * {@code .substring(2)} on all four milestone strings with no null guard, so drilling into a mill
+   * still at Opened/Draft — where the view holds NULL, not a prefix — threw. Every milestone on
+   * this path goes through {@code LegacyDateText.stripPrefix} inside {@code
+   * MillInformationService}, which null-guards, and then through the mapper's blank substitution.
+   * The crash is unreachable by construction, which is precisely why {@code MillDrillDownReportIT}
+   * proves it on fixture mills 732 (all four NULL) and 733 rather than leaving it an accident.
+   *
+   * @param millId the mill to report on (the status table's clicked row, NOT the mill number)
+   * @param year the reporting year
+   * @return the filled single-section report plus the mill number its filename needs
+   */
+  MillDrillDown renderMillInformation(long millId, int year) {
+    MillInformationSection section =
+        millInformationService
+            .findSection(millId, year)
+            .orElseThrow(
+                () -> {
+                  // WARN, not ERROR: the year is open and this mill simply has no row against it.
+                  // Nobody needs to fix code for this, so it must not raise the 5xx rate.
+                  log.warn(
+                      "Mill {} carries no report status for year {} — nothing to render",
+                      millId,
+                      year);
+                  return new MillInformationMillNotFoundException();
+                });
+    try (VirtualizerHandle handle = new VirtualizerHandle(virtualizerFactory.create())) {
+      JasperPrint print = fillMillInformation(section, year, handle.virtualizer());
+      log.info("Rendered the mill information section for mill {} year {}", millId, year);
+      return new MillDrillDown(section.millNumber(), handle.transferTo(List.of(print)));
+    }
+  }
+
+  /**
+   * A rendered drill-down and the one thing outside the PDF its response needs: the mill NUMBER for
+   * the parity filename {@code mill_<millNumber>_print.pdf} ({@code PrintSchedulesMB.java:332}).
+   *
+   * <p>This pair exists because the endpoint is keyed by mill ID while the filename is keyed by
+   * mill NUMBER, and those are different values (fixture mill 730 carries mill number 7300). The
+   * controller cannot derive one from the other, and the alternative — reading the mill a second
+   * time just to name the file — would put a second query on the path and leave two reads that
+   * could disagree. {@link RenderedReport} deliberately stays a pure transport holder rather than
+   * growing a filename field that only this one caller would ever set.
+   *
+   * <p>{@code millNumber} is nullable, exactly as {@code THE.MILL.MILL_NUMBER} is; the controller
+   * owns the fallback, because the frontend has to apply the SAME fallback to the same row and the
+   * two derivations must agree.
+   *
+   * @param millNumber the mill's number as stored; nullable
+   * @param report the filled single-section report, ready to stream (the caller closes it)
+   */
+  record MillDrillDown(String millNumber, RenderedReport report) {}
+
+  /**
    * Fill one mill's section. Always exactly one detail row, so there is no skip-empty case here.
    */
   private JasperPrint fillMillInformation(

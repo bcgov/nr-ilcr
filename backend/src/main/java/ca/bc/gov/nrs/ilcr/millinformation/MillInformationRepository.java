@@ -20,9 +20,22 @@ import org.springframework.data.repository.query.Param;
 public interface MillInformationRepository extends Repository<MillInformationRowEntity, Long> {
 
   /**
-   * Every mill with a report-status row for the year, with its information, milestones, ownership
-   * and contacts. Unscoped by design — the Administrator report covers all mills (BR-01), so there
-   * is deliberately no user or mill predicate here.
+   * Every mill with a report-status row for the year — or ONE named mill's row — with its
+   * information, milestones, ownership and contacts. Unscoped by USER either way: the Administrator
+   * report covers all mills (BR-01), so there is deliberately no user or associated-mill predicate
+   * here.
+   *
+   * <p><b>One query serves both reports, and that is the requirement, not a convenience.</b> The
+   * all-mills Mill Information PDF (Story 19.1, {@code millId} null) and the per-mill drill-down
+   * PDF (Story 19.3, {@code millId} set) render the SAME template from the SAME mapper, and their
+   * sameness is the parity contract — legacy ran one renderer for both, calling {@code
+   * addMillReportStatus} once where the all-mills path loops it ({@code
+   * ILCRPrintService.java:213-220,230-249}). A second copy of the 19-column join below is the one
+   * failure mode nothing here would catch: each report would keep passing its own tests while
+   * quietly disagreeing about a mill, because a column added to one copy and not the other is
+   * invisible until someone compares two PDFs by eye. So the drill-down is a PREDICATE, never a
+   * second query — and {@code AND (:millId IS NULL OR ...)} is the standard Oracle optional-bind
+   * idiom, which over a year's ~118 rows costs nothing worth measuring.
    *
    * <p>The Active flag comes from the VIEW's {@code ILCR_MILL_STATUS_CODE}, not the xref's. They
    * are different facts: the view's is the mill's status FOR THAT REPORTING YEAR, the xref's is its
@@ -39,7 +52,29 @@ public interface MillInformationRepository extends Repository<MillInformationRow
    * <p>Ordered by mill id, matching legacy's {@code findILCRMillReportStatusRptOv} ({@code Order By
    * rep.ilcr_mill_id}), so the section sequence reproduces the legacy document.
    *
+   * <p><b>The ORDER BY continues past mill id on purpose, and removing the tail reintroduces a
+   * non-reproducible read.</b> {@code ILCR_MILL_REPORT_STATUS_RPT_VW} is a VIEW with no PK or
+   * uniqueness guarantee — {@code MillContextRepository.findStatusDates} documents the same fact
+   * and takes first-row semantics for it, as legacy's {@code
+   * MillReportStatusDAO.getMillReportStatusList} did with {@code get(0)}. So one (year, mill) pair
+   * can yield several rows, and {@link MillInformationService#findSection} takes the FIRST of them.
+   * With {@code ORDER BY v.ILCR_MILL_ID} alone that first row is whatever Oracle's plan happens to
+   * emit, which is free to differ between two executions of the same request: two consecutive
+   * drill-downs of one mill could hand the administrator different addresses or contacts.
+   *
+   * <p>The tail is the view's OWN projected columns, and that is what makes it sufficient. Every
+   * other table here joins 1:1 on a primary key ({@code MILL} by {@code MILL_ID}, the xref by the
+   * same id, {@code CLIENT_LOCATION} by its composite PK, both contacts by {@code
+   * CLIENT_CONTACT_ID}), so no joined column can differ between two rows of the same mill — only
+   * the view's status code and its four milestone strings can. Ordering by exactly those totally
+   * orders the DISTINCT PROJECTIONS: two view rows agreeing on all five produce byte-identical
+   * sections, so which one wins is unobservable. A surrogate like {@code
+   * x.ILCR_MILL_STATUS_XREF_ID} would NOT work — it equals {@code m.MILL_ID}, which equals {@code
+   * v.ILCR_MILL_ID}, so it is constant across exactly the rows that need separating. Oracle's
+   * default {@code NULLS LAST} on ASC settles the unreached milestones deterministically.
+   *
    * @param year the reporting year
+   * @param millId ONE mill to restrict to, or {@code null} for every mill in the year
    * @return one row per mill, ordered by mill id (legacy's order — note mill id is NOT mill number)
    */
   @Query(
@@ -76,9 +111,16 @@ public interface MillInformationRepository extends Repository<MillInformationRow
         LEFT JOIN THE.CLIENT_CONTACT dv
           ON dv.CLIENT_CONTACT_ID = x.DIVISION_CONTACT_ID
        WHERE v.REPORT_YEAR = :year
-       ORDER BY v.ILCR_MILL_ID
+         AND (:millId IS NULL OR v.ILCR_MILL_ID = :millId)
+       ORDER BY v.ILCR_MILL_ID,
+                v.ILCR_MILL_STATUS_CODE,
+                v.MILL_STATUS_OPEN_DATE,
+                v.MILL_STATUS_DRAFT_DATE,
+                v.MILL_STATUS_SUBMIT_DATE,
+                v.MILL_STATUS_VERIFY_DATE
       """)
-  List<MillInformationRowEntity> findSectionRows(@Param("year") int year);
+  List<MillInformationRowEntity> findSectionRows(
+      @Param("year") int year, @Param("millId") Long millId);
 
   /**
    * The selling-price zone code to description lookup, read SEPARATELY from the section rows.

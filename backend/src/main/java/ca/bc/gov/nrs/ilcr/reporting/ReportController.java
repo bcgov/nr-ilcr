@@ -21,9 +21,13 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  * ReportService} (AD-16). It never touches repositories directly (AD-1).
  *
  * <p>The schedule endpoints authorize on {@code VIEW_SCHEDULE} — printing is read-only for every
- * role (BR-01) — and validate a mill/year working context. The Mill Information report does
- * NEITHER: it is administrator-only ({@code GENERATE_MILL_REPORTS}) and covers every mill for a
- * chosen year, so it has no context to validate. Both differences are behaviour, not oversight.
+ * role (BR-01) — and validate a mill/year working context. The two Mill Information endpoints do
+ * NEITHER: they are administrator-only ({@code GENERATE_MILL_REPORTS}) and answer for a chosen
+ * report year rather than the Home selection, so there is no working context to validate. Both
+ * differences are behaviour, not oversight.
+ *
+ * <p>The per-mill drill-down DOES take a mill, and still runs no context guard — it must not, or a
+ * closed mill would stop being drillable from a status table that deliberately lists it.
  *
  * <p>Mirrors the Schedule 9 read controller's guard/auth posture; the only difference is the binary
  * response ({@code application/pdf} + an attachment Content-Disposition). The empty-schedule 404 is
@@ -95,6 +99,42 @@ public class ReportController implements ReportApi {
     int reportYear = reportYearGuard.requireOpenYear(year);
     RenderedReport report = reportService.renderMillInformation(reportYear);
     return pdfResponse("mills_print.pdf", null, reportYear, report);
+  }
+
+  @Override
+  @PreAuthorize("@permissions.hasPermission(authentication, 'GENERATE_MILL_REPORTS')")
+  public ResponseEntity<StreamingResponseBody> getMillDrillDownPdf(
+      long millId, String year, Authentication authentication) {
+    // No MillContextService call here either, and for one MORE reason than the all-mills endpoint
+    // above. Beyond having no Home working context, this endpoint must not reject a CLOSED mill:
+    // closed mills appear in the Mill Status Report table this drill-down is launched from, and
+    // reprinting a year in which such a mill was active is exactly what an administrator does.
+    // BOTH validateMillYearActive overloads would refuse it (they apply submitter mill scope and
+    // the active-mill rule), so neither is called. The year guard is the only guard, and the
+    // mill's existence in the year is answered by the read itself as a 404.
+    int reportYear = reportYearGuard.requireOpenYear(year);
+    ReportService.MillDrillDown drillDown = reportService.renderMillInformation(millId, reportYear);
+    return pdfResponse(
+        drillDownFilename(drillDown.millNumber(), millId), millId, reportYear, drillDown.report());
+  }
+
+  /**
+   * The drill-down's parity filename, {@code mill_<millNumber>_print.pdf} — legacy's {@code "mill_"
+   * + millReportStatusType.getIlcrMillNumber() + "_print.pdf"} ({@code PrintSchedulesMB.java:332}).
+   *
+   * <p>Note MILL NUMBER, not the mill id the endpoint is keyed by: they are different values
+   * (fixture mill 730 carries mill number 7300), and using the id would break the parity name on
+   * every mill.
+   *
+   * <p>The fall back to the mill id covers a mill whose {@code MILL_NUMBER} is null — nullable in
+   * {@code THE.MILL} — where interpolating it raw would offer the administrator a file called
+   * {@code mill_null_print.pdf}. The frontend applies the SAME fallback to the same row rather than
+   * parsing this header (19.1's report page never reads it either), so the two derivations have to
+   * agree: see {@code millReportStatus/index.tsx}.
+   */
+  private static String drillDownFilename(String millNumber, long millId) {
+    String name = millNumber == null || millNumber.isBlank() ? String.valueOf(millId) : millNumber;
+    return "mill_" + name + "_print.pdf";
   }
 
   /**

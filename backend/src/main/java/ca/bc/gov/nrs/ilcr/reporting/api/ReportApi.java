@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -108,4 +109,45 @@ public interface ReportApi {
   @GetMapping("/mill-information")
   ResponseEntity<StreamingResponseBody> getMillInformationPdf(
       @RequestParam(required = false) String year, Authentication authentication);
+
+  /**
+   * Download ONE mill's Mill Information section for a reporting year as a PDF — the per-mill
+   * drill-down launched from the Mill Status Report table (UC-MRPT-002 S02 / UC-MRPT-004 S02).
+   *
+   * <p>Nested under {@code /mill-information} because that is what this IS: the same report scoped
+   * to one mill — same template, same nineteen fields, same mapper, one section instead of many.
+   * Legacy ran the identical renderer for both ({@code ILCRPrintService.java:213-220,230-249}), and
+   * nesting keeps this interface's "every method streams a PDF" contract intact. The Story 19.2
+   * JSON status table is a different resource and stays at {@code /mill-status}.
+   *
+   * <p>Like the all-mills endpoint above, this runs NO mill/year working-context guard and takes no
+   * account of the Home selection — and, unlike the schedule endpoints, it deliberately does not
+   * reject a CLOSED mill. Closed mills appear in the status table (its Active column is what says
+   * so, per the reporting year), so they must stay drillable: a 2021 report on a mill closed in
+   * 2024 is a legitimate thing for an administrator to print. {@code
+   * MillContextService.validateMillYearActive} would refuse it, which is why neither of its
+   * overloads is called here. Do not "align" this with the sibling schedule endpoints.
+   *
+   * <p>Guards, in the order they run: missing/blank/non-numeric {@code year} → <b>400</b> {@code
+   * Report Year: Value is required.}; a parseable year that is not an OPEN reporting period →
+   * <b>400</b> {@code Report Year is not an open reporting period.}; an open year in which THIS
+   * mill has no report status → <b>404</b> {@code The selected mill has no report status for the
+   * selected Report Year.}; a genuine failure while building → <b>500</b> {@code undefinedError}. A
+   * non-numeric {@code millId} never reaches the method — the path variable's own type conversion
+   * rejects it. No file is produced in any of those cases. Without {@code GENERATE_MILL_REPORTS} →
+   * 403; anonymous → 401.
+   *
+   * <p>The attachment filename is {@code mill_<millNumber>_print.pdf}, parity-bound to legacy
+   * ({@code PrintSchedulesMB.java:332}) — note MILL NUMBER, not the mill id in the path.
+   *
+   * @param millId the mill to report on — the mill id, NOT the mill number
+   * @param year the reporting year (optional raw String, so the guard owns the rejection text)
+   * @param authentication the caller (authorized for GENERATE_MILL_REPORTS — administrators only)
+   * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
+   */
+  @GetMapping("/mill-information/{millId}")
+  ResponseEntity<StreamingResponseBody> getMillDrillDownPdf(
+      @PathVariable long millId,
+      @RequestParam(required = false) String year,
+      Authentication authentication);
 }

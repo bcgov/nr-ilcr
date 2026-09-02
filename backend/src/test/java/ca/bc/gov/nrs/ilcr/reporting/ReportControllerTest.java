@@ -3,6 +3,8 @@ package ca.bc.gov.nrs.ilcr.reporting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -119,6 +121,97 @@ class ReportControllerTest {
           .isEqualTo(HttpStatus.BAD_REQUEST);
     }
     verify(reportService, never()).renderMillInformation(anyInt());
+  }
+
+  @Test
+  @DisplayName("the drill-down streams mill_<millNumber>_print.pdf — the mill NUMBER, not the id")
+  void drillDownStreamsTheParityFilename() {
+    yearsAre(2021, 2020);
+    // Mill id 730 carries mill number 7300. Legacy named the file from the NUMBER
+    // (PrintSchedulesMB.java:332), so a filename built from the path's id would be wrong on every
+    // mill — and would still look plausible, which is why the two differ in this fixture.
+    when(reportService.renderMillInformation(730L, 2021))
+        .thenReturn(new ReportService.MillDrillDown("7300", renderedReport));
+
+    ResponseEntity<StreamingResponseBody> response =
+        controller.getMillDrillDownPdf(730L, "2021", null);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+    assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
+        .isEqualTo("attachment; filename=\"mill_7300_print.pdf\"");
+  }
+
+  @Test
+  @DisplayName("a mill with no mill number names the file by mill id, never \"mill_null\"")
+  void drillDownFilenameFallsBackToTheMillId() {
+    // MILL.MILL_NUMBER is NUMBER(15) and nullable (V1__the_schedule1_snapshot.sql:10), so NULL is
+    // the reachable delivery state and interpolating it raw would offer the administrator
+    // "mill_null_print.pdf".
+    //
+    // The two BLANK cases are defence-in-depth at the DTO layer, NOT delivery states: a NUMBER
+    // column cannot hold "" or "   ". They are kept because the value reaches here as a String —
+    // MillInformationSection.millNumber — after crossing the row-entity boundary, and because the
+    // frontend's own fallback has to handle blanks for millNAME, which IS a nullable VARCHAR2(100).
+    // Review round 1 corrected this comment: it previously claimed MILL_NUMBER was "a VARCHAR2 with
+    // no NOT-NULL-or-non-blank constraint", which is false, and that false claim made this test
+    // read as proof that the two-sided filename contract held on blanks — while the frontend half
+    // was still using `??` and did not handle them at all (patch P5).
+    //
+    // The frontend applies the SAME fallback to the same row (it never reads this header), so the
+    // two must agree.
+    for (String millNumber : new String[] {null, "", "   "}) {
+      yearsAre(2021);
+      when(reportService.renderMillInformation(730L, 2021))
+          .thenReturn(new ReportService.MillDrillDown(millNumber, renderedReport));
+
+      assertThat(
+              controller
+                  .getMillDrillDownPdf(730L, "2021", null)
+                  .getHeaders()
+                  .getFirst(HttpHeaders.CONTENT_DISPOSITION))
+          .as("millNumber=%s", millNumber)
+          .isEqualTo("attachment; filename=\"mill_730_print.pdf\"");
+    }
+  }
+
+  @Test
+  @DisplayName("the drill-down rejects an unusable or unopened year without building anything")
+  void drillDownRejectsBadYears() {
+    // The SAME guard as the all-mills endpoint, deliberately: ReportYearGuard is shared so the two
+    // 400 texts cannot drift. Asserted on this path too, because "the guard runs FIRST" is the
+    // property that keeps a bad year from reaching the read.
+    for (String year : new String[] {null, "", "   ", "not-a-year"}) {
+      assertThatThrownBy(() -> controller.getMillDrillDownPdf(730L, year, null))
+          .as("year=%s", year)
+          .isInstanceOf(ReportYearRequiredException.class);
+    }
+
+    yearsAre(2021, 2020);
+    for (String year : new String[] {"1899", "1999", "0", "99999999999"}) {
+      assertThatThrownBy(() -> controller.getMillDrillDownPdf(730L, year, null))
+          .as("year=%s", year)
+          .isInstanceOf(ReportYearNotOpenException.class);
+    }
+
+    verify(reportService, never()).renderMillInformation(anyLong(), anyInt());
+  }
+
+  @Test
+  @DisplayName("the drill-down runs NO mill/year context guard — a closed mill stays drillable")
+  void drillDownNeverValidatesAMillYearContext() {
+    // The fence. MillContextService.validateMillYearActive applies submitter mill scope and rejects
+    // a CLOSED mill; closed mills appear in the status table this drill-down launches from, so
+    // calling it would make them undrillable. Without this test, "aligning" the endpoint with its
+    // schedule siblings is a one-line change that breaks a requirement and passes every other test.
+    yearsAre(2021);
+    when(reportService.renderMillInformation(730L, 2021))
+        .thenReturn(new ReportService.MillDrillDown("7300", renderedReport));
+
+    controller.getMillDrillDownPdf(730L, "2021", null);
+
+    verify(millContextService, never()).validateMillYearActive(anyString(), anyString());
+    verify(millContextService, never()).validateMillYearActive(anyLong(), anyInt());
   }
 
   @Test
