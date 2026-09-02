@@ -18,6 +18,7 @@ import {
   Grid,
   InlineNotification,
   Modal,
+  Pagination,
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
@@ -65,6 +66,12 @@ const CONFIRM_DELETE_BODY = 'This will delete the current record. Do you want to
 const DELETE_BUTTON_LABEL = 'Delete'
 const DELETE_BUTTON_TITLE = 'Delete Road Maintenance Report'
 const SCHEDULE6_PATH = '/v1/schedule6'
+
+// Legacy paginated the road-maintenance list five per page: `p:dataList ... paginator="true"
+// rows="5"` (schedule6.xhtml:241). `rows` is fixed and no `rowsPerPageTemplate` is declared, so the
+// page size was never the user's to change — the same declaration Schedule 7A ported as its own
+// PAGE_SIZE (schedule7a/index.tsx:49).
+const PAGE_SIZE = 5
 const RECORDS_PATH = `${SCHEDULE6_PATH}/records`
 const CHECK_STATUS_PATH = `${SCHEDULE6_PATH}/check-status`
 // A missing revisionCount is a contract regression (8.1 always serves it) -- a coerced 0 would
@@ -428,7 +435,16 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       onRateCommit={onRateCommit}
     />
     <Button
-      kind="danger--ghost"
+      className="schedule-6__row-delete"
+      // Outlined, not `danger--ghost`. A ghost button carries no border, so the row's one destructive
+      // control announced itself with colour alone and read as a text link. `danger--tertiary` is
+      // Carbon's own outlined danger kind — a red border and red label that invert to a solid red
+      // fill on hover/focus — so the outline comes from Carbon's tokens rather than a border rule
+      // this page would have to maintain against theme changes. Already the repo's pattern for a
+      // Delete: `core/ScheduleActions` uses the same kind (index.tsx:77). NOTE this makes Schedule 6
+      // the only PER-ROW delete that is outlined; every other schedule's row delete is still
+      // `danger--ghost`.
+      kind="danger--tertiary"
       size="sm"
       title={DELETE_BUTTON_TITLE}
       // The VISIBLE label stays the bare legacy "Delete" (legacy carries no per-row text of its
@@ -472,6 +488,10 @@ const Schedule6: FC = () => {
   // so the load and every echo seed it without an explicit write. The per-row map replaces the single
   // editRate the derived-figure work carried, because there is no longer one open editor at a time.
   const [rowRates, setRowRates] = useState<Record<number, RateInputs>>({})
+
+  // 1-based paginator position over roadRecords[]. Legacy held the same cursor in the dataList's own
+  // widget state, so it likewise survived an add/save/delete rather than snapping back to page 1.
+  const [page, setPage] = useState(1)
 
   /**
    * Advance a rate baseline only from a usable, valid entry (ruled 2026-08-21). Legacy's round-trip
@@ -519,6 +539,7 @@ const Schedule6: FC = () => {
     setRowRates({})
     setCommentsError(undefined)
     setPendingDeleteId(null)
+    setPage(1)
   }, [])
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
@@ -545,6 +566,14 @@ const Schedule6: FC = () => {
 
   const applyDocument = (doc: Schedule6Response) => {
     setData(doc)
+    // Deleting the last record on a page leaves `page` past the end of the new list. Clamp it as the
+    // document arrives — every mutation response funnels through here — rather than during render,
+    // where setting state is a re-entrant update React warns about. The clamp is STORED, not merely
+    // derived at the slice below: a stale page would otherwise resurrect — paginate to 2, delete
+    // back to one page, add a record, and the list would silently jump to page 2 again.
+    setPage((current) =>
+      Math.min(current, Math.max(1, Math.ceil(doc.roadRecords.length / PAGE_SIZE))),
+    )
     setMessage(doc.message?.text ?? null)
     setActionError(null)
     setCheckResult(null)
@@ -678,15 +707,26 @@ const Schedule6: FC = () => {
     clearBanners()
     const commentError = validateGeneralComments(generalComments)
     const errors: Record<number, RoadRecordErrors> = {}
+    // The first row that fails, in document order — only needed to page to it below.
+    let firstInvalid: RoadRecord | null = null
     for (const row of data.roadRecords) {
       const rowError = validateRoadRecord(getRowForm(row))
       if (Object.keys(rowError).length > 0) {
         errors[row.recordId] = rowError
+        firstInvalid ??= row
       }
     }
     setRowErrors(errors)
     setCommentsError(commentError)
     if (commentError || Object.keys(errors).length > 0) {
+      // Save validates EVERY row, not just the visible page (it posts every row), so paginating
+      // introduced a way for Save to reject on a row the user cannot see and appear to do nothing at
+      // all. Bring the first offender's page into view so its inline errors are reachable — the same
+      // recovery Schedule 7A makes (schedule7a/index.tsx:348). A comments-only failure moves nothing:
+      // that field is below the list and always on screen.
+      if (firstInvalid !== null) {
+        setPage(Math.max(1, Math.floor(data.roadRecords.indexOf(firstInvalid) / PAGE_SIZE) + 1))
+      }
       return
     }
     // Hazard 1: 8.1 always serves revisionCount, but the type admits null/absent. Sending a coerced 0
@@ -812,6 +852,31 @@ const Schedule6: FC = () => {
   // per-row-editor distinction): legacy gated Delete on disableReportEdits() only
   // (schedule6.xhtml:436-437), same as every other row input.
   const entryLocked = !editable || saving
+
+  // `applyDocument` already clamps `page` for every mutation response and a mill/year change resets
+  // it to 1; this min is the belt-and-braces that keeps the slice in range on any other path that
+  // shortens the list.
+  const totalPages = Math.max(1, Math.ceil(data.roadRecords.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const firstOnPage = (currentPage - 1) * PAGE_SIZE
+  const visibleRecords = data.roadRecords.slice(firstOnPage, firstOnPage + PAGE_SIZE)
+
+  // Legacy rendered the paginator ABOVE AND BELOW the list: `p:dataList` declares only
+  // `paginator="true"`, and PrimeFaces defaults `paginatorPosition` to "both" (schedule6.xhtml:241).
+  // Rendered twice from one factory so the two can never drift apart. `pageSizes={[PAGE_SIZE]}` pins
+  // the size: legacy declared no `rowsPerPageTemplate`, so its paginator offered no size control.
+  const paginator = (key: string) => (
+    <Pagination
+      key={key}
+      page={currentPage}
+      pageSize={PAGE_SIZE}
+      pageSizes={[PAGE_SIZE]}
+      totalItems={data.roadRecords.length}
+      onChange={({ page: next }) => {
+        setPage(next)
+      }}
+    />
+  )
   const deleteDisabled = entryLocked
 
   // Two instances, deliberately asymmetric: legacy carried Save + Check Status above the schedule
@@ -931,39 +996,51 @@ const Schedule6: FC = () => {
             // general comment below stay visible (deviation J).
             <p className="schedule-6__empty">{EMPTY_LIST}</p>
           ) : (
-            <Accordion>
-              {data.roadRecords.map((row, index) => (
-                <AccordionItem
-                  key={row.recordId}
-                  // The 1-based ORDINAL into roadRecords[], matching the rowCounter the check-status
-                  // lines key on — never recordId, which belongs only in the PUT URL and the key.
-                  title={`Road Maintenance report Id: ${String(index + 1)}`}
-                >
-                  <RoadRecordRow
-                    row={row}
-                    ordinal={index + 1}
-                    form={getRowForm(row)}
-                    errors={rowErrors[row.recordId] ?? {}}
-                    codeLists={data.codeLists}
-                    disabled={entryLocked}
-                    deleteDisabled={deleteDisabled}
-                    rateInputs={getRowRate(row)}
-                    onAreaTypeChange={(value) => {
-                      updateRowForm(row, (prev) => applyAreaType(prev, value))
-                    }}
-                    onFieldChange={(key, value) => {
-                      updateRowForm(row, (prev) => ({ ...prev, [key]: value }))
-                    }}
-                    onRateCommit={() => {
-                      commitRowRate(row)
-                    }}
-                    onDelete={() => {
-                      setPendingDeleteId(row.recordId)
-                    }}
-                  />
-                </AccordionItem>
-              ))}
-            </Accordion>
+            <>
+              {paginator('paginator-top')}
+              <Accordion>
+                {visibleRecords.map((row, indexOnPage) => {
+                  // The ordinal counts through the WHOLE list, not the page: legacy's rowCounter is a
+                  // field on the record itself (RoadMaintenanceReportType.rowCounter), so report 6
+                  // stayed "report 6" on page 2 rather than restarting at 1. It is also what the
+                  // check-status lines key on, and those cover every record regardless of page.
+                  const index = firstOnPage + indexOnPage
+                  return (
+                    <AccordionItem
+                      key={row.recordId}
+                      // The 1-based ORDINAL into roadRecords[], matching the rowCounter the
+                      // check-status lines key on — never recordId, which belongs only in the PUT URL
+                      // and the key.
+                      title={`Road Maintenance report Id: ${String(index + 1)}`}
+                    >
+                      <RoadRecordRow
+                        row={row}
+                        ordinal={index + 1}
+                        form={getRowForm(row)}
+                        errors={rowErrors[row.recordId] ?? {}}
+                        codeLists={data.codeLists}
+                        disabled={entryLocked}
+                        deleteDisabled={deleteDisabled}
+                        rateInputs={getRowRate(row)}
+                        onAreaTypeChange={(value) => {
+                          updateRowForm(row, (prev) => applyAreaType(prev, value))
+                        }}
+                        onFieldChange={(key, value) => {
+                          updateRowForm(row, (prev) => ({ ...prev, [key]: value }))
+                        }}
+                        onRateCommit={() => {
+                          commitRowRate(row)
+                        }}
+                        onDelete={() => {
+                          setPendingDeleteId(row.recordId)
+                        }}
+                      />
+                    </AccordionItem>
+                  )
+                })}
+              </Accordion>
+              {paginator('paginator-bottom')}
+            </>
           )}
         </Column>
 
