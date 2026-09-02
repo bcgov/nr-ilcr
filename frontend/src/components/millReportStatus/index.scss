@@ -17,7 +17,18 @@
 
   &__year {
     // Wide enough for "Select Reporting Year" without the field spanning the screen.
-    min-inline-size: 14rem;
+    //
+    // `flex: 0 0 auto` is load-bearing, not tidying. Carbon gives `.cds--form-item` `flex: 1 1 auto`,
+    // so inside `&__controls` the field GREW to fill the row minus Apply and a `min-inline-size`
+    // could never bind — on a wide viewport the year picker was several times the width of its own
+    // longest option. Fixing the size here is what makes 14rem the actual width instead of a floor.
+    //
+    // 14rem is measured against the no-selection item, not the years: "Select Reporting Year" is far
+    // longer than "2021", and a native select clips the closed control's text rather than
+    // ellipsing it, so a narrower field would silently truncate the exact string the AC (MRPT-004
+    // S01) requires the selector to show. Do not shrink this without checking that text still fits.
+    flex: 0 0 auto;
+    inline-size: 14rem;
   }
 
   // O / D / S / V, laid out as one horizontal row of four, wrapping on narrow viewports. List
