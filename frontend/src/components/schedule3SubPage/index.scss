@@ -24,6 +24,12 @@
 // widths — pinning those too made them far too narrow. The column count varies by config (3 columns
 // on Unacceptable Costs, 5 on Other Acceptable), which a percentage handles either way.
 .schedule-3-sub__table.cds--data-table {
+  // The percentage column below needs a resolved table width to be a share OF. #411 Overall 2
+  // releases Carbon's `inline-size: 100%` app-wide so tables pack to their content, which would
+  // leave that 40% resolving against a content-derived width — circular. Restate the stretch here,
+  // as Schedules 1 and 3 already do for their own percentage geometry.
+  inline-size: 100%;
+
   th:first-child,
   td:first-child {
     inline-size: 40%;

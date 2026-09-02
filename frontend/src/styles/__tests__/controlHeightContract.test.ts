@@ -12,6 +12,7 @@ import { describe, expect, test } from 'vitest'
  *   - ONE height app-wide: no data-table compaction scope (#411 Overall 1 replaced the former 40px
  *     compact — the client asked for the taller CSP field on the dense schedule screens too)
  *   - Dropdown is pinned by `block-size` because Carbon hardcodes it and ignores the token
+ *   - tables cap at 80rem rather than running the full screen width (#411 Overall 2)
  *
  * It PARSES the stylesheet rather than pattern-matching its text: comments are stripped, rules are
  * split on balanced braces, and a height is looked up as "the rule that lists this selector AND
@@ -81,7 +82,9 @@ function declaredValue(scss: string, selector: string, property: RegExp): string
 const height = (scss: string, selector: string) =>
   declaredValue(scss, selector, /--cds-layout-size-height-local:\s*([\d.]+)rem/)
 const blockSize = (scss: string, selector: string) =>
-  declaredValue(scss, selector, /block-size:\s*([\d.]+)rem/)
+  declaredValue(scss, selector, /[^-]block-size:\s*([\d.]+)rem/)
+const maxInlineSize = (scss: string, selector: string) =>
+  declaredValue(scss, selector, /max-inline-size:\s*([\d.]+)rem/)
 
 /**
  * The CSS variable `property` reads for `selector` — `block-size: var(--x)` yields `--x`. Separate
@@ -139,5 +142,19 @@ describe('control-height contract (_overrides.scss / Story 30.2 / #312, amended 
     expect(pinnedToVar(SOURCE, selector, /max-block-size:\s*var\(\s*(--[\w-]+)\s*\)/)).toBe(
       '--cds-layout-size-height-local',
     )
+  })
+
+  test('tables cap at 80rem instead of running the full screen width', () => {
+    // #411 Overall 2. Capped on the container so a toolbar is bounded too, and in rem so the cap
+    // does not bind on the narrow screens where a dense schedule needs every pixel — a percentage
+    // would shrink hardest exactly there.
+    expect(maxInlineSize(SOURCE, '.cds--data-table-container')).toBe('80')
+  })
+
+  test('tables pack to their content rather than stretching to fill', () => {
+    // Carbon's `inline-size: 100%` is released so a table sizes to what it holds, as CSP does —
+    // capping a stretched table only moves its slack inside the table. Pinned because the release is
+    // what makes the cap read as narrowing rather than as reflow.
+    expect(declaredValue(SOURCE, '.cds--data-table', /inline-size:\s*(auto)/)).toBe('auto')
   })
 })

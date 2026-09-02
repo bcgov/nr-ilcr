@@ -150,6 +150,35 @@
   padding-block: $spacing-03;
 }
 
+// Tables no longer run the full width of the screen (#411 Overall 2), left-aligned in the page.
+//
+// Carbon stretches every table with `inline-size: 100%` (:13231). Merely CAPPING that is not enough:
+// as the CSP port on feat/sched-2-diff-sizes found, a stretched table just redistributes the slack
+// between the labels and the figures rather than giving it back to the page. CSP instead packs the
+// table to its content, so release the stretch and let each table size to what it holds. Carbon sets
+// no `table-layout` at all, so tables already lay out by content (several schedules carry a
+// `table-layout: auto` comment claiming otherwise — those rules are no-ops).
+//
+// The 80rem cap stays as the ceiling for the tables wide enough to reach it, on the container so a
+// toolbar is bounded too; the table then takes `max-inline-size: 100%` so it can never outgrow that.
+// A rem cap, not the 75% first proposed, and the reason is the small screens rather than the large:
+// a percentage keeps shrinking where there is no slack to give, squeezing Schedule 3's eight columns
+// of 48px inputs to ~818px on a 1366 laptop. 80rem is ~73% of the content area on a 1920 monitor and
+// does not bind below 1280px, so a dense schedule keeps full width on the screens that need it.
+// Follows the `.code-tables__selector` rem-cap precedent (#312) for the same instruction.
+//
+// A table that pins percentage columns must keep `inline-size: 100%` of its own, or the percentages
+// resolve against a content-derived width and go circular. Schedules 1 and 3 already do at (0,2,0);
+// the two cost sub-pages were given it alongside this change.
+.#{variables.$bcgov-prefix}--data-table-container {
+  max-inline-size: 80rem;
+}
+
+.#{variables.$bcgov-prefix}--data-table {
+  inline-size: auto;
+  max-inline-size: 100%;
+}
+
 .#{variables.$bcgov-prefix}--list-box__menu,
 .#{variables.$bcgov-prefix}--modal-container,
 .#{variables.$bcgov-prefix}--number__control-btn,
