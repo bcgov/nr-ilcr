@@ -88,18 +88,11 @@ describe('Schedule 7A layout rules (source tripwire, not a behaviour test)', () 
     'utf8',
   )
 
-  test('the accordion body keeps the width Carbon reserves for prose (#295 R1)', () => {
-    // Carbon pads every accordion body 25% on the inline-end above 640px. A list row is 333px narrower
-    // than the Add panel without this override.
-    //
-    // Pinned to Carbon's own density token, not a literal: the value has to track whatever Carbon puts
-    // on the inline-START or the two sides drift apart under a condensed-density ancestor (PR #355
-    // review). Matching the token name rather than `1rem` therefore also fails if someone "simplifies"
-    // it back to a hard-coded length, which is the regression this now guards.
-    expect(source).toMatch(
-      /\.schedule-7a__section\s+\.cds--accordion__content\s*\{[^}]*padding-inline-end:\s*var\(--cds-layout-density-padding-inline-local/,
-    )
-  })
+  // The accordion-body gutter override (#295 R1) is no longer asserted here: #411 promoted the rule
+  // to styles/_overrides.scss so Schedules 6, 7B and 9 stop losing the same 25%, and the tripwire
+  // went with it — see 'accordion editors cap tighter than the tables, and reclaim Carbon 25% gutter'
+  // in styles/__tests__/controlHeightContract.test.ts, which still pins it to Carbon's density token
+  // rather than a literal. Re-asserting it against THIS file would only re-fail the move.
 
   test('the money inputs keep a floor, capped at their own track (#295 R2)', () => {
     // The floor stops a `1fr` track crushing a cost box to its padding; the `min(..., 100%)` cap stops

@@ -179,6 +179,42 @@
   max-inline-size: 100%;
 }
 
+// The accordion record editors (Schedules 6, 7A, 7B, 9) get the same treatment as the tables, at a
+// tighter cap: what they hold is a three-across field grid, not a data grid, so 80rem left the
+// numeric inputs stretched to ~24rem apiece (#411, Scho's 64rem call).
+//
+// The paginator takes the same width because it is part of the same block, not a neighbour of it:
+// those four pages are the only `Pagination` callers in the app, and each renders it directly above
+// AND below its list (legacy PrimeFaces `paginatorPosition="both"`). Capping only the accordion left
+// the pager running the full screen out from under a 64rem list. If a paginated DATA TABLE ever
+// appears, this rule would cap its pager at 64rem under an 80rem table — split the selectors then.
+.#{variables.$bcgov-prefix}--accordion,
+.#{variables.$bcgov-prefix}--pagination {
+  max-inline-size: 64rem;
+}
+
+// Carbon reserves a QUARTER of every accordion body as right-hand gutter above 640px
+// (@carbon/styles/css/styles.css:4305) — a sensible measure for the paragraph of prose an accordion
+// usually holds, and a measured 333px of a 1334px row here. These bodies hold field grids, so that
+// quarter reads as the editor failing to fill its own box, and it makes a list row narrower than the
+// Add panel above it at the same window width: at 1366 rail-shut, a 7A row dropped to a two-across
+// grid while the panel stayed three-across (#295 R1).
+//
+// Symmetric with Carbon's inline-START padding AT ANY DENSITY rather than a pinned 1rem (PR #355
+// review, paulushcgcj). Carbon sets the start from `layout.density('padding-inline')`, which compiles
+// to this custom property — declared on `.cds--accordion` by its `layout.use('density')`, so it is in
+// scope here and resolves to $spacing-05 (1rem) normal / $spacing-03 (0.5rem) condensed. Reusing the
+// token means a `cds--layout--density-condensed` ancestor moves BOTH sides together; a literal would
+// move the start and leave this end behind. Nothing sets condensed density today, so that is latent
+// rather than live — but it costs one token to be correct instead of correct-for-now. The 1rem
+// fallback applies only if the property is ever out of scope, reproducing the old behaviour exactly.
+//
+// Schedule 7A carried this rule alone from #295; 6, 7B and 9 never got it and were losing the quarter
+// (#411). Promoted here so all four editors agree.
+.#{variables.$bcgov-prefix}--accordion__content {
+  padding-inline-end: var(--cds-layout-density-padding-inline-local, 1rem);
+}
+
 .#{variables.$bcgov-prefix}--list-box__menu,
 .#{variables.$bcgov-prefix}--modal-container,
 .#{variables.$bcgov-prefix}--number__control-btn,

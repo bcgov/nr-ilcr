@@ -151,6 +151,21 @@ describe('control-height contract (_overrides.scss / Story 30.2 / #312, amended 
     expect(maxInlineSize(SOURCE, '.cds--data-table-container')).toBe('80')
   })
 
+  test('accordion editors cap tighter than the tables, and reclaim Carbon 25% gutter', () => {
+    // #411: the accordion record editors (Schedules 6, 7A, 7B, 9) hold a three-across field grid
+    // rather than a data grid, so they cap below the tables. The gutter override is what makes that
+    // cap usable — Carbon reserves 25% of every accordion body above 640px, so a capped-but-guttered
+    // editor would still leave a quarter of its narrower box empty.
+    expect(maxInlineSize(SOURCE, '.cds--accordion')).toBe('64')
+    // The paginator is part of the same block — rendered above and below each list — so it takes the
+    // accordion's width, not the screen's. Asserted separately: capping one and not the other is the
+    // regression, and a shared selector list makes that easy to undo by half.
+    expect(maxInlineSize(SOURCE, '.cds--pagination')).toBe('64')
+    expect(
+      declaredValue(SOURCE, '.cds--accordion__content', /padding-inline-end:\s*var\(\s*(--[\w-]+)/),
+    ).toBe('--cds-layout-density-padding-inline-local')
+  })
+
   test('tables pack to their content rather than stretching to fill', () => {
     // Carbon's `inline-size: 100%` is released so a table sizes to what it holds, as CSP does —
     // capping a stretched table only moves its slack inside the table. Pinned because the release is
