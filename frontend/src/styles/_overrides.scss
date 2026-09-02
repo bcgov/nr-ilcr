@@ -277,24 +277,29 @@
     }
   }
 
-  // Side-nav open/close toggle: keep the icon white on the brand header in every state. Carbon gives
-  // the trigger a light background when it is active (side nav expanded) and on hover, which hid the
-  // white icon; force a translucent overlay instead so the icon is always visible.
+  // Side-nav open/close toggle, matching CSP (nr-csp LayoutHeader/index.scss:22-32, #411 Overall 8).
+  // White glyph on the brand header while the nav is closed; when it is OPEN, Carbon's own active
+  // treatment stands — a `--cds-layer` (white) button — and the glyph is recoloured to read against
+  // it. So the close control is a white button with a near-black X, which is the CSP close button.
+  //
+  // This deliberately reverts the previous treatment, which forced the background transparent and
+  // painted a translucent overlay to keep the icon white in every state. Carbon's light active
+  // background was read as something to fight; CSP leans on it instead and recolours the glyph, and
+  // the inverse token flips on its own between themes (#161616 on the light layer, #f4f4f4 on the
+  // dark), which a hardcoded white could not do.
+  //
+  // Hover is left to Carbon (`--cds-background-hover`, a subtle overlay) rather than overridden.
   .#{variables.$bcgov-prefix}--header__menu-trigger {
     color: colors.$white;
-    background-color: transparent;
 
     path,
     svg {
       fill: currentColor;
     }
 
-    &:hover,
-    &:active,
-    &:focus,
+    // (0,3,0), so this beats the blanket white on `.bc-header .cds--header__action` above.
     &.#{variables.$bcgov-prefix}--header__action--active {
-      background-color: rgba(255, 255, 255, 0.16);
-      color: colors.$white;
+      color: var(--cds-layer-selected-inverse);
     }
   }
 }
