@@ -98,7 +98,6 @@ const CulvertFields: FC<Props> = ({
             id={`${idPrefix}-culvertTypeCode`}
             titleText="Type"
             label="Select"
-            size="sm"
             items={items}
             itemToString={(item) => item?.description ?? ''}
             // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
