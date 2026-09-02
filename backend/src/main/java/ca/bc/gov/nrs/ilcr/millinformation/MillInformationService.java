@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.millinformation;
 
 import ca.bc.gov.nrs.ilcr.millinformation.dto.MillInformationSection;
 import ca.bc.gov.nrs.ilcr.util.LegacyDateText;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +54,7 @@ public class MillInformationService {
     Map<String, String> regions = zoneDescriptions();
     List<MillInformationSection> sections =
         repository.findSectionRows(year).stream()
-            .map(row -> toSection(row, regions.get(row.regionCode())))
+            .map(row -> toSection(row, region(regions, row)))
             .toList();
     // Count only. Contact names, phone numbers and addresses are personal data (AD-11/NFR3).
     log.info("Read {} mill information sections for year {}", sections.size(), year);
@@ -61,14 +62,35 @@ public class MillInformationService {
   }
 
   /**
+   * A row's Region description, or {@code null} when its zone code is absent or undescribed.
+   *
+   * <p>The null-code guard is NOT decoration, it is the fix for a 500. A mill may carry no zone
+   * code at all, and {@code Map.of().get(null)} THROWS NullPointerException on Java 21 — {@code
+   * ImmutableCollections.MapN.get} calls {@code Objects.requireNonNull} — where {@code
+   * HashMap.get(null)} quietly answers null. So whenever the degrade below fired, the first
+   * null-zone mill took out the whole report: exactly the outcome reading the code table separately
+   * is meant to prevent. Both halves of the pair were fixed together — this guard, and the {@link
+   * Collections#emptyMap()} the catch now returns — so neither can reintroduce it alone. Story 19.2
+   * fixed its own copy of this in-story; this is 19.1's, tracked in {@code deferred-work.md}.
+   */
+  private static String region(Map<String, String> regions, MillInformationRowEntity row) {
+    return row.regionCode() == null ? null : regions.get(row.regionCode());
+  }
+
+  /**
    * The zone code to description lookup, or an empty map when the table cannot be read.
    *
-   * <p>Degrading here rather than failing is deliberate. {@code ISP_SELL_PRICE_ZONE_CODE} is a
-   * shared ministry table reached through a PUBLIC synonym, and that synonym is dangling on the FTA
-   * development database — the table is simply absent, which Oracle reports as ORA-00942. Region is
-   * a display description with an established "-" fallback, so an absent lookup costs one line per
-   * section; letting it propagate would deny the administrator the entire report over a decorative
-   * field. Logged at WARN once per render so a genuinely broken environment is still visible.
+   * <p>Degrading here rather than failing is deliberate. {@code APPRAISAL_SELL_PRICE_ZONE_CODE} is
+   * a shared ministry code table reached through a PUBLIC synonym; when a synonym's target is
+   * missing Oracle rejects the statement at parse time with ORA-00942. Region is a display
+   * description with an established "-" fallback, so an absent lookup costs one line per section;
+   * letting it propagate would deny the administrator the entire report over a decorative field.
+   * Logged at WARN once per render so a genuinely broken environment is still visible.
+   *
+   * <p>The WARN is no longer the normal case. Until 2026-09-02 this query named {@code
+   * THE.ISP_SELL_PRICE_ZONE_CODE} — the {@code MILL} column's name, not the table legacy reads — so
+   * the catch fired on every request and every Region rendered "-". See {@code
+   * MillInformationRepository#findZoneDescriptions}.
    */
   private Map<String, String> zoneDescriptions() {
     try {
@@ -82,7 +104,9 @@ public class MillInformationService {
           "Selling-price zone descriptions are unavailable ({}); every mill's Region will render as"
               + " \"-\". This is an environment gap, not report data.",
           e.getMostSpecificCause().getMessage());
-      return Map.of();
+      // Collections.emptyMap(), never Map.of(): the latter rejects a null key with an NPE, and the
+      // caller looks up a nullable zone code. See the region(...) note above.
+      return Collections.emptyMap();
     }
   }
 

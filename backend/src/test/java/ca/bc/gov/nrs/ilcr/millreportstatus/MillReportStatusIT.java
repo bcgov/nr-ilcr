@@ -181,10 +181,12 @@ class MillReportStatusIT extends AbstractOracleIT {
   @Test
   @DisplayName("an unreadable zone table costs Region only — the endpoint still answers 200")
   void unreadableZoneTableDegradesRatherThanFailing() throws Exception {
-    // The end-to-end proof of the degrade, not just the unit-level one. On the FTA development
-    // database ISP_SELL_PRICE_ZONE_CODE is reached through a PUBLIC synonym whose table is absent,
-    // so
-    // Oracle answers ORA-00942 on EVERY request; renaming the table away reproduces that exactly.
+    // The end-to-end proof of the degrade, not just the unit-level one. APPRAISAL_SELL_PRICE_ZONE_
+    // CODE is a shared ministry code table reached through a PUBLIC synonym, and a synonym whose
+    // target is missing makes Oracle answer ORA-00942 for the whole statement; renaming the table
+    // away reproduces that exactly. (Until 2026-09-02 the app read THE.ISP_SELL_PRICE_ZONE_CODE --
+    // the MILL COLUMN's name, not legacy's lookup table -- which is absent on FTA, so this degrade
+    // was firing on every real request. The name is fixed; this test keeps the safety net.)
     //
     // Two separate mechanisms can turn this into a 500, and both are asserted against here:
     //   1. Map.of().get(null) throws NPE on Java 21, and most mills carry no zone code.
@@ -195,7 +197,7 @@ class MillReportStatusIT extends AbstractOracleIT {
     //      a 500 raised AFTER the catch had already handled the failure.
     // Whichever is broken, this test fails; it is the only place either is observable.
     jdbc.execute(
-        "ALTER TABLE THE.ISP_SELL_PRICE_ZONE_CODE RENAME TO ISP_SELL_PRICE_ZONE_CODE_GONE");
+        "ALTER TABLE THE.APPRAISAL_SELL_PRICE_ZONE_CODE RENAME TO APPRAISAL_SELL_PRICE_ZONE_GONE");
     try {
       mockMvc
           .perform(get(ENDPOINT).param("year", "2021").accept(MediaType.APPLICATION_JSON))
@@ -216,7 +218,7 @@ class MillReportStatusIT extends AbstractOracleIT {
       // the
       // table renamed would redden Story 19.1's report tests for a reason that is not theirs.
       jdbc.execute(
-          "ALTER TABLE THE.ISP_SELL_PRICE_ZONE_CODE_GONE RENAME TO ISP_SELL_PRICE_ZONE_CODE");
+          "ALTER TABLE THE.APPRAISAL_SELL_PRICE_ZONE_GONE RENAME TO APPRAISAL_SELL_PRICE_ZONE_CODE");
     }
   }
 

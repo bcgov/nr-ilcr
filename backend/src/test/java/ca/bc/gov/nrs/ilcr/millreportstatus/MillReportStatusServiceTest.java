@@ -144,9 +144,11 @@ class MillReportStatusServiceTest {
   @Test
   @DisplayName("an unreadable zone table costs the Region only, not the whole table")
   void missingZoneTableDegradesToNoRegion() {
-    // ISP_SELL_PRICE_ZONE_CODE is reached through a PUBLIC synonym that is dangling on the FTA dev
-    // database, so Oracle answers ORA-00942. This is exactly what took down Story 19.1's report;
-    // the table must still render, with Region degraded.
+    // APPRAISAL_SELL_PRICE_ZONE_CODE is a shared ministry code table reached through a PUBLIC
+    // synonym; a synonym whose target is missing makes Oracle answer ORA-00942 for the whole
+    // statement. This is exactly what took down Story 19.1's report; the table must still render,
+    // with Region degraded. (Until 2026-09-02 the query named the MILL column's namesake instead,
+    // THE.ISP_SELL_PRICE_ZONE_CODE, which is absent on FTA — so this path ran on every request.)
     when(millInformationRepository.findZoneDescriptions())
         .thenThrow(new BadSqlGrammarException("select", "select 1", new SQLException("ORA-00942")));
     // A row with a zone code AND a row with NONE. The second one is the whole point: the empty map

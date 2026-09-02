@@ -23,11 +23,26 @@ public interface MillReportStatusRepository extends Repository<MillReportStatusR
    * Every mill with a report-status row for the year, with its number, name, per-year active
    * status, region code and all seven milestone strings.
    *
-   * <p>Unscoped by design. Legacy passed the logged-in user's associated mills into a {@code
-   * Restrictions.in} ({@code MillReportStatusDAO.java:173}), but under DL-23 the Auditor role is
-   * merged into ADMIN and this page is administrator-only, so the mill set is every mill. There is
-   * deliberately no user or mill predicate — and therefore no reachable empty-{@code IN ()} defect
-   * to port either.
+   * <p>Unscoped by design, and WIDER than legacy's row set in two ways — both deliberate, and both
+   * visible in a side-by-side comparison, so read this before filing a bug against the row count.
+   *
+   * <ol>
+   *   <li><b>No user scope.</b> Legacy passed the logged-in user's associated mills into a {@code
+   *       Restrictions.in} ({@code MillReportStatusDAO.java:173}), but under DL-23 the Auditor role
+   *       is merged into ADMIN and this page is administrator-only, so the mill set is every mill.
+   *       There is deliberately no user or mill predicate — and therefore no reachable empty-{@code
+   *       IN ()} defect to port either.
+   *   <li><b>No "active today" filter.</b> That same mill list came from {@code
+   *       getMillSelection(null, true)} → {@code UserSessionDAO.getActiveMills()}, which keeps only
+   *       mills whose {@code ILCR_MILL_STATUS_XREF.ILCR_MILL_STATUS_CODE} is {@code 'ACT'} — the
+   *       status TODAY. So legacy silently dropped every mill that has since closed, however
+   *       completely it reported in the year on screen. This query keeps them, with the Active
+   *       column reporting their status FOR THAT YEAR. Measured on {@code fortmp1} 2026-09-02, that
+   *       is 1-3 extra rows on 2015-2018 (2017: 19 here, 16 in legacy) and 0 on 2019-2022. It also
+   *       means this table is the first place Active can read {@code No}: on that data every mill
+   *       with a non-{@code ACT} year is also closed today, so legacy's Active column could only
+   *       ever say {@code Yes}. Listing closed mills is ratified story scope, not an oversight.
+   * </ol>
    *
    * <p>{@code THE.MILL} is joined INNER, matching the driving-table contract: the table lists mills
    * that have a report status for the year, and a view row whose {@code ILCR_MILL_ID} has no {@code
@@ -39,11 +54,12 @@ public interface MillReportStatusRepository extends Repository<MillReportStatusR
    * which is its status today. Legacy reads the view ({@code MillReportStatusDAO.java:106}), and
    * taking the xref's would make a 2021 table change the moment a mill closed.
    *
-   * <p>{@code ISP_SELL_PRICE_ZONE_CODE} is selected as a bare CODE, not joined to its description
-   * table. See {@code MillInformationRepository.findZoneDescriptions} for why: that table is
-   * reached through a PUBLIC synonym which is dangling on the FTA development database, so ANY
-   * reference to it fails the whole statement at parse time with ORA-00942 — join type
-   * notwithstanding. Joining it here would re-create the Story 19.1 outage.
+   * <p>{@code m.ISP_SELL_PRICE_ZONE_CODE} is selected as a bare CODE, not joined to its description
+   * table — note that the description table is {@code THE.APPRAISAL_SELL_PRICE_ZONE_CODE}, NOT the
+   * column's namesake; see {@code MillInformationRepository.findZoneDescriptions}. Keeping it out
+   * of this statement is the point: a shared ministry code table reached through a PUBLIC synonym
+   * whose target is missing fails the whole statement at parse time with ORA-00942, join type
+   * notwithstanding, so joining it here would trade one blank column for the whole table.
    *
    * <p>Ordered by mill id, matching legacy's {@code Criteria} {@code Order.asc("ilcr_mill_id")}
    * ({@code MillReportStatusDAO.java:175}) and Story 19.1's committed ordering — even though the

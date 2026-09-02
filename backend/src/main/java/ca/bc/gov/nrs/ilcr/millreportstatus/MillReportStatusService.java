@@ -94,12 +94,19 @@ public class MillReportStatusService {
    * The zone code to description lookup, or an empty map when the table cannot be read.
    *
    * <p>Degrading here rather than failing is deliberate, and it is why the code is read SEPARATELY
-   * instead of joined. {@code ISP_SELL_PRICE_ZONE_CODE} is a shared ministry table reached through
-   * a PUBLIC synonym that is dangling on the FTA development database — the table is simply absent,
-   * which Oracle reports as ORA-00942, aborting any statement that names it at parse time. Region
-   * is a display description with an established {@code "-"} fallback, so an absent lookup costs
-   * one column; letting it propagate would deny the administrator the entire table over a
-   * decorative field. This is the exact failure that took down Story 19.1's report in production.
+   * instead of joined. {@code APPRAISAL_SELL_PRICE_ZONE_CODE} is a shared ministry code table
+   * reached through a PUBLIC synonym, and Oracle rejects any statement naming a synonym whose
+   * target is missing at parse time with ORA-00942 — join type notwithstanding. Region is a display
+   * description with an established {@code "-"} fallback, so an absent lookup costs one column;
+   * letting it propagate would deny the administrator the entire table over a decorative field.
+   *
+   * <p><b>The degrade was masking a defect, not an environment gap.</b> Until 2026-09-02 the shared
+   * query named {@code THE.ISP_SELL_PRICE_ZONE_CODE} — the name of the {@code MILL} COLUMN, not of
+   * the table legacy reads ({@code THE.APPRAISAL_SELL_PRICE_ZONE_CODE}, per {@code Mill.java:59-61}
+   * and {@code hibernate.cfg.xml:90}). That table does not exist on the FTA database, so this catch
+   * fired on every request and every mill's Region rendered {@code "-"} while legacy showed real
+   * descriptions. The name is fixed in {@code MillInformationRepository#findZoneDescriptions}; a
+   * WARN here now means the environment is genuinely broken.
    *
    * <p><b>Why catching here is enough, and what would break it.</b> A caught {@code
    * DataAccessException} inside a {@code @Transactional} method can still produce a 500: if the

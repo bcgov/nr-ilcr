@@ -49,14 +49,17 @@ INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ISP_SELL_PRICE_ZONE_CODE,
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ISP_SELL_PRICE_ZONE_CODE, CLIENT_NUMBER, CLIENT_LOCN_CODE, ENTRY_USERID)
   VALUES (732, 'MILL INFO NO CLIENT', 7320, NULL, NULL, NULL, 'SEED');
 
--- The seeded real-data image has ZERO rows in ISP_SELL_PRICE_ZONE_CODE (all 21 of its mills orphan
--- the FK -- the closure gap Story 1.5 recorded), so the populated region path is untested there.
--- Seeding one zone here is what makes mill 730 prove it while 731 proves the "-" fallback.
+-- Zone descriptions come from APPRAISAL_SELL_PRICE_ZONE_CODE, not from the table the MILL column is
+-- named after -- see the V20260828 snapshot header for the legacy mapping that settles it. Story
+-- 1.5's recorded "MILL -> ISP_SELL_PRICE_ZONE_CODE closure gap" on the seeded image was that wrong
+-- table: on the FTA database all 140 mills' codes resolve against APPRAISAL_SELL_PRICE_ZONE_CODE.
+-- Seeding one zone here is what makes mill 730 prove the populated path while 731 proves the "-"
+-- fallback from a NULL code -- the shape that used to NPE the degrade (deferred-work, 19.1).
 INSERT INTO THE.MILL (MILL_ID, MILL_NAME, MILL_NUMBER, ISP_SELL_PRICE_ZONE_CODE, CLIENT_NUMBER, CLIENT_LOCN_CODE, ENTRY_USERID)
   VALUES (733, 'MILL INFO CLOSED SINCE', 7330, NULL, NULL, NULL, 'SEED');
 
-INSERT INTO THE.ISP_SELL_PRICE_ZONE_CODE (ISP_SELL_PRICE_ZONE_CODE, DESCRIPTION, EFFECTIVE_DATE, EXPIRY_DATE)
-  VALUES ('Z1', 'Kootenay Selling Price Zone', DATE '2015-01-01', DATE '9999-12-31');
+INSERT INTO THE.APPRAISAL_SELL_PRICE_ZONE_CODE (APPRAISAL_SELL_PRICE_ZONE_CODE, DESCRIPTION, EFFECTIVE_DATE, EXPIRY_DATE, UPDATE_TIMESTAMP)
+  VALUES ('Z1', 'Kootenay Selling Price Zone', DATE '2015-01-01', DATE '9999-12-31', DATE '2015-01-01');
 
 INSERT INTO THE.CLIENT_LOCATION (CLIENT_NUMBER, CLIENT_LOCN_CODE, CLIENT_LOCN_NAME, ADDRESS_1, ADDRESS_2, CITY, POSTAL_CODE)
   VALUES ('00073001', '00', 'FULL OWNERSHIP HOLDINGS LTD', '100 MAIN STREET', 'SUITE 400', 'CRANBROOK', 'V1C1A1');
