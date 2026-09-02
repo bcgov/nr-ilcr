@@ -29,10 +29,14 @@
     text-align: right;
   }
 
-  &__totals {
+  &__totals td {
     // 700 to match the parent schedule5 totals (code review 2026-08-31); this sub-page mirrors
     // components/schedule5, whose section/total rows are bold.
     font-weight: 700;
+    // The footer figure this sub-page adds up to, so the full total band. It was the one marked
+    // totals row in the app with no band at all — bold but unshaded, while its siblings on Schedules
+    // 3, 4, 8, 11 and 1 Other Costs were already shaded (#411 Overall 5).
+    background: var(--ilcr-band-total);
   }
 
   &__actions {

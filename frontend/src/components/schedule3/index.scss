@@ -84,3 +84,18 @@
   padding-inline: 0;
   min-block-size: auto;
 }
+
+// Calculated summary bands (#411 Overall 5). The four derived rows are Subtotal Other Costs,
+// Subtotal (Actual Costs), Included Unacceptable Costs and Total Costs; the cost LINES above them and
+// the Override dropdown below carry no band, being entered rather than calculated.
+.schedule-3__subtotal-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-subtotal);
+}
+
+// Total Costs is the schedule's final figure — note it is not the final ROW, since the Override
+// dropdown sits beneath it.
+.schedule-3__total-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-total);
+}

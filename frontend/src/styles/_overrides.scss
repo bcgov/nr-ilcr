@@ -66,6 +66,19 @@
   @include theme.theme(dark.$dark-theme);
 }
 
+// The two summary bands for calculated rows (#411 Overall 5). A schedule's FINAL figure takes the
+// total band; every other calculated row — intermediate subtotals and fully-derived component lines
+// alike — takes the lighter subtotal band, so depth reads off the shade.
+//
+// Defined once here because nine stylesheets were each restating one of the two values, which is how
+// the tiers drifted: the same grey ended up meaning "grand total" on one schedule and "intermediate
+// subtotal" on another. Both are theme-aware — the accent and background tokens are redefined per
+// theme above, and `color-mix` resolves at use time, so the light band tracks whichever is active.
+:root {
+  --ilcr-band-total: var(--cds-layer-accent-01);
+  --ilcr-band-subtotal: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+}
+
 .#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
   // Global button height: 48px (Carbon `lg` / 3rem) for every size variant (sm/md/lg and icon-only),

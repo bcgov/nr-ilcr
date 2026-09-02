@@ -165,7 +165,8 @@
   content: ':';
 }
 
+// The table's final figure, so the full total band (#411 Overall 5).
 .schedule-3-sub__totals td {
   font-weight: 700;
-  background: var(--cds-layer-accent-01);
+  background: var(--ilcr-band-total);
 }

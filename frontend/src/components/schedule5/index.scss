@@ -61,13 +61,18 @@
   font-weight: 700;
 }
 
-// The four server-derived rows — Camp Sub-Total, Camp Total, Access Expense Total, Camp and Access
-// (`validation.ts` GRID_ROWS, `kind: 'derived'`). These are what #312 Overall 5 asks to shade.
-// Intermediate subtotals rather than one grand total, so a LIGHTER grey than the schedules whose band
-// IS the actual total (full --cds-layer-accent-01). color-mix keeps it theme-aware.
+// The server-derived rows (`validation.ts` GRID_ROWS, `kind: 'derived'`) — what #312 Overall 5 asks
+// to shade. Camp Sub-Total, Camp Total and Access Expense Total are intermediate, so they take the
+// lighter band; Camp and Access is the schedule's final figure and takes the full total band, which
+// is the depth distinction #411 Overall 5 adds.
 .schedule-5__derived-row td {
   font-weight: 700;
-  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+  background: var(--ilcr-band-subtotal);
+}
+
+.schedule-5__total-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-total);
 }
 
 // Legacy pads the four Equipment and Supplies rows with non-breaking spaces to sit them under their

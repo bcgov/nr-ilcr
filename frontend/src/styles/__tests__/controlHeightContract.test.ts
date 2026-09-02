@@ -166,6 +166,18 @@ describe('control-height contract (_overrides.scss / Story 30.2 / #312, amended 
     ).toBe('--cds-layout-density-padding-inline-local')
   })
 
+  test('the two summary bands are defined once, and the subtotal is the lighter of them', () => {
+    // #411 Overall 5. Nine stylesheets each restated one of these two values before, which is how the
+    // same grey came to mean "grand total" on one schedule and "intermediate subtotal" on another.
+    // The subtotal band must stay a MIX of the total band with the page background — that is what
+    // makes it lighter in both themes, and collapsing it to a flat colour is the regression here.
+    const root = rulesIn(SOURCE).find((rule) => rule.selectors.includes(':root'))?.body ?? ''
+    expect(root).toMatch(/--ilcr-band-total:\s*var\(--cds-layer-accent-01\)/)
+    expect(root).toMatch(
+      /--ilcr-band-subtotal:\s*color-mix\([^)]*var\(--cds-layer-accent-01\)[^;]*var\(--cds-background\)/,
+    )
+  })
+
   test('tables pack to their content rather than stretching to fill', () => {
     // Carbon's `inline-size: 100%` is released so a table sizes to what it holds, as CSP does —
     // capping a stretched table only moves its slack inside the table. Pinned because the release is

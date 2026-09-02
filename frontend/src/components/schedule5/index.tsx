@@ -305,12 +305,17 @@ const CategoryGridRow: FC<{
 const DerivedGridRow: FC<{
   readonly label: string
   readonly amount?: CategoryAmount
-}> = ({ label, amount }) => (
+  /** True for Camp and Access — the schedule's final figure, which takes the darker total band. */
+  readonly isTotal?: boolean
+}> = ({ label, amount, isTotal = false }) => (
   // The calculated-total band (#312 Overall 5) belongs HERE, on the derived rows — Camp Sub-Total,
   // Camp Total, Access Expense Total, Camp and Access. It shipped on `schedule-5__section-row` for
   // one commit, which is the SECTION HEADER row ("Camp Expenses" plus the repeated column captions),
   // i.e. the exact opposite of a calculated row (PR #381 review).
-  <TableRow className="schedule-5__derived-row">
+  //
+  // The first three are intermediate, so they keep the lighter band; Camp and Access is what the
+  // schedule adds up to, so it takes the full total band (#411 Overall 5).
+  <TableRow className={isTotal ? 'schedule-5__total-row' : 'schedule-5__derived-row'}>
     <TableCell>{label}</TableCell>
     <TableCell className="schedule-5__num">{fmtVolume(amount?.volume)}</TableCell>
     <TableCell className="schedule-5__num">{fmtCost(amount?.cost)}</TableCell>
@@ -378,6 +383,7 @@ const CategoryGrid: FC<{
                 // The four derived rows track the committed entry while editable (#291); outside that
                 // there is no entry, so the served figures render as-is.
                 amount={derived ? derived[row.key] : served?.[row.key as DerivedKey]}
+                isTotal={row.key === 'campAndAccessTotal'}
               />
             )
           }
