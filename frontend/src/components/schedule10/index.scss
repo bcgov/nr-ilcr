@@ -114,12 +114,13 @@
 // The COLOUR is deliberately NOT Carbon's own `$text-secondary`. `styles/_overrides.scss` repaints
 // labels app-wide to primary through `label.#{$bcgov-prefix}--label, legend...`, and that selector
 // is ELEMENT-qualified: it reaches the six real <label>s in this panel and cannot reach this <span>.
-// Primary is what makes them agree HERE — Schedules 4 and 6 use secondary for their read-only
-// labels, so this is a decision local to a `.schedule-page` route, not an app-wide rule.
+// Primary is what makes them agree HERE, in this panel's own row. Schedule 4 still uses secondary
+// for its read-only labels, so this stays a per-page decision, not an app-wide rule.
 //
-// Schedule 6 (schedule6/index.scss:46) is the precedent for TAKING THE TOKEN, and only for that:
-// it is not a `.schedule-page` route, so the same include renders 12px secondary there against
-// 14px primary here.
+// Schedule 6 hit the same mismatch and reached the same answer: its hand-rolled `dt` labels now
+// take primary too (schedule6/index.scss). It remains the precedent for TAKING THE TYPE TOKEN and
+// only that — it is not a `.schedule-page` route, so the same include renders 12px there against
+// 14px here.
 .schedule-10__field-label {
   @include type-style('label-01');
 

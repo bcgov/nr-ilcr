@@ -1972,3 +1972,193 @@ describe('Schedule 6 action icons (Story 30.3 / #312 Overall 6)', () => {
     expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
   })
 })
+
+// ---- Pagination (legacy `p:dataList paginator="true" rows="5"`, schedule6.xhtml:241) -------------
+//
+// Legacy paged the road-maintenance list five at a time and, because PrimeFaces defaults
+// `paginatorPosition` to "both", rendered a paginator above AND below the accordion. These cover the
+// three things paging can silently break: the ordinal (legacy's rowCounter is a field ON the record,
+// so it must keep counting across pages), Save (it posts every record, not the visible five), and the
+// page cursor itself (a delete can strand it past the end of the list).
+describe('Schedule 6 pagination (legacy dataList rows=5)', () => {
+  // Distinct comments so a record is identifiable by content as well as by ordinal.
+  const manyRecords = (count: number): RoadRecord[] =>
+    Array.from({ length: count }, (_, i) => ({
+      ...tsaRecord,
+      recordId: 9600 + i,
+      revisionCount: 1,
+      comments: `Record ${String(i + 1)}`,
+    }))
+
+  const pagedDoc = (count: number, overrides: Record<string, unknown> = {}) =>
+    doc({ roadRecords: manyRecords(count), ...overrides })
+
+  const nextButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /next page/i })
+
+  test('renders only the first five records, with a paginator above AND below', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(pagedDoc(7))))
+    render(<Schedule6 />)
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    for (const ordinal of [1, 2, 3, 4, 5]) {
+      expect(rowPanel(ordinal)).toBeInTheDocument()
+    }
+    // The 6th and 7th exist in the document but must not be rendered — the whole point of paging.
+    expect(
+      screen.queryByRole('button', { name: 'Road Maintenance report Id: 6' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Road Maintenance report Id: 7' }),
+    ).not.toBeInTheDocument()
+
+    // Two paginators: legacy's PrimeFaces default position is "both".
+    expect(nextButtons()).toHaveLength(2)
+  })
+
+  test('the paginator shows even on a single page, as legacy’s always-visible one did', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(pagedDoc(3))))
+    render(<Schedule6 />)
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    // PrimeFaces `paginatorAlwaysVisible` defaults to true and schedule6.xhtml never overrides it.
+    expect(nextButtons()).toHaveLength(2)
+  })
+
+  test('page 2 shows the remainder and keeps counting the ordinal from the whole list', async () => {
+    server.use(http.get(URL, () => HttpResponse.json(pagedDoc(7))))
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    // The BOTTOM paginator, proving both instances drive the same cursor.
+    await user.click(nextButtons()[1])
+
+    // Ordinals 6 and 7, NOT 1 and 2 restarting — legacy's rowCounter is a field on the record.
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 6' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Road Maintenance report Id: 7' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Road Maintenance report Id: 1' }),
+    ).not.toBeInTheDocument()
+    // The top paginator moved with the bottom one it was not clicked on.
+    expect(nextButtons()).toHaveLength(2)
+  })
+
+  test('Save posts EVERY record, not just the five on screen', async () => {
+    let captured: Schedule6SaveRequest | null = null
+    server.use(
+      http.get(URL, () => HttpResponse.json(pagedDoc(7))),
+      http.put(URL, async ({ request }) => {
+        captured = (await request.json()) as Schedule6SaveRequest
+        return HttpResponse.json(pagedDoc(7))
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(barSaveButtons()[0])
+
+    await waitFor(() => {
+      expect(captured).not.toBeNull()
+    })
+    // All seven travel — an omitted off-page row is a 400 from the server.
+    expect(captured!.records).toHaveLength(7)
+    expect(captured!.records.map((entry) => entry.recordId)).toEqual([
+      9600, 9601, 9602, 9603, 9604, 9605, 9606,
+    ])
+  })
+
+  test('a Save blocked by an off-page invalid row pages to that row', async () => {
+    let put = 0
+    // Record 7 (page 2) arrives with no area type — legacy rows predate the validation, which is why
+    // the served document can hold one. Save validates every record, so this rejects from page 1.
+    const records = manyRecords(7).map((row, i) => (i === 6 ? { ...row, areaType: '' } : row))
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ roadRecords: records }))),
+      http.put(URL, () => {
+        put += 1
+        return HttpResponse.json(doc({ roadRecords: records }))
+      }),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(barSaveButtons()[0])
+
+    // Without the jump the user sits on page 1 and Save appears to do nothing at all.
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 7' }),
+    ).toBeVisible()
+    expect(put).toBe(0)
+  })
+
+  test('deleting the last record of the last page falls back to the page before it', async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(pagedDoc(6))),
+      // The echo carries five records, so page 2 no longer exists.
+      http.delete(`${RECORDS_URL}/:id`, () => HttpResponse.json(pagedDoc(5))),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(nextButtons()[0])
+
+    // Page 2 holds exactly the sixth record; delete it.
+    const lone = await screen.findByRole('button', { name: 'Road Maintenance report Id: 6' })
+    expect(lone).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Delete Road Maintenance Report 6' }))
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+
+    // Clamped back to page 1 rather than stranded on an empty page 2.
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Road Maintenance report Id: 6' }),
+    ).not.toBeInTheDocument()
+  })
+
+  // The test above is satisfied by the render-time `Math.min(page, totalPages)` alone — it never
+  // reaches the STORED clamp in applyDocument. This one does: once the list grows back, a page that
+  // was only clamped for display springs back to 2 and the user lands on a page they never asked for.
+  test('a page shortened by a delete does not spring back when the list grows again', async () => {
+    let records = 6
+    server.use(
+      http.get(URL, () => HttpResponse.json(pagedDoc(6))),
+      // Shrinks to one page...
+      http.delete(`${RECORDS_URL}/:id`, () => {
+        records = 5
+        return HttpResponse.json(pagedDoc(records))
+      }),
+      // ...then Save's echo grows it back to two.
+      http.put(URL, () => HttpResponse.json(pagedDoc(6))),
+    )
+    render(<Schedule6 />)
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' })
+    await user.click(nextButtons()[0])
+    await screen.findByRole('button', { name: 'Road Maintenance report Id: 6' })
+    await user.click(screen.getByRole('button', { name: 'Delete Road Maintenance Report 6' }))
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+    await waitFor(() => {
+      expect(records).toBe(5)
+    })
+
+    await user.click(barSaveButtons()[0])
+
+    // Still page 1. A merely-derived clamp would have left `page` at 2 and jumped here.
+    expect(
+      await screen.findByRole('button', { name: 'Road Maintenance report Id: 1' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Road Maintenance report Id: 6' }),
+    ).not.toBeInTheDocument()
+  })
+})

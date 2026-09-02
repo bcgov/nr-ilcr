@@ -37,15 +37,25 @@
 }
 
 // Every label/value pair on the page — the record display grid, the derived read-outs in the
-// add/edit grid, and the totals strip. The label is told apart from its value by SIZE and COLOUR,
-// Carbon's own convention for a field label, rather than by weight: a 12px secondary-colour label
-// over a 14px primary-colour value, separated by Carbon's standard $spacing-03 label-to-field gap.
-// Three reinforcing cues, so nothing here needs to be bold to read as a label.
+// add/edit grid, and the totals strip. These are hand-rolled `dt` labels: RMG and $ / m³ are
+// server-derived, so they have no control to hang a Carbon <label> on.
+//
+// PRIMARY, not secondary. The app styles every real Carbon label to `--cds-text-primary`
+// (styles/_overrides.scss:228-231), and that selector is ELEMENT-qualified —
+// `label.cds--label, legend.cds--label` — so it reaches TFL / Supply Block / Volume m³ / Cost $ and
+// cannot reach a `dt`. Taking `label-01` alone left these two sitting at #525252 beside #161616
+// neighbours in the same field row, which reads as a lighter, different-looking label rather than
+// as the same kind of thing. Matching the token is what makes the row agree. This is a decision
+// local to this page's own row, not an app-wide rule.
+//
+// The label is still told apart from its value by SIZE, Carbon's own convention: a 12px label over
+// a 14px `body-compact-01` value, separated by Carbon's standard $spacing-03 label-to-field gap.
+// Nothing here needs to be bold to read as a label.
 .schedule-6__field {
   dt {
     @include type-style('label-01');
 
-    color: var(--cds-text-secondary);
+    color: var(--cds-text-primary);
     margin-block-end: $spacing-03;
   }
 
@@ -94,6 +104,17 @@
 // Comments spans the grid so a two-row textarea is not squeezed into one narrow column.
 .schedule-6__comments {
   grid-column: 1 / -1;
+}
+
+// Delete is a sibling of `.schedule-6__fields`, not a cell in it, so it inherits none of the grid's
+// gap and butted straight up against the Comments textarea above it.
+//
+// $spacing-06 (1.5rem) DELIBERATELY EXCEEDS the grid's own 1rem gap. Matching the gap would space
+// the button like one more field row, which is the thing it is not — it is the row's action, and a
+// destructive one sitting directly under a text box the user was just typing in. The extra half-rem
+// is what separates "another field" from "a control that deletes this record".
+.schedule-6__row-delete {
+  margin-block-start: $spacing-06;
 }
 
 // The TSA/Supply Block combo boxes need more than one 10rem track: their options are code
