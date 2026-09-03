@@ -4,8 +4,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.CostBlock;
@@ -51,6 +50,14 @@ import org.springframework.transaction.annotation.Transactional;
  * silviculture terms are persisted items 1/2; the two Schedule-3 crown operands come from the
  * Schedule 3 document (Subtotal Actual Costs Crown column; item-37 Silviculture Admin crown).
  *
+ * <p>The {@code subtotalLoggingCost} term is read as a NAMED figure from {@link
+ * Schedule1CostDerivation} — the same computation Schedule 1 uses for its own item-144 display
+ * figure, which folds Forest Mgmt Admin on top. This service used to assemble the whole Schedule 1
+ * document and recover the term by inverse arithmetic ({@code subtotalCompanyLoggingCost −
+ * forestMgmtAdminCost}), which coupled these totals to Schedule 1's subtotal composition and built
+ * a second document (plus a full Schedule 3 derivation, only to subtract it back out) inside the
+ * {@code @Transactional} save and {@code checkStatus}. Resolved in bcgov/nr-ilcr#252.
+ *
  * <p>An absent Schedule 3 (no category-{@code "3"} summary) makes {@code findSchedule3} return an
  * empty {@link java.util.Optional}, and every carried Schedule-3 figure is treated as null. (Before
  * defect #296 the signal was a caught {@code ScheduleNotFoundException}; Schedules 1 and 3 no
@@ -83,22 +90,24 @@ public class Schedule2Service {
   private static final String LABEL_PURCHASED_LOG_COST = "Purchased/Private Log Costs - Cost";
 
   private final Schedule2Repository repository;
-  private final Schedule1Service schedule1Service;
+  private final Schedule1CostDerivation schedule1CostDerivation;
   private final Schedule3Service schedule3Service;
 
   /**
    * Constructs the Schedule 2 service.
    *
    * @param repository the repository
-   * @param schedule1Service the schedule 1 service
+   * @param schedule1CostDerivation the narrow Schedule 1 read port for the carried no-FMA subtotal
+   *     (#252) — deliberately NOT {@code Schedule1Service}: this service needs one figure, not an
+   *     assembled document
    * @param schedule3Service the schedule 3 service
    */
   public Schedule2Service(
       Schedule2Repository repository,
-      Schedule1Service schedule1Service,
+      Schedule1CostDerivation schedule1CostDerivation,
       Schedule3Service schedule3Service) {
     this.repository = repository;
-    this.schedule1Service = schedule1Service;
+    this.schedule1CostDerivation = schedule1CostDerivation;
     this.schedule3Service = schedule3Service;
   }
 
@@ -316,18 +325,19 @@ public class Schedule2Service {
     // Schedule1DO.getSubtotalLoggingCost: the computed sum of the harvest cost blocks + Subtotal
     // Other
     // Costs, EXCLUDING Forest Management Admin (its javadoc note). NOT the stored item 144.
-    // Schedule 1's
-    // computed subtotalCompanyLoggingCost includes FMA (Schedule1Service line: logging + fma +
-    // other),
-    // so the legacy no-FMA figure is subtotalCompanyLoggingCost − forestMgmtAdminCost. Absent
-    // Schedule 1
-    // (404) → null (term drops).
-    // findSchedule1 (not getSchedule1) — same reason as findSchedule3 above (defect #296).
-    Schedule1Response sch1 = schedule1Service.findSchedule1(millId, year, false).orElse(null);
-    if (sch1 == null) {
+    // Read as a named figure from Schedule1CostDerivation (#252), which is also what Schedule 1's
+    // own
+    // assembly sums before folding Forest Mgmt Admin on top — so the two can never drift.
+    // The empty Optional is the ABSENCE signal (same reason findSchedule3 is used above, defect
+    // #296): no Schedule 1 → null, and the term drops out of the legacy null-propagating sum
+    // instead of contributing $0.
+    Optional<Long> sch1SubtotalNoFma =
+        schedule1CostDerivation.subtotalLoggingNoFmaCost(millId, year);
+    if (sch1SubtotalNoFma.isEmpty()) {
       log.debug("No Schedule 1 for mill {} year {}; carried Sch1 terms null", millId, year);
     }
-    Integer sch1SubtotalLoggingCost = sch1 == null ? null : subtotalLoggingNoFma(sch1);
+    // Range-safe: an out-of-int-range subtotal null-propagates (debug-logged) rather than 500ing.
+    Integer sch1SubtotalLoggingCost = longToInt(sch1SubtotalNoFma.orElse(null));
     // Schedule 1 silviculture actual/accrued $ spent (items 1/2) — the stored terms of the legacy
     // totalCompanyLogging formula (getTotalLoggingCost); these are stored CostVolumeType costs.
     Integer sch1SilvActualSpent = repository.findSch1SilvActualSpentCost(millId, year).orElse(null);
@@ -498,26 +508,6 @@ public class Schedule2Service {
       return null;
     }
     return value.intValue();
-  }
-
-  /**
-   * The legacy {@code Schedule1DO.getSubtotalLoggingCost} (Subtotal Company Logging Cost, no
-   * silviculture) — the harvest cost blocks + Subtotal Other Costs, EXCLUDING Forest Management
-   * Admin. Schedule 1's own {@code subtotalCompanyLoggingCost} includes FMA, so subtract it back
-   * out.
-   *
-   * <p>Follow-up: this inverse arithmetic couples Schedule 2's totals to Schedule 1's subtotal
-   * composition; {@code Schedule1Service} should expose the no-FMA subtotal directly. Tracked in
-   * bcgov/nr-ilcr#252 (the relationship is pinned by {@code
-   * Schedule2ServiceTest.totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal}).
-   */
-  private static Integer subtotalLoggingNoFma(Schedule1Response sch1) {
-    Long subtotalWithFma = sch1.subtotalCompanyLoggingCost();
-    if (subtotalWithFma == null) {
-      return null;
-    }
-    long fma = sch1.forestMgmtAdminCost() == null ? 0L : sch1.forestMgmtAdminCost();
-    return longToInt(subtotalWithFma - fma); // range-safe (null-propagates on overflow, never 500)
   }
 
   /**

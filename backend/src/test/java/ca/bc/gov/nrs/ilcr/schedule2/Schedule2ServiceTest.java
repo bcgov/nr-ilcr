@@ -5,11 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
-import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
@@ -43,19 +41,11 @@ class Schedule2ServiceTest {
 
   @Mock private Schedule2Repository repository;
 
-  @Mock private Schedule1Service schedule1Service;
+  @Mock private Schedule1CostDerivation schedule1CostDerivation;
 
   @Mock private Schedule3Service schedule3Service;
 
   @InjectMocks private Schedule2Service service;
-
-  /** A Schedule 1 document mock exposing only the two figures Schedule 2 reads. */
-  private Schedule1Response sch1Doc(long subtotalCompanyLoggingWithFma, Long forestMgmtAdminCost) {
-    Schedule1Response sch1 = mock(Schedule1Response.class);
-    lenient().when(sch1.subtotalCompanyLoggingCost()).thenReturn(subtotalCompanyLoggingWithFma);
-    lenient().when(sch1.forestMgmtAdminCost()).thenReturn(forestMgmtAdminCost);
-    return sch1;
-  }
 
   /**
    * A Schedule 3 document exposing only the figures Schedule 2 carries: PO&amp;P + Crown timber
@@ -117,11 +107,10 @@ class Schedule2ServiceTest {
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
-    // Sch1 computed subtotal company logging (no FMA) = 617250 (subtotalWithFma 617250, FMA 0).
-    // Build the Sch1 mock BEFORE the outer stub — nesting when() inside .thenReturn() breaks
-    // Mockito.
-    Schedule1Response sch1 = sch1Doc(617250L, 0L);
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.of(sch1));
+    // Sch1 "Subtotal Company Logging Cost (no silviculture)", the no-FMA figure = 617250.
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.of(617250L));
     lenient()
         .when(repository.findSch1SilvActualSpentCost(MILL, YEAR))
         .thenReturn(Optional.of(20000));
@@ -142,7 +131,9 @@ class Schedule2ServiceTest {
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
     lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
   }
 
   private static void eq(String expected, BigDecimal actual) {
@@ -200,12 +191,14 @@ class Schedule2ServiceTest {
   }
 
   @Test
-  void totalCompanyLogging_usesSchedule1SubtotalMinusFma_notRawSubtotal() {
-    // The no-FMA logging subtotal Schedule 2 consumes is Schedule 1's subtotalCompanyLoggingCost
-    // (which INCLUDES Forest Management Admin) MINUS forestMgmtAdminCost. The stubFullDraft fixture
-    // uses FMA=0, so the subtraction is a no-op there. Here FMA is non-zero: a regression that fed
-    // the
-    // raw subtotal into the total would inflate it by exactly the FMA (823450 instead of 740700).
+  void totalCompanyLogging_consumesTheNamedNoFmaSubtotal_verbatim() {
+    // Schedule 2 consumes Schedule1CostDerivation's named no-FMA subtotal AS-IS — it must not
+    // adjust, re-derive, or second-guess the figure (#252). Before #252 this test pinned the
+    // inverse arithmetic that lived here (subtotalCompanyLoggingCost − forestMgmtAdminCost); the
+    // "Forest Mgmt Admin is excluded" half of that pin now lives where the sum does, in
+    // Schedule1CostDerivationTest.loggingLinesAndItemizedOtherCosts_summed_forestMgmtAdminExcluded.
+    // What is still worth pinning HERE is the boundary: the port's figure reaches
+    // totalCompanyLogging unmodified, so a stray adjustment on this side can't creep back in.
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.of(new SummaryRow(1002, "c", 0)));
     lenient()
         .when(repository.findDetails(1002))
@@ -219,11 +212,11 @@ class Schedule2ServiceTest {
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
-    // subtotalWithFma 700000, FMA 82750 -> no-FMA subtotal 617250 (same downstream total as the
-    // FMA=0
-    // fixture, isolating the subtraction as the only thing under test).
-    Schedule1Response sch1 = sch1Doc(700000L, 82750L);
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.of(sch1));
+    // The port reports 617250 as the no-FMA subtotal. A regression that re-added a Forest Mgmt
+    // Admin of 82750 on this side would inflate the total to 823450.
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.of(617250L));
     lenient()
         .when(repository.findSch1SilvActualSpentCost(MILL, YEAR))
         .thenReturn(Optional.of(20000));
@@ -232,7 +225,7 @@ class Schedule2ServiceTest {
         .thenReturn(Optional.of(8450));
 
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
-    // 617250 (700000 − 82750) + 100000 crown + ((20000 − 5000) + 8450) = 740700, NOT 823450.
+    // 617250 + 100000 crown + ((20000 − 5000) + 8450) = 740700, NOT 823450.
     assertEquals(740700, doc.totalCompanyLogging().cost());
   }
 
@@ -278,7 +271,9 @@ class Schedule2ServiceTest {
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
     eq("10000", doc.purchasedWoodOverhead().volume());
     assertEquals(20000, doc.purchasedWoodOverhead().cost());

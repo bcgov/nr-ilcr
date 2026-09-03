@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
@@ -33,7 +33,7 @@ class Schedule2CheckStatusServiceTest {
 
   @Mock private Schedule2Repository repository;
 
-  @Mock private Schedule1Service schedule1Service;
+  @Mock private Schedule1CostDerivation schedule1CostDerivation;
 
   @Mock private Schedule3Service schedule3Service;
 
@@ -46,7 +46,9 @@ class Schedule2CheckStatusServiceTest {
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
     lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
   }
 
   @Test

@@ -591,24 +591,6 @@ public class Schedule1Service {
   }
 
   /**
-   * Partition the stored detail rows into the code-keyed map (single row per code) and the
-   * repeatable Other-Costs rows. Rows without a cost item code are ignored.
-   */
-  private static void partitionDetails(
-      List<DetailRow> details, Map<Integer, DetailRow> byCode, List<DetailRow> otherCostRows) {
-    for (DetailRow row : details) {
-      if (row.costItemCode() == null) {
-        continue;
-      }
-      if (row.costItemCode() == CODE_OTHER) {
-        otherCostRows.add(row);
-      } else {
-        byCode.put(row.costItemCode(), row);
-      }
-    }
-  }
-
-  /**
    * Assemble the Schedule 1 document for a mill/year. NEVER 404s (defect #296): a mill/year with no
    * category-"1" summary yields a 200 empty document, editable when the caller may edit and the
    * track is Draft, so a first entry can be typed and saved. This is the CONTROLLER-facing read.
@@ -675,7 +657,7 @@ public class Schedule1Service {
 
     Map<Integer, DetailRow> byCode = new HashMap<>();
     List<DetailRow> otherCostRows = new ArrayList<>();
-    partitionDetails(details, byCode, otherCostRows);
+    Schedule1CostDerivation.partitionDetails(details, byCode, otherCostRows);
 
     // BR-03 pre-fill (S02): first entry (every stored volume empty) + a Schedule 3 Crown Timber
     // volume present ⇒ copy that volume into the full legacy 13-field volume set (all line items
@@ -727,13 +709,14 @@ public class Schedule1Service {
     // Subtotal Company Logging is never blank in legacy (its Subtotal-Other-Costs term seeds at 0),
     // so
     // the logging lines + Forest Mgmt Admin + Other Costs are summed with null treated as 0.
-    long loggingLineCost = 0;
-    for (int code : new int[] {12, 13, 14, 15, 16, 17, 18}) {
-      loggingLineCost += costOfCode(byCode, code);
-    }
-    long otherCostsCost = otherCosts.costSubtotal() == null ? 0L : otherCosts.costSubtotal();
+    //
+    // The logging + Other Costs half is the legacy Schedule1DO.getSubtotalLoggingCost — the no-FMA
+    // figure Schedule 2 carries — so it is computed by Schedule1CostDerivation, the single
+    // implementation both sides share (#252). This line is the ONLY place Forest Mgmt Admin is
+    // folded in: the served item-144 figure is exactly the shared figure + FMA.
+    long subtotalLoggingNoFma = Schedule1CostDerivation.subtotalLoggingNoFma(byCode, otherCostRows);
     long fmaCost = forestMgmtAdminCost == null ? 0L : forestMgmtAdminCost;
-    Long subtotalCompanyLoggingCost = loggingLineCost + fmaCost + otherCostsCost;
+    Long subtotalCompanyLoggingCost = subtotalLoggingNoFma + fmaCost;
 
     // Total Silviculture + Total Company Logging follow legacy CoreUtil null-propagation
     // (Schedule1MB.getTotalSilvCost / Schedule1DO.getTotalLoggingCost) — NOT null-as-0. The Sch3
@@ -1023,13 +1006,10 @@ public class Schedule1Service {
     List<DetailRow> itemized =
         otherCostRows.stream().filter(r -> StringUtils.isNotEmpty(r.itemDescription())).toList();
 
-    // Sum as long to avoid silent int overflow across many/large itemized costs.
-    long costSubtotal =
-        itemized.stream()
-            .map(DetailRow::cost)
-            .filter(c -> c != null)
-            .mapToLong(Integer::longValue)
-            .sum();
+    // Sum as long to avoid silent int overflow across many/large itemized costs. Delegated to
+    // Schedule1CostDerivation so this DTO subtotal and the shared no-FMA subtotal (#252) are the
+    // same sum over the same rows by construction, not by coincidence.
+    long costSubtotal = Schedule1CostDerivation.itemizedOtherCostsSubtotal(otherCostRows);
 
     return new OtherCostsSummary(
         normalizeVolume(sharedVolume),
@@ -1049,12 +1029,6 @@ public class Schedule1Service {
       return null;
     }
     return cost.divide(volume, 10, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
-  }
-
-  /** A line-item cost from the by-code map, treating absent/null as 0 (legacy null-safe sums). */
-  private static int costOfCode(Map<Integer, DetailRow> byCode, int code) {
-    DetailRow row = byCode.get(code);
-    return row == null || row.cost() == null ? 0 : row.cost();
   }
 
   /** A line-item cost from the by-code map as a nullable Long (absent/null cost → null). */

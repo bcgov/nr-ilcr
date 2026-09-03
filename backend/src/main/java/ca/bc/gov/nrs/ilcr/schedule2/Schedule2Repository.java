@@ -120,11 +120,12 @@ public interface Schedule2Repository extends Repository<Schedule2SummaryEntity, 
   // Schedule 1 Subtotal Company Logging cost is NOT the stored item 144 — the legacy
   // Schedule1DO.getSubtotalLoggingCost is a COMPUTED sum (harvest cost blocks + Subtotal Other
   // Costs,
-  // excluding Forest Management Admin). Schedule2Service derives it from Schedule 1's computed
-  // document
-  // (Schedule1Service: subtotalCompanyLoggingCost − forestMgmtAdminCost). Only the two silviculture
-  // $
-  // terms below (items 1/2) are stored CostVolumeType costs read directly.
+  // excluding Forest Management Admin), so it is not read here either: Schedule2Service takes it as
+  // a
+  // named figure from Schedule1CostDerivation, the same computation Schedule 1's own assembly uses
+  // (#252 — it used to be recovered by inverse arithmetic off the assembled Schedule 1 document).
+  // Only the two silviculture $ terms below (items 1/2) are stored CostVolumeType costs read
+  // directly.
 
   /**
    * Schedule 1 Silviculture Actual $ Spent cost (cost-item 1) — the fixed detail row (NULL {@code

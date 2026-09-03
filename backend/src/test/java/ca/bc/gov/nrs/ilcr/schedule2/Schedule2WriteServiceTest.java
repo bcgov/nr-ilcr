@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
@@ -47,7 +47,7 @@ class Schedule2WriteServiceTest {
 
   @Mock private Schedule2Repository repository;
 
-  @Mock private Schedule1Service schedule1Service;
+  @Mock private Schedule1CostDerivation schedule1CostDerivation;
 
   @Mock private Schedule3Service schedule3Service;
 
@@ -69,7 +69,9 @@ class Schedule2WriteServiceTest {
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
     lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
   }
 
   @Test
@@ -98,7 +100,9 @@ class Schedule2WriteServiceTest {
     when(repository.bumpRevision(eq(9001), eq(0), anyString(), eq(USER))).thenReturn(1);
     lenient().when(repository.findDetails(9001)).thenReturn(List.of());
     lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
 
     // null revisionCount from the client means "new/unsaved" -> matches the freshly-inserted 0.
     service.saveSchedule2(
