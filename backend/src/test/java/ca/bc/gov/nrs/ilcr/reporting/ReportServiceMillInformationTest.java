@@ -254,10 +254,11 @@ class ReportServiceMillInformationTest {
     }
 
     // A PDF, with the section's chrome intact...
-    assertThat(text).contains("MILL INFO NO CLIENT - 7320").contains("Schedule Status");
-    // ...and the milestone lines BLANK: never the word "null", never a raw prefix, and never the
-    // "-" the address/contact fields use (legacy's null sweep left these empty).
     assertThat(text)
+        .contains("MILL INFO NO CLIENT - 7320")
+        .contains("Schedule Status")
+        // ...and the milestone lines BLANK: never the word "null", never a raw prefix, and never
+        // the "-" the address/contact fields use (legacy's null sweep left these empty).
         .doesNotContain("null")
         .doesNotContain("D: ")
         .doesNotContain("Draft: -")

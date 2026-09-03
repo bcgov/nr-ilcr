@@ -132,10 +132,12 @@ class MillDrillDownReportIT extends AbstractOracleIT {
                     "attachment; filename=\"mill_7320_print.pdf\""));
 
     String text = pdfText(732, 2021);
-    assertThat(text).contains("MILL INFO NO CLIENT - 7320").contains("Schedule Status");
-    // Blank, not the word "null" and not the "-" the address/contact fields fall back to: legacy's
-    // null sweep left milestone dates empty, and this PDF has no legend to decode a raw prefix.
     assertThat(text)
+        .contains("MILL INFO NO CLIENT - 7320")
+        .contains("Schedule Status")
+        // Blank, not the word "null" and not the "-" the address/contact fields fall back to:
+        // legacy's null sweep left milestone dates empty, and this PDF has no legend to decode a
+        // raw prefix.
         .doesNotContain("null")
         .doesNotContain("Draft: -")
         .doesNotContain("Submitted: -")
@@ -154,8 +156,9 @@ class MillDrillDownReportIT extends AbstractOracleIT {
     // it must strip, exactly as the all-mills report does.
     String text = pdfText(731, 2021);
 
-    assertThat(text).contains("MILL INFO SPARSE - 7310").contains("2021-01-05");
     assertThat(text)
+        .contains("MILL INFO SPARSE - 7310")
+        .contains("2021-01-05")
         .doesNotContain("D: ")
         .doesNotContain("S: ")
         .doesNotContain("V: ")
@@ -174,11 +177,16 @@ class MillDrillDownReportIT extends AbstractOracleIT {
     // real rows look like this.
     String text = pdfText(733, 2021);
 
-    assertThat(text).contains("MILL INFO CLOSED SINCE - 7330").contains("2021-01-05");
-    assertThat(text).doesNotContain("D: ").doesNotContain("S: ").doesNotContain("V: ");
-    // ACT for 2021 in the report view but CLS on the xref: the per-year value is what prints, and a
-    // reprint of 2021 must not be rewritten by the mill's closure since.
-    assertThat(text).contains("Active:").contains("Yes");
+    assertThat(text)
+        .contains("MILL INFO CLOSED SINCE - 7330")
+        .contains("2021-01-05")
+        .doesNotContain("D: ")
+        .doesNotContain("S: ")
+        .doesNotContain("V: ")
+        // ACT for 2021 in the report view but CLS on the xref: the per-year value is what prints,
+        // and a reprint of 2021 must not be rewritten by the mill's closure since.
+        .contains("Active:")
+        .contains("Yes");
   }
 
   @Test
