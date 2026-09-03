@@ -51,6 +51,15 @@ public class Schedule6CheckStatusResolver {
    * before validating, {@code Schedule6MB:139-140}), while a report-level sweep must describe what
    * is actually stored. See {@link Schedule6Service#checkStatusStored}.
    *
+   * <p><strong>The caller MUST validate the mill/year context first</strong> (AD-4, {@code
+   * MillContextService.validateMillYearActive}). This method does not, and the failure mode is
+   * SILENT rather than loud: an absent or closed {@code (millId, year)} simply yields no rows, and
+   * every schedule whose verdict is a loop over rows treats zero rows as a vacuous {@code MET}
+   * (Schedules 4, 5, 6, 8, 10 and 11 all document that explicitly). A sweep that skipped the guard
+   * would therefore report a nonexistent or closed mill-year as COMPLETE instead of raising
+   * ERR-002/ERR-003 — the worst available direction to fail in. Story 15.1 owns exactly ONE guard
+   * covering all twelve schedules; do not add a thirteenth here, and do not call this without it.
+   *
    * @param millId the mill id (context already validated by the caller)
    * @param year the reporting year
    * @return the stored-data verdict with every message's verbatim text populated
