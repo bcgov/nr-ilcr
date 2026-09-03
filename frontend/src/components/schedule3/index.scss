@@ -32,11 +32,8 @@
   table-layout: fixed;
   inline-size: 100%;
 
-  // Bold column-header text (Carbon defaults to semibold).
-  thead th,
-  thead .cds--table-header-label {
-    font-weight: 700;
-  }
+  // Column-header weight is now app-wide (see the data-table thead rule in _overrides.scss); this
+  // table's local copy was one of the four that let the other schedules go unbolded.
 
   th:first-child,
   td:first-child {

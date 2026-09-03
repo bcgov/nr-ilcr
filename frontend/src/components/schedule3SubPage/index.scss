@@ -45,9 +45,8 @@
 // page's Comments label + counter after any visit to a sub-page, until a hard refresh dropped the
 // chunk again. Bold only the label that actually wants it (see .schedule-3-sub__meta-field below).
 
-.schedule-3__section .cds--data-table thead th {
-  font-weight: 700;
-}
+// Column-header weight is now app-wide (see the data-table thead rule in _overrides.scss). Dropping
+// this copy also removes one more thing scoped to the shared `.schedule-3__section`, per the note above.
 
 .schedule-3__section {
   margin-block: 1rem;

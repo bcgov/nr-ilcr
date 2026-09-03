@@ -60,12 +60,14 @@ const SUMMARY_ROWS: ReadonlyArray<{ file: string; selector: string; label: strin
     label: 'Sch3 total costs',
   },
   { file: 'schedule4/index.scss', selector: '.schedule-4__totals-row td', label: 'Sch4 totals' },
-  // Sch5 section HEADER: bold on the label cell only (the row also holds the repeated
-  // Volume/Cost/$ captions). No band — a header is not a calculated row.
+  // Sch5 section HEADER: the whole row, label AND the repeated Volume/Cost/$ captions. Was
+  // `td:first-child` until #411 recognised those captions as this grid's column labels — legacy
+  // repeats the column headers per section rather than heading the table once — and column labels are
+  // bold app-wide. No band — a header is not a calculated row.
   {
     file: 'schedule5/index.scss',
-    selector: '.schedule-5__section-row td:first-child',
-    label: 'Sch5 section label',
+    selector: '.schedule-5__section-row td',
+    label: 'Sch5 section label and column captions',
   },
   // Sch5's actual calculated rows, which carry the band (PR #381 review). Camp and Access is the
   // schedule's final figure and took the darker tier in #411 Overall 5; the other three stay lighter.

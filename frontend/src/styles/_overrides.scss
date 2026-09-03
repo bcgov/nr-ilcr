@@ -89,6 +89,26 @@
   --ilcr-band-link: var(--cds-link-primary-hover);
 }
 
+// Bold column labels on EVERY data table (#411). Legacy bolded them, and four stylesheets had each
+// restated this rule for their own table — Schedules 1 and 3, the Schedule 3 sub-page and SubPanel —
+// so the schedules that never opted in rendered their labels at body weight. Measured in the browser
+// before this rule landed: Sch 1 and Sch 3 computed 700, while Schedules 2, 4, 5, 8, 10 and 11 all
+// computed 400. Stating it once here is the same move #411 Overall 5 made for the summary bands.
+//
+// It has to be stated at all because Carbon's reset gives every table element `font: inherit`, which
+// beats the semibold its own `heading-compact-01` thead rule would otherwise apply — so a `th` quietly
+// inherits the body's 400. 700 rather than Carbon's 600 to match legacy and the four rules replaced.
+//
+// Three selectors, not one, because Carbon nests the label differently per header type: plain text
+// sits in a `--table-header-label` div (which inherits, so the `th` alone would do), but a SORTABLE
+// header wraps it in a `<button class="--table-sort">`, and a button takes the UA's own font-weight
+// instead of inheriting the cell's. Schedule 11's sortable grid is the case that proves the third one.
+.#{variables.$bcgov-prefix}--data-table thead th,
+.#{variables.$bcgov-prefix}--data-table thead .#{variables.$bcgov-prefix}--table-header-label,
+.#{variables.$bcgov-prefix}--data-table thead .#{variables.$bcgov-prefix}--table-sort {
+  font-weight: 700;
+}
+
 .#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
   // Global button height: 48px (Carbon `lg` / 3rem) for every size variant (sm/md/lg and icon-only),
