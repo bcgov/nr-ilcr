@@ -21,6 +21,7 @@ export const ROUTES = {
   homeContent: '/home-content',
   millAssociations: '/mill-associations',
   millInformationReport: '/mill-information-report',
+  millStatusReport: '/mill-status-report',
   printSchedules: '/print-schedules',
   submissions: '/submissions',
 } as const
@@ -105,7 +106,12 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: Report,
     name: 'Generate Reports',
     adminOnly: true,
-    items: [{ name: 'Mill Information Report', path: ROUTES.millInformationReport }],
+    items: [
+      { name: 'Mill Information Report', path: ROUTES.millInformationReport },
+      // Legacy's own menu label for millReportStatus.xhtml (menu.xhtml:41) — "Mill Status Report",
+      // not "Mill Report Status". The page title matches it.
+      { name: 'Mill Status Report', path: ROUTES.millStatusReport },
+    ],
   },
   {
     icon: Printer,

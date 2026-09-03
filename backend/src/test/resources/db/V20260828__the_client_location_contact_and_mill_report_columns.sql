@@ -1,4 +1,4 @@
--- THE.CLIENT_LOCATION, THE.CLIENT_CONTACT and THE.ISP_SELL_PRICE_ZONE_CODE, plus the MILL and
+-- THE.CLIENT_LOCATION, THE.CLIENT_CONTACT and THE.APPRAISAL_SELL_PRICE_ZONE_CODE, plus the MILL and
 -- ILCR_MILL_STATUS_XREF columns that reach them. TEST-SCOPE ONLY (the app executes no runtime DDL, AD-2).
 --
 -- None of this is new. All three tables already exist in managed THE and are owned by THE itself --
@@ -37,12 +37,22 @@ CREATE TABLE THE.CLIENT_CONTACT (
   CONSTRAINT CLIENT_CONTACT_PK PRIMARY KEY (CLIENT_CONTACT_ID)
 );
 
-CREATE TABLE THE.ISP_SELL_PRICE_ZONE_CODE (
-  ISP_SELL_PRICE_ZONE_CODE VARCHAR2(2)   NOT NULL,
-  DESCRIPTION              VARCHAR2(120) NOT NULL,
-  EFFECTIVE_DATE           DATE          NOT NULL,
-  EXPIRY_DATE              DATE          NOT NULL,
-  CONSTRAINT ISP_SELL_PRICE_ZONE_CODE_PK PRIMARY KEY (ISP_SELL_PRICE_ZONE_CODE)
+-- The selling-price zone DESCRIPTIONS live here, in APPRAISAL_SELL_PRICE_ZONE_CODE -- not in the
+-- table the MILL column is named after. Legacy settles it: MILL.ISP_SELL_PRICE_ZONE_CODE is mapped
+-- (Mill.java:59-61) to the AppraisalSellPrizeZoneCode entity, whose @Table is
+-- THE.APPRAISAL_SELL_PRICE_ZONE_CODE and which is the only zone entity in hibernate.cfg.xml (:90);
+-- legacy's IspSellPrizeZodeCode class names the ISP table but is mapped nowhere and used by nothing.
+-- This snapshot originally created THE.ISP_SELL_PRICE_ZONE_CODE, which let the ITs pass green against
+-- a table the app cannot read in any real environment -- THE.ISP_SELL_PRICE_ZONE_CODE does not exist
+-- on the FTA database, only a dangling PUBLIC synonym does. Corrected 2026-09-02; shape below read
+-- from ALL_TAB_COLUMNS on fortmp1 (5 columns, all NOT NULL, PK SPZC_PK).
+CREATE TABLE THE.APPRAISAL_SELL_PRICE_ZONE_CODE (
+  APPRAISAL_SELL_PRICE_ZONE_CODE VARCHAR2(2)   NOT NULL,
+  DESCRIPTION                    VARCHAR2(120) NOT NULL,
+  EFFECTIVE_DATE                 DATE          NOT NULL,
+  EXPIRY_DATE                    DATE          NOT NULL,
+  UPDATE_TIMESTAMP               DATE          NOT NULL,
+  CONSTRAINT APPRAISAL_SELL_PRICE_ZONE_PK PRIMARY KEY (APPRAISAL_SELL_PRICE_ZONE_CODE)
 );
 
 -- The MILL columns the report joins on. DELIBERATE DEVIATION, and the reason matters: delivery has
@@ -51,7 +61,9 @@ CREATE TABLE THE.ISP_SELL_PRICE_ZONE_CODE (
 -- snapshot-wide fixture rewrite. They are nullable here so a mill with no client linkage still loads,
 -- which is also the shape the report's LEFT JOIN and "-" fallbacks are written for.
 -- Note the column spelling: the FK column is ISP_SELL_PRICE_ZONE_CODE ("Price"), even though the
--- legacy Java getter reads getIsp_Sell_Prize_Zone_Code ("Prize"). The column wins.
+-- legacy Java getter reads getIsp_Sell_Prize_Zone_Code ("Prize"). The column wins. And note that the
+-- column's name does NOT name its lookup table -- that is APPRAISAL_SELL_PRICE_ZONE_CODE above.
+-- No FK constraint is declared, matching delivery: fortmp1 has none on this column either.
 ALTER TABLE THE.MILL ADD (
   ISP_SELL_PRICE_ZONE_CODE VARCHAR2(2),
   CLIENT_NUMBER            VARCHAR2(8),

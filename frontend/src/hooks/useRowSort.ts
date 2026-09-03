@@ -1,17 +1,24 @@
-import { useMemo, useState } from 'react'
-import type { EditRow } from '@/hooks/useEditableCostRows'
+import { useMemo, useRef, useState } from 'react'
 
 export type SortDirection = 'NONE' | 'ASC' | 'DESC'
 
 /** A cell's sort key: numbers sort numerically, strings alphabetically; null/blank always sort last. */
 export type SortValue = number | string | null | undefined
 
-/** Per-column value extractors keyed by the column's sort key (e.g. `'description'`, `'total'`). */
-export type SortExtractors = Record<string, (row: EditRow) => SortValue>
+/** A row's stable identity, used to snapshot and restore display order. */
+export type RowIdentity = number | string
 
-export interface RowSort {
-  /** The rows in display order (unchanged from input while no sort is active). */
-  sortedRows: EditRow[]
+/** Per-column value extractors keyed by the column's sort key (e.g. `'description'`, `'total'`). */
+export type SortExtractors<T> = Record<string, (row: T) => SortValue>
+
+export interface RowSort<T> {
+  /**
+   * The rows in display order (the SAME array reference as the input while no sort is active).
+   *
+   * `readonly` on purpose: it may be the caller's own array, so an in-place `.sort()` here would
+   * reorder a component's props under it.
+   */
+  sortedRows: readonly T[]
   /** The active sort column's key, or null when unsorted. */
   activeKey: string | null
   /** The sort direction to hand a Carbon `TableHeader` for the given column. */
@@ -45,18 +52,39 @@ const compareValues = (a: SortValue, b: SortValue): number => {
 }
 
 /**
- * Client-side, single-column table sort for the editable cost sub-pages, mirroring the legacy
- * PrimeFaces header-click sort: the whole list is already loaded, so sorting is in-memory and on
- * demand with no default sort. The order is SNAPSHOTTED at click time (by row identity) so editing a
- * cell does not re-sort and yank the row out from under the cursor — legacy re-evaluates the sort key
- * only on the next header click. Rows added after the snapshot append at the end; removed rows drop
- * out. Blank/absent values always sort last, regardless of direction.
+ * Client-side, single-column table sort, mirroring the legacy PrimeFaces header-click sort: the whole
+ * list is already loaded, so sorting is in-memory and on demand with no default sort. The order is
+ * SNAPSHOTTED at click time (by row identity) so editing a cell does not re-sort and yank the row out
+ * from under the cursor — legacy re-evaluates the sort key only on the next header click. Rows added
+ * after the snapshot append at the end; removed rows drop out. Blank/absent values always sort last,
+ * regardless of direction.
+ *
+ * Generic over the row type (Story 19.2): the editable cost sub-pages sort `EditRow`s keyed by
+ * `row.key`, while the Mill Status Report sorts read-only DTO rows keyed by `row.millId`. `keyOf`
+ * supplies that identity, so the hook never has to know the shape of a row.
+ *
+ * @param rows the rows in the order the server returned them
+ * @param extractors per-column value extractors, keyed by the column's sort key
+ * @param keyOf a row's STABLE identity — it must not change while the row is on screen, or the
+ *   snapshotted order cannot find it again
  */
-export function useRowSort(rows: EditRow[], extractors: SortExtractors): RowSort {
+export function useRowSort<T>(
+  rows: readonly T[],
+  extractors: SortExtractors<T>,
+  keyOf: (row: T) => RowIdentity,
+): RowSort<T> {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [direction, setDirection] = useState<SortDirection>('NONE')
   // Frozen display order (row keys) captured at the last header click; null means unsorted.
-  const [order, setOrder] = useState<number[] | null>(null)
+  const [order, setOrder] = useState<RowIdentity[] | null>(null)
+  // keyOf lives in a ref, not in the memo's dependency list. Every call site passes an inline arrow,
+  // so a fresh identity arrives on each render; depending on it would rebuild `sortedRows` — and
+  // hand out a NEW array — every render. The editable cost sub-pages mount an editor per row and are
+  // the documented cause of frontend CI timeouts, so that is a cost worth avoiding. A ref is honest
+  // rather than suppressed: the value is read at call time, and it is a pure identity reader whose
+  // result cannot change for the same row.
+  const keyRef = useRef(keyOf)
+  keyRef.current = keyOf
 
   const toggleSort = (key: string) => {
     // A header with no extractor cannot be sorted — ignore the click rather than throwing (or
@@ -84,7 +112,7 @@ export function useRowSort(rows: EditRow[], extractors: SortExtractors): RowSort
         if (bBlank) return -1
         return compareValues(av, bv) * sign
       })
-      .map((r) => r.key)
+      .map(keyRef.current)
     setOrder(snapshot)
   }
 
@@ -92,10 +120,11 @@ export function useRowSort(rows: EditRow[], extractors: SortExtractors): RowSort
     if (!order) {
       return rows
     }
-    const byKey = new Map(rows.map((r) => [r.key, r]))
-    const ordered = order.map((k) => byKey.get(k)).filter((r): r is EditRow => r !== undefined)
+    const identify = keyRef.current
+    const byKey = new Map(rows.map((r) => [identify(r), r]))
+    const ordered = order.map((k) => byKey.get(k)).filter((r): r is T => r !== undefined)
     const seen = new Set(order)
-    const appended = rows.filter((r) => !seen.has(r.key))
+    const appended = rows.filter((r) => !seen.has(identify(r)))
     return [...ordered, ...appended]
   }, [rows, order])
 

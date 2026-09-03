@@ -108,8 +108,9 @@ class MillInformationServiceTest {
   @Test
   @DisplayName("an unreadable zone table costs the Region only, not the whole report")
   void missingZoneTableDegradesToNoRegion() {
-    // ISP_SELL_PRICE_ZONE_CODE is reached through a PUBLIC synonym that is dangling on the FTA dev
-    // database, so Oracle answers ORA-00942. The report must still render.
+    // APPRAISAL_SELL_PRICE_ZONE_CODE is a shared ministry code table reached through a PUBLIC
+    // synonym; if that synonym's target is missing Oracle answers ORA-00942 for the whole
+    // statement. The report must still render.
     when(repository.findZoneDescriptions())
         .thenThrow(new BadSqlGrammarException("select", "select 1", new SQLException("ORA-00942")));
     when(repository.findSectionRows(2021)).thenReturn(List.of(row("ACT")));
@@ -121,6 +122,37 @@ class MillInformationServiceTest {
   }
 
   @Test
+  @DisplayName("the degrade survives a mill with NO zone code — the 500 this used to be")
+  void missingZoneTableDegradesForANullZoneCodeToo() {
+    // The regression test for the recorded 19.1 defect. The catch used to return Map.of(), and
+    // Map.of().get(null) THROWS NullPointerException on Java 21 (ImmutableCollections.MapN.get
+    // calls Objects.requireNonNull) where HashMap.get(null) answers null. Most mills carry no zone
+    // code, so the mitigation for ORA-00942 turned a one-column outage into a 500 on exactly the
+    // database it existed for. The test above passed anyway because its row carries "Z1"; this one
+    // is the shape that detonated it, and it fails if either half of the fix is reverted.
+    when(repository.findZoneDescriptions())
+        .thenThrow(new BadSqlGrammarException("select", "select 1", new SQLException("ORA-00942")));
+    when(repository.findSectionRows(2021)).thenReturn(List.of(rowWithNoZoneCode()));
+
+    MillInformationSection section = service.findSections(2021).getFirst();
+
+    assertThat(section.region()).isNull();
+    assertThat(section.millName()).isEqualTo("name");
+  }
+
+  @Test
+  @DisplayName("a readable zone table still leaves a code-less mill with no Region")
+  void aNullZoneCodeYieldsNoRegionEvenWhenTheTableReads() {
+    // The same null-code row on the happy path: HashMap.get(null) is harmless, but the guard must
+    // not be mistaken for degrade-only handling. Region is absent because the mill has no code.
+    when(repository.findZoneDescriptions())
+        .thenReturn(List.of(new ZoneDescriptionEntity("Z1", "Kootenay Selling Price Zone")));
+    when(repository.findSectionRows(2021)).thenReturn(List.of(rowWithNoZoneCode()));
+
+    assertThat(service.findSections(2021).getFirst().region()).isNull();
+  }
+
+  @Test
   @DisplayName("no rows for the year yields no sections rather than an error")
   void emptyYearYieldsNoSections() {
     when(repository.findSectionRows(1999)).thenReturn(List.of());
@@ -128,14 +160,23 @@ class MillInformationServiceTest {
     assertThat(service.findSections(1999)).isEmpty();
   }
 
+  /** The common delivery shape: a mill carrying no selling-price zone code at all. */
+  private static MillInformationRowEntity rowWithNoZoneCode() {
+    return row("ACT", null);
+  }
+
   /** A row whose every text column carries a value unique to that column. */
   private static MillInformationRowEntity row(String statusCode) {
+    return row(statusCode, "Z1");
+  }
+
+  private static MillInformationRowEntity row(String statusCode, String regionCode) {
     return new MillInformationRowEntity(
         730,
         "number",
         "name",
         statusCode,
-        "Z1",
+        regionCode,
         "clientName",
         "address1",
         "address2",

@@ -83,20 +83,39 @@ public interface MillInformationRepository extends Repository<MillInformationRow
   /**
    * The selling-price zone code to description lookup, read SEPARATELY from the section rows.
    *
-   * <p>It is not joined into {@link #findSectionRows} on purpose. {@code ISP_SELL_PRICE_ZONE_CODE}
-   * is a shared ministry table reached through a PUBLIC synonym, and on the FTA development
-   * database that synonym is dangling: the underlying table is absent, so ANY reference to it fails
-   * the whole statement at parse time with ORA-00942, join type notwithstanding. Joined in, one
-   * missing code table took down the entire report; read apart, a mill simply shows "-" for its
-   * region, which is the fallback that field already has. Region is a display description, not
-   * report data.
+   * <p><b>The table is {@code APPRAISAL_SELL_PRICE_ZONE_CODE}, not {@code
+   * ISP_SELL_PRICE_ZONE_CODE}.</b> The join key on {@code MILL} is a column named {@code
+   * ISP_SELL_PRICE_ZONE_CODE}, but the descriptions it points at live in the APPRAISAL table — see
+   * {@link ZoneDescriptionEntity} for the legacy mapping that settles it. This query originally
+   * named the ISP table, which does not exist on the FTA database, so the degrade below fired on
+   * every request and Region rendered "-" for all 140 mills while legacy showed real values
+   * (verified 2026-09-02 as {@code ILCR$WEB1} on {@code fortmp1}: {@code
+   * THE.APPRAISAL_SELL_PRICE_ZONE_CODE} holds 19 rows and resolves every mill's code).
+   *
+   * <p>It is still not joined into {@link #findSectionRows}, and the degrade below stays. This is a
+   * shared ministry code table reached through a PUBLIC synonym; a synonym whose target is missing
+   * fails the whole statement at parse time with ORA-00942, join type notwithstanding. Joined in,
+   * one unreadable code table takes down the entire report; read apart, a mill simply shows "-" for
+   * its region, which is the fallback that field already has. Region is a display description, not
+   * report data — but a "-" is now a real signal about the environment rather than the normal case.
+   *
+   * <p><b>Two consumers.</b> Besides {@link MillInformationService}, {@code
+   * ca.bc.gov.nrs.ilcr.millreportstatus.MillReportStatusService} borrows THIS method for the Mill
+   * Status Report table's Region column (Story 19.2) — deliberately, so there is one definition of
+   * the read rather than two copies that can drift, and so a table-name fix reaches both surfaces
+   * at once. Renaming or narrowing it while working on 19.1 breaks 19.2 as well.
+   *
+   * <p>Deliberately unfiltered by {@code EFFECTIVE_DATE}/{@code EXPIRY_DATE}: legacy reached the
+   * description by FK navigation with no date predicate either, so a retired zone still names
+   * itself on a historical report. Whether Region should be as-of-year is an open question recorded
+   * in {@code deferred-work.md}, not something to change here unasked.
    *
    * @return one row per zone code
    */
   @Query(
       """
-      SELECT ISP_SELL_PRICE_ZONE_CODE, DESCRIPTION
-        FROM THE.ISP_SELL_PRICE_ZONE_CODE
+      SELECT APPRAISAL_SELL_PRICE_ZONE_CODE, DESCRIPTION
+        FROM THE.APPRAISAL_SELL_PRICE_ZONE_CODE
       """)
   List<ZoneDescriptionEntity> findZoneDescriptions();
 }

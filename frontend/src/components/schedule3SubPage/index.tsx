@@ -185,15 +185,19 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
   // Client-side column sort, matching the legacy Schedule 3 sub-page dataTables: Description, every
   // editable field, AND each derived read-only column (e.g. Crown $) are sortable. See useRowSort for
   // the snapshot-on-click semantics.
-  const sort = useRowSort(rows, {
-    description: (row) => row.description,
-    ...Object.fromEntries(
-      config.fields.map((f) => [f.key, (row: EditRow) => toNum(row.values[f.key])]),
-    ),
-    ...Object.fromEntries(
-      readonlyColumns.map((col) => [col.key, (row: EditRow) => col.derive(numeric(row.values))]),
-    ),
-  })
+  const sort = useRowSort(
+    rows,
+    {
+      description: (row) => row.description,
+      ...Object.fromEntries(
+        config.fields.map((f) => [f.key, (row: EditRow) => toNum(row.values[f.key])]),
+      ),
+      ...Object.fromEntries(
+        readonlyColumns.map((col) => [col.key, (row: EditRow) => col.derive(numeric(row.values))]),
+      ),
+    },
+    (row) => row.key,
+  )
 
   /**
    * A row's committed values, falling back to its LIVE values when it has never been committed — only

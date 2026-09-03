@@ -38,10 +38,13 @@ describe('visibleNavigationItems', () => {
     expect(gated.map((item) => item.name)).toEqual(['Administration', 'Generate Reports'])
   })
 
-  test('Generate Reports is a menu whose only item is the Mill Information Report', () => {
+  test('Generate Reports lists the two mill reports, in the legacy menu order', () => {
+    // menu.xhtml:40-41 — Mill Information Report then Mill Status Report. (Data Extract is its own
+    // later epic and is deliberately not here yet.)
     const reports = NAVIGATION_ITEMS.find((item) => item.name === 'Generate Reports')
     expect(reports?.items).toEqual([
       { name: 'Mill Information Report', path: '/mill-information-report' },
+      { name: 'Mill Status Report', path: '/mill-status-report' },
     ])
   })
 
@@ -69,6 +72,7 @@ describe('admin-only paths (route guard source)', () => {
       '/home-content',
       '/mill-associations',
       '/mill-information-report',
+      '/mill-status-report',
       '/open-reporting-year',
     ])
   })
@@ -79,6 +83,7 @@ describe('admin-only paths (route guard source)', () => {
     expect(isAdminOnlyPath('/open-reporting-year')).toBe(true)
     expect(isAdminOnlyPath('/home-content')).toBe(true)
     expect(isAdminOnlyPath('/mill-information-report')).toBe(true)
+    expect(isAdminOnlyPath('/mill-status-report')).toBe(true)
     expect(isAdminOnlyPath('/schedule-1')).toBe(false)
     expect(isAdminOnlyPath('/')).toBe(false)
   })

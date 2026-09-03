@@ -39,6 +39,7 @@ public class ReportController implements ReportApi {
   private final MillContextService millContextService;
   private final ReportService reportService;
   private final PrintService printService;
+  private final ReportYearGuard reportYearGuard;
 
   /**
    * Constructs a new ReportController.
@@ -46,14 +47,18 @@ public class ReportController implements ReportApi {
    * @param millContextService the mill context service
    * @param reportService the report service
    * @param printService the print service
+   * @param reportYearGuard the shared report-year guard (Story 19.2 hoisted this out of a private
+   *     method here so the Mill Report Status endpoint rejects a bad year with identical text)
    */
   public ReportController(
       MillContextService millContextService,
       ReportService reportService,
-      PrintService printService) {
+      PrintService printService,
+      ReportYearGuard reportYearGuard) {
     this.millContextService = millContextService;
     this.reportService = reportService;
     this.printService = printService;
+    this.reportYearGuard = reportYearGuard;
   }
 
   @Override
@@ -87,34 +92,9 @@ public class ReportController implements ReportApi {
       String year, Authentication authentication) {
     // No MillContextService call here, deliberately: this report has no mill and no working context
     // (BR-08). The year is the only input, and it is the only thing to validate.
-    int reportYear = requireOpenYear(year);
+    int reportYear = reportYearGuard.requireOpenYear(year);
     RenderedReport report = reportService.renderMillInformation(reportYear);
     return pdfResponse("mills_print.pdf", null, reportYear, report);
-  }
-
-  /**
-   * Parse and validate the report year. Absent, blank and non-numeric collapse to one rejection —
-   * the legacy control was a dropdown of opened periods, so any value that is not a year means no
-   * year was chosen. A parseable year that is not an OPEN period is rejected separately: without
-   * that check {@code year=0} or a mistyped {@code 202} would reach the report, find no mills and
-   * surface as {@code undefinedError}, which reads as a system fault rather than a bad selection.
-   */
-  private int requireOpenYear(String year) {
-    if (year == null || year.isBlank()) {
-      throw new ReportYearRequiredException();
-    }
-    int parsed;
-    try {
-      parsed = Integer.parseInt(year.trim());
-    } catch (NumberFormatException e) {
-      throw new ReportYearRequiredException();
-    }
-    boolean open =
-        millContextService.listReportingYears().stream().anyMatch(y -> y.reportYear() == parsed);
-    if (!open) {
-      throw new ReportYearNotOpenException();
-    }
-    return parsed;
   }
 
   /**
