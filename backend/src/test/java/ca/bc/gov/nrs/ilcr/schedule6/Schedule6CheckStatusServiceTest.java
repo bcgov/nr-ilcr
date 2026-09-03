@@ -354,10 +354,10 @@ class Schedule6CheckStatusServiceTest {
   void checkStatusStored_emitsKeysOnly() {
     stored(List.of(row(8440, "01", "01B", null)), List.of());
 
-    RoadRecordCheckResult record = service.checkStatusStored(MILL, YEAR).records().get(0);
+    RoadRecordCheckResult verdict = service.checkStatusStored(MILL, YEAR).records().get(0);
 
-    assertEquals("missingRequiredFieldMsg", record.issues().get(0).message().key());
-    assertNull(record.issues().get(0).message().text());
+    assertEquals("missingRequiredFieldMsg", verdict.issues().get(0).message().key());
+    assertNull(verdict.issues().get(0).message().text());
   }
 
   @Test

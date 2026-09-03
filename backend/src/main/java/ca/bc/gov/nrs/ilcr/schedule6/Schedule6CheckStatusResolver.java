@@ -81,25 +81,26 @@ public class Schedule6CheckStatusResolver {
     List<RoadRecordCheckResult> records =
         raw.records().stream()
             .map(
-                record ->
+                roadRecord ->
                     new RoadRecordCheckResult(
-                        record.recordId(),
-                        record.rowCounter(),
-                        record.met(),
-                        record.metMessage() == null
+                        roadRecord.recordId(),
+                        roadRecord.rowCounter(),
+                        roadRecord.met(),
+                        roadRecord.metMessage() == null
                             ? null
                             // String, not int: MessageFormat applies locale number grouping to a
                             // numeric arg, so ordinal 1000 rendered "1,000". Legacy passed a String
                             // (Schedule6MB.java:147 — road.getRowCounter().toString()).
                             : message(
-                                record.metMessage().key(), String.valueOf(record.rowCounter())),
-                        record.issues().stream()
+                                roadRecord.metMessage().key(),
+                                String.valueOf(roadRecord.rowCounter())),
+                        roadRecord.issues().stream()
                             .map(
                                 issue ->
                                     new FieldIssue(
                                         issue.field(),
                                         composedValueRequired(
-                                            record.rowCounter(),
+                                            roadRecord.rowCounter(),
                                             issue.field(),
                                             issue.message().key())))
                             .toList()))
