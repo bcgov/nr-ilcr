@@ -104,16 +104,16 @@
   padding-inline: 0;
 }
 
-// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title both read
-// at 20px (the two sub-page headers).
+// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title are both
+// section headings, so their SIZE now comes from the one app-wide rule in styles/index.scss (#411
+// Overall 11) rather than a 20px literal restated here — same value, one source. Only the layout
+// each needs is left below.
 .schedule-4__subpage-title {
-  font-size: 20px;
   margin-block: $spacing-05 $spacing-03;
   text-align: left;
 }
 
 .schedule-4__subpage-table .cds--data-table-header__title {
-  font-size: 20px;
   text-align: left;
 }
 
