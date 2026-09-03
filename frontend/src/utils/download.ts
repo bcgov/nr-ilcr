@@ -19,8 +19,8 @@ export function triggerDownload(blob: Blob, filename: string): void {
 
 /** A response that arrived as {@code application/pdf} but is not a complete PDF. */
 export class TruncatedPdfError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
     this.name = 'TruncatedPdfError'
   }
 }
@@ -52,13 +52,16 @@ const INCOMPLETE =
  * <p>Throws {@link TruncatedPdfError}, whose message {@link extractBlobDetail} surfaces, so every
  * call site's existing error branch puts the retryable banner up and saves no file.
  *
- * <p><strong>Fails OPEN when the blob cannot be read.</strong> If slicing or decoding throws, the
- * download proceeds: this guard exists to catch a truncated stream, and blocking a PDF that is
- * probably fine because the environment would not let us look at it trades a rare missed
- * truncation for a common broken download.
+ * <p><strong>Fails CLOSED when the blob cannot be read.</strong> A rejected read is not evidence
+ * that the body is fine — it is the absence of evidence either way, and this check is the only
+ * thing standing between an already-committed stream and the user's disk, so passing on it would
+ * reinstate the hole it exists to close. The unreadable case is also not a rescued download: the
+ * browser has to read the same blob to save it. The original failure travels as {@code cause}.
  */
 export async function assertCompletePdf(blob: Blob): Promise<void> {
-  if (blob.size === 0) {
+  // A missing body fails closed for the same reason an unreadable one does; it also keeps the
+  // property access below from throwing a raw TypeError past every call site's error branch.
+  if (!blob || blob.size === 0) {
     throw new TruncatedPdfError(INCOMPLETE)
   }
   let head: string
@@ -66,8 +69,8 @@ export async function assertCompletePdf(blob: Blob): Promise<void> {
   try {
     head = await blob.slice(0, PDF_MAGIC.length).text()
     tail = await blob.slice(Math.max(0, blob.size - TRAILER_WINDOW)).text()
-  } catch {
-    return
+  } catch (cause) {
+    throw new TruncatedPdfError(INCOMPLETE, { cause })
   }
   if (!head.startsWith(PDF_MAGIC) || !tail.includes(PDF_TRAILER)) {
     throw new TruncatedPdfError(INCOMPLETE)

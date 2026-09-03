@@ -69,14 +69,24 @@ describe('assertCompletePdf', () => {
     await expect(assertCompletePdf(buried)).rejects.toThrow(TruncatedPdfError)
   })
 
-  it('FAILS OPEN when the blob cannot be inspected, rather than blocking a likely-good download', async () => {
+  it('FAILS CLOSED when the blob cannot be read, and carries the original failure as cause', async () => {
+    // Review feedback on #415: a rejected read is not evidence the body is whole. This check is the
+    // only thing between an already-committed stream and the user's disk, so an unreadable blob has
+    // to take the same retryable path as a short one.
     const unreadable = {
       size: 4096,
-      slice: () => {
-        throw new Error('not sliceable here')
-      },
+      slice: () => ({ text: () => Promise.reject(new Error('NotReadableError')) }),
     } as unknown as Blob
-    await expect(assertCompletePdf(unreadable)).resolves.toBeUndefined()
+    await expect(assertCompletePdf(unreadable)).rejects.toThrow(TruncatedPdfError)
+    await assertCompletePdf(unreadable).catch((error: unknown) => {
+      expect((error as Error).cause).toBeInstanceOf(Error)
+      expect(((error as Error).cause as Error).message).toBe('NotReadableError')
+    })
+  })
+
+  it('FAILS CLOSED when the body is not a Blob at all', async () => {
+    const notABlob = { size: 12 } as unknown as Blob
+    await expect(assertCompletePdf(notABlob)).rejects.toThrow(TruncatedPdfError)
   })
 })
 
