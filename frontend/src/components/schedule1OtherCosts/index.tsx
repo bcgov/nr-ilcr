@@ -171,7 +171,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-volume"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="Volume"
                       size="sm"
                       value={numStrGroup(volume)}
@@ -180,7 +180,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-cost"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="Cost"
                       size="sm"
                       value={addValues.cost ?? ''}
@@ -191,7 +191,7 @@ const OtherCostsPage: FC = () => {
                     />
                     <TextInput
                       id="add-perunit"
-                      className="oc-add__field oc-add__field--narrow"
+                      className="oc-add__field"
                       labelText="$ / m³"
                       size="sm"
                       value={numStrGroup(perUnitOf(addValues.cost ?? ''))}
