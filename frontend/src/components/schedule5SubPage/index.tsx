@@ -410,6 +410,7 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
       <div className="schedule-5-sub-page__add-fields">
         <TextInput
           id="sub-page-add-description"
+          className="schedule-5-sub-page__add-field schedule-5-sub-page__add-field--wide"
           labelText="Description: "
           maxLength={DESCRIPTION_MAX_LENGTH}
           value={addForm.description}
@@ -428,12 +429,14 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
             `disabled="true"`. */}
         <TextInput
           id="sub-page-add-volume"
+          className="schedule-5-sub-page__add-field"
           labelText="Volume: "
           value={fmtVolume(doc.associatedCampVolume)}
           disabled
         />
         <TextInput
           id="sub-page-add-cost"
+          className="schedule-5-sub-page__add-field"
           labelText="Cost $: "
           value={addForm.cost}
           disabled={!editable || saving}
@@ -443,10 +446,20 @@ const Schedule5SubPage: FC<Schedule5SubPageProps> = ({ campId, kind, onBack }) =
             setAddForm((current) => ({ ...current, cost: event.target.value }))
           }}
         />
+        {/* Last IN the field row rather than a block beneath it, matching the sibling Add panels
+            (`.schedule-3-sub__actions`, Schedule 11): the button is the end of the line the fields
+            make, so it reads as their action instead of a separate step (#411, Scho's call). */}
+        <div className="schedule-5-sub-page__add-actions">
+          <Button
+            kind="primary"
+            disabled={!editable || saving}
+            renderIcon={Add}
+            onClick={handleAdd}
+          >
+            Add
+          </Button>
+        </div>
       </div>
-      <Button kind="primary" disabled={!editable || saving} renderIcon={Add} onClick={handleAdd}>
-        Add
-      </Button>
     </div>
   )
 
