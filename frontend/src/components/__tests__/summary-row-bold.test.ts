@@ -28,26 +28,62 @@ const SUMMARY_ROWS: ReadonlyArray<{ file: string; selector: string; label: strin
     selector: 'tr.schedule-1__grand-total-row td',
     label: 'Sch1 grand total',
   },
+  // Sch1's in-table summaries (Total Silviculture 140, Subtotal Company Logging 144, Subtotal Other
+  // Costs) — the lighter tier #411 Overall 5 added beneath the grand total above.
+  {
+    file: 'schedule1/index.scss',
+    selector: 'tr.schedule-1__subtotal-row td',
+    label: 'Sch1 subtotals',
+  },
+  // Sch2: the band moved OFF `.schedule-2__section-start` in #411 Overall 5 — that selector is now a
+  // group divider only (a heavier top border, no shading, no weight), so it is deliberately absent
+  // here. Shading follows the row being calculated instead, in these two tiers.
   {
     file: 'schedule2/index.scss',
-    selector: '.schedule-2__section-start td',
-    label: 'Sch2 subtotal bands',
+    selector: '.schedule-2__subtotal-row td',
+    label: 'Sch2 subtotals',
+  },
+  {
+    file: 'schedule2/index.scss',
+    selector: '.schedule-2__total-row td',
+    label: 'Sch2 grand total',
+  },
+  // Sch3's four derived rows, split by tier: Total Costs is the final figure, the rest intermediate.
+  {
+    file: 'schedule3/index.scss',
+    selector: '.schedule-3__subtotal-row td',
+    label: 'Sch3 subtotals',
+  },
+  {
+    file: 'schedule3/index.scss',
+    selector: '.schedule-3__total-row td',
+    label: 'Sch3 total costs',
   },
   { file: 'schedule4/index.scss', selector: '.schedule-4__totals-row td', label: 'Sch4 totals' },
-  // Sch5 section HEADER: bold on the label cell only (the row also holds the repeated
-  // Volume/Cost/$ captions). No band — a header is not a calculated row.
+  // Sch5 section HEADER: the whole row, label AND the repeated Volume/Cost/$ captions. Was
+  // `td:first-child` until #411 recognised those captions as this grid's column labels — legacy
+  // repeats the column headers per section rather than heading the table once — and column labels are
+  // bold app-wide. No band — a header is not a calculated row.
   {
     file: 'schedule5/index.scss',
-    selector: '.schedule-5__section-row td:first-child',
-    label: 'Sch5 section label',
+    selector: '.schedule-5__section-row td',
+    label: 'Sch5 section label and column captions',
   },
-  // Sch5's actual calculated rows, which carry the band (PR #381 review).
+  // Sch5's actual calculated rows, which carry the band (PR #381 review). Camp and Access is the
+  // schedule's final figure and took the darker tier in #411 Overall 5; the other three stay lighter.
   {
     file: 'schedule5/index.scss',
     selector: '.schedule-5__derived-row td',
-    label: 'Sch5 derived totals',
+    label: 'Sch5 derived subtotals',
   },
-  { file: 'schedule5SubPage/index.scss', selector: '&__totals', label: 'Sch5 sub-page totals' },
+  {
+    file: 'schedule5/index.scss',
+    selector: '.schedule-5__total-row td',
+    label: 'Sch5 camp and access total',
+  },
+  // Now `&__totals td`, not `&__totals`: #411 Overall 5 gave this row the band it was missing, and a
+  // background belongs on the cells (Carbon paints td backgrounds, which would cover a tr's).
+  { file: 'schedule5SubPage/index.scss', selector: '&__totals td', label: 'Sch5 sub-page totals' },
   { file: 'schedule8/index.scss', selector: '.schedule-8__totals-row td', label: 'Sch8 totals' },
   // Rows relied on as "already 700" — pin the baseline the story's completeness claim depends on.
   {

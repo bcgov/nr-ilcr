@@ -86,12 +86,13 @@
   // that is merely derived.
   font-size: 0.875rem;
   line-height: 1.29;
-  // Stand in for the input box the other two costs have: same height as size="sm" (layout size-height
-  // sm = 2rem) with the figure centred in it, so the total sits on the same line as the amounts rather
-  // than riding above them, and the cell keeps its height when the value is blank.
+  // Stand in for the input box the other two costs have: the same 3rem the app gives every field
+  // (styles/_overrides.scss; #411 Overall 1), with the figure centred in it, so the total sits on the
+  // same line as the amounts rather than riding above them, and the cell keeps its height when the
+  // value is blank. The former 2rem tracked a `size="sm"` box the global override never produced.
   display: flex;
   align-items: center;
-  min-height: 2rem;
+  min-height: 3rem;
   // Carbon insets its field text by the density padding ($spacing-05); matching it keeps the total's
   // first digit aligned with the amounts in the cost inputs beside it (schedule 3 indents its
   // plain-text cells for the same reason).

@@ -61,14 +61,16 @@ body {
   max-inline-size: 100%;
 }
 
-// Consistent typography on `.schedule-page` routes — Schedules 2, 4, 8 and 10 and their sub-pages,
-// plus the home content, open-reporting-year and code-table screens; scoped to that class so it does
-// not leak to routes that keep Carbon's own sizes (Schedules 1, 3, 5, 6, 7A, 7B, 9, 11 do). Main
-// headers — panel/section headings + Carbon table titles — at 1.25rem; row + field labels, Carbon
-// input labels included, at 0.875rem. So equivalent headers (e.g. "Existing Locations" and "Edit
-// Location") and equivalent labels (e.g. "Location Name" and the edit-grid row labels) match across
-// the schedules. Sizes are in rem (not px) so they scale with the browser's font-size setting
-// (WCAG 1.4.4).
+// Consistent LABEL typography on `.schedule-page` routes — Schedules 2, 4, 8 and 10 and their
+// sub-pages, plus the home content, open-reporting-year and code-table screens. Row + field labels,
+// Carbon input labels included, at 0.875rem, so equivalent labels (e.g. "Location Name" and the
+// edit-grid row labels) match across the schedules. Sizes are in rem (not px) so they scale with the
+// browser's font-size setting (WCAG 1.4.4).
+//
+// Section HEADINGS used to live in this block too and no longer do — #411 Overall 11 moved them to
+// the global rule below, because scoping them here is what let the same heading render at two sizes
+// depending on its route. Labels stay scoped: unlike a heading, a label size that leaked onto the
+// routes keeping Carbon's own type would change controls this rule was never measured against.
 //
 // THIS RULE SETS ONLY THE SIZE, deliberately, leaving weight, leading and tracking to whatever
 // declared the label — for a Carbon label that is Carbon's own `label-01` include. That is why no
@@ -76,17 +78,45 @@ body {
 // declared: `.schedule-10__field-label` takes its other four properties from `label-01` precisely so
 // this rule only has to override the one property it owns. (#366 code review — the earlier wording
 // read as a house rule against type-style tokens, which Schedules 6 and 10 both contradict.)
+// Section headings — 1.25rem app-wide (#411 Overall 11). This is CSP's own section-heading token,
+// `heading-03` (nr-csp core/DetailSection/index.scss:9, its R13 section-heading mixin:25, and the
+// R06-R11 __section-heading classes), so the schedules match the app the client points at.
+//
+// GLOBAL, not scoped to `.schedule-page`, and that is the fix rather than an incidental detail. The
+// rule used to live inside that class AND name a hand-maintained list, so a heading's size depended
+// on which route it landed on and whether someone had added its class here. Carbon resets bare
+// headings to its own scale (h2 2rem / h3 1.75rem / h4 1.25rem — styles.css:189-206), so anything
+// that missed both lists silently rendered at Carbon's size for its level: nine section headings
+// stood at 1.75rem, 40% over the standard. The same "Comments" heading was 28px on Schedule 1 and
+// 20px on Schedule 2. Size now follows the heading's ROLE, so a new schedule inherits it by naming
+// its heading class here — the one thing left to remember.
+//
+// Subordinate tiers are deliberately NOT touched and are already consistent with CSP: 1rem/600 for a
+// panel or table heading (`.sub-panel__title`, `.schedule-8__subheading`, `.schedule-10__detail-
+// heading`, `.schedule-5-sub-page__panel-heading`; CSP EditableLineItemsTable/index.scss:7) and
+// 0.875rem for the tier below that (`.schedule-10__detail-subheading`; CSP Invoice/index.scss:121).
+.schedule-1__heading,
+.schedule-2__heading,
+.schedule-3__heading,
+.schedule-4__heading,
+.schedule-4__subpage-title,
+.schedule-5__heading,
+.schedule-5__comments-heading,
+.schedule-6__heading,
+.schedule-7a__heading,
+.schedule-7b__heading,
+.schedule-8__heading,
+.schedule-8__rate-heading,
+.schedule-9__heading,
+.schedule-10__heading,
+.schedule-11__heading,
+.code-tables__heading,
+.mill-associations__heading,
+.#{$bcgov-prefix}--data-table-header__title {
+  font-size: 1.25rem;
+}
+
 .schedule-page {
-  .schedule-2__heading,
-  .schedule-4__heading,
-  .schedule-8__heading,
-  .schedule-4__subpage-title,
-  .schedule-8__rate-heading,
-  .code-tables__heading,
-  .mill-associations__heading,
-  .#{$bcgov-prefix}--data-table-header__title {
-    font-size: 1.25rem;
-  }
 
   // A hand-rolled label — a read-only field's <span>, which has no control to hang a Carbon <label>
   // on — is NOT `.cds--label` and so does not pick this up. It has to be listed here by name or it

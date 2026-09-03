@@ -332,9 +332,23 @@ const Schedule2: FC = () => {
   )
 
   // Read-only derived / carried block (never inputs, never sent on write).
-  // `sectionStart` draws a heavier top border to visually divide the table into its 4 cost groups.
-  const derivedRow = (label: string, block: CostBlock, sectionStart = false) => (
-    <TableRow key={label} className={sectionStart ? 'schedule-2__section-start' : undefined}>
+  //
+  // `sectionStart` draws a heavier top border to visually divide the table into its 4 cost groups —
+  // a GROUPING cue and nothing else. The summary band is keyed off the row being calculated instead
+  // (#411 Overall 5): every derived row gets one, the table's final figure takes the darker total
+  // band and the rest the lighter subtotal band. The two used to ride the same flag, which shaded by
+  // where a group happened to start rather than by what the row is — leaving Wood Overhead and Total
+  // Company Logging Costs bare, and giving the grand total the subtotal grey.
+  const derivedRow = (label: string, block: CostBlock, sectionStart = false, isTotal = false) => (
+    <TableRow
+      key={label}
+      className={[
+        isTotal ? 'schedule-2__total-row' : 'schedule-2__subtotal-row',
+        sectionStart ? 'schedule-2__section-start' : null,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <TableCell>{label}</TableCell>
       {readOnlyCell(block.volume)}
       {readOnlyCell(block.cost)}
@@ -402,7 +416,7 @@ const Schedule2: FC = () => {
                 {item26Row}
                 {derivedRow('Net Purchased/Private Log Cost:', figures.netPurchased, true)}
                 {derivedRow('Total Company Logging Costs(Sch 1):', data.totalCompanyLogging)}
-                {derivedRow('Total Average Logging Costs:', figures.totalAverage, true)}
+                {derivedRow('Total Average Logging Costs:', figures.totalAverage, true, true)}
               </TableBody>
             </Table>
           </TableContainer>

@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
+import { ArrowLeft } from '@carbon/icons-react'
 import { Link } from '@tanstack/react-router'
 
 /**
@@ -18,7 +19,7 @@ const NotAuthorized: FC = () => {
       </Grid>
       <Grid fullWidth className="app-page__body">
         <Column sm={4} md={8} lg={16}>
-          <Button as={Link} to="/" name="homeBtn">
+          <Button as={Link} to="/" name="homeBtn" renderIcon={ArrowLeft}>
             Back Home
           </Button>
         </Column>

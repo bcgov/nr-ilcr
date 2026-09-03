@@ -20,7 +20,18 @@ import {
   TextInput,
   Tooltip,
 } from '@carbon/react'
-import { Add, CheckmarkOutline, Information } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Information,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
@@ -363,6 +374,7 @@ const SamplePage: FC<SamplePageProps> = ({
                     <Button
                       kind="ghost"
                       size="sm"
+                      renderIcon={editable ? Edit : View}
                       onClick={() => openEditOrView(sample, editable ? 'edit' : 'view')}
                     >
                       {editable ? 'Edit' : 'View'}
@@ -371,14 +383,16 @@ const SamplePage: FC<SamplePageProps> = ({
                       kind="ghost"
                       size="sm"
                       disabled={!editable || busy}
+                      renderIcon={Copy}
                       onClick={() => openCopy(sample)}
                     >
                       Copy
                     </Button>
                     <Button
-                      kind="danger--ghost"
+                      kind="danger--tertiary"
                       size="sm"
                       disabled={!editable || busy}
+                      renderIcon={TrashCan}
                       onClick={() => setConfirmDelete(sample)}
                     >
                       Delete
@@ -563,11 +577,16 @@ const SamplePage: FC<SamplePageProps> = ({
 
       <div className="schedule-8__panel-actions">
         {!readOnly && (
-          <Button kind="primary" disabled={busy} onClick={handleSave}>
+          <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={busy} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={busy}
+          renderIcon={readOnly ? Close : ArrowLeft}
+          onClick={closePanel}
+        >
           {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>
@@ -595,7 +614,7 @@ const SamplePage: FC<SamplePageProps> = ({
       )}
 
       <div className="schedule-8__actions">
-        <Button kind="secondary" onClick={requestBack}>
+        <Button kind="secondary" renderIcon={ArrowLeft} onClick={requestBack}>
           Back to pages
         </Button>
         <Button kind="primary" renderIcon={Add} disabled={!editable || busy} onClick={openNew}>

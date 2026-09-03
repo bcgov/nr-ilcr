@@ -110,12 +110,14 @@
 }
 
 // A read-only/computed data value (Total %, Actual Harvested, the Rate figures): sits on the second
-// row at the height of a Carbon size-sm input box (2rem) with a matching top gap, so it lines up with
-// the editable inputs beside it — labels on row 1, data on row 2.
+// row at the height of a Carbon input box with a matching top gap, so it lines up with the editable
+// inputs beside it — labels on row 1, data on row 2. 3rem is the app-wide field height
+// (styles/_overrides.scss; #411 Overall 1); the former 2rem tracked a `size="sm"` box that the
+// global override never actually produced.
 .schedule-8__field-value {
   display: flex;
   align-items: center;
-  min-block-size: 2rem;
+  min-block-size: 3rem;
   margin-block-start: $spacing-03;
   // A Carbon text input insets its text by its padding + border (1rem + 1px), so a bare value would
   // sit ~1rem left of the input numbers beside it. Indent by that inset so the last column's figure
@@ -181,8 +183,8 @@
 .schedule-8__totals-row td {
   border-block-start: 0.0625rem solid var(--cds-border-strong);
   font-weight: 700;
-  // Calculated total band (#312 Overall 5) — same accent layer as the other schedules.
-  background: var(--cds-layer-accent-01);
+  // The table's final figure, so the full total band (#312 Overall 5, tokenised by #411).
+  background: var(--ilcr-band-total);
 }
 
 // Each rate table (Additions / Deductions) is a bordered card with a bold titled divider and a wide

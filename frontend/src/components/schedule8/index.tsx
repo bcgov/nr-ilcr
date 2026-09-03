@@ -21,7 +21,18 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  ArrowRight,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import { getRouteApi } from '@tanstack/react-router'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
@@ -647,7 +658,7 @@ const Schedule8: FC = () => {
                       Copy
                     </Button>
                     <Button
-                      kind="danger--ghost"
+                      kind="danger--tertiary"
                       size="sm"
                       renderIcon={TrashCan}
                       disabled={!editable || saving}
@@ -719,6 +730,8 @@ const Schedule8: FC = () => {
             size="sm"
             className="schedule-8__samples-action"
             disabled={saving}
+            // Navigational, like the other "open a level" buttons — it drills into the samples level.
+            renderIcon={ArrowRight}
             onClick={() => requestOpenSamples(editId)}
           >
             TtT Samples ({panelPage?.sampleCount ?? 0})
@@ -754,11 +767,16 @@ const Schedule8: FC = () => {
 
       <div className="schedule-8__panel-actions">
         {!readOnly && (
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={saving} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={saving}
+          renderIcon={readOnly ? Close : ArrowLeft}
+          onClick={closePanel}
+        >
           {readOnly ? 'Close' : 'Back'}
         </Button>
       </div>

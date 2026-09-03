@@ -88,7 +88,6 @@ const ContractualWorkFields: FC<Props> = ({
         id={`${idPrefix}-${field}`}
         titleText={label}
         label="Select"
-        size="sm"
         items={options}
         itemToString={(item) => item?.description ?? ''}
         // `null`, not `undefined`: undefined hands control back to downshift's internal state, so a

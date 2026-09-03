@@ -43,16 +43,30 @@
 }
 
 // Visual divider between the 4 cost groups: a heavier top border on the first row of each group
-// (Subtotal, Net Purchased, Total Average).
+// (Subtotal, Net Purchased, Total Average). GROUPING ONLY — the summary band is no longer keyed off
+// this flag (#411 Overall 5), because where a group starts and whether a row is calculated are two
+// different questions and only the second should decide the shading.
 .schedule-2__section-start td {
   border-block-start: 0.125rem solid var(--cds-border-strong);
-  // Bold the subtotal labels (#312 Overall 5, bold) so each summary row reads as a summary.
+}
+
+// Every calculated row carries a band; the two entered rows (Purchased/Private Log Costs and (less)
+// Log Sales, which hold inputs) carry none. Bold so each summary reads as a summary (#312 Overall 5).
+//
+// The intermediate figures — Wood Overhead, Subtotal, Net Purchased, and the Schedule 1 total carried
+// onto this page — take the lighter band.
+.schedule-2__subtotal-row td {
   font-weight: 700;
-  // Subtotal/section band (#312 Overall 5). These are intermediate subtotals (not a single grand
-  // total), so shade them a LIGHTER grey than the schedules whose band IS the actual total (which use
-  // the full --cds-layer-accent-01). color-mix keeps it theme-aware (a light tint of the accent over
-  // the page background).
-  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+  background: var(--ilcr-band-subtotal);
+}
+
+// Total Average Logging Costs is the schedule's final figure, so it takes the full total band and
+// reads a step heavier than the subtotals above it. Each band rule states its own weight rather than
+// sharing one grouped declaration, so components/__tests__/summary-row-bold.test.ts can keep pinning
+// bold per selector.
+.schedule-2__total-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-total);
 }
 
 .schedule-2__actions {

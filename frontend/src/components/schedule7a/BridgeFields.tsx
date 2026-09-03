@@ -138,7 +138,6 @@ const BridgeFields: FC<Props> = ({
         id={`${idPrefix}-${field}`}
         titleText={spec.label}
         label="Select"
-        size="sm"
         // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
         // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
         // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the

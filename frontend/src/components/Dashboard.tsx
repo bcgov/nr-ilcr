@@ -1,5 +1,6 @@
 import type { FC } from 'react'
 import { Button, Column, Grid, Tag, Tile } from '@carbon/react'
+import { ArrowRight } from '@carbon/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import useAuth from '@/context/auth/useAuth'
 import PageTitle from '@/components/core/PageTitle'
@@ -44,9 +45,18 @@ const Dashboard: FC = () => {
 
         <Column sm={4} md={4} lg={11}>
           <Tile>
+            {/* Unclassed headings, deliberately: this landing screen keeps Carbon's own scale (h2
+                2rem / h3 1.75rem) rather than the 1.25rem section-heading standard the schedules
+                take. CSP does the same — its landing page's `__section-heading` and `__tile-heading`
+                carry no font-size rule at all — so normalising these would move AWAY from the app
+                the client points at (#411 Overall 11). */}
             <h3>Schedules</h3>
             <p>Open Schedule 1 for the mill and reporting year in context.</p>
-            <Button kind="primary" onClick={() => navigate({ to: '/schedule-1' })}>
+            <Button
+              kind="primary"
+              renderIcon={ArrowRight}
+              onClick={() => navigate({ to: '/schedule-1' })}
+            >
               Open Schedule 1
             </Button>
           </Tile>

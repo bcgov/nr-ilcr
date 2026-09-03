@@ -2,7 +2,7 @@ import type { FC } from 'react'
 import { useCallback, useState } from 'react'
 import { Accordion, AccordionItem, Button, Column, Grid } from '@carbon/react'
 import { Pagination } from '@carbon/react'
-import { Add, CheckmarkOutline, Close, TrashCan } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Save, TrashCan } from '@carbon/icons-react'
 import type Schedule9Response from '@/interfaces/Schedule9Response'
 import type {
   ContractualWorkRecord,
@@ -405,12 +405,13 @@ const Schedule9: FC = () => {
                         kind="primary"
                         size="sm"
                         disabled={controlsDisabled}
+                        renderIcon={Save}
                         onClick={() => handleSaveRow(record)}
                       >
                         Save
                       </Button>
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         renderIcon={TrashCan}
                         disabled={controlsDisabled}

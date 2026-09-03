@@ -537,7 +537,7 @@ const Schedule7a: FC = () => {
                         Save/Cancel pair would offer a granularity the schedule does not have. */}
                     <div className="schedule-7a__panel-actions">
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         renderIcon={TrashCan}
                         disabled={controlsDisabled}

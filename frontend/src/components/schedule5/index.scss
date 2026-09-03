@@ -54,20 +54,34 @@
 
 // The three section header rows (Camp Expenses / Access Expenses / Total Expense) carry the weight
 // legacy gave them with its `header` style class.
-// Bold only the section LABEL cell (#312 Overall 5, bold): this row also carries the repeated
-// "Volume (m³) / Cost $ / $/m³" captions, which should NOT be over-weighted (code review 2026-08-31).
+// The WHOLE row is bold, label and captions alike (#411). This REVERSES the 2026-08-31 code review,
+// which bolded only the section LABEL cell on the grounds that the repeated "Volume (m³) / Cost $ /
+// $/m³" captions should not be over-weighted — read the reasoning before restoring it.
+//
+// What changed is the comparison. Those captions are this grid's COLUMN LABELS: legacy repeats the
+// four column headers on every section row instead of heading the table once
+// (`schedule5ExistingCamp.xhtml:122-125`), so they are the same thing Carbon puts in a `thead` on
+// every other schedule — and those are now bold app-wide (see the data-table rule in
+// _overrides.scss). Left at 400 they were the only column labels in the app rendering at body weight.
+// They are `td`s purely because they sit mid-table, which is a markup accident, not a demotion.
+//
 // NO background here — a section header is not a calculated row; the band lives on __derived-row.
-.schedule-5__section-row td:first-child {
+.schedule-5__section-row td {
   font-weight: 700;
 }
 
-// The four server-derived rows — Camp Sub-Total, Camp Total, Access Expense Total, Camp and Access
-// (`validation.ts` GRID_ROWS, `kind: 'derived'`). These are what #312 Overall 5 asks to shade.
-// Intermediate subtotals rather than one grand total, so a LIGHTER grey than the schedules whose band
-// IS the actual total (full --cds-layer-accent-01). color-mix keeps it theme-aware.
+// The server-derived rows (`validation.ts` GRID_ROWS, `kind: 'derived'`) — what #312 Overall 5 asks
+// to shade. Camp Sub-Total, Camp Total and Access Expense Total are intermediate, so they take the
+// lighter band; Camp and Access is the schedule's final figure and takes the full total band, which
+// is the depth distinction #411 Overall 5 adds.
 .schedule-5__derived-row td {
   font-weight: 700;
-  background: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+  background: var(--ilcr-band-subtotal);
+}
+
+.schedule-5__total-row td {
+  font-weight: 700;
+  background: var(--ilcr-band-total);
 }
 
 // Legacy pads the four Equipment and Supplies rows with non-breaking spaces to sit them under their

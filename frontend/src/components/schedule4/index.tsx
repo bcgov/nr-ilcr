@@ -19,7 +19,17 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Copy, Edit, TrashCan, View } from '@carbon/icons-react'
+import {
+  Add,
+  ArrowLeft,
+  CheckmarkOutline,
+  Close,
+  Copy,
+  Edit,
+  Save,
+  TrashCan,
+  View,
+} from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum, groupInput } from '@/utils/number'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
@@ -714,7 +724,7 @@ const Schedule4: FC = () => {
                       Copy
                     </Button>
                     <Button
-                      kind="danger--ghost"
+                      kind="danger--tertiary"
                       size="sm"
                       renderIcon={TrashCan}
                       disabled={!editable || saving}
@@ -844,11 +854,18 @@ const Schedule4: FC = () => {
 
       <div className="schedule-4__panel-actions">
         {!readOnlyPanel && (
-          <Button kind="primary" disabled={saving} onClick={handleSave}>
+          <Button kind="primary" disabled={saving} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={saving} onClick={closePanel}>
+        <Button
+          kind="secondary"
+          disabled={saving}
+          // The icon tracks the label: this one button is Close on a view panel and Back on an
+          // editable one, so a fixed glyph would contradict half of its own uses.
+          renderIcon={readOnlyPanel ? Close : ArrowLeft}
+          onClick={closePanel}
+        >
           {readOnlyPanel ? 'Close' : 'Back'}
         </Button>
       </div>

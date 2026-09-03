@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
+import { ArrowLeft, Save } from '@carbon/icons-react'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
@@ -98,7 +99,7 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
         notification={{ kind: 'error', title: errorTitle, subtitle: errorDetail }}
       >
         <Column sm={4} md={8} lg={16}>
-          <Button kind="secondary" size="md" onClick={onBack}>
+          <Button kind="secondary" size="md" renderIcon={ArrowLeft} onClick={onBack}>
             {backLabel}
           </Button>
         </Column>
@@ -130,12 +131,13 @@ export default function EditableSubPageLayout<TDoc extends EditableRowsDoc>({
               size="md"
               // Greyed out until there is data to save (and while saving) — legacy parity.
               disabled={saving || rows.length === 0}
+              renderIcon={Save}
               onClick={handleSave}
             >
               Save
             </Button>
           )}
-          <Button kind="secondary" size="md" onClick={handleBack}>
+          <Button kind="secondary" size="md" renderIcon={ArrowLeft} onClick={handleBack}>
             {backLabel}
           </Button>
         </Column>

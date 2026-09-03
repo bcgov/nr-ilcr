@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { Button, Checkbox, Column, FormGroup, Grid, InlineNotification } from '@carbon/react'
-import { Printer } from '@carbon/icons-react'
+import { Printer, Reset } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -250,7 +250,7 @@ const PrintSchedules: FC = () => {
                 >
                   {busy ? 'Generating…' : 'Generate PDF'}
                 </Button>
-                <Button kind="secondary" disabled={busy} onClick={handleClear}>
+                <Button kind="secondary" disabled={busy} renderIcon={Reset} onClick={handleClear}>
                   Clear
                 </Button>
               </div>

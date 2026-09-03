@@ -15,6 +15,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Add, ArrowLeft, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { fmtCurrency, fmtNumber, numStr, toNum } from '@/utils/number'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
@@ -326,6 +327,7 @@ const SubPage: FC<SubPageProps> = ({
               size="sm"
               className="schedule-4__add-row"
               disabled={busy}
+              renderIcon={Add}
               onClick={handleAdd}
             >
               Add row
@@ -408,9 +410,10 @@ const SubPage: FC<SubPageProps> = ({
                       {editable && (
                         <TableCell>
                           <Button
-                            kind="danger--ghost"
+                            kind="danger--tertiary"
                             size="sm"
                             disabled={busy}
+                            renderIcon={TrashCan}
                             onClick={() => setConfirmDeleteRow(row)}
                           >
                             Delete
@@ -450,15 +453,15 @@ const SubPage: FC<SubPageProps> = ({
       <div className="schedule-4__panel-actions">
         {editable ? (
           <>
-            <Button kind="primary" disabled={busy} onClick={handleSave}>
+            <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
               Save
             </Button>
-            <Button kind="secondary" disabled={busy} onClick={onBack}>
+            <Button kind="secondary" disabled={busy} renderIcon={ArrowLeft} onClick={onBack}>
               Back
             </Button>
           </>
         ) : (
-          <Button kind="secondary" onClick={onBack}>
+          <Button kind="secondary" renderIcon={ArrowLeft} onClick={onBack}>
             Back
           </Button>
         )}

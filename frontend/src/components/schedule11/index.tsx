@@ -27,7 +27,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Edit, TrashCan } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Edit, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -447,10 +447,10 @@ const EditRow: FC<EditRowProps> = ({
       />
     </TableCell>
     <TableCell>
-      <Button kind="primary" size="sm" disabled={saving} onClick={onSave}>
+      <Button kind="primary" size="sm" disabled={saving} renderIcon={Save} onClick={onSave}>
         Save
       </Button>
-      <Button kind="ghost" size="sm" disabled={saving} onClick={onCancel}>
+      <Button kind="ghost" size="sm" disabled={saving} renderIcon={Close} onClick={onCancel}>
         Cancel
       </Button>
     </TableCell>
@@ -490,7 +490,7 @@ const DisplayRow: FC<DisplayRowProps> = ({ row, editable, actionsDisabled, onEdi
           Edit
         </Button>
         <Button
-          kind="danger--ghost"
+          kind="danger--tertiary"
           size="sm"
           renderIcon={TrashCan}
           disabled={actionsDisabled}

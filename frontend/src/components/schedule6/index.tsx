@@ -22,7 +22,7 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
-import { Add, CheckmarkOutline, Close, Save } from '@carbon/icons-react'
+import { Add, CheckmarkOutline, Close, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -33,7 +33,7 @@ import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
 import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import PageState from '@/components/core/PageState'
-import PageTitle from '@/components/core/PageTitle'
+import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   GENERAL_COMMENTS_MAX_LENGTH,
   RECORD_COMMENTS_MAX_LENGTH,
@@ -160,11 +160,12 @@ const buildSaveEntry = (
   revisionCount,
 })
 
-const PAGE_HEADER = (
-  <Grid fullWidth className="app-page__header">
-    <PageTitle title="Schedule 6" subtitle="Road Management" />
-  </Grid>
-)
+// The tombstone, like every other schedule — Schedule 6 was the one schedule still on PageTitle,
+// which rendered its page title at 1rem against the siblings' 2rem (#411 Overall 11). A like-for-like
+// swap: both set `document.title`, and both render exactly one "Working context" landmark (the
+// tombstone carries WorkingContextLines itself where PageTitle hosts the ContextBanner), so no page
+// ends up with two or none. ScheduleTombstone brings its own Grid, hence no wrapper here.
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 6" subtitle="Road Management" />
 
 // Any ProblemDetail detail (ERR-001/002/003) renders verbatim (AC7); a network error with no detail
 // falls back to a generic client-owned message.
@@ -441,9 +442,10 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       // Carbon's own outlined danger kind — a red border and red label that invert to a solid red
       // fill on hover/focus — so the outline comes from Carbon's tokens rather than a border rule
       // this page would have to maintain against theme changes. Already the repo's pattern for a
-      // Delete: `core/ScheduleActions` uses the same kind (index.tsx:77). NOTE this makes Schedule 6
-      // the only PER-ROW delete that is outlined; every other schedule's row delete is still
-      // `danger--ghost`.
+      // Delete: `core/ScheduleActions` uses the same kind (index.tsx:77).
+      //
+      // This used to be the ONLY per-row delete that was outlined; #411 made every row delete in the
+      // app match it, so the treatment is now the app-wide standard rather than this page's exception.
       kind="danger--tertiary"
       size="sm"
       title={DELETE_BUTTON_TITLE}
@@ -454,6 +456,7 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       // the row's own "Road Maintenance report Id: N" accordion title (final-review M8).
       aria-label={`${DELETE_BUTTON_TITLE} ${String(ordinal)}`}
       disabled={deleteDisabled}
+      renderIcon={TrashCan}
       onClick={onDelete}
     >
       {DELETE_BUTTON_LABEL}

@@ -93,10 +93,11 @@
   .schedule-6__field dd {
     display: flex;
     align-items: center;
-    // $spacing-07 is 2rem — the height of the size="sm" inputs, so the value sits on their line
-    // rather than riding up under the label. Holds the row aligned even when the value is blank,
-    // as RMG is in the Add panel (deviation D).
-    min-height: $spacing-07;
+    // $spacing-09 is 3rem — the app-wide field height (styles/_overrides.scss; #411 Overall 1), so
+    // the value sits on the inputs' line rather than riding up under the label. Holds the row
+    // aligned even when the value is blank, as RMG is in the Add panel (deviation D). The former
+    // $spacing-07/2rem tracked a `size="sm"` box that the global override never actually produced.
+    min-height: $spacing-09;
     padding-inline-start: $spacing-05;
   }
 }
