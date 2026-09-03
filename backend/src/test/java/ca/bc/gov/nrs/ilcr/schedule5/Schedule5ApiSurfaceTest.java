@@ -61,7 +61,11 @@ class Schedule5ApiSurfaceTest {
     mockMvc =
         MockMvcBuilders.standaloneSetup(
                 new Schedule5Controller(
-                    millContextService, schedule5Service, permissions, messageSource))
+                    millContextService,
+                    schedule5Service,
+                    permissions,
+                    messageSource,
+                    new Schedule5CheckStatusResolver(schedule5Service, messageSource)))
             .build();
   }
 

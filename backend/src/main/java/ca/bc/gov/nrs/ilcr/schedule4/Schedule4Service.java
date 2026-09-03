@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
@@ -70,8 +71,6 @@ public class Schedule4Service {
   /** The 9 fixed no-distance cost-item codes (written as detail rows on the primary report). */
   private static final Set<Integer> FIXED_CODES = Set.of(40, 41, 42, 44, 45, 49, 50, 51, 53);
 
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_LOCATION_MET = "locationRequirementsMetMsg";
   private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
@@ -192,9 +191,10 @@ public class Schedule4Service {
    * per location, flags every in-scope category / sub-page row whose Cost is null as a missing
    * field (0 counts as present; Distance is NOT enforced — §Decision 2, legacy parity; Comments are
    * soft — §Decision 3). The schedule {@code outcome} is {@code MET} only when EVERY location
-   * passes (all-or-nothing, S31). Emits bundle KEYS; the controller resolves the verbatim text
-   * (AD-8), substituting the location name into the per-location met message. A mill/year with no
-   * locations is vacuously MET (legacy {@code isSchedule4Valid} AND-over-locations).
+   * passes (all-or-nothing, S31). Emits bundle KEYS; {@link Schedule4CheckStatusResolver} resolves
+   * the verbatim text (AD-8), substituting the location name into the per-location met message. A
+   * mill/year with no locations is vacuously MET (legacy {@code isSchedule4Valid}
+   * AND-over-locations).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -228,7 +228,7 @@ public class Schedule4Service {
           met ? List.of(new MessageInfo(MSG_LOCATION_MET, null)) : List.of();
       results.add(new LocationCheckResult(location.id(), location.name(), met, messages, issues));
     }
-    String outcome = scheduleMet ? OUTCOME_MET : OUTCOME_ISSUES;
+    String outcome = scheduleMet ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     List<MessageInfo> scheduleMessages =
         scheduleMet ? List.of(new MessageInfo(MSG_SCHEDULE_MET, null)) : List.of();
     return new Schedule4CheckStatusResponse(outcome, scheduleMessages, results);

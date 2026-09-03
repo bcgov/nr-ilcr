@@ -50,9 +50,19 @@ class Schedule5CheckStatusCompositionTest {
   private static final String CAMP = "Cedar Flats Camp";
 
   private final Schedule5Service service = mock(Schedule5Service.class);
+
+  /**
+   * The composition moved to {@link Schedule5CheckStatusResolver} in Story 15.0, so the real
+   * resolver is wired here rather than a mock: these assertions must keep proving the actual bytes,
+   * through the same path the endpoint takes, not merely that the controller delegates.
+   */
   private final Schedule5Controller controller =
       new Schedule5Controller(
-          millContext(), service, mock(SchedulePermissions.class), realBundle());
+          millContext(),
+          service,
+          mock(SchedulePermissions.class),
+          realBundle(),
+          new Schedule5CheckStatusResolver(service, realBundle()));
 
   private static MillContextService millContext() {
     MillContextService millContextService = mock(MillContextService.class);

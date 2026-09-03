@@ -1,0 +1,1 @@
+{"outcome":"ISSUES","messages":[],"locations":[{"id":7001,"name":"Harbour Dump","met":false,"messages":[],"issues":[{"code":52,"message":{"key":"missingRequiredFieldMsg","text":"Value Required"}}]},{"id":7002,"name":"Empty Landing","met":true,"messages":[{"key":"locationRequirementsMetMsg","text":"All requirements for Empty Landing have been met."}],"issues":[]}]}

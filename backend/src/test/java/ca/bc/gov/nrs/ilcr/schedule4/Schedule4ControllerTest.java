@@ -22,9 +22,9 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -54,7 +54,24 @@ class Schedule4ControllerTest {
 
   @Mock private Authentication authentication;
 
-  @InjectMocks private Schedule4Controller controller;
+  private Schedule4Controller controller;
+
+  /**
+   * Built by hand rather than {@code @InjectMocks} since Story 15.0: the check-status composition
+   * moved to {@link Schedule4CheckStatusResolver}, and a MOCK resolver would make the check-status
+   * assertions below vacuous. Wiring the real one keeps them proving the actual composed bytes,
+   * through the same path the endpoint takes.
+   */
+  @BeforeEach
+  void setUp() {
+    controller =
+        new Schedule4Controller(
+            millContextService,
+            schedule4Service,
+            permissions,
+            messageSource,
+            new Schedule4CheckStatusResolver(schedule4Service, messageSource));
+  }
 
   @Test
   void getSchedule4_validatesContext_derivesEditFlag_returnsDocument() {

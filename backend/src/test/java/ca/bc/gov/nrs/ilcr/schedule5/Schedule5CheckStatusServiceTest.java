@@ -29,7 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * The Check Status condition matrix (BR-08), transcribed from {@code
  * Schedule5CheckStatus.java:13-97} + {@code Schedule5MB.checkValidatedCurrentCamp():341-438}.
  *
- * <p>The service emits bundle KEYS with {@code null} text — the controller resolves and composes
+ * <p>The service emits bundle KEYS with {@code null} text — the resolver resolves and composes
  * (AD-8) — so every assertion here is about WHICH findings fire, in what order, and what the
  * outcome is. The byte-exact rendered text is {@link Schedule5CheckStatusCompositionTest}'s.
  *

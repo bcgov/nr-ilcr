@@ -15,7 +15,8 @@ import java.util.List;
  * <p>{@code messages} is the schedule-level banner: one {@code scheduleRequirementsMetMsg} ("All
  * requirements for this schedule have been met") when {@code outcome == "MET"}, empty otherwise —
  * and a MET schedule carries NO per-record results at all (the legacy pass branch never enters the
- * loop). The service emits bundle keys; the controller resolves the verbatim composed text (AD-8).
+ * loop). The service emits bundle keys; {@code Schedule6CheckStatusResolver} resolves the verbatim
+ * composed text (AD-8).
  *
  * @param outcome {@code "MET"} (every record passes; zero records is vacuously met) or {@code
  *     "ISSUES"}

@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule2;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
@@ -72,9 +73,6 @@ public class Schedule2Service {
   // Schedule 3 Silviculture Admin Costs line (category-'3' item 37, Harvest-only → crown = its
   // cost).
   private static final int ITEM_SILV_ADMIN = 37;
-
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
   // Legacy field label for the ISSUES message (Schedule2MB.java:168) — the controller prefixes the
@@ -446,7 +444,7 @@ public class Schedule2Service {
    * scheduleRequirementsMetMsg}; null (including the unsaved-schedule state — never 404) &rarr;
    * {@code ISSUES} with one {@code missingRequiredFieldMsg}. The mill/year context is already
    * validated in the controller (AD-4). The returned {@link MessageInfo} carries the bundle KEY
-   * only; the controller resolves the verbatim text (AD-8), mirroring the save/delete split.
+   * only; {@link Schedule2CheckStatusResolver} resolves the verbatim text (AD-8).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -457,7 +455,7 @@ public class Schedule2Service {
     // callerMayEdit is irrelevant to BR-07 (only the item-25 cost matters); pass false.
     Schedule2Response document = getSchedule2(millId, year, false);
     boolean met = document.purchasedLogCost().cost() != null;
-    String outcome = met ? OUTCOME_MET : OUTCOME_ISSUES;
+    String outcome = met ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;
     // For the ISSUES message the label is carried in text as the prefix the controller prepends to
     // the

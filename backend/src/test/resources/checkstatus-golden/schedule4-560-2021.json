@@ -1,0 +1,1 @@
+{"outcome":"MET","messages":[{"key":"scheduleRequirementsMetMsg","text":"All requirements for this schedule have been met"}],"locations":[{"id":8080,"name":"All Good Dump","met":true,"messages":[{"key":"locationRequirementsMetMsg","text":"All requirements for All Good Dump have been met."}],"issues":[]}]}

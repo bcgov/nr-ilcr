@@ -47,9 +47,19 @@ class Schedule6CheckStatusCompositionTest {
   private static final int YEAR = 2021;
 
   private final Schedule6Service service = mock(Schedule6Service.class);
+
+  /**
+   * The composition moved to {@link Schedule6CheckStatusResolver} in Story 15.0, so the real
+   * resolver is wired here rather than a mock: these assertions must keep proving the actual bytes,
+   * through the same path the endpoint takes, not merely that the controller delegates.
+   */
   private final Schedule6Controller controller =
       new Schedule6Controller(
-          millContext(), service, mock(SchedulePermissions.class), realBundle());
+          millContext(),
+          service,
+          mock(SchedulePermissions.class),
+          realBundle(),
+          new Schedule6CheckStatusResolver(service, realBundle()));
 
   private static MillContextService millContext() {
     MillContextService millContextService = mock(MillContextService.class);

@@ -4,14 +4,11 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageResponse;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.schedule4.api.Schedule4Api;
-import ca.bc.gov.nrs.ilcr.schedule4.dto.FieldIssue;
-import ca.bc.gov.nrs.ilcr.schedule4.dto.LocationCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -44,6 +41,7 @@ public class Schedule4Controller implements Schedule4Api {
   private final Schedule4Service schedule4Service;
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
+  private final Schedule4CheckStatusResolver checkStatusResolver;
 
   /** Resolve a legacy bundle key to verbatim text (AD-8), substituting any positional args. */
   private MessageInfo message(String key, Object... args) {
@@ -133,29 +131,6 @@ public class Schedule4Controller implements Schedule4Api {
       long millId, int year, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
-    Schedule4CheckStatusResponse raw = schedule4Service.checkStatus(millId, year);
-    // Resolve every bundle key to verbatim text (AD-8): the schedule banner, each location's met
-    // message (with the location name as the {0} arg), and each field's "Value Required".
-    List<MessageInfo> scheduleMessages =
-        raw.messages().stream().map(m -> message(m.key())).toList();
-    List<LocationCheckResult> locations =
-        raw.locations().stream()
-            .map(
-                location ->
-                    new LocationCheckResult(
-                        location.id(),
-                        location.name(),
-                        location.met(),
-                        location.messages().stream()
-                            .map(m -> message(m.key(), location.name()))
-                            .toList(),
-                        location.issues().stream()
-                            .map(
-                                issue ->
-                                    new FieldIssue(issue.code(), message(issue.message().key())))
-                            .toList()))
-            .toList();
-    return ResponseEntity.ok(
-        new Schedule4CheckStatusResponse(raw.outcome(), scheduleMessages, locations));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
   }
 }
