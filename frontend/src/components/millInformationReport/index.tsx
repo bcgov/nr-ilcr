@@ -5,7 +5,7 @@ import { Download } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { extractDetail } from '@/utils/error'
-import { extractBlobDetail, triggerDownload } from '@/utils/download'
+import { assertCompletePdf, extractBlobDetail, triggerDownload } from '@/utils/download'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import './index.scss'
 
@@ -67,7 +67,13 @@ const MillInformationReport: FC = () => {
     setBusy(true)
     api()
       .get(REPORT_PATH, { params: { year: selectedYear }, responseType: 'blob' })
-      .then((response) => triggerDownload(response.data as Blob, PDF_FILENAME))
+      .then(async (response) => {
+        // A post-commit export failure streams a TRUNCATED 200 application/pdf that the browser
+        // would otherwise save as a success. Throwing routes it to the .catch below, which keeps
+        // the selected year so Generate Report retries it.
+        await assertCompletePdf(response.data as Blob)
+        triggerDownload(response.data as Blob, PDF_FILENAME)
+      })
       .catch(async (cause: unknown) => {
         // The selected year is deliberately kept: pressing Generate Report again must retry the year
         // that was held when it failed.

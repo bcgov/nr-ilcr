@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { extractBlobDetail, triggerDownload } from './download'
+import {
+  assertCompletePdf,
+  extractBlobDetail,
+  triggerDownload,
+  TruncatedPdfError,
+} from './download'
 
 describe('triggerDownload', () => {
   afterEach(() => {
@@ -27,7 +32,60 @@ describe('triggerDownload', () => {
   })
 })
 
+describe('assertCompletePdf', () => {
+  const complete = () => new Blob([`%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n`])
+
+  it('accepts a PDF carrying both the header and the trailer', async () => {
+    await expect(assertCompletePdf(complete())).resolves.toBeUndefined()
+  })
+
+  it('accepts a trailer followed by padding, since %%EOF need not be the final byte', async () => {
+    await expect(
+      assertCompletePdf(new Blob(['%PDF-1.7 body %%EOF\n\n   '])),
+    ).resolves.toBeUndefined()
+  })
+
+  it('rejects a body truncated after the header — the shape a failed export streams', async () => {
+    // The header survives truncation (it is at the FRONT), which is why the trailer is the check
+    // that discriminates. This is the exact 200-application/pdf-then-die case from the backend.
+    await expect(assertCompletePdf(new Blob(['%PDF-1.4 half a document']))).rejects.toThrow(
+      TruncatedPdfError,
+    )
+  })
+
+  it('rejects an empty body', async () => {
+    await expect(assertCompletePdf(new Blob([]))).rejects.toThrow(TruncatedPdfError)
+  })
+
+  it('rejects a body that was never a PDF', async () => {
+    await expect(assertCompletePdf(new Blob(['<html>gateway timeout</html>']))).rejects.toThrow(
+      TruncatedPdfError,
+    )
+  })
+
+  it('finds a trailer only within the tail window, not arbitrarily far back', async () => {
+    // %%EOF buried under 2KB of trailing bytes is not a well-formed end-of-file.
+    const buried = new Blob([`%PDF-1.4 %%EOF${'x'.repeat(2048)}`])
+    await expect(assertCompletePdf(buried)).rejects.toThrow(TruncatedPdfError)
+  })
+
+  it('FAILS OPEN when the blob cannot be inspected, rather than blocking a likely-good download', async () => {
+    const unreadable = {
+      size: 4096,
+      slice: () => {
+        throw new Error('not sliceable here')
+      },
+    } as unknown as Blob
+    await expect(assertCompletePdf(unreadable)).resolves.toBeUndefined()
+  })
+})
+
 describe('extractBlobDetail', () => {
+  it('surfaces the truncated-stream message, which arrives as a bare Error after a 200', async () => {
+    const message = await extractBlobDetail(new TruncatedPdfError('did not download completely'))
+    expect(message).toBe('did not download completely')
+  })
+
   it('parses the RFC 7807 detail from a Blob error body (responseType: blob)', async () => {
     const blob = new Blob([JSON.stringify({ detail: 'Select at least one schedule.' })], {
       type: 'application/problem+json',

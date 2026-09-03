@@ -90,7 +90,11 @@ describe('PrintSchedules', () => {
     server.use(
       http.post(PRINT_URL, async ({ request }) => {
         sentBody = (await request.json()) as Record<string, boolean>
-        return new HttpResponse(new Blob(['%PDF-1.4 mock']), {
+        // arrayBuffer, NOT new HttpResponse(new Blob(...)): this MSW build coerces a Blob body to
+        // its string form, so the old fixture delivered the 13 bytes "[object Blob]" rather than a
+        // PDF. The download assertions below were passing on that, which is what the "MSW/undici
+        // blob defect" notes in this suite were actually seeing.
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),
@@ -151,7 +155,7 @@ describe('PrintSchedules', () => {
     server.use(
       http.post(PRINT_URL, () => {
         handled = true
-        return new HttpResponse(new Blob(['%PDF-1.4 mock']), {
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),

@@ -105,7 +105,7 @@ const drillDownResponds = (millId: number, capture?: (year: string | null) => vo
   server.use(
     http.get(DRILL_DOWN(millId), ({ request }) => {
       capture?.(new URL(request.url).searchParams.get('year'))
-      return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock').buffer, {
+      return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
         headers: { 'Content-Type': 'application/pdf' },
       })
     }),
@@ -817,7 +817,7 @@ describe('Mill Status Report', () => {
             { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
           )
         }
-        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock').buffer, {
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),
@@ -995,6 +995,58 @@ describe('Mill Status Report', () => {
     expectAdvertisedDisabled('MILL INFO FULL', false)
     await userEvent.click(millButton('MILL INFO FULL'))
     await waitFor(() => expect(requested).toHaveBeenCalledWith('2021'))
+  })
+
+  // Verbatim from utils/download.ts — the one message the guard raises.
+  const TRUNCATED_MESSAGE =
+    'The report did not download completely. Please try again \u2014 if it keeps failing, contact ' +
+    'the ILCR administrator.'
+
+  test('a TRUNCATED 200 application/pdf is refused: banner up, table intact, nothing saved', async () => {
+    await applied2021()
+    // The failure the streaming endpoint actually produces. ReportController commits 200 and the
+    // application/pdf headers BEFORE exporting, so an export-time failure or an async timeout
+    // cannot come back as problem+json — it comes back as a short body under a success status.
+    // Without the blob guard the browser saves that as mill_7300_print.pdf and the administrator
+    // has a file that will not open, with nothing on the page saying so (MRPT-002 S07 /
+    // MRPT-004 S05).
+    server.use(
+      http.get(DRILL_DOWN(730), () =>
+        HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n').buffer, {
+          headers: { 'Content-Type': 'application/pdf' },
+        }),
+      ),
+    )
+
+    await userEvent.click(millButton('MILL INFO FULL'))
+
+    // Exact text, not a regex: the same sentence also lands in the aria-live status region, and a
+    // substring match would find both.
+    expect(await screen.findByText(TRUNCATED_MESSAGE)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        `The mill information report for MILL INFO FULL failed. ${TRUNCATED_MESSAGE}`,
+      ),
+    ).toBeInTheDocument()
+    // Nothing was handed to the browser...
+    expect(downloaded).not.toHaveBeenCalled()
+    // ...the table survives, so the drill-down can be retried...
+    expect(renderedMills()).toEqual([
+      'AAA Milling',
+      'MILL INFO FULL',
+      'MILL INFO SPARSE',
+      'MILL INFO NO CLIENT',
+    ])
+    expect(screen.getByLabelText(YEAR_LABEL)).toHaveValue('2021')
+
+    // ...and a retry that returns a WHOLE PDF downloads normally, which is what proves the guard
+    // rejects the body rather than the row.
+    const requested = vi.fn()
+    drillDownResponds(730, requested)
+    await userEvent.click(millButton('MILL INFO FULL'))
+    await waitFor(() => expect(requested).toHaveBeenCalledWith('2021'))
+    await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1))
+    expect(downloaded.mock.calls[0][1]).toBe('mill_7300_print.pdf')
   })
 
   test('a transport failure falls back to the page’s own PDF message', async () => {

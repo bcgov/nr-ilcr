@@ -6,7 +6,7 @@ import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import MillReportStatusTable from '@/components/millReportStatus/MillReportStatusTable'
 import { extractDetail } from '@/utils/error'
-import { extractBlobDetail, triggerDownload } from '@/utils/download'
+import { assertCompletePdf, extractBlobDetail, triggerDownload } from '@/utils/download'
 import { millLabel, millReportFilename } from '@/components/millReportStatus/millIdentity'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import type MillReportStatusRow from '@/interfaces/MillReportStatusRow'
@@ -237,7 +237,12 @@ const MillReportStatus: FC = () => {
         params: { year },
         responseType: 'blob',
       })
-      .then((response) => {
+      .then(async (response) => {
+        // A post-commit export failure streams a TRUNCATED 200 application/pdf: once the headers
+        // are out the backend cannot turn it into problem+json, so this is the only thing that can
+        // tell a whole PDF from half of one. Throwing hands it to the .catch below, which is what
+        // raises the retryable banner and leaves nothing on disk (MRPT-002 S07 / MRPT-004 S05).
+        await assertCompletePdf(response.data as Blob)
         if (generation !== tableGenerationRef.current) {
           // The table moved on while this was in flight. Dropping the blob is the WHOLE point:
           // saving it would hand the administrator a PDF for the previous year under a filename

@@ -17,6 +17,63 @@ export function triggerDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+/** A response that arrived as {@code application/pdf} but is not a complete PDF. */
+export class TruncatedPdfError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TruncatedPdfError'
+  }
+}
+
+const PDF_MAGIC = '%PDF-'
+const PDF_TRAILER = '%%EOF'
+
+/**
+ * How far back from the end to look for the trailer. {@code %%EOF} is the last token of a
+ * well-formed PDF, but incremental updates and linearised files can leave whitespace or a short
+ * pad after it, so the check is "the tail CONTAINS it" rather than "the file ENDS with it".
+ */
+const TRAILER_WINDOW = 1024
+
+const INCOMPLETE =
+  'The report did not download completely. Please try again — if it keeps failing, contact the ' +
+  'ILCR administrator.'
+
+/**
+ * Reject a PDF response that is not whole.
+ *
+ * <p>The report endpoints stream: the 200 and the {@code application/pdf} headers are committed
+ * before the first byte is exported, so an export-time failure or an async timeout cannot be turned
+ * into {@code problem+json} by any server-side handler — the client just receives a short body. A
+ * truncated PDF keeps its {@code %PDF-} header (truncation takes the END off), so the trailer is
+ * the check that actually discriminates; the header check only catches a body that was never a PDF
+ * at all.
+ *
+ * <p>Throws {@link TruncatedPdfError}, whose message {@link extractBlobDetail} surfaces, so every
+ * call site's existing error branch puts the retryable banner up and saves no file.
+ *
+ * <p><strong>Fails OPEN when the blob cannot be read.</strong> If slicing or decoding throws, the
+ * download proceeds: this guard exists to catch a truncated stream, and blocking a PDF that is
+ * probably fine because the environment would not let us look at it trades a rare missed
+ * truncation for a common broken download.
+ */
+export async function assertCompletePdf(blob: Blob): Promise<void> {
+  if (blob.size === 0) {
+    throw new TruncatedPdfError(INCOMPLETE)
+  }
+  let head: string
+  let tail: string
+  try {
+    head = await blob.slice(0, PDF_MAGIC.length).text()
+    tail = await blob.slice(Math.max(0, blob.size - TRAILER_WINDOW)).text()
+  } catch {
+    return
+  }
+  if (!head.startsWith(PDF_MAGIC) || !tail.includes(PDF_TRAILER)) {
+    throw new TruncatedPdfError(INCOMPLETE)
+  }
+}
+
 /**
  * The RFC 7807 {@code detail} from an axios error whose response body is a {@link Blob}. When a
  * request uses {@code responseType: 'blob'}, a SUCCESS is the file but an ERROR body (the
@@ -25,6 +82,11 @@ export function triggerDownload(blob: Blob, filename: string): void {
  * {@link extractDetail} for non-blob errors.
  */
 export async function extractBlobDetail(error: unknown): Promise<string | undefined> {
+  // Not an axios error at all: the stream guard above throws this AFTER a 200, so it reaches the
+  // same error branches and needs its message carried through them.
+  if (error instanceof TruncatedPdfError) {
+    return error.message
+  }
   const data = (error as { response?: { data?: unknown } } | undefined)?.response?.data
   if (data instanceof Blob) {
     try {

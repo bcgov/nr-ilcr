@@ -5,7 +5,7 @@ import { Printer } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
-import { extractBlobDetail, triggerDownload } from '@/utils/download'
+import { assertCompletePdf, extractBlobDetail, triggerDownload } from '@/utils/download'
 import './index.scss'
 
 const PRINT_PATH = '/v1/reports/print'
@@ -138,6 +138,9 @@ const PrintSchedules: FC = () => {
         .post(`${PRINT_PATH}?millId=${String(millId)}&year=${String(year)}`, body, {
           responseType: 'blob',
         })
+      // A post-commit export failure streams a TRUNCATED 200 application/pdf. Checked before the
+      // freshness re-read below so the save stays the last thing that happens.
+      await assertCompletePdf(response.data as Blob)
       if (!dispatchedCurrent()) {
         return
       }

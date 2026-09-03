@@ -30,7 +30,7 @@ const reportRespondsWithPdf = (capture?: (year: string | null) => void) =>
   server.use(
     http.get(REPORT_ENDPOINT, ({ request }) => {
       capture?.(new URL(request.url).searchParams.get('year'))
-      return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock').buffer, {
+      return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
         headers: { 'Content-Type': 'application/pdf' },
       })
     }),
@@ -130,7 +130,7 @@ describe('Mill Information Report', () => {
         await new Promise<void>((resolve) => {
           release = resolve
         })
-        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4').buffer, {
+        return HttpResponse.arrayBuffer(new TextEncoder().encode('%PDF-1.4 mock\n%%EOF\n').buffer, {
           headers: { 'Content-Type': 'application/pdf' },
         })
       }),
