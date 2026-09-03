@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
  * the user's error list.
  *
  * <p>This class resolves no text. It emits bundle keys plus pre-formatted arguments and the label
- * prefix; the controller performs the single concatenation {@code label + ": " + resolvedText}, so
- * the verbatim byte composition lives in exactly one place.
+ * prefix; {@code Schedule10CheckStatusResolver} performs the single concatenation {@code label + ":
+ * " + resolvedText}, so the verbatim byte composition lives in exactly one place.
  *
  * <p><strong>Legacy quirks preserved deliberately</strong> — each is reproduced, not corrected:
  *

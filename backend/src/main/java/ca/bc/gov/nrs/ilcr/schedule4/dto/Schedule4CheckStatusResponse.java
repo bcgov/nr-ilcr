@@ -12,8 +12,8 @@ import java.util.List;
  *
  * <p>{@code messages} is the schedule-level banner: one {@code scheduleRequirementsMetMsg} ("All
  * requirements for this schedule have been met") when {@code outcome == "MET"}, empty otherwise (no
- * schedule banner on ISSUES). The service emits bundle keys; the controller resolves the verbatim
- * text (AD-8).
+ * schedule banner on ISSUES). The service emits bundle keys; the check-status resolver resolves the
+ * verbatim text (AD-8).
  *
  * @param outcome {@code "MET"} (all locations pass) or {@code "ISSUES"}
  * @param messages the schedule-level message(s) — the MET banner when passing, empty otherwise

@@ -11,8 +11,8 @@ import java.util.List;
  * <p>A passing location carries one {@code locationRequirementsMetMsg} ("All requirements for {0}
  * have been met.", {0} = {@code name}) in {@code messages} and no {@code issues}; a failing
  * location carries one {@link FieldIssue} per missing-Cost field and an empty {@code messages}. The
- * service emits bundle keys; the controller resolves the text, substituting {@code name} for the
- * per-location met message (AD-8).
+ * service emits bundle keys; the check-status resolver resolves the text, substituting {@code name}
+ * for the per-location met message (AD-8).
  *
  * @param id the location's primary report id ({@link Location#id()})
  * @param name the location description

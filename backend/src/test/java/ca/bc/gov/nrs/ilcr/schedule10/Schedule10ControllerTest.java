@@ -56,7 +56,12 @@ class Schedule10ControllerTest {
   @BeforeEach
   void setUp() {
     controller =
-        new Schedule10Controller(millContextService, schedule10Service, permissions, messageSource);
+        new Schedule10Controller(
+            millContextService,
+            schedule10Service,
+            permissions,
+            messageSource,
+            new Schedule10CheckStatusResolver(schedule10Service, messageSource));
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
         .thenReturn(new MillYearContext(MILL, YEAR));
   }

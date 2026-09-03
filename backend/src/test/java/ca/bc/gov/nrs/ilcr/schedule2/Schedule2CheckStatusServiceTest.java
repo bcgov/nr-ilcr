@@ -23,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * Spring. MET when the assembled document's {@code purchasedLogCost.cost} (item 25) is present;
  * ISSUES when it is absent, including the saved-summary-without-item-25 and the unsaved-schedule
  * states. The evaluation runs off the same {@code getSchedule2} assembly and returns the bundle
- * keys only — the controller resolves verbatim text (AD-8).
+ * keys only — {@code Schedule2CheckStatusResolver} resolves verbatim text (AD-8).
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule2CheckStatusServiceTest {

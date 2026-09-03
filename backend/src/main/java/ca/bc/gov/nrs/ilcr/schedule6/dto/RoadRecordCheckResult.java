@@ -16,8 +16,8 @@ import java.util.List;
  * been met.") is present only when this record is met AND the schedule outcome is ISSUES — the
  * legacy pass branch never enters the per-record loop, so an all-clean schedule emits no per-record
  * messages at all. {@code issues} carries one entry per missing field in legacy order (type,
- * TFL/Supply Block, cost); the service emits bundle keys, the controller resolves the composed
- * verbatim text (AD-8).
+ * TFL/Supply Block, cost); the service emits bundle keys, the check-status resolver resolves the
+ * composed verbatim text (AD-8).
  *
  * @param recordId the 1-based payload ordinal (no stored id exists for an on-screen row) — a React
  *     list key only, never a correlation back to a database record

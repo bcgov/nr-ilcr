@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
@@ -65,16 +66,13 @@ public class Schedule6Service {
   // TSA_NUMBER VARCHAR2(2) (V31 DDL, delivery-verified) — the TSA-branch width guard in classify().
   private static final int TSA_NUMBER_MAX_LENGTH = 2;
 
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
-
-  // Check-status message keys (the service emits keys with null text; the controller resolves the
+  // Check-status message keys (the service emits keys with null text; the resolver composes the
   // verbatim composed lines — Schedule 4 idiom, AD-8).
   private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_ROAD_MET = "roadRequirementsMetMsg";
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
 
-  // The FieldIssue.field names the controller composes labels from (§ PINNED WRITE CONTRACT).
+  // The FieldIssue.field names the resolver composes labels from (§ PINNED WRITE CONTRACT).
   static final String FIELD_AREA_TYPE = "areaType";
   static final String FIELD_TFL_NUMBER = "tflNumber";
   static final String FIELD_SUPPLY_BLOCK = "supplyBlock";
@@ -629,7 +627,8 @@ public class Schedule6Service {
    * Check Status for Schedule 6 (S09–S11, S20, S21). A passing schedule returns the single MET
    * banner and NO per-record results at all (the legacy pass branch never enters the loop); a
    * failing one returns each record's issues plus the per-record met banner for clean records. The
-   * service emits bundle keys with null text; the controller composes/resolves (AD-8).
+   * service emits bundle keys with null text; {@link Schedule6CheckStatusResolver}
+   * composes/resolves (AD-8).
    *
    * <p>{@code request} is the on-screen values (Task 6, {@code Schedule6MB.checkStatus} :139-140 —
    * legacy's {@code ajax="false"} postback applied the screen to the model before evaluating, so
@@ -644,8 +643,18 @@ public class Schedule6Service {
   @Transactional(readOnly = true)
   public Schedule6CheckStatusResponse checkStatus(
       long millId, int year, Schedule6CheckRequest request) {
-    List<CheckCandidate> candidates = payloadCandidates(request);
+    return evaluate(payloadCandidates(request));
+  }
 
+  /**
+   * The verdict, source-agnostic: identical for a payload row and a stored row, which is the whole
+   * point of routing both through {@link CheckCandidate}. Neither {@link #checkStatus} nor {@link
+   * #checkStatusStored} may restate any part of it (AD-5).
+   *
+   * @param candidates the rows to judge, already in their contractual order
+   * @return the MET banner alone, or the per-record results
+   */
+  private Schedule6CheckStatusResponse evaluate(List<CheckCandidate> candidates) {
     List<RoadRecordCheckResult> records = new ArrayList<>();
     boolean schedulePasses = true;
     for (CheckCandidate candidate : candidates) {
@@ -678,9 +687,93 @@ public class Schedule6Service {
       // Zero records (and lone-comment, via the placeholder exclusion) is a vacuous pass — the
       // legacy loop never runs. The pass branch emits ONLY the schedule banner.
       return new Schedule6CheckStatusResponse(
-          OUTCOME_MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
+          CheckStatusOutcome.MET, List.of(new MessageInfo(MSG_REQUIREMENTS_MET, null)), List.of());
     }
-    return new Schedule6CheckStatusResponse(OUTCOME_ISSUES, List.of(), records);
+    return new Schedule6CheckStatusResponse(CheckStatusOutcome.ISSUES, List.of(), records);
+  }
+
+  /**
+   * Is the SAVED Schedule 6 complete? The stored-data counterpart of {@link #checkStatus}, for
+   * report-level callers (Story 15.0/15.1) that have no screen to describe.
+   *
+   * <p><strong>This is a deliberate semantic divergence from the endpoint, not a duplicate of
+   * it.</strong> {@code POST /schedule6/check-status} answers "is what I'm LOOKING AT complete?";
+   * this answers "is what is SAVED complete?". The two can legitimately disagree, and the payload
+   * design is the reason: legacy Check Status was an {@code ajax="false"} full postback that
+   * applied the on-screen inputs to the model before validating ({@code Schedule6MB:139-140}), so
+   * the verdict always described the screen. An earlier DB-reading implementation of the ENDPOINT
+   * was retired (Task 8) precisely because, once every row became editable at once, it disagreed
+   * with the screen on every keystroke. Nothing about that argument applies to a report-level
+   * sweep, which has no screen.
+   *
+   * <p>The rules are not restated here: {@link #storedCandidates} maps stored rows into the same
+   * {@link CheckCandidate} shape the payload builds, and the verdict then runs through the
+   * identical {@link #evaluateRecord} and {@link #recordPasses} (AD-5).
+   *
+   * @param millId the mill id (context already validated)
+   * @param year the reporting year
+   * @return the check-status result with key-only messages for the resolver to compose
+   */
+  @Transactional(readOnly = true)
+  public Schedule6CheckStatusResponse checkStatusStored(long millId, int year) {
+    return evaluate(storedCandidates(millId, year));
+  }
+
+  /**
+   * The stored source: one candidate per SERVED road record, in the document's display order.
+   *
+   * <p>Three things here are contractual and each has cost someone time before:
+   *
+   * <ul>
+   *   <li><strong>Placeholders are excluded.</strong> A row whose classification is entirely blank
+   *       is the general-comment placeholder (S18, deviation (d)) — it is not a road record and the
+   *       screen never shows it. Without this filter a mill whose only Schedule 6 content is a
+   *       general comment would report a phantom failing row, since a placeholder has no area type,
+   *       no supply block and no cost. {@link #payloadCandidates} needs no equivalent filter only
+   *       because the screen never sends one.
+   *   <li><strong>The ordinal is the DISPLAY position</strong>, counted after that exclusion, so it
+   *       matches what {@link #buildDocument} serves and therefore the {@code "Road : N"} the user
+   *       sees. Sourcing rows in any other order shifts the message bytes.
+   *   <li><strong>Cost is carried as stored, nulls included.</strong> The check is null-only, so a
+   *       stored {@code 0} PASSES (D2 precedent — exact legacy parity). Coercing null to zero here
+   *       would turn every missing cost into a pass.
+   * </ul>
+   *
+   * <p>{@code volume} and {@code comments} are deliberately absent: only {@code areaType}, {@code
+   * tflNumber}, {@code supplyBlock} and {@code cost} drive the verdict, and legacy never checks
+   * volume either (commented out at {@code Schedule6CheckStatus:19}).
+   *
+   * <p>The TSA-vs-TFL derivation mirrors {@link #buildDocument}'s, which is the authority on what a
+   * stored classification is served AS. It is asserted equal there rather than shared as code:
+   * {@code Schedule6CheckStatusServiceTest.storedCandidatesMatchTheServedDocument} reads one
+   * fixture through both paths and fails if either side drifts — a check that catches a change in
+   * EITHER direction, which extracting a shared helper would not.
+   */
+  private List<CheckCandidate> storedCandidates(long millId, int year) {
+    List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
+    Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+
+    List<CheckCandidate> candidates = new ArrayList<>();
+    int rowCounter = 0;
+    for (RoadRecordRow row : rows) {
+      if (isPlaceholder(row)) {
+        continue;
+      }
+      rowCounter++;
+      String tsaNumber = StringUtils.trimToNull(row.tsaNumber());
+      String tflNumberCode = StringUtils.trimToNull(row.tflNumberCode());
+      boolean tfl = tsaNumber == null && tflNumberCode != null;
+      CostDetailRow detail = costByRecord.get(row.recordId());
+      candidates.add(
+          new CheckCandidate(
+              row.recordId(),
+              rowCounter,
+              tfl ? AREA_TYPE_TFL : tsaNumber,
+              tfl ? tflNumberCode : null,
+              tfl ? null : StringUtils.trimToNull(row.tsbNumberCode()),
+              detail == null ? null : detail.cost()));
+    }
+    return candidates;
   }
 
   /**
@@ -760,7 +853,7 @@ public class Schedule6Service {
     return StringUtils.isNotBlank(supplyBlock);
   }
 
-  /** A key-only "Value Required" finding for a field; the controller composes the verbatim line. */
+  /** A key-only "Value Required" finding for a field; the resolver composes the verbatim line. */
   private static FieldIssue valueRequired(String field) {
     return new FieldIssue(field, new MessageInfo(MSG_VALUE_REQUIRED, null));
   }

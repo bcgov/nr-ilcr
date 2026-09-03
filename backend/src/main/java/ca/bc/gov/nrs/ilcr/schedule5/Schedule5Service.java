@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule5;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
@@ -64,9 +65,6 @@ public class Schedule5Service {
   private static final String STATUS_DRAFT = "D";
   private static final String INDICATOR_YES = "Y";
   private static final String INDICATOR_NO = "N";
-
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
   private static final String MSG_CAMP_MET = "campRequirementsMetMsg";
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
@@ -792,7 +790,8 @@ public class Schedule5Service {
    * per-camp loop ({@code Schedule5MB.java:324-333}) — which is deviation (C), contradicting both
    * the epics AC and {@code UC-SCH5-001-detailed.md:151}.
    *
-   * <p>The service emits bundle KEYS with null text; the controller resolves and composes (AD-8).
+   * <p>The service emits bundle KEYS with null text; {@link Schedule5CheckStatusResolver} resolves
+   * and composes (AD-8).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
@@ -821,9 +820,9 @@ public class Schedule5Service {
 
     if (schedulePasses) {
       return new Schedule5CheckStatusResponse(
-          OUTCOME_MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
+          CheckStatusOutcome.MET, List.of(new MessageInfo(MSG_SCHEDULE_MET, null)), List.of());
     }
-    return new Schedule5CheckStatusResponse(OUTCOME_ISSUES, List.of(), camps);
+    return new Schedule5CheckStatusResponse(CheckStatusOutcome.ISSUES, List.of(), camps);
   }
 
   /**
