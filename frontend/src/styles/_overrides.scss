@@ -74,9 +74,19 @@
 // the tiers drifted: the same grey ended up meaning "grand total" on one schedule and "intermediate
 // subtotal" on another. Both are theme-aware — the accent and background tokens are redefined per
 // theme above, and `color-mix` resolves at use time, so the light band tracks whichever is active.
+// Link text sitting ON either band needs a darker blue than Carbon's default. `$link-primary`
+// (#0f62fe) clears WCAG 2.1 AA's 4.5:1 against pure white and nothing darker — 5.00:1 unbanded,
+// 4.39:1 on the subtotal band, 3.79:1 on the total band — so the ghost link-buttons in Sch1's and
+// Sch3's calculated rows failed axe the moment the bands above landed. `axe.ts` had already recorded
+// that 3.79 for Carbon's identical #e0e0e0 table HOVER layer; the bands made it a RESTING state.
+// Blue 70 clears both (6.84:1 and 5.90:1) and still reads as a link.
+//
+// A token rather than two copies, for the same reason the bands are: whoever retiers a band must find
+// the link colour that depends on it. Pinned by `styles/__tests__/bandLinkContrast.test.ts`.
 :root {
   --ilcr-band-total: var(--cds-layer-accent-01);
   --ilcr-band-subtotal: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+  --ilcr-band-link: var(--cds-link-primary-hover);
 }
 
 .#{variables.$bcgov-prefix}--btn {
