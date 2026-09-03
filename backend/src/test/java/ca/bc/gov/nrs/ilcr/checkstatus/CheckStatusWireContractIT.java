@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -32,6 +33,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * <p><strong>The goldens are the raw response body, verbatim.</strong> Not pretty-printed and not
  * re-serialized: the assertion is on the bytes the client receives, so JSON field order (which
  * follows record component order) is part of what is pinned.
+ *
+ * <p><strong>The comparison is on raw bytes, not on a decoded String.</strong> Decoding first would
+ * let a change in the response's character encoding through — the same text re-encoded is a
+ * different response to the client, and "byte-identical" is the claim this class makes. The decoded
+ * text is materialised only to render a readable diff once a mismatch is already established.
  *
  * <p><strong>Regenerating.</strong> Run with {@code -Dilcr.checkstatus.golden.regenerate=true} to
  * rewrite the files from the current behaviour. That run then FAILS on purpose: a regenerated
@@ -150,12 +156,13 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
   @MethodSource("anchors")
   @DisplayName("the response body is byte-identical to its golden")
   void wireResponseIsUnchanged(Anchor anchor) throws Exception {
-    String actual = call(anchor);
+    byte[] actual = call(anchor);
 
     if (Boolean.getBoolean(REGENERATE_FLAG)) {
       Files.createDirectories(GOLDEN_SOURCE_DIR);
-      Files.writeString(
-          GOLDEN_SOURCE_DIR.resolve(anchor.name() + ".json"), actual, StandardCharsets.UTF_8);
+      // Written as the bytes that came off the wire, not re-encoded from a String: the golden has
+      // to be able to hold a response this test would then reject.
+      Files.write(GOLDEN_SOURCE_DIR.resolve(anchor.name() + ".json"), actual);
       fail(
           "Golden '"
               + anchor.name()
@@ -164,10 +171,24 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
               + " — a regenerated golden asserts nothing.");
     }
 
-    assertEquals(golden(anchor.name()), actual, "wire response changed for " + anchor.name());
+    byte[] expected = golden(anchor.name());
+    if (!Arrays.equals(expected, actual)) {
+      // The bytes are the gate; this comparison exists only to print the difference as text, which
+      // is the form a reviewer can actually read.
+      assertEquals(
+          new String(expected, StandardCharsets.UTF_8),
+          new String(actual, StandardCharsets.UTF_8),
+          "wire response changed for " + anchor.name());
+      // Reached only when the decoded text is identical and the bytes are not — i.e. the response
+      // ENCODING moved. That is exactly the change a String comparison would have passed.
+      fail(
+          "wire response bytes changed for "
+              + anchor.name()
+              + " while the decoded UTF-8 text did not — the response encoding moved.");
+    }
   }
 
-  private String call(Anchor anchor) throws Exception {
+  private byte[] call(Anchor anchor) throws Exception {
     MockHttpServletRequestBuilder request =
         post(anchor.path())
             .param("millId", anchor.millId())
@@ -182,7 +203,7 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
         .andExpect(status().isOk())
         .andReturn()
         .getResponse()
-        .getContentAsString();
+        .getContentAsByteArray();
   }
 
   /**
@@ -192,7 +213,7 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
    * the filesystem, where a wrong directory is immediately obvious to the developer who asked for
    * it.
    */
-  private static String golden(String name) throws Exception {
+  private static byte[] golden(String name) throws Exception {
     try (InputStream in =
         CheckStatusWireContractIT.class.getResourceAsStream(GOLDEN_CLASSPATH + name + ".json")) {
       if (in == null) {
@@ -203,7 +224,7 @@ class CheckStatusWireContractIT extends AbstractOracleIT {
                 + REGENERATE_FLAG
                 + "=true");
       }
-      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+      return in.readAllBytes();
     }
   }
 }
