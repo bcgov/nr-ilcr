@@ -1,0 +1,8 @@
+@use '@carbon/react/scss/spacing' as *;
+
+// The action sits directly beneath the "next reporting year" sentence on the recurring path, and
+// beneath the year Select on first-time setup. Neither leaves trailing space of its own — Carbon's
+// reset zeroes the paragraph's margin — so without this the button reads as part of the line above.
+.open-reporting-year__action {
+  margin-block-start: $spacing-05;
+}
