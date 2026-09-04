@@ -409,9 +409,12 @@ const Schedule3: FC = () => {
     )
   }
 
-  // A read-only derived three-column total row.
-  const totalRow = (key: string, label: string, total: ThreeColumnTotal) => (
-    <TableRow key={key}>
+  // A read-only derived three-column total row. `isTotal` marks the schedule's FINAL figure (Total
+  // Costs), which takes the darker band; the intermediate subtotals take the lighter one (#411
+  // Overall 5). Note the final figure is not the final ROW — the Override dropdown sits below it and
+  // is an input, so it carries no band at all.
+  const totalRow = (key: string, label: string, total: ThreeColumnTotal, isTotal = false) => (
+    <TableRow key={key} className={isTotal ? 'schedule-3__total-row' : 'schedule-3__subtotal-row'}>
       <TableCell>{label}</TableCell>
       <TableCell className="schedule-3__num">{fmtNumber(total.harvest)}</TableCell>
       <TableCell className="schedule-3__num">{fmtNumber(total.pop)}</TableCell>
@@ -431,7 +434,8 @@ const Schedule3: FC = () => {
     total: ThreeColumnTotal,
     popHidden = false,
   ) => (
-    <TableRow key={key}>
+    // Derived like `totalRow`, and always an intermediate subtotal, so always the lighter band.
+    <TableRow key={key} className="schedule-3__subtotal-row">
       <TableCell>
         <Button
           kind="ghost"
@@ -567,6 +571,7 @@ const Schedule3: FC = () => {
                   'totalCosts',
                   'Total Costs',
                   derived ? derived.totalCosts : data.totalCosts,
+                  true,
                 )}
                 {/* Legacy: the Override dropdown is the last row of this table (in the Harvest column). */}
                 <TableRow key="overrideHarvestTotalPop">

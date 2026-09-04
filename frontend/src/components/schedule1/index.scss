@@ -34,11 +34,8 @@
   table-layout: fixed;
   inline-size: 100%;
 
-  // Bold column-header text (Carbon defaults to semibold).
-  thead th,
-  thead .cds--table-header-label {
-    font-weight: 700;
-  }
+  // Column-header weight is now app-wide (see the data-table thead rule in _overrides.scss); this
+  // table's local copy was one of the four that let the other schedules go unbolded.
 
   th:first-child,
   td:first-child {
@@ -61,9 +58,21 @@
     // Bold the grand-total labels/values so the summary row reads as a summary (#312 Overall 5, bold),
     // matching the 700-weight sub-page and Schedule 11 totals.
     font-weight: 700;
-    // Shade the calculated grand-total row (#312 Overall 5) on the same accent layer the sub-page
-    // and Schedule 11 totals use, so it reads as a summary band, distinct from the edit highlight.
-    background: var(--cds-layer-accent-01);
+    // The schedule's final figure, so the full total band (#312 Overall 5, tokenised by #411).
+    background: var(--ilcr-band-total);
+  }
+
+  // The calculated summary rows WITHIN the table — Total Silviculture (140, derived cost), Subtotal
+  // Company Logging (144, derived cost) and Subtotal Other Costs (server-derived cost and $/m³).
+  // Lighter than the grand total above so the two depths are distinguishable at a glance (#411
+  // Overall 5); bold for the same reason the grand total is.
+  //
+  // Deliberately NOT banded: Forest Management & Admin (143) and Silviculture 1/2/139. Those are cost
+  // LINES, not summaries — a figure that is read-only because it is pulled from Schedule 3 is still a
+  // component of the total, not a total of anything on this page.
+  tr.schedule-1__subtotal-row td {
+    font-weight: 700;
+    background: var(--ilcr-band-subtotal);
   }
 }
 
@@ -127,7 +136,13 @@
 
 // The "Subtotal Other Costs" label is a link/button inside the Company Logging table's label column;
 // strip the ghost button's default inline padding so it lines up flush with the other row labels.
+//
+// Its row is a `schedule-1__subtotal-row`, so the label sits on the subtotal band, where Carbon's
+// ghost blue (#0f62fe) measures 4.39:1 — under WCAG 2.1 AA. Take the darker on-band link (see the
+// token's note in _overrides.scss); the two-class selector outranks Carbon's `.cds--btn--ghost`,
+// which sets this colour only on its base rule and leaves it alone on hover.
 .schedule-1__other-costs-link.cds--btn {
   padding-inline: 0;
   min-block-size: auto;
+  color: var(--ilcr-band-link);
 }

@@ -8,7 +8,6 @@ import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -42,6 +41,7 @@ public class Schedule2Controller implements Schedule2Api {
   private final Schedule2Service schedule2Service;
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
+  private final Schedule2CheckStatusResolver checkStatusResolver;
 
   /**
    * Resolve a legacy bundle key to verbatim text (AD-8) for a mutating-response success message.
@@ -90,21 +90,6 @@ public class Schedule2Controller implements Schedule2Api {
       long millId, int year, Authentication authentication) {
     // Read-only (AD-5): context guard first (no summary-required), then evaluate — mutates nothing.
     millContextService.validateMillYearActive(millId, year);
-    Schedule2CheckStatusResponse status = schedule2Service.checkStatus(millId, year);
-    // Resolve each message's verbatim bundle text (AD-8), same as the save/delete success message.
-    // The
-    // service carries an optional field label in MessageInfo.text; when present it is prefixed as
-    // "<label>: <resolvedText>" (legacy Schedule2MB:168 + Schedule 1 valueRequired parity).
-    List<MessageInfo> resolved =
-        status.messages().stream()
-            .map(
-                m -> {
-                  MessageInfo base = message(m.key());
-                  return m.text() == null
-                      ? base
-                      : new MessageInfo(base.key(), m.text() + ": " + base.text());
-                })
-            .toList();
-    return ResponseEntity.ok(new Schedule2CheckStatusResponse(status.outcome(), resolved));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(millId, year));
   }
 }

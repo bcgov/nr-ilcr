@@ -104,16 +104,16 @@
   padding-inline: 0;
 }
 
-// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title both read
-// at 20px (the two sub-page headers).
+// The "Add <sub-page>" heading above the add-row form and the sub-page table's own title are both
+// section headings, so their SIZE now comes from the one app-wide rule in styles/index.scss (#411
+// Overall 11) rather than a 20px literal restated here — same value, one source. Only the layout
+// each needs is left below.
 .schedule-4__subpage-title {
-  font-size: 20px;
   margin-block: $spacing-05 $spacing-03;
   text-align: left;
 }
 
 .schedule-4__subpage-table .cds--data-table-header__title {
-  font-size: 20px;
   text-align: left;
 }
 
@@ -132,8 +132,14 @@
   margin-block-end: $spacing-06;
 }
 
-// The compact Add-row button: 32px, overriding the global 40px button height (the CSS var drives both
-// the min-height and the centering padding, so the label stays vertically centred).
+// The compact Add-row button: 32px, deliberately overriding the global button height — which is
+// 48px, not the 40px this comment used to claim (the 40px was the in-table compaction that #411
+// Overall 1 removed; this button is page-level and was never subject to it). The CSS var drives both
+// the min-height and the centering padding, so the label stays vertically centred at any value.
+//
+// Kept at 32px through the #411 Overall 9 button-height audit as a purposeful override. Worth knowing
+// it is the ONE button in the app that does not match the fields beside it, and it shares a
+// flex-end row with them — so if the row ever reads wrong, this is the rule to delete, not to tune.
 .schedule-4__add-row {
   --cds-layout-size-height-local: 2rem;
 }
@@ -143,6 +149,6 @@
 .schedule-4__totals-row td {
   border-block-start: 0.0625rem solid var(--cds-border-strong);
   font-weight: 700;
-  // Calculated total band (#312 Overall 5) — same accent layer as the other schedules.
-  background: var(--cds-layer-accent-01);
+  // The table's final figure, so the full total band (#312 Overall 5, tokenised by #411).
+  background: var(--ilcr-band-total);
 }

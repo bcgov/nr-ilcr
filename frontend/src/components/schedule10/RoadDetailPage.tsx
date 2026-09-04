@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@carbon/react'
+import { Add, ArrowLeft, Close, Edit, Save, TrashCan, View } from '@carbon/icons-react'
 import type {
   ConstructionPage,
   RoadDetail,
@@ -73,12 +74,12 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
   return (
     <>
       <div className="schedule-10__actions">
-        <Button kind="primary" disabled={controlsDisabled} onClick={onOpenNew}>
+        <Button kind="primary" disabled={controlsDisabled} renderIcon={Add} onClick={onOpenNew}>
           Add Road
         </Button>
         {/* Back is never disabled, including outside Draft — a read-only reporter must be able to
             leave the level. */}
-        <Button kind="secondary" onClick={onBack}>
+        <Button kind="secondary" renderIcon={ArrowLeft} onClick={onBack}>
           Back
         </Button>
       </div>
@@ -115,14 +116,16 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
                         kind="ghost"
                         size="sm"
                         disabled={saving}
+                        renderIcon={editable ? Edit : View}
                         onClick={() => onOpenDetail(detail)}
                       >
                         {editable ? 'Edit' : 'View'}
                       </Button>
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         disabled={controlsDisabled}
+                        renderIcon={TrashCan}
                         onClick={() => onRequestDelete(detail)}
                       >
                         Delete
@@ -152,10 +155,15 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
             />
             <div className="schedule-10__panel-actions">
               {/* AC11 and deviation 7: rendered and disabled outside Draft, never removed. */}
-              <Button kind="primary" disabled={controlsDisabled || readOnly} onClick={onSave}>
+              <Button
+                kind="primary"
+                disabled={controlsDisabled || readOnly}
+                renderIcon={Save}
+                onClick={onSave}
+              >
                 Save
               </Button>
-              <Button kind="secondary" onClick={onCloseForm}>
+              <Button kind="secondary" renderIcon={Close} onClick={onCloseForm}>
                 Close
               </Button>
             </div>

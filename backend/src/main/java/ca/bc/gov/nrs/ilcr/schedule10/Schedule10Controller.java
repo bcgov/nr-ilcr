@@ -5,14 +5,10 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule10.api.Schedule10Api;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
-import ca.bc.gov.nrs.ilcr.schedule10.dto.FieldIssue;
-import ca.bc.gov.nrs.ilcr.schedule10.dto.PageCheckResult;
-import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
-import java.util.List;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -32,9 +28,12 @@ import org.springframework.web.bind.annotation.RestController;
  * ILCR_REPORT_SUMMARY} row for the category, and Schedule 10 has none — only categories 1, 2 and 3
  * do. Using the summary-requiring guard would 404 every single request.
  *
- * <p><strong>Message text is resolved here, never in the service.</strong> Domain code carries
- * bundle keys and format arguments; this class turns them into the verbatim strings the client
- * renders, which keeps every user-facing byte in one place.
+ * <p><strong>Message text is never resolved in the domain service.</strong> Domain code carries
+ * bundle keys and format arguments; the verbatim strings the client renders are produced outside
+ * it, which keeps every user-facing byte in one place. This class does that for its own save/delete
+ * confirmations; the check-status assembly moved to {@link Schedule10CheckStatusResolver} in Story
+ * 15.0 — still outside the service, but inside the package, so a report-level caller can name the
+ * result (that response was previously reachable only through this controller).
  */
 @RestController
 public class Schedule10Controller implements Schedule10Api {
@@ -47,31 +46,33 @@ public class Schedule10Controller implements Schedule10Api {
    */
   private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 
-  /** The single schedule-level banner when every checked requirement passes. */
-  private static final String MSG_REQUIREMENTS_MET = "scheduleRequirementsMetMsg";
-
   private final MillContextService millContextService;
   private final Schedule10Service schedule10Service;
   private final SchedulePermissions permissions;
   private final MessageSource messageSource;
+  private final Schedule10CheckStatusResolver checkStatusResolver;
 
   /**
-   * Wires the mill/year guard, the domain service, permissions and the message bundle.
+   * Wires the mill/year guard, the domain service, permissions, the message bundle and the
+   * check-status resolver.
    *
    * @param millContextService the single owner of mill/year validation
    * @param schedule10Service the domain service
    * @param permissions the action-based permission component
    * @param messageSource the one message bundle, keyed by legacy property keys
+   * @param checkStatusResolver assembles the check-status response inside the schedule10 package
    */
   public Schedule10Controller(
       MillContextService millContextService,
       Schedule10Service schedule10Service,
       SchedulePermissions permissions,
-      MessageSource messageSource) {
+      MessageSource messageSource,
+      Schedule10CheckStatusResolver checkStatusResolver) {
     this.millContextService = millContextService;
     this.schedule10Service = schedule10Service;
     this.permissions = permissions;
     this.messageSource = messageSource;
+    this.checkStatusResolver = checkStatusResolver;
   }
 
   @Override
@@ -197,9 +198,7 @@ public class Schedule10Controller implements Schedule10Api {
   public ResponseEntity<Schedule10CheckStatusResponse> checkStatus(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    Schedule10CheckStatus.Outcome outcome =
-        schedule10Service.checkStatus(context.millId(), context.year());
-    return ResponseEntity.ok(compose(outcome));
+    return ResponseEntity.ok(checkStatusResolver.checkStatus(context.millId(), context.year()));
   }
 
   private boolean mayEdit(Authentication authentication) {
@@ -212,59 +211,6 @@ public class Schedule10Controller implements Schedule10Api {
 
   private ResponseEntity<Schedule10Response> deleted(Schedule10Response document) {
     return ResponseEntity.ok(document.withMessage(message(MSG_DELETED)));
-  }
-
-  /**
-   * Turns the rule outcome into the wire response, composing every verbatim line.
-   *
-   * <p>Two mutually exclusive branches, mirroring legacy: a pass emits the single banner and NO
-   * per-page results, because legacy's pass branch never enters its loop; anything outstanding
-   * emits no banner and every visible page and road detail.
-   */
-  private Schedule10CheckStatusResponse compose(Schedule10CheckStatus.Outcome outcome) {
-    if (outcome.met()) {
-      return new Schedule10CheckStatusResponse(
-          Schedule10CheckStatusResponse.MET, List.of(message(MSG_REQUIREMENTS_MET)), List.of());
-    }
-    List<PageCheckResult> pages = outcome.pages().stream().map(this::composePage).toList();
-    return new Schedule10CheckStatusResponse(
-        Schedule10CheckStatusResponse.ISSUES, List.of(), pages);
-  }
-
-  private PageCheckResult composePage(Schedule10CheckStatus.PageOutcome page) {
-    List<RoadDetailCheckResult> details =
-        page.roadDetails().stream()
-            .map(
-                detail ->
-                    new RoadDetailCheckResult(
-                        detail.roadDetailId(),
-                        detail.rowNumber(),
-                        detail.roadDetailLabel(),
-                        detail.issues().isEmpty(),
-                        composeIssues(detail.issues())))
-            .toList();
-    boolean met = page.issues().isEmpty() && details.stream().allMatch(RoadDetailCheckResult::met);
-    return new PageCheckResult(
-        page.pageId(),
-        page.pageNumber(),
-        page.pageLabel(),
-        met,
-        composeIssues(page.issues()),
-        details);
-  }
-
-  private List<FieldIssue> composeIssues(List<Schedule10CheckStatus.Issue> issues) {
-    return issues.stream()
-        .map(
-            issue ->
-                new FieldIssue(
-                    issue.field(),
-                    new MessageInfo(
-                        issue.messageKey(),
-                        issue.label()
-                            + ": "
-                            + resolve(issue.messageKey(), issue.args().toArray()))))
-        .toList();
   }
 
   private MessageInfo message(String key) {

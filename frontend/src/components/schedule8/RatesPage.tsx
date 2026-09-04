@@ -16,6 +16,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
+import { Add, ArrowLeft, Close, Save, TrashCan } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import { emptyRateForm, fmt, toNum, validateRateForm, type RateForm } from './validation'
@@ -259,7 +260,7 @@ const RatesPage: FC<RatesPageProps> = ({
               invalid={Boolean(errors.itemDescription)}
               invalidText={errors.itemDescription}
             />
-            <Button kind="primary" size="sm" disabled={busy} onClick={onAdd}>
+            <Button kind="primary" size="sm" disabled={busy} renderIcon={Add} onClick={onAdd}>
               Add {label}
             </Button>
           </div>
@@ -291,9 +292,10 @@ const RatesPage: FC<RatesPageProps> = ({
                     {editable && (
                       <TableCell>
                         <Button
-                          kind="danger--ghost"
+                          kind="danger--tertiary"
                           size="sm"
                           disabled={busy}
+                          renderIcon={TrashCan}
                           onClick={() => setConfirmDeleteRow(row)}
                         >
                           Delete
@@ -359,11 +361,17 @@ const RatesPage: FC<RatesPageProps> = ({
           when there is a draft). Read-only shows a single Close (nothing to save). */}
       <div className="schedule-8__panel-actions">
         {editable && (
-          <Button kind="primary" disabled={busy} onClick={handleSave}>
+          <Button kind="primary" disabled={busy} renderIcon={Save} onClick={handleSave}>
             Save
           </Button>
         )}
-        <Button kind="secondary" disabled={busy} onClick={requestBack}>
+        <Button
+          kind="secondary"
+          disabled={busy}
+          // Back on an editable panel, Close on a read-only one — the glyph follows the label.
+          renderIcon={editable ? ArrowLeft : Close}
+          onClick={requestBack}
+        >
           {editable ? 'Back' : 'Close'}
         </Button>
       </div>

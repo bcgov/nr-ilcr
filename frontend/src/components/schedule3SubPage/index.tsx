@@ -13,7 +13,7 @@ import {
   TableRow,
   TextInput,
 } from '@carbon/react'
-import { TrashCan } from '@carbon/icons-react'
+import { Add, TrashCan } from '@carbon/icons-react'
 import { fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { committedNum, isUnusableStrictEntry } from '@/utils/derivedMath'
 import EditableSubPageLayout from '@/components/core/EditableSubPageLayout'
@@ -282,7 +282,7 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
           ))}
           <TableCell>
             <Button
-              kind="danger--ghost"
+              kind="danger--tertiary"
               size="sm"
               hasIconOnly
               iconDescription="Remove"
@@ -367,7 +367,13 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                       />
                     ))}
                     <div className="schedule-3-sub__actions">
-                      <Button kind="primary" size="md" disabled={saving} onClick={handleAdd}>
+                      <Button
+                        kind="primary"
+                        size="md"
+                        disabled={saving}
+                        renderIcon={Add}
+                        onClick={handleAdd}
+                      >
                         Add
                       </Button>
                     </div>

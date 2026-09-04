@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
@@ -59,10 +60,8 @@ public class Schedule8Service {
    */
   private static final String SKID_TYPE_NOT_APPLICABLE = "NA";
 
-  // Check Status (Story 14.6) — bundle keys (controller resolves to verbatim text, AD-8) +
+  // Check Status (Story 14.6) — bundle keys (Schedule8CheckStatusResolver resolves them, AD-8) +
   // outcomes.
-  private static final String OUTCOME_MET = "MET";
-  private static final String OUTCOME_ISSUES = "ISSUES";
   private static final String MSG_REQUIRED = "missingRequiredFieldMsg";
   private static final String MSG_AT_LEAST_ONE_SAMPLE = "treeToTruckReportAtleastOneSample";
   private static final String MSG_HARVEST_ZERO = "invalidLowerRangeZeroErrorMsg";
@@ -621,7 +620,7 @@ public class Schedule8Service {
    * Evaluate the Schedule 8 completion requirement (BR-07, Check Status) for a mill/year —
    * read-only (AD-5), mutates nothing (Story 14.6, all-pages sweep). Reuses the assembled read
    * model and applies the Check-Status-only rules per page and sample. {@code outcome} is {@code
-   * MET} only when EVERY page (and its samples) passes. Emits bundle KEYS; the controller resolves
+   * MET} only when EVERY page (and its samples) passes. Emits bundle KEYS; the resolver resolves
    * verbatim text (AD-8). A mill/year with no pages is vacuously MET.
    *
    * @param millId the mill id (context already validated)
@@ -684,7 +683,7 @@ public class Schedule8Service {
       scheduleMet &= pageMet;
       pageResults.add(new Schedule8PageCheckResult(page.id(), pageMet, pageIssues, sampleResults));
     }
-    String outcome = scheduleMet ? OUTCOME_MET : OUTCOME_ISSUES;
+    String outcome = scheduleMet ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     List<MessageInfo> messages =
         scheduleMet ? List.of(new MessageInfo(MSG_SCHEDULE_MET, null)) : List.of();
     return new Schedule8CheckStatusResponse(outcome, messages, pageResults);

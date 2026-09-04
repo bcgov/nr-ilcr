@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import java.util.List;
 
@@ -28,9 +29,15 @@ import java.util.List;
 public record Schedule10CheckStatusResponse(
     String outcome, List<MessageInfo> messages, List<PageCheckResult> pages) {
 
-  /** {@code outcome} when every checked requirement passes. */
-  public static final String MET = "MET";
+  /**
+   * {@code outcome} when every checked requirement passes.
+   *
+   * <p>Kept as a member of this record (it is existing public API and several tests name it) but
+   * sourced from {@link CheckStatusOutcome} since Story 15.0, so the token has ONE definition
+   * rather than six.
+   */
+  public static final String MET = CheckStatusOutcome.MET;
 
   /** {@code outcome} when at least one requirement is outstanding. */
-  public static final String ISSUES = "ISSUES";
+  public static final String ISSUES = CheckStatusOutcome.ISSUES;
 }

@@ -2,14 +2,18 @@ package ca.bc.gov.nrs.ilcr.schedule1;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
+import com.jayway.jsonpath.JsonPath;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 /**
@@ -32,6 +36,8 @@ import org.springframework.http.MediaType;
 class Schedule1DocumentIT extends AbstractOracleIT {
 
   private static final String ENDPOINT = "/api/v1/schedule1";
+
+  @Autowired private Schedule1CostDerivation schedule1CostDerivation;
 
   @Test
   @DisplayName("514/2021 Draft — full pinned document with server-computed derived values")
@@ -59,6 +65,46 @@ class Schedule1DocumentIT extends AbstractOracleIT {
         .andExpect(jsonPath("$.otherCosts.count", is(2)))
         .andExpect(jsonPath("$.otherCosts.costSubtotal", is(24000)))
         .andExpect(jsonPath("$.otherCosts.perUnit", is(3.0)));
+  }
+
+  /**
+   * The served item-144 figure and the cross-schedule no-FMA figure are the SAME sum plus/minus
+   * Forest Management Administration — asserted here against real seeded data (#252).
+   *
+   * <p>Schedule 2 used to compute {@code subtotalCompanyLoggingCost − forestMgmtAdminCost} itself
+   * to recover the legacy {@code Schedule1DO.getSubtotalLoggingCost}; it now reads {@link
+   * Schedule1CostDerivation}'s named figure, and {@code Schedule1Service} adds Forest Mgmt Admin on
+   * top of that same figure. This pins the identity end-to-end, so the served document and Schedule
+   * 2's carried term cannot drift apart through the HTTP/DB path either — the belt-and-braces the
+   * {@code Schedule3CostDerivation} javadoc uses between {@code Schedule3DocumentIT} and {@code
+   * Schedule1CrownPrefillIT}. On 514/2021 Forest Mgmt Admin is a non-zero 600000, so the two
+   * figures genuinely differ.
+   */
+  @Test
+  @DisplayName("514/2021 — the no-FMA read port equals the served subtotal minus Forest Mgmt Admin")
+  void noFmaReadPort_agreesWithServedSubtotalMinusForestMgmtAdmin() throws Exception {
+    String body =
+        mockMvc
+            .perform(
+                get(ENDPOINT)
+                    .param("millId", "514")
+                    .param("year", "2021")
+                    .accept(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    long servedSubtotal =
+        ((Number) JsonPath.read(body, "$.subtotalCompanyLoggingCost")).longValue();
+    long servedFma = ((Number) JsonPath.read(body, "$.forestMgmtAdminCost")).longValue();
+    assertEquals(
+        600000L, servedFma, "fixture guard: 514/2021 must carry a non-zero Forest Mgmt Admin");
+
+    assertEquals(
+        Optional.of(servedSubtotal - servedFma),
+        schedule1CostDerivation.subtotalLoggingNoFmaCost(514L, 2021),
+        "Schedule 2's carried figure must be the served subtotal with Forest Mgmt Admin removed");
   }
 
   @Test

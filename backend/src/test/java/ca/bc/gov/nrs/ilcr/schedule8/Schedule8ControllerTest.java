@@ -29,9 +29,9 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.util.List;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
@@ -62,7 +62,24 @@ class Schedule8ControllerTest {
 
   @Mock private Authentication authentication;
 
-  @InjectMocks private Schedule8Controller controller;
+  private Schedule8Controller controller;
+
+  /**
+   * Built by hand rather than {@code @InjectMocks} since Story 15.0: the check-status composition
+   * moved to {@link Schedule8CheckStatusResolver}, and a MOCK resolver would make the check-status
+   * assertions below vacuous. Wiring the real one keeps them proving the actual composed bytes,
+   * through the same path the endpoint takes.
+   */
+  @BeforeEach
+  void setUp() {
+    controller =
+        new Schedule8Controller(
+            millContextService,
+            schedule8Service,
+            permissions,
+            messageSource,
+            new Schedule8CheckStatusResolver(schedule8Service, messageSource));
+  }
 
   private void stubSaved(String key, String text) {
     when(messageSource.getMessage(eq(key), any(), any(), any(Locale.class))).thenReturn(text);

@@ -61,7 +61,12 @@ class Schedule5ControllerTest {
   @BeforeEach
   void setUp() {
     controller =
-        new Schedule5Controller(millContextService, schedule5Service, permissions, messageSource);
+        new Schedule5Controller(
+            millContextService,
+            schedule5Service,
+            permissions,
+            messageSource,
+            new Schedule5CheckStatusResolver(schedule5Service, messageSource));
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
         .thenReturn(new MillYearContext(MILL, YEAR));
   }

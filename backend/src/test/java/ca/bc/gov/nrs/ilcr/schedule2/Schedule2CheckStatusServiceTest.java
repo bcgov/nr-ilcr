@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
+import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2CheckStatusResponse;
@@ -23,7 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * Spring. MET when the assembled document's {@code purchasedLogCost.cost} (item 25) is present;
  * ISSUES when it is absent, including the saved-summary-without-item-25 and the unsaved-schedule
  * states. The evaluation runs off the same {@code getSchedule2} assembly and returns the bundle
- * keys only — the controller resolves verbatim text (AD-8).
+ * keys only — {@code Schedule2CheckStatusResolver} resolves verbatim text (AD-8).
  */
 @ExtendWith(MockitoExtension.class)
 class Schedule2CheckStatusServiceTest {
@@ -33,7 +33,7 @@ class Schedule2CheckStatusServiceTest {
 
   @Mock private Schedule2Repository repository;
 
-  @Mock private Schedule1Service schedule1Service;
+  @Mock private Schedule1CostDerivation schedule1CostDerivation;
 
   @Mock private Schedule3Service schedule3Service;
 
@@ -46,7 +46,9 @@ class Schedule2CheckStatusServiceTest {
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
     lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
-    lenient().when(schedule1Service.findSchedule1(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
   }
 
   @Test

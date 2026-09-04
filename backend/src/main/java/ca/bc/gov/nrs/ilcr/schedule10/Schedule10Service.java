@@ -453,7 +453,8 @@ public class Schedule10Service {
    *
    * @param millId the validated mill
    * @param year the validated reporting year
-   * @return the unresolved outcome; the controller composes the verbatim text
+   * @return the unresolved outcome; {@link Schedule10CheckStatusResolver} composes the verbatim
+   *     text
    */
   @Transactional(readOnly = true)
   public Schedule10CheckStatus.Outcome checkStatus(long millId, int year) {

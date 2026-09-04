@@ -450,7 +450,13 @@ const Schedule1: FC = () => {
     const costValue = silvicultureCost(row.code, item)
     const perUnitValue = silviculturePerUnit(row.code, item)
     return (
-      <TableRow key={row.code}>
+      // 140 (Total Silviculture) is the one summary row of the four — its cost is derived rather than
+      // entered or pulled — so it takes the lighter subtotal band; it is a total WITHIN the table, not
+      // the table's final figure (#411 Overall 5).
+      <TableRow
+        key={row.code}
+        className={row.code === 140 ? 'schedule-1__subtotal-row' : undefined}
+      >
         <TableCell>{row.label}</TableCell>
         {numberCell(`vol-${row.code}`, `${row.label} volume`, true, item?.volume)}
         {numberCell(`cost-${row.code}`, `${row.label} cost`, writableCost, costValue)}
@@ -479,7 +485,7 @@ const Schedule1: FC = () => {
   )
 
   const subtotalCompanyLoggingRow = (
-    <TableRow key={144}>
+    <TableRow key={144} className="schedule-1__subtotal-row">
       <TableCell>{LINE_ITEM_LABELS[144]}</TableCell>
       {numberCell(
         'vol-144',
@@ -500,7 +506,7 @@ const Schedule1: FC = () => {
   // The label is a link/button that opens the Other Costs sub-page (Story 2.5); the VOLUME is
   // user-entered (editable schedules) while the cost subtotal and $/m³ are server-derived (read-only).
   const otherCostsRow = (
-    <TableRow key="other-costs">
+    <TableRow key="other-costs" className="schedule-1__subtotal-row">
       <TableCell>
         <Button
           kind="ghost"

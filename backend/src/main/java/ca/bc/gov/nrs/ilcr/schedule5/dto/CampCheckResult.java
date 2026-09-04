@@ -37,8 +37,8 @@ public record CampCheckResult(
    * <p>{@code field} is present only on a {@code Value Required} finding and is omitted from the
    * JSON on the met message ({@code NON_NULL}) — it names the {@link CampRequest} property the
    * licensee must supply, so a frontend can focus the right input rather than parse the sentence.
-   * The service emits the key and the field with {@code text} null; the controller resolves and
-   * composes the text (the house key/text split, AD-8).
+   * The service emits the key and the field with {@code text} null; the check-status resolver
+   * resolves and composes the text (the house key/text split, AD-8).
    *
    * @param key the legacy {@code messages.properties} key
    * @param field the {@link CampRequest} field name this finding points at (null on the met

@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { Button, Column, Grid } from '@carbon/react'
+import { Save } from '@carbon/icons-react'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import RichTextEditor from '@/components/homeContent/RichTextEditor'
@@ -135,7 +136,7 @@ const HomeContent: FC = () => {
                 onChange={(html) => setMessages((prev) => ({ ...prev, [role]: html }))}
               />
             ))}
-          <Button disabled={saving || !loaded} onClick={save}>
+          <Button disabled={saving || !loaded} renderIcon={Save} onClick={save}>
             Save
           </Button>
         </Column>

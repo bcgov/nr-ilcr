@@ -524,11 +524,12 @@ const Schedule7b: FC = () => {
                     <div className="schedule-7b__panel-actions">
                       {/* Legacy labelled this button `Delete` with the icon beside it
                           (schedule7B.xhtml:527-529), and the repo's own `RowActionButtons` renders a
-                          row delete the same way — a labelled `danger--ghost` button. The 7A twin's
-                          icon-only variant is the outlier of the two, so this follows legacy and the
-                          house convention rather than its sibling page. */}
+                          row delete the same way — a labelled button, outlined `danger--tertiary`
+                          since #411 took Schedule 6's treatment app-wide. The 7A twin's icon-only
+                          variant is the outlier of the two, so this follows legacy and the house
+                          convention rather than its sibling page. */}
                       <Button
-                        kind="danger--ghost"
+                        kind="danger--tertiary"
                         size="sm"
                         renderIcon={TrashCan}
                         disabled={controlsDisabled}

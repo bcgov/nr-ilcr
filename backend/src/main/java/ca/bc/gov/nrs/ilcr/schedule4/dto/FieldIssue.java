@@ -6,7 +6,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
  * One missing-field finding within a location's Check Status result (Story 4.4, S28/S31). {@code
  * code} is the legacy cost-item code (40–55) whose Cost is missing; {@code message} carries the
  * verbatim {@code missingRequiredFieldMsg} ("Value Required"). The service emits the bundle key;
- * the controller resolves the text (AD-8).
+ * the check-status resolver resolves the text (AD-8).
  *
  * @param code the cost-item code whose Cost is required but null
  * @param message the "Value Required" message (key + resolved text)

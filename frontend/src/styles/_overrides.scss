@@ -66,14 +66,58 @@
   @include theme.theme(dark.$dark-theme);
 }
 
+// The two summary bands for calculated rows (#411 Overall 5). A schedule's FINAL figure takes the
+// total band; every other calculated row — intermediate subtotals and fully-derived component lines
+// alike — takes the lighter subtotal band, so depth reads off the shade.
+//
+// Defined once here because nine stylesheets were each restating one of the two values, which is how
+// the tiers drifted: the same grey ended up meaning "grand total" on one schedule and "intermediate
+// subtotal" on another. Both are theme-aware — the accent and background tokens are redefined per
+// theme above, and `color-mix` resolves at use time, so the light band tracks whichever is active.
+// Link text sitting ON either band needs a darker blue than Carbon's default. `$link-primary`
+// (#0f62fe) clears WCAG 2.1 AA's 4.5:1 against pure white and nothing darker — 5.00:1 unbanded,
+// 4.39:1 on the subtotal band, 3.79:1 on the total band — so the ghost link-buttons in Sch1's and
+// Sch3's calculated rows failed axe the moment the bands above landed. `axe.ts` had already recorded
+// that 3.79 for Carbon's identical #e0e0e0 table HOVER layer; the bands made it a RESTING state.
+// Blue 70 clears both (6.84:1 and 5.90:1) and still reads as a link.
+//
+// A token rather than two copies, for the same reason the bands are: whoever retiers a band must find
+// the link colour that depends on it. Pinned by `styles/__tests__/bandLinkContrast.test.ts`.
+:root {
+  --ilcr-band-total: var(--cds-layer-accent-01);
+  --ilcr-band-subtotal: color-mix(in srgb, var(--cds-layer-accent-01) 50%, var(--cds-background));
+  --ilcr-band-link: var(--cds-link-primary-hover);
+}
+
+// Bold column labels on EVERY data table (#411). Legacy bolded them, and four stylesheets had each
+// restated this rule for their own table — Schedules 1 and 3, the Schedule 3 sub-page and SubPanel —
+// so the schedules that never opted in rendered their labels at body weight. Measured in the browser
+// before this rule landed: Sch 1 and Sch 3 computed 700, while Schedules 2, 4, 5, 8, 10 and 11 all
+// computed 400. Stating it once here is the same move #411 Overall 5 made for the summary bands.
+//
+// It has to be stated at all because Carbon's reset gives every table element `font: inherit`, which
+// beats the semibold its own `heading-compact-01` thead rule would otherwise apply — so a `th` quietly
+// inherits the body's 400. 700 rather than Carbon's 600 to match legacy and the four rules replaced.
+//
+// Three selectors, not one, because Carbon nests the label differently per header type: plain text
+// sits in a `--table-header-label` div (which inherits, so the `th` alone would do), but a SORTABLE
+// header wraps it in a `<button class="--table-sort">`, and a button takes the UA's own font-weight
+// instead of inheriting the cell's. Schedule 11's sortable grid is the case that proves the third one.
+.#{variables.$bcgov-prefix}--data-table thead th,
+.#{variables.$bcgov-prefix}--data-table thead .#{variables.$bcgov-prefix}--table-header-label,
+.#{variables.$bcgov-prefix}--data-table thead .#{variables.$bcgov-prefix}--table-sort {
+  font-weight: 700;
+}
+
 .#{variables.$bcgov-prefix}--btn {
   border-radius: 0.25rem;
   // Global button height: 48px (Carbon `lg` / 3rem) for every size variant (sm/md/lg and icon-only),
   // matching the CSP/ISP default control height (Story 30.2 / #312; nr-csp report-form-size mixin
   // default = 3rem). Overriding Carbon's layout height token — which drives BOTH the min-block-size
   // and the centering padding-block — keeps the label/icon vertically centered at any size, unlike a
-  // raw min-height override that would push sm/lg labels off-centre. Dense schedule tables compact
-  // this back to 40px below (see the `.cds--data-table` block).
+  // raw min-height override that would push sm/lg labels off-centre. Applies everywhere, tables
+  // included, so a row-action button matches the fields beside it (#411 Overall 1, superseding the
+  // dense-table 40px compaction that used to follow).
   --cds-layout-size-height-local: 3rem;
 }
 
@@ -89,11 +133,16 @@
 }
 
 // Global field height: normalize every single-line control (text inputs, dropdowns/combo boxes,
-// selects, date pickers) to 48px (Carbon `lg` / 3rem) regardless of the Carbon `size` prop, so
-// fields line up AND match the CSP/ISP default (Story 30.2 / #312; nr-csp report-form-size mixin
-// default = 3rem). Without a single token every `size`-less control would fall to Carbon's own
-// default and mis-align (a `size`-less CodeComboBox at md/40px stood 8px taller than the sm inputs
-// beside it). Buttons above use the same 3rem, so buttons match fields (#312 Overall 9).
+// selects, date pickers) to 48px (Carbon `lg` / 3rem), so fields line up AND match the CSP/ISP
+// default (Story 30.2 / #312; nr-csp report-form-size mixin default = 3rem). Without a single token
+// every `size`-less control would fall to Carbon's own default and mis-align (a `size`-less
+// CodeComboBox at md/40px stood 8px taller than the sm inputs beside it). Buttons above use the same
+// 3rem, so buttons match fields (#312 Overall 9). One height app-wide, tables included: the client
+// asked for the taller CSP field on the dense schedule screens too (#411 Overall 1).
+//
+// The token reaches a control only where Carbon actually READS it, which is not everywhere — see the
+// `.cds--dropdown` and `.cds--date-picker__input` rules below for the two that hardcode instead.
+// Verify height claims against `node_modules/@carbon/styles/css/styles.css`, not the Carbon docs.
 //
 // NOTE (SScholefield review): `--cds-layout-size-height-local` is an internal Carbon variable. A
 // minor Carbon update could rename it and silently revert field heights (tracked as a style-pinning
@@ -115,26 +164,98 @@
   block-size: 3rem;
 }
 
-// Dense schedule tables — compact to 40px (Carbon `md` / 2.5rem). The data-entry schedules pack
-// many inline controls per row and are denser than any CSP report screen, so they take CSP's own
-// COMPACT size (the size CSP reserves for its one dense page, R13 AdHocReporting: report-form-size(
-// 2.5rem)). Story 30.2 / #312 decision (Scho, 2026-08-28): 48px default app-wide, 40px inside the
-// schedule tables. Scoped to `.cds--data-table` so a control's height follows its context — table
-// cells 40px, page-level fields + the Save/Check-Status action bar stay 48px. Row-action buttons
-// (Delete) inside the table also compact to 40px, keeping buttons = fields within the row.
-.#{variables.$bcgov-prefix}--data-table {
-  .#{variables.$bcgov-prefix}--text-input,
-  .#{variables.$bcgov-prefix}--select-input,
-  .#{variables.$bcgov-prefix}--list-box,
-  .#{variables.$bcgov-prefix}--list-box__field,
-  .#{variables.$bcgov-prefix}--search,
-  .#{variables.$bcgov-prefix}--btn {
-    --cds-layout-size-height-local: 2.5rem;
-  }
+// Carbon's BASE `.cds--dropdown` rule hardcodes `block-size: 2.5rem` (40px) outright
+// (@carbon/styles/css/styles.css:16815) instead of reading --cds-layout-size-height-local, and its
+// `.cds--dropdown--sm` variant hardcodes 2rem (:16841). A Dropdown root carries `.cds--dropdown` AND
+// `.cds--list-box` on the same element, both at specificity (0,1,0) — and the `.cds--dropdown` rule
+// sits AFTER the `.cds--list-box` rule (:10715) that the height token above drives. So source order
+// hands the win to Carbon, and the normalization silently does not reach a Dropdown: it rendered
+// 40px size-less (32px with `size="sm"`) beside 48px TextInputs and ComboBoxes, which under a row's
+// `align-items: flex-end` also dragged its label out of line with theirs.
+//
+// Set block-size directly — the only thing that outranks a direct declaration — and read the token
+// rather than restating 48px, so this stays pinned to the app standard if that decision changes.
+// Specificity (0,2,0) beats both Carbon rules. Diagnosed on Schedule 11 (#312) and fixed centrally
+// here (#411 Overall 1), which is where it always belonged.
+.#{variables.$bcgov-prefix}--list-box.#{variables.$bcgov-prefix}--dropdown {
+  block-size: var(--cds-layout-size-height-local);
+  max-block-size: var(--cds-layout-size-height-local);
+}
 
-  .#{variables.$bcgov-prefix}--date-picker__input {
-    block-size: 2.5rem;
-  }
+// Vertical breathing room inside table cells. Carbon fixes a row at `block-size: 3rem` (:13251,
+// hardcoded — it does NOT read the layout height token) and gives a cell `padding-inline` only, no
+// padding-block at all. While table controls were compacted to 40px that left 8px of slack in the
+// 48px row which READ as padding; now that a control is the row's full 48px it fills the row edge to
+// edge and its border meets the row border. Restore that 8px as real padding, so the inset no longer
+// depends on the control being shorter than its row. Rows become 64px (48 + 8 + 8) — `block-size` on
+// a `tr` is a minimum in table layout, so the row grows rather than clipping.
+.#{variables.$bcgov-prefix}--data-table td {
+  padding-block: $spacing-03;
+}
+
+// Tables no longer run the full width of the screen (#411 Overall 2), left-aligned in the page.
+//
+// Carbon stretches every table with `inline-size: 100%` (:13231). Merely CAPPING that is not enough:
+// as the CSP port on feat/sched-2-diff-sizes found, a stretched table just redistributes the slack
+// between the labels and the figures rather than giving it back to the page. CSP instead packs the
+// table to its content, so release the stretch and let each table size to what it holds. Carbon sets
+// no `table-layout` at all, so tables already lay out by content (several schedules carry a
+// `table-layout: auto` comment claiming otherwise — those rules are no-ops).
+//
+// The 80rem cap stays as the ceiling for the tables wide enough to reach it, on the container so a
+// toolbar is bounded too; the table then takes `max-inline-size: 100%` so it can never outgrow that.
+// A rem cap, not the 75% first proposed, and the reason is the small screens rather than the large:
+// a percentage keeps shrinking where there is no slack to give, squeezing Schedule 3's eight columns
+// of 48px inputs to ~818px on a 1366 laptop. 80rem is ~73% of the content area on a 1920 monitor and
+// does not bind below 1280px, so a dense schedule keeps full width on the screens that need it.
+// Follows the `.code-tables__selector` rem-cap precedent (#312) for the same instruction.
+//
+// A table that pins percentage columns must keep `inline-size: 100%` of its own, or the percentages
+// resolve against a content-derived width and go circular. Schedules 1 and 3 already do at (0,2,0);
+// the two cost sub-pages were given it alongside this change.
+.#{variables.$bcgov-prefix}--data-table-container {
+  max-inline-size: 80rem;
+}
+
+.#{variables.$bcgov-prefix}--data-table {
+  inline-size: auto;
+  max-inline-size: 100%;
+}
+
+// The accordion record editors (Schedules 6, 7A, 7B, 9) get the same treatment as the tables, at a
+// tighter cap: what they hold is a three-across field grid, not a data grid, so 80rem left the
+// numeric inputs stretched to ~24rem apiece (#411, Scho's 64rem call).
+//
+// The paginator takes the same width because it is part of the same block, not a neighbour of it:
+// those four pages are the only `Pagination` callers in the app, and each renders it directly above
+// AND below its list (legacy PrimeFaces `paginatorPosition="both"`). Capping only the accordion left
+// the pager running the full screen out from under a 64rem list. If a paginated DATA TABLE ever
+// appears, this rule would cap its pager at 64rem under an 80rem table — split the selectors then.
+.#{variables.$bcgov-prefix}--accordion,
+.#{variables.$bcgov-prefix}--pagination {
+  max-inline-size: 64rem;
+}
+
+// Carbon reserves a QUARTER of every accordion body as right-hand gutter above 640px
+// (@carbon/styles/css/styles.css:4305) — a sensible measure for the paragraph of prose an accordion
+// usually holds, and a measured 333px of a 1334px row here. These bodies hold field grids, so that
+// quarter reads as the editor failing to fill its own box, and it makes a list row narrower than the
+// Add panel above it at the same window width: at 1366 rail-shut, a 7A row dropped to a two-across
+// grid while the panel stayed three-across (#295 R1).
+//
+// Symmetric with Carbon's inline-START padding AT ANY DENSITY rather than a pinned 1rem (PR #355
+// review, paulushcgcj). Carbon sets the start from `layout.density('padding-inline')`, which compiles
+// to this custom property — declared on `.cds--accordion` by its `layout.use('density')`, so it is in
+// scope here and resolves to $spacing-05 (1rem) normal / $spacing-03 (0.5rem) condensed. Reusing the
+// token means a `cds--layout--density-condensed` ancestor moves BOTH sides together; a literal would
+// move the start and leave this end behind. Nothing sets condensed density today, so that is latent
+// rather than live — but it costs one token to be correct instead of correct-for-now. The 1rem
+// fallback applies only if the property is ever out of scope, reproducing the old behaviour exactly.
+//
+// Schedule 7A carried this rule alone from #295; 6, 7B and 9 never got it and were losing the quarter
+// (#411). Promoted here so all four editors agree.
+.#{variables.$bcgov-prefix}--accordion__content {
+  padding-inline-end: var(--cds-layout-density-padding-inline-local, 1rem);
 }
 
 .#{variables.$bcgov-prefix}--list-box__menu,
@@ -186,24 +307,29 @@
     }
   }
 
-  // Side-nav open/close toggle: keep the icon white on the brand header in every state. Carbon gives
-  // the trigger a light background when it is active (side nav expanded) and on hover, which hid the
-  // white icon; force a translucent overlay instead so the icon is always visible.
+  // Side-nav open/close toggle, matching CSP (nr-csp LayoutHeader/index.scss:22-32, #411 Overall 8).
+  // White glyph on the brand header while the nav is closed; when it is OPEN, Carbon's own active
+  // treatment stands — a `--cds-layer` (white) button — and the glyph is recoloured to read against
+  // it. So the close control is a white button with a near-black X, which is the CSP close button.
+  //
+  // This deliberately reverts the previous treatment, which forced the background transparent and
+  // painted a translucent overlay to keep the icon white in every state. Carbon's light active
+  // background was read as something to fight; CSP leans on it instead and recolours the glyph, and
+  // the inverse token flips on its own between themes (#161616 on the light layer, #f4f4f4 on the
+  // dark), which a hardcoded white could not do.
+  //
+  // Hover is left to Carbon (`--cds-background-hover`, a subtle overlay) rather than overridden.
   .#{variables.$bcgov-prefix}--header__menu-trigger {
     color: colors.$white;
-    background-color: transparent;
 
     path,
     svg {
       fill: currentColor;
     }
 
-    &:hover,
-    &:active,
-    &:focus,
+    // (0,3,0), so this beats the blanket white on `.bc-header .cds--header__action` above.
     &.#{variables.$bcgov-prefix}--header__action--active {
-      background-color: rgba(255, 255, 255, 0.16);
-      color: colors.$white;
+      color: var(--cds-layer-selected-inverse);
     }
   }
 }

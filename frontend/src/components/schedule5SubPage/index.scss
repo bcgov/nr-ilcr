@@ -17,11 +17,38 @@
     font-weight: 600;
   }
 
+  // The Add form is ONE line, Add button included (#411, Scho's call). Flex rather than the
+  // `repeat(auto-fit, minmax(12rem, 1fr))` grid this replaces: that grid split the panel into equal
+  // columns, which stretched the two short numerics to a third of the panel each and left the button
+  // no slot to join — so it sat in a block underneath, out of line with the fields it acts on.
+  //
+  // `flex-end` rather than a baseline, and the 11rem basis below, both from the sibling Add panels
+  // (`.schedule-3-sub__add` / `.schedule-11__add-fields`): a label that wraps to two lines would
+  // otherwise push its own input out of line with the rest of the row. Wraps on narrow viewports.
   &__add-fields {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: 1rem;
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-    margin-block-end: 1rem;
+  }
+
+  // Volume and Cost are short numerics, so they hold a narrow fixed basis instead of dividing the
+  // row — 11rem, the basis the sibling panels use for the same job (it holds a full cost value,
+  // -99,999,999, and the stamped camp volume).
+  &__add-field {
+    flex: 0 0 11rem;
+  }
+
+  // Description holds the only variable-length content here, so it takes the row's slack.
+  &__add-field--wide {
+    flex: 1 1 16rem;
+  }
+
+  // Sized to its label so the button ends the line. `align-items: flex-end` on the row already sits
+  // it on the inputs, so it needs no alignment of its own — and the global 48px control height
+  // (styles/_overrides.scss) applies to buttons and fields alike, so the two match exactly.
+  &__add-actions {
+    display: flex;
   }
 
   // Numeric cells align right so the columns scan as figures, matching the camp grid.
@@ -29,10 +56,14 @@
     text-align: right;
   }
 
-  &__totals {
+  &__totals td {
     // 700 to match the parent schedule5 totals (code review 2026-08-31); this sub-page mirrors
     // components/schedule5, whose section/total rows are bold.
     font-weight: 700;
+    // The footer figure this sub-page adds up to, so the full total band. It was the one marked
+    // totals row in the app with no band at all — bold but unshaded, while its siblings on Schedules
+    // 3, 4, 8, 11 and 1 Other Costs were already shaded (#411 Overall 5).
+    background: var(--ilcr-band-total);
   }
 
   &__actions {
