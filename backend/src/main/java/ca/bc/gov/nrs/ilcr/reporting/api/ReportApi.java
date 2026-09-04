@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.reporting.api;
 
 import jakarta.validation.Valid;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,17 +10,15 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * Print Schedule PDF API contract (Epic 20). The interface owns the request mapping; {@code
  * ReportController} implements it and adds authorization — the established controller/api-interface
  * idiom (mirrors {@code Schedule9Api}).
  *
- * <p>The PDF is STREAMED to the servlet output stream: {@code
- * ResponseEntity<StreamingResponseBody>} with {@code application/pdf} (Story 29.2), so a big "all
- * schedules" print is never buffered whole as a {@code byte[]} on the heap. Later Epic 20 report
- * stories copy this shape.
+ * <p>The PDF is STREAMED to the servlet output stream: {@code ResponseEntity<Resource>} with {@code
+ * application/pdf} (Story 29.2), so a big "all schedules" print is never buffered whole as a {@code
+ * byte[]} on the heap. Later Epic 20 report stories copy this shape.
  *
  * <p><b>Every one of these endpoints either produces a whole PDF or produces no file at all.</b>
  * That is a guarantee, not a best effort, and it is what the ordering in {@code ReportController}
@@ -55,7 +54,7 @@ public interface ReportApi {
    * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
    */
   @GetMapping("/schedule9")
-  ResponseEntity<StreamingResponseBody> getSchedule9Pdf(
+  ResponseEntity<Resource> getSchedule9Pdf(
       @RequestParam(required = false) String millId,
       @RequestParam(required = false) String year,
       Authentication authentication);
@@ -87,7 +86,7 @@ public interface ReportApi {
   // wiring
   // is already here. Do NOT add constraints to the Boolean flags.
   @PostMapping("/print")
-  ResponseEntity<StreamingResponseBody> printSchedules(
+  ResponseEntity<Resource> printSchedules(
       @RequestParam(required = false) String millId,
       @RequestParam(required = false) String year,
       @Valid @RequestBody PrintRequest request,
@@ -117,7 +116,7 @@ public interface ReportApi {
    * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
    */
   @GetMapping("/mill-information")
-  ResponseEntity<StreamingResponseBody> getMillInformationPdf(
+  ResponseEntity<Resource> getMillInformationPdf(
       @RequestParam(required = false) String year, Authentication authentication);
 
   /**
@@ -156,7 +155,7 @@ public interface ReportApi {
    * @return 200 streaming the PDF ({@code application/pdf} + attachment Content-Disposition)
    */
   @GetMapping("/mill-information/{millId}")
-  ResponseEntity<StreamingResponseBody> getMillDrillDownPdf(
+  ResponseEntity<Resource> getMillDrillDownPdf(
       @PathVariable long millId,
       @RequestParam(required = false) String year,
       Authentication authentication);

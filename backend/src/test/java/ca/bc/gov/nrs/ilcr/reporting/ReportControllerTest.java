@@ -15,7 +15,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
-import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,11 +26,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * Unit tests for the report endpoints' guards and response shape.
@@ -104,7 +104,7 @@ class ReportControllerTest {
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
     exportWrites();
 
-    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+    ResponseEntity<Resource> response = controller.getMillInformationPdf("2021", null);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
@@ -112,14 +112,15 @@ class ReportControllerTest {
         .isEqualTo("attachment; filename=\"mills_print.pdf\"");
 
     // The export has ALREADY run — before the ResponseEntity existed, which is the whole point.
-    // (It used to be asserted the other way round: writeTo was deferred into the streaming body,
+    // (It used to be asserted the other way round: writeTo was deferred into a streaming body,
     // which is exactly what put export failures past the point of no return.)
     verify(renderedReport).writeTo(any());
     verify(renderedReport).close();
 
-    ByteArrayOutputStream sent = new ByteArrayOutputStream();
-    response.getBody().writeTo(sent);
-    assertThat(sent.toByteArray()).isEqualTo(EXPORTED);
+    // The body is the finished file, not a deferred callback.
+    try (InputStream sent = response.getBody().getInputStream()) {
+      assertThat(sent.readAllBytes()).isEqualTo(EXPORTED);
+    }
   }
 
   @Test
@@ -130,7 +131,7 @@ class ReportControllerTest {
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
     exportWrites();
 
-    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+    ResponseEntity<Resource> response = controller.getMillInformationPdf("2021", null);
 
     // Content-Length is only expressible because the export finished first. It length-delimits the
     // body, so a transfer cut short after the commit fails the request at the browser instead of
@@ -164,37 +165,30 @@ class ReportControllerTest {
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
     exportWrites();
 
-    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+    ResponseEntity<Resource> response = controller.getMillInformationPdf("2021", null);
     assertThat(spooled()).as("held until the body is sent").hasSize(1);
 
-    response.getBody().writeTo(new ByteArrayOutputStream());
+    // The converter closes the stream once the response is written; that is what reaps the spool.
+    response.getBody().getInputStream().close();
     assertThat(spooled()).as("reaped after the body is sent").isEmpty();
   }
 
   @Test
-  @DisplayName("a client that disconnects mid-download still gets its spool file cleaned up")
-  void spoolIsReapedWhenTheTransferFails() throws Exception {
+  @DisplayName("a partially read body still reaps its spool when the stream closes")
+  void spoolIsReapedWhenTheTransferIsCutShort() throws Exception {
     yearsAre(2021);
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
     exportWrites();
 
-    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
-    OutputStream broken =
-        new OutputStream() {
-          @Override
-          public void write(int b) throws java.io.IOException {
-            throw new java.io.IOException("broken pipe");
-          }
+    ResponseEntity<Resource> response = controller.getMillInformationPdf("2021", null);
 
-          @Override
-          public void write(byte[] b, int off, int len) throws java.io.IOException {
-            throw new java.io.IOException("broken pipe");
-          }
-        };
-
-    assertThatThrownBy(() -> response.getBody().writeTo(broken))
-        .isInstanceOf(java.io.IOException.class);
-    assertThat(spooled()).as("try-with-resources reaps on the failure path too").isEmpty();
+    // A client that disconnects mid-download: the converter's copy aborts and it closes the stream
+    // having read only part of the file. Cleanup hangs off close(), not off completion, so the
+    // spool goes either way.
+    try (InputStream body = response.getBody().getInputStream()) {
+      assertThat(body.read()).isNotEqualTo(-1);
+    }
+    assertThat(spooled()).isEmpty();
   }
 
   @Test
@@ -249,8 +243,7 @@ class ReportControllerTest {
     when(reportService.renderMillInformation(730L, 2021))
         .thenReturn(new ReportService.MillDrillDown("7300", renderedReport));
 
-    ResponseEntity<StreamingResponseBody> response =
-        controller.getMillDrillDownPdf(730L, "2021", null);
+    ResponseEntity<Resource> response = controller.getMillDrillDownPdf(730L, "2021", null);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);

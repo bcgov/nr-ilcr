@@ -2,8 +2,6 @@ package ca.bc.gov.nrs.ilcr.support;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import org.flywaydb.core.Flyway;
@@ -13,7 +11,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -98,18 +95,24 @@ public abstract class AbstractOracleIT {
   }
 
   /**
-   * Perform a request whose 200 response STREAMS its body via {@code StreamingResponseBody} (the
-   * report/print PDF endpoints, Story 29.2). A streaming controller returns after starting async
-   * processing, so the final response — status, headers, and PDF body — is only available after an
-   * async dispatch; this asserts async started, then dispatches and returns the {@link
-   * ResultActions} for the caller to chain its {@code andExpect(...)} on. Use it only for the
-   * success path: the 400/404/409 guards throw synchronously (before the body streams) and never
-   * start async, so those tests keep calling {@code mockMvc.perform(...)} directly.
+   * Perform a request for one of the report/print PDF endpoints.
+   *
+   * <p>Kept as a named helper even though it is now a plain {@code perform}: it marks which tests
+   * are exercising the PDF endpoints, and it is where the async dance used to live, so the reason
+   * that dance is gone belongs here rather than in a commit message.
+   *
+   * <p>These endpoints no longer answer with {@code StreamingResponseBody}. The export now finishes
+   * BEFORE the response is built, so the body is a spooled file served as a {@link
+   * org.springframework.core.io.Resource} on the request thread — nothing is deferred to an async
+   * dispatch, and asserting {@code asyncStarted()} would now fail. Writing from an async thread
+   * while the response declared a {@code Content-Length} is exactly what raced: Spring Security's
+   * {@code OnCommittedResponseWrapper} fires its response-committed callback the moment the written
+   * count reaches that length, adding security headers from the async thread into a header map the
+   * main thread was reading — an intermittent {@code ConcurrentModificationException} on precisely
+   * these tests.
    */
   protected ResultActions streamPdf(MockHttpServletRequestBuilder request) throws Exception {
-    MvcResult asyncResult =
-        mockMvc.perform(request).andExpect(request().asyncStarted()).andReturn();
-    return mockMvc.perform(asyncDispatch(asyncResult));
+    return mockMvc.perform(request);
   }
 
   @DynamicPropertySource

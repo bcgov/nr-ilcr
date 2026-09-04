@@ -4,17 +4,16 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import ca.bc.gov.nrs.ilcr.reporting.api.ReportApi;
-import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * Report PDF endpoints. Authorizes by naming the action (AD-7), delegates mill/year validation to
@@ -73,7 +72,7 @@ public class ReportController implements ReportApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<StreamingResponseBody> getSchedule9Pdf(
+  public ResponseEntity<Resource> getSchedule9Pdf(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     // Fill synchronously (may throw the empty-schedule 404) BEFORE the response is built. The
@@ -86,7 +85,7 @@ public class ReportController implements ReportApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
-  public ResponseEntity<StreamingResponseBody> printSchedules(
+  public ResponseEntity<Resource> printSchedules(
       String millId, String year, PrintRequest request, Authentication authentication) {
     // Guard order: mill/year context first (400/404/409), THEN the selection ladder before any
     // fill.
@@ -98,7 +97,7 @@ public class ReportController implements ReportApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'GENERATE_MILL_REPORTS')")
-  public ResponseEntity<StreamingResponseBody> getMillInformationPdf(
+  public ResponseEntity<Resource> getMillInformationPdf(
       String year, Authentication authentication) {
     // No MillContextService call here, deliberately: this report has no mill and no working context
     // (BR-08). The year is the only input, and it is the only thing to validate.
@@ -109,7 +108,7 @@ public class ReportController implements ReportApi {
 
   @Override
   @PreAuthorize("@permissions.hasPermission(authentication, 'GENERATE_MILL_REPORTS')")
-  public ResponseEntity<StreamingResponseBody> getMillDrillDownPdf(
+  public ResponseEntity<Resource> getMillDrillDownPdf(
       long millId, String year, Authentication authentication) {
     // No MillContextService call here either, and for one MORE reason than the all-mills endpoint
     // above. Beyond having no Home working context, this endpoint must not reject a CLOSED mill:
@@ -160,7 +159,7 @@ public class ReportController implements ReportApi {
    * global handler as a 500 {@code undefinedError} with no bytes written, which is exactly the "no
    * file, inline retryable error" the print criteria ask for (MRPT-002 S07 / MRPT-004 S05).
    *
-   * <p>Previously the export ran inside the {@link StreamingResponseBody}, on the far side of the
+   * <p>Previously the export ran inside a {@code StreamingResponseBody}, on the far side of the
    * commit. A {@code JRException} or an async timeout there could not change the already-sent 200 +
    * {@code application/pdf} headers, so the browser saved a truncated file and the only defence was
    * the client inspecting the bytes — which cannot be made sound, because a cut PDF can still carry
@@ -172,50 +171,28 @@ public class ReportController implements ReportApi {
    * two, EVERY failed export is distinguishable from a successful one — an error response before
    * the commit, a failed request after it — and neither leaves a file on disk.
    *
-   * <p>Heap is unaffected (Story 29.2): the PDF goes to disk, never to a {@code byte[]}, and the
-   * {@link StreamingResponseBody} copies it out in a small buffer. try-with-resources deletes the
-   * spool on success, on IO failure and on client disconnect alike.
+   * <p>The body is a {@link Resource}, written synchronously, NOT a {@code StreamingResponseBody}.
+   * Async streaming was there to keep the export off the heap while it ran, and it has nothing left
+   * to do now that the export finishes first — while combining it with a declared {@code
+   * Content-Length} actively raced (see {@link ExportedPdf#asResource()}). The heap is unaffected
+   * either way: the converter copies from disk in a small buffer, and the spool deletes itself when
+   * the response stream closes.
    */
-  // S2139 (log and rethrow) is suppressed deliberately, and only here. The rule's premise is that
-  // the rethrown exception already carries what the log line would say — which is false in this
-  // case: the mill, year and filename live in this method's scope, never in the IOException, so
-  // rethrowing alone loses them. Wrapping the cause to carry them instead would be worse, because
-  // the container identifies a client disconnect BY EXCEPTION TYPE (ClientAbortException) to keep
-  // cancelled downloads out of the error log; hiding it inside another IOException would turn every
-  // cancelled download into a logged server error. So: log the context at WARN, rethrow the
-  // original untouched so the container still aborts the response and classifies it correctly.
-  @SuppressWarnings("java:S2139")
-  private ResponseEntity<StreamingResponseBody> pdfResponse(
+  private ResponseEntity<Resource> pdfResponse(
       String filename, Long millId, int year, RenderedReport report) {
     // Before the ResponseEntity exists, deliberately: a throw here is still a normal 500.
     ExportedPdf pdf = pdfSpooler.spool(report);
-    StreamingResponseBody body =
-        out -> {
-          try (pdf) {
-            pdf.writeTo(out);
-          } catch (IOException | RuntimeException e) {
-            // WARN, not ERROR. Nothing about the REPORT can fail here any more — it is already a
-            // complete file — so what reaches this catch is the transfer: most often the user
-            // navigating away or cancelling the download, which is not a fault and must not raise
-            // the 5xx rate. It is also no longer silent: the client was given a Content-Length, so
-            // it rejects the short body and can retry. Logged with the mill/year anyway, because it
-            // is still the only server-side signal for a genuine "the download keeps dying".
-            log.warn(
-                "Report transfer failed after the response was committed for mill {} year {} ({}) — "
-                    + "the client receives a short body against the declared Content-Length and "
-                    + "rejects it, so no file is saved",
-                millId == null ? "n/a (not mill-scoped)" : millId,
-                year,
-                filename,
-                e);
-            throw e;
-          }
-        };
+    log.debug(
+        "Sending {} ({} bytes) for mill {} year {}",
+        filename,
+        pdf.size(),
+        millId == null ? "n/a (not mill-scoped)" : millId,
+        year);
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)
         .contentLength(pdf.size())
         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-        .body(body);
+        .body(pdf.asResource());
   }
 
   /**

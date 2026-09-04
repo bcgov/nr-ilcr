@@ -14,9 +14,10 @@ import org.springframework.web.bind.annotation.RequestParam;
  * ADMIN-only {@code GENERATE_MILL_REPORTS} authorization.
  *
  * <p>It lives in its own package rather than as a fourth method on {@code ReportApi} because that
- * contract is explicitly PDF-streaming — every method there returns {@code StreamingResponseBody} —
- * and a {@code ResponseEntity<List<…>>} would break its single-shape story. {@code CodeTableApi} is
- * the comparator this follows: an ADMIN-only, read-only JSON list.
+ * contract is explicitly a PDF download — every method there returns a {@code
+ * ResponseEntity<Resource>} of {@code application/pdf} — and a {@code ResponseEntity<List<…>>}
+ * would break its single-shape story. {@code CodeTableApi} is the comparator this follows: an
+ * ADMIN-only, read-only JSON list.
  */
 @RequestMapping("/api/v1/reports")
 public interface MillReportStatusApi {

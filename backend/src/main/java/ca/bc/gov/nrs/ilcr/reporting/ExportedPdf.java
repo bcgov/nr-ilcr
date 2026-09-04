@@ -1,12 +1,16 @@
 package ca.bc.gov.nrs.ilcr.reporting;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 
 /**
  * A COMPLETE PDF on disk, ready to be sent as the response body: the whole export has already
@@ -58,20 +62,62 @@ class ExportedPdf implements AutoCloseable {
   }
 
   /**
-   * Copy the finished PDF to {@code out} — the servlet output stream.
+   * Copy the finished PDF to {@code out}. Used by tests and by any caller that owns the stream; the
+   * response itself goes out through {@link #asResource()}.
    *
-   * <p>The only work left on the committed response is this copy, so the only thing that can still
-   * fail here is the transfer itself (a client disconnect, a container IO error). That failure
-   * truncates a body the client has been told the length of, so the client rejects the request; it
-   * cannot masquerade as a complete download. {@link Files#copy} streams through a small buffer and
-   * does not close {@code out}, which the container owns.
+   * <p>{@link Files#copy} streams through a small buffer and does not close {@code out}.
    */
   void writeTo(OutputStream out) throws IOException {
     Files.copy(file, out);
   }
 
   /**
+   * The finished PDF as a response body, deleting itself once the response has been written.
+   *
+   * <p>A {@link Resource} rather than a {@code StreamingResponseBody}, and that is a deliberate
+   * reversal of how these endpoints used to answer. Streaming existed to keep the EXPORT off the
+   * heap while it ran; now the export is over before the response exists, and what is left is a
+   * finished file. Spring's resource converter serves that from disk in a small buffer — the heap
+   * stays flat either way — and writes it on the REQUEST thread.
+   *
+   * <p>The request thread is the point. Writing from the async executor while the container thread
+   * still held the response is what made the declared {@code Content-Length} dangerous: Spring
+   * Security's {@code OnCommittedResponseWrapper} fires its response-committed callback the moment
+   * the written byte count reaches that length, and that callback adds security headers — from the
+   * async thread, into a header map the other thread was reading. Intermittent {@code
+   * ConcurrentModificationException}, and only ever on the endpoints that declared a length. One
+   * thread writing means the callback fires on that same thread, in order, and the race cannot
+   * exist. Content-Length keeps its meaning; nothing about the failure contract changes.
+   *
+   * <p>Deletion rides on the stream's {@code close()}, which the converter always calls — on a
+   * completed write and on a client disconnect alike. A response that never opens the stream at all
+   * leaves the file for the spool directory's own reaping; {@link #close()} stays available for the
+   * paths that never reach a response.
+   */
+  Resource asResource() {
+    return new FileSystemResource(file) {
+      @Override
+      public InputStream getInputStream() throws IOException {
+        InputStream in = super.getInputStream();
+        return new FilterInputStream(in) {
+          @Override
+          public void close() throws IOException {
+            try {
+              super.close();
+            } finally {
+              ExportedPdf.this.close();
+            }
+          }
+        };
+      }
+    };
+  }
+
+  /**
    * Delete the spooled file.
+   *
+   * <p>Safe to call more than once — {@code deleteIfExists} is idempotent — because the resource's
+   * stream close and an explicit failure-path close can both reach it.
    *
    * <p>A failure to delete is logged and swallowed rather than thrown: by the time this runs the
    * response has either been sent in full or already failed, and turning a leftover temp file into
