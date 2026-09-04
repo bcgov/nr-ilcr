@@ -74,30 +74,47 @@ class PdfSpooler {
    * @return the complete PDF on disk, whose {@code close()} deletes it
    */
   ExportedPdf spool(RenderedReport report) {
-    Path file = createSpoolFile();
-    try {
-      // The report closes AFTER the stream (reverse declaration order), so the export is flushed
-      // and the file complete before the virtualizer goes away and before size() is read.
-      try (report;
-          OutputStream out = new BufferedOutputStream(Files.newOutputStream(file))) {
-        report.writeTo(out);
+    // The report is the OUTERMOST resource, so it is closed even when the spool file cannot be
+    // created. It owns the fill's swap file, and that is the one thing here whose leak survives the
+    // request: a spool that is never opened leaves nothing behind, but an unclosed virtualizer
+    // leaves a swap file on the same volume, and a directory that fails once tends to fail for
+    // every request after it. Acquiring the file inside this block rather than before it is the
+    // whole reason it is shaped this way.
+    try (report) {
+      Path file = createSpoolFile();
+      try {
+        // The stream closes BEFORE size() is read, so the export is flushed and the file complete.
+        try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(file))) {
+          report.writeTo(out);
+        }
+        long size = Files.size(file);
+        log.debug("Spooled {} bytes of exported PDF to {}", size, file);
+        return new ExportedPdf(file, size);
+      } catch (IOException e) {
+        delete(file);
+        throw new ReportGenerationException("Failed to spool the exported report to disk", e);
+      } catch (RuntimeException e) {
+        // Includes the ReportGenerationException writeTo raises for a JRException — the export
+        // failure this whole class exists to keep in front of the response commit.
+        delete(file);
+        throw e;
       }
-      long size = Files.size(file);
-      log.debug("Spooled {} bytes of exported PDF to {}", size, file);
-      return new ExportedPdf(file, size);
-    } catch (IOException e) {
-      delete(file);
-      throw new ReportGenerationException("Failed to spool the exported report to disk", e);
-    } catch (RuntimeException e) {
-      // Includes the ReportGenerationException writeTo raises for a JRException — the export
-      // failure this whole class exists to keep in front of the response commit.
-      delete(file);
-      throw e;
     }
   }
 
+  /**
+   * A fresh empty spool file, creating the spool directory if it is not there yet.
+   *
+   * <p>{@code createDirectories} is here rather than in the constructor deliberately. A configured
+   * {@code ilcr.reporting.spool-directory} that does not exist at runtime — an unmounted volume, a
+   * fresh container — would otherwise fail every report with a {@code NoSuchFileException}; but
+   * doing it at construction would fail BEAN CREATION, taking the whole application down over a
+   * directory only the report endpoints need. Per-request keeps the blast radius to reports, and it
+   * is idempotent and one stat call when the directory already exists.
+   */
   private Path createSpoolFile() {
     try {
+      Files.createDirectories(directory);
       return Files.createTempFile(directory, "ilcr-report-", ".pdf");
     } catch (IOException e) {
       throw new ReportGenerationException(

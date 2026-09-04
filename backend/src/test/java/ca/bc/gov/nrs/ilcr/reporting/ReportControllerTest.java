@@ -256,6 +256,25 @@ class ReportControllerTest {
   }
 
   @Test
+  @DisplayName("a padded mill number is stripped, so both sides derive the same filename")
+  void drillDownFilenameStripsPadding() {
+    yearsAre(2021);
+    // The frontend's millNumberOrNull trims before building the name it saves under, and the
+    // frontend is only allowed to skip parsing this header BECAUSE the two derivations agree. A
+    // padded MILL_NUMBER — a nullable text column with no non-blank constraint — used to make them
+    // disagree: "mill_ 7300 _print.pdf" here against "mill_7300_print.pdf" there.
+    when(reportService.renderMillInformation(730L, 2021))
+        .thenReturn(new ReportService.MillDrillDown("  7300  ", renderedReport));
+
+    assertThat(
+            controller
+                .getMillDrillDownPdf(730L, "2021", null)
+                .getHeaders()
+                .getFirst(HttpHeaders.CONTENT_DISPOSITION))
+        .isEqualTo("attachment; filename=\"mill_7300_print.pdf\"");
+  }
+
+  @Test
   @DisplayName("a mill with no mill number names the file by mill id, never \"mill_null\"")
   void drillDownFilenameFallsBackToTheMillId() {
     // MILL.MILL_NUMBER is NUMBER(15) and nullable (V1__the_schedule1_snapshot.sql:10), so NULL is

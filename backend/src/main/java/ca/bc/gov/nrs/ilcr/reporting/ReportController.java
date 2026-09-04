@@ -139,7 +139,13 @@ public class ReportController implements ReportApi {
    * agree: see {@code millReportStatus/index.tsx}.
    */
   private static String drillDownFilename(String millNumber, long millId) {
-    String name = millNumber == null || millNumber.isBlank() ? String.valueOf(millId) : millNumber;
+    // Stripped, because the frontend's millNumberOrNull trims and this must produce the SAME name
+    // — the two derivations agreeing is the entire reason the frontend is allowed not to parse this
+    // header. MILL_NUMBER is a nullable text column with no non-blank constraint, so a padded value
+    // is a reachable delivery state; isBlank already agrees with the frontend on whitespace-only,
+    // and this makes them agree on padding too.
+    String name =
+        millNumber == null || millNumber.isBlank() ? String.valueOf(millId) : millNumber.strip();
     return "mill_" + name + "_print.pdf";
   }
 

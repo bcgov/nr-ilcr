@@ -1189,6 +1189,47 @@ describe('Mill Status Report', () => {
     expect(downloaded.mock.calls.map((call) => call[1])).toEqual(['mill_9001_print.pdf'])
   })
 
+  test('a stale drill-down settling does not re-enable a row the CURRENT one is still fetching', async () => {
+    // Review round 2. `.finally` deleted its mill from the in-flight set unconditionally, justified
+    // as "the abandon already emptied the set, so this is a no-op". That holds only while the mill
+    // stays out of the set — and this sequence puts it back.
+    //
+    // Changing the year abandons in-flight downloads but does NOT clear the rows (they still belong
+    // to the applied year until Apply replaces them), so the same mill is still on screen and still
+    // clickable. Click it again and it re-enters the set under the NEW generation; the old request
+    // then settles and deletes an entry it no longer owns.
+    await applied2021()
+    const stale = heldDrillDown(730)
+
+    await userEvent.click(millButton('MILL INFO FULL'))
+    await stale.started()
+    await waitFor(() => expectAdvertisedDisabled('MILL INFO FULL', true))
+
+    // Bumps the generation, empties the set, leaves the 2021 rows up.
+    await userEvent.selectOptions(screen.getByLabelText(YEAR_LABEL), '2019')
+    await waitFor(() => expectAdvertisedDisabled('MILL INFO FULL', false))
+
+    const current = heldDrillDown(730)
+    await userEvent.click(millButton('MILL INFO FULL'))
+    await current.started()
+    await waitFor(() => expectAdvertisedDisabled('MILL INFO FULL', true))
+
+    // The stale request lands while the current one is still open. Before the fix this re-enabled
+    // the row, so the administrator could fire a duplicate request for a mill already downloading.
+    stale.releaseWithPdf()
+    await waitFor(() => expect(stale.requested).toHaveBeenCalledTimes(1))
+    expectAdvertisedDisabled('MILL INFO FULL', true)
+    await userEvent.click(millButton('MILL INFO FULL'))
+    expect(current.requested).toHaveBeenCalledTimes(1)
+
+    // The current request still owns its own removal, so the row recovers normally — and only it
+    // saves a file, because the stale one is dropped by the generation check in `.then`.
+    current.releaseWithPdf()
+    await waitFor(() => expectAdvertisedDisabled('MILL INFO FULL', false))
+    await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1))
+    expect(downloaded.mock.calls[0][1]).toBe('mill_7300_print.pdf')
+  })
+
   test('re-applying the SAME year does NOT abandon an in-flight drill-down', async () => {
     // The other side of the P2 guard, and the reason it hangs off a real load rather than off every
     // Apply press: re-applying the same year does not refetch and does not replace the rows, so a

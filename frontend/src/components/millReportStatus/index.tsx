@@ -268,16 +268,25 @@ const MillReportStatus: FC = () => {
         setPdfError(detail)
         setPdfStatus(`The mill information report for ${label} failed. ${detail}`)
       })
-      .finally(() =>
+      .finally(() => {
+        // Two conditions, and the generation one is NOT redundant. `abandonDownloads` already
+        // emptied the set for a stale request, so the delete looked like a harmless no-op — but
+        // only while the mill stays out of the set. Re-apply the year and click the SAME mill
+        // again and it is back in, belonging to the new generation; the old request then settles
+        // and deletes an entry it does not own, re-enabling a row whose request is still in
+        // flight. Skipping the delete when stale is safe precisely because the abandon already
+        // cleared it, and the live request owns its own removal.
+        if (generation !== tableGenerationRef.current) {
+          return
+        }
         // Removes only ITS OWN mill, so a settling request cannot re-enable a row that is still
-        // fetching or clear one that never started. Runs even when stale, where the set has already
-        // been emptied and the delete is a harmless no-op.
+        // fetching or clear one that never started.
         setDownloadingMillIds((current) => {
           const next = new Set(current)
           next.delete(row.millId)
           return next
-        }),
-      )
+        })
+      })
   }
 
   /**
