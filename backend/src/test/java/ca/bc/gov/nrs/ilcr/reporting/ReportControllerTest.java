@@ -13,10 +13,14 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
@@ -44,7 +48,13 @@ class ReportControllerTest {
   // MillContextService (Story 19.2 hoisted it out of a private method on the controller), and a
   // MOCK of it would answer 0 for every year and silently bypass the two 400s these tests assert.
   // The REAL guard over the mocked context service keeps `yearsAre(...)` driving the decision.
+  //
+  // The spooler is real for the same class of reason: it is the component that moves the export in
+  // FRONT of the response commit, so mocking it would erase the very ordering these tests exist to
+  // pin. Pointed at a @TempDir, so the spool files are visible to assertions and reaped by JUnit.
   private ReportController controller;
+
+  @TempDir private Path spoolDirectory;
 
   @BeforeEach
   void createController() {
@@ -53,7 +63,30 @@ class ReportControllerTest {
             millContextService,
             reportService,
             printService,
-            new ReportYearGuard(millContextService));
+            new ReportYearGuard(millContextService),
+            new PdfSpooler(spoolDirectory.toString()));
+  }
+
+  /** The bytes a stubbed export writes, standing in for a real Jasper PDF. */
+  private static final byte[] EXPORTED =
+      "%PDF-1.4 ... %%EOF".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+  /** Make the mocked report export {@link #EXPORTED} to whatever stream the spooler hands it. */
+  private void exportWrites() {
+    org.mockito.Mockito.doAnswer(
+            invocation -> {
+              ((OutputStream) invocation.getArgument(0)).write(EXPORTED);
+              return null;
+            })
+        .when(renderedReport)
+        .writeTo(org.mockito.ArgumentMatchers.any());
+  }
+
+  /** The spool files still on disk — empty once a response has been fully streamed. */
+  private java.util.List<Path> spooled() throws Exception {
+    try (var files = Files.list(spoolDirectory)) {
+      return files.toList();
+    }
   }
 
   private void yearsAre(int... years) {
@@ -66,6 +99,7 @@ class ReportControllerTest {
   void openYearStreamsThePdf() throws Exception {
     yearsAre(2021, 2020);
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
+    exportWrites();
 
     ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
 
@@ -74,11 +108,90 @@ class ReportControllerTest {
     assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
         .isEqualTo("attachment; filename=\"mills_print.pdf\"");
 
-    // The body streams on demand, so nothing is written until the container consumes it.
-    verify(renderedReport, never()).writeTo(org.mockito.ArgumentMatchers.any());
-    response.getBody().writeTo(new ByteArrayOutputStream());
+    // The export has ALREADY run — before the ResponseEntity existed, which is the whole point.
+    // (It used to be asserted the other way round: writeTo was deferred into the streaming body,
+    // which is exactly what put export failures past the point of no return.)
     verify(renderedReport).writeTo(org.mockito.ArgumentMatchers.any());
     verify(renderedReport).close();
+
+    ByteArrayOutputStream sent = new ByteArrayOutputStream();
+    response.getBody().writeTo(sent);
+    assertThat(sent.toByteArray()).isEqualTo(EXPORTED);
+  }
+
+  @Test
+  @DisplayName(
+      "the response declares the exported PDF's exact length, so a short read is detectable")
+  void responseCarriesContentLength() {
+    yearsAre(2021);
+    when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
+    exportWrites();
+
+    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+
+    // Content-Length is only expressible because the export finished first. It length-delimits the
+    // body, so a transfer cut short after the commit fails the request at the browser instead of
+    // arriving as a plausible-looking short PDF.
+    assertThat(response.getHeaders().getContentLength()).isEqualTo(EXPORTED.length);
+  }
+
+  @Test
+  @DisplayName("an export failure throws before any response exists, and leaves no spool behind")
+  void exportFailureNeverBecomesAResponse() throws Exception {
+    yearsAre(2021);
+    when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
+    org.mockito.Mockito.doThrow(new ReportGenerationException("export blew up", null))
+        .when(renderedReport)
+        .writeTo(org.mockito.ArgumentMatchers.any());
+
+    // The failure Paulo's review was about. It now surfaces as an ordinary throw on the synchronous
+    // path — so the global handler renders 500 undefinedError and the caller gets no file — rather
+    // than as a truncated 200 the browser saves.
+    assertThatThrownBy(() -> controller.getMillInformationPdf("2021", null))
+        .isInstanceOf(ReportGenerationException.class);
+
+    verify(renderedReport).close();
+    assertThat(spooled()).as("the partial spool is deleted").isEmpty();
+  }
+
+  @Test
+  @DisplayName("the spooled file is deleted once the body has been streamed")
+  void spoolIsReapedAfterStreaming() throws Exception {
+    yearsAre(2021);
+    when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
+    exportWrites();
+
+    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+    assertThat(spooled()).as("held until the body is sent").hasSize(1);
+
+    response.getBody().writeTo(new ByteArrayOutputStream());
+    assertThat(spooled()).as("reaped after the body is sent").isEmpty();
+  }
+
+  @Test
+  @DisplayName("a client that disconnects mid-download still gets its spool file cleaned up")
+  void spoolIsReapedWhenTheTransferFails() throws Exception {
+    yearsAre(2021);
+    when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
+    exportWrites();
+
+    ResponseEntity<StreamingResponseBody> response = controller.getMillInformationPdf("2021", null);
+    OutputStream broken =
+        new OutputStream() {
+          @Override
+          public void write(int b) throws java.io.IOException {
+            throw new java.io.IOException("broken pipe");
+          }
+
+          @Override
+          public void write(byte[] b, int off, int len) throws java.io.IOException {
+            throw new java.io.IOException("broken pipe");
+          }
+        };
+
+    assertThatThrownBy(() -> response.getBody().writeTo(broken))
+        .isInstanceOf(java.io.IOException.class);
+    assertThat(spooled()).as("try-with-resources reaps on the failure path too").isEmpty();
   }
 
   @Test

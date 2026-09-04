@@ -238,10 +238,13 @@ const MillReportStatus: FC = () => {
         responseType: 'blob',
       })
       .then(async (response) => {
-        // A post-commit export failure streams a TRUNCATED 200 application/pdf: once the headers
-        // are out the backend cannot turn it into problem+json, so this is the only thing that can
-        // tell a whole PDF from half of one. Throwing hands it to the .catch below, which is what
-        // raises the retryable banner and leaves nothing on disk (MRPT-002 S07 / MRPT-004 S05).
+        // Belt and braces. A generation failure no longer reaches here at all: the backend exports
+        // the PDF to a temp file BEFORE it commits a status, so it answers 500 problem+json and
+        // this .then never runs. A transfer cut short after the commit is caught by the
+        // Content-Length the backend now sends — axios rejects it as a network error. Both land in
+        // the .catch below with no file saved (MRPT-002 S07 / MRPT-004 S05). What this still buys
+        // is the case neither of those covers: a length-complete 200 that is not a PDF, e.g. a
+        // gateway or SSO interstitial answering for the API.
         await assertCompletePdf(response.data as Blob)
         if (generation !== tableGenerationRef.current) {
           // The table moved on while this was in flight. Dropping the blob is the WHOLE point:

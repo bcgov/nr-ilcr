@@ -138,7 +138,8 @@ const PrintSchedules: FC = () => {
         .post(`${PRINT_PATH}?millId=${String(millId)}&year=${String(year)}`, body, {
           responseType: 'blob',
         })
-      // A post-commit export failure streams a TRUNCATED 200 application/pdf. Checked before the
+      // Belt and braces — see assertCompletePdf; the backend now spools the export before it
+      // commits a status, so a failed render is a 500 rather than a short 200. Checked before the
       // freshness re-read below so the save stays the last thing that happens.
       await assertCompletePdf(response.data as Blob)
       if (!dispatchedCurrent()) {

@@ -68,9 +68,11 @@ const MillInformationReport: FC = () => {
     api()
       .get(REPORT_PATH, { params: { year: selectedYear }, responseType: 'blob' })
       .then(async (response) => {
-        // A post-commit export failure streams a TRUNCATED 200 application/pdf that the browser
-        // would otherwise save as a success. Throwing routes it to the .catch below, which keeps
-        // the selected year so Generate Report retries it.
+        // Belt and braces — see assertCompletePdf. A generation failure is now a 500
+        // problem+json (the backend exports before it commits a status) and a cut transfer is a
+        // Content-Length short read axios rejects, so neither reaches this .then. Throwing here
+        // still routes the leftover case to the .catch below, which keeps the selected year so
+        // Generate Report retries it.
         await assertCompletePdf(response.data as Blob)
         triggerDownload(response.data as Blob, PDF_FILENAME)
       })

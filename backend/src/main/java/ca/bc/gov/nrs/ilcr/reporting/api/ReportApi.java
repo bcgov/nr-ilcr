@@ -18,10 +18,20 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  *
  * <p>The PDF is STREAMED to the servlet output stream: {@code
  * ResponseEntity<StreamingResponseBody>} with {@code application/pdf} (Story 29.2), so a big "all
- * schedules" print is written straight to the response instead of buffered whole as a {@code
- * byte[]} on the heap. The mill/year/selection guards (400/404/409) still run — and may reject —
- * BEFORE the response is committed, because the fill happens synchronously in the controller and
- * only the export streams. Later Epic 20 report stories copy this shape.
+ * schedules" print is never buffered whole as a {@code byte[]} on the heap. Later Epic 20 report
+ * stories copy this shape.
+ *
+ * <p><b>Every one of these endpoints either produces a whole PDF or produces no file at all.</b>
+ * That is a guarantee, not a best effort, and it is what the ordering in {@code ReportController}
+ * buys: the guards, the fill AND the export all complete on the synchronous path, before a status
+ * code is chosen, so any failure among them is an ordinary {@code problem+json} response. The
+ * export writes to a temp file rather than to the response (see {@code PdfSpooler}), which is what
+ * lets it fail that way and what keeps the heap flat at the same time.
+ *
+ * <p>Only the finished file's bytes are streamed, under a real {@code Content-Length}. A transfer
+ * interrupted after the commit is therefore a short read against a declared length, which the
+ * browser fails outright — so it cannot be mistaken for a complete download either. There is no
+ * remaining path on which a caller receives a partial PDF as a success.
  *
  * <p>{@code millId}/{@code year} arrive as OPTIONAL raw Strings — like the Schedule read endpoints
  * — so the shared {@code MillContextService} guard can emit the verbatim ERR-003 for missing,

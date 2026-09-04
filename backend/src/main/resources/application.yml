@@ -18,12 +18,18 @@ spring:
       accept-float-as-int: false
   mvc:
     async:
-      # Story 29.2 — report/print PDFs now stream via StreamingResponseBody, so the export runs under
-      # the async request clock. Set it EXPLICITLY (rather than inheriting the container default) so a
-      # slow or large "all schedules" render has a deliberate ceiling. On timeout Spring completes the
-      # response; for an already-committed streamed PDF that means a truncated body (logged at ERROR in
-      # ReportController) — so size this to the worst-case render, not tight. 120s covers a big combined
-      # print with headroom; raise via SPRING_MVC_ASYNC_REQUEST_TIMEOUT if a legitimate render exceeds it.
+      # Story 29.2 — report/print PDFs stream via StreamingResponseBody, so the async clock covers the
+      # response body. Set it EXPLICITLY rather than inheriting the container default.
+      #
+      # It no longer bounds the RENDER. Both the fill and the export now finish on the synchronous
+      # request thread (ReportController spools the PDF to a temp file before building the response),
+      # precisely so that a failure there can still be turned into problem+json instead of a truncated
+      # 200. What runs under this timeout is only the copy of a finished file to the socket, which is
+      # IO-bound and fast — so 120s is now generous rather than a worst-case render budget.
+      #
+      # A timeout here still truncates the body, but that is no longer silent: the response carries a
+      # Content-Length, so the client sees a short read and rejects the download rather than saving a
+      # partial PDF. Raise via SPRING_MVC_ASYNC_REQUEST_TIMEOUT only if slow clients are being cut off.
       request-timeout: ${SPRING_MVC_ASYNC_REQUEST_TIMEOUT:120000}
   datasource:
     url: ${SPRING_DATASOURCE_URL:}

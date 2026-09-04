@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.reporting.api.PrintRequest;
 import ca.bc.gov.nrs.ilcr.reporting.api.ReportApi;
+import java.io.IOException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -44,6 +45,7 @@ public class ReportController implements ReportApi {
   private final ReportService reportService;
   private final PrintService printService;
   private final ReportYearGuard reportYearGuard;
+  private final PdfSpooler pdfSpooler;
 
   /**
    * Constructs a new ReportController.
@@ -53,16 +55,20 @@ public class ReportController implements ReportApi {
    * @param printService the print service
    * @param reportYearGuard the shared report-year guard (Story 19.2 hoisted this out of a private
    *     method here so the Mill Report Status endpoint rejects a bad year with identical text)
+   * @param pdfSpooler exports each filled report to a temp file before the response is built, so an
+   *     export failure is a {@code problem+json} error rather than a truncated 200
    */
   public ReportController(
       MillContextService millContextService,
       ReportService reportService,
       PrintService printService,
-      ReportYearGuard reportYearGuard) {
+      ReportYearGuard reportYearGuard,
+      PdfSpooler pdfSpooler) {
     this.millContextService = millContextService;
     this.reportService = reportService;
     this.printService = printService;
     this.reportYearGuard = reportYearGuard;
+    this.pdfSpooler = pdfSpooler;
   }
 
   @Override
@@ -70,9 +76,9 @@ public class ReportController implements ReportApi {
   public ResponseEntity<StreamingResponseBody> getSchedule9Pdf(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    // Fill synchronously (may throw the empty-schedule 404) BEFORE the response is built; only the
-    // export streams, so a rejected render still produces a problem+json error, never a
-    // half-written PDF.
+    // Fill synchronously (may throw the empty-schedule 404) BEFORE the response is built. The
+    // export is synchronous too, inside pdfResponse — only the finished file's bytes are streamed —
+    // so a failure at EITHER stage still produces a problem+json error, never a half-written PDF.
     RenderedReport report = reportService.renderSchedule9(context.millId(), context.year());
     String filename = "schedule9_" + context.millId() + "_" + context.year() + ".pdf";
     return pdfResponse(filename, context.millId(), context.year(), report);
@@ -138,31 +144,51 @@ public class ReportController implements ReportApi {
   }
 
   /**
-   * Stream a filled report as an {@code application/pdf} attachment. The {@link
-   * StreamingResponseBody} exports directly to the servlet output stream (no full-PDF {@code
-   * byte[]} on the heap, Story 29.2) and try-with-resources closes the {@link RenderedReport} on
-   * both success and failure, so the virtualizer's swap file is never leaked. The status + headers
-   * are set on the ResponseEntity here, before any byte is written, so the attachment filename and
-   * content type are always applied.
+   * Send a filled report as an {@code application/pdf} attachment, exporting it BEFORE the response
+   * is built.
    *
-   * <p>An export failure surfaces DIFFERENTLY from the pre-fill guards: by the time bytes are
-   * written the 200 + {@code application/pdf} headers are already committed, so no
-   * {@code @ExceptionHandler} can turn it into a {@code problem+json} — the client just gets a
-   * truncated PDF. It is therefore logged at ERROR with the mill/year (the only server-side signal
-   * ops can correlate with a user's "the PDF won't open") before being rethrown so the container
-   * aborts the response. The async render runs under {@code spring.mvc.async.request-timeout}; a
-   * timeout produces the same truncated shape.
+   * <p>This is the ordering that makes the endpoint's failure contract true. The fill already
+   * happened on the synchronous path; {@link PdfSpooler#spool} now runs the EXPORT there too,
+   * against a temp file. So the last step that can fail for a report reason has finished — and has
+   * either produced a whole PDF or thrown — before a status code is chosen. A throw travels to the
+   * global handler as a 500 {@code undefinedError} with no bytes written, which is exactly the "no
+   * file, inline retryable error" the print criteria ask for (MRPT-002 S07 / MRPT-004 S05).
+   *
+   * <p>Previously the export ran inside the {@link StreamingResponseBody}, on the far side of the
+   * commit. A {@code JRException} or an async timeout there could not change the already-sent 200 +
+   * {@code application/pdf} headers, so the browser saved a truncated file and the only defence was
+   * the client inspecting the bytes — which cannot be made sound, because a cut PDF can still carry
+   * a plausible header and {@code %%EOF} trailer.
+   *
+   * <p>The spooled file also gives the response a real {@code Content-Length}. That closes the
+   * remaining window: the body is length-delimited instead of chunked, so a transfer that stops
+   * part-way is a short read the browser fails outright rather than a file it saves. Between the
+   * two, EVERY failed export is distinguishable from a successful one — an error response before
+   * the commit, a failed request after it — and neither leaves a file on disk.
+   *
+   * <p>Heap is unaffected (Story 29.2): the PDF goes to disk, never to a {@code byte[]}, and the
+   * {@link StreamingResponseBody} copies it out in a small buffer. try-with-resources deletes the
+   * spool on success, on IO failure and on client disconnect alike.
    */
-  private static ResponseEntity<StreamingResponseBody> pdfResponse(
+  private ResponseEntity<StreamingResponseBody> pdfResponse(
       String filename, Long millId, int year, RenderedReport report) {
+    // Before the ResponseEntity exists, deliberately: a throw here is still a normal 500.
+    ExportedPdf pdf = pdfSpooler.spool(report);
     StreamingResponseBody body =
         out -> {
-          try (report) {
-            report.writeTo(out);
-          } catch (RuntimeException e) {
-            log.error(
-                "Report export failed after the response was committed for mill {} year {} ({}) — "
-                    + "the client received a truncated PDF",
+          try (pdf) {
+            pdf.writeTo(out);
+          } catch (IOException | RuntimeException e) {
+            // WARN, not ERROR. Nothing about the REPORT can fail here any more — it is already a
+            // complete file — so what reaches this catch is the transfer: most often the user
+            // navigating away or cancelling the download, which is not a fault and must not raise
+            // the 5xx rate. It is also no longer silent: the client was given a Content-Length, so
+            // it rejects the short body and can retry. Logged with the mill/year anyway, because it
+            // is still the only server-side signal for a genuine "the download keeps dying".
+            log.warn(
+                "Report transfer failed after the response was committed for mill {} year {} ({}) — "
+                    + "the client receives a short body against the declared Content-Length and "
+                    + "rejects it, so no file is saved",
                 millId == null ? "n/a (not mill-scoped)" : millId,
                 year,
                 filename,
@@ -172,6 +198,7 @@ public class ReportController implements ReportApi {
         };
     return ResponseEntity.ok()
         .contentType(MediaType.APPLICATION_PDF)
+        .contentLength(pdf.size())
         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
         .body(body);
   }
