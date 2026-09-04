@@ -426,4 +426,36 @@ class MillContextServiceTest {
     when(repository.findMillStatusCodeForYear(514L, YEAR)).thenReturn(Optional.of("ACT"));
     assertDoesNotThrow(() -> service.validateMillYearActive("514", "2021"));
   }
+
+  // --- Story 15.1: the cheap both-tracks read for the Check Status sweep ---
+
+  @Test
+  void findTrackStatusCodes_mapsBothCodesFromTheOneRow() {
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", "S")));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertEquals("S", codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_nullSilvicultureCode_isCarriedNotThrown() {
+    // Legacy NPE'd on a null MILL_SILVICULTUR_STATUS_CODE; Story 1.2 tolerates it and so does this.
+    when(repository.findTrackStatusCodes(514L, YEAR))
+        .thenReturn(Optional.of(new TrackCodes("D", null)));
+
+    var codes = service.findTrackStatusCodes(514L, YEAR).orElseThrow();
+
+    assertEquals("D", codes.schedules1To10Code());
+    assertNull(codes.schedule11Code());
+  }
+
+  @Test
+  void findTrackStatusCodes_noStatusRow_isEmpty() {
+    when(repository.findTrackStatusCodes(514L, YEAR)).thenReturn(Optional.empty());
+
+    assertTrue(service.findTrackStatusCodes(514L, YEAR).isEmpty());
+  }
 }
