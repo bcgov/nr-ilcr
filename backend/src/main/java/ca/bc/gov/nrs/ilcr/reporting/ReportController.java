@@ -176,6 +176,15 @@ public class ReportController implements ReportApi {
    * {@link StreamingResponseBody} copies it out in a small buffer. try-with-resources deletes the
    * spool on success, on IO failure and on client disconnect alike.
    */
+  // S2139 (log and rethrow) is suppressed deliberately, and only here. The rule's premise is that
+  // the rethrown exception already carries what the log line would say — which is false in this
+  // case: the mill, year and filename live in this method's scope, never in the IOException, so
+  // rethrowing alone loses them. Wrapping the cause to carry them instead would be worse, because
+  // the container identifies a client disconnect BY EXCEPTION TYPE (ClientAbortException) to keep
+  // cancelled downloads out of the error log; hiding it inside another IOException would turn every
+  // cancelled download into a logged server error. So: log the context at WARN, rethrow the
+  // original untouched so the container still aborts the response and classifies it correctly.
+  @SuppressWarnings("java:S2139")
   private ResponseEntity<StreamingResponseBody> pdfResponse(
       String filename, Long millId, int year, RenderedReport report) {
     // Before the ResponseEntity exists, deliberately: a throw here is still a normal 500.

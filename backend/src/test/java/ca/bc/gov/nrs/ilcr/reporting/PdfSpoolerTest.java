@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.io.OutputStream;
@@ -71,8 +72,9 @@ class PdfSpoolerTest {
   void failedExportReleasesBoth() throws Exception {
     doThrow(new ReportGenerationException("export blew up", null)).when(report).writeTo(any());
 
-    assertThatThrownBy(() -> new PdfSpooler(tempDir.toString()).spool(report))
-        .isInstanceOf(ReportGenerationException.class);
+    PdfSpooler spooler = new PdfSpooler(tempDir.toString());
+
+    assertThatThrownBy(() -> spooler.spool(report)).isInstanceOf(ReportGenerationException.class);
 
     verify(report).close();
     assertThat(filesIn(tempDir)).isEmpty();
@@ -90,13 +92,15 @@ class PdfSpoolerTest {
     // The regression this pins: the spool file used to be acquired BEFORE the try-with-resources
     // that owns the report, so this path returned without ever closing it — leaking the fill's
     // virtualizer swap file on the very volume that had just proved unusable, once per request.
-    assertThatThrownBy(() -> new PdfSpooler(unusable.toString()).spool(report))
+    PdfSpooler spooler = new PdfSpooler(unusable.toString());
+
+    assertThatThrownBy(() -> spooler.spool(report))
         .isInstanceOf(ReportGenerationException.class)
         .hasMessageContaining("Failed to create a spool file");
 
     verify(report).close();
     // Never exported to a stream that could not exist.
-    verify(report, org.mockito.Mockito.never()).writeTo(any());
+    verify(report, never()).writeTo(any());
   }
 
   @Test
@@ -122,10 +126,39 @@ class PdfSpoolerTest {
 
   @Test
   @DisplayName("an empty configured directory falls back to the JVM temp dir")
-  void blankDirectoryFallsBackToTheJvmTempDir() {
+  void blankDirectoryFallsBackToTheJvmTempDir() throws Exception {
     // Mirrors ReportVirtualizerFactory's own fallback, so the two scratch locations stay the same
-    // place by default and ops sizes one volume.
-    assertThat(new PdfSpooler("")).isNotNull();
-    assertThat(new PdfSpooler("   ")).isNotNull();
+    // place by default and ops sizes one volume. Asserted on where the spool actually LANDS: a
+    // constructor that merely returns non-null would pass while resolving the directory to "".
+    doAnswer(
+            invocation -> {
+              ((OutputStream) invocation.getArgument(0)).write(EXPORTED);
+              return null;
+            })
+        .when(report)
+        .writeTo(any());
+
+    Path jvmTemp = Path.of(System.getProperty("java.io.tmpdir"));
+    List<Path> before = spoolsIn(jvmTemp);
+
+    ExportedPdf pdf = new PdfSpooler("   ").spool(report);
+
+    try (pdf) {
+      assertThat(pdf.size()).isEqualTo(EXPORTED.length);
+      // The spool landed in the JVM temp dir, not in "" — which Paths.get resolves to the working
+      // directory, where createTempFile would happily succeed and the fallback would look fine.
+      assertThat(spoolsIn(jvmTemp)).hasSize(before.size() + 1);
+    }
+    // Order-insensitive: DirectoryStream does not specify one.
+    assertThat(spoolsIn(jvmTemp)).containsExactlyInAnyOrderElementsOf(before);
+  }
+
+  /** The spool files this class's naming convention would produce in {@code directory}. */
+  private List<Path> spoolsIn(Path directory) throws Exception {
+    try (var files = Files.newDirectoryStream(directory, "ilcr-report-*.pdf")) {
+      List<Path> found = new java.util.ArrayList<>();
+      files.forEach(found::add);
+      return found;
+    }
   }
 }

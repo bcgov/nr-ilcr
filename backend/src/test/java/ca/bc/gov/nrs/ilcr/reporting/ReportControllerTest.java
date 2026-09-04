@@ -2,9 +2,12 @@ package ca.bc.gov.nrs.ilcr.reporting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,13 +76,13 @@ class ReportControllerTest {
 
   /** Make the mocked report export {@link #EXPORTED} to whatever stream the spooler hands it. */
   private void exportWrites() {
-    org.mockito.Mockito.doAnswer(
+    doAnswer(
             invocation -> {
               ((OutputStream) invocation.getArgument(0)).write(EXPORTED);
               return null;
             })
         .when(renderedReport)
-        .writeTo(org.mockito.ArgumentMatchers.any());
+        .writeTo(any());
   }
 
   /** The spool files still on disk — empty once a response has been fully streamed. */
@@ -111,7 +114,7 @@ class ReportControllerTest {
     // The export has ALREADY run — before the ResponseEntity existed, which is the whole point.
     // (It used to be asserted the other way round: writeTo was deferred into the streaming body,
     // which is exactly what put export failures past the point of no return.)
-    verify(renderedReport).writeTo(org.mockito.ArgumentMatchers.any());
+    verify(renderedReport).writeTo(any());
     verify(renderedReport).close();
 
     ByteArrayOutputStream sent = new ByteArrayOutputStream();
@@ -140,9 +143,9 @@ class ReportControllerTest {
   void exportFailureNeverBecomesAResponse() throws Exception {
     yearsAre(2021);
     when(reportService.renderMillInformation(2021)).thenReturn(renderedReport);
-    org.mockito.Mockito.doThrow(new ReportGenerationException("export blew up", null))
+    doThrow(new ReportGenerationException("export blew up", null))
         .when(renderedReport)
-        .writeTo(org.mockito.ArgumentMatchers.any());
+        .writeTo(any());
 
     // The failure Paulo's review was about. It now surfaces as an ordinary throw on the synchronous
     // path — so the global handler renders 500 undefinedError and the caller gets no file — rather
