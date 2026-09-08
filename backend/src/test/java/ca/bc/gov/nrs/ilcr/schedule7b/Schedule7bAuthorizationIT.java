@@ -1,12 +1,14 @@
 package ca.bc.gov.nrs.ilcr.schedule7b;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -339,5 +341,64 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
                 + "WHERE CULVERT_REPORT_ID = 7851");
     assertThat(((Number) stored.get("CULVERT_PIECE_COUNT")).intValue()).isEqualTo(4);
     assertThat(((Number) stored.get("REVISION_COUNT")).intValue()).isZero();
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // The ADMIN row of the role×status matrix (Story 16.1; added on the #427 review). Mill 743/2021
+  // is 1–10 'V' and silviculture 'D' (R__51) — so a gate that read the wrong track's column would
+  // see Draft, refuse the administrator, and every test below would fail on a 409 instead of
+  // passing vacuously. The shared unit truth table proves the component; these prove THIS
+  // schedule's wiring to it, on the write verb AND on DELETE.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            post(CULVERTS)
+                .param("millId", "743")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The correction must not move the track, and the echo must report the status the gate
+        // actually read — not a STATUS_DRAFT literal passed in its place.
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES a culvert at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    // Culvert 7880 is R__51's seeded delete target on this mill, so this removes a real row rather
+    // than exercising the idempotent no-op arm. A DELETE still holding the pre-16.1 Draft-only
+    // literal answers 409 here while its sibling POST passes — the divergence a refused-at-Draft
+    // probe cannot see, because Draft-only and the matrix agree an admin may not write at 'D'.
+    mockMvc
+        .perform(
+            delete(CULVERTS + "/7880")
+                .param("millId", "743")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            post(CULVERTS)
+                .param("millId", "743")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
   }
 }

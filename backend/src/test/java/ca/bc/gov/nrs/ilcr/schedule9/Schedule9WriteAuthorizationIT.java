@@ -195,4 +195,66 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
                 .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
+
+  // -----------------------------------------------------------------------------------------
+  // The ADMIN row of the role×status matrix (Story 16.1; added on the #427 review). Mill 745/2021
+  // is 1–10 'V' and silviculture 'D' (R__51) — so a gate that read the wrong track's column would
+  // see Draft, refuse the administrator, and every test below would fail on a 409 instead of
+  // passing vacuously. The shared unit truth table proves the component; these prove THIS
+  // schedule's wiring to it, on the write verb AND on DELETE.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    // 706 above covers admin@Submitted; this is the Verified half of the same matrix row, which no
+    // 1–10 schedule proved before R__51.
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "745")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES a record at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    // Record 9195 is R__51's seeded delete target on this mill, so this removes a real row. It is
+    // also this suite's FIRST positive DELETE at any status: before it, every delete probe here
+    // asserted 409 or 403, which a DELETE still holding the pre-16.1 Draft-only literal satisfies
+    // just as well as the matrix does.
+    mockMvc
+        .perform(
+            delete(RECORDS + "/9195")
+                .with(csrf())
+                .param("millId", "745")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "745")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
+  }
 }

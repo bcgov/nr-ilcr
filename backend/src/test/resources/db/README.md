@@ -160,6 +160,21 @@ sense against this directory, `mvn clean` before believing it.
    | Schedule 6 correction     | **724–726**     | `V20260822`                                  |
    | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
+   | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
+
+   **Editability matrix, per-schedule (`R__51`, Story 16.1 review follow-up)** — one mill per
+   authorization suite, `737`–`746`, each 1–10 `'V'` and silviculture `'D'` so a gate reading the wrong
+   track's column sees Draft and the test fails rather than passing vacuously. It exists because
+   `R__50` reached only Schedules 5 and 11: everywhere else ADMIN was proven only in the *refused*
+   direction, which cannot distinguish a schedule wired to the wrong status column, or a DELETE still
+   on the pre-16.1 Draft-only literal, from a correct one. Delete targets, each verified unused across
+   `db/` **and** `db-e2e/` and each below its table's sequence start: `ILCR_REPORT_SUMMARY`
+   **`1280–1282`** (the whole-document deletes for Schedules 1/2/3 — seeded rather than written by the
+   test, so the delete arm cannot collide on `REVISION_COUNT` with the sibling PUT and read a stale-revision
+   409 as a gate refusal), `TRANSPORTATION_REPORT` **`8090`**, `ROAD_MAINTENANCE_REPORT` **`8410`**,
+   `BRIDGE_REPORT` **`7660`**, `CULVERT_REPORT` **`7880`**, `TREE_TO_TRUCK_REPORT` **`8990`**,
+   `CONTRACTUAL_WORK_REPORT` **`9195`**, `ROAD_CONSTRUCTION_REPRT` **`8990`**. It adds NO table, NO code
+   row and NO cost item — every code value it uses is already in the shared catalogues.
 
    **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
    note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
