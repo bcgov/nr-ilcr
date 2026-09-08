@@ -22,6 +22,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -75,7 +76,7 @@ class Schedule6WriteServiceTest {
   @DisplayName("BR-02: TFL area type stores the TFL number and NULLs both TSA columns")
   void tflWrite_clearsTsaColumns() {
     stubDraft();
-    service.addRecord(MILL, YEAR, request("TFL", "18", "01B"), true, USER);
+    service.addRecord(MILL, YEAR, request("TFL", "18", "01B"), CallerRights.SUBMITTER, USER);
     verify(repository)
         .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq("18"), eq(USER));
   }
@@ -84,7 +85,7 @@ class Schedule6WriteServiceTest {
   @DisplayName("BR-02: a TSA area type stores TSA+TSB and NULLs the TFL number")
   void tsaWrite_clearsTflColumn() {
     stubDraft();
-    service.addRecord(MILL, YEAR, request("01", "18", "01B"), true, USER);
+    service.addRecord(MILL, YEAR, request("01", "18", "01B"), CallerRights.SUBMITTER, USER);
     // tflNumber was supplied in the request — the counterpart-clear must drop it.
     verify(repository)
         .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
@@ -96,7 +97,7 @@ class Schedule6WriteServiceTest {
           + "any other area type is stored as a TSA code")
   void nonLiteralAreaType_isTsaSide() {
     stubDraft();
-    service.addRecord(MILL, YEAR, request("tf", null, "01B"), true, USER);
+    service.addRecord(MILL, YEAR, request("tf", null, "01B"), CallerRights.SUBMITTER, USER);
     verify(repository)
         .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("tf"), eq("01B"), isNull(), eq(USER));
   }
@@ -108,7 +109,7 @@ class Schedule6WriteServiceTest {
   @DisplayName("BR-03: the complete leading-zero alias table normalizes onto the stored value")
   void tflAlias_normalizedOntoStoredValue(String entered, String stored) {
     stubDraft();
-    service.addRecord(MILL, YEAR, request("TFL", entered, null), true, USER);
+    service.addRecord(MILL, YEAR, request("TFL", entered, null), CallerRights.SUBMITTER, USER);
     verify(repository)
         .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), isNull(), isNull(), eq(stored), eq(USER));
   }
@@ -120,7 +121,9 @@ class Schedule6WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidTflNumberException.class,
-        () -> service.addRecord(MILL, YEAR, request("TFL", tflNumber, null), true, USER));
+        () ->
+            service.addRecord(
+                MILL, YEAR, request("TFL", tflNumber, null), CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
   }
@@ -131,7 +134,9 @@ class Schedule6WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidTflNumberException.class,
-        () -> service.addRecord(MILL, YEAR, request("TFL", null, null), true, USER));
+        () ->
+            service.addRecord(
+                MILL, YEAR, request("TFL", null, null), CallerRights.SUBMITTER, USER));
   }
 
   // ---- BR-09 branch selection on add ------------------------------------------------------------
@@ -147,7 +152,7 @@ class Schedule6WriteServiceTest {
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     when(repository.claimPlaceholder(8331, MILL, YEAR, "01", "01B", null, USER)).thenReturn(1);
 
-    service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER);
+    service.addRecord(MILL, YEAR, request("01", null, "01B"), CallerRights.SUBMITTER, USER);
 
     verify(repository).claimPlaceholder(8331, MILL, YEAR, "01", "01B", null, USER);
     verify(repository).upsertCostDetail(8331, new BigDecimal("100"), 5000, "rc", USER);
@@ -166,7 +171,7 @@ class Schedule6WriteServiceTest {
     when(repository.claimPlaceholder(8331, MILL, YEAR, "01", "01B", null, USER)).thenReturn(0);
     when(repository.nextRoadReportId()).thenReturn(9501);
 
-    service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER);
+    service.addRecord(MILL, YEAR, request("01", null, "01B"), CallerRights.SUBMITTER, USER);
 
     verify(repository)
         .insertRoadReport(eq(9501), eq(MILL), eq(YEAR), eq("01"), eq("01B"), isNull(), eq(USER));
@@ -185,7 +190,7 @@ class Schedule6WriteServiceTest {
     lenient().when(repository.findCostDetails(MILL, YEAR)).thenReturn(List.of());
     when(repository.nextRoadReportId()).thenReturn(9502);
 
-    service.addRecord(MILL, YEAR, request("03", null, "03B"), true, USER);
+    service.addRecord(MILL, YEAR, request("03", null, "03B"), CallerRights.SUBMITTER, USER);
 
     InOrder order = inOrder(repository);
     order
@@ -217,7 +222,7 @@ class Schedule6WriteServiceTest {
                 new RoadRecordEntry(
                     8336, 0, "TFL", "18", null, new BigDecimal("100"), 5000, "rc")));
 
-    service.saveDocument(MILL, YEAR, saveRequest, true, USER);
+    service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER);
 
     InOrder order = inOrder(repository);
     order.verify(repository).updateRoadReport(8336, MILL, YEAR, 0, null, null, "18", USER);
@@ -242,7 +247,7 @@ class Schedule6WriteServiceTest {
                     79999, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
     assertThrows(
         RoadRecordNotFoundException.class,
-        () -> service.saveDocument(MILL, YEAR, absentRequest, true, USER));
+        () -> service.saveDocument(MILL, YEAR, absentRequest, CallerRights.SUBMITTER, USER));
 
     when(repository.findRoadRecords(MILL, YEAR))
         .thenReturn(List.of(new RoadRecordRow(8336, "01", "01B", null, null, 0)));
@@ -256,7 +261,7 @@ class Schedule6WriteServiceTest {
                     8336, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
     assertThrows(
         StaleRevisionException.class,
-        () -> service.saveDocument(MILL, YEAR, staleRequest, true, USER));
+        () -> service.saveDocument(MILL, YEAR, staleRequest, CallerRights.SUBMITTER, USER));
 
     verify(repository, never()).upsertCostDetail(anyInt(), any(), any(), any(), anyString());
   }
@@ -281,7 +286,7 @@ class Schedule6WriteServiceTest {
                     8330, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
     assertThrows(
         RoadRecordNotFoundException.class,
-        () -> service.saveDocument(MILL, YEAR, saveRequest, true, USER));
+        () -> service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .updateRoadReport(
             anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
@@ -304,7 +309,7 @@ class Schedule6WriteServiceTest {
                     8336, null, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
     assertThrows(
         RevisionCountRequiredException.class,
-        () -> service.saveDocument(MILL, YEAR, saveRequest, true, USER));
+        () -> service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .updateRoadReport(
             anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
@@ -318,7 +323,9 @@ class Schedule6WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     assertThrows(
         InvalidClassificationCodeException.class,
-        () -> service.addRecord(MILL, YEAR, request("999", null, "01B"), true, USER));
+        () ->
+            service.addRecord(
+                MILL, YEAR, request("999", null, "01B"), CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
   }
@@ -343,7 +350,7 @@ class Schedule6WriteServiceTest {
                 new RoadRecordEntry(
                     8334, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
 
-    service.saveDocument(MILL, YEAR, saveRequest, true, USER);
+    service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER);
 
     verify(repository).updateAllComments(MILL, YEAR, "new text", USER);
     verify(repository, never())
@@ -359,7 +366,7 @@ class Schedule6WriteServiceTest {
     stubDraft();
     Schedule6SaveRequest saveRequest = new Schedule6SaveRequest("  raw untrimmed  ", List.of());
 
-    service.saveDocument(MILL, YEAR, saveRequest, true, USER);
+    service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER);
 
     // Stored RAW — the 8.1 legacy-faithful comments decision covers the write side too.
     verify(repository).insertPlaceholder(9501, MILL, YEAR, "  raw untrimmed  ", USER);
@@ -377,10 +384,12 @@ class Schedule6WriteServiceTest {
         .thenReturn(List.of());
     when(repository.deletePlaceholder(8330, MILL, YEAR)).thenReturn(1);
 
-    service.saveDocument(MILL, YEAR, new Schedule6SaveRequest("   ", List.of()), true, USER);
+    service.saveDocument(
+        MILL, YEAR, new Schedule6SaveRequest("   ", List.of()), CallerRights.SUBMITTER, USER);
     verify(repository).deletePlaceholder(8330, MILL, YEAR);
 
-    service.saveDocument(MILL, YEAR, new Schedule6SaveRequest(null, List.of()), true, USER);
+    service.saveDocument(
+        MILL, YEAR, new Schedule6SaveRequest(null, List.of()), CallerRights.SUBMITTER, USER);
     verify(repository, never())
         .insertPlaceholder(anyInt(), anyLong(), anyInt(), any(), anyString());
     verify(repository, never()).updateAllComments(anyLong(), anyInt(), any(), anyString());
@@ -398,7 +407,8 @@ class Schedule6WriteServiceTest {
         .thenReturn(List.of(new RoadRecordRow(8330, " ", " ", " ", "lone", 0)));
     when(repository.deletePlaceholder(8330, MILL, YEAR)).thenReturn(0);
 
-    service.saveDocument(MILL, YEAR, new Schedule6SaveRequest(" ", List.of()), true, USER);
+    service.saveDocument(
+        MILL, YEAR, new Schedule6SaveRequest(" ", List.of()), CallerRights.SUBMITTER, USER);
 
     verify(repository).deletePlaceholder(8330, MILL, YEAR);
     verify(repository).updateAllComments(MILL, YEAR, null, USER);
@@ -420,7 +430,7 @@ class Schedule6WriteServiceTest {
                 new RoadRecordEntry(
                     8334, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
 
-    service.saveDocument(MILL, YEAR, saveRequest, true, USER);
+    service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER);
 
     verify(repository).updateAllComments(MILL, YEAR, null, USER);
     verify(repository, never()).deletePlaceholder(anyInt(), anyLong(), anyInt());
@@ -449,7 +459,7 @@ class Schedule6WriteServiceTest {
 
     assertThrows(
         OmittedRoadRecordsException.class,
-        () -> service.saveDocument(MILL, YEAR, request, true, USER));
+        () -> service.saveDocument(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .updateRoadReport(
             anyInt(), anyLong(), anyInt(), anyInt(), any(), any(), any(), anyString());
@@ -474,7 +484,7 @@ class Schedule6WriteServiceTest {
                 new RoadRecordEntry(
                     8390, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
 
-    service.saveDocument(MILL, YEAR, request, true, USER);
+    service.saveDocument(MILL, YEAR, request, CallerRights.SUBMITTER, USER);
 
     verify(repository).updateRoadReport(8390, MILL, YEAR, 0, "01", "01B", null, USER);
     verify(repository).updateAllComments(MILL, YEAR, "still here", USER);
@@ -489,7 +499,9 @@ class Schedule6WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER));
+        () ->
+            service.addRecord(
+                MILL, YEAR, request("01", null, "01B"), CallerRights.SUBMITTER, USER));
     Schedule6SaveRequest saveRequest =
         new Schedule6SaveRequest(
             "x",
@@ -498,7 +510,7 @@ class Schedule6WriteServiceTest {
                     8336, 0, "01", null, "01B", new BigDecimal("100"), 5000, "rc")));
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.saveDocument(MILL, YEAR, saveRequest, true, USER));
+        () -> service.saveDocument(MILL, YEAR, saveRequest, CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .insertRoadReport(anyInt(), anyLong(), anyInt(), any(), any(), any(), anyString());
     verify(repository, never()).updateAllComments(anyLong(), anyInt(), any(), anyString());
@@ -510,7 +522,9 @@ class Schedule6WriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER));
+        () ->
+            service.addRecord(
+                MILL, YEAR, request("01", null, "01B"), CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -522,7 +536,9 @@ class Schedule6WriteServiceTest {
     ScheduleNotSavedException ex =
         assertThrows(
             ScheduleNotSavedException.class,
-            () -> service.addRecord(MILL, YEAR, request("01", null, "01B"), true, USER));
+            () ->
+                service.addRecord(
+                    MILL, YEAR, request("01", null, "01B"), CallerRights.SUBMITTER, USER));
     assertEquals("scheduleNotSavedErrorMsg", ex.getMessageKey());
   }
 
@@ -539,7 +555,9 @@ class Schedule6WriteServiceTest {
     AreaTypeRequiredException ex =
         assertThrows(
             AreaTypeRequiredException.class,
-            () -> service.addRecord(MILL, YEAR, request(areaType, null, "01B"), true, USER));
+            () ->
+                service.addRecord(
+                    MILL, YEAR, request(areaType, null, "01B"), CallerRights.SUBMITTER, USER));
     // Message parity with the @NotBlank route: the two are indistinguishable to a client.
     assertEquals("tsaOrTflRequiredErrorMsg", ex.getMessageKey());
     verify(repository, never())
@@ -576,7 +594,7 @@ class Schedule6WriteServiceTest {
   void deleteSoleRecord_reInsertsPlaceholderAndDeletesChildrenFirst() {
     stubDeleteDraft(List.of(servedRow(8336, "the general comment")));
 
-    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+    service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER);
 
     InOrder order = inOrder(repository);
     // Parent-first would pass against a constraint-less test schema and raise ORA-02292 in
@@ -591,7 +609,7 @@ class Schedule6WriteServiceTest {
   void deleteSoleRecord_nullComment_insertsNoPlaceholder() {
     stubDeleteDraft(List.of(servedRow(8336, null)));
 
-    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+    service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER);
 
     verify(repository).deleteRoadReport(8336, MILL, YEAR);
     verify(repository, never())
@@ -605,7 +623,7 @@ class Schedule6WriteServiceTest {
   void deleteSoleRecord_whitespaceComment_reInsertsPlaceholder() {
     stubDeleteDraft(List.of(servedRow(8336, "   ")));
 
-    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+    service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER);
 
     verify(repository).insertPlaceholder(9600, MILL, YEAR, "   ", USER);
   }
@@ -616,7 +634,7 @@ class Schedule6WriteServiceTest {
   void deleteOneOfSeveral_insertsNoPlaceholder() {
     stubDeleteDraft(List.of(servedRow(8336, "shared comment"), servedRow(8337, "shared comment")));
 
-    service.deleteRecord(MILL, YEAR, 8336, true, USER);
+    service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER);
 
     verify(repository).deleteRoadReport(8336, MILL, YEAR);
     verify(repository, never())
@@ -630,7 +648,7 @@ class Schedule6WriteServiceTest {
 
     assertThrows(
         RoadRecordNotFoundException.class,
-        () -> service.deleteRecord(MILL, YEAR, 8340, true, USER));
+        () -> service.deleteRecord(MILL, YEAR, 8340, CallerRights.SUBMITTER, USER));
 
     verify(repository, never()).deleteCostDetailsFor(anyInt());
     verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
@@ -644,7 +662,7 @@ class Schedule6WriteServiceTest {
 
     assertThrows(
         RoadRecordNotFoundException.class,
-        () -> service.deleteRecord(MILL, YEAR, 9999, true, USER));
+        () -> service.deleteRecord(MILL, YEAR, 9999, CallerRights.SUBMITTER, USER));
 
     verify(repository, never()).deleteCostDetailsFor(anyInt());
     verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
@@ -658,7 +676,7 @@ class Schedule6WriteServiceTest {
 
     assertThrows(
         RoadRecordNotFoundException.class,
-        () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
+        () -> service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER));
 
     // The raced delete must not resurrect the comment onto a placeholder the winner already
     // handled.
@@ -674,7 +692,7 @@ class Schedule6WriteServiceTest {
 
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
+        () -> service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER));
 
     verify(repository, never()).deleteCostDetailsFor(anyInt());
     verify(repository, never()).deleteRoadReport(anyInt(), anyLong(), anyInt());
@@ -691,7 +709,7 @@ class Schedule6WriteServiceTest {
     ScheduleNotSavedException ex =
         assertThrows(
             ScheduleNotSavedException.class,
-            () -> service.deleteRecord(MILL, YEAR, 8336, true, USER));
+            () -> service.deleteRecord(MILL, YEAR, 8336, CallerRights.SUBMITTER, USER));
     assertEquals("scheduleNotSavedErrorMsg", ex.getMessageKey());
   }
 }

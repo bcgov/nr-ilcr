@@ -280,7 +280,7 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
 
   @Test
   @DisplayName(
-      "an authorized role clears POST, PUT and save-all too (non-mutatingly: 409 on 517/S)")
+      "an authorized role clears POST, PUT and save-all too (non-mutatingly: 409 by the matrix)")
   void authorizedRoleClearsEveryWriteVerb() throws Exception {
     // Previously only DELETE had a positive probe, so a typo in POST's, PUT's or save-all's action
     // name — 'EDIT_SCHEDULES', or an accidental VIEW_SCHEDULE — would have denied both production
@@ -288,11 +288,9 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
     // DENIES
     // an unknown action rather than failing loudly).
     //
-    // Each probe targets mill 517, whose 1-10 track is Submitted, so it clears @PreAuthorize and
-    // then
-    // stops at the service's Draft gate with a 409 — reaching the service is the proof, and nothing
-    // is
-    // written to the shared fixture.
+    // Each submitter probe targets mill 517, whose 1-10 track is Submitted, so it clears
+    // @PreAuthorize and then stops at the editability matrix with a 409 — reaching the service is
+    // the proof, and nothing is written to the shared fixture.
     mockMvc
         .perform(
             post(CULVERTS)
@@ -303,10 +301,13 @@ class Schedule7bAuthorizationIT extends AbstractOracleIT {
                 .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
 
+    // The ADMIN probe targets DRAFT mill 514 instead: an administrator clears @PreAuthorize and is
+    // then refused by the matrix while the mill still owns its draft. Pointing it at 517/'S' would
+    // now legitimately SUCCEED and overwrite a culvert this suite's siblings read.
     mockMvc
         .perform(
             put(CULVERTS + "/7851")
-                .param("millId", "517")
+                .param("millId", "514")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)

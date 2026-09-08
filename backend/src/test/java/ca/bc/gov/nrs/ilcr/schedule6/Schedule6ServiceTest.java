@@ -10,6 +10,8 @@ import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecord;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -53,7 +55,8 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8001, "01", "01B", null, "GC", 0)),
         List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, "note")));
 
-    RoadRecord record = service.getSchedule6(MILL, YEAR, true).roadRecords().get(0);
+    RoadRecord record =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
     assertEquals("15", record.rmg());
     assertEquals("01", record.areaType());
@@ -72,7 +75,8 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8002, null, null, "18", "GC", 0)),
         List.of(new CostDetailRow(8002, new BigDecimal("400"), 30000, null)));
 
-    RoadRecord record = service.getSchedule6(MILL, YEAR, true).roadRecords().get(0);
+    RoadRecord record =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
     assertEquals("4", record.rmg());
     assertEquals("TFL", record.areaType());
@@ -93,7 +97,8 @@ class Schedule6ServiceTest {
             new CostDetailRow(8001, BigDecimal.ZERO, 5000, null),
             new CostDetailRow(8002, null, 6000, null)));
 
-    List<RoadRecord> records = service.getSchedule6(MILL, YEAR, true).roadRecords();
+    List<RoadRecord> records =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords();
 
     assertNull(records.get(0).costPerVolume(), "zero volume");
     assertNull(records.get(1).costPerVolume(), "absent volume");
@@ -111,7 +116,7 @@ class Schedule6ServiceTest {
             new CostDetailRow(8001, new BigDecimal("10"), 2_000_000_000, null),
             new CostDetailRow(8002, new BigDecimal("10"), 2_000_000_000, null)));
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(4_000_000_000L, response.totalCost());
     assertEquals(0, new BigDecimal("20").compareTo(response.totalVolume()));
@@ -123,7 +128,7 @@ class Schedule6ServiceTest {
   void placeholder_excludedButGeneralCommentKept() {
     stub("D", List.of(new RoadRecordRow(8004, null, null, null, "Only a comment", 0)), List.of());
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertTrue(response.roadRecords().isEmpty());
     assertEquals("Only a comment", response.generalComments());
@@ -144,7 +149,7 @@ class Schedule6ServiceTest {
             new RoadRecordRow(8002, "03", "03B", null, "GC", 0)),
         List.of(new CostDetailRow(8002, new BigDecimal("2000"), 40000, null)));
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
     RoadRecord detailless = response.roadRecords().get(0);
 
     assertEquals(8001, detailless.recordId());
@@ -165,7 +170,7 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8001, "01", "01B", null, null, 0)),
         List.of(new CostDetailRow(8001, new BigDecimal("400.50"), 1000, null)));
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
     RoadRecord record = response.roadRecords().get(0);
 
     // normalizeVolume strips only trailing zeros: 400.50 -> 400.5 (not 400 and not 4.005E+2).
@@ -188,7 +193,8 @@ class Schedule6ServiceTest {
             new RoadRecordRow(8001, "01", "01B", null, "first ", 0),
             new RoadRecordRow(8002, "03", "03B", null, " last ", 0)),
         List.of());
-    assertEquals(" last ", service.getSchedule6(MILL, YEAR, true).generalComments());
+    assertEquals(
+        " last ", service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).generalComments());
 
     stub(
         "D",
@@ -196,7 +202,7 @@ class Schedule6ServiceTest {
             new RoadRecordRow(8001, "01", "01B", null, "first", 0),
             new RoadRecordRow(8002, "03", "03B", null, null, 0)),
         List.of());
-    assertNull(service.getSchedule6(MILL, YEAR, true).generalComments());
+    assertNull(service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).generalComments());
   }
 
   @Test
@@ -211,7 +217,7 @@ class Schedule6ServiceTest {
             new CostDetailRow(8001, new BigDecimal("1000"), 50000, "kept"),
             new CostDetailRow(8001, new BigDecimal("9999"), 99999, "dropped")));
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(50000, response.roadRecords().get(0).cost());
     assertEquals("kept", response.roadRecords().get(0).comments());
@@ -227,7 +233,7 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8004, null, null, null, "Only a comment", 0)),
         List.of(new CostDetailRow(8004, new BigDecimal("500"), 12345, "orphaned")));
 
-    Schedule6Response response = service.getSchedule6(MILL, YEAR, true);
+    Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertTrue(response.roadRecords().isEmpty());
     assertEquals(0L, response.totalCost());
@@ -245,7 +251,8 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8001, "01 ", " 01B ", "  ", null, 0)),
         List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, null)));
 
-    RoadRecord record = service.getSchedule6(MILL, YEAR, true).roadRecords().get(0);
+    RoadRecord record =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
     assertEquals("01", record.areaType());
     assertEquals("01B", record.supplyBlock());
@@ -254,15 +261,20 @@ class Schedule6ServiceTest {
   }
 
   @Test
-  @DisplayName("editable = callerMayEdit AND trackStatus Draft (server-authoritative)")
+  @DisplayName("editable follows the role x status matrix (server-authoritative)")
   void editableMatrix() {
-    assertTrue(editableFor("D", true), "Draft + mayEdit");
-    assertFalse(editableFor("D", false), "Draft + !mayEdit");
-    assertFalse(editableFor("S", true), "Submitted + mayEdit");
-    assertFalse(editableFor(null, true), "no status + mayEdit");
+    assertTrue(editableFor("D", CallerRights.SUBMITTER), "Draft + submitter");
+    assertFalse(editableFor("D", CallerRights.ADMIN), "Draft + admin");
+    assertFalse(editableFor("D", CallerRights.NONE), "Draft + no edit rights");
+    assertFalse(editableFor("S", CallerRights.SUBMITTER), "Submitted + submitter");
+    assertTrue(editableFor("S", CallerRights.ADMIN), "Submitted + admin");
+    assertTrue(editableFor("V", CallerRights.ADMIN), "Verified + admin");
+    assertFalse(editableFor("V", CallerRights.SUBMITTER), "Verified + submitter");
+    assertFalse(editableFor(null, CallerRights.SUBMITTER), "no status + submitter");
+    assertFalse(editableFor(null, CallerRights.ADMIN), "no status + admin");
   }
 
-  private boolean editableFor(String trackStatus, boolean callerMayEdit) {
+  private boolean editableFor(String trackStatus, EditableStatuses callerMayEdit) {
     stub(trackStatus, List.of(), List.of());
     return service.getSchedule6(MILL, YEAR, callerMayEdit).editable();
   }

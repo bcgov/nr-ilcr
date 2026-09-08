@@ -20,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -58,8 +59,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule4Service {
 
-  private static final String STATUS_DRAFT = "D";
-
   private static final String KIND_FIXED = "FIXED";
   private static final String KIND_DISTANCE = "DISTANCE";
 
@@ -86,13 +85,13 @@ public class Schedule4Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit
    * @return the read document (never null; {@code locations: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule4Response getSchedule4(long millId, int year, boolean callerMayEdit) {
+  public Schedule4Response getSchedule4(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
     // A location spans MULTIPLE TRANSPORTATION_REPORT rows sharing LOCATION_DESCRIPTION
     // (delivery-DB
@@ -203,8 +202,8 @@ public class Schedule4Service {
    */
   @Transactional(readOnly = true)
   public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
-    // callerMayEdit is irrelevant to the requirement check (only stored Costs matter); pass false.
-    Schedule4Response document = getSchedule4(millId, year, false);
+    // Editability is irrelevant to the requirement check (only stored Costs matter).
+    Schedule4Response document = getSchedule4(millId, year, EditableStatuses.NONE);
     List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
     boolean scheduleMet = true;
     for (Location location : document.locations()) {
@@ -237,8 +236,8 @@ public class Schedule4Service {
   /**
    * Save (create-or-edit) one Schedule 4 location and return the recomputed document (Story 4.2,
    * S01/S02/S07). The mill/year context is already validated in the controller (AD-4). Enforces the
-   * Draft gate (AD-9), server-side name uniqueness (BR-02), and per-location optimistic locking
-   * (§Decision 3).
+   * editability gate (AD-9), server-side name uniqueness (BR-02), and per-location optimistic
+   * locking (§Decision 3).
    *
    * <p>A location is a FAMILY of {@code TRANSPORTATION_REPORT} rows: {@code request.id()} null →
    * CREATE (insert the primary report, revision 0→1); present → EDIT (bump the primary revision,
@@ -255,14 +254,18 @@ public class Schedule4Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the location name, optimistic-lock token, and entered categories (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
   @Transactional
   public Schedule4Response saveLocation(
-      long millId, int year, Schedule4LocationRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      Schedule4LocationRequest request,
+      EditableStatuses caller,
+      String user) {
+    requireEditable(millId, year, caller);
     String name = request.name().trim();
     // The edited family's current name (null on create) — excluded from the uniqueness comparison
     // so
@@ -314,7 +317,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return getSchedule4(millId, year, caller);
   }
 
   /**
@@ -328,8 +331,8 @@ public class Schedule4Service {
    * @param id the primary report id of the location to delete
    */
   @Transactional
-  public void deleteLocation(long millId, int year, int id) {
-    requireDraft(millId, year);
+  public void deleteLocation(long millId, int year, int id, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign id resolves to no name here, so it can never delete another
     // context's family (IDOR guard); an absent id in this context stays an idempotent no-op.
     String name = repository.findLocationName(id, millId, year).orElse(null);
@@ -352,7 +355,7 @@ public class Schedule4Service {
    * Add one sub-page list row (Towing/Truck Rehaul/Other) to a location and return the recomputed
    * document (Story 4.3, S03–S06). A row is its OWN {@code TRANSPORTATION_REPORT} sharing the
    * location's name + a single detail (item 43/46/55 with {@code ITEM_DESCRIPTION}); {@code cycle}
-   * is written for Truck Rehaul only. Draft gate (AD-9); unknown {@code locationId} → 404;
+   * is written for Truck Rehaul only. editability gate (AD-9); unknown {@code locationId} → 404;
    * persistence fault → 500 (type-only log). The mill/year context is validated in the controller
    * (AD-4).
    *
@@ -360,7 +363,7 @@ public class Schedule4Service {
    * @param year the reporting year
    * @param locationId the parent location's primary report id (its {@link Location#id()})
    * @param request the row type, description, and amounts (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
@@ -370,9 +373,9 @@ public class Schedule4Service {
       int year,
       int locationId,
       Schedule4SubPageRowRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign locationId resolves to no name here, so rows can only be attached
     // to a location that genuinely exists in THIS context (IDOR guard) — otherwise 404.
     String name = repository.findLocationName(locationId, millId, year).orElse(null);
@@ -398,7 +401,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return getSchedule4(millId, year, caller);
   }
 
   /**
@@ -406,17 +409,17 @@ public class Schedule4Service {
    * document (Story 4.3, the edit counterpart of {@link #addSubPageRow}). The row is its OWN {@code
    * TRANSPORTATION_REPORT} (carrying its distance + cycle) with a single detail (item 43/46/55 with
    * {@code ITEM_DESCRIPTION}); {@code cycle} is written for Truck Rehaul only, null otherwise.
-   * Draft gate (AD-9); an unknown {@code locationId}, or a {@code rowId} that is NOT a sub-page row
-   * of THAT location, → 404 (path-scoped, IDOR guard — never a cross-location/cross-context
-   * mutation); persistence fault → 500 (type-only log). The mill/year context is validated in the
-   * controller (AD-4).
+   * editability gate (AD-9); an unknown {@code locationId}, or a {@code rowId} that is NOT a
+   * sub-page row of THAT location, → 404 (path-scoped, IDOR guard — never a
+   * cross-location/cross-context mutation); persistence fault → 500 (type-only log). The mill/year
+   * context is validated in the controller (AD-4).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param locationId the parent location's primary report id (its {@link Location#id()})
    * @param rowId the sub-page row's own report id (the edit target)
    * @param request the row type, description, and amounts (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 4 document
    */
@@ -427,9 +430,9 @@ public class Schedule4Service {
       int locationId,
       int rowId,
       Schedule4SubPageRowRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     // Mill/year-scoped: a foreign locationId resolves to no name here (IDOR guard) → 404.
     String name = repository.findLocationName(locationId, millId, year).orElse(null);
     if (name == null) {
@@ -457,27 +460,27 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return getSchedule4(millId, year, caller);
   }
 
   /**
    * Delete one sub-page list row (its whole {@code TRANSPORTATION_REPORT} + cascaded detail) and
-   * return the recomputed document (Story 4.3, S11 / BR-08). Draft gate (AD-9). Idempotent: an
-   * unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report) —
-   * is a no-op success, so this endpoint can never delete a location. Fixes the legacy
+   * return the recomputed document (Story 4.3, S11 / BR-08). editability gate (AD-9). Idempotent:
+   * an unknown id — or an id that is NOT a sub-page row (e.g. a location's primary/category report)
+   * — is a no-op success, so this endpoint can never delete a location. Fixes the legacy
    * Other-sub-page bug by returning the "deleted" semantics for all three types (§Decision 4).
    * Context validated in the controller (AD-4).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param rowId the sub-page row's own report id
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 4 document
    */
   @Transactional
   public Schedule4Response deleteSubPageRow(
-      long millId, int year, int locationId, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int locationId, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     // Enforce the /locations/{locationId}/rows/{rowId} path: resolve the addressed location's name
     // (mill/year-scoped) and only delete when rowId is a sub-page row OF THAT location. A foreign
     // or
@@ -497,7 +500,7 @@ public class Schedule4Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule4(millId, year, callerMayEdit);
+    return getSchedule4(millId, year, caller);
   }
 
   /**
@@ -545,13 +548,15 @@ public class Schedule4Service {
   }
 
   /**
-   * The Draft gate shared by save and delete: the Schedules 1–10 track must be Draft (else 409).
+   * The editability gate shared by save and delete: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409).
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   private static BigDecimal bd(Integer value) {

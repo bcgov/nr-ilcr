@@ -17,6 +17,7 @@ import ca.bc.gov.nrs.ilcr.schedule7a.Schedule7aService;
 import ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bService;
 import ca.bc.gov.nrs.ilcr.schedule8.Schedule8Service;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Service;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
@@ -371,7 +372,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule2SectionMapper.map(schedule2Service.getSchedule2(millId, year, false)),
+              Schedule2SectionMapper.map(
+                  schedule2Service.getSchedule2(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_3 ->
           fillBean(
@@ -401,7 +403,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule5SectionMapper.map(schedule5Service.getSchedule5(millId, year, false)),
+              Schedule5SectionMapper.map(
+                  schedule5Service.getSchedule5(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_6 ->
           fillBean(
@@ -411,7 +414,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule6SectionMapper.map(schedule6Service.getSchedule6(millId, year, false)),
+              Schedule6SectionMapper.map(
+                  schedule6Service.getSchedule6(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_7A ->
           fillBean(
@@ -421,7 +425,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule7aSectionMapper.map(schedule7aService.getSchedule7a(millId, year, false)),
+              Schedule7aSectionMapper.map(
+                  schedule7aService.getSchedule7a(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_7B ->
           fillBean(
@@ -431,7 +436,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule7bSectionMapper.map(schedule7bService.getSchedule7b(millId, year, false)),
+              Schedule7bSectionMapper.map(
+                  schedule7bService.getSchedule7b(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_8 ->
           fillBean(
@@ -441,7 +447,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule8SectionMapper.map(schedule8Service.getSchedule8(millId, year, false)),
+              Schedule8SectionMapper.map(
+                  schedule8Service.getSchedule8(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_10 ->
           fillBean(
@@ -451,7 +458,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule10SectionMapper.map(schedule10Service.getSchedule10(millId, year, false)),
+              Schedule10SectionMapper.map(
+                  schedule10Service.getSchedule10(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_11 ->
           fillBean(
@@ -461,7 +469,8 @@ public class ReportService {
               options,
               millTitleBlock,
               bookmarkTitle,
-              Schedule11SectionMapper.map(schedule11Service.getSchedule11(millId, year, false)),
+              Schedule11SectionMapper.map(
+                  schedule11Service.getSchedule11(millId, year, EditableStatuses.NONE)),
               virtualizer);
       case SCHEDULE_9 -> fillSchedule9(millId, year, options, bookmarkTitle, virtualizer);
     };
@@ -478,10 +487,11 @@ public class ReportService {
    * summary and are still caught, so {@code getSchedule3} would yield the same null section today.
    * The Schedule 1 sibling is where it genuinely matters: {@code schedule1Section} TOLERATES a
    * missing Other-Costs document, so a never-404 read there really would emit a blank section.
-   * Read-only: every read passes {@code callerMayEdit = false} (no BR-09 crown push).
+   * Read-only: every read permits no editing (no BR-09 crown push).
    */
   private SectionData schedule3Section(long millId, int year) {
-    Schedule3Response summary = schedule3Service.findSchedule3(millId, year, false).orElse(null);
+    Schedule3Response summary =
+        schedule3Service.findSchedule3(millId, year, EditableStatuses.NONE).orElse(null);
     if (summary == null) {
       log.debug(
           "Schedule 3 summary not found for mill {} year {} -> skipping section (BR-09)",
@@ -492,8 +502,8 @@ public class ReportService {
     try {
       return Schedule3SectionMapper.map(
           summary,
-          schedule3Service.getOtherAcceptableDocument(millId, year, false),
-          schedule3Service.getUnacceptableDocument(millId, year, false));
+          schedule3Service.getOtherAcceptableDocument(millId, year, EditableStatuses.NONE),
+          schedule3Service.getUnacceptableDocument(millId, year, EditableStatuses.NONE));
     } catch (ScheduleNotFoundException e) {
       return null;
     }
@@ -502,7 +512,8 @@ public class ReportService {
   /** Build the Schedule 4 section, translating an absent document into the combined-print skip. */
   private SectionData schedule4Section(long millId, int year) {
     try {
-      return Schedule4SectionMapper.map(schedule4Service.getSchedule4(millId, year, false));
+      return Schedule4SectionMapper.map(
+          schedule4Service.getSchedule4(millId, year, EditableStatuses.NONE));
     } catch (ScheduleNotFoundException e) {
       log.debug(
           "Schedule 4 summary not found for mill {} year {} -> skipping section (BR-09)",
@@ -520,10 +531,11 @@ public class ReportService {
    * defect #296 the latter serves an EMPTY document for an unsaved Schedule 1, which would put a
    * blank Schedule 1 section into every combined report for a mill/year that has none. {@code
    * getOtherCostsDocument} still throws on an absent summary and is still caught below. Read-only:
-   * both reads pass {@code callerMayEdit = false}.
+   * both reads permit no editing.
    */
   private SectionData schedule1Section(long millId, int year) {
-    Schedule1Response summary = schedule1Service.findSchedule1(millId, year, false).orElse(null);
+    Schedule1Response summary =
+        schedule1Service.findSchedule1(millId, year, EditableStatuses.NONE).orElse(null);
     if (summary == null) {
       log.debug(
           "Schedule 1 summary not found for mill {} year {} -> skipping section (BR-09)",
@@ -534,7 +546,7 @@ public class ReportService {
 
     ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument otherCosts = null;
     try {
-      otherCosts = schedule1Service.getOtherCostsDocument(millId, year, false);
+      otherCosts = schedule1Service.getOtherCostsDocument(millId, year, EditableStatuses.NONE);
     } catch (ScheduleNotFoundException e) {
       log.debug(
           "Schedule 1 other costs document not found for mill {} year {} -> mapping with empty list",

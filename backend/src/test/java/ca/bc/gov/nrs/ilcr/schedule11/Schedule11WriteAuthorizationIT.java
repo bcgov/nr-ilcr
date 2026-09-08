@@ -139,13 +139,15 @@ class Schedule11WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
-  void admin_passesEditAuthorization() throws Exception {
+  @DisplayName("ILCR_ADMIN at a Draft track -> authz passes (not 403); matrix -> 409")
+  void admin_refusedAtSilvicultureDraft() throws Exception {
+    // 614/2021 carries silviculture 'D': authz passes so the request is NOT 403, and the matrix
+    // refuses an administrator at Draft on this track too -- 409, nothing written.
     mockMvc
         .perform(
             post(LOCATIONS)
                 .with(csrf())
-                .param("millId", "615")
+                .param("millId", "614")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)

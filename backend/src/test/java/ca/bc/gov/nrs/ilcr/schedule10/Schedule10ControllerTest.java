@@ -1,13 +1,16 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService.MillYearContext;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +48,7 @@ class Schedule10ControllerTest {
 
   @Mock private Schedule10Service schedule10Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private Authentication authentication;
 
@@ -55,11 +58,12 @@ class Schedule10ControllerTest {
 
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     controller =
         new Schedule10Controller(
             millContextService,
             schedule10Service,
-            permissions,
+            editability,
             messageSource,
             new Schedule10CheckStatusResolver(schedule10Service, messageSource));
     when(millContextService.validateMillYearActive(MILL_PARAM, YEAR_PARAM))
@@ -73,26 +77,28 @@ class Schedule10ControllerTest {
   @Test
   @DisplayName("asks for the EDIT_SCHEDULE action BY NAME, not VIEW_SCHEDULE")
   void asksForTheEditScheduleActionByName() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule10Service.getSchedule10(MILL, YEAR, true)).thenReturn(document(true));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule10Service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(document(true));
 
     controller.getSchedule10(MILL_PARAM, YEAR_PARAM, authentication);
 
     // Pinning the action string matters: asking for VIEW_SCHEDULE here would silently grant edit
     // authority to every caller who can read, and no other test would notice.
-    verify(permissions).hasPermission(authentication, "EDIT_SCHEDULE");
+    verify(editability).forCaller(authentication);
   }
 
   @Test
   @DisplayName("passes callerMayEdit=false through when the caller lacks EDIT_SCHEDULE")
   void deniedPermissionIsPassedThroughAsFalse() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule10Service.getSchedule10(MILL, YEAR, false)).thenReturn(document(false));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule10Service.getSchedule10(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(document(false));
 
     var response = controller.getSchedule10(MILL_PARAM, YEAR_PARAM, authentication);
 
     // The false must actually reach the service — a hardcoded `true` would fail here.
-    verify(schedule10Service).getSchedule10(MILL, YEAR, false);
+    verify(schedule10Service).getSchedule10(MILL, YEAR, CallerRights.NONE);
     assertThat(response.getBody()).isNotNull();
     assertThat(response.getBody().editable()).isFalse();
   }
@@ -100,12 +106,13 @@ class Schedule10ControllerTest {
   @Test
   @DisplayName("passes callerMayEdit=true through when the caller holds EDIT_SCHEDULE")
   void grantedPermissionIsPassedThroughAsTrue() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule10Service.getSchedule10(MILL, YEAR, true)).thenReturn(document(true));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule10Service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(document(true));
 
     var response = controller.getSchedule10(MILL_PARAM, YEAR_PARAM, authentication);
 
-    verify(schedule10Service).getSchedule10(MILL, YEAR, true);
+    verify(schedule10Service).getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
     assertThat(response.getBody()).isNotNull();
     assertThat(response.getBody().editable()).isTrue();
   }
@@ -113,14 +120,15 @@ class Schedule10ControllerTest {
   @Test
   @DisplayName("guards mill/year FIRST, delegating to millcontext with the raw params (AD-4)")
   void validatesMillYearContextBeforeReading() {
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule10Service.getSchedule10(MILL, YEAR, true)).thenReturn(document(true));
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule10Service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(document(true));
 
     controller.getSchedule10(MILL_PARAM, YEAR_PARAM, authentication);
 
     // The raw Strings go to millcontext, which owns parsing and the verbatim ERR-001 message;
     // the service only ever sees the validated, typed context.
     verify(millContextService).validateMillYearActive(MILL_PARAM, YEAR_PARAM);
-    verify(schedule10Service).getSchedule10(MILL, YEAR, true);
+    verify(schedule10Service).getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
   }
 }

@@ -73,7 +73,8 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
       @Param("year") int year, @Param("millId") long millId);
 
   // ===============================================================================================
-  // Write path (Story 25.2) — AD-3 dumb SQL; transaction boundary, Draft gate, cost upsert/clear,
+  // Write path (Story 25.2) — AD-3 dumb SQL; transaction boundary, editability gate, cost
+  // upsert/clear,
   // and 404-vs-409 disambiguation live in Schedule11Service. All writes are THE-qualified and
   // scope every UPDATE/DELETE to (id, ILCR_MILL_ID, REPORT_YEAR, ILCR_CATEGORY_ID='11') so one
   // mill's write can never touch another's rows.

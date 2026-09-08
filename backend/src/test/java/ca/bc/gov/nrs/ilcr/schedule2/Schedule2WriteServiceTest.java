@@ -22,6 +22,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule2.dto.Schedule2Request;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Service;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -68,7 +69,9 @@ class Schedule2WriteServiceTest {
     // non-locking findTrackStatus), so keep these lenient.
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
-    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
     lenient()
         .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
         .thenReturn(Optional.empty());
@@ -80,7 +83,11 @@ class Schedule2WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule2(
-        MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER);
+        MILL,
+        YEAR,
+        request(0, 500000, new BigDecimal("2000"), 100000),
+        CallerRights.SUBMITTER,
+        USER);
 
     // item 25 — cost only (volume always null; carried from Sch3, never written).
     verify(repository).upsertDetail(SUMMARY_ID, 25, null, 500000, USER);
@@ -99,14 +106,20 @@ class Schedule2WriteServiceTest {
     when(repository.insertSummary(MILL, YEAR, "c", USER)).thenReturn(9001);
     when(repository.bumpRevision(eq(9001), eq(0), anyString(), eq(USER))).thenReturn(1);
     lenient().when(repository.findDetails(9001)).thenReturn(List.of());
-    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
     lenient()
         .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
         .thenReturn(Optional.empty());
 
     // null revisionCount from the client means "new/unsaved" -> matches the freshly-inserted 0.
     service.saveSchedule2(
-        MILL, YEAR, request(null, 500000, new BigDecimal("2000"), 100000), true, USER);
+        MILL,
+        YEAR,
+        request(null, 500000, new BigDecimal("2000"), 100000),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).insertSummary(MILL, YEAR, "c", USER);
     verify(repository).bumpRevision(9001, 0, "c", USER); // 0 -> 1
@@ -119,7 +132,8 @@ class Schedule2WriteServiceTest {
     stubDraftExistingSummary();
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
-    service.saveSchedule2(MILL, YEAR, request(0, null, new BigDecimal("2000"), 100000), true, USER);
+    service.saveSchedule2(
+        MILL, YEAR, request(0, null, new BigDecimal("2000"), 100000), CallerRights.SUBMITTER, USER);
 
     verify(repository).upsertDetail(eq(SUMMARY_ID), eq(25), isNull(), isNull(), eq(USER));
   }
@@ -133,7 +147,11 @@ class Schedule2WriteServiceTest {
         StaleRevisionException.class,
         () ->
             service.saveSchedule2(
-                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+                MILL,
+                YEAR,
+                request(0, 500000, new BigDecimal("2000"), 100000),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).upsertDetail(anyInt(), anyInt(), any(), any(), anyString());
   }
@@ -146,7 +164,11 @@ class Schedule2WriteServiceTest {
         ScheduleNotEditableException.class,
         () ->
             service.saveSchedule2(
-                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+                MILL,
+                YEAR,
+                request(0, 500000, new BigDecimal("2000"), 100000),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyString(), anyString());
     verify(repository, never()).insertSummary(anyLong(), anyInt(), anyString(), anyString());
@@ -162,7 +184,11 @@ class Schedule2WriteServiceTest {
         ScheduleNotSavedException.class,
         () ->
             service.saveSchedule2(
-                MILL, YEAR, request(0, 500000, new BigDecimal("2000"), 100000), true, USER));
+                MILL,
+                YEAR,
+                request(0, 500000, new BigDecimal("2000"), 100000),
+                CallerRights.SUBMITTER,
+                USER));
   }
 
   @Test
@@ -171,7 +197,9 @@ class Schedule2WriteServiceTest {
     when(repository.findSummary(MILL, YEAR))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "c", 0)));
 
-    assertTrue(service.deleteSchedule2(MILL, YEAR), "a real delete reports that it removed a row");
+    assertTrue(
+        service.deleteSchedule2(MILL, YEAR, CallerRights.SUBMITTER),
+        "a real delete reports that it removed a row");
 
     verify(repository).deleteSchedule(SUMMARY_ID);
   }
@@ -183,7 +211,9 @@ class Schedule2WriteServiceTest {
 
     // Must not throw, and must report that nothing was removed so the controller can say so
     // instead of announcing a successful delete (defect #292 code review).
-    assertFalse(service.deleteSchedule2(MILL, YEAR), "the no-op must not claim it deleted a row");
+    assertFalse(
+        service.deleteSchedule2(MILL, YEAR, CallerRights.SUBMITTER),
+        "the no-op must not claim it deleted a row");
 
     verify(repository, never()).deleteSchedule(anyInt());
   }
@@ -192,7 +222,9 @@ class Schedule2WriteServiceTest {
   void delete_notDraft_throwsNotEditable() {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
 
-    assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule2(MILL, YEAR));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () -> service.deleteSchedule2(MILL, YEAR, CallerRights.SUBMITTER));
 
     verify(repository, never()).deleteSchedule(anyInt());
   }
@@ -206,6 +238,8 @@ class Schedule2WriteServiceTest {
         .when(repository)
         .deleteSchedule(SUMMARY_ID);
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule2(MILL, YEAR));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () -> service.deleteSchedule2(MILL, YEAR, CallerRights.SUBMITTER));
   }
 }

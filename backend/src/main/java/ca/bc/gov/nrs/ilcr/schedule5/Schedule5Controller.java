@@ -10,7 +10,8 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -42,7 +43,7 @@ public class Schedule5Controller implements Schedule5Api {
 
   private final MillContextService millContextService;
   private final Schedule5Service schedule5Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
   private final Schedule5CheckStatusResolver checkStatusResolver;
 
@@ -53,12 +54,12 @@ public class Schedule5Controller implements Schedule5Api {
   public Schedule5Controller(
       MillContextService millContextService,
       Schedule5Service schedule5Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource,
       Schedule5CheckStatusResolver checkStatusResolver) {
     this.millContextService = millContextService;
     this.schedule5Service = schedule5Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
     this.checkStatusResolver = checkStatusResolver;
   }
@@ -68,9 +69,9 @@ public class Schedule5Controller implements Schedule5Api {
   public ResponseEntity<Schedule5Response> getSchedule5(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, EDIT_SCHEDULE);
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule5Service.getSchedule5(context.millId(), context.year(), callerMayEdit));
+        schedule5Service.getSchedule5(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -83,7 +84,7 @@ public class Schedule5Controller implements Schedule5Api {
             context.millId(),
             context.year(),
             request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -99,7 +100,7 @@ public class Schedule5Controller implements Schedule5Api {
             context.year(),
             campId,
             request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -111,10 +112,7 @@ public class Schedule5Controller implements Schedule5Api {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule5Response doc =
         schedule5Service.deleteCamp(
-            context.millId(),
-            context.year(),
-            campId,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE));
+            context.millId(), context.year(), campId, editability.forCaller(authentication));
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
@@ -122,7 +120,8 @@ public class Schedule5Controller implements Schedule5Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule5CheckStatusResponse> checkStatus(
       String millId, String year, Authentication authentication) {
-    // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no Draft gate.
+    // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no editability
+    // gate.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     return ResponseEntity.ok(checkStatusResolver.checkStatus(context.millId(), context.year()));
   }
@@ -191,11 +190,7 @@ public class Schedule5Controller implements Schedule5Api {
       int campId, String millId, String year, SubPage page, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     return schedule5Service.getSubPage(
-        context.millId(),
-        context.year(),
-        campId,
-        page,
-        permissions.hasPermission(authentication, EDIT_SCHEDULE));
+        context.millId(), context.year(), campId, page, editability.forCaller(authentication));
   }
 
   private SubPageDocument saveSubPage(
@@ -213,7 +208,7 @@ public class Schedule5Controller implements Schedule5Api {
             campId,
             page,
             request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            editability.forCaller(authentication),
             authentication.getName())
         .withMessage(message(MSG_SAVED));
   }
@@ -233,7 +228,7 @@ public class Schedule5Controller implements Schedule5Api {
             campId,
             page,
             rowId,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE))
+            editability.forCaller(authentication))
         .withMessage(message(MSG_DELETED));
   }
 

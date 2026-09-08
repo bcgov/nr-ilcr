@@ -8,7 +8,8 @@ import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import java.util.List;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -34,7 +35,7 @@ public class Schedule11Controller implements Schedule11Api {
 
   private final MillContextService millContextService;
   private final Schedule11Service schedule11Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
 
   /**
@@ -42,17 +43,17 @@ public class Schedule11Controller implements Schedule11Api {
    *
    * @param millContextService the mill context service
    * @param schedule11Service the Schedule 11 service
-   * @param permissions the schedule permissions evaluator
+   * @param editability the role×status editability resolver
    * @param messageSource the message source
    */
   public Schedule11Controller(
       MillContextService millContextService,
       Schedule11Service schedule11Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource) {
     this.millContextService = millContextService;
     this.schedule11Service = schedule11Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
   }
 
@@ -61,9 +62,9 @@ public class Schedule11Controller implements Schedule11Api {
   public ResponseEntity<Schedule11Response> getSchedule11(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule11Service.getSchedule11(context.millId(), context.year(), callerMayEdit));
+        schedule11Service.getSchedule11(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -76,7 +77,11 @@ public class Schedule11Controller implements Schedule11Api {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc =
         schedule11Service.addLocation(
-            context.millId(), context.year(), request, true, authentication.getName());
+            context.millId(),
+            context.year(),
+            request,
+            editability.forCaller(authentication),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -91,7 +96,12 @@ public class Schedule11Controller implements Schedule11Api {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc =
         schedule11Service.updateLocation(
-            context.millId(), context.year(), id, request, true, authentication.getName());
+            context.millId(),
+            context.year(),
+            id,
+            request,
+            editability.forCaller(authentication),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -101,7 +111,8 @@ public class Schedule11Controller implements Schedule11Api {
       long id, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule11Response doc =
-        schedule11Service.deleteLocation(context.millId(), context.year(), id, true);
+        schedule11Service.deleteLocation(
+            context.millId(), context.year(), id, editability.forCaller(authentication));
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 

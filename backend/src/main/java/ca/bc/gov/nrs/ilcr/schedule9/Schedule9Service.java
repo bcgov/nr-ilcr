@@ -13,6 +13,7 @@ import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecord;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
@@ -44,16 +45,15 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><strong>The write half hardens what legacy left open.</strong> Legacy had no concurrency
  * control (it never incremented {@code REVISION_COUNT}), no server-side edit gate (only the
  * disabled buttons), and routed Save and Delete through one list transaction. Here each write is
- * one transaction whose first statement is the {@code FOR UPDATE} Draft gate, the optimistic lock
- * keys on the master's {@code REVISION_COUNT}, and Save/Delete are separate endpoints (recorded
- * deviation). The Save-vs-Check asymmetry — blank units/cost and a side slope of exactly 100 SAVE
- * but Check flags them — is preserved verbatim, not repaired. Costs/units are never logged (AD-11).
+ * one transaction whose first statement is the {@code FOR UPDATE} editability gate, the optimistic
+ * lock keys on the master's {@code REVISION_COUNT}, and Save/Delete are separate endpoints
+ * (recorded deviation). The Save-vs-Check asymmetry — blank units/cost and a side slope of exactly
+ * 100 SAVE but Check flags them — is preserved verbatim, not repaired. Costs/units are never logged
+ * (AD-11).
  */
 @Service
 @Slf4j
 public class Schedule9Service {
-
-  private static final String STATUS_DRAFT = "D";
 
   // Contractual Item cost-item ids (BR-09; legacy Constant.REPORT_COST_ITEMS Schedule9_*).
   private static final int ITEM_MIN = 108;
@@ -142,23 +142,27 @@ public class Schedule9Service {
    *
    * @param millId the validated mill id
    * @param year the validated reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the pinned document
    */
   @Transactional(readOnly = true)
-  public Schedule9Response getSchedule9(long millId, int year, boolean callerMayEdit) {
+  public Schedule9Response getSchedule9(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit, true);
+    return buildDocument(millId, year, trackStatus, caller, true);
   }
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their Draft gate just proved (same transaction) rather than re-running the track
-   * query.
+   * {@code D} their editability gate just proved (same transaction) rather than re-running the
+   * track query.
    */
   private Schedule9Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit, boolean includeCodeLists) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId,
+      int year,
+      String trackStatus,
+      EditableStatuses caller,
+      boolean includeCodeLists) {
+    boolean editable = caller.allows(trackStatus);
 
     // One cost line per record; lowest ILCR_COST_REPORT_DETAIL_ID wins if delivery ever holds more
     // (no unique constraint on the FK) — the repository ORDER BY makes that deterministic, and the
@@ -223,8 +227,9 @@ public class Schedule9Service {
   }
 
   // ===============================================================================================
-  // Writes (Story 9.2). Each is ONE transaction: FOR UPDATE Draft gate first, then validate, then
-  // persist, then return the recomputed document built from the "D" the gate proved. The success
+  // Writes (Story 9.2). Each is ONE transaction: FOR UPDATE editability gate first, then validate,
+  // then
+  // persist, then return the recomputed document built from the status the gate proved. The success
   // message is attached by the controller (AD-8), so the service stays message-free on the write
   // path. A persistence failure rolls back and surfaces as ScheduleNotSavedException.
   // ===============================================================================================
@@ -236,8 +241,7 @@ public class Schedule9Service {
    * @param millId the mill id (context already validated by the controller, AD-4)
    * @param year the reporting year
    * @param request the entered fields
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed
-   *     editability)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed editability)
    * @param user the acting user id (audit columns)
    * @return the recomputed document, the new record included
    */
@@ -246,9 +250,9 @@ public class Schedule9Service {
       long millId,
       int year,
       ContractualWorkRecordRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     validateWrite(request);
     int itemCode = request.contractualItemCode();
     try {
@@ -278,7 +282,7 @@ public class Schedule9Service {
       logWriteFailure("add", millId, year, null, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
+    return buildDocument(millId, year, trackStatus, caller, false);
   }
 
   /**
@@ -290,7 +294,7 @@ public class Schedule9Service {
    * @param year the reporting year
    * @param recordId the record to edit
    * @param request the entered fields plus the required {@code revisionCount} token
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the recomputed document
    */
@@ -300,9 +304,9 @@ public class Schedule9Service {
       int year,
       int recordId,
       ContractualWorkRecordRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     // Defence in depth for the AR11 token: the API's OnUpdate group already rejects a null
     // revisionCount as a clean 400, but this method unboxes it, so a direct caller that bypassed
     // the
@@ -347,7 +351,7 @@ public class Schedule9Service {
       logWriteFailure("update", millId, year, recordId, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
+    return buildDocument(millId, year, trackStatus, caller, false);
   }
 
   /**
@@ -359,13 +363,13 @@ public class Schedule9Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param recordId the record to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the recomputed document without the deleted record
    */
   @Transactional
   public Schedule9Response deleteRecord(
-      long millId, int year, int recordId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int recordId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countRecord(recordId, millId, year) == 0) {
         throw new ContractualWorkRecordNotFoundException();
@@ -380,7 +384,7 @@ public class Schedule9Service {
       logWriteFailure("delete", millId, year, recordId, ex);
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit, false);
+    return buildDocument(millId, year, trackStatus, caller, false);
   }
 
   // ===============================================================================================
@@ -481,17 +485,18 @@ public class Schedule9Service {
   }
 
   /**
-   * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
-   * AD-9). The {@code FOR UPDATE} lock is load-bearing — it holds the status for the whole
-   * transaction so a transition cannot slip between the gate and the write it guards. Never reads
-   * the silviculture track. The mill/year context (400/404/409) is already validated by the
-   * controller.
+   * The editability gate for every write: the caller must be permitted to write at the Schedules
+   * 1–10 track's current status, else 409 (BR-06, AD-9). The {@code FOR UPDATE} lock is
+   * load-bearing — it holds the status for the whole transaction so a transition cannot slip
+   * between the gate and the write it guards. Never reads the silviculture track. The mill/year
+   * context (400/404/409) is already validated by the controller.
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** Class name plus most-specific cause only — an ORA code carries no cost/unit values (AD-11). */
@@ -508,7 +513,8 @@ public class Schedule9Service {
   }
 
   // ===============================================================================================
-  // Check Status (Story 9.2, BR-08) — read-only, mutates nothing, NOT Draft-gated (VIEW_SCHEDULE
+  // Check Status (Story 9.2, BR-08) — read-only, mutates nothing, NOT editability-gated
+  // (VIEW_SCHEDULE
   // only, so a Submitted mill can still be checked). Reproduces
   // Schedule9CheckStatus.validateSchedule
   // exactly: the eight fields, the 1-based row number in the title, the side-slope 0..99 bound, and

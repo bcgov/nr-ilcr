@@ -173,7 +173,8 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
   List<CodeRow> findSupplyBlocks(@Param("millId") long millId, @Param("year") int year);
 
   // ===============================================================================================
-  // Write path (Story 8.2) — AD-3 dumb SQL; transaction boundary, Draft gate, BR-02 counterpart-
+  // Write path (Story 8.2) — AD-3 dumb SQL; transaction boundary, editability gate, BR-02
+  // counterpart-
   // clear, BR-09 placeholder logic, and 404-vs-409 disambiguation live in Schedule6Service. All
   // writes are THE-qualified and scope every UPDATE/DELETE to (id, ILCR_MILL_ID, REPORT_YEAR,
   // ILCR_CATEGORY_ID='6') so one mill's write can never touch another's rows (the Schedule 4 IDOR

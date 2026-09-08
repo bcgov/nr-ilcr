@@ -14,6 +14,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordCheckResult.FieldIssue;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckRequest.CheckEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -380,7 +381,8 @@ class Schedule6CheckStatusServiceTest {
     when(repository.findTsaNumbers(MILL, YEAR)).thenReturn(List.of());
     when(repository.findSupplyBlocks(MILL, YEAR)).thenReturn(List.of());
 
-    List<RoadRecord> served = service.getSchedule6(MILL, YEAR, true).roadRecords();
+    List<RoadRecord> served =
+        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords();
     // Force the ISSUES branch so every candidate appears in the response (the MET branch emits no
     // per-record results at all, so it could not carry this comparison).
     List<RoadRecordCheckResult> checked = service.checkStatusStored(MILL, YEAR).records();

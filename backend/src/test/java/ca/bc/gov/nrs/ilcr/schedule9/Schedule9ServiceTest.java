@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.CostRow;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.RecordRow;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecord;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -73,7 +74,8 @@ class Schedule9ServiceTest {
         List.of(record(9101, new BigDecimal("100.0"))),
         List.of(new CostRow(9101, 108, "Cattleguard", null, 5000)));
 
-    ContractualWorkRecord row = service.getSchedule9(MILL, YEAR, true).records().get(0);
+    ContractualWorkRecord row =
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0);
 
     assertEquals(0, new BigDecimal("50.00").compareTo(row.costPerUnit()));
     assertEquals(5000, row.cost());
@@ -89,7 +91,8 @@ class Schedule9ServiceTest {
         List.of(record(9102, BigDecimal.ZERO)),
         List.of(new CostRow(9102, 109, "Pipeline Crossing", null, 3000)));
 
-    ContractualWorkRecord row = service.getSchedule9(MILL, YEAR, true).records().get(0);
+    ContractualWorkRecord row =
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0);
 
     assertNull(row.costPerUnit());
     assertEquals(3000, row.cost());
@@ -103,7 +106,8 @@ class Schedule9ServiceTest {
         List.of(record(9103, null)),
         List.of(new CostRow(9103, 110, "Remedial Fence", null, 2000)));
 
-    assertNull(service.getSchedule9(MILL, YEAR, true).records().get(0).costPerUnit());
+    assertNull(
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0).costPerUnit());
   }
 
   @Test
@@ -111,7 +115,8 @@ class Schedule9ServiceTest {
   void nullCostLine_leavesItemAndCostNull() {
     stub("D", List.of(record(9104, new BigDecimal("10.0"))), List.of());
 
-    ContractualWorkRecord row = service.getSchedule9(MILL, YEAR, true).records().get(0);
+    ContractualWorkRecord row =
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0);
 
     assertNull(row.contractualItem());
     assertNull(row.cost());
@@ -122,14 +127,14 @@ class Schedule9ServiceTest {
   @DisplayName("editable = caller holds EDIT_SCHEDULE AND the track is Draft (server authority)")
   void editableRequiresDraftAndPermission() {
     stub("D", List.of(), List.of());
-    assertTrue(service.getSchedule9(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   @DisplayName("Draft but caller lacks EDIT_SCHEDULE -> editable false")
   void notEditable_whenCallerMayNotEdit() {
     stub("D", List.of(), List.of());
-    assertFalse(service.getSchedule9(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule9(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -140,7 +145,7 @@ class Schedule9ServiceTest {
         List.of(record(9110, new BigDecimal("40.0"))),
         List.of(new CostRow(9110, 111, "Semi-permanent Road Deactivation", null, 8000)));
 
-    Schedule9Response response = service.getSchedule9(MILL, YEAR, true);
+    Schedule9Response response = service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertFalse(response.editable());
     assertEquals("S", response.trackStatus());

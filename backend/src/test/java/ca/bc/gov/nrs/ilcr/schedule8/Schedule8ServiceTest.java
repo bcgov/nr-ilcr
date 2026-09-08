@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -134,7 +135,7 @@ class Schedule8ServiceTest {
   @Test
   void threeLevelAssembly_pageCarriesItsSampleAndSampleCount() {
     stubOnePageOneSample();
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(1, doc.pages().size());
     Page page = doc.pages().get(0);
     assertEquals(8500, page.id());
@@ -146,7 +147,8 @@ class Schedule8ServiceTest {
   @Test
   void additionsAndDeductions_splitBySubcategory() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(1, sample.additionCount());
     assertEquals(1, sample.deductionCount());
     assertEquals(82, sample.additions().get(0).costItemCode()); // subcat '1'
@@ -156,7 +158,8 @@ class Schedule8ServiceTest {
   @Test
   void computedRollups_totalsAndFinalRate() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(100, sample.percentTotal()); // 60 + 40
     assertEquals(1000, sample.actualHarvested()); // 700 + 300
     eq("5", sample.additionsTotal());
@@ -180,7 +183,8 @@ class Schedule8ServiceTest {
                     8702, 8600, "CT1", 999, "Orphan",
                     "9.99"))); // 999 not in subcategories → dropped
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
     assertEquals(1, sample.additionCount()); // only the classifiable addition
     assertEquals(0, sample.deductionCount());
@@ -191,7 +195,7 @@ class Schedule8ServiceTest {
   @Test
   void codeLabels_resolvedFromCodeTables() {
     stubOnePageOneSample();
-    Page page = service.getSchedule8(MILL, YEAR, true).pages().get(0);
+    Page page = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
     assertEquals("SC1", page.supportCentre());
     assertEquals("Support Centre One", page.supportCentreLabel());
     assertEquals("Region One", page.regionLabel());
@@ -204,7 +208,8 @@ class Schedule8ServiceTest {
   @Test
   void ynIndicators_mappedToBooleans() {
     stubOnePageOneSample();
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertTrue(sample.uphillDirection()); // "Y"
     assertFalse(sample.waterDumpDestination()); // "N"
   }
@@ -212,8 +217,8 @@ class Schedule8ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stubOnePageOneSample();
-    assertTrue(service.getSchedule8(MILL, YEAR, true).editable());
-    assertFalse(service.getSchedule8(MILL, YEAR, false).editable());
+    assertTrue(service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).editable());
+    assertFalse(service.getSchedule8(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -222,7 +227,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertFalse(doc.editable());
     assertEquals(1, doc.pages().size());
     assertEquals("S", doc.trackStatus());
@@ -234,7 +239,7 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Schedule8Response doc = service.getSchedule8(MILL, YEAR, true);
+    Schedule8Response doc = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.pages().isEmpty());
     assertTrue(doc.editable()); // editable per Draft track even with no pages
   }
@@ -254,7 +259,8 @@ class Schedule8ServiceTest {
                 rate(8702, 8600, "CT2", 101, "Ded subcat 3", "2.00"),
                 rate(8703, 8600, "CT2", 107, "Ded subcat 4", "1.75")));
 
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
 
     assertEquals(2, sample.additionCount());
     assertEquals(2, sample.deductionCount());
@@ -305,7 +311,8 @@ class Schedule8ServiceTest {
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
     when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
     when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
-    Sample sample = service.getSchedule8(MILL, YEAR, true).pages().get(0).samples().get(0);
+    Sample sample =
+        service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).samples().get(0);
     assertEquals(0, sample.additionCount());
     assertEquals(0, sample.deductionCount());
     eq("0", sample.additionsTotal());

@@ -15,6 +15,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +69,7 @@ class Schedule3ServiceTest {
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
 
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertNull(doc.revisionCount(), "an unsaved schedule must carry NO optimistic-lock token");
     assertNull(doc.comments());
@@ -87,8 +88,10 @@ class Schedule3ServiceTest {
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
     lenient().when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
 
-    assertTrue(service.findSchedule3(MILL, YEAR, true).isEmpty());
-    assertNotNull(service.getSchedule3(MILL, YEAR, true), "get must still serve a document");
+    assertTrue(service.findSchedule3(MILL, YEAR, CallerRights.SUBMITTER).isEmpty());
+    assertNotNull(
+        service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER),
+        "get must still serve a document");
   }
 
   private void stub(String trackStatus, String location, List<DetailRow> details) {
@@ -132,7 +135,7 @@ class Schedule3ServiceTest {
   @Test
   void normalLine_crownIsHarvestMinusPop() {
     stub("D", "N", List.of(cost(27, 100000), cost(125, 40000)));
-    CostLine licenses = line(service.getSchedule3(MILL, YEAR, true), 27);
+    CostLine licenses = line(service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER), 27);
     assertEquals(100000, licenses.harvest());
     assertEquals(40000, licenses.pop());
     assertEquals(60000, licenses.crown());
@@ -141,7 +144,7 @@ class Schedule3ServiceTest {
   @Test
   void harvestOnlyLines_popForcedZero_crownEqualsHarvest() {
     stub("D", "N", List.of(cost(29, 30000), cost(37, 150000)));
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0, line(doc, 29).pop());
     assertEquals(30000, line(doc, 29).crown());
     assertEquals(0, line(doc, 37).pop());
@@ -153,7 +156,7 @@ class Schedule3ServiceTest {
     // ratio = popTimberVol / (popTimberVol + crownTimberVol) = 54321/108642 = 0.5; pop = 0.5 *
     // 60000.
     stub("D", "N", List.of(cost(33, 60000), volume(118, "54321"), volume(119, "54321")));
-    CostLine scaling = line(service.getSchedule3(MILL, YEAR, true), 33);
+    CostLine scaling = line(service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER), 33);
     assertEquals(60000, scaling.harvest());
     assertEquals(30000, scaling.pop());
     assertEquals(30000, scaling.crown());
@@ -162,7 +165,7 @@ class Schedule3ServiceTest {
   @Test
   void fullDocument_derivedCascadeMatchesLegacy() {
     stub("D", "Y", fullDocument());
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
 
     // Subtotal Actual = 900000 / 300000 (== the V5-stored 115/135). Totals are Long
     // (overflow-safe).
@@ -206,7 +209,7 @@ class Schedule3ServiceTest {
     rows.add(new DetailRow(38, null, 1000, "Fine A", null)); // two item-38 rows
     rows.add(new DetailRow(38, null, 2000, "Fine B", null));
     stub("D", "N", rows);
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(3, doc.unacceptableCount());
     // Included Unacceptable harvest = 1000 + 2000 + 30000 (Annual Rents).
     assertEquals(33000, doc.includedUnacceptableCosts().harvest());
@@ -215,7 +218,7 @@ class Schedule3ServiceTest {
   @Test
   void unacceptableCount_noAnnualRents_noPlusOne() {
     stub("D", "N", List.of(new DetailRow(38, null, 1000, "Fine A", null)));
-    assertEquals(1, service.getSchedule3(MILL, YEAR, true).unacceptableCount());
+    assertEquals(1, service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER).unacceptableCount());
   }
 
   @Test
@@ -228,7 +231,7 @@ class Schedule3ServiceTest {
             new DetailRow(124, null, 6000, "Tools", "SCH3_2_TOT_GRP2"),
             new DetailRow(124, null, 1000, "Tools", "SCH3_2_POP_GRP2"));
     stub("D", "N", rows);
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(2, doc.otherAcceptableCount());
     assertEquals(16000L, doc.subtotalOtherCosts().harvest().longValue()); // 10000 + 6000
     assertEquals(5000L, doc.subtotalOtherCosts().pop().longValue()); // 4000 + 1000
@@ -238,13 +241,14 @@ class Schedule3ServiceTest {
   @Test
   void overrideDefaultsToN_whenLocationNull() {
     stub("D", null, List.of());
-    assertEquals("N", service.getSchedule3(MILL, YEAR, true).overrideHarvestTotalPop());
+    assertEquals(
+        "N", service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER).overrideHarvestTotalPop());
   }
 
   @Test
   void emptySchedule_subtotalsAreZero() {
     stub("D", "N", List.of());
-    Schedule3Response doc = service.getSchedule3(MILL, YEAR, true);
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0L, doc.subtotalActualCosts().harvest().longValue());
     assertEquals(0L, doc.subtotalActualCosts().pop().longValue());
     assertEquals(0L, doc.totalCosts().harvest().longValue());
@@ -257,18 +261,18 @@ class Schedule3ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stub("D", "N", List.of());
-    assertTrue(service.getSchedule3(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenNotDraft() {
     stub("S", "N", List.of());
-    assertFalse(service.getSchedule3(MILL, YEAR, true).editable());
+    assertFalse(service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenCallerMayNotEdit() {
     stub("D", "N", List.of());
-    assertFalse(service.getSchedule3(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule3(MILL, YEAR, CallerRights.NONE).editable());
   }
 }

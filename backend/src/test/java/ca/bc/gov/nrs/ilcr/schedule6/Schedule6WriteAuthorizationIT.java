@@ -195,13 +195,15 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
-  void admin_passesEditAuthorization() throws Exception {
+  @DisplayName("ILCR_ADMIN at a Draft track -> authz passes (not 403); matrix -> 409")
+  void admin_refusedAtDraft() throws Exception {
+    // 666/2021 is this class's own DRAFT mill: authz passes so the request is NOT 403, and the
+    // matrix refuses an administrator while the mill still owns its draft -- 409, nothing written.
     mockMvc
         .perform(
             post(RECORDS)
                 .with(csrf())
-                .param("millId", "662")
+                .param("millId", "666")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)

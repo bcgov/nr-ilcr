@@ -92,7 +92,7 @@ public interface Schedule6Api {
 
   /**
    * Check Status for Schedule 6 (S09–S11, S20, S21) — read-only readiness validation, mutates
-   * nothing, NOT Draft-gated ({@code VIEW_SCHEDULE}; the 2.6 precedent). Returns the composed
+   * nothing, NOT editability-gated ({@code VIEW_SCHEDULE}; the 2.6 precedent). Returns the composed
    * per-record {@code Value Required} lines byte-for-byte, the per-record met banner on mixed
    * results, and the single schedule-level MET banner (with no per-record results) when everything
    * passes.
@@ -119,8 +119,9 @@ public interface Schedule6Api {
    * ({@code Schedule6MB.remove} :208-218), matching the general-comments precedent (deviation
    * (c2)). When the deleted record was the mill/year's only road record AND carried a non-blank
    * general comment, a bare placeholder row is re-inserted to preserve it (BR-09 delete side,
-   * {@code Schedule6DAO.java:297-309}). Draft-gated; an unknown, foreign, or placeholder id → 404;
-   * missing {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409 (ERR-001/003/002).
+   * {@code Schedule6DAO.java:297-309}). editability-gated; an unknown, foreign, or placeholder id →
+   * 404; missing {@code EDIT_SCHEDULE} → 403; bad mill/year context → 400/404/409
+   * (ERR-001/003/002).
    *
    * @param recordId the road record id ({@code ROAD_MAINTENANCE_REPORT_ID}) to delete
    * @param millId the raw mill id param (validated by millcontext)

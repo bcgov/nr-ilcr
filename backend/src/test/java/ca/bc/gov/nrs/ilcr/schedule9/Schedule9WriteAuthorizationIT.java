@@ -151,13 +151,31 @@ class Schedule9WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
-  void admin_passesEditAuthorization() throws Exception {
+  @DisplayName("ILCR_ADMIN WRITES at a Submitted track -> 2xx, the correction path (AD-9)")
+  void admin_writesAtSubmitted() throws Exception {
     mockMvc
         .perform(
             post(RECORDS)
                 .with(csrf())
                 .param("millId", "706")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The correction must not move the track — it stays Submitted.
+        .andExpect(jsonPath("$.trackStatus", is("S")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN at a DRAFT track -> 409: the mill still owns its draft (AD-9)")
+  void admin_refusedAtDraft() throws Exception {
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "702")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,7 +20,8 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,7 +50,7 @@ class Schedule4ControllerTest {
 
   @Mock private Schedule4Service schedule4Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private MessageSource messageSource;
 
@@ -64,11 +66,12 @@ class Schedule4ControllerTest {
    */
   @BeforeEach
   void setUp() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
     controller =
         new Schedule4Controller(
             millContextService,
             schedule4Service,
-            permissions,
+            editability,
             messageSource,
             new Schedule4CheckStatusResolver(schedule4Service, messageSource));
   }
@@ -76,8 +79,8 @@ class Schedule4ControllerTest {
   @Test
   void getSchedule4_validatesContext_derivesEditFlag_returnsDocument() {
     Schedule4Response doc = mock(Schedule4Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule4Service.getSchedule4(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule4Service.getSchedule4(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule4Response> response =
         controller.getSchedule4(MILL_ID, YEAR, authentication);
@@ -93,9 +96,9 @@ class Schedule4ControllerTest {
     Schedule4LocationRequest request = mock(Schedule4LocationRequest.class);
     Schedule4Response saved = mock(Schedule4Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, true, "dev-admin"))
+    when(schedule4Service.saveLocation(MILL_ID, YEAR, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
@@ -121,7 +124,7 @@ class Schedule4ControllerTest {
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule4Service).deleteLocation(MILL_ID, YEAR, 8001);
+    verify(schedule4Service).deleteLocation(MILL_ID, YEAR, 8001, CallerRights.SUBMITTER);
   }
 
   @Test
@@ -129,9 +132,10 @@ class Schedule4ControllerTest {
     Schedule4SubPageRowRequest request = mock(Schedule4SubPageRowRequest.class);
     Schedule4Response saved = mock(Schedule4Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn("dev-admin");
-    when(schedule4Service.addSubPageRow(MILL_ID, YEAR, 8001, request, true, "dev-admin"))
+    when(schedule4Service.addSubPageRow(
+            MILL_ID, YEAR, 8001, request, CallerRights.SUBMITTER, "dev-admin"))
         .thenReturn(saved);
     when(messageSource.getMessage(
             eq("dataSavedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
@@ -149,8 +153,9 @@ class Schedule4ControllerTest {
   void deleteSubPageRow_delegates_andAppliesDeletedMessage() {
     Schedule4Response updated = mock(Schedule4Response.class);
     when(updated.withMessage(any())).thenReturn(updated);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, true)).thenReturn(updated);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule4Service.deleteSubPageRow(MILL_ID, YEAR, 8001, 9001, CallerRights.SUBMITTER))
+        .thenReturn(updated);
     when(messageSource.getMessage(
             eq("dataDeletedSuccesfullyInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("Data deleted successfully");

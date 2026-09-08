@@ -7,7 +7,8 @@ import ca.bc.gov.nrs.ilcr.schedule9.api.Schedule9Api;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -42,7 +43,7 @@ public class Schedule9Controller implements Schedule9Api {
 
   private final MillContextService millContextService;
   private final Schedule9Service schedule9Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
 
   /**
@@ -50,17 +51,17 @@ public class Schedule9Controller implements Schedule9Api {
    *
    * @param millContextService the mill context service
    * @param schedule9Service the Schedule 9 service
-   * @param permissions the schedule permissions checker
+   * @param editability the role×status editability resolver
    * @param messageSource the message source for localized messages
    */
   public Schedule9Controller(
       MillContextService millContextService,
       Schedule9Service schedule9Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource) {
     this.millContextService = millContextService;
     this.schedule9Service = schedule9Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
   }
 
@@ -77,9 +78,9 @@ public class Schedule9Controller implements Schedule9Api {
   public ResponseEntity<Schedule9Response> getSchedule9(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, EDIT_SCHEDULE);
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule9Service.getSchedule9(context.millId(), context.year(), callerMayEdit));
+        schedule9Service.getSchedule9(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -95,7 +96,7 @@ public class Schedule9Controller implements Schedule9Api {
             context.millId(),
             context.year(),
             request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -115,7 +116,7 @@ public class Schedule9Controller implements Schedule9Api {
             context.year(),
             id,
             request,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE),
+            editability.forCaller(authentication),
             authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
@@ -127,10 +128,7 @@ public class Schedule9Controller implements Schedule9Api {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule9Response doc =
         schedule9Service.deleteRecord(
-            context.millId(),
-            context.year(),
-            id,
-            permissions.hasPermission(authentication, EDIT_SCHEDULE));
+            context.millId(), context.year(), id, editability.forCaller(authentication));
     return ResponseEntity.ok(doc.withMessage(message(MSG_DELETED)));
   }
 
@@ -138,7 +136,8 @@ public class Schedule9Controller implements Schedule9Api {
   @PreAuthorize("@permissions.hasPermission(authentication, 'VIEW_SCHEDULE')")
   public ResponseEntity<Schedule9CheckStatusResponse> checkStatus(
       String millId, String year, Authentication authentication) {
-    // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no Draft gate.
+    // Read-only (AD-5): context guard first, then evaluate — mutates nothing, and no editability
+    // gate.
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     return ResponseEntity.ok(schedule9Service.checkStatus(context.millId(), context.year()));
   }

@@ -124,8 +124,8 @@ public interface Schedule9Api {
 
   /**
    * Check Status for Schedule 9 (S09) — read-only readiness validation. Mutates nothing, takes NO
-   * request body, and is NOT Draft-gated: {@code VIEW_SCHEDULE} only (the Schedule 5/7A precedent),
-   * so a Submitted mill can still be checked.
+   * request body, and is NOT editability-gated: {@code VIEW_SCHEDULE} only (the Schedule 5/7A
+   * precedent), so a Submitted mill can still be checked.
    *
    * <p>Returns either {@code requirementsMet: true} with the single SUC-002 banner and no errors,
    * or {@code requirementsMet: false} with each record's composed {@code Value Required} / range

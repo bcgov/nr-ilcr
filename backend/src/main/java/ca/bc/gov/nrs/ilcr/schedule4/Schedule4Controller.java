@@ -8,7 +8,8 @@ import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4LocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
@@ -39,7 +40,7 @@ public class Schedule4Controller implements Schedule4Api {
 
   private final MillContextService millContextService;
   private final Schedule4Service schedule4Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
   private final Schedule4CheckStatusResolver checkStatusResolver;
 
@@ -55,8 +56,8 @@ public class Schedule4Controller implements Schedule4Api {
       long millId, int year, Authentication authentication) {
     // No no-locations 404 for Schedule 4 — only mill/year existence + active checks (404/409).
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
-    return ResponseEntity.ok(schedule4Service.getSchedule4(millId, year, callerMayEdit));
+    EditableStatuses caller = editability.forCaller(authentication);
+    return ResponseEntity.ok(schedule4Service.getSchedule4(millId, year, caller));
   }
 
   @Override
@@ -64,10 +65,9 @@ public class Schedule4Controller implements Schedule4Api {
   public ResponseEntity<Schedule4Response> saveLocation(
       long millId, int year, Schedule4LocationRequest request, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
-    Schedule4Response saved =
-        schedule4Service.saveLocation(millId, year, request, callerMayEdit, user);
+    Schedule4Response saved = schedule4Service.saveLocation(millId, year, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -76,7 +76,7 @@ public class Schedule4Controller implements Schedule4Api {
   public ResponseEntity<MessageResponse> deleteLocation(
       long millId, int year, int id, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    schedule4Service.deleteLocation(millId, year, id);
+    schedule4Service.deleteLocation(millId, year, id, editability.forCaller(authentication));
     return ResponseEntity.ok(new MessageResponse(message(MSG_DELETED)));
   }
 
@@ -89,10 +89,10 @@ public class Schedule4Controller implements Schedule4Api {
       Schedule4SubPageRowRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule4Response saved =
-        schedule4Service.addSubPageRow(millId, year, locationId, request, callerMayEdit, user);
+        schedule4Service.addSubPageRow(millId, year, locationId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -106,11 +106,10 @@ public class Schedule4Controller implements Schedule4Api {
       Schedule4SubPageRowRequest request,
       Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     String user = authentication.getName();
     Schedule4Response saved =
-        schedule4Service.updateSubPageRow(
-            millId, year, locationId, rowId, request, callerMayEdit, user);
+        schedule4Service.updateSubPageRow(millId, year, locationId, rowId, request, caller, user);
     return ResponseEntity.ok(saved.withMessage(message(MSG_SAVED)));
   }
 
@@ -119,9 +118,9 @@ public class Schedule4Controller implements Schedule4Api {
   public ResponseEntity<Schedule4Response> deleteSubPageRow(
       long millId, int year, int locationId, int rowId, Authentication authentication) {
     millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     Schedule4Response updated =
-        schedule4Service.deleteSubPageRow(millId, year, locationId, rowId, callerMayEdit);
+        schedule4Service.deleteSubPageRow(millId, year, locationId, rowId, caller);
     return ResponseEntity.ok(updated.withMessage(message(MSG_DELETED)));
   }
 

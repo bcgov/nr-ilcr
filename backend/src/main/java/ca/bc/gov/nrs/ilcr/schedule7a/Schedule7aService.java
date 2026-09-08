@@ -10,6 +10,7 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -41,8 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Slf4j
 public class Schedule7aService {
-
-  private static final String STATUS_DRAFT = "D";
 
   // Legacy Constant.REPORT_COST_ITEMS.Schedule7_* ids (category '7').
   private static final int ITEM_SITE_PLAN = 70;
@@ -80,21 +79,22 @@ public class Schedule7aService {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (never inlined, AC5)
-   * @return the document with server-computed totals and Draft-gated editability
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (never inlined, AC5)
+   * @return the document with server-computed totals and editability-gated editability
    */
   @Transactional(readOnly = true)
-  public Schedule7aResponse getSchedule7a(long millId, int year, boolean callerMayEdit) {
+  public Schedule7aResponse getSchedule7a(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Assemble the served document for a known track status (writes reuse it with their proven "D").
+   * Assemble the served document for a known track status (writes reuse it with the status their
+   * gate proved).
    */
   private Schedule7aResponse buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<BridgeReportEntity> bridgeRows = repository.findBridges(millId, year);
     Map<Long, Map<Integer, Integer>> costs =
@@ -125,19 +125,19 @@ public class Schedule7aService {
 
   // ===============================================================================================
   // Writes (Story 12.2). Each method is one transaction: a persistence failure rolls back and
-  // surfaces as 500/ERR-004. Draft-gated on the 1–10 track (BR-01/AD-9).
+  // surfaces as 500/ERR-004. editability-gated on the 1–10 track (BR-01/AD-9).
   // ===============================================================================================
 
   /**
    * Add one bridge and return the recomputed document + the recalculated totals (S01/S02). Costs
    * are optional, but every one of the ten detail rows is written either way — an absent cost
-   * stores a NULL row, never no row (see {@link #writeCosts}). Draft-gated; unknown code → 400;
-   * malformed date → 400.
+   * stores a NULL row, never no row (see {@link #writeCosts}). editability-gated; unknown code →
+   * 400; malformed date → 400.
    */
   @Transactional
   public Schedule7aResponse addBridge(
-      long millId, int year, BridgeRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, BridgeRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     LocalDate builtDate = parseBuiltDate(request.builtDate());
     validateCodes(codeSets(year), request);
     try {
@@ -152,7 +152,7 @@ public class Schedule7aService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -167,11 +167,11 @@ public class Schedule7aService {
       int year,
       long bridgeId,
       BridgeRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    final String trackStatus = requireEditable(millId, year, caller);
     applyBridgeUpdate(millId, year, bridgeId, request, user, codeSets(year));
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -180,21 +180,21 @@ public class Schedule7aService {
    * button). Each entry goes through the same per-row path as {@link #updateBridge}, so the
    * validation, optimistic lock and cost upsert/clear rules are identical.
    *
-   * <p>Atomic by construction: one entry failing its Draft gate, revision check, code check or date
-   * parse rolls the WHOLE batch back. That is the legacy guarantee — a partial save would leave the
-   * reporter unable to tell which rows persisted.
+   * <p>Atomic by construction: one entry failing its editability gate, revision check, code check
+   * or date parse rolls the WHOLE batch back. That is the legacy guarantee — a partial save would
+   * leave the reporter unable to tell which rows persisted.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the bridges to save, each with its id and {@code revisionCount}
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the audit user
    * @return the recomputed document with refreshed totals
    */
   @Transactional
   public Schedule7aResponse saveAllBridges(
-      long millId, int year, BridgeSaveAllRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, BridgeSaveAllRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     rejectDuplicateIds(request);
     // Read the five code tables ONCE for the batch rather than once per bridge: the lists are
     // year-scoped, not row-scoped, so N bridges would otherwise issue 5N identical queries inside
@@ -203,7 +203,7 @@ public class Schedule7aService {
     for (BridgeSaveAllRequest.Item item : request.bridges()) {
       applyBridgeUpdate(millId, year, item.bridgeReportId(), item.bridge(), user, codes);
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -222,7 +222,8 @@ public class Schedule7aService {
 
   /**
    * Correct one bridge row and its costs. Shared by the per-row PUT and the save-all so a bridge is
-   * persisted by exactly one code path. Assumes the Draft gate has already run for the request.
+   * persisted by exactly one code path. Assumes the editability gate has already run for the
+   * request.
    */
   private void applyBridgeUpdate(
       long millId, int year, long bridgeId, BridgeRequest request, String user, CodeSets codes) {
@@ -251,8 +252,8 @@ public class Schedule7aService {
   }
 
   /**
-   * Delete one bridge and ALL its cost children (S04/S05 — legacy whole-row removal). Draft-gated;
-   * an unknown id → 404.
+   * Delete one bridge and ALL its cost children (S04/S05 — legacy whole-row removal).
+   * editability-gated; an unknown id → 404.
    *
    * <p>CHILDREN FIRST, then the parent — the order legacy used (Schedule7aDAO:566-570). Delivery
    * carries an FK from {@code ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID} without {@code ON DELETE
@@ -263,8 +264,8 @@ public class Schedule7aService {
    */
   @Transactional
   public Schedule7aResponse deleteBridge(
-      long millId, int year, long bridgeId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, long bridgeId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countBridge(bridgeId, millId, year) == 0) {
         throw new BridgeNotFoundException();
@@ -286,7 +287,7 @@ public class Schedule7aService {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -346,12 +347,16 @@ public class Schedule7aService {
     repository.upsertCost(bridgeId, costItemId, cost, user);
   }
 
-  /** The Draft gate for every write: the 1–10 track must be {@code D} (else 409, BR-01/AD-9). */
-  private void requireDraft(long millId, int year) {
+  /**
+   * The editability gate for every write: the caller must be permitted to write at the 1–10 track's
+   * current status (else 409, BR-01/AD-9).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** The five code-value sets a write is validated against, read once for a reporting year. */
