@@ -225,4 +225,25 @@ class Schedule11WriteAuthorizationIT extends AbstractOracleIT {
                 .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES at a VERIFIED silviculture track -> 2xx (the correction path)")
+  void admin_deletesAtSilvicultureVerified() throws Exception {
+    // The positive DELETE arm. This suite proved the admin WRITE at both editable statuses but
+    // never the delete, and the two are separate seams: the service threads its own
+    // EditableStatuses through each path, so a DELETE left on the pre-16.1 Draft-only literal
+    // passes every refused-at-Draft probe here — Draft-only and the matrix agree that an
+    // administrator may not write at 'D'. Location 9402 is R__50's seeded row on mill 736, so this
+    // removes a real row, and it is not the row admin_writesAtSilvicultureVerified creates, so the
+    // two arms stay independent of JUnit method order.
+    mockMvc
+        .perform(
+            delete(LOCATIONS + "/9402")
+                .with(csrf())
+                .param("millId", "736")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
 }
