@@ -8,6 +8,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
@@ -433,5 +434,23 @@ public class MillContextService {
    */
   public Optional<String> findSchedule11TrackStatusCode(long millId, int year) {
     return repository.findTrackStatusCodes(millId, year).map(TrackCodes::schedule11Code);
+  }
+
+  /**
+   * BOTH tracks' status codes for a mill/year in one read (Story 15.1) — the cheap shape for a
+   * caller that has already passed {@link #validateMillYearActive(long, int)} and needs the codes
+   * without the descriptions, dates and the four-to-seven queries {@link #resolveWorkingContext}
+   * spends on them. Codes only, never a per-schedule {@code findTrackStatus}: there are already
+   * eleven of those in the schedule repositories and this is the read that stops the count.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return both codes (either may be null); empty when no {@code ILCR_MILL_REPORT_STATUS} row
+   *     exists
+   */
+  public Optional<TrackStatusCodes> findTrackStatusCodes(long millId, int year) {
+    return repository
+        .findTrackStatusCodes(millId, year)
+        .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
   }
 }
