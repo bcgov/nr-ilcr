@@ -174,7 +174,12 @@ sense against this directory, `mvn clean` before believing it.
    409 as a gate refusal), `TRANSPORTATION_REPORT` **`8090`**, `ROAD_MAINTENANCE_REPORT` **`8410`**,
    `BRIDGE_REPORT` **`7660`**, `CULVERT_REPORT` **`7880`**, `TREE_TO_TRUCK_REPORT` **`8990`**,
    `CONTRACTUAL_WORK_REPORT` **`9195`**, `ROAD_CONSTRUCTION_REPRT` **`8990`**. It adds NO table, NO code
-   row and NO cost item — every code value it uses is already in the shared catalogues.
+   row and NO cost item — every code value it uses is already in the shared catalogues. Every `INSERT`
+   in it is **guarded on its own primary key** (`SELECT … FROM DUAL WHERE NOT EXISTS (…)`, i.e. `MERGE
+   … WHEN NOT MATCHED`), so editing the file — which changes its checksum and makes Flyway re-apply it —
+   cannot fail with `ORA-00001` against a database that already holds `737`–`746`. Convention 1b's
+   reused-container caveat still stands: the guard stops a *re-run* from erroring, it does not restore
+   rows a previous run's admin writes mutated.
 
    **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
    note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
