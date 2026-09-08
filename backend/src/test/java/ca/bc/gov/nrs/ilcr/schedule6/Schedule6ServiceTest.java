@@ -55,16 +55,15 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8001, "01", "01B", null, "GC", 0)),
         List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, "note")));
 
-    RoadRecord record =
-        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
+    RoadRecord road = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
-    assertEquals("15", record.rmg());
-    assertEquals("01", record.areaType());
-    assertEquals("01B", record.supplyBlock());
-    assertNull(record.tflNumber());
-    assertEquals(0, new BigDecimal("50.00").compareTo(record.costPerVolume()));
-    assertEquals("note", record.comments());
-    assertEquals(0, record.revisionCount());
+    assertEquals("15", road.rmg());
+    assertEquals("01", road.areaType());
+    assertEquals("01B", road.supplyBlock());
+    assertNull(road.tflNumber());
+    assertEquals(0, new BigDecimal("50.00").compareTo(road.costPerVolume()));
+    assertEquals("note", road.comments());
+    assertEquals(0, road.revisionCount());
   }
 
   @Test
@@ -75,14 +74,13 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8002, null, null, "18", "GC", 0)),
         List.of(new CostDetailRow(8002, new BigDecimal("400"), 30000, null)));
 
-    RoadRecord record =
-        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
+    RoadRecord road = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
-    assertEquals("4", record.rmg());
-    assertEquals("TFL", record.areaType());
-    assertEquals("18", record.tflNumber());
-    assertNull(record.supplyBlock());
-    assertEquals(0, new BigDecimal("75.00").compareTo(record.costPerVolume()));
+    assertEquals("4", road.rmg());
+    assertEquals("TFL", road.areaType());
+    assertEquals("18", road.tflNumber());
+    assertNull(road.supplyBlock());
+    assertEquals(0, new BigDecimal("75.00").compareTo(road.costPerVolume()));
   }
 
   @Test
@@ -171,13 +169,13 @@ class Schedule6ServiceTest {
         List.of(new CostDetailRow(8001, new BigDecimal("400.50"), 1000, null)));
 
     Schedule6Response response = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
-    RoadRecord record = response.roadRecords().get(0);
+    RoadRecord road = response.roadRecords().get(0);
 
     // normalizeVolume strips only trailing zeros: 400.50 -> 400.5 (not 400 and not 4.005E+2).
-    assertEquals(new BigDecimal("400.5"), record.volume());
+    assertEquals(new BigDecimal("400.5"), road.volume());
     assertEquals(new BigDecimal("400.5"), response.totalVolume());
     // 1000 / 400.5 = 2.4968... -> 2.50 at scale 2 HALF_UP (legacy CoreUtil.bigDecimalDivision).
-    assertEquals(new BigDecimal("2.50"), record.costPerVolume());
+    assertEquals(new BigDecimal("2.50"), road.costPerVolume());
     assertEquals(new BigDecimal("2.50"), response.totalCostPerVolume());
   }
 
@@ -251,13 +249,12 @@ class Schedule6ServiceTest {
         List.of(new RoadRecordRow(8001, "01 ", " 01B ", "  ", null, 0)),
         List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, null)));
 
-    RoadRecord record =
-        service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
+    RoadRecord road = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER).roadRecords().get(0);
 
-    assertEquals("01", record.areaType());
-    assertEquals("01B", record.supplyBlock());
-    assertNull(record.tflNumber());
-    assertEquals("15", record.rmg());
+    assertEquals("01", road.areaType());
+    assertEquals("01B", road.supplyBlock());
+    assertNull(road.tflNumber());
+    assertEquals("15", road.rmg());
   }
 
   @Test

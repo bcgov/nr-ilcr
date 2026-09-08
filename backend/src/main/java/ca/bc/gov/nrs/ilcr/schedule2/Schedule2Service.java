@@ -177,7 +177,7 @@ public class Schedule2Service {
           user);
       // Recompute-and-return INSIDE the try so a late DataAccessException on the read path is also
       // translated to ScheduleNotSaved (500) rather than leaking to the shared handler (409).
-      return getSchedule2(millId, year, caller);
+      return assembleSchedule2(millId, year, caller);
     } catch (StaleRevisionException ex) {
       throw ex;
     } catch (DataAccessException ex) {
@@ -270,34 +270,28 @@ public class Schedule2Service {
    */
   @Transactional(readOnly = true)
   public Schedule2Response getSchedule2(long millId, int year, EditableStatuses caller) {
-    Optional<SummaryRow> summary = repository.findSummary(millId, year);
+    return assembleSchedule2(millId, year, caller);
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * ({@link #saveSchedule2}, {@link #checkStatus}) reach it directly instead of self-invoking the
+   * annotated entry point. A {@code this} call bypasses the Spring proxy, so the annotation was
+   * never applied on those paths anyway (sonar java:S6809); the read simply joins the transaction
+   * the caller already opened, which is the behaviour those two paths always had.
+   */
+  private Schedule2Response assembleSchedule2(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     final boolean editable = caller.allows(trackStatus);
 
     // Stored line items 25/26 (empty when unsaved — AC6).
-    Integer purchasedLogCostAmount = null; // item 25 cost
-    BigDecimal lessLogSalesVolume = null; // item 26 volume
-    Integer lessLogSalesCost = null; // item 26 cost
-    String comments = null;
-    Integer revisionCount = null;
-
-    if (summary.isPresent()) {
-      SummaryRow row = summary.get();
-      comments = row.comments();
-      revisionCount = row.revisionCount();
-      List<DetailRow> details = repository.findDetails(row.summaryId());
-      for (DetailRow d : details) {
-        if (d.costItemCode() == null) {
-          continue;
-        }
-        if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
-          purchasedLogCostAmount = d.cost();
-        } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
-          lessLogSalesVolume = d.volume();
-          lessLogSalesCost = d.cost();
-        }
-      }
-    }
+    StoredItems stored =
+        repository.findSummary(millId, year).map(this::readStoredItems).orElse(StoredItems.EMPTY);
+    Integer purchasedLogCostAmount = stored.purchasedLogCostAmount(); // item 25 cost
+    BigDecimal lessLogSalesVolume = stored.lessLogSalesVolume(); // item 26 volume
+    Integer lessLogSalesCost = stored.lessLogSalesCost(); // item 26 cost
+    String comments = stored.comments();
+    Integer revisionCount = stored.revisionCount();
 
     // Carried Schedule 3 figures — sourced from Schedule 3's computed document (single source of
     // truth,
@@ -450,6 +444,49 @@ public class Schedule2Service {
   }
 
   /**
+   * The stored half of the document, read off one category-{@code '2'} summary row: line items
+   * 25/26 plus the summary's own comments/revision. {@link #EMPTY} is the unsaved-schedule state,
+   * every component null (AC6).
+   */
+  private record StoredItems(
+      Integer purchasedLogCostAmount,
+      BigDecimal lessLogSalesVolume,
+      Integer lessLogSalesCost,
+      String comments,
+      Integer revisionCount) {
+
+    private static final StoredItems EMPTY = new StoredItems(null, null, null, null, null);
+  }
+
+  /**
+   * Pick items 25 and 26 out of one summary's detail rows. A null {@code costItemCode} row is
+   * skipped rather than matched, and any other item code is ignored — Schedule 2 stores only these
+   * two.
+   */
+  private StoredItems readStoredItems(SummaryRow row) {
+    Integer purchasedLogCostAmount = null; // item 25 cost
+    BigDecimal lessLogSalesVolume = null; // item 26 volume
+    Integer lessLogSalesCost = null; // item 26 cost
+    for (DetailRow d : repository.findDetails(row.summaryId())) {
+      if (d.costItemCode() == null) {
+        continue;
+      }
+      if (d.costItemCode() == ITEM_PURCHASED_LOG_COST) {
+        purchasedLogCostAmount = d.cost();
+      } else if (d.costItemCode() == ITEM_LESS_LOG_SALES) {
+        lessLogSalesVolume = d.volume();
+        lessLogSalesCost = d.cost();
+      }
+    }
+    return new StoredItems(
+        purchasedLogCostAmount,
+        lessLogSalesVolume,
+        lessLogSalesCost,
+        row.comments(),
+        row.revisionCount());
+  }
+
+  /**
    * Evaluate the Schedule 2 completion requirement (BR-07) for a mill/year — read-only (AD-5),
    * never mutates. Reuses the server-assembled document ({@link #getSchedule2}) and inspects {@code
    * purchasedLogCost.cost} (cost-item 25): non-null &rarr; {@code MET} with one {@code
@@ -465,7 +502,7 @@ public class Schedule2Service {
   @Transactional(readOnly = true)
   public Schedule2CheckStatusResponse checkStatus(long millId, int year) {
     // Editability is irrelevant to BR-07 (only the item-25 cost matters); permit nothing.
-    Schedule2Response document = getSchedule2(millId, year, EditableStatuses.NONE);
+    Schedule2Response document = assembleSchedule2(millId, year, EditableStatuses.NONE);
     boolean met = document.purchasedLogCost().cost() != null;
     String outcome = met ? CheckStatusOutcome.MET : CheckStatusOutcome.ISSUES;
     String key = met ? MSG_REQUIREMENTS_MET : MSG_MISSING_REQUIRED;

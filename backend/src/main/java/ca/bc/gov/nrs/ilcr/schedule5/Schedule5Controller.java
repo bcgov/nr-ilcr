@@ -37,7 +37,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class Schedule5Controller implements Schedule5Api {
 
-  private static final String EDIT_SCHEDULE = "EDIT_SCHEDULE";
   private static final String MSG_SAVED = "dataSavedSuccesfullyInfoMsg";
   private static final String MSG_DELETED = "dataDeletedSuccesfullyInfoMsg";
 

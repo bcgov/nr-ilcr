@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.security;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,13 +45,13 @@ class ScheduleEditabilityTest {
     @ParameterizedTest(name = "SUBMITTER at {0} -> editable={1}")
     @CsvSource({"D,true", "S,false", "V,false", "O,false"})
     void submitter_editsAtDraftOnly(String status, boolean expected) {
-      assertTrue(expected == editable("ILCR_SUBMITTER", status), "SUBMITTER at " + status);
+      assertEquals(expected, editable("ILCR_SUBMITTER", status), "SUBMITTER at " + status);
     }
 
     @ParameterizedTest(name = "ADMIN at {0} -> editable={1}")
     @CsvSource({"D,false", "S,true", "V,true", "O,false"})
     void admin_editsAtSubmittedAndVerifiedButNotDraft(String status, boolean expected) {
-      assertTrue(expected == editable("ILCR_ADMIN", status), "ADMIN at " + status);
+      assertEquals(expected, editable("ILCR_ADMIN", status), "ADMIN at " + status);
     }
 
     @Test

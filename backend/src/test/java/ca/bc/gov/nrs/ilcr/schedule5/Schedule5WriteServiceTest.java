@@ -148,16 +148,15 @@ class Schedule5WriteServiceTest {
     @DisplayName("a non-Draft track rejects every mutation before anything is read or written")
     void nonDraftRejectsAllThree() {
       when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
+      // Each request is built OUTSIDE its lambda so the only call that can throw inside is the
+      // one under test — a builder failure would otherwise read as the gate rejecting (S5778).
+      CampRequest create = request("New Camp", null);
+      CampRequest update = request("New Camp", 0);
 
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, request("New Camp", null), CallerRights.SUBMITTER, USER))
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, create, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL, YEAR, CAMP, request("New Camp", 0), CallerRights.SUBMITTER, USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, update, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
       assertThatThrownBy(() -> service.deleteCamp(MILL, YEAR, CAMP, CallerRights.SUBMITTER))
           .isInstanceOf(ScheduleNotEditableException.class);
@@ -183,11 +182,9 @@ class Schedule5WriteServiceTest {
     @DisplayName("a MISSING status row is not Draft either — no report status means not editable")
     void absentTrackStatusRejects() {
       when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.empty());
+      CampRequest create = request("New Camp", null);
 
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, request("New Camp", null), CallerRights.SUBMITTER, USER))
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, create, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotEditableException.class);
     }
   }
@@ -304,11 +301,9 @@ class Schedule5WriteServiceTest {
     @DisplayName("a create checks the UNSCOPED count and rejects a duplicate before any write")
     void createRejectsDuplicate() {
       when(repository.countCampsNamed(MILL, YEAR, "New Camp")).thenReturn(1);
+      CampRequest duplicate = request("New Camp", null);
 
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, request("New Camp", null), CallerRights.SUBMITTER, USER))
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, duplicate, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampNameConflictException.class);
 
       verify(repository, never())
@@ -425,10 +420,9 @@ class Schedule5WriteServiceTest {
 
       // The conflict BRANCH, not just the query call: updateExcludesItselfById above only proves
       // the right query runs — this proves its result is acted on (the review's regression gap).
+      CampRequest rename = request("Taken Name", 0);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL, YEAR, CAMP, request("Taken Name", 0), CallerRights.SUBMITTER, USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, rename, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampNameConflictException.class);
 
       verify(repository, never())
@@ -455,10 +449,9 @@ class Schedule5WriteServiceTest {
 
       // A 409 "Camp name already exists." for an id the caller cannot see would both contradict
       // the API's documented 404 and confirm the name exists across the tenancy boundary.
+      CampRequest rename = request("Taken Name", 0);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL, YEAR, CAMP, request("Taken Name", 0), CallerRights.SUBMITTER, USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, rename, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampNotFoundException.class);
     }
   }
@@ -470,15 +463,10 @@ class Schedule5WriteServiceTest {
     @Test
     @DisplayName("a null token is a 400, never a coerced 409 — the direct-caller guard")
     void nullRevisionCountIsBadRequest() {
+      CampRequest noToken = request("Edit Target Camp", null);
+
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL,
-                      YEAR,
-                      CAMP,
-                      request("Edit Target Camp", null),
-                      CallerRights.SUBMITTER,
-                      USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, noToken, CallerRights.SUBMITTER, USER))
           .isInstanceOf(RevisionCountRequiredException.class);
 
       verify(repository, never())
@@ -514,15 +502,9 @@ class Schedule5WriteServiceTest {
           .thenReturn(0);
       when(repository.countCamp(CAMP, MILL, YEAR)).thenReturn(0);
 
+      CampRequest edit = request("Edit Target Camp", 0);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL,
-                      YEAR,
-                      CAMP,
-                      request("Edit Target Camp", 0),
-                      CallerRights.SUBMITTER,
-                      USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, edit, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampNotFoundException.class);
     }
 
@@ -547,15 +529,9 @@ class Schedule5WriteServiceTest {
       // The guarded UPDATE cannot tell these two apart on its own — both are zero rows. Swapping
       // the
       // outcomes would tell a licensee to reload when the camp is simply gone, or vice versa.
+      CampRequest edit = request("Edit Target Camp", 0);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL,
-                      YEAR,
-                      CAMP,
-                      request("Edit Target Camp", 0),
-                      CallerRights.SUBMITTER,
-                      USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, edit, CallerRights.SUBMITTER, USER))
           .isInstanceOf(StaleRevisionException.class);
     }
 
@@ -577,15 +553,9 @@ class Schedule5WriteServiceTest {
           .thenReturn(0);
       when(repository.countCamp(CAMP, MILL, YEAR)).thenReturn(1);
 
+      CampRequest edit = request("Edit Target Camp", 0);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL,
-                      YEAR,
-                      CAMP,
-                      request("Edit Target Camp", 0),
-                      CallerRights.SUBMITTER,
-                      USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, edit, CallerRights.SUBMITTER, USER))
           .isInstanceOf(StaleRevisionException.class);
 
       verify(repository, never()).upsertCostDetail(anyInt(), anyInt(), any(), any(), anyString());
@@ -647,16 +617,14 @@ class Schedule5WriteServiceTest {
     @Test
     @DisplayName("an ordinary category is capped at +/-9,999,999 on both sides")
     void standardCategoryRange() {
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, withCost(0, 10_000_000), CallerRights.SUBMITTER, USER))
+      CampRequest overCap = withCost(0, 10_000_000);
+      CampRequest underFloor = withCost(6, -10_000_000);
+
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, overCap, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class)
           .hasMessage("costSize7ValidatorErrorMsg");
       assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, withCost(6, -10_000_000), CallerRights.SUBMITTER, USER))
+              () -> service.addCamp(MILL, YEAR, underFloor, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class)
           .hasMessage("costSize7ValidatorErrorMsg");
 
@@ -691,14 +659,14 @@ class Schedule5WriteServiceTest {
         "recoveries is 0-FLOORED, and capped at the legacy message's 9,999,999 "
             + "(deviation (G)) — not at the wider NUMBER(8,0) column")
     void recoveriesIsZeroFloored() {
+      CampRequest belowFloor = withCost(5, -1);
+      CampRequest overCap = withCost(5, 10_000_000);
+
       assertThatThrownBy(
-              () -> service.addCamp(MILL, YEAR, withCost(5, -1), CallerRights.SUBMITTER, USER))
+              () -> service.addCamp(MILL, YEAR, belowFloor, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class)
           .hasMessage("costValidatorSchedule9ErrorMsg");
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, withCost(5, 10_000_000), CallerRights.SUBMITTER, USER))
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, overCap, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class)
           .hasMessage("costValidatorSchedule9ErrorMsg");
 
@@ -713,10 +681,9 @@ class Schedule5WriteServiceTest {
       // Every other range test goes through addCamp; deleting validateCostRanges from updateCamp
       // alone kept the whole suite green (the review's regression gap). The Bean Validation bounds
       // are WIDER (±99,999,999), so they cannot catch what this rejects.
+      CampRequest belowFloor = withCost(5, -1);
       assertThatThrownBy(
-              () ->
-                  service.updateCamp(
-                      MILL, YEAR, CAMP, withCost(5, -1), CallerRights.SUBMITTER, USER))
+              () -> service.updateCamp(MILL, YEAR, CAMP, belowFloor, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class)
           .hasMessage("costValidatorSchedule9ErrorMsg");
 
@@ -738,10 +705,9 @@ class Schedule5WriteServiceTest {
     @Test
     @DisplayName("a range rejection happens before ANY write")
     void rejectionWritesNothing() {
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, withCost(0, 10_000_000), CallerRights.SUBMITTER, USER))
+      CampRequest overCap = withCost(0, 10_000_000);
+
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, overCap, CallerRights.SUBMITTER, USER))
           .isInstanceOf(CampCostOutOfRangeException.class);
 
       verify(repository, never())
@@ -773,10 +739,8 @@ class Schedule5WriteServiceTest {
       // screen
       // could only ever show a generic message; ERR-002's text is not statically resolvable
       // (UC-SCH5-001-technical.md:280), which is why no verbatim string is owed here.
-      assertThatThrownBy(
-              () ->
-                  service.addCamp(
-                      MILL, YEAR, request("New Camp", null), CallerRights.SUBMITTER, USER))
+      CampRequest create = request("New Camp", null);
+      assertThatThrownBy(() -> service.addCamp(MILL, YEAR, create, CallerRights.SUBMITTER, USER))
           .isInstanceOf(ScheduleNotSavedException.class);
     }
 

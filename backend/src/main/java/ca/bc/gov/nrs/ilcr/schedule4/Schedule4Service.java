@@ -90,6 +90,17 @@ public class Schedule4Service {
    */
   @Transactional(readOnly = true)
   public Schedule4Response getSchedule4(long millId, int year, EditableStatuses caller) {
+    return assembleSchedule4(millId, year, caller);
+  }
+
+  /**
+   * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
+   * ({@link #checkStatus} and the four write paths, which each echo the recomputed document) reach
+   * it directly instead of self-invoking the annotated entry point. A {@code this} call bypasses
+   * the Spring proxy, so the annotation never applied on those paths anyway (sonar java:S6809); the
+   * read joins the transaction the caller already opened, which is the behaviour they had.
+   */
+  private Schedule4Response assembleSchedule4(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     final boolean editable = caller.allows(trackStatus);
 
@@ -203,7 +214,7 @@ public class Schedule4Service {
   @Transactional(readOnly = true)
   public Schedule4CheckStatusResponse checkStatus(long millId, int year) {
     // Editability is irrelevant to the requirement check (only stored Costs matter).
-    Schedule4Response document = getSchedule4(millId, year, EditableStatuses.NONE);
+    Schedule4Response document = assembleSchedule4(millId, year, EditableStatuses.NONE);
     List<LocationCheckResult> results = new ArrayList<>(document.locations().size());
     boolean scheduleMet = true;
     for (Location location : document.locations()) {
@@ -317,7 +328,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, caller);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -401,7 +412,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, caller);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -460,7 +471,7 @@ public class Schedule4Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule4(millId, year, caller);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
@@ -500,7 +511,7 @@ public class Schedule4Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule4(millId, year, caller);
+    return assembleSchedule4(millId, year, caller);
   }
 
   /**
