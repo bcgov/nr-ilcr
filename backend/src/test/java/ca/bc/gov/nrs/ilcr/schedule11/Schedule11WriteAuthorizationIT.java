@@ -1,11 +1,13 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
+import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -27,9 +29,16 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>Bodies on the 403 write tests are VALID because {@code @Valid} body binding runs during
  * argument resolution BEFORE {@code @PreAuthorize} fires — an invalid body would yield 400, not the
- * 403 under test. The "authorized" proof POSTs to a non-Draft mill (615/'S'): authz passes so the
- * request is NOT 403, and the service's Draft gate rejects it 409 WITHOUT mutating anything — no
- * fixture churn.
+ * 403 under test. The submitter "authorized" proof POSTs to a non-Draft mill (615/'S'): authz
+ * passes so the request is NOT 403, and the editability matrix rejects it 409 WITHOUT mutating
+ * anything — no fixture churn.
+ *
+ * <p><strong>That no-mutation trick stops working for the administrator (Story 16.1).</strong> An
+ * ILCR_ADMIN at 'S' or 'V' now legitimately WRITES, so the admin arm cannot borrow a shared refusal
+ * fixture — 615 is read by sibling suites and would be corrupted. Mills <strong>735</strong>
+ * (silviculture 'S') and <strong>736</strong> (silviculture 'V') are seeded by {@code R__50} and
+ * owned solely by this class for that reason. Both carry 'D' on the 1–10 column, so the per-track
+ * evaluation is falsifiable rather than assumed.
  *
  * <p><b>Coverage gap (recorded):</b> a "holds VIEW but not EDIT → 403" case is unreachable today —
  * both shipped roles ({@code ILCR_SUBMITTER}, {@code ILCR_ADMIN}) hold {@code EDIT_SCHEDULE}. It
@@ -152,6 +161,68 @@ class Schedule11WriteAuthorizationIT extends AbstractOracleIT {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
                 .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().isConflict());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // The positive arm on the SILVICULTURE track (Story 16.1). Mills 735 and 736 (R__50) carry the
+  // status under test on the silviculture column and 'D' on the 1–10 column — the inverse of mill
+  // 615. That pairing is what makes the track split falsifiable: legacy duplicated
+  // disableUserInput() verbatim per track and changed only the getter it read, so a gate reading
+  // ILCR_MILL_REPORT_STATUS_CODE here would see Draft, refuse the administrator, and fail these.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a SUBMITTED silviculture track -> 2xx, track stays 'S'")
+  void admin_writesAtSilvicultureSubmitted() throws Exception {
+    mockMvc
+        .perform(
+            post(LOCATIONS)
+                .with(csrf())
+                .param("millId", "735")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // 'S' — not the 'D' sitting on this mill's 1–10 column, and not the STATUS_DRAFT literal
+        // the pre-16.1 echo passed its response builder.
+        .andExpect(jsonPath("$.trackStatus", is("S")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED silviculture track -> 2xx, track stays 'V'")
+  void admin_writesAtSilvicultureVerified() throws Exception {
+    mockMvc
+        .perform(
+            post(LOCATIONS)
+                .with(csrf())
+                .param("millId", "736")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same SUBMITTED silviculture track -> 409")
+  void submitter_refusedAtSilvicultureSubmitted() throws Exception {
+    // The other half of the row: the mill has handed the report over, so it is read-only to the
+    // mill. Without this, the admin case above would also pass on a gate simply widened to "anyone
+    // may edit at S".
+    mockMvc
+        .perform(
+            post(LOCATIONS)
+                .with(csrf())
+                .param("millId", "735")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
 }

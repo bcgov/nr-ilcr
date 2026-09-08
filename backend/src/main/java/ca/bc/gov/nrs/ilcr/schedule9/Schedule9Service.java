@@ -39,8 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
  * keyed {@code ILCR_COST_REPORT_DETAIL} cost line) plus the per-record Check Status. {@code
  * costPerUnit} ($/Unit) is derived here and never accepted from a client.
  *
- * <p>{@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the 1–10 track is Draft,
- * computed here and server-authoritative (AD-9, S30). A non-Draft mill still lists every record.
+ * <p>{@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the role×status matrix admits it
+ * at the 1–10 track's status — submitter at Draft, administrator at Submitted or Verified ({@link
+ * ca.bc.gov.nrs.ilcr.security.ScheduleEditability}) — computed here and server-authoritative (AD-9,
+ * S30). A mill a given caller may not edit still lists every record.
  *
  * <p><strong>The write half hardens what legacy left open.</strong> Legacy had no concurrency
  * control (it never incremented {@code REVISION_COUNT}), no server-side edit gate (only the

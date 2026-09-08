@@ -215,4 +215,80 @@ class Schedule5WriteAuthorizationIT extends AbstractOracleIT {
                 .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }
+
+  // -----------------------------------------------------------------------------------------
+  // The VERIFIED row of the matrix (Story 16.1). Mill 734/2021 is 1–10 'V' and silviculture 'D'
+  // (R__50) — so a gate that read the wrong track's column would see Draft, refuse the
+  // administrator, and every test below would fail on a 409 instead of passing vacuously.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "734")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The echo must report the status the gate actually read. Before 16.1 the post-write echo
+        // passed a STATUS_DRAFT literal, so this assertion would have read "D" on a Verified
+        // report — and recomputed editable for the wrong status.
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN UPDATES at a VERIFIED track -> 2xx (the correction path)")
+  void admin_updatesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            put(CAMPS + "/8250")
+                .with(csrf())
+                .param("millId", "734")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"campName":"Corrected At Verified","isolatedCamp":false,"revisionCount":0}
+                    """)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            delete(CAMPS + "/8251")
+                .with(csrf())
+                .param("millId", "734")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            post(CAMPS)
+                .with(csrf())
+                .param("millId", "734")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
+  }
 }

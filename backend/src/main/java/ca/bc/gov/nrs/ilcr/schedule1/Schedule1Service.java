@@ -613,8 +613,9 @@ public class Schedule1Service {
 
   /**
    * Assemble the Schedule 1 document for a mill/year. NEVER 404s (defect #296): a mill/year with no
-   * category-"1" summary yields a 200 empty document, editable when the caller may edit and the
-   * track is Draft, so a first entry can be typed and saved. This is the CONTROLLER-facing read.
+   * category-"1" summary yields a 200 empty document, editable when the caller holds the action and
+   * the role×status matrix admits it at the track's status, so a first entry can be typed and
+   * saved. This is the CONTROLLER-facing read.
    *
    * <p>Cross-schedule callers must use {@link #findSchedule1} instead — they need to tell "no
    * Schedule 1" from "an empty Schedule 1", and this method can no longer tell them (the derived
