@@ -459,6 +459,28 @@ export const CONFIRM_SAVE_NEW_CAMP =
   'The information for the New Camp must be saved before you can add other expenses. '
   + 'Would you like to save the information now?';
 
+// ---------------------------------------------------------------------------------------------------
+// S06 — Check Status, all requirements met.  |  S07 — Delete an existing camp.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Check Status texts, verbatim from `messages.properties`.
+ *
+ * `campMet` is deliberately kept even though S06 asserts its ABSENCE — the negative needs the exact
+ * string to be meaningful, and S20 (issues found) will assert its siblings. See SPEC-3: on a PASS the
+ * app emits the schedule banner alone, matching legacy `Schedule5MB.java:324-326`, where the per-camp
+ * loop lives in the `else` branch and is unreachable when the schedule passes.
+ */
+export const CHECK_STATUS_MESSAGES = {
+  /** `scheduleRequirementsMetMsg` (messages.properties:179). Note: no trailing full stop. */
+  scheduleMet: 'All requirements for this schedule have been met',
+  /** `campRequirementsMetMsg` (messages.properties:246) with {0} = camp name. WITH a full stop. */
+  campMet: (campName: string) => `All requirements for ${campName} have been met.`,
+} as const;
+
+/** CFM-001, verbatim from `components/schedule5/index.tsx:74`. Modal heading is "Delete camp". */
+export const CONFIRM_DELETE_CAMP = 'This will delete the current record. Do you want to continue?';
+
 /** ERR/SUC message text, verbatim from backend `messages.properties`. */
 export const MESSAGES = {
   /** `dataSavedSuccesfullyInfoMsg` (messages.properties:168) — the Gherkin's expected text, unchanged. */

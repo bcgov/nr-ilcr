@@ -137,6 +137,32 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
     follows legacy and is GREEN.
   - **Status:** OPEN — spec correction owed. Found 2026-09-09.
 
+- **SPEC-3 — OPEN: three planning documents say Check Status shows a per-camp "requirements met" line
+  on a pass. Neither the new app nor LEGACY does.**
+  - **What's wrong.** `UC-SCH5-001-S06.feature:26-27` expects TWO messages when everything is complete:
+    the schedule banner *and* "All requirements for North Camp have been met." Only the schedule banner
+    appears. The same wrong expectation is in `UC-SCH5-001-detailed.md:151` and in the epic's AC.
+  - **Expected vs actual.** Expected: two messages. Actual: one — "All requirements for this schedule
+    have been met", with an empty `camps` array on the API response.
+  - **The app matches legacy; the documents do not.** `Schedule5MB.java:324-326` adds
+    `scheduleRequirementsMetMsg` in the PASS branch and returns; the loop that would add
+    `campRequirementsMetMsg` sits in the `else` branch and is unreachable when the schedule passes. The
+    per-camp "met" line is therefore only ever seen when the schedule FAILS and some individual camp
+    passed. The rewrite reproduces this and its own source already names it — *"the legacy pass branch
+    never enters the per-camp loop … which is deviation (C), contradicting both the epics AC and
+    UC-SCH5-001-detailed.md:151"* (`Schedule5Service.java:788-791`).
+  - **How caught.** Probing `POST /api/v1/schedule5/check-status` against a complete camp returned
+    `outcome: MET`, one message, and `camps: []` — then the legacy managed bean was read to decide
+    which side was wrong.
+  - **Not a divergence, and already known to the implementer.** Logged here because the *test* has to
+    take a side: `check-status.feature` asserts the per-camp line is ABSENT, so the distinction is
+    regression-proof rather than resting on a code comment.
+  - **Fix:** correct S06, `UC-SCH5-001-detailed.md:151` and the epic AC in the `ilcr-bmad` planning
+    repo — three documents, one correction. **Or**, if the Ministry actually wants the per-camp
+    confirmation, that is a product change to raise against the app, not a test fix. That call is
+    BA/QA's, not the suite's.
+  - **Status:** OPEN — spec correction owed (or a product decision). Found 2026-09-09.
+
 ---
 
 ## Verified — not a defect

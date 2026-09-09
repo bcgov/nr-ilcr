@@ -1,6 +1,8 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  CHECK_MET_ANCHOR,
+  DELETE_ANCHOR,
   COPY_ANCHOR,
   SUBPAGE_EXISTING_ANCHOR,
   SUBPAGE_NEW_ANCHOR,
@@ -36,6 +38,8 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   copy: COPY_ANCHOR,
   'subpage-existing': SUBPAGE_EXISTING_ANCHOR,
   'subpage-new': SUBPAGE_NEW_ANCHOR,
+  'check-met': CHECK_MET_ANCHOR,
+  delete: DELETE_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -405,6 +409,40 @@ When(
     );
   },
 );
+
+// ---------------------------------------------------------------------------------------------------
+// S06 — Check Status  |  S07 — Delete a camp
+// ---------------------------------------------------------------------------------------------------
+
+// Domain-qualified because sch11 already owns the bare "I run Check Status"
+// (steps/sch11/schedule11.steps.ts:458) and playwright-bdd rejects two definitions of one step. Same
+// reason as "I save the Schedule 5 sub-page" above.
+When('I run Schedule 5 Check Status', async ({ schedule5Page }) => {
+  await schedule5Page.runCheckStatus();
+});
+
+When('I delete the {string} camp', async ({ schedule5Page }, campName) => {
+  await schedule5Page.deleteButtonFor(campName).click();
+});
+
+Then('{string} is no longer listed in the Existing Camps table', async ({ schedule5Page }, campName) => {
+  await expect(schedule5Page.existingCampRow(campName)).toHaveCount(0);
+});
+
+/**
+ * Prove the delete reached the database, not just the table.
+ *
+ * A row can vanish from a client-side list without anything being persisted, so the UI assertion alone
+ * would pass against a purely optimistic removal.
+ */
+Then('no camps are stored on the anchor', async ({ request, world }) => {
+  await expect
+    .poll(
+      async () => (await getSchedule5(request, world.scheduleKey!)).camps.map((c) => c.campName),
+      { message: `expected no camps on ${world.scheduleKey!.millId}/${world.scheduleKey!.year}` },
+    )
+    .toEqual([]);
+});
 
 // ---------------------------------------------------------------------------------------------------
 // Save and verification

@@ -158,6 +158,30 @@ export class Schedule5Page {
       .filter({ has: this.page.getByRole('cell', { name: new RegExp(`^${escapeRegExp(label)}`) }) });
   }
 
+  // ---- check status (S06) / delete (S07) ------------------------------------------------------------
+
+  /**
+   * Check Status is DISABLED while a panel is open (index.tsx:1419) — legacy's button was a full
+   * postback so its verdict always reflected the screen, whereas the modern check reads only the
+   * database. A scenario must therefore close any panel before running it.
+   */
+  get checkStatusButton(): Locator {
+    return this.page.getByRole('button', { name: 'Check Status' });
+  }
+
+  async runCheckStatus(): Promise<void> {
+    await expect(
+      this.checkStatusButton,
+      'Check Status is disabled while a camp panel is open — close the panel first',
+    ).toBeEnabled();
+    await this.checkStatusButton.click();
+  }
+
+  /** The `Delete` action on a camp's row — scoped to the row, like Edit and Copy. */
+  deleteButtonFor(campName: string): Locator {
+    return this.existingCampRow(campName).getByRole('button', { name: 'Delete' });
+  }
+
   // ---- copy (S03) ---------------------------------------------------------------------------------
 
   /** The `Copy` action on a camp's row — scoped to the row for the same reason as Edit. */
