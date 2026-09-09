@@ -120,11 +120,7 @@ public class ReportingYearService {
       throw ReportingYearException.yearAlreadyOpen();
     }
     for (long millId : activeMillIds) {
-      repository.insertMillReportStatus(
-          targetYear, millId, STATUS_DRAFT, STATUS_DRAFT, NOT_COMPLETED, user);
-      for (String categoryId : CATEGORY_IDS) {
-        repository.insertReportCategory(targetYear, millId, categoryId, user);
-      }
+      enrolMillInYear(millId, targetYear, user);
     }
 
     log.info(
@@ -133,6 +129,35 @@ public class ReportingYearService {
         activeMillIds.size(),
         user);
     return new OpenReportingYearResult(targetYear, activeMillIds.size());
+  }
+
+  /** The current reporting year — the highest opened one, or {@code null} when none exist. */
+  public Integer currentReportingYear() {
+    return repository.findMaxReportYear();
+  }
+
+  /** Whether a mill already has a report-status row for a year. */
+  public boolean isMillEnrolled(long millId, int year) {
+    return repository.millReportStatusExists(millId, year);
+  }
+
+  /**
+   * Give one mill its report records for a year: the report-status row initializing both
+   * independent tracks to Draft, and one per-category row per schedule category. This is the unit
+   * of work that opening a year repeats per active mill, and it is also what importing a mill and
+   * reactivating a closed one each need for the current year — so it lives here, with the domain
+   * that owns these three tables, rather than being reproduced by every caller (AD-14).
+   *
+   * <p>Not idempotent by itself: both the composite primary keys would reject a second call.
+   * Callers decide whether the mill already has records; {@link #isMillEnrolled} is that check.
+   */
+  @Transactional
+  public void enrolMillInYear(long millId, int year, String user) {
+    repository.insertMillReportStatus(
+        year, millId, STATUS_DRAFT, STATUS_DRAFT, NOT_COMPLETED, user);
+    for (String categoryId : CATEGORY_IDS) {
+      repository.insertReportCategory(year, millId, categoryId, user);
+    }
   }
 
   private int resolveFirstTimeYear(Integer requestedYear) {

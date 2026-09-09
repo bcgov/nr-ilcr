@@ -94,6 +94,21 @@ public class ReportingYearRepository {
   }
 
   /**
+   * Whether a mill already holds a report-status row for a year. This is legacy's {@code
+   * findMillReportStatus} named query (ILCRMillReportStatus.java:28), the existence check that
+   * decides whether activating a mill has to create its current-year records (BR-07).
+   */
+  public boolean millReportStatusExists(long millId, int year) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT CASE WHEN EXISTS ("
+                + "SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS "
+                + "WHERE ILCR_MILL_ID = :millId AND REPORT_YEAR = :year) THEN 1 ELSE 0 END FROM DUAL",
+            new MapSqlParameterSource().addValue("millId", millId).addValue("year", year),
+            Boolean.class));
+  }
+
+  /**
    * Insert one mill's report-status row for the new year, initializing BOTH independent tracks
    * (Schedules 1–10 and Schedule 11) to the same status code and report-completed indicator (A-8:
    * Draft, not completed). The audit quartet + {@code REVISION_COUNT} are NOT NULL in delivery and
