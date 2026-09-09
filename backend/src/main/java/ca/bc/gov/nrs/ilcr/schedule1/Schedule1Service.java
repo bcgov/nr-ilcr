@@ -1,10 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule1;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.OtherCostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
@@ -69,6 +74,17 @@ public class Schedule1Service {
   // Fixed line-item codes writable with BOTH volume and cost from the PUT request (12–18).
   private static final Set<Integer> WRITABLE_LINE_ITEM_CODES = Set.of(12, 13, 14, 15, 16, 17, 18);
 
+  /**
+   * The line items legacy carried a submitted COST original for. Every line item carries a volume
+   * original, but only these nine carry a cost one: {@code Schedule1DAO.java:147-204} sets both on
+   * the entered rows while {@code :208-218} sets volume alone on the pulled and subtotal rows (143
+   * Forest Mgmt Admin, 139/140 silviculture admin/total, 144 Subtotal Company Logging), and {@code
+   * schedule1.xhtml} accordingly renders a volume indicator but no cost indicator for them ({@code
+   * :360}, {@code :513-522}, {@code :543-552}, {@code :728-737}). Asymmetric in legacy, so
+   * asymmetric here — "only if the legacy app does it".
+   */
+  private static final Set<Integer> COST_ORIGINAL_CODES = Set.of(1, 2, 12, 13, 14, 15, 16, 17, 18);
+
   // Codes whose VOLUME is user-entered but whose COST is pulled/derived, not client-written
   // (D2 reversed per the use cases — BR-04: only their cost comes from Sch 3 / is derived): Forest
   // Mgmt Admin (143), Subtotal Company Logging (144), Less Silv Admin (139), Total Silviculture
@@ -79,6 +95,9 @@ public class Schedule1Service {
   private final Schedule1Repository repository;
   private final Schedule3CostDerivation schedule3CostDerivation;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
   /**
    * Constructs the Schedule 1 service.
@@ -90,10 +109,16 @@ public class Schedule1Service {
   public Schedule1Service(
       Schedule1Repository repository,
       Schedule3CostDerivation schedule3CostDerivation,
-      MessageSource messageSource) {
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
     this.schedule3CostDerivation = schedule3CostDerivation;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
@@ -269,7 +294,7 @@ public class Schedule1Service {
             .summaryId();
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     boolean editable = caller.allows(trackStatus);
-    return buildOtherCostsDocument(summaryId, editable);
+    return buildOtherCostsDocument(summaryId, editable, trackStatus);
   }
 
   /**
@@ -294,7 +319,8 @@ public class Schedule1Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherCostsDocument(summaryId, true);
+    return buildOtherCostsDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -328,7 +354,8 @@ public class Schedule1Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherCostsDocument(summaryId, true);
+    return buildOtherCostsDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -355,7 +382,8 @@ public class Schedule1Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherCostsDocument(summaryId, true);
+    return buildOtherCostsDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** How one batch-save row maps onto the stored rows during reconcile. */
@@ -432,15 +460,27 @@ public class Schedule1Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherCostsDocument(summaryId, true);
+    return buildOtherCostsDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
    * Assemble the Other-Costs document from stored rows; all derived values computed here (AD-6).
    */
-  private OtherCostsDocument buildOtherCostsDocument(int summaryId, boolean editable) {
+  private OtherCostsDocument buildOtherCostsDocument(
+      int summaryId, boolean editable, String trackStatus) {
     BigDecimal sharedVolume = repository.findSharedOtherCostsVolume(summaryId).orElse(null);
     List<OtherCostDetailRow> rows = repository.findOtherCostRows(summaryId);
+
+    // The licensee's submitted description and cost per itemized row (Story 16.2, BR-04). Keyed on
+    // the detail id, not the cost item: every itemized row carries cost item 19.
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
+        originalValues.exposesOriginalValues(trackStatus)
+            ? costSnapshots.findBySummary(summaryId).stream()
+                .filter(r -> r.detailId() != null)
+                .collect(
+                    HashMap::new, (m, r) -> m.putIfAbsent(r.detailId(), r), java.util.Map::putAll)
+            : Map.of();
 
     // Sum as long to avoid silent int overflow across many/large itemized costs.
     long costSubtotal =
@@ -461,7 +501,8 @@ public class Schedule1Service {
                         // Per-row $/m³ uses the shared volume (BR-06), matching legacy
                         // otherCostItemCal.
                         perUnit(
-                            sharedVolume, r.cost() == null ? null : BigDecimal.valueOf(r.cost()))))
+                            sharedVolume, r.cost() == null ? null : BigDecimal.valueOf(r.cost())),
+                        otherCostRowOriginals(trackStatus, snapshotByDetailId.get(r.id()))))
             .toList();
 
     return new OtherCostsDocument(
@@ -667,6 +708,26 @@ public class Schedule1Service {
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Read once here and threaded into the
+    // line-item factories below; at Draft every map built from these comes back null, so the
+    // Draft-time document is byte-identical to what it was before this feature existed.
+    // Skipped entirely at Draft: the maps would all come back null anyway, and a submitter reading
+    // their own Draft is the commonest request this schedule serves — it should not pay for two
+    // snapshot queries whose result it cannot use.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    List<CostDetailSnapshotRepository.Row> costSnapshotRows =
+        summary == null || !exposeOriginals
+            ? List.of()
+            : costSnapshots.findBySummary(summary.summaryId());
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode =
+        fixedLineSnapshots(costSnapshotRows);
+    CostDetailSnapshotRepository.Row sharedOtherCostsSnapshot =
+        sharedOtherCostsSnapshot(costSnapshotRows);
+    ReportSummarySnapshotRepository.Snapshot summarySnapshot =
+        summary == null || !exposeOriginals
+            ? null
+            : summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null);
+
     // Schedule 3 source data (BR-03 crown pre-fill + BR-04 admin-cost pulls). Derived live from the
     // stored Schedule 3 fixed lines (legacy computed these each render; the subtotals are never
     // persisted — see Schedule3CostDerivation). Tolerant of a missing Schedule 3 (category "1" is
@@ -692,21 +753,45 @@ public class Schedule1Service {
     List<LineItem> lineItems = new ArrayList<>();
     for (Integer code : LINE_ITEM_CODES) {
       DetailRow row = byCode.get(code);
+      Map<String, OriginalValue> itemOriginals =
+          lineItemOriginals(trackStatus, code, snapshotByCode.get(code));
       if (prefill) {
-        lineItems.add(prefilledLineItem(code, row, sch3CrownVolume));
+        lineItems.add(prefilledLineItem(code, row, sch3CrownVolume, itemOriginals));
       } else if (row != null) {
-        lineItems.add(toLineItem(row));
+        lineItems.add(toLineItem(row, itemOriginals));
       }
     }
 
     SilvicultureBlock silviculture =
         new SilvicultureBlock(
-            prefilledSilv(CODE_SILV_ACTUAL, byCode.get(CODE_SILV_ACTUAL), prefill, sch3CrownVolume),
             prefilledSilv(
-                CODE_SILV_ACCRUED, byCode.get(CODE_SILV_ACCRUED), prefill, sch3CrownVolume),
+                CODE_SILV_ACTUAL,
+                byCode.get(CODE_SILV_ACTUAL),
+                prefill,
+                sch3CrownVolume,
+                lineItemOriginals(
+                    trackStatus, CODE_SILV_ACTUAL, snapshotByCode.get(CODE_SILV_ACTUAL))),
             prefilledSilv(
-                CODE_SILV_LESS_ADMIN, byCode.get(CODE_SILV_LESS_ADMIN), prefill, sch3CrownVolume),
-            prefilledSilv(CODE_SILV_TOTAL, byCode.get(CODE_SILV_TOTAL), prefill, sch3CrownVolume));
+                CODE_SILV_ACCRUED,
+                byCode.get(CODE_SILV_ACCRUED),
+                prefill,
+                sch3CrownVolume,
+                lineItemOriginals(
+                    trackStatus, CODE_SILV_ACCRUED, snapshotByCode.get(CODE_SILV_ACCRUED))),
+            prefilledSilv(
+                CODE_SILV_LESS_ADMIN,
+                byCode.get(CODE_SILV_LESS_ADMIN),
+                prefill,
+                sch3CrownVolume,
+                lineItemOriginals(
+                    trackStatus, CODE_SILV_LESS_ADMIN, snapshotByCode.get(CODE_SILV_LESS_ADMIN))),
+            prefilledSilv(
+                CODE_SILV_TOTAL,
+                byCode.get(CODE_SILV_TOTAL),
+                prefill,
+                sch3CrownVolume,
+                lineItemOriginals(
+                    trackStatus, CODE_SILV_TOTAL, snapshotByCode.get(CODE_SILV_TOTAL))));
 
     // BR-04: the two admin costs are PULLED from Schedule 3 (read-only), never from Schedule 1's
     // own
@@ -718,7 +803,8 @@ public class Schedule1Service {
     Long forestMgmtAdminCost = sch3.forestMgmtAdminCrownCost();
     Integer lessSilvAdminCost = sch3.silvicultureAdminCrownCost();
 
-    OtherCostsSummary otherCosts = toOtherCosts(otherCostRows);
+    OtherCostsSummary otherCosts =
+        toOtherCosts(otherCostRows, trackStatus, sharedOtherCostsSnapshot);
 
     boolean editable = caller.allows(trackStatus);
 
@@ -784,6 +870,13 @@ public class Schedule1Service {
         normalizeVolume(sch3CrownVolume),
         summary == null ? null : summary.revisionCount(),
         summary == null ? null : summary.comments(),
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            .build(),
         lineItems,
         silviculture,
         forestMgmtAdminCost,
@@ -971,21 +1064,27 @@ public class Schedule1Service {
    * A line item pre-filled with the crown volume: keeps any stored cost, recomputes {@code
    * perUnit}.
    */
-  private static LineItem prefilledLineItem(int code, DetailRow row, BigDecimal crownVolume) {
+  private static LineItem prefilledLineItem(
+      int code, DetailRow row, BigDecimal crownVolume, Map<String, OriginalValue> originals) {
     Integer cost = row == null ? null : row.cost();
     return new LineItem(
         code,
         normalizeVolume(crownVolume),
         cost,
-        perUnit(crownVolume, cost == null ? null : BigDecimal.valueOf(cost)));
+        perUnit(crownVolume, cost == null ? null : BigDecimal.valueOf(cost)),
+        originals);
   }
 
   /**
    * A silviculture entry, pre-filled with the crown volume when pre-fill is active (else mapped).
    */
   private static LineItem prefilledSilv(
-      int code, DetailRow row, boolean prefill, BigDecimal crown) {
-    return prefill ? prefilledLineItem(code, row, crown) : toLineItem(row);
+      int code,
+      DetailRow row,
+      boolean prefill,
+      BigDecimal crown,
+      Map<String, OriginalValue> originals) {
+    return prefill ? prefilledLineItem(code, row, crown, originals) : toLineItem(row, originals);
   }
 
   /** Resolve a legacy bundle key to verbatim text (AD-8) for an advisory warning message. */
@@ -994,7 +1093,7 @@ public class Schedule1Service {
         key, messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale()));
   }
 
-  private static LineItem toLineItem(DetailRow row) {
+  private static LineItem toLineItem(DetailRow row, Map<String, OriginalValue> originals) {
     if (row == null) {
       return null;
     }
@@ -1002,10 +1101,14 @@ public class Schedule1Service {
         row.costItemCode(),
         normalizeVolume(row.volume()),
         row.cost(),
-        perUnit(row.volume(), row.cost() == null ? null : BigDecimal.valueOf(row.cost())));
+        perUnit(row.volume(), row.cost() == null ? null : BigDecimal.valueOf(row.cost())),
+        originals);
   }
 
-  private OtherCostsSummary toOtherCosts(List<DetailRow> otherCostRows) {
+  private OtherCostsSummary toOtherCosts(
+      List<DetailRow> otherCostRows,
+      String trackStatus,
+      CostDetailSnapshotRepository.Row sharedSnapshot) {
     // Always present (AD-5/AD-12): a schedule with no Other Costs still carries count 0 / subtotal
     // 0,
     // so the client can distinguish "zero" from "missing".
@@ -1037,7 +1140,84 @@ public class Schedule1Service {
         normalizeVolume(sharedVolume),
         costSubtotal,
         perUnit(sharedVolume, BigDecimal.valueOf(costSubtotal)),
-        itemized.size());
+        itemized.size(),
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "volume",
+                sharedSnapshot == null ? null : sharedSnapshot.volume(),
+                OriginalValueFormat.WHOLE)
+            .build());
+  }
+
+  /**
+   * The submitted cost-detail rows for the fixed line items, indexed by cost item.
+   *
+   * <p>Cost item 19 is excluded: it repeats within one summary (the shared-volume row plus one per
+   * itemized Other Cost), so it cannot be keyed by its cost item and is matched on the detail id
+   * instead. First row per code wins, matching {@code indexFirstByCode} on the current side so a
+   * corrupt duplicate cannot make the indicator disagree with the value it decorates.
+   */
+  private static Map<Integer, CostDetailSnapshotRepository.Row> fixedLineSnapshots(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    Map<Integer, CostDetailSnapshotRepository.Row> byCode = new HashMap<>();
+    for (CostDetailSnapshotRepository.Row row : rows) {
+      if (row.costItemCode() != null && row.costItemCode() != CODE_OTHER) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
+  }
+
+  /**
+   * The submitted shared Other-Costs volume row — cost item 19 with no description, the same row
+   * {@code findSharedOtherCostsVolume} reads on the current side (BR-06).
+   */
+  private static CostDetailSnapshotRepository.Row sharedOtherCostsSnapshot(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    return rows.stream()
+        .filter(r -> r.costItemCode() != null && r.costItemCode() == CODE_OTHER)
+        .filter(r -> StringUtils.isEmpty(r.itemDescription()))
+        .findFirst()
+        .orElse(null);
+  }
+
+  /**
+   * One line item's submitted figures: always a volume, and a cost only for the items legacy
+   * carried one for (see {@link #COST_ORIGINAL_CODES}). Null at Draft.
+   *
+   * <p>Both use the whole-number grouped format because legacy bound {@code
+   * originalValueVolumeConverter} and {@code originalValueCostConverter} at its default precision
+   * to every Schedule 1 tooltip — none of this screen's tooltips passed a {@code precision}
+   * attribute.
+   */
+  private Map<String, OriginalValue> lineItemOriginals(
+      String trackStatus, int code, CostDetailSnapshotRepository.Row snapshot) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put("volume", snapshot == null ? null : snapshot.volume(), OriginalValueFormat.WHOLE);
+    if (COST_ORIGINAL_CODES.contains(code)) {
+      builder.put("cost", snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE);
+    }
+    return builder.build();
+  }
+
+  /**
+   * One itemized Other-Costs row's submitted figures: the description and the cost, the two fields
+   * legacy's row template rendered indicators for ({@code schedule1OtherCosts.xhtml} — description
+   * and cost, and no volume, since the volume is shared across the rows rather than per row).
+   */
+  private Map<String, OriginalValue> otherCostRowOriginals(
+      String trackStatus, CostDetailSnapshotRepository.Row snapshot) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "description",
+            snapshot == null ? null : snapshot.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put("cost", snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE)
+        .build();
   }
 
   /**

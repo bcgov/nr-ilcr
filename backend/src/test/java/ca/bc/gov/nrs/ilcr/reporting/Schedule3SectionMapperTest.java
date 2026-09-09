@@ -136,7 +136,7 @@ class Schedule3SectionMapperTest {
   }
 
   private static CostLine line(int code, Integer harvest, Integer pop, Integer crown) {
-    return new CostLine(code, harvest, pop, crown);
+    return new CostLine(code, harvest, pop, crown, null);
   }
 
   private static Schedule3Response response() {
@@ -170,6 +170,7 @@ class Schedule3SectionMapperTest {
         0,
         "N",
         "See the notes",
+        null, // originalValues — Draft, so none
         lines,
         popTimber,
         crownTimber,
@@ -189,7 +190,7 @@ class Schedule3SectionMapperTest {
         false,
         1,
         new ThreeColumnTotal(5_000L, 2_000L, 3_000L),
-        List.of(new OtherAcceptableRow(1, "Consulting", 4_000, 1_500, 2_500)),
+        List.of(new OtherAcceptableRow(1, "Consulting", 4_000, 1_500, 2_500, null)),
         null);
   }
 
@@ -199,7 +200,7 @@ class Schedule3SectionMapperTest {
         1,
         500L,
         800, // annualRentsTotal (item-29 harvest)
-        List.of(new UnacceptableRow(1, "Fire rehab", 500)),
+        List.of(new UnacceptableRow(1, "Fire rehab", 500, null)),
         null);
   }
 }

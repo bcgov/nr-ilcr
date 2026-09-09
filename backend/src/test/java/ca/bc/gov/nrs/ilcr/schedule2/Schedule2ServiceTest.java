@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
@@ -17,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.ThreeColumnTotal;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.TimberBlock;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -45,6 +50,14 @@ class Schedule2ServiceTest {
   @Mock private Schedule1CostDerivation schedule1CostDerivation;
 
   @Mock private Schedule3Service schedule3Service;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule2Service service;
 
@@ -68,7 +81,7 @@ class Schedule2ServiceTest {
     List<CostLine> lineItems =
         silvAdminCrown == null
             ? List.of()
-            : List.of(new CostLine(37, silvAdminCrown, 0, silvAdminCrown));
+            : List.of(new CostLine(37, silvAdminCrown, 0, silvAdminCrown, null));
     return new Schedule3Response(
         MILL,
         YEAR,
@@ -77,6 +90,7 @@ class Schedule2ServiceTest {
         0,
         null,
         null,
+        null, // originalValues — Draft, so none
         lineItems,
         popTimber,
         crownTimber,
