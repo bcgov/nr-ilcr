@@ -152,6 +152,16 @@ const PARSER_PROBES: { key: AnchorKey; codes: string; why: string }[] = [
     why: 'they differ the other way round, so a swap cannot pass both probes.',
   },
   { key: '12050/2016', codes: 'S/S', why: 'a non-Draft pair, so the parser is not just matching Ds.' },
+  {
+    key: '737/2021',
+    codes: 'V/D',
+    why:
+      'the GUARDED form — `(cols) SELECT 2021, 737, \'V\', \'D\', … FROM DUAL WHERE NOT EXISTS (…)`, how '
+      + 'every row in db/R__51 is written so a repeatable migration survives a checksum change. It reads '
+      + 'through a different branch of readableInsert than the four probes above, and R__51 seeds 41 rows '
+      + 'this way; without this probe, dropping that branch would leave every check here passing on a '
+      + 'gate that had gone blind to ten mills, their ACT xrefs and their report-status rows.',
+  },
 ];
 
 /** Floors, not counts: a vacuity guard that does not need editing every time an anchor is added. */
@@ -212,11 +222,101 @@ function unwrap(value: string): string | null {
   return quoted ? quoted[1] : value;
 }
 
+/** Index just past the `)` closing the list that opens at `from`, respecting quotes and nesting. */
+function closeParen(text: string, from: number): number {
+  let depth = 1;
+  let quoted = false;
+  let at = from;
+  while (at < text.length && depth > 0) {
+    const ch = text[at];
+    if (quoted) {
+      quoted = ch !== "'";
+    } else if (ch === "'") {
+      quoted = true;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    }
+    at += 1;
+  }
+  return at;
+}
+
+/**
+ * Index of the `FROM` that ends a SELECT list, or -1. Ignores any `FROM` inside a string literal or a
+ * nested call, so `'... FROM ...'` and `TO_CHAR(x, 'FM00')` cannot end the list early.
+ */
+function selectListEnd(text: string): number {
+  let depth = 0;
+  let quoted = false;
+  for (let at = 0; at < text.length; at += 1) {
+    const ch = text[at];
+    if (quoted) {
+      quoted = ch !== "'";
+    } else if (ch === "'") {
+      quoted = true;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    } else if (
+      depth === 0
+      && (ch === 'F' || ch === 'f')
+      && /^from\b/i.test(text.slice(at, at + 5))
+      && !/[A-Z0-9_]/i.test(text[at - 1] ?? ' ')
+    ) {
+      return at;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The column list and the positional value list of an INSERT this gate can zip by name, or null when
+ * the statement is a shape it cannot read.
+ *
+ * TWO FORMS QUALIFY. `(cols) VALUES (vals)` is the e2e seed's own convention. `(cols) SELECT vals FROM
+ * DUAL WHERE NOT EXISTS (<the row's own PK>)` is the guarded, re-runnable form the R__ fixture
+ * migrations use — MERGE ... WHEN NOT MATCHED semantics written long-hand so the column list stays
+ * reviewable, because Flyway re-executes a repeatable migration on every checksum change and an
+ * unguarded re-run is ORA-00001. It carries the SAME explicit column list and the SAME positional
+ * values, so reading it needs no new machinery beyond finding the `FROM DUAL` boundary — and it must be
+ * read: R__51 alone seeds 41 rows this way, including ten mills, their ACT xrefs and their report-status
+ * rows. Enumerating those as "unreadable but harmless" would have blinded the gate to a fifth of its
+ * subject, which is the opposite of what KNOWN_UNREADABLE is for.
+ *
+ * Insisting on the `WHERE NOT EXISTS` tail is what keeps a genuinely set-based statement out. V29's
+ * `SELECT 8900 + LEVEL ... FROM DUAL CONNECT BY LEVEL <= 51` also selects FROM DUAL, but generates 51
+ * rows from one statement and so has no per-row value list to zip at all; it stays in KNOWN_UNREADABLE.
+ */
+function readableInsert(rest: string): { columns: string[]; values: string[] } | null {
+  const head = rest.match(/^\s*\(([^)]*)\)\s*(VALUES\s*\(|SELECT\b)/i);
+  if (!head) {
+    return null;
+  }
+  const columns = head[1].split(',').map((c) => c.trim().toUpperCase());
+
+  if (/^VALUES/i.test(head[2])) {
+    const from = head[0].length;
+    return { columns, values: splitValues(rest.slice(from, closeParen(rest, from) - 1)) };
+  }
+
+  const tail = rest.slice(head[0].length);
+  const end = selectListEnd(tail);
+  if (end < 0 || !/^FROM\s+DUAL\s+WHERE\s+NOT\s+EXISTS\s*\(/i.test(tail.slice(end))) {
+    return null;
+  }
+  return { columns, values: splitValues(tail.slice(0, end)) };
+}
+
 /**
  * Names the reason an INSERT cannot be zipped by column name, or null if the shape is unrecognised.
  *
  * Both forms are valid SQL and neither carries a positional column list this gate can pair with its
- * values, so reading them would need a real parser. Naming them is what keeps the skip honest.
+ * values, so reading them would need a real parser. Naming them is what keeps the skip honest. Note
+ * that 'insert-select' now means a genuinely set-based SELECT: the guarded single-row form is read by
+ * readableInsert above and never reaches here.
  */
 function unreadableForm(rest: string): 'insert-select' | 'no-column-list' | null {
   if (/^\s*\([^)]*\)\s*SELECT\b/i.test(rest)) return 'insert-select';
@@ -255,18 +355,19 @@ function parseInserts(sql: string, table: string): Record<string, string | null>
 
   for (const match of source.matchAll(start)) {
     const rest = source.slice(match.index! + match[0].length);
-    const shape = rest.match(/^\s*\(([^)]*)\)\s*VALUES\s*\(/i);
+    const shape = readableInsert(rest);
     if (!shape) {
       // NOTHING IS SKIPPED SILENTLY — that used to be a bare `continue`, which is the very thing the
       // arity check below refuses to do: an unread statement is a row this gate believes is missing,
       // and the MIN_* floors would only notice at scale. Raised in review.
       //
-      // Two legitimate SQL forms cannot be zipped by name and so cannot be read here at all:
-      // `INSERT INTO t (cols) SELECT …` (set-based) and `INSERT INTO t VALUES (…)` with no column
-      // list. Both exist on the tree. Rather than hard-fail on long-standing SQL or wave them
-      // through, they are RECOGNISED and enumerated — see KNOWN_UNREADABLE and the test that asserts
-      // the set, the same shape as DELIBERATELY_ABSENT. Anything the classifier cannot even name
-      // still throws immediately.
+      // Two SQL forms cannot be zipped by name and so cannot be read here at all: a set-based
+      // `INSERT INTO t (cols) SELECT …` and `INSERT INTO t VALUES (…)` with no column list. Both
+      // exist on the tree. Rather than hard-fail on long-standing SQL or wave them through, they are
+      // RECOGNISED and enumerated — see KNOWN_UNREADABLE and the test that asserts the set, the same
+      // shape as DELIBERATELY_ABSENT. Anything the classifier cannot even name still throws
+      // immediately. The guarded `SELECT … FROM DUAL WHERE NOT EXISTS` form used to land here too;
+      // it is now READ rather than excused, because those are real fixture rows (see readableInsert).
       if (unreadableForm(rest) === null) {
         const preview = rest.slice(0, 120).replace(/\s+/g, ' ').trim();
         throw new Error(
@@ -276,27 +377,7 @@ function parseInserts(sql: string, table: string): Record<string, string | null>
       }
       continue;
     }
-    const columns = shape[1].split(',').map((c) => c.trim().toUpperCase());
-
-    // Walk to the matching close paren of the VALUES list, respecting quotes and nesting.
-    const from = shape[0].length;
-    let depth = 1;
-    let quoted = false;
-    let end = from;
-    while (end < rest.length && depth > 0) {
-      const ch = rest[end];
-      if (quoted) {
-        quoted = ch !== "'";
-      } else if (ch === "'") {
-        quoted = true;
-      } else if (ch === '(') {
-        depth += 1;
-      } else if (ch === ')') {
-        depth -= 1;
-      }
-      end += 1;
-    }
-    const values = splitValues(rest.slice(from, end - 1));
+    const { columns, values } = shape;
     if (values.length !== columns.length) {
       throw new Error(
         `could not parse an INSERT INTO THE.${table}: ${columns.length} column(s) but `
@@ -556,7 +637,9 @@ test('seed parity: every INSERT this gate cannot read is a known, harmless one',
     const start = new RegExp(`INSERT\\s+INTO\\s+THE\\.${table}(?![A-Z0-9_])`, 'gi');
     for (const match of source.matchAll(start)) {
       const rest = source.slice(match.index! + match[0].length);
-      if (/^\s*\([^)]*\)\s*VALUES\s*\(/i.test(rest)) continue;
+      // Asked of readableInsert, not of a second copy of its regex: a form taught to the parser and
+      // not to this loop would be reported here as an unenumerated skip that never actually happened.
+      if (readableInsert(rest)) continue;
       const form = unreadableForm(rest);
       const key = `${table}:${form ?? 'UNCLASSIFIED'}`;
       found.set(key, (found.get(key) ?? 0) + 1);
