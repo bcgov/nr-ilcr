@@ -43,11 +43,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * ILCR_MILL_USER_XREF} row, so a mock SUBMITTER is correctly scoped to nothing; point {@code
  * ilcr.security.mock-user-guid} at a GUID that database does associate.
  *
- * <p>The GUID lives in the token's {@code details}, NOT its name, and that is load-bearing: {@code
- * Authentication.getName()} is written straight into the {@code ENTRY_USERID} / {@code
- * UPDATE_USERID} audit columns by every write controller, and those are {@code VARCHAR2(30)} while
- * a FAM GUID is 32 chars — so naming the principal after it would {@code ORA-12899} on every save.
- * The name stays the short, readable {@code dev-<roles>}.
+ * <p>The GUID travels in a typed {@link MockUserPrincipal}, NOT in the principal's name, and that
+ * is load-bearing: {@code Authentication.getName()} is written straight into the {@code
+ * ENTRY_USERID} / {@code UPDATE_USERID} audit columns by every write controller, and those are
+ * {@code VARCHAR2(30)} while a FAM GUID is 32 chars — so naming the principal after it would {@code
+ * ORA-12899} on every save. The name stays the short, readable {@code dev-<roles>}; see {@link
+ * MockUserPrincipal} for why a dedicated type rather than the token's {@code details}.
  */
 public class MockPrincipalFilter extends OncePerRequestFilter {
 
@@ -74,11 +75,13 @@ public class MockPrincipalFilter extends OncePerRequestFilter {
               + roles.stream()
                   .map(role -> role.name().toLowerCase(Locale.ROOT))
                   .collect(Collectors.joining("-"));
-      var token = new UsernamePasswordAuthenticationToken(name, "N/A", authorities);
-      // The GUID a real principal carries as `custom:idp_user_id`. In `details`, not in the
-      // principal name — the class javadoc explains why the name cannot hold it.
-      token.setDetails(userGuid);
-      SecurityContextHolder.getContext().setAuthentication(token);
+      // A typed principal carrying the GUID a real caller would hold as `custom:idp_user_id`.
+      // `MockUserPrincipal` documents why it is a type and not the token's `details`, and why
+      // getName() must stay the short name rather than becoming the GUID.
+      var principal = new MockUserPrincipal(name, userGuid);
+      SecurityContextHolder.getContext()
+          .setAuthentication(
+              new UsernamePasswordAuthenticationToken(principal, "N/A", authorities));
     }
     filterChain.doFilter(request, response);
   }

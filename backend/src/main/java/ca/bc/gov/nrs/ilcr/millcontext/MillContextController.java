@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -57,14 +58,16 @@ public class MillContextController implements MillContextApi {
     if (auth.getPrincipal() instanceof Jwt jwt) {
       return JwtPrincipalUtil.getIdpUserId(jwt);
     }
-    // Dev/UAT mock principal (security off): MockPrincipalFilter carries a stand-in directory
-    // GUID in `details` — not as the principal name, which feeds the VARCHAR2(30) audit columns
-    // (a FAM GUID is 32 chars). Without it the mock fail-closed to an empty mill list, so only
-    // ILCR_ADMIN saw any mill; once Story 16.1 took Draft editing from admins, no single role
-    // could run the e2e suite. Unreachable when deployed: that filter is not registered then.
-    if (auth.getDetails() instanceof String guid) {
-      return guid;
+    // Dev/UAT mock principal (security off): MockPrincipalFilter presents a MockUserPrincipal
+    // carrying a stand-in directory GUID — not as the principal NAME, which feeds the
+    // VARCHAR2(30) audit columns (a FAM GUID is 32 chars). Without it the mock fail-closed to an
+    // empty mill list, so only ILCR_ADMIN saw any mill; once Story 16.1 took Draft editing from
+    // admins, no single role could run the e2e suite. Unreachable when deployed: that filter is
+    // not registered then.
+    if (auth.getPrincipal() instanceof MockUserPrincipal mock) {
+      return mock.userGuid();
     }
+    // Any other non-Jwt principal carries no identity we can scope by: fail closed, never all.
     return "";
   }
 

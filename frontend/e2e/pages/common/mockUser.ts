@@ -82,4 +82,6 @@ export async function seedMockUser(page: Page, id: MockUserId): Promise<void> {
  *
  * If a mill dropdown ever comes back empty, the cause is data, not identity: check that this GUID
  * has active `ILCR_MILL_USER_XREF` rows in whichever database you are pointed at.
+ * `preflight/mill-scope.setup.ts` asserts exactly that before any browser starts, so you should
+ * never actually reach a scenario to find out — if you did, that preflight is the thing to read.
  */

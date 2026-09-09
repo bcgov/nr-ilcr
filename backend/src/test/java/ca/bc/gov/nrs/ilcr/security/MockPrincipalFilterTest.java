@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
@@ -60,7 +61,7 @@ class MockPrincipalFilterTest {
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     assertNotNull(auth);
-    assertEquals("dev-admin", auth.getPrincipal());
+    assertEquals("dev-admin", auth.getName());
     assertEquals(Set.of("ADMIN"), authorityNames(auth));
     verify(chain).doFilter(request, response);
   }
@@ -70,7 +71,7 @@ class MockPrincipalFilterTest {
     filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    assertEquals("dev-submitter", auth.getPrincipal());
+    assertEquals("dev-submitter", auth.getName());
     assertEquals(Set.of("SUBMITTER"), authorityNames(auth));
     verify(chain).doFilter(request, response);
   }
@@ -83,7 +84,7 @@ class MockPrincipalFilterTest {
     filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    assertEquals("dev-admin", auth.getPrincipal());
+    assertEquals("dev-admin", auth.getName());
     assertEquals(Set.of("ADMIN"), authorityNames(auth));
   }
 
@@ -122,17 +123,20 @@ class MockPrincipalFilterTest {
   }
 
   @Test
-  void carriesTheDirectoryGuid_inDetailsNotTheName() throws Exception {
+  void carriesTheDirectoryGuid_inATypedPrincipalNotTheName() throws Exception {
     filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    // `details` is what MillContextController reads for the identity-scoped mill list; without it a
+    // The GUID is what MillContextController reads for the identity-scoped mill list; without it a
     // mock submitter fail-closes to zero mills (Story 5.5) and the e2e suite cannot reach a mill.
-    assertEquals(TEST_GUID, auth.getDetails());
+    assertInstanceOf(MockUserPrincipal.class, auth.getPrincipal());
+    assertEquals(TEST_GUID, ((MockUserPrincipal) auth.getPrincipal()).userGuid());
     // And it must NOT be the name: getName() feeds the VARCHAR2(30) ENTRY_USERID/UPDATE_USERID
-    // audit
-    // columns on every write, while a FAM GUID is 32 chars — naming the principal after it would
-    // ORA-12899 every save. This assertion is the guard against "simplifying" it into the name.
+    // audit columns on every write, while a FAM GUID is 32 chars — naming the principal after it
+    // would ORA-12899 every save. This is the guard against "simplifying" it into the name, and it
+    // also pins that MockUserPrincipal implements AuthenticatedPrincipal: without that,
+    // AbstractAuthenticationToken.getName() falls through to the record's toString() and the audit
+    // columns get `MockUserPrincipal[name=dev-submitter, userGuid=...]` instead.
     assertEquals("dev-submitter", auth.getName());
   }
 }
