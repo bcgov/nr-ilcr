@@ -142,6 +142,21 @@ export class Schedule5Page {
     return this.categoryInput(category, half).inputValue();
   }
 
+  /**
+   * Fill a category cost AND commit it, so the derived rows recompute.
+   *
+   * BLUR IS THE COMMIT POINT. The four derived rows mirror the COMMITTED entry while the document is
+   * editable (#291), not the keystroke — the app's own unit tests pin that ("not per keystroke"). A
+   * bare `fill()` therefore leaves Camp Sub-Total / Camp Total showing the previous figures, and a
+   * scenario asserting the live recompute would fail for a reason that has nothing to do with the
+   * arithmetic it is testing.
+   */
+  async fillCategoryCostAndCommit(category: string, value: string): Promise<void> {
+    const input = this.categoryInput(category, 'cost');
+    await input.fill(value);
+    await input.blur();
+  }
+
   /** A derived row (`Camp Sub-Total: `, `Camp Total: `, …) as its whole table row, for text assertions. */
   derivedRow(label: string): Locator {
     return this.campsTablePanelRow(label);
@@ -149,13 +164,21 @@ export class Schedule5Page {
 
   /**
    * The grid row whose first cell starts with `label`. Scoped to the PANEL's grid rather than the page,
-   * so the Existing Camps table cannot satisfy it. Carbon renders the grid as a table inside the panel;
-   * the label cell keeps legacy's trailing ": ", so this matches on the leading text.
+   * so the Existing Camps table cannot satisfy it.
+   *
+   * THE LABEL IS TRIMMED BEFORE MATCHING. GRID_ROWS keeps legacy's trailing ": " ("Camp Sub-Total: "),
+   * but an accessible NAME is whitespace-normalised and trimmed, so a pattern ending in a space can
+   * never match and the row silently resolves to nothing. Trimming keeps the specs readable — they
+   * quote the label exactly as the app declares it — while the match uses the normalised form.
+   * Anchoring with `^` still separates "Camp Total:" from "Camp Sub-Total:".
    */
   private campsTablePanelRow(label: string): Locator {
+    const normalized = label.trim();
     return this.page
       .locator('.schedule-5__panel tr')
-      .filter({ has: this.page.getByRole('cell', { name: new RegExp(`^${escapeRegExp(label)}`) }) });
+      .filter({
+        has: this.page.getByRole('cell', { name: new RegExp(`^${escapeRegExp(normalized)}`) }),
+      });
   }
 
   // ---- check status (S06) / delete (S07) ------------------------------------------------------------

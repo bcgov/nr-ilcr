@@ -15,8 +15,8 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S08 AUTHORED AND GREEN; S09–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 8/25 rather than held back, so the ledger reflects reality rather than an
+**STATUS: S01–S09 AUTHORED AND GREEN; S10–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 9/25 rather than held back, so the ledger reflects reality rather than an
 intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
 preflight proves all 22 resolve on every run — so the `deferred` rows below are waiting on authoring
 effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
@@ -69,7 +69,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S06 | Check Status — All Requirements Met | Alternative | **covered** | `check-status.feature` `@p1 @S06` — GREEN. Asserts the per-camp line is ABSENT; found SPEC-3 |
 | S07 | Delete an Existing Camp | Alternative | **covered** | `delete.feature` `@p1 @S07 @CFM-001` — GREEN |
 | S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | **covered** | `same-name.feature` `@p1 @S08 @BR-02` — GREEN. The one slice needing two anchors |
-| S09 | Recoveries Amount Reduces the Camp Total | Alternative | deferred | as S02. Also carries the per-category `$/m³` assertions S01 does not |
+| S09 | Recoveries Amount Reduces the Camp Total | Alternative | **covered** | `recoveries.feature` `@p1 @S09 @BR-04` — GREEN. Client-side mirror, never saves. Does NOT cover per-category `$/m³` — see note |
 | S10 | Close/Navigate Away With Unsaved Changes Prompts a Discard Confirm | Alternative | deferred | validate-only; can share a non-mutating anchor when authored |
 | S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | deferred | as S10 |
 | S12 | Required Descriptive Field Left Blank (Camp Name or Isolated Camp) | Exception | deferred | validate-only. FLD-001's exact text is `[UNKNOWN]` in source — re-ground against the app |
@@ -87,7 +87,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 8 / 25 slices (32%). P0: 1 / 1 authored.**
+**Coverage: 9 / 25 slices (36%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -118,7 +118,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | The two totals' `$/m³` | S01 | covered | same step (0.76 and 0.98 against the 5000 camp volume) |
 | **SUC** `Data saved successfully` | S01 / messages.properties:168 | covered | reuses the common "I should see the message" step |
 | Camp appears in the Existing Camps table | S01 | covered | ""Cedar Creek Camp" is listed in the Existing Camps table" |
-| Per-category `$/m³` recomputes for EACH category | S01 | **deferred** | S01 asserts the two TOTAL rates; the twelve per-category rates ride S09/S15 where they are the point rather than a side effect |
+| Per-category `$/m³` recomputes for EACH category | S01 | **deferred** | S01 asserts the two TOTAL rates. NOT picked up by S09 after all: S09 enters no volume (Recoveries is the volume-less category), so every `$/m³` stays blank there. Rides S15, which enters volumes |
 | Panel redisplays with recalculated values after save | S01 | **deferred** | the API read-back proves persistence, which is the stronger claim; re-render fidelity rides S02's reopen |
 
 ## Notes

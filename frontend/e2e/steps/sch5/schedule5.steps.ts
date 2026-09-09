@@ -3,6 +3,7 @@ import {
   ADD_ANCHOR,
   CHECK_MET_ANCHOR,
   DELETE_ANCHOR,
+  RECOVERIES_ANCHOR,
   SAME_NAME_A_ANCHOR,
   SAME_NAME_B_ANCHOR,
   COPY_ANCHOR,
@@ -43,6 +44,7 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'check-met': CHECK_MET_ANCHOR,
   delete: DELETE_ANCHOR,
   'same-name-b': SAME_NAME_B_ANCHOR,
+  recoveries: RECOVERIES_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -412,6 +414,28 @@ When(
     );
   },
 );
+
+// ---------------------------------------------------------------------------------------------------
+// S09 — Recoveries reduces the Camp Total
+// ---------------------------------------------------------------------------------------------------
+
+When(
+  'I enter a {string} cost of {string}',
+  async ({ schedule5Page }, category, cost) => {
+    await schedule5Page.fillCategoryCostAndCommit(category, cost);
+  },
+);
+
+/**
+ * A derived row's on-screen figure — the CLIENT-SIDE mirror, before any save.
+ *
+ * The four derived rows are read-only text, never inputs (index.tsx:203), and they render through
+ * `fmtCost`, so 1000 reads as "1,000". S09 never saves, so nothing here can be a served figure: this
+ * is the mirror the app maintains while the panel is editable (#291).
+ */
+Then('the {string} row shows {string}', async ({ schedule5Page }, label, value) => {
+  await expect(schedule5Page.derivedRow(label)).toContainText(value);
+});
 
 // ---------------------------------------------------------------------------------------------------
 // S08 — the same camp name under a different mill/year

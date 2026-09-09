@@ -189,6 +189,26 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
     exemption is void. No behaviour changed.
   - **Status:** CLOSED as verified 2026-09-09.
 
+- **VER-3 — one unreproduced S04 abort left a camp behind; preflight caught it, as designed.**
+  - **What was seen.** During a `--repeat-each=3 --workers=1` run of the whole sch5 set, one S04
+    instance failed with a duration of **0ms** — not an assertion failure but an aborted test — and its
+    cleanup therefore never ran, leaving `"North Camp"` on 12050/2022.
+  - **Why it is recorded rather than dismissed.** The NEXT run failed in `setup` with exactly the right
+    message: *"Schedule 5 anchors already hold camps: subpage-existing (S04) (12050/2022) holds
+    campId=25613 'North Camp'"*, naming the anchor, the camp and the remedy. That is
+    `preflight/sch5-anchors.setup.ts` doing its job — an escaped row surfaced as one clear setup
+    failure instead of a confusing red inside whichever scenario ran next.
+  - **Not reproduced.** S04/S05 alone survived **5/5** serial repeats afterwards, and the full sch5 set
+    then passed `--repeat-each=3` cleanly (193 passed). So this is not a flaky assertion; the scenario
+    was cut short by something outside it.
+  - **Honest limit of this entry:** the abort's cause was not identified. A 0ms Playwright failure is a
+    test that never started or was killed, not one that failed — most likely worker-level, and this
+    machine runs the backend in Docker over a Windows bind mount with the DB in a separate WSL distro,
+    which has already produced load-induced 60s timeouts elsewhere in the suite.
+  - **What to do if it recurs:** clear the residue (preflight prints the exact DELETE) and re-run. If it
+    recurs *often*, that is worth a real investigation rather than a sweep.
+  - **Status:** CLOSED as verified 2026-09-09 — no defect in the scenario; the guard worked.
+
 - **VER-2 — `--repeat-each` in parallel fails every mutating scenario in this suite, S01 included. Not a
   flake and not specific to Schedule 5.**
   - **What was seen.** Stress-running S01 with `--repeat-each=5` failed 3 of 5, with the app reporting
