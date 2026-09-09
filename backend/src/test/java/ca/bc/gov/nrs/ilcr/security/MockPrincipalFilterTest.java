@@ -36,6 +36,13 @@ class MockPrincipalFilterTest {
 
   @Mock private FilterChain chain;
 
+  /** Any non-blank value; the filter only carries it through, it never interprets it. */
+  private static final String TEST_GUID = "TESTGUIDAAAABBBBCCCCDDDD00000001";
+
+  private static MockPrincipalFilter filter(Role defaultRole) {
+    return new MockPrincipalFilter(defaultRole, TEST_GUID);
+  }
+
   @AfterEach
   void clearContext() {
     SecurityContextHolder.clearContext();
@@ -49,7 +56,7 @@ class MockPrincipalFilterTest {
 
   @Test
   void seedsMockPrincipal_whenContextEmpty() throws Exception {
-    new MockPrincipalFilter(Role.ADMIN).doFilterInternal(request, response, chain);
+    filter(Role.ADMIN).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     assertNotNull(auth);
@@ -60,7 +67,7 @@ class MockPrincipalFilterTest {
 
   @Test
   void seedsConfiguredRole_submitter() throws Exception {
-    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+    filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     assertEquals("dev-submitter", auth.getPrincipal());
@@ -73,7 +80,7 @@ class MockPrincipalFilterTest {
     // The SPA sends the selected mock user's roles; an admin header must grant ILCR_ADMIN even when
     // the configured default is SUBMITTER (so the admin-only actions are reachable in local dev).
     org.mockito.Mockito.when(request.getHeader("X-Mock-Groups")).thenReturn("ILCR_ADMIN");
-    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+    filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     assertEquals("dev-admin", auth.getPrincipal());
@@ -84,7 +91,7 @@ class MockPrincipalFilterTest {
   void headerRoles_supportADualRoleUser() throws Exception {
     org.mockito.Mockito.when(request.getHeader("X-Mock-Groups"))
         .thenReturn("ILCR_ADMIN,ILCR_SUBMITTER");
-    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+    filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     assertEquals(
         Set.of("ADMIN", "SUBMITTER"),
@@ -94,7 +101,7 @@ class MockPrincipalFilterTest {
   @Test
   void unknownHeaderRole_fallsBackToTheConfiguredDefault() throws Exception {
     org.mockito.Mockito.when(request.getHeader("X-Mock-Groups")).thenReturn("SOME_OTHER_APP_ADMIN");
-    new MockPrincipalFilter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+    filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
     assertEquals(
         Set.of("SUBMITTER"),
@@ -108,9 +115,24 @@ class MockPrincipalFilterTest {
             "real-user", "N/A", List.of(new SimpleGrantedAuthority("SUBMITTER")));
     SecurityContextHolder.getContext().setAuthentication(existing);
 
-    new MockPrincipalFilter(Role.ADMIN).doFilterInternal(request, response, chain);
+    filter(Role.ADMIN).doFilterInternal(request, response, chain);
 
     assertSame(existing, SecurityContextHolder.getContext().getAuthentication());
     verify(chain).doFilter(request, response);
+  }
+
+  @Test
+  void carriesTheDirectoryGuid_inDetailsNotTheName() throws Exception {
+    filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
+
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    // `details` is what MillContextController reads for the identity-scoped mill list; without it a
+    // mock submitter fail-closes to zero mills (Story 5.5) and the e2e suite cannot reach a mill.
+    assertEquals(TEST_GUID, auth.getDetails());
+    // And it must NOT be the name: getName() feeds the VARCHAR2(30) ENTRY_USERID/UPDATE_USERID
+    // audit
+    // columns on every write, while a FAM GUID is 32 chars — naming the principal after it would
+    // ORA-12899 every save. This assertion is the guard against "simplifying" it into the name.
+    assertEquals("dev-submitter", auth.getName());
   }
 }

@@ -51,8 +51,19 @@ public class MillContextController implements MillContextApi {
    */
   private static String currentUserGuid() {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+    if (auth == null) {
+      return "";
+    }
+    if (auth.getPrincipal() instanceof Jwt jwt) {
       return JwtPrincipalUtil.getIdpUserId(jwt);
+    }
+    // Dev/UAT mock principal (security off): MockPrincipalFilter carries a stand-in directory
+    // GUID in `details` — not as the principal name, which feeds the VARCHAR2(30) audit columns
+    // (a FAM GUID is 32 chars). Without it the mock fail-closed to an empty mill list, so only
+    // ILCR_ADMIN saw any mill; once Story 16.1 took Draft editing from admins, no single role
+    // could run the e2e suite. Unreachable when deployed: that filter is not registered then.
+    if (auth.getDetails() instanceof String guid) {
+      return guid;
     }
     return "";
   }
