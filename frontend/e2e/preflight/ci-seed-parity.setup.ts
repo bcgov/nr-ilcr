@@ -125,6 +125,14 @@ const DELIBERATELY_ABSENT = new Map<AnchorKey, string>([
   ],
   ['13/2016', 'sch2 "not-found" — 404 on a closed mill that has no row for this year.'],
   ['25051/2018', 'sch4 "not-found" — 404. Mill 25051 IS seeded (CLS) and has a 2015 row for the 409 arm.'],
+  [
+    '16050/2022',
+    'sch5 "no-schedule" (S18, "No Schedule 5 Record Found for Mill/Year" -> 404). The hole is CARVED '
+      + 'rather than found: the sch5 fan-out opens 2022 for sixteen of the seventeen ACT mills and skips '
+      + 'this one precisely so a 404 anchor exists inside its own new year. Seeding it would delete the '
+      + 'fixture, not fix it. Distinct from 16050/2016 and 16050/2015 above — same mill, three different '
+      + 'years, one 404 each for sch11/sec, sch3 and sch5, so no two domains share a key.',
+  ],
 ]);
 
 /**

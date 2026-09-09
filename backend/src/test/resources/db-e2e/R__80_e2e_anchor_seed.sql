@@ -64,14 +64,26 @@
 -- Note the trigger is NOT a flag flip: the suite has no way to present a real
 -- principal today, so #385 is best sequenced with whatever gives it one.
 --
--- NOT REPLICATED, deliberately: THE.ILCR_REPORT_CATEGORY. Three of the patches
+-- NOT REPLICATED, deliberately: THE.ILCR_REPORT_CATEGORY. Four of the patches
 -- seed eleven category rows per anchor because the REAL Oracle has a composite
 -- FK onto that table and a bare mill-year 500s on its first save
 -- (DataIntegrityViolationException). The Flyway test schema models the table
--- (db/V20260819__seed_reporting_year_open_fixtures.sql) with a PK and NO FK,
--- and no schedule 1/2/3/4/11 code path reads it (only reportingyear and
--- schedule5 do), so those rows change nothing here. The omission is a decision,
--- not an oversight.
+-- (db/V20260819__seed_reporting_year_open_fixtures.sql) with a PK and NO FK, so
+-- those rows change nothing here. The omission is a decision, not an oversight.
+--
+-- RESTATED 2026-09-09 when sch5 joined the suite. This paragraph used to rest on
+-- "no schedule 1/2/3/4/11 code path reads it (only reportingyear and schedule5
+-- do)" — i.e. on Schedule 5 being ABSENT from the suite. That premise is now
+-- false, so it has been replaced with the reason that actually load-bears and
+-- survives the next domain: the CI schema simply has no such FK to satisfy.
+-- V34__the_schedule5_snapshot_and_read_fixtures.sql:34-35 says so at the point
+-- of creation — "Delivery also has the composite FK CMP_RPT_ILCR_RCAT_FK ->
+-- ILCR_REPORT_CATEGORY; the V1 test snapshot has no such table ... not added
+-- here." Schedule 5 never SELECTs the table either; it only inherits the FK.
+-- So sch5's 9050/2016 anchor needs its eleven category rows in the patch (real
+-- Oracle, FK enforced — verified: the save 500s without them) and needs only the
+-- report-status row here. If a future migration ever adds that FK to the test
+-- schema, this whole paragraph is void and every anchor needs category rows.
 --
 -- ID CLAIMS (all verified free against every migration in db/ on 2026-08-24;
 -- re-verified for the ranges extended on 2026-08-28):
@@ -79,7 +91,9 @@
 --                                        16050, 17052, 22050, 22051, 23050,
 --                                        23051, 23052, 24050, 24051,
 --                                        25050-25054
---   ILCR_REPORTING_PERIOD              : 2015-2019 (2020/2021 exist in V2/V8)
+--   ILCR_REPORTING_PERIOD              : 2015-2019, 2022-2023 (2020/2021 exist
+--                                        in V2/V8; 2022-2023 opened 2026-09-09
+--                                        for the sch5 fan-out)
 --   ILCR_REPORT_SUMMARY_ID             : 3001-3044   (db/ uses 1001-1228)
 --   ILCR_COST_REPORT_DETAIL_ID         : 4001-4305   (db/ uses 5001-9506)
 --   TRANSPORTATION_REPORT_ID           : 4801-4808
@@ -172,7 +186,14 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 2015 is sch4's BR-12 'check-unsaved' anchor (S33/S34, issue #359) — folded in
 -- from real-test-data-patches/sch4/unsaved-check-anchors.sql. Empty at rest: the
 -- scenarios' own Givens save the state they then edit on screen.
+-- 2016 is sch5's 'add' anchor (UC-SCH5-001 S01) — folded in from
+-- real-test-data-patches/sch5/draft-anchors.sql. It was the LAST empty cell in the
+-- 17-ACT-mill x 7-opened-year grid: all three unpinned Draft mill-years in the
+-- extract (1/2017, 14050/2018, 25051/2017) are CLS mills that answer 409, so
+-- Schedule 5 had no free mutating anchor at all. Empty at rest; the S01 scenario
+-- creates its camp and deletes it again through the app's own DELETE endpoint.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2015, 9050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2016, 9050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2017, 9050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2018, 9050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2019, 9050, 'D', 'D', 'E2E_SEED');
@@ -285,8 +306,16 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2019, 25050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2020, 25050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2021, 25050, 'D', 'D', 'E2E_SEED');
--- Mill 25051 (closed). ONLY 2015 (409 via CLS); NO 2018 row (404 anchor).
+-- Mill 25051 (closed). 2015 = sch4's 409 arm, 2017 = sch5's 409 arm (S17); NO
+-- 2018 row (sch4's 404 anchor). The two 409 arms are separate years so the two
+-- domains do not share a key — and the row must EXIST for each, because without
+-- one MillContextService answers 404 first and the 409 is never reached.
+-- 25051/2017 exists in the real extract as a Draft row on this CLS mill; this
+-- reproduces it. It was missing here until 2026-09-09, and the parity gate caught
+-- it the moment sch5 pinned it — locally it answered 409, in CI it would have
+-- 404'd and S17 would have failed only in CI.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2015, 25051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2017, 25051, 'D', 'D', 'E2E_SEED');
 -- Mill 25052. 2015/2017 are the clear-amounts snapshot/restore anchors.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2015, 25052, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2016, 25052, 'D', 'D', 'E2E_SEED');
@@ -309,6 +338,55 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2019, 25054, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2020, 25054, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2021, 25054, 'D', 'D', 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 5 fan-out: reporting years 2022-2023 (fixtures/sch5/schedule5-test-data.ts).
+-- Folded in from real-test-data-patches/sch5/draft-anchors.sql.
+--
+-- WHY A WHOLE NEW YEAR. 9050/2016 (above) was the LAST empty cell in the
+-- 17-ACT-mill x 7-opened-year grid; the other six domains pin the other 119. So
+-- UC-SCH5-001's remaining 24 slices could not be authored without minting
+-- capacity. Opening 2022-2023 is purely additive — no existing row changes — and
+-- because every key any other fixture pins is <= 2021, "year >= 2022 belongs to
+-- sch5" is STRUCTURAL: no cross-domain collision is even expressible.
+--
+-- Safe for the year LIST too: nothing asserts its contents. The only step that
+-- inspects it (steps/sec/working-context.steps.ts:24) asserts a KNOWN option is
+-- present, not a count — and the app has no default working context to shift
+-- (MillYearProvider dropped its 13050/2017 mount default in e37649b).
+--
+-- 16050/2022 IS ABSENT ON PURPOSE — the absence is S18's fixture ("No Schedule 5
+-- Record Found" -> 404). It is registered in DELIBERATELY_ABSENT in
+-- preflight/ci-seed-parity.setup.ts, which fails if anyone seeds it.
+-- 16050/2023 is Submitted ("S"), not Draft: S19 needs a non-editable document.
+-- Every other row here is an empty editable Draft; the scenarios create and then
+-- delete their own camps.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2022, DATE '2022-01-01', DATE '2022-12-31', 'E2E_SEED');
+INSERT INTO THE.ILCR_REPORTING_PERIOD (REPORT_YEAR, REPORT_OFFICIAL_START_DATE, REPORT_OFFICIAL_END_DATE, ENTRY_USERID) VALUES (2023, DATE '2023-01-01', DATE '2023-12-31', 'E2E_SEED');
+-- 2022 — 16 of the 17 ACT mills (16050 deliberately omitted; see above).
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 9050,  'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 10050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 12050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 13050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 17052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 22050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 22051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 23050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 23051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 23052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 24050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 24051, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 25050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 25052, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 25053, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2022, 25054, 'D', 'D', 'E2E_SEED');
+-- 2023 — the overflow, plus the one Submitted document S19 needs.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 9050,  'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 10050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 12050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 13050, 'D', 'D', 'E2E_SEED');
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------
 -- Banner status dates (sec S01 asserts "Sch 1-10 - Status: Draft - Date:
