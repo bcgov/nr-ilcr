@@ -155,14 +155,18 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     every feature file declared "As a Licensee". Invisible until Story 16.1 made an administrator
     read-only at Draft, at which point ~200 scenarios failed at once and read as an app regression.
     Three documents said the selector could not matter, which is why nobody looked there.
-  - **What is still genuinely blocked:** anything needing a real DIRECTORY identity. The mock
-    principal is a `UsernamePasswordAuthenticationToken` with no `custom:idp_user_id`, so a
-    submitter's mill SCOPING cannot be exercised at all — see GAP-5.
-  - **Status:** OPEN — `partially unblocked` (2026-09-09). Role variation: available, and now used.
-    Directory-scoped behaviour: still `blocked`.
+  - **What was still blocked, and no longer is (#385):** anything needing a DIRECTORY identity. The
+    mock principal was a `UsernamePasswordAuthenticationToken` with no `custom:idp_user_id`, so a
+    submitter's mill SCOPING could not be exercised at all. It now carries a stand-in GUID
+    (`ilcr.security.mock-user-guid`) that is associated with the mills in both e2e databases, so the
+    scoped query really runs — see GAP-5. What remains out of reach is a *real* FAM identity: the
+    GUID is synthetic, so anything reading claims other than `custom:idp_user_id` is still untested
+    here.
+  - **Status:** OPEN — `substantially unblocked` (2026-09-09). Role variation: available and used.
+    Directory-scoped behaviour: available and used, via a synthetic GUID.
 
-- **GAP-5 — A mock submitter is offered NO mill, so the suite borrows the administrator for
-  `GET /v1/mills`. APP-SIDE gap, test-side workaround. Found 2026-09-09.**
+- **GAP-5 — A mock submitter was offered NO mill, so the suite borrowed the administrator for
+  `GET /v1/mills`. APP-SIDE gap. Found 2026-09-09, CLOSED 2026-09-09 (bcgov/nr-ilcr#385).**
   - **The gap, in the app:** `MillContextController.currentUserGuid()` resolves to `""` for the
     security-off dev principal (not a `Jwt`), and `MillContextService.listMills` fail-closes a
     submitter with a blank GUID to `List.of()`. Eleven lines above it, `validateMillAccess` **exempts
@@ -171,27 +175,41 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     to select. Under mock auth that leaves NO usable identity once the Story 16.1 matrix lands — the
     admin, the only role Home offers a mill to, is read-only at Draft. It breaks local dev the same
     way: neither mock user can enter schedule data.
-  - **The app fix, deliberately not taken here:** exempt the mock principal in `listMills` as
-    `validateMillAccess` already does (one branch; never reachable with security on, where every
-    caller presents a `Jwt`, and `DeployedSecurityGuard` forbids security-off beside a datasource on
-    a pod). It was implemented and then reverted on the decision that this change stay **test-only**.
-  - **The workaround:** `pages/common/mockUser.ts` `grantAdminOnMillList` rewrites `X-Mock-Groups`
-    to `ILCR_ADMIN` on `GET /api/v1/mills` **only**; the global `page` fixture installs it, and the
-    identity stays `ILCR_SUBMITTER` for every schedule GET, write and check-status. Verified at the
-    backend boundary against a stub: `/api/v1/mills` arrives as `ILCR_ADMIN`,
-    `/api/v1/reporting-years` and `/api/v1/home-content/mine` as `ILCR_SUBMITTER`.
-  - **What it costs, stated so no one reads more into the green than is there:** the dropdown this
-    suite asserts is the ADMIN's list (`findAllMills` — every listable mill, closed included). A
-    submitter's SCOPED list (`findMillsForUser`, and the S06 "closed *associated* mills still
-    appear" shape) is **not covered here** and cannot be while the mock principal has no directory
-    GUID; the backend's own tests own it. This is not a coverage regression — the suite was an
-    administrator throughout until now — but it was previously undeclared, which is worse.
-  - **Future action:** delete `grantAdminOnMillList` the day either the app fix lands or mock auth
-    grows a directory GUID (which would also need `ILCR_MILL_USER_XREF` rows for the e2e anchor
-    mills — note `R__70_test_scope_canonical_submitter.sql` sorts BEFORE `R__80_e2e_anchor_seed.sql`,
-    so its set-based association cannot reach them today).
-  - **Status:** OPEN — app gap unfixed by choice; suite green via a declared, single-request
-    workaround.
+  - **The interim workaround, now DELETED:** `pages/common/mockUser.ts` `grantAdminOnMillList`
+    rewrote `X-Mock-Groups` to `ILCR_ADMIN` on `GET /api/v1/mills` **only**, installed by the global
+    `page` fixture, with the identity staying `ILCR_SUBMITTER` for every schedule GET, write and
+    check-status. It cost real coverage: the dropdown the suite asserted was the ADMIN's list
+    (`findAllMills` — every listable mill, closed included), so a submitter's SCOPED list
+    (`findMillsForUser`, and the S06 "closed *associated* mills still appear" shape) was not
+    covered here at all.
+  - **The app fix, taken (#385).** Two candidates were considered. Exempting the mock principal in
+    `listMills` as `validateMillAccess` does was rejected: it makes the gates agree but has the
+    suite BYPASS the scoped query, so the coverage above stays lost. Instead `MockPrincipalFilter`
+    now presents a stand-in directory GUID (`ilcr.security.mock-user-guid`, defaulting to the
+    test-scope canonical submitter) in the token's `details` — not its name, which feeds the
+    `VARCHAR2(30)` `ENTRY_USERID`/`UPDATE_USERID` audit columns while a FAM GUID is 32 chars, so
+    naming the principal after it would `ORA-12899` every save. `MillContextController
+    .currentUserGuid()` reads `details` for a non-`Jwt` caller. Unreachable when deployed: that
+    filter is not registered with security on, and `DeployedSecurityGuard` forbids security-off
+    beside a datasource on a pod.
+  - **The data half, which the identity is useless without.** That GUID needs active
+    `ILCR_MILL_USER_XREF` rows in BOTH e2e databases, and `R__70_test_scope_canonical_submitter.sql`
+    sorts BEFORE `R__80_e2e_anchor_seed.sql` so its set-based association cannot reach the e2e
+    mills. Added in each: a set-based `INSERT` at the end of `R__80` for CI, and
+    `real-test-data-patches/common/mock-submitter-associations.sql` for the extract. Every mill is
+    associated, so the submitter's scoped list is the same SET as the admin's — verified with
+    `MINUS` both ways on the extract (0 rows each side), which is what makes the deletion of the
+    workaround behaviour-preserving for the dropdown while the query behind it becomes the real one.
+  - **Measured, same database, before and after:** `GET /api/v1/mills` as `ILCR_SUBMITTER` against
+    the extract returned **0 mills** on the old code and **21** on the fixed code (the admin
+    returned 21 in both). The first entry is a `CLS` mill, i.e. the S06 closed-associated shape now
+    renders for a submitter rather than only for an admin.
+  - **The other reason this mattered:** it broke LOCAL DEV outright. Since Story 16.1 an admin is
+    read-only at Draft while a submitter was offered no mill, so neither mock user could enter
+    schedule data. Note the default GUID exists only in the seeded databases — against any other
+    database, point `ilcr.security.mock-user-guid` at a GUID that database associates.
+  - **Status:** CLOSED (2026-09-09). App gap fixed, workaround deleted, submitter scoping now
+    covered here rather than only by the backend's own tests.
 
 **Spec gaps (the Gherkin is missing / underspecifies scenarios):**
 

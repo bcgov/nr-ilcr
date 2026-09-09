@@ -64,45 +64,22 @@ export async function seedMockUser(page: Page, id: MockUserId): Promise<void> {
 }
 
 /**
- * THE ONE REQUEST THE SUITE CANNOT MAKE AS ITS DECLARED ROLE — a deliberate, narrow workaround for
- * an APP-SIDE gap, not a test convenience. Read this before adding another.
+ * HISTORY, kept because it is the reason this file exists and the reason not to re-add the shortcut.
  *
- * `GET /api/v1/mills` is the Home mill dropdown. `MillContextController.currentUserGuid()` resolves
- * to `""` for the security-off dev principal (a `UsernamePasswordAuthenticationToken`, not a `Jwt`),
- * and `MillContextService.listMills` fail-closes a submitter with a blank GUID to `List.of()`. So a
- * mock submitter is offered NO mill and cannot reach any schedule — while `validateMillAccess`, two
- * methods above it, EXEMPTS that same principal, so the very same identity may WRITE to any mill.
- * The two gates disagree, and under mock auth that leaves no identity able to do the suite's work:
- * the admin (the only one Home offers a mill to) is read-only at Draft under the Story 16.1 matrix,
- * and the submitter sees nothing to select.
+ * `grantAdminOnMillList` used to live here: a `page.route` handler that rewrote `X-Mock-Groups` to
+ * `ILCR_ADMIN` on `GET /api/v1/mills` alone, because a mock SUBMITTER was offered no mill at all.
+ * `MillContextController.currentUserGuid()` returned `""` for the security-off principal (a
+ * `UsernamePasswordAuthenticationToken`, not a `Jwt`) and `MillContextService.listMills`
+ * fail-closes a submitter with a blank GUID to `List.of()` — correctly, so a submitter can never
+ * see mills that are not theirs. So the suite had to borrow the administrator for that one read.
  *
- * The app-side fix is to make the two gates agree (exempt the mock principal in `listMills` as
- * `validateMillAccess` already does), which also un-breaks local dev, where neither mock user can
- * currently enter schedule data. That is deliberately NOT taken here: this change is test-only. So
- * the suite borrows the administrator for exactly this one READ and stays the submitter for
- * everything else — every schedule GET, every write, every check-status.
+ * It is GONE because the app-side gap is fixed (bcgov/nr-ilcr#385): `MockPrincipalFilter` now
+ * presents a stand-in directory GUID (`ilcr.security.mock-user-guid`), and that GUID is associated
+ * with the mills in BOTH e2e databases — `db-e2e/R__80_e2e_anchor_seed.sql` for CI, and
+ * `real-test-data-patches/common/mock-submitter-associations.sql` for the extract. The dropdown is
+ * therefore the submitter's OWN scoped list (`findMillsForUser`) now, not the admin's
+ * (`findAllMills`), which also closes the coverage gap the workaround cost — `sec` GAP-5.
  *
- * WHY A HEADER REWRITE AND NOT A LOCALSTORAGE SWITCH: the identity would then depend on WHEN Home is
- * visited. Any remount or re-navigation refetches the list, so a switch-back would have to be
- * threaded through every entry point and would break the moment someone added another. Keying on the
- * URL makes it independent of navigation order — one handler, one request, no ordering rule to
- * remember.
- *
- * WHAT IT COSTS, stated plainly: the dropdown the suite sees is the ADMIN's list (`findAllMills`,
- * all listable mills including closed). A real submitter's SCOPED list — `findMillsForUser`, the
- * S06 "closed associated mills still appear" shape — is therefore NOT covered by this suite and
- * cannot be while mock auth has no directory GUID; it is covered by the backend's own tests. That
- * is unchanged from the status quo (the whole suite was an administrator until now), and it is
- * recorded as a gap in `features/sec/uc-sec-001-working-context/defects.md`.
- *
- * Registered by the global `page` fixture, so it applies to every scenario. Playwright matches
- * handlers in reverse registration order, so a later, broader handler still wins where a scenario
- * wants one — `appShell.openWithoutBackend`'s `**\/api\/**` abort keeps aborting this too.
+ * If a mill dropdown ever comes back empty, the cause is data, not identity: check that this GUID
+ * has active `ILCR_MILL_USER_XREF` rows in whichever database you are pointed at.
  */
-export async function grantAdminOnMillList(page: Page): Promise<void> {
-  await page.route(/\/api\/v1\/mills(\?|$)/, (route) =>
-    route.continue({
-      headers: { ...route.request().headers(), [MOCK_GROUPS_HEADER.toLowerCase()]: 'ILCR_ADMIN' },
-    }),
-  );
-}
