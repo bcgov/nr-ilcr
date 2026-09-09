@@ -346,18 +346,32 @@ obsolete, one follow-up was confirmed done, one Coverage gap was closed, and thr
     Draft-gate are enforced separately in the domain services (AD-9)". Every Schedule 1 endpoint is
     guarded by `VIEW_SCHEDULE` or `EDIT_SCHEDULE` only, so **no admin-only branch and no role-driven 403
     exists on this UC**. There is nothing to assert, not merely something we cannot reach.
-  - **On the header's mock-user selector (ILCR_ADMIN / ILCR_SUBMITTER / both):** it is a **frontend-only
-    display affordance** and does NOT grant roles. `context/auth/mockUsers.ts` persists the choice to
-    `localStorage` under `nr-ilcr.mock-user`; no header or interceptor carries it to the API. The backend
-    stamps ONE authority on every request from the startup property
-    `ilcr.security.mock-role` (default `ILCR_SUBMITTER`, `SecurityConfiguration.java:38` →
-    `MockPrincipalFilter`). The only consumer of the selected user anywhere in the app is
-    `Dashboard.tsx`, which renders `user.displayName` / `user.email` / role chips — nothing branches on
-    it. So switching it changes the name on the Home card, not what you may do.
-  - **Future action:** revisit when FAM auth lands **and the two `ROLE_ACTIONS` sets actually diverge**.
-    At that point the lever is a CI matrix — a second suite run against a backend started with
-    `ilcr.security.mock-role=ILCR_ADMIN` — not a per-test switch, because the authority is fixed per
-    process. Until the maps differ, that second job would assert nothing new.
+  - **On the header's mock-user selector — CORRECTED 2026-09-09, and the correction is the point.** This
+    used to read "a **frontend-only display affordance** … no header or interceptor carries it to the
+    API … the backend stamps ONE authority per process from `ilcr.security.mock-role`". That was true
+    when written and **false since #265** (2026-08-12, Maintain Code Tables): `service/api-service.ts`
+    now sends the selected user's roles as `X-Mock-Groups` on every mock-auth request, and
+    `MockPrincipalFilter` **prefers that header** over its configured `ilcr.security.mock-role`
+    default. The selector is the acting role.
+  - **What that stale note cost.** Because `findMockUser` falls back to `?? MOCK_USERS[0]` and the
+    admin was listed first, this suite ran as **`ILCR_ADMIN`** from #265 until 2026-09-09 while every
+    feature file declared "As a Licensee" — invisible while the write gate was `callerMayEdit &&
+    Draft`, which an administrator satisfied. Story 16.1's role x status matrix made an administrator
+    **read-only at Draft** and ~200 scenarios failed at once, reading as an app regression. Three
+    documents (this one, `coverage.md`, sch11's `defects.md`) asserted the selector could not matter,
+    which is why nobody looked there. Now: the identity is seeded explicitly per scenario
+    (`pages/common/mockUser.ts`, global `page` fixture) and `preflight/mock-user.setup.ts` fails if
+    the ids or roles it names stop matching `mockUsers.ts`. One request still has to borrow the
+    administrator — `GET /v1/mills`, because a mock submitter is offered no mill at all; that is an
+    app-side gap left unfixed on purpose (this change is test-only) and it is recorded with its cost
+    in UC-SEC-001 defects.md GAP-5.
+  - **Future action — also corrected.** "The lever is a CI matrix, not a per-test switch, because the
+    authority is fixed per process" no longer holds: the authority is per REQUEST, so a per-scenario
+    switch is exactly the lever (`seedMockUser(page, 'admin')`). And the premise has already moved —
+    the two `ROLE_ACTIONS` sets are still identical, so there is still no role-driven **403**, but
+    editability is now role-dependent through `ScheduleEditability` rather than through
+    `SchedulePermissions`. An admin-at-non-Draft write arm is owed coverage; it is currently proven by
+    the backend's `*WriteAuthorizationIT` suites (db/R__50, R__51) rather than in the browser.
   - **Status:** OPEN (informational). Re-verified 2026-08-07.
   - **Test:** none needed today — `not-applicable (no role-dependent behaviour)` in coverage.md.
 
