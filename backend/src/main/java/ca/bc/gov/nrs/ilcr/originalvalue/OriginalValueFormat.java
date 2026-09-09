@@ -101,7 +101,7 @@ public enum OriginalValueFormat {
     @Override
     String render(Object value) {
       if (value instanceof Boolean flag) {
-        return flag ? "Yes" : "No";
+        return flag.booleanValue() ? "Yes" : "No";
       }
       return switch (String.valueOf(value)) {
         case "Y", "true" -> "Yes";

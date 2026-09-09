@@ -183,7 +183,7 @@ public class OriginalValues {
         return decimal.stripTrailingZeros().toPlainString();
       }
       if (submitted instanceof Boolean flag) {
-        return flag ? "Y" : "N";
+        return flag.booleanValue() ? "Y" : "N";
       }
       return submitted.toString();
     }

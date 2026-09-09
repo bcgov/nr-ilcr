@@ -708,25 +708,10 @@ public class Schedule1Service {
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
-    // The licensee's submitted figures (Story 16.2, BR-04). Read once here and threaded into the
-    // line-item factories below; at Draft every map built from these comes back null, so the
-    // Draft-time document is byte-identical to what it was before this feature existed.
-    // Skipped entirely at Draft: the maps would all come back null anyway, and a submitter reading
-    // their own Draft is the commonest request this schedule serves — it should not pay for two
-    // snapshot queries whose result it cannot use.
-    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
-    List<CostDetailSnapshotRepository.Row> costSnapshotRows =
-        summary == null || !exposeOriginals
-            ? List.of()
-            : costSnapshots.findBySummary(summary.summaryId());
-    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode =
-        fixedLineSnapshots(costSnapshotRows);
-    CostDetailSnapshotRepository.Row sharedOtherCostsSnapshot =
-        sharedOtherCostsSnapshot(costSnapshotRows);
-    ReportSummarySnapshotRepository.Snapshot summarySnapshot =
-        summary == null || !exposeOriginals
-            ? null
-            : summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null);
+    Snapshots snapshots = loadSnapshots(trackStatus, summary);
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode = snapshots.byCode();
+    CostDetailSnapshotRepository.Row sharedOtherCostsSnapshot = snapshots.sharedOtherCosts();
+    ReportSummarySnapshotRepository.Snapshot summarySnapshot = snapshots.summary();
 
     // Schedule 3 source data (BR-03 crown pre-fill + BR-04 admin-cost pulls). Derived live from the
     // stored Schedule 3 fixed lines (legacy computed these each render; the subtotals are never
@@ -1148,6 +1133,36 @@ public class Schedule1Service {
                 sharedSnapshot == null ? null : sharedSnapshot.volume(),
                 OriginalValueFormat.WHOLE)
             .build());
+  }
+
+  /**
+   * The licensee's submitted figures for one summary (Story 16.2, BR-04), read once and threaded
+   * into the line-item factories.
+   *
+   * @param byCode a fixed line's submitted cost row, by cost-item code
+   * @param sharedOtherCosts the single Other Costs row whose volume every other-cost line shares
+   * @param summary the submitted summary-level figures (crown volume, comments)
+   */
+  private record Snapshots(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      CostDetailSnapshotRepository.Row sharedOtherCosts,
+      ReportSummarySnapshotRepository.Snapshot summary) {}
+
+  /**
+   * Read both snapshots, or nothing at all at Draft. Skipping the queries entirely there is the
+   * point: every map built from them would come back null anyway, so the Draft-time document is
+   * byte-identical to what it was before this feature existed, and a submitter reading their own
+   * Draft — the commonest request this schedule serves — pays for neither query.
+   */
+  private Snapshots loadSnapshots(String trackStatus, SummaryRow summary) {
+    if (summary == null || !originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(Map.of(), null, null);
+    }
+    List<CostDetailSnapshotRepository.Row> rows = costSnapshots.findBySummary(summary.summaryId());
+    return new Snapshots(
+        fixedLineSnapshots(rows),
+        sharedOtherCostsSnapshot(rows),
+        summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null));
   }
 
   /**

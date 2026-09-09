@@ -218,19 +218,9 @@ public class Schedule3Service {
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     final String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
-    // The licensee's submitted figures (Story 16.2, BR-04), skipped entirely at Draft.
-    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
-    List<CostDetailSnapshotRepository.Row> snapshotRows =
-        summary == null || !exposeOriginals
-            ? List.of()
-            : costSnapshots.findBySummary(summary.summaryId());
-    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode = indexSnapshots(snapshotRows);
-    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
-        indexSnapshotsByDetailId(snapshotRows);
-    final ReportSummarySnapshotRepository.Snapshot summarySnapshot =
-        summary == null || !exposeOriginals
-            ? null
-            : summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null);
+    Snapshots snapshots = loadSnapshots(trackStatus, summary);
+    final Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode = snapshots.byCode();
+    final ReportSummarySnapshotRepository.Snapshot summarySnapshot = snapshots.summary();
 
     PartitionedDetails partitioned = partitionDetails(details);
     Map<Integer, DetailRow> byCode = partitioned.byCode();
@@ -245,25 +235,11 @@ public class Schedule3Service {
     BigDecimal overheadVolume = add(popTimberVolume, crownTimberVolume);
 
     // --- Fixed lines (harvest/pop/crown) -------------------------------------------------------
-    Map<Integer, Integer> harvestByCode = new HashMap<>();
-    Map<Integer, Integer> popByCode = new HashMap<>();
-    List<CostLine> lineItems = new ArrayList<>();
-    for (LineSpec spec : LINES) {
-      Integer harvest = costOf(byCode.get(spec.code()));
-      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
-      Integer crown = crownCost(harvest, pop);
-      harvestByCode.put(spec.code(), harvest);
-      popByCode.put(spec.code(), pop);
-      if (harvest != null || pop != null || crown != null) {
-        lineItems.add(
-            new CostLine(
-                spec.code(),
-                harvest,
-                pop,
-                crown,
-                lineOriginals(trackStatus, spec, snapshotByCode)));
-      }
-    }
+    FixedLines fixed =
+        fixedLines(trackStatus, byCode, popTimberVolume, overheadVolume, snapshotByCode);
+    final List<CostLine> lineItems = fixed.lineItems();
+    final Map<Integer, Integer> harvestByCode = fixed.harvestByCode();
+    final Map<Integer, Integer> popByCode = fixed.popByCode();
 
     // --- Subtotal Other Costs (from item-124 groups) -------------------------------------------
     ThreeColumnTotal subtotalOtherCosts = subtotalOtherCosts(acceptableRows);
@@ -367,6 +343,69 @@ public class Schedule3Service {
    */
   private record PartitionedDetails(
       Map<Integer, DetailRow> byCode, List<DetailRow> acceptable, List<DetailRow> unacceptable) {}
+
+  /**
+   * The licensee's submitted figures for one summary (Story 16.2, BR-04).
+   *
+   * @param byCode a fixed line's submitted cost row, by cost-item code
+   * @param summary the submitted summary-level figures (comments, override-total-PO&amp;P)
+   */
+  private record Snapshots(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      ReportSummarySnapshotRepository.Snapshot summary) {}
+
+  /** Read both snapshots, or neither at Draft — where no query is issued at all. */
+  private Snapshots loadSnapshots(String trackStatus, SummaryRow summary) {
+    if (summary == null || !originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(Map.of(), null);
+    }
+    return new Snapshots(
+        indexSnapshots(costSnapshots.findBySummary(summary.summaryId())),
+        summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null));
+  }
+
+  /**
+   * The eleven fixed lines, plus the per-code Harvest and PO&amp;P costs the subtotals sum. Both
+   * maps are keyed by cost-item code and carry an entry for every line, present or not, because the
+   * subtotal loop iterates {@code LINES} rather than the served rows.
+   */
+  private record FixedLines(
+      List<CostLine> lineItems,
+      Map<Integer, Integer> harvestByCode,
+      Map<Integer, Integer> popByCode) {}
+
+  /**
+   * Build the fixed lines. A line is served only when at least one of its three columns has a value
+   * — legacy's own emptiness rule — but its costs are recorded either way so the subtotals see
+   * them.
+   */
+  private FixedLines fixedLines(
+      String trackStatus,
+      Map<Integer, DetailRow> byCode,
+      BigDecimal popTimberVolume,
+      BigDecimal overheadVolume,
+      Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode) {
+    Map<Integer, Integer> harvestByCode = new HashMap<>();
+    Map<Integer, Integer> popByCode = new HashMap<>();
+    List<CostLine> lineItems = new ArrayList<>();
+    for (LineSpec spec : LINES) {
+      Integer harvest = costOf(byCode.get(spec.code()));
+      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
+      Integer crown = crownCost(harvest, pop);
+      harvestByCode.put(spec.code(), harvest);
+      popByCode.put(spec.code(), pop);
+      if (harvest != null || pop != null || crown != null) {
+        lineItems.add(
+            new CostLine(
+                spec.code(),
+                harvest,
+                pop,
+                crown,
+                lineOriginals(trackStatus, spec, snapshotByCode)));
+      }
+    }
+    return new FixedLines(lineItems, harvestByCode, popByCode);
+  }
 
   /**
    * Partition detail rows: one row per (summary, cost-item) is the invariant; if a duplicate ever
@@ -832,17 +871,26 @@ public class Schedule3Service {
                   .forTrack(trackStatus)
                   .put(
                       "description",
-                      snapshotField(snapshotByDetailId, tot.detailId(), r -> r.itemDescription()),
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
                       OriginalValueFormat.TEXT)
                   .put(
                       "total",
-                      snapshotField(snapshotByDetailId, tot.detailId(), r -> r.cost()),
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
                       OriginalValueFormat.WHOLE)
                   .put(
                       "pop",
                       pair[1] == null
                           ? null
-                          : snapshotField(snapshotByDetailId, pair[1].detailId(), r -> r.cost()),
+                          : snapshotField(
+                              snapshotByDetailId,
+                              pair[1].detailId(),
+                              CostDetailSnapshotRepository.Row::cost),
                       OriginalValueFormat.WHOLE)
                   .build()));
       harvest += nullToZero(tot.cost());
@@ -1033,11 +1081,17 @@ public class Schedule3Service {
                   .forTrack(trackStatus)
                   .put(
                       "description",
-                      snapshotField(snapshotByDetailId, row.detailId(), r -> r.itemDescription()),
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
                       OriginalValueFormat.TEXT)
                   .put(
                       "total",
-                      snapshotField(snapshotByDetailId, row.detailId(), r -> r.cost()),
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
                       OriginalValueFormat.WHOLE)
                   .build()));
       rowsTotal += nullToZero(row.cost());
