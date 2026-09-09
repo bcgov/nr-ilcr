@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule8.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One Schedule 8 Tree-to-Truck report page (AD-12) — a category-{@code '8'} {@code
@@ -36,4 +38,60 @@ public record Page(
     String supplyBlockLabel,
     String comments,
     int sampleCount,
-    List<Sample> samples) {}
+    List<Sample> samples,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Page(
+      Integer id,
+      Integer revisionCount,
+      String division,
+      String license,
+      String contact,
+      String phone,
+      String cuttingPermit,
+      String supportCentre,
+      String supportCentreLabel,
+      String region,
+      String regionLabel,
+      String becZone,
+      String becZoneLabel,
+      String tsaNumber,
+      String tsaNumberLabel,
+      String tflNumber,
+      String tflNumberLabel,
+      String supplyBlock,
+      String supplyBlockLabel,
+      String comments,
+      int sampleCount,
+      List<Sample> samples) {
+    this(
+        id,
+        revisionCount,
+        division,
+        license,
+        contact,
+        phone,
+        cuttingPermit,
+        supportCentre,
+        supportCentreLabel,
+        region,
+        regionLabel,
+        becZone,
+        becZoneLabel,
+        tsaNumber,
+        tsaNumberLabel,
+        tflNumber,
+        tflNumberLabel,
+        supplyBlock,
+        supplyBlockLabel,
+        comments,
+        sampleCount,
+        samples,
+        null);
+  }
+}

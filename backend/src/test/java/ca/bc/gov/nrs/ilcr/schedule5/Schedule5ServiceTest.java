@@ -6,12 +6,15 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,11 +50,16 @@ class Schedule5ServiceTest {
 
   @Mock private Schedule5Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule5Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule5Service(repository);
+    service = new Schedule5Service(repository, originalValues, costSnapshots);
   }
 
   // -----------------------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 8 (Tree to Truck) tables (AD-3,
@@ -763,5 +766,182 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
 
   default Map<String, String> costTypeLabels() {
     return asLabelMap(findRateCostTypeCodes());
+  }
+
+  /**
+   * One submitted Tree-to-Truck page from {@code THE.TREE_TO_TRUCK_REPORT_S_VW} (Story 16.2,
+   * BR-04).
+   */
+  record PageSnapshotRow(
+      int id,
+      String division,
+      String license,
+      String contact,
+      String phone,
+      String cuttingPermit,
+      String supportCentre,
+      String region,
+      String becZone,
+      String tsaNumber,
+      String tflNumber,
+      String supplyBlock,
+      String comments) {}
+
+  /**
+   * One submitted sample from {@code THE.TREE_TO_TRUCK_DTL_RPRT_S_VW} (Story 16.2, BR-04).
+   *
+   * <p>{@code uphillDirectionInd} reads the view's own {@code UPHILL_DIRECTION_IND}. Legacy read
+   * the WATER DUMP column into the uphill original ({@code Schedule8DAO.java:616-617}) even though
+   * {@code TreeToTruckDetailReportOv.java:88} exposes the right one, so its uphill indicator fired
+   * on the wrong comparison — false positives and negatives, and a wrong tooltip. Deviation D3.
+   */
+  record SampleSnapshotRow(
+      int id,
+      String contractId,
+      String cutBlock,
+      Integer groundBasePct,
+      Integer grapplePct,
+      Integer skylinePct,
+      Integer highleadPct,
+      Integer helicopterPct,
+      Integer otherSkiddingPct,
+      Integer skylineSlopeDistance,
+      Integer skylineSupportNumber,
+      BigDecimal supportAverageDistance,
+      BigDecimal distance,
+      BigDecimal cycleTime,
+      String uphillDirectionInd,
+      String waterDumpDestinationInd,
+      String skidTypeCode,
+      Integer coniferousVolume,
+      Integer deciduousVolume,
+      BigDecimal originalRate) {}
+
+  /** One submitted rate row from {@code THE.TREE_TO_TRUCK_RATE_DTL_S_VW} (Story 16.2, BR-04). */
+  record RateSnapshotRow(
+      int id,
+      Integer costItemCode,
+      String itemDescription,
+      BigDecimal costingRate,
+      String costTypeCode) {}
+
+  /** Every submitted page for a mill/year (category "8"). */
+  @Query(
+      value =
+          """
+      SELECT TREE_TO_TRUCK_REPORT_ID, DIVISION_LOCATION, HARVEST_LICENSE_NUMBER, CONTACT_NAME,
+             CONTACT_PHONE_NUMBER, CUTTING_PERMIT_NUMBER, ILCR_SUPPORT_CENTRE_CODE,
+             ILCR_FOREST_REGION_CODE, BEC_ZONE_CODE, TSA_NUMBER, TFL_NUMBER_CODE,
+             TSB_NUMBER_CODE, COMMENTS
+        FROM THE.TREE_TO_TRUCK_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = PageSnapshotRowMapper.class)
+  List<PageSnapshotRow> findPageSnapshots(@Param("millId") long millId, @Param("year") int year);
+
+  /** Every submitted sample under a mill/year's pages. */
+  @Query(
+      value =
+          """
+      SELECT d.TREE_TO_TRUCK_DETAIL_REPORT_ID, d.CONTRACTOR_ID, d.CUT_BLOCK, d.GROUND_BASE_PCT,
+             d.GRAPPLE_PCT, d.SKYLINE_PCT, d.HIGHLEAD_PCT, d.HELICOPTER_PCT, d.OTHER_SKIDDING_PCT,
+             d.SKYLINE_SLOPE_DISTANCE, d.SKYLINE_SUPPORT_NUMBER, d.SUPPORT_AVERAGE_DISTANCE,
+             d.DISTANCE, d.CYCLE_TIME, d.UPHILL_DIRECTION_IND, d.WATER_DUMP_DESTINATION_IND,
+             d.ILCR_SKID_TYPE_CODE, d.CONIFEROUS_VOLUME, d.DECIDUOUS_VOLUME,
+             d.ORIGINAL_TREE_TO_TRUCK_RATE
+        FROM THE.TREE_TO_TRUCK_DTL_RPRT_S_VW d
+        JOIN THE.TREE_TO_TRUCK_REPORT r
+          ON r.TREE_TO_TRUCK_REPORT_ID = d.TREE_TO_TRUCK_REPORT_ID
+       WHERE r.ILCR_MILL_ID = :millId
+         AND r.REPORT_YEAR = :year
+      """,
+      rowMapperClass = SampleSnapshotRowMapper.class)
+  List<SampleSnapshotRow> findSampleSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Every submitted rate row under a mill/year's samples. */
+  @Query(
+      value =
+          """
+      SELECT t.TREE_TO_TRUCK_RATE_DETAIL_ID, t.ILCR_REPORT_COST_ITEM_ID, t.ITEM_DESCRIPTION,
+             t.COSTING_RATE, t.ILCR_RATE_COST_TYPE_CODE
+        FROM THE.TREE_TO_TRUCK_RATE_DTL_S_VW t
+        JOIN THE.TREE_TO_TRUCK_DETAIL_REPORT d
+          ON d.TREE_TO_TRUCK_DETAIL_REPORT_ID = t.TREE_TO_TRUCK_DETAIL_REPORT_ID
+        JOIN THE.TREE_TO_TRUCK_REPORT r
+          ON r.TREE_TO_TRUCK_REPORT_ID = d.TREE_TO_TRUCK_REPORT_ID
+       WHERE r.ILCR_MILL_ID = :millId
+         AND r.REPORT_YEAR = :year
+      """,
+      rowMapperClass = RateSnapshotRowMapper.class)
+  List<RateSnapshotRow> findRateSnapshots(@Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code TREE_TO_TRUCK_REPORT_S_VW} row. */
+  class PageSnapshotRowMapper implements RowMapper<PageSnapshotRow> {
+    @Override
+    public PageSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new PageSnapshotRow(
+          rs.getInt("TREE_TO_TRUCK_REPORT_ID"),
+          rs.getString("DIVISION_LOCATION"),
+          rs.getString("HARVEST_LICENSE_NUMBER"),
+          rs.getString("CONTACT_NAME"),
+          rs.getString("CONTACT_PHONE_NUMBER"),
+          rs.getString("CUTTING_PERMIT_NUMBER"),
+          rs.getString("ILCR_SUPPORT_CENTRE_CODE"),
+          rs.getString("ILCR_FOREST_REGION_CODE"),
+          rs.getString("BEC_ZONE_CODE"),
+          rs.getString("TSA_NUMBER"),
+          rs.getString("TFL_NUMBER_CODE"),
+          rs.getString("TSB_NUMBER_CODE"),
+          rs.getString("COMMENTS"));
+    }
+  }
+
+  /** Maps a {@code TREE_TO_TRUCK_DTL_RPRT_S_VW} row. */
+  class SampleSnapshotRowMapper implements RowMapper<SampleSnapshotRow> {
+    @Override
+    public SampleSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new SampleSnapshotRow(
+          rs.getInt("TREE_TO_TRUCK_DETAIL_REPORT_ID"),
+          rs.getString("CONTRACTOR_ID"),
+          rs.getString("CUT_BLOCK"),
+          nullableInteger(rs, "GROUND_BASE_PCT"),
+          nullableInteger(rs, "GRAPPLE_PCT"),
+          nullableInteger(rs, "SKYLINE_PCT"),
+          nullableInteger(rs, "HIGHLEAD_PCT"),
+          nullableInteger(rs, "HELICOPTER_PCT"),
+          nullableInteger(rs, "OTHER_SKIDDING_PCT"),
+          nullableInteger(rs, "SKYLINE_SLOPE_DISTANCE"),
+          nullableInteger(rs, "SKYLINE_SUPPORT_NUMBER"),
+          rs.getBigDecimal("SUPPORT_AVERAGE_DISTANCE"),
+          rs.getBigDecimal("DISTANCE"),
+          rs.getBigDecimal("CYCLE_TIME"),
+          rs.getString("UPHILL_DIRECTION_IND"),
+          rs.getString("WATER_DUMP_DESTINATION_IND"),
+          rs.getString("ILCR_SKID_TYPE_CODE"),
+          nullableInteger(rs, "CONIFEROUS_VOLUME"),
+          nullableInteger(rs, "DECIDUOUS_VOLUME"),
+          rs.getBigDecimal("ORIGINAL_TREE_TO_TRUCK_RATE"));
+    }
+  }
+
+  /** Maps a {@code TREE_TO_TRUCK_RATE_DTL_S_VW} row. */
+  class RateSnapshotRowMapper implements RowMapper<RateSnapshotRow> {
+    @Override
+    public RateSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new RateSnapshotRow(
+          rs.getInt("TREE_TO_TRUCK_RATE_DETAIL_ID"),
+          nullableInteger(rs, "ILCR_REPORT_COST_ITEM_ID"),
+          rs.getString("ITEM_DESCRIPTION"),
+          rs.getBigDecimal("COSTING_RATE"),
+          rs.getString("ILCR_RATE_COST_TYPE_CODE"));
+    }
+  }
+
+  /** {@code getInt} with a real null, captured before the next column is read. */
+  private static Integer nullableInteger(ResultSet rs, String column) throws SQLException {
+    int value = rs.getInt(column);
+    return rs.wasNull() ? null : value;
   }
 }

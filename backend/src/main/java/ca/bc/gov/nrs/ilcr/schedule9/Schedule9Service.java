@@ -2,11 +2,15 @@ package ca.bc.gov.nrs.ilcr.schedule9;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.CostRow;
 import ca.bc.gov.nrs.ilcr.schedule9.Schedule9Repository.RecordRow;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.ContractualWorkRecord;
@@ -19,6 +23,7 @@ import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -114,10 +119,26 @@ public class Schedule9Service {
 
   private final Schedule9Repository repository;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule9Service(Schedule9Repository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 9 service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule9Service(
+      Schedule9Repository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -174,9 +195,37 @@ public class Schedule9Service {
             .collect(
                 Collectors.toMap(CostRow::reportId, Function.identity(), (first, dup) -> first));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule9Repository.ContractualSnapshotRow> recordSnapshots = new HashMap<>();
+    Map<Integer, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
+    List<Schedule9Repository.RecordRow> recordRows = repository.findRecords(millId, year);
+    if (exposeOriginals && !recordRows.isEmpty()) {
+      for (Schedule9Repository.ContractualSnapshotRow snap :
+          repository.findContractualSnapshots(millId, year)) {
+        recordSnapshots.putIfAbsent(snap.reportId(), snap);
+      }
+      List<Integer> reportIds =
+          recordRows.stream().map(Schedule9Repository.RecordRow::id).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findByContractualWorkReports(reportIds)) {
+        if (r.parentId() != null) {
+          costSnapshotByRecord.putIfAbsent(r.parentId(), r);
+        }
+      }
+    }
+
     List<ContractualWorkRecord> records =
-        repository.findRecords(millId, year).stream()
-            .map(row -> toRecord(row, costByRecord.get(row.id())))
+        recordRows.stream()
+            .map(
+                row ->
+                    toRecord(
+                        row,
+                        costByRecord.get(row.id()),
+                        recordOriginals(
+                            trackStatus,
+                            recordSnapshots.get(row.id()),
+                            costSnapshotByRecord.get(row.id()))))
             .toList();
 
     return new Schedule9Response(
@@ -189,7 +238,8 @@ public class Schedule9Service {
         null);
   }
 
-  private static ContractualWorkRecord toRecord(RecordRow row, CostRow cost) {
+  private static ContractualWorkRecord toRecord(
+      RecordRow row, CostRow cost, Map<String, OriginalValue> submitted) {
     Integer costValue = cost == null ? null : cost.cost();
     CodeDescriptionDto contractualItem =
         cost == null || cost.itemCode() == null
@@ -212,7 +262,8 @@ public class Schedule9Service {
         row.sideSlopePct(),
         code(row.sourceCode(), row.sourceCodeDescription()),
         row.sourceDescription(),
-        row.comments());
+        row.comments(),
+        submitted);
   }
 
   /** A code/description pair, or null when the code itself is absent. */
@@ -636,5 +687,58 @@ public class Schedule9Service {
   private String resolve(String key, Object... args) {
     return messageSource.getMessage(
         key, args.length == 0 ? null : args, LocaleContextHolder.getLocale());
+  }
+
+  /**
+   * One record's submitted values (Story 16.2, BR-04) — the twelve legacy rendered on this screen
+   * ({@code Schedule9DO.java:438-476}).
+   *
+   * <p>{@code costPerUnit} is derived, so it carries none. Legacy also defines a thirteenth
+   * accessor, {@code isCostReportDetailCommentsOV} ({@code :459}), which NO view consumes — the
+   * cost row's own comments are never shown on this screen — so nothing is served for it either
+   * ("only if the legacy app does it", deviation D9).
+   *
+   * <p>The three code fields are served as their raw submitted CODES, which is what legacy compared
+   * ({@code :444}, {@code :450}, {@code :462} all compare the code, not its description), and what
+   * the page holds in its dropdowns.
+   */
+  private Map<String, OriginalValue> recordOriginals(
+      String trackStatus,
+      Schedule9Repository.ContractualSnapshotRow record,
+      CostDetailSnapshotRepository.Row cost) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "contractorId", record == null ? null : record.contractorId(), OriginalValueFormat.TEXT)
+        .put(
+            "numberOfUnits",
+            record == null ? null : record.performedUnit(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "sideSlopePct",
+            record == null ? null : record.sideSlopePct(),
+            OriginalValueFormat.PERCENTAGE)
+        .put("unitType", record == null ? null : record.unitCode(), OriginalValueFormat.TEXT)
+        .put(
+            "unitDescription",
+            record == null ? null : record.unitDescription(),
+            OriginalValueFormat.TEXT)
+        .put("source", record == null ? null : record.sourceCode(), OriginalValueFormat.TEXT)
+        .put(
+            "sourceDescription",
+            record == null ? null : record.sourceDescription(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "biogeoclimaticZone",
+            record == null ? null : record.becZoneCode(),
+            OriginalValueFormat.TEXT)
+        .put("comments", record == null ? null : record.comments(), OriginalValueFormat.TEXT)
+        .put("contractualItem", cost == null ? null : cost.costItemCode(), OriginalValueFormat.TEXT)
+        .put(
+            "itemDescription",
+            cost == null ? null : cost.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put("cost", cost == null ? null : cost.cost(), OriginalValueFormat.WHOLE)
+        .build();
   }
 }

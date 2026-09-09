@@ -1,9 +1,13 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Bridge;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
@@ -63,10 +67,26 @@ public class Schedule7aService {
 
   private final Schedule7aRepository repository;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule7aService(Schedule7aRepository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 7A service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule7aService(
+      Schedule7aRepository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -100,10 +120,38 @@ public class Schedule7aService {
     Map<Long, Map<Integer, Integer>> costs =
         costsByBridge(repository.findCostDetails(millId, year));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule7aRepository.BridgeSnapshotRow> bridgeSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByBridge = new HashMap<>();
+    if (exposeOriginals && !bridgeRows.isEmpty()) {
+      for (Schedule7aRepository.BridgeSnapshotRow snap :
+          repository.findBridgeSnapshots(millId, year)) {
+        bridgeSnapshots.putIfAbsent(snap.bridgeReportId(), snap);
+      }
+      List<Integer> bridgeIds =
+          bridgeRows.stream().map(b -> (int) b.bridgeReportId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByBridgeReports(bridgeIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByBridge
+              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<Bridge> bridges = new ArrayList<>(bridgeRows.size());
     int rowCounter = 1;
     for (BridgeReportEntity row : bridgeRows) {
-      bridges.add(toBridge(row, rowCounter++, costs.getOrDefault(row.bridgeReportId(), Map.of())));
+      bridges.add(
+          toBridge(
+              row,
+              rowCounter++,
+              costs.getOrDefault(row.bridgeReportId(), Map.of()),
+              bridgeOriginals(
+                  trackStatus,
+                  bridgeSnapshots.get(row.bridgeReportId()),
+                  costSnapshotsByBridge.getOrDefault(row.bridgeReportId(), Map.of()))));
     }
     return new Schedule7aResponse(
         millId, year, trackStatus, editable, bridges, codeLists(year), null);
@@ -563,7 +611,11 @@ public class Schedule7aService {
   }
 
   /** Map one bridge row + its cost map to the wire shape, computing the four totals (BR-06). */
-  private Bridge toBridge(BridgeReportEntity row, int rowCounter, Map<Integer, Integer> cost) {
+  private Bridge toBridge(
+      BridgeReportEntity row,
+      int rowCounter,
+      Map<Integer, Integer> cost,
+      Map<String, OriginalValue> submitted) {
     Integer sitePlan = cost.get(ITEM_SITE_PLAN);
     Integer ssMaterial = cost.get(ITEM_SS_MATERIAL);
     Integer ssDeliver = cost.get(ITEM_SS_DELIVER);
@@ -611,7 +663,8 @@ public class Schedule7aService {
         totalDeliver,
         totalInstall,
         grandTotal,
-        row.revisionCount());
+        row.revisionCount(),
+        submitted);
   }
 
   private static String formatBuiltDate(LocalDate date) {
@@ -662,5 +715,91 @@ public class Schedule7aService {
       }
     }
     return any ? Math.toIntExact(total) : null;
+  }
+
+  /**
+   * One bridge's submitted values (Story 16.2, BR-04) — the thirteen attributes legacy tracked on
+   * {@code BridgeReportType} ({@code :548-596}) plus the ten cost items ({@code
+   * Schedule7aDAO.java:299-432}).
+   *
+   * <p>The four TOTAL costs get none: legacy's own OV summing for them is commented out ({@code
+   * BridgeReportType.java:408,410,412}) and the page renders no indicator on them.
+   *
+   * <p>Every cost renders whole-dollar grouped, matching legacy's default-precision {@code
+   * originalValueCostConverter} on this screen; the three measurements render at one decimal as
+   * their own tooltips did.
+   */
+  private Map<String, OriginalValue> bridgeOriginals(
+      String trackStatus,
+      Schedule7aRepository.BridgeSnapshotRow bridge,
+      Map<Integer, Integer> submittedCosts) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "locationName",
+                bridge == null ? null : bridge.locationName(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "builtDate",
+                bridge == null ? null : formatBuiltDate(bridge.builtDate()),
+                OriginalValueFormat.TEXT)
+            .put(
+                "constructionTypeCode",
+                bridge == null ? null : bridge.constructionTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "superstructureTypeCode",
+                bridge == null ? null : bridge.superstructureTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "deckTypeCode",
+                bridge == null ? null : bridge.deckTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "abutmentTypeCode",
+                bridge == null ? null : bridge.abutmentTypeCode(),
+                OriginalValueFormat.TEXT)
+            .put(
+                "loadRatingCode",
+                bridge == null ? null : bridge.loadRatingCode(),
+                OriginalValueFormat.TEXT)
+            .put("lifeSpan", bridge == null ? null : bridge.lifeSpan(), OriginalValueFormat.WHOLE)
+            .put(
+                "abutmentHeight",
+                bridge == null ? null : bridge.abutmentHeight(),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put("length", bridge == null ? null : bridge.length(), OriginalValueFormat.ONE_DECIMAL)
+            .put(
+                "width",
+                bridge == null ? null : bridge.deckWidth(),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put("distance", bridge == null ? null : bridge.distance(), OriginalValueFormat.WHOLE)
+            .put("comments", bridge == null ? null : bridge.comments(), OriginalValueFormat.TEXT);
+
+    builder.put("sitePlanCost", submittedCosts.get(ITEM_SITE_PLAN), OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureMaterialCost",
+        submittedCosts.get(ITEM_SS_MATERIAL),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureDeliverCost",
+        submittedCosts.get(ITEM_SS_DELIVER),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "superstructureInstallCost",
+        submittedCosts.get(ITEM_SS_INSTALL),
+        OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentMaterialCost", submittedCosts.get(ITEM_ABUT_MATERIAL), OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentDeliverCost", submittedCosts.get(ITEM_ABUT_DELIVER), OriginalValueFormat.WHOLE);
+    builder.put(
+        "abutmentInstallCost", submittedCosts.get(ITEM_ABUT_INSTALL), OriginalValueFormat.WHOLE);
+    builder.put("approachCost", submittedCosts.get(ITEM_APPROACH), OriginalValueFormat.WHOLE);
+    builder.put(
+        "afterInstallCost", submittedCosts.get(ITEM_AFTER_INSTALL), OriginalValueFormat.WHOLE);
+    builder.put("otherCost", submittedCosts.get(ITEM_OTHER), OriginalValueFormat.WHOLE);
+    return builder.build();
   }
 }

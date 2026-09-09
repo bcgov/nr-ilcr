@@ -5,9 +5,13 @@ import static ca.bc.gov.nrs.ilcr.schedule7b.Schedule7bRepository.ITEM_MATERIAL;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertCodeLists;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
@@ -72,11 +76,27 @@ public class Schedule7bService {
   private static final String MSG_VALUE_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule7bRepository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
   private final MessageSource messageSource;
 
-  public Schedule7bService(Schedule7bRepository repository, MessageSource messageSource) {
+  /**
+   * Constructs the Schedule 7B service.
+   *
+   * @param repository the repository
+   * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule7bService(
+      Schedule7bRepository repository,
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   // ===============================================================================================
@@ -110,11 +130,38 @@ public class Schedule7bService {
     Map<Long, Map<Integer, Integer>> costs =
         costsByCulvert(repository.findCostDetails(millId, year));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule7bRepository.CulvertSnapshotRow> culvertSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByCulvert = new HashMap<>();
+    if (exposeOriginals && !rows.isEmpty()) {
+      for (Schedule7bRepository.CulvertSnapshotRow snap :
+          repository.findCulvertSnapshots(millId, year)) {
+        culvertSnapshots.putIfAbsent(snap.culvertReportId(), snap);
+      }
+      List<Integer> culvertIds =
+          rows.stream().map(c -> (int) c.culvertReportId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCulvertReports(culvertIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByCulvert
+              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<Culvert> culverts = new ArrayList<>(rows.size());
     int rowCounter = 1;
     for (CulvertReportEntity row : rows) {
       culverts.add(
-          toCulvert(row, rowCounter++, costs.getOrDefault(row.culvertReportId(), Map.of())));
+          toCulvert(
+              row,
+              rowCounter++,
+              costs.getOrDefault(row.culvertReportId(), Map.of()),
+              culvertOriginals(
+                  trackStatus,
+                  culvertSnapshots.get(row.culvertReportId()),
+                  costSnapshotsByCulvert.getOrDefault(row.culvertReportId(), Map.of()))));
     }
     return new Schedule7bResponse(
         millId,
@@ -603,7 +650,10 @@ public class Schedule7bService {
 
   /** Map one culvert row + its cost map to the wire shape, computing the total (BR-05). */
   private static Culvert toCulvert(
-      CulvertReportEntity row, int rowCounter, Map<Integer, Integer> cost) {
+      CulvertReportEntity row,
+      int rowCounter,
+      Map<Integer, Integer> cost,
+      Map<String, OriginalValue> submitted) {
     Integer material = cost.get(ITEM_MATERIAL);
     Integer install = cost.get(ITEM_INSTALL);
 
@@ -619,7 +669,8 @@ public class Schedule7bService {
         install,
         totalCost(material, install),
         row.comments(),
-        row.revisionCount());
+        row.revisionCount(),
+        submitted);
   }
 
   /**
@@ -654,5 +705,39 @@ public class Schedule7bService {
       return material;
     }
     return material + install;
+  }
+
+  /**
+   * One culvert's submitted values (Story 16.2, BR-04) — the six attributes plus the two costs
+   * legacy tracked ({@code CulvertReportType.java:373-393}, {@code Schedule7bDAO.java:306-343}).
+   * The Total is derived, so it carries none.
+   *
+   * <p>One normalisation, recorded: legacy compared {@code spanSize}, {@code riseSize} and {@code
+   * culvertPieceCount} with the GENERIC {@code equals} helper while comparing {@code length} with
+   * the rounded BigDecimal one ({@code :377-389}). All four are numbers, so all four compare by
+   * value here; the difference only ever showed as a spurious indicator when Oracle handed back a
+   * different scale for the same figure.
+   */
+  private Map<String, OriginalValue> culvertOriginals(
+      String trackStatus,
+      Schedule7bRepository.CulvertSnapshotRow culvert,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "culvertTypeCode",
+            culvert == null ? null : culvert.culvertTypeCode(),
+            OriginalValueFormat.TEXT)
+        .put("spanSize", culvert == null ? null : culvert.spanSize(), OriginalValueFormat.WHOLE)
+        .put("riseSize", culvert == null ? null : culvert.riseSize(), OriginalValueFormat.WHOLE)
+        .put("length", culvert == null ? null : culvert.length(), OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "culvertPieceCount",
+            culvert == null ? null : culvert.culvertPieceCount(),
+            OriginalValueFormat.WHOLE)
+        .put("materialCost", submittedCosts.get(ITEM_MATERIAL), OriginalValueFormat.WHOLE)
+        .put("installCost", submittedCosts.get(ITEM_INSTALL), OriginalValueFormat.WHOLE)
+        .put("comments", culvert == null ? null : culvert.comments(), OriginalValueFormat.TEXT)
+        .build();
   }
 }

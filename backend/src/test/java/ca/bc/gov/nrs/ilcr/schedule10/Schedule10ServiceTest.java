@@ -3,12 +3,15 @@ package ca.bc.gov.nrs.ilcr.schedule10;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -40,11 +43,16 @@ class Schedule10ServiceTest {
 
   @Mock private Schedule10Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule10Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule10Service(repository);
+    service = new Schedule10Service(repository, originalValues, costSnapshots);
     // Default: no data anywhere. Individual tests override what they need.
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of());

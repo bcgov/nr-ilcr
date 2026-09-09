@@ -1,10 +1,14 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
@@ -67,6 +71,8 @@ public class Schedule11Service {
   private final Schedule11Repository repository;
   private final MillContextService millContextService;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
   /**
    * Constructs the Schedule 11 service.
@@ -74,14 +80,20 @@ public class Schedule11Service {
    * @param repository the repository
    * @param millContextService the mill context service
    * @param messageSource the message source
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
    */
   public Schedule11Service(
       Schedule11Repository repository,
       MillContextService millContextService,
-      MessageSource messageSource) {
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
     this.millContextService = millContextService;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -142,9 +154,39 @@ public class Schedule11Service {
     List<SilvicultureLocationEntity> locationRows = repository.findLocations(year, millId);
     Map<Long, CostPair> costs = unpackCosts(repository.findCostDetails(year, millId));
 
+    // The licensee's submitted figures (Story 16.2, BR-04). Gated on the SILVICULTURE track — a
+    // gate reading the 1-10 column here would be silently wrong (AD-9/AR7).
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Long, Schedule11Repository.LocationSnapshotRow> locationSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costSnapshotsByLocation = new HashMap<>();
+    if (exposeOriginals && !locationRows.isEmpty()) {
+      for (Schedule11Repository.LocationSnapshotRow snap :
+          repository.findLocationSnapshots(millId, year)) {
+        locationSnapshots.putIfAbsent(snap.locationId(), snap);
+      }
+      List<Integer> locationIds =
+          locationRows.stream().map(l -> (int) l.locationId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findBySilvicultureLocations(locationIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          costSnapshotsByLocation
+              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r.cost());
+        }
+      }
+    }
+
     List<SilvicultureLocation> locations =
         locationRows.stream()
-            .map(row -> toLocation(row, costs.getOrDefault(row.locationId(), CostPair.EMPTY)))
+            .map(
+                row ->
+                    toLocation(
+                        row,
+                        costs.getOrDefault(row.locationId(), CostPair.EMPTY),
+                        locationOriginals(
+                            trackStatus,
+                            locationSnapshots.get(row.locationId()),
+                            costSnapshotsByLocation.getOrDefault(row.locationId(), Map.of()))))
             .toList();
 
     // Document revisionCount is ALWAYS null: no ILCR_REPORT_SUMMARY row exists for this list
@@ -461,7 +503,8 @@ public class Schedule11Service {
   }
 
   /** Map one location row + its cost pair to the wire shape, computing the BR-08 row figures. */
-  private SilvicultureLocation toLocation(SilvicultureLocationEntity row, CostPair costs) {
+  private SilvicultureLocation toLocation(
+      SilvicultureLocationEntity row, CostPair costs, Map<String, OriginalValue> submitted) {
     Integer totalCost = addNullTolerant(costs.actual(), costs.planned());
     return new SilvicultureLocation(
         row.locationId(),
@@ -475,7 +518,8 @@ public class Schedule11Service {
         totalCost,
         perNetArea(totalCost == null ? null : totalCost.longValue(), row.netArea()),
         row.comments(),
-        row.revisionCount());
+        row.revisionCount(),
+        submitted);
   }
 
   /**
@@ -613,5 +657,42 @@ public class Schedule11Service {
   /** The 24/23 whole-dollar cost pair of one location; either side may be null. */
   private record CostPair(Integer actual, Integer planned) {
     static final CostPair EMPTY = new CostPair(null, null);
+  }
+
+  /**
+   * One location's submitted values (Story 16.2, BR-04) — the four legacy renders indicators for
+   * plus the two costs ({@code SilvicultureReportType.java:220-233}, {@code
+   * Schedule11DAO.java:216-238}); {@code schedule11.xhtml} draws exactly six.
+   *
+   * <p>{@code enhancedIndicator} is wired and STRUCTURALLY INERT, which is faithful rather than
+   * lazy: {@code BASIC_SILVICULTURE_REPORT_S_VW} does not select {@code ENHANCED_IND}, so no
+   * submitted value can exist for it, and legacy's own indicator for it could never fire either
+   * (its DAO read the current value — {@code Schedule11DAO.java:226}). Widening the view is
+   * delivery-schema DDL, outside this project's sanctioned scope. Deviation D5.
+   *
+   * <p>{@code comments} is not wired at all: legacy defines {@code commentsOriginalVal} but no
+   * {@code isCommentsOriginalVal} accessor and no indicator in the view, so the licensee's original
+   * comment was persisted and never surfaced. "Only if the legacy app does it."
+   *
+   * <p>{@code becLabel}, {@code totalCost} and {@code costPerNetArea} are derived and carry none.
+   */
+  private Map<String, OriginalValue> locationOriginals(
+      String trackStatus,
+      Schedule11Repository.LocationSnapshotRow location,
+      Map<Integer, Integer> submittedCosts) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("location", location == null ? null : location.location(), OriginalValueFormat.TEXT)
+        .put(
+            "biogeoclimaticCatalogueId",
+            location == null ? null : location.biogeoclimaticCatalogueId(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "netArea",
+            location == null ? null : location.netArea(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put("actualCost", submittedCosts.get(CODE_ACTUAL), OriginalValueFormat.WHOLE)
+        .put("plannedCost", submittedCosts.get(CODE_PLANNED), OriginalValueFormat.WHOLE)
+        .build();
   }
 }

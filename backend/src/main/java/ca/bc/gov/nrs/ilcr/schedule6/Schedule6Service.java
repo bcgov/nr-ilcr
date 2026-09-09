@@ -3,10 +3,14 @@ package ca.bc.gov.nrs.ilcr.schedule6;
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.CostDetailRow;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
@@ -79,9 +83,23 @@ public class Schedule6Service {
   static final String FIELD_COST = "cost";
 
   private final Schedule6Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule6Service(Schedule6Repository repository) {
+  /**
+   * Constructs the Schedule 6 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule6Service(
+      Schedule6Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -109,6 +127,28 @@ public class Schedule6Service {
 
     List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
     Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule6Repository.RoadRecordSnapshotRow> recordSnapshots = new HashMap<>();
+    Map<Integer, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
+    String submittedGeneralComment = null;
+    if (exposeOriginals && !rows.isEmpty()) {
+      for (Schedule6Repository.RoadRecordSnapshotRow snap :
+          repository.findRoadRecordSnapshots(millId, year)) {
+        recordSnapshots.putIfAbsent(snap.recordId(), snap);
+        // Legacy reads the general comment off the LAST row, the data model replicating it on every
+        // row, so the submitted general comment follows the same last-one-wins rule.
+        submittedGeneralComment = snap.generalComment();
+      }
+      List<Integer> recordIds = rows.stream().map(RoadRecordRow::recordId).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findByRoadMaintenanceReports(recordIds)) {
+        if (r.parentId() != null) {
+          costSnapshotByRecord.putIfAbsent(r.parentId(), r);
+        }
+      }
+    }
 
     List<RoadRecord> roadRecords = new ArrayList<>();
     long totalCost = 0L;
@@ -158,7 +198,11 @@ public class Schedule6Service {
               normalizeVolume(volume),
               cost,
               perUnit(cost == null ? null : (long) cost, volume),
-              comments));
+              comments,
+              roadRecordOriginals(
+                  trackStatus,
+                  recordSnapshots.get(row.recordId()),
+                  costSnapshotByRecord.get(row.recordId()))));
 
       if (cost != null) {
         totalCost += cost;
@@ -176,6 +220,10 @@ public class Schedule6Service {
         trackStatus,
         editable,
         generalComments,
+        originalValues
+            .forTrack(trackStatus)
+            .put("generalComments", submittedGeneralComment, OriginalValueFormat.TEXT)
+            .build(),
         roadRecords,
         normalizeVolume(totalVolume),
         totalCost,
@@ -884,5 +932,35 @@ public class Schedule6Service {
     }
     BigDecimal stripped = volume.stripTrailingZeros();
     return stripped.scale() < 0 ? stripped.setScale(0) : stripped;
+  }
+
+  /**
+   * One road record's submitted values (Story 16.2, BR-04): its three classification codes and its
+   * own comment from the report row, and the cost/volume/comment from its item-69 cost detail —
+   * exactly the eight legacy tracked ({@code RoadMaintenanceReportType.java:372-400} plus {@code
+   * CostVolumeCommentsType.java:101-109}).
+   *
+   * <p>The record's areaType/tflNumber/supplyBlock are the TSA/TFL/TSB codes under presentation
+   * names, so their originals are keyed by the presented field rather than the column, matching how
+   * the page addresses them. {@code rmg} is derived from the three and legacy left {@code
+   * rmgOriginal} unread with no accessor, so it carries none (deviation D9).
+   */
+  private Map<String, OriginalValue> roadRecordOriginals(
+      String trackStatus,
+      Schedule6Repository.RoadRecordSnapshotRow record,
+      CostDetailSnapshotRepository.Row detail) {
+    String tsa = record == null ? null : StringUtils.trimToNull(record.tsaNumber());
+    String tsb = record == null ? null : StringUtils.trimToNull(record.tsbNumberCode());
+    String tfl = record == null ? null : StringUtils.trimToNull(record.tflNumberCode());
+    boolean submittedAsTfl = tsa == null && tfl != null;
+    return originalValues
+        .forTrack(trackStatus)
+        .put("areaType", submittedAsTfl ? AREA_TYPE_TFL : tsa, OriginalValueFormat.TEXT)
+        .put("tflNumber", submittedAsTfl ? tfl : null, OriginalValueFormat.TEXT)
+        .put("supplyBlock", submittedAsTfl ? null : tsb, OriginalValueFormat.TEXT)
+        .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+        .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
+        .put("comments", detail == null ? null : detail.comments(), OriginalValueFormat.TEXT)
+        .build();
   }
 }

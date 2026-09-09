@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule11.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 11 location row of the pinned Story 25.1 wire contract (AD-12). All derived figures
@@ -37,4 +39,40 @@ public record SilvicultureLocation(
     Integer totalCost,
     BigDecimal costPerNetArea,
     String comments,
-    Integer revisionCount) {}
+    Integer revisionCount,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public SilvicultureLocation(
+      long locationId,
+      String location,
+      boolean enhancedIndicator,
+      long biogeoclimaticCatalogueId,
+      String becLabel,
+      BigDecimal netArea,
+      Integer actualCost,
+      Integer plannedCost,
+      Integer totalCost,
+      BigDecimal costPerNetArea,
+      String comments,
+      Integer revisionCount) {
+    this(
+        locationId,
+        location,
+        enhancedIndicator,
+        biogeoclimaticCatalogueId,
+        becLabel,
+        netArea,
+        actualCost,
+        plannedCost,
+        totalCost,
+        costPerNetArea,
+        comments,
+        revisionCount,
+        null);
+  }
+}

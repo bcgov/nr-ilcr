@@ -1,12 +1,15 @@
 package ca.bc.gov.nrs.ilcr.schedule6;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 6 tables (AD-3): explicit
@@ -547,4 +550,41 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
          AND ILCR_CATEGORY_ID = '6'
       """)
   int deleteRoadReport(@Param("id") int id, @Param("millId") long millId, @Param("year") int year);
+
+  /**
+   * One submitted road-maintenance report from {@code THE.ROAD_MAINTENANCE_REPORT_S_VW} — the
+   * licensee's own classification codes and general comment (Story 16.2, BR-04).
+   */
+  record RoadRecordSnapshotRow(
+      int recordId,
+      String tsaNumber,
+      String tsbNumberCode,
+      String tflNumberCode,
+      String generalComment) {}
+
+  /** Every submitted road-maintenance report for a mill/year. */
+  @Query(
+      value =
+          """
+      SELECT ROAD_MAINTENANCE_REPORT_ID, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE, COMMENTS
+        FROM THE.ROAD_MAINTENANCE_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = RoadRecordSnapshotRowMapper.class)
+  List<RoadRecordSnapshotRow> findRoadRecordSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code ROAD_MAINTENANCE_REPORT_S_VW} row. */
+  class RoadRecordSnapshotRowMapper implements RowMapper<RoadRecordSnapshotRow> {
+    @Override
+    public RoadRecordSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new RoadRecordSnapshotRow(
+          rs.getInt("ROAD_MAINTENANCE_REPORT_ID"),
+          rs.getString("TSA_NUMBER"),
+          rs.getString("TSB_NUMBER_CODE"),
+          rs.getString("TFL_NUMBER_CODE"),
+          rs.getString("COMMENTS"));
+    }
+  }
 }
