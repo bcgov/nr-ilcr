@@ -3,6 +3,9 @@ import {
   ADD_ANCHOR,
   CHECK_MET_ANCHOR,
   DELETE_ANCHOR,
+  CAMP_SWITCH_ANCHOR,
+  DISCARDED_COST,
+  DISCARD_CLOSE_ANCHOR,
   RECOVERIES_ANCHOR,
   SAME_NAME_A_ANCHOR,
   SAME_NAME_B_ANCHOR,
@@ -45,6 +48,8 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   delete: DELETE_ANCHOR,
   'same-name-b': SAME_NAME_B_ANCHOR,
   recoveries: RECOVERIES_ANCHOR,
+  'discard-close': DISCARD_CLOSE_ANCHOR,
+  'camp-switch': CAMP_SWITCH_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -412,6 +417,54 @@ When(
       'Associated Camp Volume',
       NEW_CAMP_DESCRIPTORS.associatedCampVolume,
     );
+  },
+);
+
+// ---------------------------------------------------------------------------------------------------
+// S10 — close with unsaved changes  |  S11 — switch camps while editing
+// ---------------------------------------------------------------------------------------------------
+
+/** S11's precondition: two camps on one anchor, both seeded from the same baseline. */
+Given(
+  'camps named {string} and {string} already exist',
+  async ({ request, schedule5Cleanup, world }, first, second) => {
+    for (const campName of [first, second]) {
+      schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+      await createCamp(request, world.scheduleKey!, { ...EDIT_CAMP_BASELINE, campName });
+    }
+  },
+);
+
+When('I close the camp panel', async ({ schedule5Page }) => {
+  await schedule5Page.closeButton.click();
+});
+
+/** Click Edit on another camp while one panel is dirty — the switch must be intercepted, not honoured. */
+When('I click Edit on the {string} camp', async ({ schedule5Page }, campName) => {
+  await schedule5Page.clickEditFor(campName);
+});
+
+Then('the camp panel is closed', async ({ schedule5Page }) => {
+  await schedule5Page.expectPanelClosed();
+});
+
+/**
+ * The discard must not have reached the database.
+ *
+ * A confirm dialog can be dismissed correctly on screen while the edit was already flushed — asserting
+ * the panel closed proves only that the panel closed. This reads the camp back and pins the ORIGINAL
+ * cost, which is the whole point of "the unsaved changes are discarded".
+ */
+Then(
+  '{string} still holds its original Catering and Food cost',
+  async ({ request, world }, campName) => {
+    const camp = await findCampByName(request, world.scheduleKey!, campName);
+    expect(camp, `"${campName}" should still exist on the anchor`).toBeDefined();
+    expect(
+      camp?.cateringAndFood?.cost,
+      `"${campName}" must still hold its stored cost — the discarded edit (${DISCARDED_COST}) must `
+        + 'never have been persisted',
+    ).toBe(EDIT_CAMP_BASELINE.cateringAndFood.cost);
   },
 );
 

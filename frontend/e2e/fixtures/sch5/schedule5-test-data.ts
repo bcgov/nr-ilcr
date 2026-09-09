@@ -488,6 +488,33 @@ export const CHECK_STATUS_MESSAGES = {
  */
 export const SAME_NAME_CAMP_NAME = 'North Camp';
 
+/**
+ * S10 / S11 — the two discard confirms, verbatim from `components/schedule5/index.tsx:74-88`.
+ *
+ * DEVIATION (K), worth knowing when reading these two slices: legacy attached its CLOSE confirm
+ * UNCONDITIONALLY (schedule5.xhtml:169, :192, :221, :244 — no dirty check anywhere), whereas the
+ * rewrite only prompts when the panel is actually dirty. Both slices supply a real unsaved change, so
+ * both systems prompt and the deviation is not in scope here — but a future "close a clean panel"
+ * scenario would land straight on it.
+ */
+export const CONFIRM_CLOSE_PANEL = {
+  /** CFM-002. Modal heading "Close camp report". */
+  text: 'Any unsaved data will be lost. Are you sure you would like to continue?',
+  heading: 'Close camp report',
+} as const;
+
+export const CONFIRM_CAMP_SWITCH = {
+  /** CFM-003. Modal heading "Switch camp report". Note "changes to the current camp report", not "data". */
+  text: 'Any unsaved changes to the current camp report will be lost. Are you sure you would like to continue?',
+  heading: 'Switch camp report',
+} as const;
+
+/** S11 needs two camps on one anchor — the slice IS switching between them. */
+export const SWITCH_CAMP_NAMES = { first: 'North Camp', second: 'South Camp' } as const;
+
+/** The value S11 types into the open panel and then discards. Distinct from every seeded figure. */
+export const DISCARDED_COST = '9999';
+
 /** CFM-001, verbatim from `components/schedule5/index.tsx:74`. Modal heading is "Delete camp". */
 export const CONFIRM_DELETE_CAMP = 'This will delete the current record. Do you want to continue?';
 

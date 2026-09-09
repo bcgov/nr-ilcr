@@ -92,6 +92,29 @@ export class Schedule5Page {
     await expect(this.campPanelHeading(campName)).toBeVisible();
   }
 
+  /**
+   * Click Edit WITHOUT waiting for the panel — for S11, where a confirm intercepts the switch.
+   *
+   * Separate from `openEditPanel` on purpose: that one asserts the panel opened, which is exactly what
+   * must NOT happen yet when another panel is dirty (`setPendingSwitch`, index.tsx:1216-1220).
+   */
+  async clickEditFor(campName: string): Promise<void> {
+    await this.editButtonFor(campName).click();
+  }
+
+  /** The panel's Close button. */
+  get closeButton(): Locator {
+    return this.page.getByRole('button', { name: 'Close', exact: true });
+  }
+
+  /** No camp panel is open — neither the new-camp literal nor any camp's own heading. */
+  async expectPanelClosed(campName?: string): Promise<void> {
+    await expect(this.newCampPanelHeading).toHaveCount(0);
+    if (campName !== undefined) {
+      await expect(this.campPanelHeading(campName)).toHaveCount(0);
+    }
+  }
+
   // ---- descriptors --------------------------------------------------------------------------------
 
   /** The five descriptor controls, keyed by the vocabulary the feature file uses. */

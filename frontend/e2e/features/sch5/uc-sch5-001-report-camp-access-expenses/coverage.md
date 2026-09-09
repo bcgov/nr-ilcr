@@ -15,8 +15,8 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S09 AUTHORED AND GREEN; S10–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 9/25 rather than held back, so the ledger reflects reality rather than an
+**STATUS: S01–S11 AUTHORED AND GREEN; S12–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 11/25 rather than held back, so the ledger reflects reality rather than an
 intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
 preflight proves all 22 resolve on every run — so the `deferred` rows below are waiting on authoring
 effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
@@ -70,8 +70,8 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S07 | Delete an Existing Camp | Alternative | **covered** | `delete.feature` `@p1 @S07 @CFM-001` — GREEN |
 | S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | **covered** | `same-name.feature` `@p1 @S08 @BR-02` — GREEN. The one slice needing two anchors |
 | S09 | Recoveries Amount Reduces the Camp Total | Alternative | **covered** | `recoveries.feature` `@p1 @S09 @BR-04` — GREEN. Client-side mirror, never saves. Does NOT cover per-category `$/m³` — see note |
-| S10 | Close/Navigate Away With Unsaved Changes Prompts a Discard Confirm | Alternative | deferred | validate-only; can share a non-mutating anchor when authored |
-| S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | deferred | as S10 |
+| S10 | Close/Navigate Away With Unsaved Changes Prompts a Discard Confirm | Alternative | **covered** | `discard-confirm.feature` `@p1 @S10 @CFM-002` — GREEN |
+| S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | **covered** | `discard-confirm.feature` `@p1 @S11 @CFM-003` — GREEN |
 | S12 | Required Descriptive Field Left Blank (Camp Name or Isolated Camp) | Exception | deferred | validate-only. FLD-001's exact text is `[UNKNOWN]` in source — re-ground against the app |
 | S13 | Duplicate Camp Name on Save (Case-Insensitive) | Exception | deferred | BR-02. Its message is already OBSERVED — see note below |
 | S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | deferred | **re-ground before authoring** — SPEC-2: a copy opens with a BLANK name, so an untouched save raises the REQUIRED-name error (FLD-001), not the duplicate-name error this slice predicts |
@@ -87,7 +87,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 9 / 25 slices (36%). P0: 1 / 1 authored.**
+**Coverage: 11 / 25 slices (44%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -122,6 +122,14 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | Panel redisplays with recalculated values after save | S01 | **deferred** | the API read-back proves persistence, which is the stronger claim; re-render fidelity rides S02's reopen |
 
 ## Notes
+
+- **DEVIATION (K) is not yet covered, and deliberately so.** Legacy attached its panel CLOSE confirm
+  **unconditionally** — there is no dirty check anywhere in `schedule5.xhtml` (:169, :192, :221, :244) —
+  whereas the rewrite prompts only when the panel is genuinely dirty (`panelDirty`, index.tsx:669-670).
+  S10 supplies a real unsaved change, so both systems prompt and the deviation never surfaces. A
+  "close a CLEAN panel" scenario would land straight on it and is **not** in the 25-slice catalog. It
+  belongs in its own slice with its own adjudication rather than being smuggled into S10, where a
+  reader would not expect to find it. Raised here so it is not lost.
 
 - **`recoveries` is the twelfth category and has no volume cell** (`GRID_ROWS hasVolume: false`), which
   is exactly why the source Gherkin says "11 expense-category Volume fields" against twelve categories.
