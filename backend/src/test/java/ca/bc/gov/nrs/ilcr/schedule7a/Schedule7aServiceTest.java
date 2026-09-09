@@ -23,6 +23,7 @@ import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.BridgeSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7a.dto.Schedule7aResponse;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -125,7 +126,7 @@ class Schedule7aServiceTest {
                 cost(10, 7601, 81, 800) // ss install
                 ));
 
-    Schedule7aResponse doc = service.getSchedule7a(514, 2021, true);
+    Schedule7aResponse doc = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER);
 
     assertThat(doc.editable()).isTrue();
     assertThat(doc.bridges()).hasSize(1);
@@ -148,7 +149,7 @@ class Schedule7aServiceTest {
     // Only site plan present — material/deliver/install have no operands.
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.totalMaterial()).isNull();
     assertThat(b.totalDeliver()).isNull();
@@ -170,7 +171,7 @@ class Schedule7aServiceTest {
                 cost(1, 7601, 79, 5000), // ss material only  → add(5000, null) → 5000
                 cost(2, 7601, 75, 300))); // abut deliver only → add(null, 300)  → 300
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.totalMaterial()).isEqualTo(5000);
     assertThat(b.totalDeliver()).isEqualTo(300);
@@ -203,7 +204,7 @@ class Schedule7aServiceTest {
                     0)));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Bridge b = service.getSchedule7a(514, 2021, true).bridges().get(0);
+    Bridge b = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0);
 
     assertThat(b.builtDate()).isNull();
     assertThat(b.abutmentHeight()).isNull();
@@ -220,11 +221,14 @@ class Schedule7aServiceTest {
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
 
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
-    assertThat(service.getSchedule7a(514, 2021, false).editable()).isFalse(); // no EDIT_SCHEDULE
+    assertThat(service.getSchedule7a(514, 2021, CallerRights.NONE).editable())
+        .isFalse(); // no EDIT_SCHEDULE
 
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
-    assertThat(service.getSchedule7a(517, 2021, true).editable()).isFalse(); // not Draft
-    assertThat(service.getSchedule7a(517, 2021, true).trackStatus()).isEqualTo("S");
+    assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).editable())
+        .isFalse(); // not Draft
+    assertThat(service.getSchedule7a(517, 2021, CallerRights.SUBMITTER).trackStatus())
+        .isEqualTo("S");
   }
 
   @Test
@@ -239,7 +243,7 @@ class Schedule7aServiceTest {
                 bridge(7602, "B", LocalDate.of(2020, 2, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    List<Bridge> bridges = service.getSchedule7a(514, 2021, true).bridges();
+    List<Bridge> bridges = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges();
     assertThat(bridges).extracting(Bridge::rowCounter).containsExactly(1, 2);
   }
 
@@ -357,7 +361,7 @@ class Schedule7aServiceTest {
   void add_rejectedOutsideDraft() {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeRequest request = validRequest(null);
-    assertThatThrownBy(() -> service.addBridge(517, 2021, request, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(517, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
   }
 
@@ -391,7 +395,7 @@ class Schedule7aServiceTest {
             null,
             null,
             null);
-    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeDateFormatException.class);
   }
 
@@ -426,7 +430,7 @@ class Schedule7aServiceTest {
             100,
             null,
             null);
-    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(514, 2021, bad, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(InvalidBridgeCodeException.class);
   }
 
@@ -439,11 +443,13 @@ class Schedule7aServiceTest {
     BridgeRequest request = validRequest(0);
 
     when(repository.countBridge(7601, 514, 2021)).thenReturn(1); // exists → stale
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(StaleRevisionException.class);
 
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0); // absent → 404
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 9999, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 9999, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -484,7 +490,7 @@ class Schedule7aServiceTest {
             null,
             null);
 
-    Schedule7aResponse doc = service.addBridge(514, 2021, request, true, "user");
+    Schedule7aResponse doc = service.addBridge(514, 2021, request, CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(1);
     verify(repository).insertBridge(any(BridgeReportEntity.class), eq(514L), eq(2021), eq("user"));
@@ -506,7 +512,7 @@ class Schedule7aServiceTest {
         .insertBridge(any(), anyLong(), anyInt(), any());
     BridgeRequest request = validRequest(null);
 
-    assertThatThrownBy(() -> service.addBridge(514, 2021, request, true, "user"))
+    assertThatThrownBy(() -> service.addBridge(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -521,7 +527,8 @@ class Schedule7aServiceTest {
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
     BridgeRequest request = validRequest(0);
 
-    Schedule7aResponse doc = service.updateBridge(514, 2021, 7601, request, true, "user");
+    Schedule7aResponse doc =
+        service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(1);
     verify(repository, times(10)).upsertCost(eq(7601L), anyInt(), anyInt(), eq("user"));
@@ -537,7 +544,8 @@ class Schedule7aServiceTest {
         .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
     BridgeRequest request = validRequest(0);
 
-    assertThatThrownBy(() -> service.updateBridge(514, 2021, 7601, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.updateBridge(514, 2021, 7601, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -551,7 +559,7 @@ class Schedule7aServiceTest {
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, true);
+    Schedule7aResponse doc = service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER);
 
     assertThat(doc.bridges()).isEmpty();
     // Order is the whole point: delivery's FK on ILCR_COST_REPORT_DETAIL.BRIDGE_REPORT_ID has no ON
@@ -575,7 +583,7 @@ class Schedule7aServiceTest {
     // successfully"
     // over a bridge that is still on screen with its costs stripped (the cost delete having
     // committed).
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -585,7 +593,7 @@ class Schedule7aServiceTest {
     when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 9999, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
     verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
@@ -600,7 +608,7 @@ class Schedule7aServiceTest {
     // check still refuses. (It has to be scoped: the cost delete keys on the bridge id alone.)
     when(repository.countBridge(7601, 514, 2021)).thenReturn(0);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(BridgeNotFoundException.class);
     verify(repository, never()).deleteCostsForBridge(anyLong());
   }
@@ -614,7 +622,7 @@ class Schedule7aServiceTest {
         .when(repository)
         .deleteCostsForBridge(7601);
 
-    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(514, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 
@@ -623,7 +631,7 @@ class Schedule7aServiceTest {
   void delete_rejectedOutsideDraft() {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
 
-    assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, true))
+    assertThatThrownBy(() -> service.deleteBridge(517, 2021, 7601, CallerRights.SUBMITTER))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).deleteBridge(anyLong(), anyLong(), anyInt());
   }
@@ -636,7 +644,7 @@ class Schedule7aServiceTest {
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
 
-    service.getSchedule7a(514, 2019, true);
+    service.getSchedule7a(514, 2019, CallerRights.SUBMITTER);
 
     // Legacy filtered every list through LookupCache.getCacheList(year), so a code retired before
     // the reporting year was never offered. Passing the year is what carries that filter.
@@ -656,7 +664,7 @@ class Schedule7aServiceTest {
     when(repository.findBridges(514, 2019)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2019)).thenReturn(List.of());
 
-    service.updateBridge(514, 2019, 7601, validRequest(0), true, "user");
+    service.updateBridge(514, 2019, 7601, validRequest(0), CallerRights.SUBMITTER, "user");
 
     verify(repository, times(2)).constructionTypeOptions(2019); // validation + served document
   }
@@ -674,7 +682,8 @@ class Schedule7aServiceTest {
                 bridge(7602, "South Creek", LocalDate.of(2021, 3, 1))));
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    Schedule7aResponse doc = service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), true, "user");
+    Schedule7aResponse doc =
+        service.saveAllBridges(514, 2021, saveAll(7601L, 7602L), CallerRights.SUBMITTER, "user");
 
     assertThat(doc.bridges()).hasSize(2);
     // Two bridge writes, and each bridge carries its OWN ten cost upserts — not one row written
@@ -694,7 +703,8 @@ class Schedule7aServiceTest {
 
     // Left to run, the second pass would meet the revision its own first pass bumped and 409 —
     // telling the caller another user changed the row when the request was simply malformed.
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(DuplicateBridgeException.class);
     verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
   }
@@ -708,7 +718,7 @@ class Schedule7aServiceTest {
     when(repository.findBridges(514, 2021)).thenReturn(List.of());
     when(repository.findCostDetails(514, 2021)).thenReturn(List.of());
 
-    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), true, "user");
+    service.saveAllBridges(514, 2021, saveAll(7601L, 7602L, 7603L), CallerRights.SUBMITTER, "user");
 
     // Three bridges: once for the batch's validation + once for the echoed document. Per-bridge
     // lookups would make this 4 for three rows, and 5N inside one transaction at scale.
@@ -721,7 +731,8 @@ class Schedule7aServiceTest {
     when(repository.findTrackStatus(517, 2021)).thenReturn(Optional.of("S"));
     BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(517, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(517, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotEditableException.class);
     verify(repository, never()).updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
   }
@@ -739,7 +750,8 @@ class Schedule7aServiceTest {
     when(repository.countBridge(7602, 514, 2021)).thenReturn(1);
     BridgeSaveAllRequest request = saveAll(7601L, 7602L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(StaleRevisionException.class);
     verify(repository, never()).findBridges(anyLong(), anyInt());
   }
@@ -753,7 +765,8 @@ class Schedule7aServiceTest {
     when(repository.countBridge(9999, 514, 2021)).thenReturn(0);
     BridgeSaveAllRequest request = saveAll(9999L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(BridgeNotFoundException.class);
   }
 
@@ -767,7 +780,8 @@ class Schedule7aServiceTest {
         .updateBridge(any(), anyLong(), anyInt(), anyInt(), any());
     BridgeSaveAllRequest request = saveAll(7601L);
 
-    assertThatThrownBy(() -> service.saveAllBridges(514, 2021, request, true, "user"))
+    assertThatThrownBy(
+            () -> service.saveAllBridges(514, 2021, request, CallerRights.SUBMITTER, "user"))
         .isInstanceOf(ScheduleNotSavedException.class);
   }
 

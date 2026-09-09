@@ -7,6 +7,8 @@ import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -99,24 +101,34 @@ class Schedule10ServiceTest {
 
     @ParameterizedTest(name = "track={0}, callerMayEdit={1} -> editable={2}")
     @CsvSource({
-      "D,    true,  true",
-      "D,    false, false",
-      "S,    true,  false",
-      "S,    false, false",
-      "V,    true,  false",
-      "V,    false, false",
-      "O,    true,  false",
+      "D, SUBMITTER, true",
+      "D, ADMIN,     false",
+      "D, NONE,      false",
+      "S, SUBMITTER, false",
+      "S, ADMIN,     true",
+      "S, NONE,      false",
+      "V, SUBMITTER, false",
+      "V, ADMIN,     true",
+      "V, NONE,      false",
+      "O, SUBMITTER, false",
+      "O, ADMIN,     false",
     })
-    void followsTrackStatusAndPermission(String track, boolean mayEdit, boolean expected) {
+    void followsTrackStatusAndRole(String track, String role, boolean expected) {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(track));
-      assertThat(service.getSchedule10(MILL, YEAR, mayEdit).editable()).isEqualTo(expected);
+      EditableStatuses caller =
+          switch (role) {
+            case "SUBMITTER" -> CallerRights.SUBMITTER;
+            case "ADMIN" -> CallerRights.ADMIN;
+            default -> CallerRights.NONE;
+          };
+      assertThat(service.getSchedule10(MILL, YEAR, caller).editable()).isEqualTo(expected);
     }
 
     @Test
     @DisplayName("a missing context row yields a null track and editable:false")
     void missingTrackStatusIsNotEditable() {
       when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.empty());
-      Schedule10Response response = service.getSchedule10(MILL, YEAR, true);
+      Schedule10Response response = service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
       assertThat(response.trackStatus()).isNull();
       assertThat(response.editable()).isFalse();
     }
@@ -138,7 +150,8 @@ class Schedule10ServiceTest {
                   detail(8911, 8900, "Spur B"),
                   detail(8912, 8901, "Regex Road")));
 
-      List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
+      List<ConstructionPage> pages =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages();
 
       assertThat(pages).hasSize(2);
       assertThat(pages.get(0).pageNumber()).isEqualTo(1);
@@ -161,7 +174,8 @@ class Schedule10ServiceTest {
     void pageWithoutDetailsServesZero() {
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8906, "01", "01A", null)));
 
-      ConstructionPage page = service.getSchedule10(MILL, YEAR, true).pages().get(0);
+      ConstructionPage page =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
 
       assertThat(page.roadDetailCount()).isZero();
       assertThat(page.roadDetails()).isEmpty();
@@ -177,7 +191,8 @@ class Schedule10ServiceTest {
                   page(8902, null, null, "08"), // -> "10" via the TFL table
                   page(8903, "99", "99A", null))); // -> unmapped
 
-      List<ConstructionPage> pages = service.getSchedule10(MILL, YEAR, true).pages();
+      List<ConstructionPage> pages =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages();
 
       assertThat(pages.get(0).roadGroup()).isEqualTo("11");
       assertThat(pages.get(1).roadGroup()).isEqualTo("10");
@@ -193,7 +208,8 @@ class Schedule10ServiceTest {
       // Road Group "11" where legacy serves nothing. Parity restored at code review 2026-08-17.
       when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8900, "01", "01A", "  ")));
 
-      ConstructionPage page = service.getSchedule10(MILL, YEAR, true).pages().get(0);
+      ConstructionPage page =
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
 
       // The raw value is served, not normalized away.
       assertThat(page.tflNumberCode()).isEqualTo("  ");
@@ -230,7 +246,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("50000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // 50000, not 150000: the second row wins outright. The cost query's ORDER BY makes which row
       // that is deterministic here — legacy iterates a HashSet, so there it is arbitrary.
@@ -255,7 +276,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("7000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("7000");
     }
@@ -275,7 +301,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 99, new BigDecimal("777777"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // The stray amount must not appear anywhere, and must not inflate any total.
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
@@ -300,7 +331,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 22, new BigDecimal("40000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isNull();
       assertThat(detail.subGrade().totalCosts()).isEqualByComparingTo("0");
@@ -322,7 +358,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 20, new BigDecimal("150000"))));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // Legacy's sum rule: one non-null term makes the sum non-null, so the money survives.
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
@@ -339,7 +380,12 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(new CostLineRow(8910, 20, null), new CostLineRow(8910, 20, null)));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // All terms null keeps the field blank; the total still coerces to zero for display.
       assertThat(detail.subGrade().actualCost()).isNull();
@@ -374,7 +420,12 @@ class Schedule10ServiceTest {
                   new CostLineRow(8910, 9, BigDecimal.ZERO))); // stabilizing other  (sub 4)
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       assertThat(detail.subGrade().actualCost()).isEqualByComparingTo("150000");
       assertThat(detail.subGrade().ttTransfer()).isEqualByComparingTo("-5000");
@@ -407,7 +458,7 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(new CostLineRow(8910, 20, new BigDecimal("150000"))));
 
       List<RoadDetail> details =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails();
+          service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0).roadDetails();
 
       assertThat(details.get(0).subGrade().actualCost()).isEqualByComparingTo("150000");
       // 8911 has no cost lines at all — the normal shape in real delivery data. Its individual
@@ -424,7 +475,12 @@ class Schedule10ServiceTest {
           .thenReturn(List.of(detail(8910, 8900, "Mainline A")));
 
       RoadDetail detail =
-          service.getSchedule10(MILL, YEAR, true).pages().get(0).roadDetails().get(0);
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
 
       // Individual lines stay null (rendered blank); the totals coerce to zero, per legacy
       // getCostValue (:1160-1168). This is the shape of every real delivery row.

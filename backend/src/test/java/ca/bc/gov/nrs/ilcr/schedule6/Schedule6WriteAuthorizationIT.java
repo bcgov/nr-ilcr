@@ -195,13 +195,15 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN holds EDIT_SCHEDULE -> authz passes (not 403); non-Draft gate -> 409")
-  void admin_passesEditAuthorization() throws Exception {
+  @DisplayName("ILCR_ADMIN at a Draft track -> authz passes (not 403); matrix -> 409")
+  void admin_refusedAtDraft() throws Exception {
+    // 666/2021 is this class's own DRAFT mill: authz passes so the request is NOT 403, and the
+    // matrix refuses an administrator while the mill still owns its draft -- 409, nothing written.
     mockMvc
         .perform(
             post(RECORDS)
                 .with(csrf())
-                .param("millId", "662")
+                .param("millId", "666")
                 .param("year", "2021")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_BODY)
@@ -222,6 +224,68 @@ class Schedule6WriteAuthorizationIT extends AbstractOracleIT {
                 .with(csrf())
                 .param("millId", "662")
                 .param("year", "2021")
+                .with(canonicalSubmitter()))
+        .andExpect(status().isConflict());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // The ADMIN row of the role×status matrix (Story 16.1; added on the #427 review). Mill 741/2021
+  // is 1–10 'V' and silviculture 'D' (R__51) — so a gate that read the wrong track's column would
+  // see Draft, refuse the administrator, and every test below would fail on a 409 instead of
+  // passing vacuously. The shared unit truth table proves the component; these prove THIS
+  // schedule's wiring to it, on the write verb AND on DELETE.
+  // -----------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("ILCR_ADMIN WRITES at a VERIFIED track -> 2xx, and the track stays 'V' (AD-9)")
+  void admin_writesAtVerified() throws Exception {
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "741")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        // The correction must not move the track, and the echo must report the status the gate
+        // actually read — not a STATUS_DRAFT literal passed in its place.
+        .andExpect(jsonPath("$.trackStatus", is("V")))
+        .andExpect(jsonPath("$.editable", is(true)));
+  }
+
+  @Test
+  @DisplayName("ILCR_ADMIN DELETES a road record at a VERIFIED track -> 2xx (the correction path)")
+  void admin_deletesAtVerified() throws Exception {
+    // Record 8410 is R__51's seeded delete target on this mill, so this removes a real row rather
+    // than exercising the idempotent no-op arm. A DELETE still holding the pre-16.1 Draft-only
+    // literal answers 409 here while its sibling POST passes — the divergence a refused-at-Draft
+    // probe cannot see, because Draft-only and the matrix agree an admin may not write at 'D'.
+    mockMvc
+        .perform(
+            delete(RECORDS + "/8410")
+                .with(csrf())
+                .param("millId", "741")
+                .param("year", "2021")
+                .with(jwtWithGroups(List.of("ILCR_ADMIN"))))
+        .andExpect(status().is2xxSuccessful())
+        .andExpect(jsonPath("$.trackStatus", is("V")));
+  }
+
+  @Test
+  @DisplayName("A SUBMITTER at that same VERIFIED track -> 409: only the ministry corrects")
+  void submitter_refusedAtVerified() throws Exception {
+    // The other half of the row. Without it, admin_writesAtVerified alone would also pass if the
+    // gate had simply been widened to "anyone may edit at V".
+    mockMvc
+        .perform(
+            post(RECORDS)
+                .with(csrf())
+                .param("millId", "741")
+                .param("year", "2021")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY)
                 .with(canonicalSubmitter()))
         .andExpect(status().isConflict());
   }

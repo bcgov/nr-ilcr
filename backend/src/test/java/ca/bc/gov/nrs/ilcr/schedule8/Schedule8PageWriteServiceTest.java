@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8PageRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -95,7 +96,7 @@ class Schedule8PageWriteServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.savePage(MILL, YEAR, create(null, "B"), true, USER));
+        () -> service.savePage(MILL, YEAR, create(null, "B"), CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .insertPage(
             anyLong(), anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
@@ -111,7 +112,8 @@ class Schedule8PageWriteServiceTest {
         new Schedule8PageRequest(
             8800, 5, "LIC1", "SC1", "R1", "BZ1", "TSA5", null, "B", null, null, null, null, null);
     assertThrows(
-        StaleRevisionException.class, () -> service.savePage(MILL, YEAR, edit, true, USER));
+        StaleRevisionException.class,
+        () -> service.savePage(MILL, YEAR, edit, CallerRights.SUBMITTER, USER));
     verify(repository, never())
         .updatePageFields(
             anyInt(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
@@ -128,7 +130,7 @@ class Schedule8PageWriteServiceTest {
     // TFL selected + a supply block supplied → the supply block must be cleared (null) on insert,
     // and TSA_NUMBER stamped with the "TFL" sentinel so Check Status routes to the TFL-# branch
     // (H2).
-    service.savePage(MILL, YEAR, create("48", "B"), true, USER);
+    service.savePage(MILL, YEAR, create("48", "B"), CallerRights.SUBMITTER, USER);
     // tsaNumber (arg 6) "TFL" sentinel, supplyBlock (arg 7) null, tflNumber (arg 8) "48".
     verify(repository)
         .insertPage(
@@ -154,7 +156,7 @@ class Schedule8PageWriteServiceTest {
   void delete_unknownPage_isNoOp() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.pageExists(99999, MILL, YEAR)).thenReturn(false);
-    service.deletePage(MILL, YEAR, 99999);
+    service.deletePage(MILL, YEAR, 99999, CallerRights.SUBMITTER);
     verify(repository, never()).deletePage(anyInt());
   }
 
@@ -162,7 +164,7 @@ class Schedule8PageWriteServiceTest {
   void delete_existingPage_cascades() {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.pageExists(8810, MILL, YEAR)).thenReturn(true);
-    service.deletePage(MILL, YEAR, 8810);
+    service.deletePage(MILL, YEAR, 8810, CallerRights.SUBMITTER);
     verify(repository).deletePage(8810);
   }
 }

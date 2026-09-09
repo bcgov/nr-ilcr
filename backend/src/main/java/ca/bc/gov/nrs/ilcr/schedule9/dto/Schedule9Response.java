@@ -19,9 +19,11 @@ import java.util.List;
  * (which would 404 every request). Task-1 delivery gate confirms both against the delivery DB.
  *
  * <p>{@code trackStatus} = {@code ILCR_MILL_REPORT_STATUS_CODE} — the Schedules 1–10 track (AD-9).
- * {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND {@code trackStatus == "D"},
- * computed server-side and server-authoritative (AD-5/AD-9, S30); a non-Draft mill still lists
- * every record with {@code editable:false}.
+ * {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the role×status matrix admits it at
+ * {@code trackStatus} — submitter at Draft, administrator at Submitted or Verified ({@link
+ * ca.bc.gov.nrs.ilcr.security.ScheduleEditability}) — computed server-side and server-authoritative
+ * (AD-5/AD-9, S30); a mill a given caller may not edit still lists every record with {@code
+ * editable:false}.
  *
  * <p><strong>No document-level totals and no top-level {@code revisionCount}</strong> — there is no
  * schedule-level row to key one on; each {@link ContractualWorkRecord} carries its own optimistic-

@@ -22,6 +22,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -78,7 +79,8 @@ class Schedule3SubPageServiceTest {
                 tot(5503, 600, "Travel", 2), pop(5504, 200, "Travel", 2),
                 tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
-    OtherAcceptableDocument doc = service.getOtherAcceptableDocument(MILL, YEAR, true);
+    OtherAcceptableDocument doc =
+        service.getOtherAcceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertTrue(doc.editable());
     assertEquals(2, doc.count());
@@ -101,7 +103,8 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1)));
 
-    OtherAcceptableDocument doc = service.getOtherAcceptableDocument(MILL, YEAR, true);
+    OtherAcceptableDocument doc =
+        service.getOtherAcceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(1, doc.count());
     assertEquals(800, doc.rows().get(0).total());
@@ -119,7 +122,8 @@ class Schedule3SubPageServiceTest {
     when(repository.findSubPageRows(SUMMARY, 124))
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
-    service.addOtherAcceptable(MILL, YEAR, new OtherAcceptableRequest("New", 900, 100), "user");
+    service.addOtherAcceptable(
+        MILL, YEAR, new OtherAcceptableRequest("New", 900, 100), CallerRights.SUBMITTER, "user");
 
     verify(repository).insertSubPageRow(SUMMARY, 124, 900, "New", "SCH3_2_TOT_GRP2", "user");
     verify(repository).insertSubPageRow(SUMMARY, 124, 100, "New", "SCH3_2_POP_GRP2", "user");
@@ -134,7 +138,9 @@ class Schedule3SubPageServiceTest {
     OtherAcceptableRequest request = new OtherAcceptableRequest("X", 1, 0);
     assertThrows(
         OtherCostNotFoundException.class,
-        () -> service.updateOtherAcceptable(MILL, YEAR, 999999, request, "user"));
+        () ->
+            service.updateOtherAcceptable(
+                MILL, YEAR, 999999, request, CallerRights.SUBMITTER, "user"));
   }
 
   @Test
@@ -144,7 +150,12 @@ class Schedule3SubPageServiceTest {
         .thenReturn(List.of(tot(5501, 800, "Consulting", 1), pop(5502, 300, "Consulting", 1)));
 
     service.updateOtherAcceptable(
-        MILL, YEAR, 5501, new OtherAcceptableRequest("Updated", 1000, 400), "user");
+        MILL,
+        YEAR,
+        5501,
+        new OtherAcceptableRequest("Updated", 1000, 400),
+        CallerRights.SUBMITTER,
+        "user");
 
     verify(repository).updateSubPageRowById(5501, SUMMARY, 124, 1000, "Updated", "user");
     verify(repository)
@@ -168,6 +179,7 @@ class Schedule3SubPageServiceTest {
         List.of(
             new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350),
             new OtherAcceptableSaveRequest.Row(null, "Fresh", 900, 100)),
+        CallerRights.SUBMITTER,
         "user");
 
     // Update GRP1 (TOT by id + PO&P peer by comments).
@@ -195,7 +207,7 @@ class Schedule3SubPageServiceTest {
         List.of(new OtherAcceptableSaveRequest.Row(5501, "Consulting2", 850, 350));
     assertThrows(
         ScheduleNotSavedException.class,
-        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, CallerRights.SUBMITTER, "user"));
   }
 
   @Test
@@ -210,7 +222,7 @@ class Schedule3SubPageServiceTest {
         List.of(new OtherAcceptableSaveRequest.Row(999999, "Ghost", 1, 0));
     assertThrows(
         OtherCostNotFoundException.class,
-        () -> service.saveOtherAcceptable(MILL, YEAR, rows, "user"));
+        () -> service.saveOtherAcceptable(MILL, YEAR, rows, CallerRights.SUBMITTER, "user"));
   }
 
   // ---- Included Unacceptable document ----
@@ -223,7 +235,7 @@ class Schedule3SubPageServiceTest {
     when(repository.findDetails(SUMMARY))
         .thenReturn(List.of(new DetailRow(29, null, 777, null, null)));
 
-    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, true);
+    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(1, doc.count());
     // Legacy footer total = Σ item-38 rows (250) + Annual Rents Harvest (777) = 1027.
@@ -243,7 +255,7 @@ class Schedule3SubPageServiceTest {
     when(repository.findDetails(SUMMARY))
         .thenReturn(List.of(new DetailRow(29, null, null, null, null)));
 
-    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, true);
+    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(1, doc.count());
     assertEquals(250L, doc.subtotalTotal());
@@ -268,6 +280,7 @@ class Schedule3SubPageServiceTest {
         List.of(
             new UnacceptableSaveRequest.Row(5505, "Penalty!", 260),
             new UnacceptableSaveRequest.Row(null, "New", 500)),
+        CallerRights.SUBMITTER,
         "user");
 
     verify(repository).updateSubPageRowById(5505, SUMMARY, 38, 260, "Penalty!", "user");
@@ -287,7 +300,8 @@ class Schedule3SubPageServiceTest {
     List<UnacceptableSaveRequest.Row> rows =
         List.of(new UnacceptableSaveRequest.Row(5505, "Penalty!", 260));
     assertThrows(
-        ScheduleNotSavedException.class, () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+        ScheduleNotSavedException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, CallerRights.SUBMITTER, "user"));
   }
 
   @Test
@@ -300,7 +314,8 @@ class Schedule3SubPageServiceTest {
     List<UnacceptableSaveRequest.Row> rows =
         List.of(new UnacceptableSaveRequest.Row(999999, "Ghost", 1));
     assertThrows(
-        OtherCostNotFoundException.class, () -> service.saveUnacceptable(MILL, YEAR, rows, "user"));
+        OtherCostNotFoundException.class,
+        () -> service.saveUnacceptable(MILL, YEAR, rows, CallerRights.SUBMITTER, "user"));
   }
 
   // ---- Check-status sub-page branches ----

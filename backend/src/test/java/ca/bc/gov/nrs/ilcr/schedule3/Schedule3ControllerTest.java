@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,8 +19,10 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Request;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -41,6 +44,11 @@ import org.springframework.security.core.Authentication;
 @ExtendWith(MockitoExtension.class)
 class Schedule3ControllerTest {
 
+  @BeforeEach
+  void stubEditability() {
+    lenient().when(editability.forCaller(any())).thenReturn(CallerRights.SUBMITTER);
+  }
+
   private static final long MILL_ID = 522L;
   private static final int YEAR = 2021;
   private static final String CATEGORY = "3";
@@ -50,7 +58,7 @@ class Schedule3ControllerTest {
 
   @Mock private Schedule3Service schedule3Service;
 
-  @Mock private SchedulePermissions permissions;
+  @Mock private ScheduleEditability editability;
 
   @Mock private org.springframework.context.MessageSource messageSource;
 
@@ -67,8 +75,8 @@ class Schedule3ControllerTest {
   @Test
   void getSchedule3_validatesContext_derivesEditFlag_andReturnsDocument() {
     Schedule3Response doc = mock(Schedule3Response.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule3Service.getSchedule3(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule3Service.getSchedule3(MILL_ID, YEAR, CallerRights.NONE)).thenReturn(doc);
 
     ResponseEntity<Schedule3Response> response =
         controller.getSchedule3(MILL_ID, YEAR, authentication);
@@ -86,9 +94,10 @@ class Schedule3ControllerTest {
     Schedule3Request request = mock(Schedule3Request.class);
     Schedule3Response saved = mock(Schedule3Response.class);
     when(saved.withMessage(any())).thenReturn(saved);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.saveSchedule3(MILL_ID, YEAR, request, true, USER)).thenReturn(saved);
+    when(schedule3Service.saveSchedule3(MILL_ID, YEAR, request, CallerRights.SUBMITTER, USER))
+        .thenReturn(saved);
 
     ResponseEntity<Schedule3Response> response =
         controller.saveSchedule3(MILL_ID, YEAR, request, authentication);
@@ -103,7 +112,7 @@ class Schedule3ControllerTest {
 
   @Test
   void deleteSchedule3_delegates_andReturnsDeletedMessage() {
-    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR)).thenReturn(true);
+    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(true);
     ResponseEntity<MessageResponse> response =
         controller.deleteSchedule3(MILL_ID, YEAR, authentication);
 
@@ -113,7 +122,7 @@ class Schedule3ControllerTest {
     // summary to exist, which is what made an unsaved Schedule 3 a 404 (defect #296). The
     // sub-page tests below deliberately keep the summary-required guard (D1).
     verify(millContextService).validateMillYearActive(MILL_ID, YEAR);
-    verify(schedule3Service).deleteSchedule3(MILL_ID, YEAR);
+    verify(schedule3Service).deleteSchedule3(MILL_ID, YEAR, CallerRights.SUBMITTER);
   }
 
   /**
@@ -123,7 +132,7 @@ class Schedule3ControllerTest {
    */
   @Test
   void deleteSchedule3_noOp_saysNothingWasDeleted() {
-    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR)).thenReturn(false);
+    when(schedule3Service.deleteSchedule3(MILL_ID, YEAR, CallerRights.SUBMITTER)).thenReturn(false);
     when(messageSource.getMessage(eq("noDataToDeleteInfoMsg"), any(), any(), any(Locale.class)))
         .thenReturn("No saved data was found, so nothing was deleted");
 
@@ -157,8 +166,9 @@ class Schedule3ControllerTest {
   @Test
   void getOtherAcceptable_validatesContext_derivesEditFlag_andReturnsDocument() {
     OtherAcceptableDocument doc = mock(OtherAcceptableDocument.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(true);
-    when(schedule3Service.getOtherAcceptableDocument(MILL_ID, YEAR, true)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.SUBMITTER);
+    when(schedule3Service.getOtherAcceptableDocument(MILL_ID, YEAR, CallerRights.SUBMITTER))
+        .thenReturn(doc);
 
     ResponseEntity<OtherAcceptableDocument> response =
         otherCostsController.getOtherAcceptable(MILL_ID, YEAR, authentication);
@@ -174,7 +184,8 @@ class Schedule3ControllerTest {
     OtherAcceptableDocument doc = mock(OtherAcceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.addOtherAcceptable(MILL_ID, YEAR, request, USER)).thenReturn(doc);
+    when(schedule3Service.addOtherAcceptable(MILL_ID, YEAR, request, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<OtherAcceptableDocument> response =
         otherCostsController.addOtherAcceptable(MILL_ID, YEAR, request, authentication);
@@ -190,7 +201,9 @@ class Schedule3ControllerTest {
     OtherAcceptableDocument doc = mock(OtherAcceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.updateOtherAcceptable(MILL_ID, YEAR, 7, request, USER)).thenReturn(doc);
+    when(schedule3Service.updateOtherAcceptable(
+            MILL_ID, YEAR, 7, request, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<OtherAcceptableDocument> response =
         otherCostsController.updateOtherAcceptable(7, MILL_ID, YEAR, request, authentication);
@@ -205,7 +218,8 @@ class Schedule3ControllerTest {
     OtherAcceptableDocument doc = mock(OtherAcceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.deleteOtherAcceptable(MILL_ID, YEAR, 7, USER)).thenReturn(doc);
+    when(schedule3Service.deleteOtherAcceptable(MILL_ID, YEAR, 7, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<OtherAcceptableDocument> response =
         otherCostsController.deleteOtherAcceptable(7, MILL_ID, YEAR, authentication);
@@ -220,8 +234,9 @@ class Schedule3ControllerTest {
   @Test
   void getUnacceptable_validatesContext_derivesEditFlag_andReturnsDocument() {
     UnacceptableDocument doc = mock(UnacceptableDocument.class);
-    when(permissions.hasPermission(authentication, "EDIT_SCHEDULE")).thenReturn(false);
-    when(schedule3Service.getUnacceptableDocument(MILL_ID, YEAR, false)).thenReturn(doc);
+    when(editability.forCaller(authentication)).thenReturn(CallerRights.NONE);
+    when(schedule3Service.getUnacceptableDocument(MILL_ID, YEAR, CallerRights.NONE))
+        .thenReturn(doc);
 
     ResponseEntity<UnacceptableDocument> response =
         unacceptableController.getUnacceptable(MILL_ID, YEAR, authentication);
@@ -237,7 +252,8 @@ class Schedule3ControllerTest {
     UnacceptableDocument doc = mock(UnacceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.addUnacceptable(MILL_ID, YEAR, request, USER)).thenReturn(doc);
+    when(schedule3Service.addUnacceptable(MILL_ID, YEAR, request, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<UnacceptableDocument> response =
         unacceptableController.addUnacceptable(MILL_ID, YEAR, request, authentication);
@@ -253,7 +269,9 @@ class Schedule3ControllerTest {
     UnacceptableDocument doc = mock(UnacceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.updateUnacceptable(MILL_ID, YEAR, 9, request, USER)).thenReturn(doc);
+    when(schedule3Service.updateUnacceptable(
+            MILL_ID, YEAR, 9, request, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<UnacceptableDocument> response =
         unacceptableController.updateUnacceptable(9, MILL_ID, YEAR, request, authentication);
@@ -268,7 +286,8 @@ class Schedule3ControllerTest {
     UnacceptableDocument doc = mock(UnacceptableDocument.class);
     when(doc.withMessage(any())).thenReturn(doc);
     when(authentication.getName()).thenReturn(USER);
-    when(schedule3Service.deleteUnacceptable(MILL_ID, YEAR, 9, USER)).thenReturn(doc);
+    when(schedule3Service.deleteUnacceptable(MILL_ID, YEAR, 9, CallerRights.SUBMITTER, USER))
+        .thenReturn(doc);
 
     ResponseEntity<UnacceptableDocument> response =
         unacceptableController.deleteUnacceptable(9, MILL_ID, YEAR, authentication);

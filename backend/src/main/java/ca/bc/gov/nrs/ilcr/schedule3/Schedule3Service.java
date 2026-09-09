@@ -28,6 +28,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRequest;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableSaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -59,7 +60,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule3Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String OVERRIDE_DEFAULT = "N";
 
   // The fixed admin-cost LINES, the LineSpec record, and the PO&P/other-acceptable derivation rules
@@ -162,13 +162,12 @@ public class Schedule3Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the {@code EDIT_SCHEDULE} action (from the
-   *     controller)
+   * @param caller whether the caller holds the {@code EDIT_SCHEDULE} action (from the controller)
    * @return the aggregate document (never null; empty/editable when unsaved), all derived values
    *     computed server-side
    */
-  public Schedule3Response getSchedule3(long millId, int year, boolean callerMayEdit) {
-    return assemble(millId, year, callerMayEdit, repository.findSummary(millId, year).orElse(null));
+  public Schedule3Response getSchedule3(long millId, int year, EditableStatuses caller) {
+    return assemble(millId, year, caller, repository.findSummary(millId, year).orElse(null));
   }
 
   /**
@@ -184,13 +183,13 @@ public class Schedule3Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action
+   * @param caller the track statuses this caller may edit
    * @return the aggregate document, or empty when no Schedule 3 summary exists
    */
-  public Optional<Schedule3Response> findSchedule3(long millId, int year, boolean callerMayEdit) {
+  public Optional<Schedule3Response> findSchedule3(long millId, int year, EditableStatuses caller) {
     return repository
         .findSummary(millId, year)
-        .map(summary -> assemble(millId, year, callerMayEdit, summary));
+        .map(summary -> assemble(millId, year, caller, summary));
   }
 
   /**
@@ -200,7 +199,7 @@ public class Schedule3Service {
    * hide Delete on a never-saved schedule (#296 AC3, the #292 rule).
    */
   private Schedule3Response assemble(
-      long millId, int year, boolean callerMayEdit, SummaryRow summary) {
+      long millId, int year, EditableStatuses caller, SummaryRow summary) {
     List<DetailRow> details =
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     final String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
@@ -283,7 +282,7 @@ public class Schedule3Service {
     int unacceptableCount =
         unacceptableRows.size() + (annualRentsHarvest != null && annualRentsHarvest != 0 ? 1 : 0);
 
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    boolean editable = caller.allows(trackStatus);
     String override =
         summary == null || summary.location() == null ? OVERRIDE_DEFAULT : summary.location();
 
@@ -339,27 +338,26 @@ public class Schedule3Service {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Write path (Story 4.2) — Draft-gated, optimistic-locked, transactional (AD-6/AD-9/AR11).
+  // Write path (Story 4.2) — editability-gated, optimistic-locked, transactional (AD-6/AD-9/AR11).
   // ---------------------------------------------------------------------------------------------
 
   /**
    * Persist the entered Schedule 3 fields (S01) and return the recomputed document. Writes only the
    * editable rows (11 fixed-line Harvest/PO&P costs, the two timber volumes, comments, override →
-   * {@code LOCATION}); never derived or sub-page rows. Enforces the Draft gate (AD-9) and
+   * {@code LOCATION}); never derived or sub-page rows. Enforces the editability gate (AD-9) and
    * optimistic lock (AR11). When the Crown Timber volume changed, propagates it into Schedule 1 via
    * the {@code schedule1} domain (BR-09, AD-14) and carries WRN-001/002 on the response.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered fields + optimistic-lock token
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
-   *     editable})
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
    * @param user the acting user id (audit)
    * @return the recomputed document, warnings carrying the BR-09 outcome
    */
   @Transactional
   public Schedule3Response saveSchedule3(
-      long millId, int year, Schedule3Request request, boolean callerMayEdit, String user) {
+      long millId, int year, Schedule3Request request, EditableStatuses caller, String user) {
     // 0, not -1 — see Schedule1Service#saveSchedule1: -1 can never match a freshly-created
     // summary's REVISION_COUNT 0, and Schedule 2 uses 0 (#296 code review).
     int expectedRevision = request.revisionCount() == null ? 0 : request.revisionCount();
@@ -373,7 +371,7 @@ public class Schedule3Service {
       // On a freshly-created summary there are no detail rows, so the persisted crown volume is
       // null and the BR-09 push below fires on any entered value, which is correct for a first
       // save.
-      summaryId = getOrCreateEditableSummary(millId, year, request.comments(), user);
+      summaryId = getOrCreateEditableSummary(millId, year, request.comments(), caller, user);
       persistedCrownVolume = persistedVolume(summaryId, CODE_CROWN_TIMBER);
       int bumped =
           repository.bumpRevision(
@@ -406,7 +404,7 @@ public class Schedule3Service {
       try {
         boolean applied =
             schedule1Service.applyCrownTimberVolume(
-                millId, year, request.crownTimberVolume(), user);
+                millId, year, request.crownTimberVolume(), caller, user);
         warnings.add(warning(applied ? WARN_CROWN_APPLIED : WARN_CROWN_NOT_OPENED));
       } catch (DataAccessException ex) {
         // Surface a push failure as ERR-001 (500), consistent with the save writes (the whole save
@@ -420,13 +418,14 @@ public class Schedule3Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule3(millId, year, callerMayEdit).withWarnings(warnings);
+    return getSchedule3(millId, year, caller).withWarnings(warnings);
   }
 
   /**
    * Delete the whole Schedule 3 row family (summary + all detail rows) for a mill/year (S08).
-   * Enforces the same Draft gate as save. Idempotent since defect #296: a Draft mill/year with no
-   * category-"3" summary is a no-op that still returns 200 (never 404), matching Schedule 2.
+   * Enforces the same editability gate as save. Idempotent since defect #296: a Draft mill/year
+   * with no category-"3" summary is a no-op that still returns 200 (never 404), matching Schedule
+   * 2.
    *
    * <p>Returns whether anything was actually removed, so the controller can tell a real delete from
    * the idempotent no-op instead of announcing success for both (the #292 rule, now applied here
@@ -437,9 +436,9 @@ public class Schedule3Service {
    * @return {@code true} when a summary existed and was deleted, {@code false} on the no-op
    */
   @Transactional
-  public boolean deleteSchedule3(long millId, int year) {
+  public boolean deleteSchedule3(long millId, int year, EditableStatuses caller) {
     // The LOCKING gate, as Schedule 2's delete uses (#296 code review) — see deleteSchedule1.
-    requireDraftForUpdate(millId, year);
+    requireEditableForUpdate(millId, year, caller);
     Optional<SummaryRow> summary = repository.findSummary(millId, year);
     if (summary.isEmpty()) {
       return false; // idempotent — nothing to remove, and the caller must not claim otherwise
@@ -465,21 +464,21 @@ public class Schedule3Service {
    * The Other Acceptable Costs document (groups + subtotal) for a mill/year (does not gate Draft).
    */
   public OtherAcceptableDocument getOtherAcceptableDocument(
-      long millId, int year, boolean callerMayEdit) {
+      long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable =
-        callerMayEdit && STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null));
+    boolean editable = caller.allows(repository.findTrackStatus(millId, year).orElse(null));
     return buildOtherAcceptableDocument(summary.summaryId(), editable);
   }
 
   /**
-   * Add one Other Acceptable group (a fresh TOT + PO&P pair). Draft-gated; recomputes the document.
+   * Add one Other Acceptable group (a fresh TOT + PO&P pair). editability-gated; recomputes the
+   * document.
    */
   @Transactional
   public OtherAcceptableDocument addOtherAcceptable(
-      long millId, int year, OtherAcceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId, int year, OtherAcceptableRequest request, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       // Lock the summary row first so a concurrent add can't read the same max group number and
       // mint
@@ -516,8 +515,13 @@ public class Schedule3Service {
    */
   @Transactional
   public OtherAcceptableDocument updateOtherAcceptable(
-      long millId, int year, int id, OtherAcceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      int id,
+      OtherAcceptableRequest request,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
@@ -551,8 +555,9 @@ public class Schedule3Service {
    * row.
    */
   @Transactional
-  public OtherAcceptableDocument deleteOtherAcceptable(long millId, int year, int id, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+  public OtherAcceptableDocument deleteOtherAcceptable(
+      long millId, int year, int id, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       SubPageRow totRow = findTotRow(summaryId, id);
       String popComments = GROUPKEY_POP + totRow.comments().substring(GROUPKEY_TOT.length());
@@ -600,12 +605,16 @@ public class Schedule3Service {
    * Schedule3SubtotalOtherCostsMB.save()} reconcile over the item-124 TOT+PO&amp;P pairs: a group
    * whose TOT id already exists is UPDATED in place (both its TOT and PO&amp;P rows), a group with
    * no (or an unknown) id is INSERTED as a fresh pair, and any existing group absent from the
-   * request is DELETED (TOT + PO&amp;P). Draft-gated; recomputes the document.
+   * request is DELETED (TOT + PO&amp;P). editability-gated; recomputes the document.
    */
   @Transactional
   public OtherAcceptableDocument saveOtherAcceptable(
-      long millId, int year, List<OtherAcceptableSaveRequest.Row> rows, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      List<OtherAcceptableSaveRequest.Row> rows,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     List<OtherAcceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
     try {
       // Lock the summary first (AR11): serialize concurrent writers and stop a concurrent add/save
@@ -767,19 +776,18 @@ public class Schedule3Service {
 
   /** The Included Unacceptable Costs document (rows + subtotal + read-only Annual Rents S111). */
   public UnacceptableDocument getUnacceptableDocument(
-      long millId, int year, boolean callerMayEdit) {
+      long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable =
-        callerMayEdit && STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null));
+    boolean editable = caller.allows(repository.findTrackStatus(millId, year).orElse(null));
     return buildUnacceptableDocument(summary.summaryId(), editable);
   }
 
-  /** Add one Included Unacceptable row (item 38, null comments). Draft-gated. */
+  /** Add one Included Unacceptable row (item 38, null comments). editability-gated. */
   @Transactional
   public UnacceptableDocument addUnacceptable(
-      long millId, int year, UnacceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId, int year, UnacceptableRequest request, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       // Bump the aggregate revision (AR11) — see updateOtherAcceptable.
       repository.touchSummary(summaryId, user);
@@ -801,8 +809,13 @@ public class Schedule3Service {
    */
   @Transactional
   public UnacceptableDocument updateUnacceptable(
-      long millId, int year, int id, UnacceptableRequest request, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      int id,
+      UnacceptableRequest request,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       int updated =
           repository.updateSubPageRowById(
@@ -830,8 +843,9 @@ public class Schedule3Service {
    * Delete one Included Unacceptable row by detail id. 404 when the id is not an item-38 row here.
    */
   @Transactional
-  public UnacceptableDocument deleteUnacceptable(long millId, int year, int id, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+  public UnacceptableDocument deleteUnacceptable(
+      long millId, int year, int id, EditableStatuses caller, String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     try {
       int deleted = repository.deleteSubPageRowById(id, summaryId, CODE_UNACCEPTABLE);
       if (deleted == 0) {
@@ -857,12 +871,16 @@ public class Schedule3Service {
    * Batch "Save" the whole Included Unacceptable row set in one transaction — the legacy {@code
    * Schedule3IncludedUnacceptableCostsMB.save()} reconcile: rows carrying an existing detail id are
    * UPDATED in place, rows with no (or an unknown) id are INSERTED, and any existing item-38 row
-   * absent from the request is DELETED. Draft-gated; recomputes the document.
+   * absent from the request is DELETED. editability-gated; recomputes the document.
    */
   @Transactional
   public UnacceptableDocument saveUnacceptable(
-      long millId, int year, List<UnacceptableSaveRequest.Row> rows, String user) {
-    int summaryId = requireEditableSummary(millId, year).summaryId();
+      long millId,
+      int year,
+      List<UnacceptableSaveRequest.Row> rows,
+      EditableStatuses caller,
+      String user) {
+    int summaryId = requireEditableSummary(millId, year, caller).summaryId();
     List<UnacceptableSaveRequest.Row> incoming = rows == null ? List.of() : rows;
     try {
       // Lock the summary first (AR11): serialize concurrent writers and invalidate a stale
@@ -1123,51 +1141,60 @@ public class Schedule3Service {
   }
 
   /**
-   * The Draft-gate guard for the SUB-PAGE writes (Other Acceptable, Unacceptable): track must be
-   * Draft (else 409) and the summary must exist (else 404).
+   * The editability-gate guard for the SUB-PAGE writes (Other Acceptable, Unacceptable): track must
+   * be Draft (else 409) and the summary must exist (else 404).
    *
    * <p>Deliberately still 404s, and is deliberately no longer used by the main save/delete — both
    * sub-pages are reachable only from a SAVED Schedule 3 (legacy ALT-001, "The schedule has to be
    * saved before opening other costs"), so "no summary" there really is not-found. Defect #296
    * moved only the main page off this guard; see {@link #getOrCreateEditableSummary}.
    */
-  private SummaryRow requireEditableSummary(long millId, int year) {
-    requireDraft(millId, year);
+  private SummaryRow requireEditableSummary(long millId, int year, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     return repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
   }
 
   /**
-   * The Draft-gate guard for the create-on-absent main save path: the track must be Draft (else
-   * 409), and the category-"3" summary is created when absent, returning its id (defect #296 — the
-   * main Schedule 3 save never 404s). Mirrors {@code Schedule2Service.getOrCreateEditableSummary}.
+   * The editability-gate guard for the create-on-absent main save path: the caller must be
+   * permitted to write at the track's current status (else 409), and the category-"3" summary is
+   * created when absent, returning its id (defect #296 — the main Schedule 3 save never 404s).
+   * Mirrors {@code Schedule2Service.getOrCreateEditableSummary}.
    */
-  private int getOrCreateEditableSummary(long millId, int year, String comments, String user) {
-    requireDraftForUpdate(millId, year);
+  private int getOrCreateEditableSummary(
+      long millId, int year, String comments, EditableStatuses caller, String user) {
+    requireEditableForUpdate(millId, year, caller);
     return repository
         .findSummary(millId, year)
         .map(SummaryRow::summaryId)
         .orElseGet(() -> repository.insertSummary(millId, year, comments, user));
   }
 
-  /** The plain Draft gate (AD-9): the Schedules 1-10 track must be Draft, else 409. */
-  private void requireDraft(long millId, int year) {
-    if (!STATUS_DRAFT.equals(repository.findTrackStatus(millId, year).orElse(null))) {
+  /**
+   * The plain editability gate (AD-9): the caller must be permitted to write at the Schedules 1-10
+   * track's current status, else 409.
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
-   * The Draft gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
+   * The editability gate for the create-on-absent path, taking a {@code FOR UPDATE} row lock on the
    * report-status row so concurrent first-saves for the same mill/year serialize on it.
    * Load-bearing, not decoration: the real schema has no unique constraint on (year, mill,
    * category), so without the lock two concurrent first-saves can both see "not matched" in the
    * create MERGE and both insert a permanent duplicate. Only write paths call this, inside
    * {@code @Transactional}.
    */
-  private void requireDraftForUpdate(long millId, int year) {
-    if (!STATUS_DRAFT.equals(repository.findTrackStatusForUpdate(millId, year).orElse(null))) {
+  private String requireEditableForUpdate(long millId, int year, EditableStatuses caller) {
+    String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** Upsert each entered fixed line: Harvest cost always; PO&P cost only for the PO&P lines. */

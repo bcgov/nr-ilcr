@@ -10,6 +10,8 @@ import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,7 +83,7 @@ class Schedule5ServiceTest {
     when(repository.findTrackStatus(anyLong(), anyInt())).thenReturn(Optional.of("D"));
     when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(campRow));
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(details);
-    return service.getSchedule5(MILL, YEAR, true).camps().getFirst();
+    return service.getSchedule5(MILL, YEAR, CallerRights.SUBMITTER).camps().getFirst();
   }
 
   private static final BigDecimal VOL_120K = new BigDecimal("120000");
@@ -639,19 +641,34 @@ class Schedule5ServiceTest {
   class EditableMatrix {
 
     @Test
-    @DisplayName("EDIT_SCHEDULE + Draft -> true; every other combination -> false")
-    void editableOnlyWhenDraftAndPermitted() {
-      assertThat(editableFor("D", true)).isTrue();
-      assertThat(editableFor("D", false)).isFalse();
-      assertThat(editableFor("S", true)).isFalse();
-      assertThat(editableFor("V", true)).isFalse();
-      // Dead status code O passes through as a non-Draft value (A-8).
-      assertThat(editableFor("O", true)).isFalse();
-      // No status row at all.
-      assertThat(editableFor(null, true)).isFalse();
+    @DisplayName("a submitter edits at Draft only")
+    void submitterEditsAtDraftOnly() {
+      assertThat(editableFor("D", CallerRights.SUBMITTER)).isTrue();
+      assertThat(editableFor("S", CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor("V", CallerRights.SUBMITTER)).isFalse();
     }
 
-    private boolean editableFor(String trackStatus, boolean callerMayEdit) {
+    @Test
+    @DisplayName("an administrator edits at Submitted and Verified, never at Draft")
+    void adminEditsAfterDraftOnly() {
+      assertThat(editableFor("D", CallerRights.ADMIN)).isFalse();
+      assertThat(editableFor("S", CallerRights.ADMIN)).isTrue();
+      assertThat(editableFor("V", CallerRights.ADMIN)).isTrue();
+    }
+
+    @Test
+    @DisplayName("no role, the dead O status, and a missing status row are all read-only")
+    void nobodyEditsOutsideTheMatrix() {
+      assertThat(editableFor("D", CallerRights.NONE)).isFalse();
+      // Dead status code O passes through read-only for every role (A-8).
+      assertThat(editableFor("O", CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor("O", CallerRights.ADMIN)).isFalse();
+      // No status row at all is never an implicit Draft.
+      assertThat(editableFor(null, CallerRights.SUBMITTER)).isFalse();
+      assertThat(editableFor(null, CallerRights.ADMIN)).isFalse();
+    }
+
+    private boolean editableFor(String trackStatus, EditableStatuses callerMayEdit) {
       when(repository.findTrackStatus(anyLong(), anyInt()))
           .thenReturn(Optional.ofNullable(trackStatus));
       when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
@@ -667,7 +684,7 @@ class Schedule5ServiceTest {
     when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of());
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(List.of());
 
-    Schedule5Response document = service.getSchedule5(MILL, YEAR, true);
+    Schedule5Response document = service.getSchedule5(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertThat(document.millId()).isEqualTo(MILL);
     assertThat(document.year()).isEqualTo(YEAR);

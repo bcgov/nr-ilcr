@@ -14,8 +14,10 @@ import java.util.List;
  * by loading the whole Schedule 5 document and scanning it for the Flash-passed camp id ({@code
  * Schedule5CampExpensesMB.getCampDetails()}, {@code :125-133}).
  *
- * <p>{@code editable} is SERVER-authoritative (AD-9): {@code EDIT_SCHEDULE} AND a Draft 1–10 track,
- * never inferred from the role or the track status alone on the client.
+ * <p>{@code editable} is SERVER-authoritative (AD-9): {@code EDIT_SCHEDULE} AND the role×status
+ * matrix admitting the caller at this 1–10 track status — submitter at Draft, administrator at
+ * Submitted or Verified ({@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability}). Never inferred
+ * from the role or the track status alone on the client: neither one decides it by itself.
  *
  * <p><strong>{@code totals} is NOT the camp panel's figure for the same category, and the two sides
  * compute it differently (deviation (C)).</strong> On the CAMP sub-page the footer volume is the

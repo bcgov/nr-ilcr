@@ -204,9 +204,10 @@ public interface Schedule10Api {
   /**
    * Run the Schedule 10 readiness rules.
    *
-   * <p>Requires only {@code VIEW_SCHEDULE} and is deliberately NOT Draft-gated, so a submitted or
-   * verified schedule can still be checked. Mutates nothing. There is no request body and no scope
-   * parameter: the check always covers the whole schedule for the mill and year, as legacy does.
+   * <p>Requires only {@code VIEW_SCHEDULE} and is deliberately NOT editability-gated, so a
+   * submitted or verified schedule can still be checked. Mutates nothing. There is no request body
+   * and no scope parameter: the check always covers the whole schedule for the mill and year, as
+   * legacy does.
    *
    * @param millId the raw mill id param
    * @param year the raw reporting year param

@@ -24,7 +24,11 @@ Then(
     await expect(appShell.navLink('Check Status')).toBeVisible();
     // Generate Reports is a GROUP, not a link: story 19.1 gave it the Mill Information Report as a
     // sub-item, so Carbon renders it as an expandable toggle (a button) like Schedules. It is also
-    // admin-gated now — visible here because the default mock user (MOCK_USERS[0]) is the admin.
+    // admin-gated, and visible here because `openWithoutBackend` opens this scenario AS the admin
+    // on purpose. It used to be visible only because `MOCK_USERS[0]` happens to be the admin —
+    // still true in the app, and still the fallback `findMockUser` returns for an unrecognised id,
+    // which is exactly the accident that ran the whole suite as one (pages/common/mockUser.ts).
+    // Nothing here depends on that ordering any more.
     await expect(appShell.navGroup('Generate Reports')).toBeVisible();
     await expect(appShell.navLink('Print Schedules')).toBeVisible();
     await expect(appShell.navLink('Submissions')).toBeVisible();

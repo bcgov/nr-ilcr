@@ -13,13 +13,15 @@ import java.util.List;
  * there is no category-{@code "6"} summary row (delivery-DB confirmed, Story 8.1 Task 1).
  *
  * <p>{@code trackStatus} = {@code ILCR_MILL_REPORT_STATUS_CODE} (the Schedules 1-10 track, AD-9).
- * {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND {@code trackStatus == "D"},
- * computed server-side (AD-5/AD-9), never client-supplied — a non-Draft mill still lists records
- * ({@code editable:false}). {@code generalComments} is the single schedule-level comment (stored
- * replicated on every road-record row in legacy). {@code totalVolume}/{@code totalCost}/ {@code
- * totalCostPerVolume} are DERIVED running totals (BR-07). A valid, active mill/year with no road
- * records returns {@code roadRecords: []} with zero totals and no general comment — never a 404
- * (that is reserved for the mill/year context guard, ERR-003).
+ * {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the role×status matrix admits it at
+ * {@code trackStatus} — submitter at Draft, administrator at Submitted or Verified ({@link
+ * ca.bc.gov.nrs.ilcr.security.ScheduleEditability}) — computed server-side (AD-5/AD-9), never
+ * client-supplied; a mill a given caller may not edit still lists records ({@code editable:false}).
+ * {@code generalComments} is the single schedule-level comment (stored replicated on every
+ * road-record row in legacy). {@code totalVolume}/{@code totalCost}/ {@code totalCostPerVolume} are
+ * DERIVED running totals (BR-07). A valid, active mill/year with no road records returns {@code
+ * roadRecords: []} with zero totals and no general comment — never a 404 (that is reserved for the
+ * mill/year context guard, ERR-003).
  *
  * <p>{@code message} is the AD-8 success-message echo: null on a GET read (Jackson {@code non_null}
  * omits it), carrying the resolved {@link MessageInfo} on the Story 8.2 save echo.

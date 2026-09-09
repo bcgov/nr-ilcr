@@ -144,11 +144,54 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     HOME-1.5 AC4 intent (Home + banner a11y proven) holds.
   - **Status:** CLOSED (2026-07-30).
 
-- **GAP-4 — Role-gated branches can't be exercised under single-role mock auth.**
-  - **Why not:** Security off → one fixed authority per run, so any role-conditional behaviour on Home can't
-    be varied. Same as UC-SCH1-001 GAP-1.
-  - **Future action:** revisit with FAM auth + finer roles.
-  - **Status:** OPEN — `blocked`.
+- **GAP-4 — Role-gated branches under mock auth — PREMISE CORRECTED 2026-09-09.**
+  - **What this used to say:** "Security off → one fixed authority per run, so any role-conditional
+    behaviour on Home can't be varied." That was true when written and **false since #265**
+    (2026-08-12): `service/api-service.ts` sends the selected mock user's roles as `X-Mock-Groups`
+    and `MockPrincipalFilter` prefers that header over `ilcr.security.mock-role`. The authority is
+    per REQUEST, so a role CAN be varied per scenario — `seedMockUser(page, 'admin' | 'submitter')`.
+  - **What it cost while it read the other way:** because `findMockUser` falls back to
+    `?? MOCK_USERS[0]` and the admin is listed first, the whole suite ran as **`ILCR_ADMIN`** while
+    every feature file declared "As a Licensee". Invisible until Story 16.1 made an administrator
+    read-only at Draft, at which point ~200 scenarios failed at once and read as an app regression.
+    Three documents said the selector could not matter, which is why nobody looked there.
+  - **What is still genuinely blocked:** anything needing a real DIRECTORY identity. The mock
+    principal is a `UsernamePasswordAuthenticationToken` with no `custom:idp_user_id`, so a
+    submitter's mill SCOPING cannot be exercised at all — see GAP-5.
+  - **Status:** OPEN — `partially unblocked` (2026-09-09). Role variation: available, and now used.
+    Directory-scoped behaviour: still `blocked`.
+
+- **GAP-5 — A mock submitter is offered NO mill, so the suite borrows the administrator for
+  `GET /v1/mills`. APP-SIDE gap, test-side workaround. Found 2026-09-09.**
+  - **The gap, in the app:** `MillContextController.currentUserGuid()` resolves to `""` for the
+    security-off dev principal (not a `Jwt`), and `MillContextService.listMills` fail-closes a
+    submitter with a blank GUID to `List.of()`. Eleven lines above it, `validateMillAccess` **exempts
+    that same principal** ("mock/security-off (AC6 exemption) — no real directory identity to scope
+    by"). So the two mill-scope gates disagree: the identity may WRITE to any mill and is shown none
+    to select. Under mock auth that leaves NO usable identity once the Story 16.1 matrix lands — the
+    admin, the only role Home offers a mill to, is read-only at Draft. It breaks local dev the same
+    way: neither mock user can enter schedule data.
+  - **The app fix, deliberately not taken here:** exempt the mock principal in `listMills` as
+    `validateMillAccess` already does (one branch; never reachable with security on, where every
+    caller presents a `Jwt`, and `DeployedSecurityGuard` forbids security-off beside a datasource on
+    a pod). It was implemented and then reverted on the decision that this change stay **test-only**.
+  - **The workaround:** `pages/common/mockUser.ts` `grantAdminOnMillList` rewrites `X-Mock-Groups`
+    to `ILCR_ADMIN` on `GET /api/v1/mills` **only**; the global `page` fixture installs it, and the
+    identity stays `ILCR_SUBMITTER` for every schedule GET, write and check-status. Verified at the
+    backend boundary against a stub: `/api/v1/mills` arrives as `ILCR_ADMIN`,
+    `/api/v1/reporting-years` and `/api/v1/home-content/mine` as `ILCR_SUBMITTER`.
+  - **What it costs, stated so no one reads more into the green than is there:** the dropdown this
+    suite asserts is the ADMIN's list (`findAllMills` — every listable mill, closed included). A
+    submitter's SCOPED list (`findMillsForUser`, and the S06 "closed *associated* mills still
+    appear" shape) is **not covered here** and cannot be while the mock principal has no directory
+    GUID; the backend's own tests own it. This is not a coverage regression — the suite was an
+    administrator throughout until now — but it was previously undeclared, which is worse.
+  - **Future action:** delete `grantAdminOnMillList` the day either the app fix lands or mock auth
+    grows a directory GUID (which would also need `ILCR_MILL_USER_XREF` rows for the e2e anchor
+    mills — note `R__70_test_scope_canonical_submitter.sql` sorts BEFORE `R__80_e2e_anchor_seed.sql`,
+    so its set-based association cannot reach them today).
+  - **Status:** OPEN — app gap unfixed by choice; suite green via a declared, single-request
+    workaround.
 
 **Spec gaps (the Gherkin is missing / underspecifies scenarios):**
 

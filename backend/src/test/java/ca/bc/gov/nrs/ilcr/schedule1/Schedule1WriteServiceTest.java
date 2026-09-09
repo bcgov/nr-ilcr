@@ -24,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.LineItemInput;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Request.SilvicultureInput;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -79,7 +80,11 @@ class Schedule1WriteServiceTest {
     when(repository.bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER))).thenReturn(1);
 
     service.saveSchedule1(
-        MILL, YEAR, request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER);
+        MILL,
+        YEAR,
+        request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 12, new BigDecimal("2000"), 60000, USER);
     // the shared Other-Costs volume row (code 19) is written from otherCostsVolume
@@ -109,7 +114,7 @@ class Schedule1WriteServiceTest {
             new BigDecimal("8000"),
             new BigDecimal("111"),
             new BigDecimal("222")),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(12), any(), any(), eq(USER));
@@ -143,7 +148,7 @@ class Schedule1WriteServiceTest {
             new BigDecimal("8000"),
             null,
             null),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 139, new BigDecimal("77"), null, USER);
@@ -162,7 +167,7 @@ class Schedule1WriteServiceTest {
                 MILL,
                 YEAR,
                 request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never()).upsertFixedDetail(anyInt(), anyInt(), any(), any(), anyString());
@@ -180,7 +185,7 @@ class Schedule1WriteServiceTest {
                 MILL,
                 YEAR,
                 request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
 
     verify(repository, never()).bumpRevision(anyInt(), anyInt(), anyString(), anyString());
@@ -199,14 +204,16 @@ class Schedule1WriteServiceTest {
                 MILL,
                 YEAR,
                 request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
   }
 
   @Test
   void delete_notDraft_throwsNotEditable() {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("S"));
-    assertThrows(ScheduleNotEditableException.class, () -> service.deleteSchedule1(MILL, YEAR));
+    assertThrows(
+        ScheduleNotEditableException.class,
+        () -> service.deleteSchedule1(MILL, YEAR, CallerRights.SUBMITTER));
     verify(repository, never()).deleteSchedule(anyInt());
   }
 
@@ -216,7 +223,7 @@ class Schedule1WriteServiceTest {
     when(repository.findSummary(MILL, YEAR, "1"))
         .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, null, "c", 1)));
 
-    assertTrue(service.deleteSchedule1(MILL, YEAR));
+    assertTrue(service.deleteSchedule1(MILL, YEAR, CallerRights.SUBMITTER));
 
     verify(repository).deleteSchedule(SUMMARY_ID);
     // DELETE must take the LOCKING status read, as Schedule 2's does: without it a delete racing a
@@ -236,7 +243,7 @@ class Schedule1WriteServiceTest {
     when(repository.findTrackStatusForUpdate(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findSummary(MILL, YEAR, "1")).thenReturn(Optional.empty());
 
-    assertFalse(service.deleteSchedule1(MILL, YEAR));
+    assertFalse(service.deleteSchedule1(MILL, YEAR, CallerRights.SUBMITTER));
 
     verify(repository, never()).deleteSchedule(anyInt());
   }
@@ -261,7 +268,11 @@ class Schedule1WriteServiceTest {
         .thenReturn(new Schedule1Sources(null, null, null));
 
     service.saveSchedule1(
-        MILL, YEAR, request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)), true, USER);
+        MILL,
+        YEAR,
+        request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).insertSummary(eq(MILL), eq(YEAR), anyString(), eq(USER));
     verify(repository).bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER));
@@ -280,7 +291,7 @@ class Schedule1WriteServiceTest {
                 MILL,
                 YEAR,
                 request(0, new LineItemInput(12, new BigDecimal("2000"), 60000)),
-                true,
+                CallerRights.SUBMITTER,
                 USER));
     verify(repository, never()).insertSummary(anyLong(), anyInt(), anyString(), anyString());
   }
@@ -305,7 +316,7 @@ class Schedule1WriteServiceTest {
             new BigDecimal("8000"),
             null,
             null),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).bumpRevision(eq(SUMMARY_ID), eq(0), anyString(), eq(USER));
@@ -320,7 +331,9 @@ class Schedule1WriteServiceTest {
         .when(repository)
         .deleteSchedule(SUMMARY_ID);
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.deleteSchedule1(MILL, YEAR));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () -> service.deleteSchedule1(MILL, YEAR, CallerRights.SUBMITTER));
   }
 
   @Test
@@ -334,7 +347,7 @@ class Schedule1WriteServiceTest {
         MILL,
         YEAR,
         new Schedule1Request(0, "c", null, null, new BigDecimal("8000"), null, null),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).upsertFixedDetail(eq(SUMMARY_ID), eq(19), any(), eq(null), eq(USER));
@@ -362,7 +375,7 @@ class Schedule1WriteServiceTest {
             null,
             null,
             null),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository, never())
@@ -400,7 +413,7 @@ class Schedule1WriteServiceTest {
             null,
             null,
             null),
-        true,
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).upsertFixedDetail(SUMMARY_ID, 12, null, null, USER);

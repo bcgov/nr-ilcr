@@ -144,12 +144,12 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
 
   /**
    * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
-   * per-mill/year report-status row — every WRITE path's Draft gate uses this; the read path keeps
-   * the unlocked variant (Schedule 5's {@code findTrackStatusForUpdate}). Holding the row for the
-   * whole write transaction makes the Draft gate binding rather than advisory: a transition that
-   * commits between the gate and the INSERT/UPDATE/DELETE it guards cannot slip in. Must run inside
-   * the write {@code @Transactional}. A mill/year with no status row locks nothing and returns
-   * empty, which the gate already answers as 409.
+   * per-mill/year report-status row — every WRITE path's editability gate uses this; the read path
+   * keeps the unlocked variant (Schedule 5's {@code findTrackStatusForUpdate}). Holding the row for
+   * the whole write transaction makes the editability gate binding rather than advisory: a
+   * transition that commits between the gate and the INSERT/UPDATE/DELETE it guards cannot slip in.
+   * Must run inside the write {@code @Transactional}. A mill/year with no status row locks nothing
+   * and returns empty, which the gate already answers as 409.
    */
   @Query(
       """

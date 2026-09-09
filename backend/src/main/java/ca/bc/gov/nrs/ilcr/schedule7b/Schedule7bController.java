@@ -8,7 +8,8 @@ import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -40,7 +41,7 @@ public class Schedule7bController implements Schedule7bApi {
 
   private final MillContextService millContextService;
   private final Schedule7bService schedule7bService;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
 
   /**
@@ -48,17 +49,17 @@ public class Schedule7bController implements Schedule7bApi {
    *
    * @param millContextService the single owner of mill/year validation (AD-4)
    * @param schedule7bService the domain service owning derivation, gates and check-status
-   * @param permissions the central role → action map used by {@code @PreAuthorize} (AD-7)
+   * @param editability the role×status editability resolver
    * @param messageSource the legacy message bundle, for verbatim success text (AD-8)
    */
   public Schedule7bController(
       MillContextService millContextService,
       Schedule7bService schedule7bService,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource) {
     this.millContextService = millContextService;
     this.schedule7bService = schedule7bService;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
   }
 
@@ -67,9 +68,9 @@ public class Schedule7bController implements Schedule7bApi {
   public ResponseEntity<Schedule7bResponse> getSchedule7b(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule7bService.getSchedule7b(context.millId(), context.year(), callerMayEdit));
+        schedule7bService.getSchedule7b(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -79,7 +80,11 @@ public class Schedule7bController implements Schedule7bApi {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule7bResponse doc =
         schedule7bService.addCulvert(
-            context.millId(), context.year(), request, true, authentication.getName());
+            context.millId(),
+            context.year(),
+            request,
+            editability.forCaller(authentication),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -90,7 +95,12 @@ public class Schedule7bController implements Schedule7bApi {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule7bResponse doc =
         schedule7bService.updateCulvert(
-            context.millId(), context.year(), id, request, true, authentication.getName());
+            context.millId(),
+            context.year(),
+            id,
+            request,
+            editability.forCaller(authentication),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -101,7 +111,11 @@ public class Schedule7bController implements Schedule7bApi {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule7bResponse doc =
         schedule7bService.saveAllCulverts(
-            context.millId(), context.year(), request, true, authentication.getName());
+            context.millId(),
+            context.year(),
+            request,
+            editability.forCaller(authentication),
+            authentication.getName());
     return ResponseEntity.ok(doc.withMessage(message(MSG_SAVED)));
   }
 
@@ -111,7 +125,8 @@ public class Schedule7bController implements Schedule7bApi {
       long id, String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
     Schedule7bResponse doc =
-        schedule7bService.deleteCulvert(context.millId(), context.year(), id, true);
+        schedule7bService.deleteCulvert(
+            context.millId(), context.year(), id, editability.forCaller(authentication));
     // SUC-002 unconditionally — including when that was the last culvert. Legacy 7B's
     // Schedule7bMB.update() (managedBean/Schedule7bMB.java:216-230) always emits the key it was
     // passed; the empty-list branch that swaps in anyDataToSaveInfoMsg exists ONLY in

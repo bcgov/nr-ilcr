@@ -141,8 +141,8 @@ public interface Schedule5Api {
 
   /**
    * Check Status for Schedule 5 (S06, S20) — read-only readiness validation. Mutates nothing, takes
-   * NO request body, and is NOT Draft-gated: {@code VIEW_SCHEDULE} only, the 2.6 precedent, so a
-   * Submitted mill can still be checked.
+   * NO request body, and is NOT editability-gated: {@code VIEW_SCHEDULE} only, the 2.6 precedent,
+   * so a Submitted mill can still be checked.
    *
    * <p>Returns either {@code MET} with the single schedule banner and NO per-camp results
    * (deviation (C) — legacy's all-met branch emits {@code scheduleRequirementsMetMsg} alone,

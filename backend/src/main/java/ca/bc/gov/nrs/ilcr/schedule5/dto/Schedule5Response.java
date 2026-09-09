@@ -17,9 +17,11 @@ import java.util.List;
  * Schedule 5 is summary-less like Schedules 4 and 6.
  *
  * <p>{@code trackStatus} = {@code ILCR_MILL_REPORT_STATUS_CODE} — the Schedules 1-10 track, never
- * the silviculture track (AD-9). {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND
- * {@code trackStatus == "D"}, computed server-side and server-authoritative (AD-5/AD-9, S19); a
- * non-Draft mill still lists every camp with {@code editable:false}.
+ * the silviculture track (AD-9). {@code editable} = the caller holds {@code EDIT_SCHEDULE} AND the
+ * role×status matrix admits it at {@code trackStatus} — submitter at Draft, administrator at
+ * Submitted or Verified ({@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability}) — computed
+ * server-side and server-authoritative (AD-5/AD-9, S19); a mill a given caller may not edit still
+ * lists every camp with {@code editable:false}.
  *
  * <p><strong>There are no document-level totals.</strong> Every total is per camp — the legacy
  * screen has no cross-camp grand total ({@code schedule5.xhtml:50-119}) — and there is no top-level
