@@ -1018,11 +1018,12 @@ public class Schedule8Service {
       String trackStatus, Schedule8Repository.SampleSnapshotRow sample) {
     OriginalValues.Builder builder = originalValues.forTrack(trackStatus);
     if (sample == null) {
-      // Guarded once rather than per field. Nineteen `sample == null ? null : ...` ternaries said
-      // the same thing nineteen times and pushed this method past the cognitive-complexity limit;
-      // the result is identical because `put` ignores a null submitted value, and an EMPTY map is
-      // still the right answer here — it tells the page to evaluate the added-since-submission
-      // branch for every field, which a null map (Draft) would not.
+      // Guarded once here rather than once per field: repeating the null check on all nineteen
+      // fields said the same thing nineteen times and pushed this method past the
+      // cognitive-complexity limit. The result is identical, because the builder already ignores a
+      // null submitted value. An EMPTY map is the right answer for a sample with nothing on file —
+      // it tells the page to evaluate the added-since-submission branch for every field, which a
+      // null map (the Draft answer) would not.
       return builder.build();
     }
     return builder
