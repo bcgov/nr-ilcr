@@ -65,6 +65,7 @@ After applying to an already-running backend, **evict the app's reference-data c
 | `sch2/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH2-001` | Two dedicated Draft mill-years for the BR-12 / #359 arms. See the note below — the extract had no free anchor left. |
 | `sch11/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH11-001` | Two dedicated Draft mill-years for the BR-12 / #359 arms. Same reason. |
 | `sch4/unsaved-check-anchors.sql` (+ `.teardown.sql`) | `UC-SCH4-001` | One dedicated Draft mill-year for the BR-12 / #359 scenario. Same reason, and Schedule 4's preflight is the strictest — it enforces one anchor per mutating scenario *and* "used in at most one feature file". |
+| `common/mock-submitter-associations.sql` (+ `.teardown.sql`) | ALL (Home) | **Not an anchor — an identity.** The extract's `ILCR_MILL_USER_XREF` associations all belong to real IDIR users, and a local run has none: security is off, so the caller is the mock principal with the synthetic GUID `CANONSUBMITTER…`. Since Story 5.5 `listMills` fail-closes an unassociated submitter to an EMPTY list, so Home offers a mock submitter no mill and no schedule is reachable. Story 16.1 made that fatal — an admin is now read-only at Draft, so neither mock user can enter data. Adds one `ILCR_USER` row plus one active association per mill, set-based over `ILCR_MILL_STATUS_XREF`, so it needs no re-pick after a re-extract. Associating *every* mill is deliberate: the submitter's scoped list is then the same SET as the admin's (verified both ways with `MINUS`), so the dropdown is unchanged while the query behind it becomes the real scoped one. Pointing `ilcr.security.mock-user-guid` at a real extract GUID was rejected — real directory identifiers must not be committed, and they don't exist in CI. |
 
 > **Why three patches exist purely to create ANCHORS (2026-08-27) — read this before adding a fourth.**
 > The extract has run out of usable mill-years, and the numbers are worth knowing before you go hunting:
@@ -89,8 +90,9 @@ After applying to an already-running backend, **evict the app's reference-data c
 > (caught by Schedule 4's preflight), and the cross-domain guard itself missed 62 of the 119 keys, twice,
 > for those two reasons.
 
-**All five patches above are also folded into `backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql`**
-(as of 2026-08-28), so the same anchors exist in CI. `preflight/ci-seed-parity.setup.ts` keeps them in step.
+**All six patches above are also folded into `backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql`**
+(the five anchor patches as of 2026-08-28, the identity patch 2026-09-09), so the same anchors — and the
+same mock-submitter GUID — exist in CI. `preflight/ci-seed-parity.setup.ts` keeps them in step.
 The one thing NOT transcribed is the eleven `ILCR_REPORT_CATEGORY` rows per anchor: the real Oracle's
 composite FK is what makes them necessary, and the Flyway test schema has no such FK (that omission is
 recorded in the seed's own header).
