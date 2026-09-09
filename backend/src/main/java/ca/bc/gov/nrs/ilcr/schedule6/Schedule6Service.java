@@ -21,6 +21,7 @@ import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6CodeLists;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6Response;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -60,7 +61,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule6Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String AREA_TYPE_TFL = "TFL";
 
   // TSA_NUMBER VARCHAR2(2) (V31 DDL, delivery-verified) — the TSA-branch width guard in classify().
@@ -89,23 +89,23 @@ public class Schedule6Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (from the controller)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (from the controller)
    * @return the read document (never null; {@code roadRecords: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule6Response getSchedule6(long millId, int year, boolean callerMayEdit) {
+  public Schedule6Response getSchedule6(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their Draft gate just proved (same transaction) instead of re-running the
+   * {@code D} their editability gate just proved (same transaction) instead of re-running the
    * track-status query on every mutation.
    */
   private Schedule6Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     List<RoadRecordRow> rows = repository.findRoadRecords(millId, year);
     Map<Integer, CostDetailRow> costByRecord = costDetailsByRecord(millId, year);
@@ -221,7 +221,8 @@ public class Schedule6Service {
 
   // ===============================================================================================
   // Write path (Story 8.2) — add/edit a road record, save the general comment. Each method is one
-  // transaction: a persistence failure rolls back and surfaces as 500/ERR-004. The Draft gate keys
+  // transaction: a persistence failure rolls back and surfaces as 500/ERR-004. The editability gate
+  // keys
   // on the Schedules 1-10 track (AD-9) via the existing findTrackStatus — never the silviculture
   // track. Costs/volumes/comments are NEVER logged (AD-11).
   // ===============================================================================================
@@ -232,19 +233,19 @@ public class Schedule6Service {
    * CURRENT general comment (BR-09 replication invariant), and when the only existing row is the
    * general-comment placeholder the record is written ONTO that row — its id and {@code ENTRY_*}
    * survive, mirroring {@code Schedule6DAO.java:268–278} — with its item-69 detail created by the
-   * upsert. Draft-gated (deviation (a)).
+   * upsert. editability-gated (deviation (a)).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered record fields
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document (the new record included; totals refreshed)
    */
   @Transactional
   public Schedule6Response addRecord(
-      long millId, int year, RoadRecordRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, RoadRecordRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     Classification classification =
         classify(request.areaType(), request.tflNumber(), request.supplyBlock());
     try {
@@ -286,7 +287,7 @@ public class Schedule6Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -307,14 +308,14 @@ public class Schedule6Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request every served record plus the general comment
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document
    */
   @Transactional
   public Schedule6Response saveDocument(
-      long millId, int year, Schedule6SaveRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, Schedule6SaveRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     String comments =
         StringUtils.isBlank(request.generalComments()) ? null : request.generalComments();
     try {
@@ -401,7 +402,7 @@ public class Schedule6Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -430,7 +431,7 @@ public class Schedule6Service {
    *
    * <p>Ported from legacy {@code Schedule6MB.remove} :208-218 → {@code Schedule6DAO.saveSchedule}
    * :288-310. Carries NO revision token: legacy's row Delete had none, matching the
-   * general-comments precedent (deviation (c2)). Draft-gated (deviation (a)).
+   * general-comments precedent (deviation (c2)). editability-gated (deviation (a)).
    *
    * <p><strong>The BR-09 delete-side re-insert is load-bearing.</strong> The schedule-level general
    * comment is stored replicated on every cat-6 row, so deleting the LAST road record would take
@@ -441,15 +442,14 @@ public class Schedule6Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param recordId the road record id to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
-   *     editable})
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
    * @param user the acting user id (audit columns on the re-inserted placeholder)
    * @return the recomputed aggregate document
    */
   @Transactional
   public Schedule6Response deleteRecord(
-      long millId, int year, int recordId, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, int recordId, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       // One read answers all three questions below (the storedById refactor already applied to
       // saveDocument, :328-329, back-applied here): this used to call findRoadRecords twice (once
@@ -505,21 +505,22 @@ public class Schedule6Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * The Draft gate for every write: the Schedules 1–10 track must be {@code D} (else 409). Keys on
-   * {@code ILCR_MILL_REPORT_STATUS_CODE} via the existing {@code findTrackStatus} — never the
-   * silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only
+   * The editability gate for every write: the Schedules 1–10 track must be {@code D} (else 409).
+   * Keys on {@code ILCR_MILL_REPORT_STATUS_CODE} via the existing {@code findTrackStatus} — never
+   * the silviculture track (AD-9). Recorded hardening deviation (a): legacy gates in the UI only
    * ({@code Schedule6MB.java:62} TODO). Context (400/404/409-mill) is already validated by the
    * controller before this runs (AD-4).
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -619,7 +620,8 @@ public class Schedule6Service {
   // Schedule6CheckStatus + Schedule6MB.checkStatus() :139-180 including the pinned quirks: the
   // missing-cost line is mislabelled "TSA or TFL (Cost $)" (:172), cost==0 is MET (null-only check,
   // D2 precedent), volume is never checked (commented out in legacy :19), and the schedule-level
-  // pass ignores the area-type flag (isScheduleValid :26-55). VIEW-gated, not Draft-gated (2.6
+  // pass ignores the area-type flag (isScheduleValid :26-55). VIEW-gated, not editability-gated
+  // (2.6
   // precedent); mutates nothing; no status transition (transitions are Epics 15-18).
   // ===============================================================================================
 

@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostSaveRequest;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.OtherCostsDocument;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -71,7 +72,7 @@ class Schedule1OtherCostsServiceTest {
             new OtherCostDetailRow(5051, "Existing Row A", 3000, new BigDecimal("5000")),
             new OtherCostDetailRow(5052, "Existing Row B", null, new BigDecimal("5000"))));
 
-    OtherCostsDocument doc = service.getOtherCostsDocument(MILL, YEAR, true);
+    OtherCostsDocument doc = service.getOtherCostsDocument(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertEquals(0, new BigDecimal("5000").compareTo(doc.volume()));
     assertEquals(3000L, doc.costSubtotal());
@@ -87,14 +88,15 @@ class Schedule1OtherCostsServiceTest {
   void getDocument_editableFalseWhenNotDraft() {
     stubContext("S");
     stubRows(new BigDecimal("5000"), List.of());
-    assertFalse(service.getOtherCostsDocument(MILL, YEAR, true).editable());
+    assertFalse(service.getOtherCostsDocument(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void add_inheritsSharedVolume_andPersists() {
     stubContext("D");
     stubRows(new BigDecimal("6000"), List.of());
-    service.addOtherCost(MILL, YEAR, new OtherCostRequest("New Row", 1200), USER);
+    service.addOtherCost(
+        MILL, YEAR, new OtherCostRequest("New Row", 1200), CallerRights.SUBMITTER, USER);
     // BR-06: the new row inherits the shared Other-Costs volume (6000).
     verify(repository).insertOtherCost(SUMMARY, "New Row", 1200, new BigDecimal("6000"), USER);
   }
@@ -103,7 +105,8 @@ class Schedule1OtherCostsServiceTest {
   void add_nullCostAccepted() {
     stubContext("D");
     stubRows(new BigDecimal("6000"), List.of());
-    service.addOtherCost(MILL, YEAR, new OtherCostRequest("No cost row", null), USER);
+    service.addOtherCost(
+        MILL, YEAR, new OtherCostRequest("No cost row", null), CallerRights.SUBMITTER, USER);
     verify(repository).insertOtherCost(SUMMARY, "No cost row", null, new BigDecimal("6000"), USER);
   }
 
@@ -112,7 +115,8 @@ class Schedule1OtherCostsServiceTest {
     stubContext("S");
     OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(
-        ScheduleNotEditableException.class, () -> service.addOtherCost(MILL, YEAR, request, USER));
+        ScheduleNotEditableException.class,
+        () -> service.addOtherCost(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -122,7 +126,7 @@ class Schedule1OtherCostsServiceTest {
     OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(
         OtherCostNotFoundException.class,
-        () -> service.updateOtherCost(MILL, YEAR, 999999, request, USER));
+        () -> service.updateOtherCost(MILL, YEAR, 999999, request, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -130,7 +134,8 @@ class Schedule1OtherCostsServiceTest {
     stubContext("D");
     when(repository.deleteOtherCost(999999, SUMMARY)).thenReturn(0);
     assertThrows(
-        OtherCostNotFoundException.class, () -> service.deleteOtherCost(MILL, YEAR, 999999));
+        OtherCostNotFoundException.class,
+        () -> service.deleteOtherCost(MILL, YEAR, 999999, CallerRights.SUBMITTER));
   }
 
   @Test
@@ -139,7 +144,7 @@ class Schedule1OtherCostsServiceTest {
     // read-only.
     stubContext("D");
     stubRows(new BigDecimal("5000"), List.of());
-    assertFalse(service.getOtherCostsDocument(MILL, YEAR, false).editable());
+    assertFalse(service.getOtherCostsDocument(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -153,7 +158,8 @@ class Schedule1OtherCostsServiceTest {
 
     OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(
-        ScheduleNotSavedException.class, () -> service.addOtherCost(MILL, YEAR, request, USER));
+        ScheduleNotSavedException.class,
+        () -> service.addOtherCost(MILL, YEAR, request, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -165,7 +171,8 @@ class Schedule1OtherCostsServiceTest {
     when(repository.updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER)).thenReturn(1);
 
     OtherCostsDocument doc =
-        service.updateOtherCost(MILL, YEAR, 5051, new OtherCostRequest("Row A+", 3200), USER);
+        service.updateOtherCost(
+            MILL, YEAR, 5051, new OtherCostRequest("Row A+", 3200), CallerRights.SUBMITTER, USER);
 
     assertEquals(1, doc.count());
     assertTrue(doc.editable());
@@ -188,6 +195,7 @@ class Schedule1OtherCostsServiceTest {
         List.of(
             new OtherCostSaveRequest.Row(5051, "Row A+", 3200),
             new OtherCostSaveRequest.Row(null, "Fresh", 500)),
+        CallerRights.SUBMITTER,
         USER);
 
     verify(repository).updateOtherCost(5051, SUMMARY, "Row A+", 3200, USER);
@@ -206,7 +214,8 @@ class Schedule1OtherCostsServiceTest {
     // insert.
     List<OtherCostSaveRequest.Row> rows = List.of(new OtherCostSaveRequest.Row(999999, "Ghost", 1));
     assertThrows(
-        OtherCostNotFoundException.class, () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+        OtherCostNotFoundException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -221,7 +230,8 @@ class Schedule1OtherCostsServiceTest {
     List<OtherCostSaveRequest.Row> rows =
         List.of(new OtherCostSaveRequest.Row(5051, "Row A+", 3200));
     assertThrows(
-        ScheduleNotSavedException.class, () -> service.saveOtherCosts(MILL, YEAR, rows, USER));
+        ScheduleNotSavedException.class,
+        () -> service.saveOtherCosts(MILL, YEAR, rows, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -233,7 +243,7 @@ class Schedule1OtherCostsServiceTest {
     OtherCostRequest request = new OtherCostRequest("x", 1);
     assertThrows(
         ScheduleNotSavedException.class,
-        () -> service.updateOtherCost(MILL, YEAR, 5051, request, USER));
+        () -> service.updateOtherCost(MILL, YEAR, 5051, request, CallerRights.SUBMITTER, USER));
   }
 
   @Test
@@ -242,7 +252,7 @@ class Schedule1OtherCostsServiceTest {
     stubRows(new BigDecimal("5000"), List.of());
     when(repository.deleteOtherCost(5051, SUMMARY)).thenReturn(1);
 
-    OtherCostsDocument doc = service.deleteOtherCost(MILL, YEAR, 5051);
+    OtherCostsDocument doc = service.deleteOtherCost(MILL, YEAR, 5051, CallerRights.SUBMITTER);
 
     assertEquals(0, doc.count());
     assertTrue(doc.editable());
@@ -255,6 +265,8 @@ class Schedule1OtherCostsServiceTest {
     when(repository.deleteOtherCost(5051, SUMMARY))
         .thenThrow(new DataIntegrityViolationException("boom"));
 
-    assertThrows(ScheduleNotSavedException.class, () -> service.deleteOtherCost(MILL, YEAR, 5051));
+    assertThrows(
+        ScheduleNotSavedException.class,
+        () -> service.deleteOtherCost(MILL, YEAR, 5051, CallerRights.SUBMITTER));
   }
 }

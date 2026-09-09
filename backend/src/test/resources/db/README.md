@@ -159,6 +159,27 @@ sense against this directory, `mvn clean` before believing it.
    | Schedule 10 write         | **717–723**     | `V20260818`                                  |
    | Schedule 6 correction     | **724–726**     | `V20260822`                                  |
    | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
+   | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
+   | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
+
+   **Editability matrix, per-schedule (`R__51`, Story 16.1 review follow-up)** — one mill per
+   authorization suite, `737`–`746`, each 1–10 `'V'` and silviculture `'D'` so a gate reading the wrong
+   track's column sees Draft and the test fails rather than passing vacuously. It exists because
+   `R__50` reached only Schedules 5 and 11: everywhere else ADMIN was proven only in the *refused*
+   direction, which cannot distinguish a schedule wired to the wrong status column, or a DELETE still
+   on the pre-16.1 Draft-only literal, from a correct one. Delete targets, each verified unused across
+   `db/` **and** `db-e2e/` and each below its table's sequence start: `ILCR_REPORT_SUMMARY`
+   **`1280–1282`** (the whole-document deletes for Schedules 1/2/3 — seeded rather than written by the
+   test, so the delete arm cannot collide on `REVISION_COUNT` with the sibling PUT and read a stale-revision
+   409 as a gate refusal), `TRANSPORTATION_REPORT` **`8090`**, `ROAD_MAINTENANCE_REPORT` **`8410`**,
+   `BRIDGE_REPORT` **`7660`**, `CULVERT_REPORT` **`7880`**, `TREE_TO_TRUCK_REPORT` **`8990`**,
+   `CONTRACTUAL_WORK_REPORT` **`9195`**, `ROAD_CONSTRUCTION_REPRT` **`8990`**. It adds NO table, NO code
+   row and NO cost item — every code value it uses is already in the shared catalogues. Every `INSERT`
+   in it is **guarded on its own primary key** (`SELECT … FROM DUAL WHERE NOT EXISTS (…)`, i.e. `MERGE
+   … WHEN NOT MATCHED`), so editing the file — which changes its checksum and makes Flyway re-apply it —
+   cannot fail with `ORA-00001` against a database that already holds `737`–`746`. Convention 1b's
+   reused-container caveat still stands: the guard stops a *re-run* from erroring, it does not restore
+   rows a previous run's admin writes mutated.
 
    **Schedule 5 sub-pages (`V20260814`, Story 7.4)** — a **timestamp version**, per the historical
    note in convention 1a and the `V20260807` precedent. Seeds the first item-62 / item-68 rows the suite has ever held, on its
@@ -252,6 +273,52 @@ sense against this directory, `mvn clean` before believing it.
    `ROAD_CONSTRUCTION_REPRT_ID` **`8900–8909`**, `ROAD_CONSTRUCTION_REPRT_DTL_ID`
    **`8910–8919` plus `8940`**, `ILCR_COST_REPORT_DETAIL_ID` **`8920–8932`** (all below the sequence
    starts). Read fixtures reuse `516` (closed → 409) and unseeded `999999` (→ 404) from `V2`.
+
+### `R__50_editability_matrix_admin_write_fixtures.sql` — the admin-write arm (Story 16.1)
+
+**Read this before reusing any non-Draft fixture in a write test.** Every write-gate fixture that
+predates Story 16.1 rests on an assumption that story invalidated: *"a non-Draft write mutates
+nothing."* It is stated outright in `Schedule11WriteAuthorizationIT` — the authorized proof POSTs to
+615/`'S'` so "the service's Draft gate rejects it 409 WITHOUT mutating anything — no fixture churn."
+That was sound while only the SUBMITTER row of the editability matrix was enforced. It is not sound
+for an **administrator**, who now legitimately writes at `'S'` and `'V'`. Point an admin write at a
+shared refusal fixture and it will succeed and corrupt a sibling suite's read assertions.
+
+So the admin arm gets its **own** mills, **734–736**, and every pre-existing non-Draft fixture is
+deliberately left refusing — 623 (`V11:37-38`), 583 (`V23:38`), 593 (`V24:33`), 725
+(`V20260822:166`), 517 (`V13:92`, `V31:92`), 615, 671, 705. They now prove SUBMITTER-at-non-Draft,
+which is still a 409, and each is read or asserted by another suite.
+
+| mill | 1–10 track | silviculture | owned by |
+| --- | --- | --- | --- |
+| 734 | **`V`** | `D` | `Schedule5WriteAuthorizationIT` — admin POST/PUT/DELETE at Verified |
+| 735 | `D` | **`S`** | `Schedule11WriteAuthorizationIT` — admin write on the silviculture track |
+| 736 | `D` | **`V`** | `Schedule11WriteAuthorizationIT` — admin write on the silviculture track |
+
+**The status pairs are the point, not decoration.** Each mill carries the status under test on ONE
+track and `'D'` on the other, so a gate that reads the wrong column sees Draft, refuses the
+administrator, and the test fails. Legacy duplicated `disableUserInput()` verbatim per track and
+changed only the getter it read, so that is exactly the mistake worth catching. Mill 735 is
+deliberately the inverse of `V21`'s mill 615.
+
+The 1–10 track's admin@**Submitted** case is not here: mills **676** (Schedule 5, `V20260807`) and
+**706** (Schedule 9, `V20260815`) already carry `'S'` and are already class-owned, so 16.1 reused
+them rather than seeding a fourth mill.
+
+**Claimed:** mills **734–736**, `CAMP_REPORT_ID` **8250–8251**, `BASIC_SILVICULTURE_REPORT_ID`
+**9401–9402** — the latter clear of the db-e2e anchor seed's silviculture reports (9351–9399) and,
+like the former, below the `ILCR_REPORT_COMMON_SEQ` start (9500) that both write paths draw new ids
+from. No cost-detail children: the subject is the gate, not child-first delete ordering.
+
+**Why `R__50` and not `V<n>`.** Story 16.1's own task text says to claim "the next free `V<n>`" —
+that instruction predates the 2026-08-20 decision and convention 1a above. A new versioned file
+carrying `INSERT`s now fails `FlywayMigrationConventionTest.newVersionedMigrationsCarryNoSeedData`,
+and adding this file to `grandfathered-seeded-versions.txt` to get around that is precisely the
+escape hatch the convention exists to close. Prefix `50` is in the 10–80 data band and sorts
+**before** `R__70`, which associates the canonical submitter to every `ILCR_MILL_STATUS_XREF` row
+with a set-based insert — so these mills must already exist when it runs. (An `ILCR_ADMIN` bypasses
+mill scope outright, so the association is not what the admin tests need; it is what keeps each
+test's *submitter* arm reaching the editability gate rather than a mill-scope 403.)
 
 ### `V20260818__seed_schedule10_write_fixtures.sql` — Schedule 10 write path (Story 11.2)
 

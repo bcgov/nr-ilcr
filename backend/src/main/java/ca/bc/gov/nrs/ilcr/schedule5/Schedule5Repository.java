@@ -180,9 +180,9 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
 
   /**
    * Same as {@link #findTrackStatus} but takes an Oracle {@code FOR UPDATE} row lock on the
-   * per-mill/year report-status row. Every WRITE path's Draft gate uses this one; the read path
-   * keeps the unlocked variant. Copied from Schedule 2, which introduced it for the same reason
-   * ({@code Schedule2Repository.java:90-106}).
+   * per-mill/year report-status row. Every WRITE path's editability gate uses this one; the read
+   * path keeps the unlocked variant. Copied from Schedule 2, which introduced it for the same
+   * reason ({@code Schedule2Repository.java:90-106}).
    *
    * <p><strong>It is the concurrency backstop that Schedule 5's schema cannot provide.</strong>
    * This project owns no DDL on {@code THE} — there are no {@code src/main/resources/db/migration}
@@ -196,8 +196,8 @@ public interface Schedule5Repository extends Repository<CampReportEntity, Intege
    * <ul>
    *   <li>BR-02's count-then-insert ({@code Schedule5Service.addCamp}) — two concurrent creates of
    *       the same name can no longer both count zero and both commit;
-   *   <li>the Draft gate itself — the status this returns cannot transition between the gate and
-   *       the INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than
+   *   <li>the editability gate itself — the status this returns cannot transition between the gate
+   *       and the INSERT/UPDATE/DELETE it guards, which is what made the gate advisory rather than
    *       binding;
    *   <li>{@link #upsertCostDetail}'s update-then-insert — two concurrent first-edits of one camp
    *       can no longer both find zero rows and both insert a row for the same item id, which is

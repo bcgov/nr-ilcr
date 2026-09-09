@@ -20,6 +20,7 @@ import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -62,7 +63,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule5Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String INDICATOR_YES = "Y";
   private static final String INDICATOR_NO = "N";
   private static final String MSG_SCHEDULE_MET = "scheduleRequirementsMetMsg";
@@ -156,23 +156,24 @@ public class Schedule5Service {
    *
    * @param millId the validated mill id
    * @param year the validated reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (AD-9: combined with the
-   *     Draft track status to decide {@code editable}; the server is the sole authority)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (AD-9: combined with the Draft
+   *     track status to decide {@code editable}; the server is the sole authority)
    * @return the document — {@code camps: []} when the mill/year stores none
    */
   @Transactional(readOnly = true)
-  public Schedule5Response getSchedule5(long millId, int year, boolean callerMayEdit) {
+  public Schedule5Response getSchedule5(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
    * Assemble the served document for a KNOWN track status. Story 7.2 reuses this with the {@code D}
-   * its Draft gate just proved (same transaction) rather than re-running the track-status query.
+   * its editability gate just proved (same transaction) rather than re-running the track-status
+   * query.
    */
   private Schedule5Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+      long millId, int year, String trackStatus, EditableStatuses caller) {
+    boolean editable = caller.allows(trackStatus);
 
     // Camps FIRST, then their details. The two reads are separate statements and Oracle READ
     // COMMITTED gives each its own snapshot, so a camp committed between them is visible to one and
@@ -561,15 +562,18 @@ public class Schedule5Service {
   }
 
   // ===============================================================================================
-  // Writes (Story 7.2). Each is ONE transaction whose FIRST statement is the Draft gate, and each
-  // ends by returning the recomputed document built from the "D" that gate just proved rather than
+  // Writes (Story 7.2). Each is ONE transaction whose FIRST statement is the editability gate, and
+  // each
+  // ends by returning the recomputed document built from the status that gate just proved rather
+  // than
   // re-querying the track (the Schedule 6/11 idiom). The success message is attached by the
   // controller via Schedule5Response.withMessage (AD-8), so the service stays message-free. Legacy
   // had NO concurrency control, NO server-side edit gate, and swallowed every failure:
   // saveCampReport sets REVISION_COUNT = 0 and never increments it (Schedule5DAO.java:363, 649),
   // save()/deleteExistingCamp() are protected only by the buttons' disabled= attribute, and the DAO
   // returns -1/false on any exception (:410-427, :557-569). The optimistic lock (deviation (K)),
-  // the Draft gate, and ScheduleNotSavedException (deviation (P)) are all ADDED here per the house
+  // the editability gate, and ScheduleNotSavedException (deviation (P)) are all ADDED here per the
+  // house
   // pattern — there is no legacy code to port for them. Costs and volumes are NEVER logged (AD-11)
   // — only mill/year/camp/item identifiers.
   // ===============================================================================================
@@ -588,21 +592,20 @@ public class Schedule5Service {
    * @param millId the mill id (context already validated by the controller, AD-4)
    * @param year the reporting year
    * @param request the entered camp fields
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code
-   *     editable})
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (for the echoed {@code editable})
    * @param user the acting user id (audit columns)
    * @return the recomputed document, the new camp included
    */
   @Transactional
   public Schedule5Response addCamp(
-      long millId, int year, CampRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, CampRequest request, EditableStatuses caller, String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     String campName = trimmedCampName(request);
     validateCostRanges(request);
     // BR-02 as a PRE-CHECK, not a caught constraint violation: nothing in delivery enforces
     // camp-name uniqueness (Task 1 gates (i)/(vi) — CAMP_REPORT has only its PK, the category FK
     // and eleven NOT NULL checks), so a duplicate would simply persist if this were left to the
-    // database. The pre-check is therefore check-then-act — but NOT a race: requireDraft above
+    // database. The pre-check is therefore check-then-act — but NOT a race: requireEditable above
     // holds
     // a FOR UPDATE lock on this mill/year's report-status row for the rest of this transaction, so
     // a
@@ -646,7 +649,7 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -663,14 +666,19 @@ public class Schedule5Service {
    * @param year the reporting year
    * @param campId the camp to edit
    * @param request the entered fields plus the required {@code revisionCount} token
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the recomputed document
    */
   @Transactional
   public Schedule5Response updateCamp(
-      long millId, int year, int campId, CampRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId,
+      int year,
+      int campId,
+      CampRequest request,
+      EditableStatuses caller,
+      String user) {
+    final String trackStatus = requireEditable(millId, year, caller);
     // Defence in depth for the AR11 token: the API's @Validated OnUpdate group already rejects a
     // null revisionCount as a clean 400, but this method unboxes it, so a direct caller that
     // bypassed the group would otherwise NPE into a 500. Never a coerced 409 (the Story 2.1
@@ -728,7 +736,7 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -747,12 +755,12 @@ public class Schedule5Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param campId the camp to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the recomputed document without the deleted camp
    */
   @Transactional
-  public Schedule5Response deleteCamp(long millId, int year, int campId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+  public Schedule5Response deleteCamp(long millId, int year, int campId, EditableStatuses caller) {
+    final String trackStatus = requireEditable(millId, year, caller);
     try {
       if (repository.countCamp(campId, millId, year) == 0) {
         throw new CampNotFoundException();
@@ -774,13 +782,13 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
-   * Check Status for Schedule 5 (S06, S20, BR-08) — read-only, mutates nothing, and NOT Draft-gated
-   * ({@code VIEW_SCHEDULE} only; the 2.6 precedent, {@code deferred-work.md:23}), so a Submitted
-   * mill can still be checked.
+   * Check Status for Schedule 5 (S06, S20, BR-08) — read-only, mutates nothing, and NOT
+   * editability-gated ({@code VIEW_SCHEDULE} only; the 2.6 precedent, {@code deferred-work.md:23}),
+   * so a Submitted mill can still be checked.
    *
    * <p>Camps are evaluated in {@code CAMP_REPORT_ID} order (7.1 deviation (c) — legacy iterates a
    * {@code HashMap} with no ORDER BY, {@code Schedule5DAO.java:58, 111-113}). A schedule passes iff
@@ -905,9 +913,9 @@ public class Schedule5Service {
   }
 
   /**
-   * The Draft gate for every write: the Schedules 1–10 track must be {@code D}, else 409 (BR-06,
-   * AD-9). Never reads the silviculture track. The mill/year context (400/404/409) is already
-   * validated by the controller before this runs (AD-4).
+   * The editability gate for every write: the caller must be permitted to write at the Schedules
+   * 1–10 track's current status, else 409 (BR-06, AD-9). Never reads the silviculture track. The
+   * mill/year context (400/404/409) is already validated by the controller before this runs (AD-4).
    *
    * <p><strong>The read is {@code FOR UPDATE}, and that is load-bearing rather than
    * defensive.</strong> An unlocked {@code SELECT} makes this gate advisory: under Oracle READ
@@ -936,11 +944,12 @@ public class Schedule5Service {
    * deleteExistingCamp()} are guarded only by the {@code disabled=} attribute on the buttons
    * ({@code schedule5.xhtml:69, 92, 115, 159, 182, 211, 234}), which a crafted post ignores.
    */
-  private void requireDraft(long millId, int year) {
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatusForUpdate(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /**
@@ -1134,27 +1143,26 @@ public class Schedule5Service {
    * @param year the validated reporting year
    * @param campId the parent camp
    * @param page which sub-page
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the sub-page document
    * @throws CampNotFoundException when the camp is unknown or belongs to another mill/year
    */
   @Transactional(readOnly = true)
   public SubPageDocument getSubPage(
-      long millId, int year, int campId, SubPage page, boolean callerMayEdit) {
+      long millId, int year, int campId, SubPage page, EditableStatuses caller) {
     CampRow camp = requireCamp(millId, year, campId);
-    return buildSubPageDocument(
-        millId, year, camp, page, subPageEditable(millId, year, callerMayEdit));
+    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
   }
 
   /**
    * The served {@code editable} flag, derived the same way on the read AND on every write echo
-   * (AD-9: server-authoritative). The writes could hardcode {@code callerMayEdit} because {@code
-   * requireDraft} just proved the Draft half under its lock — but that would couple the echoed flag
-   * to the gate staying exactly as strict as it is today; deriving it here keeps the invariant
+   * (AD-9: server-authoritative). The writes could hardcode {@code caller} because {@code
+   * requireEditable} just proved the Draft half under its lock — but that would couple the echoed
+   * flag to the gate staying exactly as strict as it is today; deriving it here keeps the invariant
    * structural rather than incidental.
    */
-  private boolean subPageEditable(long millId, int year, boolean callerMayEdit) {
-    return callerMayEdit && STATUS_DRAFT.equals(trackStatus(millId, year));
+  private boolean subPageEditable(long millId, int year, EditableStatuses caller) {
+    return caller.allows(trackStatus(millId, year));
   }
 
   /**
@@ -1167,16 +1175,16 @@ public class Schedule5Service {
    * persisted. The 404 is raised BEFORE any statement runs, so a stale id cannot half-apply a batch
    * — the classification pass is separate from the write pass for exactly that reason.
    *
-   * <p>{@code requireDraft} runs first and its {@code SELECT … FOR UPDATE} on the mill/year status
-   * row is what serializes concurrent sub-page writers; the schema offers no unique key to lean on
-   * (no DDL on {@code THE}).
+   * <p>{@code requireEditable} runs first and its {@code SELECT … FOR UPDATE} on the mill/year
+   * status row is what serializes concurrent sub-page writers; the schema offers no unique key to
+   * lean on (no DDL on {@code THE}).
    *
    * @param millId the validated mill id
    * @param year the validated reporting year
    * @param campId the parent camp
    * @param page which sub-page
    * @param request the complete row set the camp should hold afterwards
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @param user the acting user id (audit columns)
    * @return the refreshed sub-page document
    */
@@ -1187,9 +1195,9 @@ public class Schedule5Service {
       int campId,
       SubPage page,
       SubPageSaveRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     final CampRow camp = requireCamp(millId, year, campId);
     // Non-null by Bean Validation: an omitted rows field is a 400, never a silent delete-all.
     List<SubPageRowRequest> incoming = request.rows();
@@ -1247,8 +1255,7 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(
-        millId, year, camp, page, subPageEditable(millId, year, callerMayEdit));
+    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
   }
 
   /**
@@ -1263,13 +1270,13 @@ public class Schedule5Service {
    * @param campId the parent camp
    * @param page which sub-page
    * @param rowId the row to delete
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE}
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE}
    * @return the refreshed sub-page document
    */
   @Transactional
   public SubPageDocument deleteSubPageRow(
-      long millId, int year, int campId, SubPage page, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int campId, SubPage page, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     CampRow camp = requireCamp(millId, year, campId);
     try {
       if (repository.deleteSubPageRow(rowId, campId, page.itemId()) == 0) {
@@ -1286,8 +1293,7 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(
-        millId, year, camp, page, subPageEditable(millId, year, callerMayEdit));
+    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
   }
 
   /**

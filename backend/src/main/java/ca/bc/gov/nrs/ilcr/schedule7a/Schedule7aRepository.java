@@ -12,7 +12,7 @@ import org.springframework.data.repository.query.Param;
  * Spring Data JDBC reads and writes for Schedule 7A (Bridge Costs) — AD-3: a {@code Repository}
  * interface of explicit {@code @Query} named-parameter SQL over {@code @Table} record entities,
  * {@code THE}-qualified; no derived queries, no {@code CrudRepository.save}, no {@code JdbcClient}.
- * SQL only — all derivations, the Draft gate, and 404-vs-409 disambiguation live in {@link
+ * SQL only — all derivations, the editability gate, and 404-vs-409 disambiguation live in {@link
  * Schedule7aService}.
  *
  * <p>A bridge = one {@code THE.BRIDGE_REPORT} row keyed {@code (ILCR_MILL_ID, REPORT_YEAR,

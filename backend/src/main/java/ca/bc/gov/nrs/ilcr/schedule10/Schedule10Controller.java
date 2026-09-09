@@ -8,7 +8,8 @@ import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetailRequest;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
-import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
+import ca.bc.gov.nrs.ilcr.security.ScheduleEditability;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +49,7 @@ public class Schedule10Controller implements Schedule10Api {
 
   private final MillContextService millContextService;
   private final Schedule10Service schedule10Service;
-  private final SchedulePermissions permissions;
+  private final ScheduleEditability editability;
   private final MessageSource messageSource;
   private final Schedule10CheckStatusResolver checkStatusResolver;
 
@@ -58,19 +59,19 @@ public class Schedule10Controller implements Schedule10Api {
    *
    * @param millContextService the single owner of mill/year validation
    * @param schedule10Service the domain service
-   * @param permissions the action-based permission component
+   * @param editability the role×status editability resolver
    * @param messageSource the one message bundle, keyed by legacy property keys
    * @param checkStatusResolver assembles the check-status response inside the schedule10 package
    */
   public Schedule10Controller(
       MillContextService millContextService,
       Schedule10Service schedule10Service,
-      SchedulePermissions permissions,
+      ScheduleEditability editability,
       MessageSource messageSource,
       Schedule10CheckStatusResolver checkStatusResolver) {
     this.millContextService = millContextService;
     this.schedule10Service = schedule10Service;
-    this.permissions = permissions;
+    this.editability = editability;
     this.messageSource = messageSource;
     this.checkStatusResolver = checkStatusResolver;
   }
@@ -80,9 +81,9 @@ public class Schedule10Controller implements Schedule10Api {
   public ResponseEntity<Schedule10Response> getSchedule10(
       String millId, String year, Authentication authentication) {
     MillYearContext context = millContextService.validateMillYearActive(millId, year);
-    boolean callerMayEdit = permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+    EditableStatuses caller = editability.forCaller(authentication);
     return ResponseEntity.ok(
-        schedule10Service.getSchedule10(context.millId(), context.year(), callerMayEdit));
+        schedule10Service.getSchedule10(context.millId(), context.year(), caller));
   }
 
   @Override
@@ -201,8 +202,8 @@ public class Schedule10Controller implements Schedule10Api {
     return ResponseEntity.ok(checkStatusResolver.checkStatus(context.millId(), context.year()));
   }
 
-  private boolean mayEdit(Authentication authentication) {
-    return permissions.hasPermission(authentication, "EDIT_SCHEDULE");
+  private EditableStatuses mayEdit(Authentication authentication) {
+    return editability.forCaller(authentication);
   }
 
   private ResponseEntity<Schedule10Response> saved(Schedule10Response document) {

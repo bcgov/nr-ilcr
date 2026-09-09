@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
@@ -69,7 +70,7 @@ class Schedule1ServiceTest {
     when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
         .thenReturn(new Schedule1Sources(null, null, null));
 
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
 
     assertNull(doc.revisionCount(), "an unsaved schedule must carry NO optimistic-lock token");
     assertNull(doc.comments());
@@ -93,8 +94,10 @@ class Schedule1ServiceTest {
         .when(schedule3CostDerivation.schedule1Sources(MILL, YEAR))
         .thenReturn(new Schedule1Sources(null, null, null));
 
-    assertTrue(service.findSchedule1(MILL, YEAR, true).isEmpty());
-    assertNotNull(service.getSchedule1(MILL, YEAR, true), "get must still serve a document");
+    assertTrue(service.findSchedule1(MILL, YEAR, CallerRights.SUBMITTER).isEmpty());
+    assertNotNull(
+        service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER),
+        "get must still serve a document");
   }
 
   /**
@@ -139,7 +142,7 @@ class Schedule1ServiceTest {
   @Test
   void perUnit_isCostOverVolume_asDecimal() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000.0000"), 50000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // 50000 / 1000 = 50.0 (kept as a decimal, scale >= 1)
     assertEquals(0, new BigDecimal("50.0").compareTo(lineItem(doc, 12).perUnit()));
   }
@@ -150,7 +153,7 @@ class Schedule1ServiceTest {
         "D",
         List.of(
             new DetailRow(12, BigDecimal.ZERO, 50000, null), new DetailRow(13, null, 40000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(lineItem(doc, 12).perUnit());
     assertNull(lineItem(doc, 13).perUnit());
   }
@@ -163,7 +166,7 @@ class Schedule1ServiceTest {
             new DetailRow(19, new BigDecimal("8000"), null, null), // shared volume row
             new DetailRow(19, null, 12000, "Row A"), // itemized
             new DetailRow(19, null, 12000, "Row B"))); // itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0, new BigDecimal("8000").compareTo(doc.otherCosts().volume()));
     assertEquals(24000L, doc.otherCosts().costSubtotal());
     assertEquals(2, doc.otherCosts().count());
@@ -181,7 +184,7 @@ class Schedule1ServiceTest {
         List.of(
             new DetailRow(19, new BigDecimal("1000"), null, null), // shared volume row (null desc)
             new DetailRow(19, null, 500, "   "))); // whitespace desc -> itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(1, doc.otherCosts().count());
     assertEquals(500L, doc.otherCosts().costSubtotal());
     assertEquals(0, new BigDecimal("1000").compareTo(doc.otherCosts().volume()));
@@ -200,7 +203,7 @@ class Schedule1ServiceTest {
         List.of(
             new DetailRow(19, null, null, null), // shared row, volume never entered / cleared
             new DetailRow(19, null, 12000, "Row A"))); // itemized
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.otherCosts().volume());
     assertEquals(12000L, doc.otherCosts().costSubtotal());
     assertEquals(1, doc.otherCosts().count());
@@ -212,7 +215,7 @@ class Schedule1ServiceTest {
     // A schedule with no Other Costs still carries a zero-summary (present, not null) so the
     // client can tell "zero" from "missing".
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0, doc.otherCosts().count());
     assertEquals(0L, doc.otherCosts().costSubtotal());
     assertNull(doc.otherCosts().volume());
@@ -222,19 +225,19 @@ class Schedule1ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stub("D", List.of());
-    assertTrue(service.getSchedule1(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenNotDraft() {
     stub("S", List.of());
-    assertFalse(service.getSchedule1(MILL, YEAR, true).editable());
+    assertFalse(service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenCallerMayNotEdit() {
     stub("D", List.of());
-    assertFalse(service.getSchedule1(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule1(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -247,7 +250,7 @@ class Schedule1ServiceTest {
             new DetailRow(1, new BigDecimal("100"), 500, null), // silviculture actual
             new DetailRow(
                 139, new BigDecimal("50"), 300, null))); // less silv admin (block line item)
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(500, doc.silviculture().actualSpent().cost());
     assertEquals(300, doc.silviculture().lessAdmin().cost());
   }
@@ -266,7 +269,7 @@ class Schedule1ServiceTest {
             new DetailRow(143, new BigDecimal("70"), 700, null),
             new DetailRow(139, new BigDecimal("50"), 300, null)));
     stubSchedule3(null, 150000, 600000L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(600000, doc.forestMgmtAdminCost());
     assertEquals(150000, doc.lessSilvAdminCost());
   }
@@ -288,7 +291,7 @@ class Schedule1ServiceTest {
     // crown volume 4000 (prefill won't fire — Sch1 has volumes); FMA 600000; Less Silv Admin
     // 150000.
     stubSchedule3(new BigDecimal("4000"), 150000, 600000L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // Subtotal Company Logging = (40000 + 10000) + 600000 (FMA) + 0 (other costs) = 650000.
     assertEquals(650000L, doc.subtotalCompanyLoggingCost());
     // Total Silviculture = 200000 (actual) − 150000 (Sch3 silv admin) + 50000 (accrued) = 100000.
@@ -314,7 +317,7 @@ class Schedule1ServiceTest {
         List.of(
             new DetailRow(12, new BigDecimal("100"), 40000, null))); // logging line, no silv costs
     stubSchedule3(null, 150000, null); // Less Silv Admin (item-37 crown) = 150000; no FMA
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.totalSilvicultureCost()); // blank — NOT -150000
     assertEquals(40000L, doc.subtotalCompanyLoggingCost()); // logging line only
     assertEquals(
@@ -330,7 +333,7 @@ class Schedule1ServiceTest {
     // (the next test). This distinguishes an opened-but-empty Schedule 3 from a missing one.
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
     stubSchedule3(null, null, 0L);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(0L, doc.forestMgmtAdminCost());
     assertNull(doc.lessSilvAdminCost());
   }
@@ -339,7 +342,7 @@ class Schedule1ServiceTest {
   void br04_pulledAdminCosts_nullWhenSchedule3Absent() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null)));
     // Default stub → no Schedule 3 summary → all sources null (legacy shows those cells blank).
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.forestMgmtAdminCost());
     assertNull(doc.lessSilvAdminCost());
   }
@@ -352,7 +355,7 @@ class Schedule1ServiceTest {
     stub("D", List.of()); // first entry: no stored detail rows
     stubSchedule3(new BigDecimal("7777"), null, null);
     stubWarningText();
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
 
     // Every savable volume field carries the copied crown value (codes 12-18 + silviculture 1 & 2).
     for (int code : List.of(12, 13, 14, 15, 16, 17, 18)) {
@@ -372,7 +375,7 @@ class Schedule1ServiceTest {
   void br03_prefill_doesNotFireWhenAnyVolumePresent() {
     stub("D", List.of(new DetailRow(12, new BigDecimal("1000"), 50000, null))); // populated
     stubSchedule3(new BigDecimal("7777"), null, null);
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     // No copy: code 12 keeps its stored 1000; no warning.
     assertEquals(0, new BigDecimal("1000").compareTo(lineItem(doc, 12).volume()));
     assertTrue(doc.warnings().isEmpty());
@@ -381,7 +384,7 @@ class Schedule1ServiceTest {
   @Test
   void br03_prefill_doesNotFireWhenNoSch3Crown() {
     stub("D", List.of()); // empty, but no Schedule 3 crown
-    Schedule1Response doc = service.getSchedule1(MILL, YEAR, true);
+    Schedule1Response doc = service.getSchedule1(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.warnings().isEmpty());
     assertTrue(doc.lineItems().isEmpty());
     assertNull(doc.schedule3CrownVolume());

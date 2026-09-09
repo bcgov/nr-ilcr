@@ -2,6 +2,7 @@ import { test as base } from 'playwright-bdd';
 
 import { HomePage } from '../../pages/common/homePage';
 import { AppShellPage } from '../../pages/common/appShell';
+import { grantAdminOnMillList, seedMockUser } from '../../pages/common/mockUser';
 import { type ScheduleKey } from '../../fixtures/sch1/schedule1-test-data';
 
 /**
@@ -125,6 +126,31 @@ export type GlobalFixtures = {
 };
 
 export const globalTest = base.extend<GlobalFixtures>({
+  /**
+   * THE SUITE'S IDENTITY, declared once for every scenario: `ILCR_SUBMITTER`, the legacy
+   * ILCR_LICENSEE that all twelve feature files name in their "As a Licensee" role line. Under the
+   * role x status matrix (Story 16.1) this is the only role that may edit a Draft, which is the
+   * track every write scenario runs on — and, symmetrically, the role for which the non-Draft
+   * anchors really are read-only, as `render-states.feature` asserts.
+   *
+   * Overriding `page` rather than adding a step is deliberate: the identity is a property of the
+   * browser, not of any one Given, and several page objects navigate directly (`openWithNoContext`
+   * seeds its own init script and calls `page.goto`) without passing through a shared entry point.
+   * See `pages/common/mockUser.ts` for how the choice reaches the backend and why it is seeded
+   * instead of inherited from `MOCK_USERS[0]`. A scenario that needs the administrator calls
+   * `seedMockUser(page, 'admin')` itself — `pages/common/appShell.ts` is the one that does.
+   */
+  page: async ({ page }, use) => {
+    await seedMockUser(page, 'submitter');
+    // The single exception, and it is an app-side gap rather than a preference: a mock submitter is
+    // offered NO mill on Home, because listMills fail-closes a blank directory GUID while
+    // validateMillAccess exempts the very same principal. `grantAdminOnMillList` borrows the
+    // administrator for that ONE read; every schedule GET, write and check-status stays the
+    // submitter. The full account, including what it costs, is in pages/common/mockUser.ts.
+    await grantAdminOnMillList(page);
+    await use(page);
+  },
+
   homePage: async ({ page }, use) => {
     await use(new HomePage(page));
   },

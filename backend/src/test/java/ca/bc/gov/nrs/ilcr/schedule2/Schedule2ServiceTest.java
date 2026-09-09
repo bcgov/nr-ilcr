@@ -16,6 +16,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.ThreeColumnTotal;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.TimberBlock;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -103,7 +104,7 @@ class Schedule2ServiceTest {
     // Sch3: popVol 10000, PO&P actual cost (Subtotal Actual Costs PO&P col) 20000, crownVol 12345,
     // Subtotal Actual Costs Crown col 100000, Silviculture Admin (item 37) crown 5000.
     lenient()
-        .when(schedule3Service.findSchedule3(MILL, YEAR, false))
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
@@ -130,7 +131,9 @@ class Schedule2ServiceTest {
     summary.ifPresent(
         s -> lenient().when(repository.findDetails(s.summaryId())).thenReturn(details));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.ofNullable(trackStatus));
-    lenient().when(schedule3Service.findSchedule3(MILL, YEAR, false)).thenReturn(Optional.empty());
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
     lenient()
         .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
         .thenReturn(Optional.empty());
@@ -146,7 +149,7 @@ class Schedule2ServiceTest {
   @Test
   void storedLineItems_mappedFrom25And26() {
     stubFullDraft();
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals(500000, doc.purchasedLogCost().cost()); // item 25 cost
     eq("2000", doc.lessLogSales().volume()); // item 26 volume
     assertEquals(100000, doc.lessLogSales().cost()); // item 26 cost
@@ -157,7 +160,7 @@ class Schedule2ServiceTest {
   @Test
   void carriedFigures_fromSchedule3() {
     stubFullDraft();
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     // purchasedLogCost.volume and purchasedWoodOverhead.volume both = Sch3 PO&P timber volume
     // (BR-03).
     eq("10000", doc.purchasedLogCost().volume());
@@ -173,7 +176,7 @@ class Schedule2ServiceTest {
   @Test
   void derivedFigures_computedByServer() {
     stubFullDraft();
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     eq("50.0", doc.purchasedLogCost().perUnit()); // 500000/10000
     eq("2.0", doc.purchasedWoodOverhead().perUnit()); // 20000/10000
     // subtotal: cost 500000+20000=520000, vol 10000, perUnit 52.0
@@ -208,7 +211,7 @@ class Schedule2ServiceTest {
                 new DetailRow(26, new BigDecimal("2000"), 100000)));
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     lenient()
-        .when(schedule3Service.findSchedule3(MILL, YEAR, false))
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
@@ -224,7 +227,7 @@ class Schedule2ServiceTest {
         .when(repository.findSch1SilvAccruedSpentCost(MILL, YEAR))
         .thenReturn(Optional.of(8450));
 
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     // 617250 + 100000 crown + ((20000 − 5000) + 8450) = 740700, NOT 823450.
     assertEquals(740700, doc.totalCompanyLogging().cost());
   }
@@ -236,7 +239,7 @@ class Schedule2ServiceTest {
         "D",
         Optional.of(new SummaryRow(1028, "c", 3)),
         List.of(new DetailRow(25, null, 333000), new DetailRow(26, new BigDecimal("500"), 25000)));
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.purchasedLogCost().volume()); // no Sch3 PO&P timber volume
     assertNull(doc.purchasedLogCost().perUnit()); // cost present but volume null
     assertNull(doc.purchasedWoodOverhead().cost()); // no Sch3 actual-costs PO&P
@@ -252,7 +255,7 @@ class Schedule2ServiceTest {
   void unsavedSchedule_returnsEmptyEditableDocument() {
     // No category-"2" summary, Draft track, no Sch3 -> empty editable doc, no NPE, no 404.
     stubNoCrossSchedule("D", Optional.empty(), List.of());
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.editable());
     assertNull(doc.revisionCount());
     assertNull(doc.comments());
@@ -267,14 +270,14 @@ class Schedule2ServiceTest {
     // No Sch2 summary but Sch3 data exists -> carried figures still present (AC6).
     when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
-    when(schedule3Service.findSchedule3(MILL, YEAR, false))
+    when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
         .thenReturn(
             Optional.of(
                 sch3Doc(new BigDecimal("10000"), 20000, new BigDecimal("12345"), 100000, 5000)));
     lenient()
         .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
         .thenReturn(Optional.empty());
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     eq("10000", doc.purchasedWoodOverhead().volume());
     assertEquals(20000, doc.purchasedWoodOverhead().cost());
     assertNull(doc.purchasedLogCost().cost()); // still unsaved item 25
@@ -283,19 +286,19 @@ class Schedule2ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stubNoCrossSchedule("D", Optional.empty(), List.of());
-    assertTrue(service.getSchedule2(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenNotDraft() {
     stubNoCrossSchedule("S", Optional.of(new SummaryRow(1028, "c", 3)), List.of());
-    assertFalse(service.getSchedule2(MILL, YEAR, true).editable());
+    assertFalse(service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
   void editable_falseWhenCallerMayNotEdit() {
     stubNoCrossSchedule("D", Optional.empty(), List.of());
-    assertFalse(service.getSchedule2(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule2(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -304,7 +307,7 @@ class Schedule2ServiceTest {
         "D",
         Optional.of(new SummaryRow(1028, "c", 0)),
         List.of(new DetailRow(26, BigDecimal.ZERO, 25000)));
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertNull(doc.lessLogSales().perUnit());
   }
 
@@ -318,7 +321,7 @@ class Schedule2ServiceTest {
         "D",
         Optional.of(new SummaryRow(1028, "c", 0)),
         List.of(new DetailRow(26, new BigDecimal("30000"), 200000)));
-    Schedule2Response doc = service.getSchedule2(MILL, YEAR, true);
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals("6.6667", doc.lessLogSales().perUnit().toPlainString());
   }
 }

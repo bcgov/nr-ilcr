@@ -11,6 +11,7 @@ import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureTotals;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -42,8 +43,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Slf4j
 public class Schedule11Service {
-
-  private static final String STATUS_DRAFT = "D";
 
   // The delivery unique key on (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID,
   // BECBIOGEOCLIMATIC_CATALOGUE_ID, LOCATION) — legacy SILVICULTURE_UNIQUE_BIOGEOCODE. Only THIS
@@ -91,15 +90,15 @@ public class Schedule11Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds {@code EDIT_SCHEDULE} (from {@code
-   *     SchedulePermissions} — never inlined, AC7)
+   * @param caller whether the caller holds {@code EDIT_SCHEDULE} (from {@code SchedulePermissions}
+   *     — never inlined, AC7)
    * @return the document with server-computed BR-08 figures and track-independent editability
    */
   @Transactional(readOnly = true)
-  public Schedule11Response getSchedule11(long millId, int year, boolean callerMayEdit) {
+  public Schedule11Response getSchedule11(long millId, int year, EditableStatuses caller) {
     String trackStatus =
         millContextService.findSchedule11TrackStatusCode(millId, year).orElse(null);
-    return buildDocument(millId, year, trackStatus, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -109,7 +108,7 @@ public class Schedule11Service {
    * escaped so the match is a LITERAL prefix (legacy {@code String.startsWith} semantics) — drives
    * a case-insensitive prefix match on the concatenated label, and each catalogue row is mapped to
    * its {@code becLabel} — the same concat the served location rows use, so a picked option reads
-   * identically to a saved row. The catalogue is global: no mill/year context, no Draft gate
+   * identically to a saved row. The catalogue is global: no mill/year context, no editability gate
    * (VIEW-gated lookup).
    *
    * @param term the raw search term from the request (may be null/blank)
@@ -131,14 +130,14 @@ public class Schedule11Service {
 
   /**
    * Assemble the served document for a KNOWN track status. The write methods reuse this with the
-   * {@code D} their Draft gate just proved (same transaction) instead of re-running the
+   * {@code D} their editability gate just proved (same transaction) instead of re-running the
    * track-status query on every mutation.
    */
   private Schedule11Response buildDocument(
-      long millId, int year, String trackStatus, boolean callerMayEdit) {
+      long millId, int year, String trackStatus, EditableStatuses caller) {
     // Editable = EDIT_SCHEDULE ∧ silviculture track Draft (legacy disableUserInputSchedule11
     // D+Licensee row; a null code cannot be Draft). The 1–10 track plays no part (S10).
-    boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    boolean editable = caller.allows(trackStatus);
 
     List<SilvicultureLocationEntity> locationRows = repository.findLocations(year, millId);
     Map<Long, CostPair> costs = unpackCosts(repository.findCostDetails(year, millId));
@@ -157,7 +156,7 @@ public class Schedule11Service {
 
   // ===============================================================================================
   // Write path (Story 25.2) — add/edit/delete a location. Each method is one transaction: a
-  // persistence failure rolls back and surfaces as 500/ERR-004. The Draft gate keys on the
+  // persistence failure rolls back and surfaces as 500/ERR-004. The editability gate keys on the
   // SILVICULTURE track (AD-9) — never the 1–10 track (AR7). Costs/comments/location values are
   // NEVER logged (AD-11).
   // ===============================================================================================
@@ -166,13 +165,13 @@ public class Schedule11Service {
    * Create one Schedule 11 location and return the recomputed document (S01/S02/S09). The location
    * persists immediately (legacy {@code addLocation()} → {@code save(true)}). Costs are optional; a
    * present cost writes its item-23/24 child, an absent cost writes no row (delivery-faithful —
-   * real silviculture locations carry no cost rows, AC9). Draft-gated (AD-9); a duplicate
+   * real silviculture locations carry no cost rows, AC9). editability-gated (AD-9); a duplicate
    * biogeo/location key → 409, an unresolvable biogeo id → 400.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the entered location fields
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document (the new row included; footer totals refreshed)
    */
@@ -181,9 +180,9 @@ public class Schedule11Service {
       long millId,
       int year,
       SilvicultureLocationRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireSilvicultureDraft(millId, year);
+    final String trackStatus = requireSilvicultureEditable(millId, year, caller);
     requireValidBiogeo(request.biogeoclimaticCatalogueId());
     try {
       long locationId = repository.nextLocationId();
@@ -212,7 +211,7 @@ public class Schedule11Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -225,7 +224,7 @@ public class Schedule11Service {
    * @param year the reporting year
    * @param locationId the location id to edit
    * @param request the entered fields + the required {@code revisionCount} token
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit columns)
    * @return the recomputed aggregate document
    */
@@ -235,9 +234,9 @@ public class Schedule11Service {
       int year,
       long locationId,
       SilvicultureLocationRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireSilvicultureDraft(millId, year);
+    final String trackStatus = requireSilvicultureEditable(millId, year, caller);
     requireValidBiogeo(request.biogeoclimaticCatalogueId());
     try {
       int updated =
@@ -274,25 +273,25 @@ public class Schedule11Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
    * Delete one Schedule 11 location and ALL its cost children (S07 — legacy whole-row removal; a
-   * 23/24-only cascade would orphan other attached items). Draft-gated; an unknown id → 404.
+   * 23/24-only cascade would orphan other attached items). editability-gated; an unknown id → 404.
    * Carries NO revision token — the systemic AR11 DELETE deviation (Story 2.1; legacy delete
    * re-fetches by PK and removes, no lock).
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param locationId the location id to delete
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed aggregate document (the row and its costs gone; footer refreshed)
    */
   @Transactional
   public Schedule11Response deleteLocation(
-      long millId, int year, long locationId, boolean callerMayEdit) {
-    requireSilvicultureDraft(millId, year);
+      long millId, int year, long locationId, EditableStatuses caller) {
+    final String trackStatus = requireSilvicultureEditable(millId, year, caller);
     try {
       // The mill/year-scoped location delete runs FIRST: its 0-rows result is the ownership check,
       // so the id-scoped cost cascade below can never touch another mill's rows.
@@ -309,7 +308,7 @@ public class Schedule11Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildDocument(millId, year, STATUS_DRAFT, callerMayEdit);
+    return buildDocument(millId, year, trackStatus, caller);
   }
 
   /**
@@ -352,17 +351,18 @@ public class Schedule11Service {
   }
 
   /**
-   * The Draft-gate for every write: the SILVICULTURE track must be {@code D} (else 409). Keys on
-   * {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext (AD-9 single owner) — a Submitted/Verified
-   * 1–10 track leaves Schedule 11 writable (AR7 track independence). Context (400/404/409-mill) is
-   * already validated by the controller before this runs (AD-4).
+   * The editability-gate for every write: the SILVICULTURE track must be {@code D} (else 409). Keys
+   * on {@code MILL_SILVICULTUR_STATUS_CODE} via millcontext (AD-9 single owner) — a
+   * Submitted/Verified 1–10 track leaves Schedule 11 writable (AR7 track independence). Context
+   * (400/404/409-mill) is already validated by the controller before this runs (AD-4).
    */
-  private void requireSilvicultureDraft(long millId, int year) {
+  private String requireSilvicultureEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus =
         millContextService.findSchedule11TrackStatusCode(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   /** Reject a biogeo id that resolves to no catalogue row (force-selection enforcement, S16). */
@@ -384,9 +384,9 @@ public class Schedule11Service {
 
   /**
    * BR-07 Check Status: validate whether every stored Schedule 11 location has both costs.
-   * Read-only — mutates nothing (VIEW-gated, not Draft-gated; runs on any status). Zero locations →
-   * vacuously met. SUC-004 "Status has been checked" is returned on every call; SUC-003 only when
-   * met.
+   * Read-only — mutates nothing (VIEW-gated, not editability-gated; runs on any status). Zero
+   * locations → vacuously met. SUC-004 "Status has been checked" is returned on every call; SUC-003
+   * only when met.
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year

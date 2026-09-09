@@ -19,6 +19,7 @@ import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRowType;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -66,7 +67,8 @@ class Schedule4SubPageServiceTest {
         .thenReturn(9100);
     stubRecompute();
 
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), null, USER);
     // code 43, description trimmed.
@@ -82,7 +84,8 @@ class Schedule4SubPageServiceTest {
         .thenReturn(9101);
     stubRecompute();
 
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.TRUCK_REHAUL, 7), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.TRUCK_REHAUL, 7), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), 7, USER); // cycle kept
     verify(repository).insertDetailWithDescription(9101, 46, bd("100"), 3000, "New Row", USER);
@@ -98,7 +101,8 @@ class Schedule4SubPageServiceTest {
     stubRecompute();
 
     // A cycle sent on a non-Rehaul type is ignored (null written).
-    service.addSubPageRow(MILL, YEAR, LOCATION_ID, req(SubPageRowType.OTHER, 9), true, USER);
+    service.addSubPageRow(
+        MILL, YEAR, LOCATION_ID, req(SubPageRowType.OTHER, 9), CallerRights.SUBMITTER, USER);
 
     verify(repository).insertSubPageReport(MILL, YEAR, NAME, bd("30.0"), null, USER);
     verify(repository).insertDetailWithDescription(9102, 55, bd("100"), 3000, "New Row", USER);
@@ -113,7 +117,12 @@ class Schedule4SubPageServiceTest {
         ScheduleNotFoundException.class,
         () ->
             service.addSubPageRow(
-                MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never())
         .insertSubPageReport(anyLong(), anyInt(), anyString(), any(), any(), anyString());
@@ -127,7 +136,12 @@ class Schedule4SubPageServiceTest {
         ScheduleNotEditableException.class,
         () ->
             service.addSubPageRow(
-                MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
     verify(repository, never())
@@ -146,7 +160,12 @@ class Schedule4SubPageServiceTest {
         ScheduleNotSavedException.class,
         () ->
             service.addSubPageRow(
-                MILL, YEAR, LOCATION_ID, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
   }
 
   @Test
@@ -157,7 +176,13 @@ class Schedule4SubPageServiceTest {
     stubRecompute();
 
     service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER);
+        MILL,
+        YEAR,
+        LOCATION_ID,
+        9100,
+        req(SubPageRowType.TOWING, null),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).updateSubPageReport(9100, bd("30.0"), null, USER); // no cycle for Towing
     // code 43, description trimmed.
@@ -172,7 +197,13 @@ class Schedule4SubPageServiceTest {
     stubRecompute();
 
     service.updateSubPageRow(
-        MILL, YEAR, LOCATION_ID, 9101, req(SubPageRowType.TRUCK_REHAUL, 7), true, USER);
+        MILL,
+        YEAR,
+        LOCATION_ID,
+        9101,
+        req(SubPageRowType.TRUCK_REHAUL, 7),
+        CallerRights.SUBMITTER,
+        USER);
 
     verify(repository).updateSubPageReport(9101, bd("30.0"), 7, USER); // cycle kept
     verify(repository).updateSubPageDetail(9101, 46, bd("100"), 3000, "New Row", USER);
@@ -187,7 +218,13 @@ class Schedule4SubPageServiceTest {
         ScheduleNotFoundException.class,
         () ->
             service.updateSubPageRow(
-                MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
     verify(repository, never())
@@ -206,7 +243,13 @@ class Schedule4SubPageServiceTest {
         ScheduleNotFoundException.class,
         () ->
             service.updateSubPageRow(
-                MILL, YEAR, LOCATION_ID, 8050, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                8050,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
     verify(repository, never())
@@ -221,7 +264,13 @@ class Schedule4SubPageServiceTest {
         ScheduleNotEditableException.class,
         () ->
             service.updateSubPageRow(
-                MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
 
     verify(repository, never()).findLocationName(anyInt(), anyLong(), anyInt());
     verify(repository, never()).updateSubPageReport(anyInt(), any(), any(), anyString());
@@ -240,7 +289,13 @@ class Schedule4SubPageServiceTest {
         ScheduleNotSavedException.class,
         () ->
             service.updateSubPageRow(
-                MILL, YEAR, LOCATION_ID, 9100, req(SubPageRowType.TOWING, null), true, USER));
+                MILL,
+                YEAR,
+                LOCATION_ID,
+                9100,
+                req(SubPageRowType.TOWING, null),
+                CallerRights.SUBMITTER,
+                USER));
   }
 
   @Test
@@ -250,7 +305,7 @@ class Schedule4SubPageServiceTest {
     when(repository.isSubPageRowOfLocation(8051, NAME, MILL, YEAR)).thenReturn(true);
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true);
+    service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, CallerRights.SUBMITTER);
 
     verify(repository).deleteReport(8051);
   }
@@ -265,7 +320,7 @@ class Schedule4SubPageServiceTest {
     stubRecompute();
 
     service.deleteSubPageRow(
-        MILL, YEAR, LOCATION_ID, 8050, true); // must not throw, must not delete
+        MILL, YEAR, LOCATION_ID, 8050, CallerRights.SUBMITTER); // must not throw, must not delete
 
     verify(repository, never()).deleteReport(anyInt());
   }
@@ -277,7 +332,7 @@ class Schedule4SubPageServiceTest {
     when(repository.findLocationName(9999, MILL, YEAR)).thenReturn(Optional.empty());
     stubRecompute();
 
-    service.deleteSubPageRow(MILL, YEAR, 9999, 8051, true);
+    service.deleteSubPageRow(MILL, YEAR, 9999, 8051, CallerRights.SUBMITTER);
 
     verify(repository, never()).isSubPageRowOfLocation(anyInt(), anyString(), anyLong(), anyInt());
     verify(repository, never()).deleteReport(anyInt());
@@ -289,7 +344,7 @@ class Schedule4SubPageServiceTest {
 
     assertThrows(
         ScheduleNotEditableException.class,
-        () -> service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, true));
+        () -> service.deleteSubPageRow(MILL, YEAR, LOCATION_ID, 8051, CallerRights.SUBMITTER));
 
     verify(repository, never()).deleteReport(anyInt());
   }

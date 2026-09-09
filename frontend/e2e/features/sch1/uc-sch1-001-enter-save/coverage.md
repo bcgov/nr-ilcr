@@ -186,10 +186,14 @@ construction — defects.md GAP-3). The `toOtherCosts` NPE row was the second su
 it is now `covered`, because fixing BUG-2 made that state reachable by ordinary user action (BUG-3).
 Nothing is `deferred` any more. No asymmetric silent omission.
 
-**Role / permission coverage:** complete for what exists. `SchedulePermissions` grants `ILCR_ADMIN` and
-`ILCR_SUBMITTER` the identical action set (`VIEW_SCHEDULE` + `EDIT_SCHEDULE`), so Schedule 1 has **no
-role-dependent behaviour and no role-driven 403** to assert. Scenarios run as `ILCR_SUBMITTER` (the
-backend's fixed mock authority); the header's mock-user selector is frontend-display only and does not
-change it. Revisit when FAM lands and the two action sets diverge — defects.md GAP-1.
+**Role / permission coverage:** complete for what exists. `SchedulePermissions` still grants
+`ILCR_ADMIN` and `ILCR_SUBMITTER` the identical action set (`VIEW_SCHEDULE` + `EDIT_SCHEDULE`), so
+there is **no role-driven 403** to assert. But "no role-dependent behaviour" stopped being true with
+Story 16.1: `ScheduleEditability` makes editability role x status dependent, and an administrator is
+read-only at Draft. Scenarios run as `ILCR_SUBMITTER` because the suite **seeds** that identity
+(`pages/common/mockUser.ts`); the sentence here used to say the acting role was "the backend's fixed
+mock authority" and that the selector "is frontend-display only and does not change it" — both false
+since #265, and correcting it is defects.md GAP-1's own subject (2026-09-09). The admin arm of the matrix
+is proven by the backend `*WriteAuthorizationIT` suites, not here.
 
 **Status values:** `covered` · `covered (+ spec-gap)` · `not-applicable` (legacy-only, by design) · `deferred` (see Coverage gaps) · `blocked` (env/auth can't reach the state) · `divergence` / `bug` (a genuinely-failing `@discovered-divergence` / `@discovered-bug` test — see this UC's `defects.md`).

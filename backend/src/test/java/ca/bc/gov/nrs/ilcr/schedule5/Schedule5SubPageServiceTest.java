@@ -17,6 +17,7 @@ import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service.SubPage;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageDocument;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageRowRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.SubPageSaveRequest;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -82,7 +83,7 @@ class Schedule5SubPageServiceTest {
     when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(campVolume)));
     when(repository.findCostDetails(anyLong(), anyInt())).thenReturn(volumeRows);
     when(repository.findSubPageRows(anyInt(), anyInt(), anyLong(), anyInt())).thenReturn(pageRows);
-    return service.getSubPage(MILL, YEAR, CAMP, page, true);
+    return service.getSubPage(MILL, YEAR, CAMP, page, CallerRights.SUBMITTER);
   }
 
   @Nested
@@ -263,7 +264,9 @@ class Schedule5SubPageServiceTest {
       // message) past the handler — Schedule5WriteServiceTest pins the same contract for the camp
       // path; this is the sub-page analog (review patch, 2026-08-12).
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(ScheduleNotSavedException.class);
     }
 
@@ -275,7 +278,10 @@ class Schedule5SubPageServiceTest {
       when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt()))
           .thenThrow(new DataAccessResourceFailureException("boom"));
 
-      assertThatThrownBy(() -> service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 8722, true))
+      assertThatThrownBy(
+              () ->
+                  service.deleteSubPageRow(
+                      MILL, YEAR, CAMP, SubPage.CAMP, 8722, CallerRights.SUBMITTER))
           .isInstanceOf(ScheduleNotSavedException.class);
     }
   }
@@ -311,7 +317,7 @@ class Schedule5SubPageServiceTest {
           CAMP,
           SubPage.CAMP,
           new SubPageSaveRequest(List.of(new SubPageRowRequest(null, "Generator Fuel", 500))),
-          true,
+          CallerRights.SUBMITTER,
           "tester");
 
       verify(repository)
@@ -334,7 +340,7 @@ class Schedule5SubPageServiceTest {
           CAMP,
           SubPage.CAMP,
           new SubPageSaveRequest(List.of(new SubPageRowRequest(8724, "Diesel", 750))),
-          true,
+          CallerRights.SUBMITTER,
           "tester");
 
       verify(repository).updateSubPageRow(8724, CAMP, ITEM_CAMP_ROW, 750, "Diesel", "tester");
@@ -361,7 +367,7 @@ class Schedule5SubPageServiceTest {
           CAMP,
           SubPage.CAMP,
           new SubPageSaveRequest(List.of(new SubPageRowRequest(8724, "Generator Fuel", 500))),
-          true,
+          CallerRights.SUBMITTER,
           "tester");
 
       verify(repository).deleteSubPageRow(8725, CAMP, ITEM_CAMP_ROW);
@@ -380,7 +386,9 @@ class Schedule5SubPageServiceTest {
                   new SubPageRowRequest(9999, "Not This Camp's", 200)));
 
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(CampNotFoundException.class);
       // The valid insert that PRECEDES the bad id in the body must not have landed: the whole
       // point of the classification pass is that a partial write is impossible.
@@ -401,7 +409,9 @@ class Schedule5SubPageServiceTest {
                   new SubPageRowRequest(8724, "Generator Fuel Again", 600)));
 
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(CampNotFoundException.class);
       verify(repository, never())
           .updateSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(), any());
@@ -420,7 +430,9 @@ class Schedule5SubPageServiceTest {
       // Classified as present a moment earlier, so a zero here is a concurrent delete — checked
       // rather than assumed (the 4.4 lesson).
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(CampNotFoundException.class);
     }
 
@@ -433,7 +445,9 @@ class Schedule5SubPageServiceTest {
       SubPageSaveRequest request = new SubPageSaveRequest(List.of());
 
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(CampNotFoundException.class);
     }
 
@@ -451,7 +465,9 @@ class Schedule5SubPageServiceTest {
       // The Access page's wider ±99,999,999 bound would accept this value; the bound is per page
       // and applied here rather than on the DTO, so each page fails with its own message (AD-8).
       assertThatThrownBy(
-              () -> service.saveSubPage(MILL, YEAR, CAMP, SubPage.CAMP, request, true, "tester"))
+              () ->
+                  service.saveSubPage(
+                      MILL, YEAR, CAMP, SubPage.CAMP, request, CallerRights.SUBMITTER, "tester"))
           .isInstanceOf(CampCostOutOfRangeException.class);
       verify(repository, never())
           .insertSubPageRow(anyInt(), anyInt(), anyInt(), any(), any(), any());
@@ -475,7 +491,7 @@ class Schedule5SubPageServiceTest {
           CAMP,
           SubPage.ACCESS,
           new SubPageSaveRequest(List.of(new SubPageRowRequest(null, "Bridge", 10_000_000))),
-          true,
+          CallerRights.SUBMITTER,
           "tester");
 
       verify(repository)
@@ -492,7 +508,8 @@ class Schedule5SubPageServiceTest {
           .thenReturn(List.of(row(8725, ITEM_CAMP_ROW, 300, "Propane")));
       wireReadBack();
 
-      SubPageDocument doc = service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 8724, true);
+      SubPageDocument doc =
+          service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 8724, CallerRights.SUBMITTER);
 
       verify(repository).deleteSubPageRow(8724, CAMP, ITEM_CAMP_ROW);
       // Re-read, never hand-patched: the surviving row is what comes back.
@@ -507,7 +524,10 @@ class Schedule5SubPageServiceTest {
       when(repository.findCamps(anyLong(), anyInt())).thenReturn(List.of(camp(VOL_120K)));
       when(repository.deleteSubPageRow(anyInt(), anyInt(), anyInt())).thenReturn(0);
 
-      assertThatThrownBy(() -> service.deleteSubPageRow(MILL, YEAR, CAMP, SubPage.CAMP, 9999, true))
+      assertThatThrownBy(
+              () ->
+                  service.deleteSubPageRow(
+                      MILL, YEAR, CAMP, SubPage.CAMP, 9999, CallerRights.SUBMITTER))
           .isInstanceOf(CampNotFoundException.class);
     }
   }

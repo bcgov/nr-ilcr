@@ -300,12 +300,15 @@ location with no costs stores real NULLs (which render as blank, not "0").
   - **A 403 is still reachable in principle** — by a caller holding *neither* action (an unknown/foreign
     authority). That is an authorization-framework concern, not Schedule 11 behaviour, and it is covered by
     the backend's own tests rather than owed by this suite.
-  - **On the header's mock-user selector:** it is a frontend-only display affordance and does not grant
-    roles — the backend stamps one authority per process from `ilcr.security.mock-role`. Switching it
-    changes the name on the Home card, not what you may do. (Detail in Schedule 1's GAP-1.)
-  - **Future action:** revisit when FAM auth lands **and the two `ROLE_ACTIONS` sets actually diverge**. The
-    lever would then be a CI matrix (a second run against `ilcr.security.mock-role=ILCR_ADMIN`), not a
-    per-test switch, because the authority is fixed per process.
+  - **On the header's mock-user selector — CORRECTED 2026-09-09.** This used to read "a frontend-only
+    display affordance … the backend stamps one authority per process from `ilcr.security.mock-role`".
+    False since #265: `api-service` sends the selected user's roles as `X-Mock-Groups` and
+    `MockPrincipalFilter` prefers that header, so the selector IS the acting role — which is how this
+    suite came to run as `ILCR_ADMIN` for a month. Full account in Schedule 1's GAP-1.
+  - **Future action:** the `ROLE_ACTIONS` sets are still identical, so there is still no role-driven
+    403 here. The lever is NOT a CI matrix — the authority is per request, so a per-scenario switch
+    (`seedMockUser(page, 'admin')`) is available today; the admin arm of the Story 16.1 editability
+    matrix is currently proven by the backend `*WriteAuthorizationIT` suites instead.
   - **Status:** OPEN — **`deferred`** (2026-08-10). Deferred rather than not-applicable because there is a
     named future trigger: the day the two `ROLE_ACTIONS` sets diverge, this becomes an ordinary owed test.
     "Not applicable" would wrongly imply never. (Schedule 1's equivalent GAP-1 still reads

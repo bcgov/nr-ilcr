@@ -12,6 +12,7 @@ import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -93,7 +94,7 @@ class Schedule4ServiceTest {
   @Test
   void reportFamilyGroupedByName_orderedAndNameOnlyLocationHasEmptyCategories() {
     stubTwoLocationDraft();
-    Schedule4Response doc = service.getSchedule4(MILL, YEAR, true);
+    Schedule4Response doc = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER);
     // Four TR rows collapse to TWO locations (grouped by LOCATION_DESCRIPTION).
     assertEquals(2, doc.locations().size());
     Location a = doc.locations().get(0);
@@ -108,7 +109,7 @@ class Schedule4ServiceTest {
   @Test
   void perCategoryDistance_fromOwnReport_canDifferAcrossDistanceCategories() {
     stubTwoLocationDraft();
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     // FIXED category: no distance.
     CategoryAmount lakeside = categoryByCode(a, 40);
     assertEquals("FIXED", lakeside.kind());
@@ -125,7 +126,7 @@ class Schedule4ServiceTest {
   @Test
   void perUnit_computedServerSide() {
     stubTwoLocationDraft();
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     eq("50.0", categoryByCode(a, 40).perUnit()); // 100000/2000
     eq("15.0", categoryByCode(a, 41).perUnit()); // 60000/4000
     eq("50.0", categoryByCode(a, 47).perUnit()); // 25000/500
@@ -134,7 +135,7 @@ class Schedule4ServiceTest {
   @Test
   void missingCategoryData_nullCost_showsVolumeAndNullPerUnit() {
     stubTwoLocationDraft();
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     CategoryAmount railHaul = categoryByCode(a, 52);
     eq("300", railHaul.volume()); // present value shown
     assertNull(railHaul.cost()); // missing cost
@@ -146,7 +147,7 @@ class Schedule4ServiceTest {
     when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
     when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
     lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
-    Schedule4Response doc = service.getSchedule4(MILL, YEAR, true);
+    Schedule4Response doc = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER);
     assertTrue(doc.locations().isEmpty());
     assertTrue(doc.editable()); // editable per Draft track even with no locations
   }
@@ -154,7 +155,7 @@ class Schedule4ServiceTest {
   @Test
   void editable_trueOnlyWhenCallerMayEditAndDraft() {
     stubTwoLocationDraft();
-    assertTrue(service.getSchedule4(MILL, YEAR, true).editable());
+    assertTrue(service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).editable());
   }
 
   @Test
@@ -164,7 +165,7 @@ class Schedule4ServiceTest {
         .thenReturn(List.of(new LocationRow(7003, "Submitted Dump", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(7003, 42, new BigDecimal("1000"), 20000)));
-    Schedule4Response doc = service.getSchedule4(MILL, YEAR, true);
+    Schedule4Response doc = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER);
     assertFalse(doc.editable());
     assertEquals(1, doc.locations().size()); // still listed
     assertEquals("S", doc.trackStatus());
@@ -173,7 +174,7 @@ class Schedule4ServiceTest {
   @Test
   void editable_falseWhenCallerMayNotEdit() {
     stubTwoLocationDraft();
-    assertFalse(service.getSchedule4(MILL, YEAR, false).editable());
+    assertFalse(service.getSchedule4(MILL, YEAR, CallerRights.NONE).editable());
   }
 
   @Test
@@ -183,7 +184,7 @@ class Schedule4ServiceTest {
         .thenReturn(List.of(new LocationRow(7001, "Zero Vol", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(7001, 40, BigDecimal.ZERO, 25000)));
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     assertNull(categoryByCode(a, 40).perUnit());
   }
 
@@ -195,7 +196,7 @@ class Schedule4ServiceTest {
         .thenReturn(List.of(new LocationRow(7001, "Round", null, null, 0)));
     when(repository.findInScopeDetails(MILL, YEAR))
         .thenReturn(List.of(new DetailRow(7001, 40, new BigDecimal("30000"), 200000)));
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     assertEquals("6.6667", categoryByCode(a, 40).perUnit().toPlainString());
   }
 
@@ -217,7 +218,7 @@ class Schedule4ServiceTest {
             List.of(
                 new DetailRow(7001, 40, new BigDecimal("2000.0000"), 100000),
                 new DetailRow(7011, 47, new BigDecimal("500.0000"), 25000)));
-    Location a = service.getSchedule4(MILL, YEAR, true).locations().get(0);
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     assertEquals("2000", categoryByCode(a, 40).volume().toPlainString());
     assertEquals("120.5", categoryByCode(a, 47).distance().toPlainString());
   }

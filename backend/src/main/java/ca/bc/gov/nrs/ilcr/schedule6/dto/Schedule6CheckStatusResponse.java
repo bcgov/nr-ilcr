@@ -5,9 +5,9 @@ import java.util.List;
 
 /**
  * The Schedule 6 Check Status result (AD-5/AD-12) — a read-only MET/ISSUES evaluation that mutates
- * nothing (VIEW-gated, not Draft-gated; the 2.6 precedent). Per record (placeholders excluded —
- * deviation (d)): the area type must be present, TFL records need a TFL number, TSA records need a
- * Supply Block, and cost must be non-null ({@code 0} is present — D2 precedent; volume is never
+ * nothing (VIEW-gated, not editability-gated; the 2.6 precedent). Per record (placeholders excluded
+ * — deviation (d)): the area type must be present, TFL records need a TFL number, TSA records need
+ * a Supply Block, and cost must be non-null ({@code 0} is present — D2 precedent; volume is never
  * checked, commented out in legacy). The schedule-level pass ignores the area-type flag — the
  * {@code Schedule6CheckStatus.isScheduleValid} quirk, ported verbatim (unreachable in practice:
  * FLD-001 blocks area-type-less writes).

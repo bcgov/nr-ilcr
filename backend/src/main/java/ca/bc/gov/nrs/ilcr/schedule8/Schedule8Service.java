@@ -18,6 +18,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8RateRequest;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleCheckResult;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
+import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -50,7 +51,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class Schedule8Service {
 
-  private static final String STATUS_DRAFT = "D";
   private static final String IND_YES = "Y";
 
   /**
@@ -92,13 +92,13 @@ public class Schedule8Service {
    *
    * @param millId the mill id (context already validated)
    * @param year the reporting year
-   * @param callerMayEdit whether the caller holds the EDIT_SCHEDULE action (from the controller)
+   * @param caller the track statuses this caller may edit
    * @return the read document (never null; {@code pages: []} when the mill/year has none)
    */
   @Transactional(readOnly = true)
-  public Schedule8Response getSchedule8(long millId, int year, boolean callerMayEdit) {
+  public Schedule8Response getSchedule8(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    final boolean editable = callerMayEdit && STATUS_DRAFT.equals(trackStatus);
+    final boolean editable = caller.allows(trackStatus);
 
     // Label maps + the addition/deduction discriminator, loaded once per read.
     Map<String, String> supportCentre = repository.supportCentreLabels();
@@ -220,14 +220,14 @@ public class Schedule8Service {
    * @param millId the mill id (context already validated)
    * @param year the reporting year
    * @param request the page fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response savePage(
-      long millId, int year, Schedule8PageRequest request, boolean callerMayEdit, String user) {
-    requireDraft(millId, year);
+      long millId, int year, Schedule8PageRequest request, EditableStatuses caller, String user) {
+    requireEditable(millId, year, caller);
     // TFL vs Supply Block are mutually exclusive (BR-03): a TFL selection clears the supply block
     // and
     // vice-versa — normalized server-side so exactly one is ever stored.
@@ -243,7 +243,7 @@ public class Schedule8Service {
     // Ownership guard on EDIT: the page must belong to THIS mill/year (H1 — mirrors saveSample/
     // deletePage). Without it, a Draft context could overwrite another mill/year's page by id
     // (IDOR),
-    // since EDIT_SCHEDULE is global and requireDraft only checks the URL mill/year.
+    // since EDIT_SCHEDULE is global and requireEditable only checks the URL mill/year.
     if (request.id() != null && !repository.pageExists(request.id(), millId, year)) {
       throw new ScheduleNotFoundException();
     }
@@ -321,23 +321,23 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete a whole Schedule 8 report page — the page, its samples, and all their rate details
-   * (BR-05, S07) — for a mill/year, targeted by the page {@code id}. Enforces the same Draft gate
-   * as save. Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a no-op
-   * that still returns success (never 404), mirroring Schedule 2/4. Context is validated in the
-   * controller (AD-4).
+   * (BR-05, S07) — for a mill/year, targeted by the page {@code id}. Enforces the same editability
+   * gate as save. Idempotent: an absent/unknown id (or one not belonging to this mill/year) is a
+   * no-op that still returns success (never 404), mirroring Schedule 2/4. Context is validated in
+   * the controller (AD-4).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param id the page id to delete
    */
   @Transactional
-  public void deletePage(long millId, int year, int id) {
-    requireDraft(millId, year);
+  public void deletePage(long millId, int year, int id, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (!repository.pageExists(id, millId, year)) {
       return; // idempotent — nothing to remove
     }
@@ -356,7 +356,7 @@ public class Schedule8Service {
 
   /**
    * Save (create-or-edit) one sample under a page and return the recomputed document (Story 14.3,
-   * S01/S05). Draft gate (AD-9), per-sample optimistic lock, unknown page/sample → 404.
+   * S01/S05). editability gate (AD-9), per-sample optimistic lock, unknown page/sample → 404.
    * Field/cross- field validation (Contract ID, per-% 0–100, sum ≤ 100, Helicopter/Other
    * conditionals, ranges) is on the request DTO; this method persists and recomputes. The Y/N
    * indicator columns are written from the request's Booleans. One transaction; a persistence fault
@@ -366,7 +366,7 @@ public class Schedule8Service {
    * @param year the reporting year
    * @param pageId the parent page id (its {@code TREE_TO_TRUCK_REPORT_ID})
    * @param request the sample fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document
    */
@@ -376,9 +376,9 @@ public class Schedule8Service {
       int year,
       int pageId,
       Schedule8SampleRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     if (!repository.pageExists(pageId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such page to attach the sample to
     }
@@ -461,25 +461,25 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete one sample (cascading its rate details) under a page and return the recomputed document
-   * (Story 14.3, S08 / BR-05). Draft gate (AD-9). Idempotent: an unknown page or sample id is a
-   * no-op success (never 404), mirroring Schedule 2/4 deletes.
+   * (Story 14.3, S08 / BR-05). editability gate (AD-9). Idempotent: an unknown page or sample id is
+   * a no-op success (never 404), mirroring Schedule 2/4 deletes.
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param pageId the parent page id
    * @param sampleId the sample id to delete
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response deleteSample(
-      long millId, int year, int pageId, int sampleId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int pageId, int sampleId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (repository.pageExists(pageId, millId, year) && repository.sampleExists(sampleId, pageId)) {
       try {
         repository.deleteSample(sampleId);
@@ -493,15 +493,15 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Add or edit one rate-detail row under a sample and return the recomputed document (Story 14.4,
    * S01/S06). {@code request.id()} null → ADD (insert at revision 0); present → EDIT
    * (optimistic-lock update). Whether the row is an addition or a deduction is derived on the read
-   * from its cost item's subcategory — not stored here. Draft gate (AD-9); unknown sample or (on
-   * edit) unknown row → 404; stale → 409; persistence fault → 500 (type-only log, AD-11). One
+   * from its cost item's subcategory — not stored here. editability gate (AD-9); unknown sample or
+   * (on edit) unknown row → 404; stale → 409; persistence fault → 500 (type-only log, AD-11). One
    * transaction.
    *
    * @param millId the mill id (context already validated)
@@ -509,7 +509,7 @@ public class Schedule8Service {
    * @param sampleId the parent sample id
    * @param rowId the rate-row id to edit; null to add
    * @param request the rate-row fields + optimistic-lock token (validated)
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @param user the acting user id (audit)
    * @return the recomputed Schedule 8 document (the sample's totals + finalRate + counts update)
    */
@@ -520,9 +520,9 @@ public class Schedule8Service {
       int sampleId,
       Integer rowId,
       Schedule8RateRequest request,
-      boolean callerMayEdit,
+      EditableStatuses caller,
       String user) {
-    requireDraft(millId, year);
+    requireEditable(millId, year, caller);
     if (!repository.sampleInMillYear(sampleId, millId, year)) {
       throw new ScheduleNotFoundException(); // 404 — no such sample under this mill/year
     }
@@ -572,25 +572,25 @@ public class Schedule8Service {
           ex.getMostSpecificCause().getMessage());
       throw new ScheduleNotSavedException();
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /**
    * Delete one rate-detail row under a sample and return the recomputed document (Story 14.4, S09 /
-   * BR-05). Draft gate (AD-9). Idempotent: an unknown sample or row id (or a row not under this
-   * sample) is a no-op success (never 404, never deletes another sample's row).
+   * BR-05). editability gate (AD-9). Idempotent: an unknown sample or row id (or a row not under
+   * this sample) is a no-op success (never 404, never deletes another sample's row).
    *
    * @param millId the mill id
    * @param year the reporting year
    * @param sampleId the parent sample id
    * @param rowId the rate-row id to delete
-   * @param callerMayEdit whether the caller holds EDIT_SCHEDULE (for the echoed {@code editable})
+   * @param caller the track statuses this caller may edit
    * @return the recomputed Schedule 8 document
    */
   @Transactional
   public Schedule8Response deleteRate(
-      long millId, int year, int sampleId, int rowId, boolean callerMayEdit) {
-    requireDraft(millId, year);
+      long millId, int year, int sampleId, int rowId, EditableStatuses caller) {
+    requireEditable(millId, year, caller);
     if (repository.sampleInMillYear(sampleId, millId, year)
         && repository.rateExists(rowId, sampleId)) {
       try {
@@ -605,7 +605,7 @@ public class Schedule8Service {
         throw new ScheduleNotSavedException();
       }
     }
-    return getSchedule8(millId, year, callerMayEdit);
+    return getSchedule8(millId, year, caller);
   }
 
   /** Map a nullable request Boolean to the legacy Y/N indicator column value (null stays null). */
@@ -629,7 +629,7 @@ public class Schedule8Service {
    */
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatus(long millId, int year) {
-    return evaluate(getSchedule8(millId, year, false).pages());
+    return evaluate(getSchedule8(millId, year, EditableStatuses.NONE).pages());
   }
 
   /**
@@ -645,7 +645,7 @@ public class Schedule8Service {
   @Transactional(readOnly = true)
   public Schedule8CheckStatusResponse checkStatusPage(long millId, int year, int pageId) {
     List<Page> scoped =
-        getSchedule8(millId, year, false).pages().stream()
+        getSchedule8(millId, year, EditableStatuses.NONE).pages().stream()
             .filter(p -> p.id() != null && p.id() == pageId)
             .toList();
     return evaluate(scoped);
@@ -728,12 +728,16 @@ public class Schedule8Service {
     return new Schedule8CheckFieldIssue(field, new MessageInfo(messageKey, null));
   }
 
-  /** The Draft gate shared by the writes: the Schedules 1–10 track must be Draft (else 409). */
-  private void requireDraft(long millId, int year) {
+  /**
+   * The editability gate shared by the writes: the caller must be permitted to write at the
+   * Schedules 1–10 track's current status (else 409).
+   */
+  private String requireEditable(long millId, int year, EditableStatuses caller) {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
-    if (!STATUS_DRAFT.equals(trackStatus)) {
+    if (!caller.allows(trackStatus)) {
       throw new ScheduleNotEditableException();
     }
+    return trackStatus;
   }
 
   private static boolean isNotBlank(String value) {

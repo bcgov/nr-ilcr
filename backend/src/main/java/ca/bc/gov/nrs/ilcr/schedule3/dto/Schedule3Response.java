@@ -14,7 +14,9 @@ import java.util.List;
  * @param millId the mill id
  * @param year the reporting year
  * @param trackStatus the Schedules 1–10 track status ({@code ILCR_MILL_REPORT_STATUS_CODE}, AD-9)
- * @param editable server-authoritative: {@code EDIT_SCHEDULE} held AND track is Draft
+ * @param editable server-authoritative: {@code EDIT_SCHEDULE} held AND the role×status matrix
+ *     admits the caller at this track status — submitter at Draft, administrator at Submitted or
+ *     Verified ({@link ca.bc.gov.nrs.ilcr.security.ScheduleEditability})
  * @param revisionCount optimistic-lock token (summary {@code REVISION_COUNT})
  * @param overrideHarvestTotalPop the Override Harvest/Total PO&amp;P indicator ("Y"/"N"), from the
  *     summary {@code LOCATION} column (legacy carrier); defaults to "N" (BR-10, Story 4.2 writes
