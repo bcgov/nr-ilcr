@@ -21,6 +21,8 @@ import {
   TextInput,
 } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import { WRITABLE_LINE_ITEM_CODES } from '@/interfaces/Schedule1Request'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
@@ -373,11 +375,34 @@ const Schedule1: FC = () => {
 
   // A value cell: an editable TextInput when the field is writable and the schedule is editable,
   // otherwise read-only text. perUnit is always read-only (server-computed).
+  // The original-value indicator for one cell (Story 16.2, BR-04). `originals` is the owning line
+  // item's map, `field` its own key ("volume"/"cost"); both are undefined for cells that legacy gave
+  // no indicator. Editable cells compare the LIVE form value so the icon appears and clears as the
+  // operator types, the way legacy's `<f:ajax event="change">` re-render did; read-only cells compare
+  // the served value.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: number | null | undefined,
+    typed: string | undefined,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={field}
+        current={typed ?? current}
+        label={label}
+      />
+    )
+
   const numberCell = (
     fieldKey: string,
     label: string,
     writable: boolean,
     current: number | null | undefined,
+    originals?: OriginalValues | null,
+    originalField?: string,
   ) =>
     editable && writable ? (
       // --input marks the cells whose value sits inside a TextInput: the field supplies its own
@@ -395,9 +420,13 @@ const Schedule1: FC = () => {
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
+        {indicator(originals, originalField, label, current, form[fieldKey])}
       </TableCell>
     ) : (
-      <TableCell className="schedule-1__num">{fmtNumber(current)}</TableCell>
+      <TableCell className="schedule-1__num">
+        {fmtNumber(current)}
+        {indicator(originals, originalField, label, current, undefined)}
+      </TableCell>
     )
 
   const lineItemRow = (item: LineItem) => {
@@ -409,8 +438,25 @@ const Schedule1: FC = () => {
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
-        {numberCell(`vol-${code}`, `${label} volume`, writableVolume, item.volume)}
-        {numberCell(`cost-${code}`, `${label} cost`, writableCost, item.cost)}
+        {numberCell(
+          `vol-${code}`,
+          `${label} volume`,
+          writableVolume,
+          item.volume,
+          item.originalValues,
+          'volume',
+        )}
+        {numberCell(
+          `cost-${code}`,
+          `${label} cost`,
+          writableCost,
+          item.cost,
+          item.originalValues,
+          // Only the nine entered items carry a submitted cost — legacy set volume alone on the
+          // pulled and subtotal rows, so those get no cost indicator. The backend simply omits the
+          // key, which makes this safe to pass unconditionally.
+          'cost',
+        )}
         <TableCell className="schedule-1__num">
           {fmtCurrency(derived ? derived.perUnit[code] : item.perUnit)}
         </TableCell>
@@ -719,17 +765,37 @@ const Schedule1: FC = () => {
 
         <Column sm={4} md={8} lg={16} className="schedule-1__section">
           {editable ? (
-            <CommentsTextArea
-              id="comments"
-              labelText="If you have any additional comments, please enter them here:"
-              maxCount={COMMENTS_MAX}
-              value={form['comments'] ?? ''}
-              onChange={setField('comments')}
-            />
+            <>
+              <CommentsTextArea
+                id="comments"
+                labelText="If you have any additional comments, please enter them here:"
+                maxCount={COMMENTS_MAX}
+                value={form['comments'] ?? ''}
+                onChange={setField('comments')}
+              />
+              {/* Legacy gave the comments textarea an indicator too, and never a width swap —
+                  icon and tooltip only (schedule1.xhtml:774-785). Text, so compared with equals. */}
+              <OriginalValueIndicator
+                originals={data.originalValues}
+                field="comments"
+                current={form['comments'] ?? ''}
+                numeric={false}
+                label="Comments"
+              />
+            </>
           ) : (
             <>
               <h3 className="schedule-1__heading">Comments</h3>
-              <p className="schedule-1__comments">{data.comments ?? '—'}</p>
+              <p className="schedule-1__comments">
+                {data.comments ?? '—'}
+                <OriginalValueIndicator
+                  originals={data.originalValues}
+                  field="comments"
+                  current={data.comments}
+                  numeric={false}
+                  label="Comments"
+                />
+              </p>
             </>
           )}
         </Column>
