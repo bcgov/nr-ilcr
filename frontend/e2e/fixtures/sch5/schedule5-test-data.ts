@@ -478,6 +478,16 @@ export const CHECK_STATUS_MESSAGES = {
   campMet: (campName: string) => `All requirements for ${campName} have been met.`,
 } as const;
 
+/**
+ * S08 — the name deliberately reused across two mill-years.
+ *
+ * BR-02 scopes camp-name uniqueness to a single (mill, year): `Schedule5Service` excludes by campId
+ * within the served mill/year, never globally. S08 proves that scoping by saving the SAME name on
+ * `SAME_NAME_B_ANCHOR` while `SAME_NAME_A_ANCHOR` already holds it — which is why this slice needs two
+ * dedicated anchors rather than one.
+ */
+export const SAME_NAME_CAMP_NAME = 'North Camp';
+
 /** CFM-001, verbatim from `components/schedule5/index.tsx:74`. Modal heading is "Delete camp". */
 export const CONFIRM_DELETE_CAMP = 'This will delete the current record. Do you want to continue?';
 

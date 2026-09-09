@@ -3,6 +3,8 @@ import {
   ADD_ANCHOR,
   CHECK_MET_ANCHOR,
   DELETE_ANCHOR,
+  SAME_NAME_A_ANCHOR,
+  SAME_NAME_B_ANCHOR,
   COPY_ANCHOR,
   SUBPAGE_EXISTING_ANCHOR,
   SUBPAGE_NEW_ANCHOR,
@@ -40,6 +42,7 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'subpage-new': SUBPAGE_NEW_ANCHOR,
   'check-met': CHECK_MET_ANCHOR,
   delete: DELETE_ANCHOR,
+  'same-name-b': SAME_NAME_B_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -407,6 +410,58 @@ When(
       'Associated Camp Volume',
       NEW_CAMP_DESCRIPTORS.associatedCampVolume,
     );
+  },
+);
+
+// ---------------------------------------------------------------------------------------------------
+// S08 — the same camp name under a different mill/year
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Seeds the name on the OTHER anchor without disturbing the working context.
+ *
+ * Deliberately does NOT touch `world.scheduleKey`: the browser journey stays entirely in the second
+ * mill-year, and the first one only has to hold the name. So no Home context switch is needed — the
+ * slice is about BR-02's SCOPE, not about navigation.
+ */
+Given(
+  'a camp named {string} already exists under a different mill and year',
+  async ({ request, schedule5Cleanup, world }, campName) => {
+    expect(
+      `${SAME_NAME_A_ANCHOR.key.millId}/${SAME_NAME_A_ANCHOR.key.year}`,
+      'S08 needs two DISTINCT anchors — the whole slice is that the name is free in the second one',
+    ).not.toBe(`${world.scheduleKey!.millId}/${world.scheduleKey!.year}`);
+
+    schedule5Cleanup.push({ key: SAME_NAME_A_ANCHOR.key, campName });
+    await createCamp(request, SAME_NAME_A_ANCHOR.key, { ...EDIT_CAMP_BASELINE, campName });
+  },
+);
+
+/**
+ * The minimum a camp needs to save: a name and the Isolated Camp selection. Every other descriptor and
+ * all twelve category amounts are optional — a blank optional field is CLEARED, not invalid
+ * (`validation.ts`). S08 relies on that, and S12 is the mirror that proves these two ARE required.
+ */
+When(
+  'I name the new camp {string} and set Isolated Camp to {string}',
+  async ({ schedule5Page, schedule5Cleanup, world }, campName, isolated) => {
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    await schedule5Page.fillDescriptor('Camp Name', campName);
+    await schedule5Page.selectIsolatedCamp(isolated);
+  },
+);
+
+/** The other mill-year must be untouched — a save that "succeeded" by moving the camp would not do. */
+Then(
+  '{string} is still stored under the other mill and year',
+  async ({ request }, campName) => {
+    const camp = await findCampByName(request, SAME_NAME_A_ANCHOR.key, campName);
+    expect(
+      camp?.campName,
+      `"${campName}" should still be on ${SAME_NAME_A_ANCHOR.key.millId}/`
+        + `${SAME_NAME_A_ANCHOR.key.year} — BR-02 scopes uniqueness per mill/year, so saving the same `
+        + 'name elsewhere must ADD a camp, never move one',
+    ).toBe(campName);
   },
 );
 

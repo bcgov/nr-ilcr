@@ -15,8 +15,8 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S07 AUTHORED AND GREEN; S08–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 7/25 rather than held back, so the ledger reflects reality rather than an
+**STATUS: S01–S08 AUTHORED AND GREEN; S09–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 8/25 rather than held back, so the ledger reflects reality rather than an
 intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
 preflight proves all 22 resolve on every run — so the `deferred` rows below are waiting on authoring
 effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
@@ -55,7 +55,7 @@ through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCoun
 (`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
 CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`); S06 Check Status on a passing
 schedule, asserting the per-camp line is ABSENT (`check-status.feature`, SPEC-3); S07 delete behind the
-CFM-001 confirm with an API read-back proving the row really went (`delete.feature`).
+CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`).
 
 ## Slice ledger
 
@@ -68,7 +68,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S05 | Enter Other Camp/Access Expenses on Sub-Page (new, unsaved camp) | Alternative | **covered** | `sub-page.feature` `@p1 @S05 @CFM-004` — GREEN |
 | S06 | Check Status — All Requirements Met | Alternative | **covered** | `check-status.feature` `@p1 @S06` — GREEN. Asserts the per-camp line is ABSENT; found SPEC-3 |
 | S07 | Delete an Existing Camp | Alternative | **covered** | `delete.feature` `@p1 @S07 @CFM-001` — GREEN |
-| S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | deferred | needs **two** dedicated anchors by construction |
+| S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | **covered** | `same-name.feature` `@p1 @S08 @BR-02` — GREEN. The one slice needing two anchors |
 | S09 | Recoveries Amount Reduces the Camp Total | Alternative | deferred | as S02. Also carries the per-category `$/m³` assertions S01 does not |
 | S10 | Close/Navigate Away With Unsaved Changes Prompts a Discard Confirm | Alternative | deferred | validate-only; can share a non-mutating anchor when authored |
 | S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | deferred | as S10 |
@@ -87,7 +87,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 7 / 25 slices (28%). P0: 1 / 1 authored.**
+**Coverage: 8 / 25 slices (32%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
