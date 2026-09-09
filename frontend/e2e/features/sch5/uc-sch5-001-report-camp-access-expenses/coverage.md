@@ -15,11 +15,11 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01 AUTHORED AND GREEN; S02–S25 ANCHORED BUT NOT YET AUTHORED.** This file is deliberately
-published at 1/25 rather than held back, so the ledger reflects reality rather than an intention. Every
-remaining slice now has a dedicated, verified anchor reserved and named for it, and preflight proves
-all 22 resolve on every run — so the `deferred` rows below are waiting on authoring effort, not on a
-blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
+**STATUS: S01–S05 AUTHORED AND GREEN; S06–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 5/25 rather than held back, so the ledger reflects reality rather than an
+intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
+preflight proves all 22 resolve on every run — so the `deferred` rows below are waiting on authoring
+effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
 
 Test data (real, discovered 2026-09-08): pinned in `fixtures/sch5/schedule5-test-data.ts` with the
 finding queries in comments. `preflight/sch5-anchors.setup.ts` asserts the anchor resolves as an
@@ -50,7 +50,10 @@ consumer list is schedule1, schedule2, schedule5, reporting), so a sch3 scenario
 
 Scope authored: S01 add-a-camp with descriptors, BR-03 volume propagation across all eleven
 volume-bearing categories, the nine fixed-category costs, and the four server-derived totals read back
-through the API (`happy-path.feature`).
+through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCount` read-back
+(`edit.feature`); S03 copy-and-rename, which resolves WRN-001's `[UNKNOWN]` and surfaced SPEC-2
+(`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
+CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`).
 
 ## Slice ledger
 
@@ -58,9 +61,9 @@ through the API (`happy-path.feature`).
 |---|---|---|---|---|
 | S01 | Add a New Camp With Descriptors and Fixed-Category Expenses | Happy Path | **covered** | `happy-path.feature` `@p0 @S01` — GREEN |
 | S02 | Edit an Existing Camp | Alternative | **covered** | `edit.feature` `@p1 @S02` — GREEN |
-| S03 | Copy an Existing Camp and Save With a New Name | Alternative | deferred | as S02; also pins WRN-001 `{0}` substitution, an unresolved `[UNKNOWN]` in the source Gherkin |
-| S04 | Enter Other Camp/Access Expenses on Sub-Page (existing camp) | Alternative | deferred | as S02 |
-| S05 | Enter Other Camp/Access Expenses on Sub-Page (new, unsaved camp) | Alternative | deferred | as S02 |
+| S03 | Copy an Existing Camp and Save With a New Name | Alternative | **covered** | `copy.feature` `@p1 @S03 @WRN-001` — GREEN. Resolves WRN-001's `[UNKNOWN]`; found SPEC-2 |
+| S04 | Enter Other Camp/Access Expenses on Sub-Page (existing camp) | Alternative | **covered** | `sub-page.feature` `@p1 @S04` — GREEN |
+| S05 | Enter Other Camp/Access Expenses on Sub-Page (new, unsaved camp) | Alternative | **covered** | `sub-page.feature` `@p1 @S05 @CFM-004` — GREEN |
 | S06 | Check Status — All Requirements Met | Alternative | deferred | as S02 |
 | S07 | Delete an Existing Camp | Alternative | deferred | as S02 |
 | S08 | Same Camp Name Allowed in a Different Mill/Year | Alternative | deferred | needs **two** dedicated anchors by construction |
@@ -69,7 +72,7 @@ through the API (`happy-path.feature`).
 | S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | deferred | as S10 |
 | S12 | Required Descriptive Field Left Blank (Camp Name or Isolated Camp) | Exception | deferred | validate-only. FLD-001's exact text is `[UNKNOWN]` in source — re-ground against the app |
 | S13 | Duplicate Camp Name on Save (Case-Insensitive) | Exception | deferred | BR-02. Its message is already OBSERVED — see note below |
-| S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | deferred | as S13 |
+| S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | deferred | **re-ground before authoring** — SPEC-2: a copy opens with a BLANK name, so an untouched save raises the REQUIRED-name error (FLD-001), not the duplicate-name error this slice predicts |
 | S15 | Numeric Field Fails Range/Format Validation | Exception | deferred | validate-only; `validation.ts` declares four cost bands to cover |
 | S16 | No Mill/Year Selected in Session | Exception | deferred | context guard; no anchor needed |
 | S17 | Selected Mill Not Active for the Reporting Year | Exception | deferred | guard anchor (409) — a CLS mill, no capacity needed |
@@ -82,7 +85,7 @@ through the API (`happy-path.feature`).
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 2 / 25 slices (8%). P0: 1 / 1 authored.**
+**Coverage: 5 / 25 slices (20%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),

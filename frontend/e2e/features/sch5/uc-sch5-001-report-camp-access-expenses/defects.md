@@ -7,9 +7,10 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 
-**As of 2026-09-09**, this UC has **no Divergence and no Bug/Regression entries** — the one authored
-slice (S01) matches the legacy-derived specification exactly, including the success message text. The
-entries below are one coverage gap, one spec gap, and two verified-not-a-defect records.
+**As of 2026-09-09**, this UC has **no Divergence and no Bug/Regression entries**. Five slices are
+authored (S01–S05) and all are green: where the app and the legacy-derived Gherkin disagreed, the
+Gherkin turned out to be wrong about legacy — see SPEC-2, which was settled by reading the legacy
+source rather than by trusting either document.
 
 ---
 
@@ -108,6 +109,33 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
   - **Fix:** change "23" to "25" in that README (a file in the `ilcr-bmad` planning repo, not this one).
   - **Status:** OPEN — trivial doc fix, owned by whoever maintains the planning artifacts. Found
     2026-09-09.
+
+- **SPEC-2 — OPEN: S03 says a copied camp keeps the source's name. Neither the new app nor LEGACY does
+  that — the name is deliberately blanked.**
+  - **What's wrong.** `UC-SCH5-001-S03.feature:29` asserts the copy panel opens "pre-filled with
+    'North Camp''s descriptive fields and expense amounts, **including
+    `schedule5Form:newCampName` set to 'North Camp'**". In the running app the Camp Name comes back
+    **empty**; every other descriptor and all twelve category amounts are copied.
+  - **Expected vs actual.** Expected (per the Gherkin): Camp Name = "North Camp". Actual: Camp Name = "".
+  - **This is a SPEC gap, not a divergence — the app matches legacy.** Legacy's own copy constructor
+    clones every field and then nulls the name: `CampReportType.java:120-121` in
+    `docs/nr-ilcr-2.0.4` (`campName = null; campNameOriginalVal = null;`). The rewrite reproduces it
+    deliberately and cites that line — `seedForm(camp, keepName=false)`,
+    `components/schedule5/index.tsx:122-140`. So the *derived Gherkin* misdescribes the system it was
+    derived from; the rewrite is correct.
+  - **How caught.** S03 failed on its first run with `Expected: "North Camp" / Received: ""`. Rather
+    than accept the Gherkin, the legacy source was opened and read — which is what turned a suspected
+    app divergence into a spec correction.
+  - **Why it matters beyond one assertion.** It changes what **S14** ("Save a Copied Camp Without
+    Renaming It") can possibly assert. With the name blanked there is nothing to duplicate, so saving
+    an untouched copy must raise the REQUIRED-name error (FLD-001), not the duplicate-name error
+    (ERR/BR-02) that S14 predicts. S14 should be re-grounded on that basis when it is authored, and it
+    is flagged in coverage.md.
+  - **Also note:** the blank name is *why* WRN-001 exists — "provide a new Camp Name and invoke save"
+    is an instruction, not a warning about a clash.
+  - **Fix:** correct S03 (and re-check S14) in the `ilcr-bmad` planning repo. The E2E test already
+    follows legacy and is GREEN.
+  - **Status:** OPEN — spec correction owed. Found 2026-09-09.
 
 ---
 

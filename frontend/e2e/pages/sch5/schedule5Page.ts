@@ -158,6 +158,86 @@ export class Schedule5Page {
       .filter({ has: this.page.getByRole('cell', { name: new RegExp(`^${escapeRegExp(label)}`) }) });
   }
 
+  // ---- copy (S03) ---------------------------------------------------------------------------------
+
+  /** The `Copy` action on a camp's row — scoped to the row for the same reason as Edit. */
+  copyButtonFor(campName: string): Locator {
+    return this.existingCampRow(campName).getByRole('button', { name: 'Copy' });
+  }
+
+  /**
+   * Copy opens the NEW-camp panel pre-filled, so its heading is the `New Camp Details` literal rather
+   * than the source camp's name — `panelMode` is 'copy', which is neither 'edit' nor 'view'
+   * (index.tsx:1282-1284). Asserting that is what distinguishes a copy from having reopened the source.
+   */
+  async copyCamp(campName: string): Promise<void> {
+    await this.copyButtonFor(campName).click();
+    await expect(this.newCampPanelHeading).toBeVisible();
+  }
+
+  // ---- expense sub-pages (S04 / S05) ----------------------------------------------------------------
+
+  /**
+   * The grid row label that navigates to a sub-page. It is a `Button kind="ghost"` whose text carries
+   * the LIVE row count — `Other Camp Expenses (0): ` — so this matches on the prefix rather than the
+   * whole string, and `subPageLinkWithCount` is used where the count itself is the assertion.
+   */
+  subPageLink(gridLabel: string): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`^${escapeRegExp(gridLabel)}\\s*\\(`) });
+  }
+
+  /** The same control, pinned to an exact count — for "the label reflects the updated count". */
+  subPageLinkWithCount(gridLabel: string, count: number): Locator {
+    return this.page.getByRole('button', {
+      name: new RegExp(`^${escapeRegExp(gridLabel)}\\s*\\(${count}\\)`),
+    });
+  }
+
+  /** Sub-page add-form fields. Carbon keeps the trailing ": " in the accessible name. */
+  subPageField(field: 'Description' | 'Volume' | 'Cost $'): Locator {
+    return this.page.getByLabel(`${field}: `, { exact: true });
+  }
+
+  get subPageAddButton(): Locator {
+    return this.page.getByRole('button', { name: 'Add', exact: true });
+  }
+
+  get subPageBackButton(): Locator {
+    return this.page.getByRole('button', { name: 'Back', exact: true });
+  }
+
+  /** The sub-page's own list table, by its header ("Other Camp Expenses" / "Other Access Expenses"). */
+  subPageList(listHeader: string): Locator {
+    return this.page.getByRole('table', { name: listHeader });
+  }
+
+  /**
+   * A row in the sub-page list, found by its Description INPUT's value.
+   *
+   * Not `filter({ hasText })`: the list's Description and Cost cells are editable `hideLabel`
+   * TextInputs, so the typed text lives in `value` and is not in the row's text content at all. Only
+   * Volume and `$/m³` are rendered as text (index.tsx:541-545), which is why the volume assertion can
+   * still read the row's text.
+   */
+  subPageRow(listHeader: string, description: string): Locator {
+    return this.subPageList(listHeader)
+      .getByRole('row')
+      .filter({ has: this.page.getByRole('textbox', { name: 'Description' }) })
+      .filter({ has: this.page.locator(`input[value="${description}"]`) });
+  }
+
+  /** The Description inputs in the list — used to assert a value without depending on row order. */
+  subPageDescriptions(listHeader: string): Locator {
+    return this.subPageList(listHeader).getByRole('textbox', { name: 'Description' });
+  }
+
+  /** Every Schedule 5 confirm is a Carbon Modal with Yes/No; the heading is what distinguishes them. */
+  async confirmModal(heading: string): Promise<void> {
+    const modal = this.page.getByRole('presentation').filter({ hasText: heading });
+    await expect(modal.first()).toBeVisible();
+    await this.page.getByRole('button', { name: 'Yes', exact: true }).click();
+  }
+
   // ---- results ------------------------------------------------------------------------------------
 
   get saveButton(): Locator {

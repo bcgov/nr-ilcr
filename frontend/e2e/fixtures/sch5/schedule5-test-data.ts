@@ -395,6 +395,70 @@ export const EDIT_CAMP_EXPECTED_TOTALS = {
 /** A saved camp starts at revisionCount 0; the first edit takes it to 1 (observed on the same probe). */
 export const EDIT_CAMP_EXPECTED_REVISION = 1;
 
+// ---------------------------------------------------------------------------------------------------
+// S03 — Copy an Existing Camp and Save With a New Name.
+// ---------------------------------------------------------------------------------------------------
+
+/** The camp S03 copies FROM. Created by the scenario's own Given, same baseline as S02. */
+export const COPY_SOURCE_CAMP_NAME = 'North Camp';
+/** The unique name the copy is saved under. */
+export const COPY_NEW_CAMP_NAME = 'North Camp Annex';
+
+/**
+ * WRN-001, resolved. The source Gherkin carried this as an `[UNKNOWN]` — it assumed literal `{0}`
+ * substitution but no live app existed to confirm it. Now confirmed in both directions:
+ *   * the template is `sch5.copy.msg=To complete copy of Camp: {0}, provide a new Camp Name and invoke
+ *     save.` (backend `messages.properties:253`);
+ *   * the app resolves it over HTTP rather than hardcoding it — `openCopy` GETs `/v1/messages` with
+ *     `{ key, arg: camp.campName }` (components/schedule5/index.tsx:713-718), so `{0}` really is the
+ *     SOURCE camp's name.
+ * The `[UNKNOWN]` marker in UC-SCH5-001's gherkin README can be retired for WRN-001 on this evidence.
+ */
+export const COPY_WARNING = `To complete copy of Camp: ${COPY_SOURCE_CAMP_NAME}, provide a new Camp Name and invoke save.`;
+
+// ---------------------------------------------------------------------------------------------------
+// S04 / S05 — the Other Camp/Access Expense sub-pages.
+//
+// There is NO second route: the sub-page level is driven by search params on `/schedule-5`
+// (`camp` = CAMP_REPORT_ID, `sub` = 'CAMP' | 'ACCESS'), mirroring Schedule 4. So the legacy
+// `schedule5CampExpenses.xhtml` / `schedule5AccessExpenses.xhtml` URLs re-ground to a query string, and
+// the browser Back button steps back to the camp list.
+// ---------------------------------------------------------------------------------------------------
+
+/** The two sub-pages, keyed by the vocabulary the feature files use. Verbatim from SUB_PAGE_DEFS. */
+export const SUB_PAGES = {
+  camp: {
+    sub: 'CAMP',
+    /** The label on the grid row that navigates there — the live count is interpolated into it. */
+    gridLabel: 'Other Camp Expenses',
+    addHeader: 'Add Other Camp Expense',
+    listHeader: 'Other Camp Expenses',
+  },
+  access: {
+    sub: 'ACCESS',
+    gridLabel: 'Other Access Expenses',
+    addHeader: 'Add Other Access Expense',
+    listHeader: 'Other Access Expenses',
+  },
+} as const;
+
+/** S04's row: added to an EXISTING camp's Other Camp Expenses list. */
+export const SUBPAGE_CAMP_ROW = { description: 'Generator Fuel', cost: '350' } as const;
+/** S05's row: added to a NEW camp's Other Access Expenses list, after the save-first confirm. */
+export const SUBPAGE_ACCESS_ROW = { description: 'Ferry Crossing', cost: '220' } as const;
+
+/** The camp S05 creates on screen and then auto-saves through the confirm. */
+export const SUBPAGE_NEW_CAMP_NAME = 'Elk Ridge Camp';
+
+/**
+ * CFM-004 — the save-first confirm, verbatim from `components/schedule5/index.tsx:85-86`. Matches the
+ * source Gherkin's text exactly, so nothing was re-grounded here beyond the control type: it is a
+ * Carbon `Modal` headed "Save camp report" with Yes/No buttons, not a PrimeFaces confirmDialog.
+ */
+export const CONFIRM_SAVE_NEW_CAMP =
+  'The information for the New Camp must be saved before you can add other expenses. '
+  + 'Would you like to save the information now?';
+
 /** ERR/SUC message text, verbatim from backend `messages.properties`. */
 export const MESSAGES = {
   /** `dataSavedSuccesfullyInfoMsg` (messages.properties:168) — the Gherkin's expected text, unchanged. */

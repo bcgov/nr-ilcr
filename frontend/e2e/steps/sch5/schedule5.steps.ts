@@ -1,6 +1,10 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  COPY_ANCHOR,
+  SUBPAGE_EXISTING_ANCHOR,
+  SUBPAGE_NEW_ANCHOR,
+  SUB_PAGES,
   EDIT_ANCHOR,
   EDIT_CAMP_BASELINE,
   EDIT_CAMP_CHANGES,
@@ -29,7 +33,18 @@ import { createCamp, findCampByName, getSchedule5 } from './schedule5Api';
 const ANCHORS: Record<string, Sch5Anchor> = {
   add: ADD_ANCHOR,
   edit: EDIT_ANCHOR,
+  copy: COPY_ANCHOR,
+  'subpage-existing': SUBPAGE_EXISTING_ANCHOR,
+  'subpage-new': SUBPAGE_NEW_ANCHOR,
 };
+
+/** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
+function subPage(key: string): (typeof SUB_PAGES)[keyof typeof SUB_PAGES] {
+  const def = SUB_PAGES[key as keyof typeof SUB_PAGES];
+  expect(def, `unknown Schedule 5 sub-page "${key}" — known: ${Object.keys(SUB_PAGES).join(', ')}`)
+    .toBeTruthy();
+  return def;
+}
 
 // ---------------------------------------------------------------------------------------------------
 // Preconditions
@@ -243,6 +258,153 @@ Then('the edited camp carries the recalculated totals', async ({ request, world 
     )
     .toEqual({ ...EDIT_CAMP_EXPECTED_TOTALS, revisionCount: EDIT_CAMP_EXPECTED_REVISION });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// S03 — copying a camp
+// ---------------------------------------------------------------------------------------------------
+
+When('I copy the {string} camp', async ({ schedule5Page }, campName) => {
+  await schedule5Page.copyCamp(campName);
+});
+
+/**
+ * The copy panel carries every descriptor and category amount from the source — but its Camp Name is
+ * BLANK, which is what forces the rename.
+ *
+ * The source Gherkin says the opposite ("including schedule5Form:newCampName set to 'North Camp'").
+ * It is wrong about legacy, and this test follows legacy: `CampReportType.java:120-121` — legacy's own
+ * copy constructor clones every field and then sets `campName = null`. The rewrite reproduces that
+ * (`seedForm(camp, keepName=false)`, index.tsx:122-140). Logged as SPEC-2 in defects.md; asserting the
+ * Gherkin's version here would have pinned a behaviour neither system has ever had.
+ */
+Then('the new camp panel is pre-filled from {string}', async ({ schedule5Page }, _sourceName) => {
+  expect(
+    await schedule5Page.descriptorValue('Camp Name'),
+    'a copied camp must open with a BLANK name (legacy CampReportType.java:120-121) — see SPEC-2',
+  ).toBe('');
+  expect(await schedule5Page.descriptorValue('Road Distance to Operating Area')).toBe(
+    EDIT_CAMP_DISPLAY.roadDistanceToOperatingArea,
+  );
+  expect(await schedule5Page.descriptorValue('Size of Camp')).toBe(EDIT_CAMP_DISPLAY.sizeOfCamp);
+  expect(await schedule5Page.categoryValue('Catering and Food', 'cost')).toBe(
+    EDIT_CAMP_DISPLAY.cateringAndFoodCost,
+  );
+});
+
+When(
+  'I rename the new camp to {string}',
+  async ({ schedule5Page, schedule5Cleanup, world }, campName) => {
+    // Registered before the rename, so the copy is torn down even if the save fails downstream.
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    await schedule5Page.fillDescriptor('Camp Name', campName);
+  },
+);
+
+/** A copy must ADD a camp, not move one — so the source has to still be there afterwards. */
+Then('both {string} and {string} are stored', async ({ request, world }, first, second) => {
+  await expect
+    .poll(
+      async () => {
+        const doc = await getSchedule5(request, world.scheduleKey!);
+        return doc.camps.map((c) => c.campName).sort();
+      },
+      { message: `expected both "${first}" and "${second}" on the anchor after the copy` },
+    )
+    .toEqual([first, second].sort());
+});
+
+// ---------------------------------------------------------------------------------------------------
+// S04 / S05 — the expense sub-pages
+// ---------------------------------------------------------------------------------------------------
+
+When('I open the {string} sub-page', async ({ schedule5Page }, key) => {
+  const def = subPage(key);
+  await schedule5Page.subPageLink(def.gridLabel).click();
+});
+
+Then('the {string} sub-page is shown', async ({ page, schedule5Page }, key) => {
+  const def = subPage(key);
+  // The sub-page level is a search param on the SAME route, not a separate URL (routes/schedule-5.tsx).
+  await expect(page).toHaveURL(new RegExp(`/schedule-5\\?.*sub=${def.sub}`));
+  await expect(page.getByRole('heading', { name: def.addHeader })).toBeVisible();
+  await expect(schedule5Page.subPageList(def.listHeader)).toBeVisible();
+});
+
+When('I add the sub-page row {string} costing {string}', async ({ schedule5Page }, description, cost) => {
+  await schedule5Page.subPageField('Description').fill(description);
+  await schedule5Page.subPageField('Cost $').fill(cost);
+  await schedule5Page.subPageAddButton.click();
+});
+
+/**
+ * The added row's Volume must default from the camp's Associated Camp Volume — the sub-page's own
+ * echo of BR-03, and the one behaviour here that is not simply "a list works".
+ */
+Then(
+  'the {string} list holds {string} with the camp volume defaulted',
+  async ({ schedule5Page }, key, description) => {
+    const def = subPage(key);
+
+    // The Description cell is an INPUT, so assert its value rather than the row's text. Volume is
+    // read-only TEXT in the same row (index.tsx:541-545) and renders through fmtVolume, i.e. grouped.
+    await expect(schedule5Page.subPageDescriptions(def.listHeader)).toHaveValue(description);
+    await expect(schedule5Page.subPageRow(def.listHeader, description)).toContainText(
+      EDIT_CAMP_DISPLAY.cateringAndFoodVolume,
+    );
+  },
+);
+
+// Deliberately NOT the bare "I save the sub-page": sch3 already owns that text for its own sub-page
+// page object (steps/sch3/subPage.steps.ts:77), and playwright-bdd rightly rejects two definitions of
+// one step. sch3's own "I go back to Schedule 3" sets the precedent — a sub-page step that drives a
+// domain's page object carries that domain's name.
+When('I save the Schedule 5 sub-page', async ({ schedule5Page }) => {
+  await schedule5Page.save();
+});
+
+/**
+ * Back ALWAYS asks for confirmation on an editable sub-page — `requestBack` has no dirty check and
+ * goes straight to the confirm unless the document is read-only (index.tsx:357-365), where legacy
+ * renders a bare Back. So a saved, pristine list still prompts, and the step must answer it.
+ */
+When('I go back to the camp list', async ({ page, schedule5Page }) => {
+  await schedule5Page.subPageBackButton.click();
+  await schedule5Page.confirmModal('Leave expense list');
+  await expect(page).toHaveURL(/\/schedule-5(?!\?.*sub=)/);
+  await expect(schedule5Page.campsTable).toBeVisible();
+});
+
+Then(
+  'the {string} link shows a count of {int}',
+  async ({ schedule5Page }, key, count) => {
+    await expect(schedule5Page.subPageLinkWithCount(subPage(key).gridLabel, count)).toBeVisible();
+  },
+);
+
+When('I confirm the {string} dialog', async ({ schedule5Page }, heading) => {
+  await schedule5Page.confirmModal(heading);
+});
+
+Then('I should see the confirm text {string}', async ({ page }, text) => {
+  await expect(page.getByText(text)).toBeVisible();
+});
+
+/** S05's precondition: a new camp panel filled in far enough to be saveable, but NOT saved. */
+When(
+  'I start a new camp named {string} without saving',
+  async ({ schedule5Page, schedule5Cleanup, world }, campName) => {
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    await schedule5Page.openNewCampPanel();
+    await schedule5Page.fillDescriptor('Camp Name', campName);
+    // Isolated Camp is REQUIRED (S12) — without it the auto-save behind the confirm would be rejected
+    // and S05 would fail for a reason that belongs to a different slice.
+    await schedule5Page.selectIsolatedCamp(NEW_CAMP_DESCRIPTORS.isolatedCamp);
+    await schedule5Page.fillDescriptor(
+      'Associated Camp Volume',
+      NEW_CAMP_DESCRIPTORS.associatedCampVolume,
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------------------------------
 // Save and verification
