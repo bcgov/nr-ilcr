@@ -208,8 +208,25 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     read-only at Draft while a submitter was offered no mill, so neither mock user could enter
     schedule data. Note the default GUID exists only in the seeded databases — against any other
     database, point `ilcr.security.mock-user-guid` at a GUID that database associates.
-  - **Status:** CLOSED (2026-09-09). App gap fixed, workaround deleted, submitter scoping now
-    covered here rather than only by the backend's own tests.
+  - **What is STILL not covered, stated precisely, because "the scoped query runs" is not the same
+    claim as "scoping is covered":** the fixture associates EVERY mill, so a submitter's list is the
+    same set as an admin's. A break INSIDE `findMillsForUser` (its joins, the
+    `ACTIVE_DATE`/`INACTIVE_DATE` predicates, the `EXISTS ILCR_MILL_REPORT_STATUS` gate) would now
+    fail this suite, because that query is really the one being run. But scoping being BYPASSED
+    would not — swap `listMills` back to `findAllMills` for everyone and every scenario here stays
+    green, since the two lists are indistinguishable. Discriminating coverage needs a mill the
+    submitter is deliberately NOT associated to, plus a scenario asserting it is absent for a
+    submitter and present for an admin; that changes what the dropdown contains, so it needs a mill
+    no fixture pins. Not done here.
+  - **What this fix did NOT do, deliberately:** make the two mill-scope gates agree. With security
+    off, `validateMillAccess` still EXEMPTS the mock principal outright while `listMills` now scopes
+    it, so a mock submitter may still WRITE to a mill it is not associated to. It does not show
+    today only because this fixture associates every mill. The asymmetry is invisible with security
+    ON — every caller presents a `Jwt` there, so both gates take the same branch — which is why it
+    was left rather than widened into an authorization change on a dev-only path.
+  - **Status:** CLOSED (2026-09-09) as an app gap: the identity is fixed, the workaround is deleted,
+    and the real scoped query is exercised. The *discrimination* gap and the gate asymmetry above
+    both remain, and neither is a suite failure — they are limits on what a green run here proves.
 
 **Spec gaps (the Gherkin is missing / underspecifies scenarios):**
 
