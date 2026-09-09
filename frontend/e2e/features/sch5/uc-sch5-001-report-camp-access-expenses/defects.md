@@ -133,9 +133,15 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
     is flagged in coverage.md.
   - **Also note:** the blank name is *why* WRN-001 exists — "provide a new Camp Name and invoke save"
     is an instruction, not a warning about a clash.
-  - **Fix:** correct S03 (and re-check S14) in the `ilcr-bmad` planning repo. The E2E test already
-    follows legacy and is GREEN.
-  - **Status:** OPEN — spec correction owed. Found 2026-09-09.
+  - **Fix:** correct S03 **and S14** in the `ilcr-bmad` planning repo. The E2E tests already follow
+    legacy and are GREEN.
+  - **CONFIRMED DOWNSTREAM 2026-09-09, as predicted.** S14 has since been authored and it behaves
+    exactly as this entry forecast: saving an unrenamed copy is rejected with **"Camp Name is
+    required."**, not the duplicate-name error S14 scripts. The duplicate error is UNREACHABLE by that
+    route — with a blank name there is nothing to duplicate. So S14 needs the same correction as S03,
+    and it is a different message, not a re-worded one.
+  - **Status:** OPEN — spec correction owed on TWO slices (S03 and S14). Found 2026-09-09, downstream
+    effect confirmed the same day.
 
 - **SPEC-3 — OPEN: three planning documents say Check Status shows a per-camp "requirements met" line
   on a pass. Neither the new app nor LEGACY does.**
@@ -187,6 +193,21 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
   - **Action taken:** the paragraph in `R__80` was rewritten to rest on the FK's absence rather than on
     Schedule 5's absence, and now states that if a future migration adds that FK to the test schema the
     exemption is void. No behaviour changed.
+  - **Status:** CLOSED as verified 2026-09-09.
+
+- **VER-4 — the Road Distance error text differs from the Gherkin by "0.9", and the APP is right. A
+  Ministry ruling, already on the record.**
+  - **What differs.** `UC-SCH5-001-S15.feature:29` expects *"Entered distance must be between 0 and
+    999,999."* The app says *"…between 0 and **999,999.9**."*
+  - **Why the app is right.** Legacy's message understated its OWN validator: the validator accepted up
+    to 999,999.9 while the text said 999,999. The Ministry confirmed the BOUND and ruled the TEXT the
+    defect (PR #370, 2026-08-27 — the value is in km). `validation.ts:23-27` records that decision at
+    the constant, and the backend's `distanceValidatorErrorMsg` is kept identical.
+  - **Not a spec gap needing correction, unlike SPEC-1/2/3:** this one was already adjudicated by the
+    business and deliberately shipped. It is recorded only so a future reader diffing S15 against the
+    suite does not "fix" the test back to the legacy wording.
+  - **The scenario still exercises a genuine rejection** — the invalid value 1000000 is above the real
+    bound either way, so the test does not depend on which text is correct to be meaningful.
   - **Status:** CLOSED as verified 2026-09-09.
 
 - **VER-3 — one unreproduced S04 abort left a camp behind; preflight caught it, as designed.**

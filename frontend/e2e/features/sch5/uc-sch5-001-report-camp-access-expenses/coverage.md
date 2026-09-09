@@ -15,10 +15,10 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S11 AUTHORED AND GREEN; S12–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 11/25 rather than held back, so the ledger reflects reality rather than an
+**STATUS: S01–S15 AUTHORED AND GREEN; S16–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 15/25 rather than held back, so the ledger reflects reality rather than an
 intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
-preflight proves all 22 resolve on every run — so the `deferred` rows below are waiting on authoring
+preflight proves all 23 resolve on every run — so the `deferred` rows below are waiting on authoring
 effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
 
 Test data (real, discovered 2026-09-08): pinned in `fixtures/sch5/schedule5-test-data.ts` with the
@@ -34,15 +34,13 @@ pinned by the other six domains. Exactly three Draft mill-years were unpinned (1
 two were already claimed. `9050/2016` was the last, and S01 uses it.
 
 `real-test-data-patches/sch5/draft-anchors.sql` therefore **opens reporting years 2022 and 2023** and
-claims 21 cells in them — purely additive, no existing row modified, and safe for the year dropdown
+claims 22 cells in them — purely additive, no existing row modified, and safe for the year dropdown
 (nothing asserts its contents, and the app has no default working context to shift). Because every key
 any other fixture pins is ≤ 2021, **"year ≥ 2022 belongs to sch5" is a structural invariant** rather
 than a convention: a cross-domain collision is not expressible in the new range. 16050/2022 is left
 empty ON PURPOSE as S18's 404 fixture and is registered in `DELIBERATELY_ABSENT`.
 
-**Anchor inventory (22 pinned, all verified through the API 2026-09-09):** 21 empty editable Drafts
-(20 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that
-need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404).
+**Anchor inventory (23 pinned, all verified through the API):** 22 empty editable Drafts (21 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). 17052/2023 was added on 2026-09-09 when S12 turned out to need a mutating anchor of its own: its second arm corrects the blank field and SAVES, and a writer cannot share a key under `fullyParallel`.
 
 **Cross-schedule note:** Schedule 5 is one of the domains that reads Schedule 3 (`Schedule3Service`'s
 consumer list is schedule1, schedule2, schedule5, reporting), so a sch3 scenario on a shared
@@ -55,7 +53,7 @@ through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCoun
 (`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
 CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`); S06 Check Status on a passing
 schedule, asserting the per-camp line is ABSENT (`check-status.feature`, SPEC-3); S07 delete behind the
-CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`).
+CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`).
 
 ## Slice ledger
 
@@ -72,10 +70,10 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S09 | Recoveries Amount Reduces the Camp Total | Alternative | **covered** | `recoveries.feature` `@p1 @S09 @BR-04` — GREEN. Client-side mirror, never saves. Does NOT cover per-category `$/m³` — see note |
 | S10 | Close/Navigate Away With Unsaved Changes Prompts a Discard Confirm | Alternative | **covered** | `discard-confirm.feature` `@p1 @S10 @CFM-002` — GREEN |
 | S11 | Switch to a Different Camp While Editing Prompts a Discard Confirm | Alternative | **covered** | `discard-confirm.feature` `@p1 @S11 @CFM-003` — GREEN |
-| S12 | Required Descriptive Field Left Blank (Camp Name or Isolated Camp) | Exception | deferred | validate-only. FLD-001's exact text is `[UNKNOWN]` in source — re-ground against the app |
-| S13 | Duplicate Camp Name on Save (Case-Insensitive) | Exception | deferred | BR-02. Its message is already OBSERVED — see note below |
-| S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | deferred | **re-ground before authoring** — SPEC-2: a copy opens with a BLANK name, so an untouched save raises the REQUIRED-name error (FLD-001), not the duplicate-name error this slice predicts |
-| S15 | Numeric Field Fails Range/Format Validation | Exception | deferred | validate-only; `validation.ts` declares four cost bands to cover |
+| S12 | Required Descriptive Field Left Blank (Camp Name or Isolated Camp) | Exception | **covered** | `name-validation.feature` `@p1 @S12 @FLD-001` — GREEN. RESOLVES FLD-001's `[UNKNOWN]` |
+| S13 | Duplicate Camp Name on Save (Case-Insensitive) | Exception | **covered** | `name-validation.feature` `@p1 @S13 @ERR-001 @BR-02` — GREEN |
+| S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | **covered** | `name-validation.feature` `@p1 @S14 @FLD-001` — GREEN, re-grounded per SPEC-2: rejected as REQUIRED, not duplicate. Prediction CONFIRMED |
+| S15 | Numeric Field Fails Range/Format Validation | Exception | **covered** | `numeric-validation.feature` `@p1 @S15 @FLD-002` — GREEN, 5 outline rows. WIDE band (Wages) not exercised — see note |
 | S16 | No Mill/Year Selected in Session | Exception | deferred | context guard; no anchor needed |
 | S17 | Selected Mill Not Active for the Reporting Year | Exception | deferred | guard anchor (409) — a CLS mill, no capacity needed |
 | S18 | No Schedule 5 Record Found for Mill/Year | Exception | deferred | guard anchor (404) — absence IS the fixture |
@@ -87,7 +85,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 11 / 25 slices (44%). P0: 1 / 1 authored.**
+**Coverage: 15 / 25 slices (60%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -122,6 +120,16 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | Panel redisplays with recalculated values after save | S01 | **deferred** | the API read-back proves persistence, which is the stronger claim; re-render fidelity rides S02's reopen |
 
 ## Notes
+
+- **S15 does not exercise the WIDE cost band, and that is a real gap rather than an oversight.**
+  `validation.ts` declares four bands: STANDARD (±9,999,999, eight categories), **WIDE**
+  (±99,999,999, `wagesAndBenefits` ALONE), NON_NEGATIVE (0–9,999,999, `recoveries`) and NONE (the two
+  Other … rows, whose cost is the sub-page sum and is read-only). S15's source scenarios name only
+  Catering and Food and Recoveries, so the outline covers STANDARD and NON_NEGATIVE. WIDE is the odd
+  one out precisely because it is easy to lose: Wages and Benefits is the only category whose legacy
+  input omits `costSize="7"`, and a blanket ±9,999,999 rule would make any stored camp above 9,999,999
+  **un-re-saveable**. Worth an added Examples row; not added here because it is outside what the slice
+  catalog scripts, and silently widening a slice hides the decision.
 
 - **DEVIATION (K) is not yet covered, and deliberately so.** Legacy attached its panel CLOSE confirm
   **unconditionally** — there is no dirty check anywhere in `schedule5.xhtml` (:169, :192, :221, :244) —

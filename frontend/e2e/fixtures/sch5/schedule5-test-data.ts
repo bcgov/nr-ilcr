@@ -137,12 +137,22 @@ export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch5Anchor = { key: { millId: 10050
 export const CHECK_UNSAVED_FIX_ANCHOR: Sch5Anchor = { key: { millId: 12050, year: 2023 }, mill: MILL_987 };
 
 /**
- * S12 / S15 — VALIDATE-ONLY. Nothing is ever saved here: both slices prove entry is REJECTED, so the
+ * S15 — VALIDATE-ONLY. Nothing is ever saved here: every scenario proves an entry is REJECTED, so the
  * anchor must be one no scenario creates on. Deliberately not any mutating key above — a validate-only
  * assertion sharing a happy-path anchor is the classic way a "nothing was written" claim goes green
  * for the wrong reason.
  */
 export const VALIDATION_ANCHOR: Sch5Anchor = { key: { millId: 13050, year: 2023 }, mill: MILL_999 };
+
+/**
+ * S12 — required descriptive field blank. MUTATING, which is why it is not the validate-only anchor.
+ *
+ * S12 has two arms and the second one SAVES: the licensee fills the field the validator complained
+ * about and the camp is stored. A writer cannot share a key with anything under `fullyParallel`, so
+ * S12 took its own cell rather than S15's. Added after the first fan-out — 2023 is sch5's own range,
+ * so minting one more collides with nobody.
+ */
+export const REQUIRED_FIELD_ANCHOR: Sch5Anchor = { key: { millId: 17052, year: 2023 }, mill: MILL_727 };
 
 // ---------------------------------------------------------------------------------------------------
 // READ-ONLY and GUARD anchors — no exclusivity needed, because nothing writes to them.
@@ -195,7 +205,8 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'subpage-cost (S23)', anchor: SUBPAGE_COST_ANCHOR },
   { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
-  { name: 'validation (S12/S15)', anchor: VALIDATION_ANCHOR },
+  { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
+  { name: 'required-field (S12)', anchor: REQUIRED_FIELD_ANCHOR },
 ];
 
 /** The guard anchors and the HTTP status each must still produce. */
@@ -517,6 +528,40 @@ export const DISCARDED_COST = '9999';
 
 /** CFM-001, verbatim from `components/schedule5/index.tsx:74`. Modal heading is "Delete camp". */
 export const CONFIRM_DELETE_CAMP = 'This will delete the current record. Do you want to continue?';
+
+// ---------------------------------------------------------------------------------------------------
+// S12 / S13 / S14 / S15 — the validation messages, verbatim from `components/schedule5/validation.ts`
+// CAMP_MESSAGES, which is itself transcribed from the backend bundle so client advice and server
+// rejection are byte-identical.
+// ---------------------------------------------------------------------------------------------------
+
+export const VALIDATION_MESSAGES = {
+  /**
+   * FLD-001. The source Gherkin carries this as `[UNKNOWN]` — legacy overrode no `requiredMessage`, so
+   * its text was whatever the JSF runtime's default happened to be and could not be recovered from
+   * source. The rewrite states both explicitly, so the `[UNKNOWN]` is RESOLVED by observation.
+   */
+  campNameRequired: 'Camp Name is required.',
+  isolatedCampRequired: 'Isolated Camp is required.',
+  /** ERR-001 / BR-02. Already observed verbatim from the app during the S01 stress run. */
+  campNameDuplicate: 'Camp name already exists.',
+  /**
+   * FLD-002. NOTE THE `.9` — the source Gherkin says "between 0 and 999,999." The app says
+   * "999,999.9", and that is a BUSINESS-DIRECTED correction, not a defect: legacy's text understated
+   * its own validator, which accepted up to 999,999.9, and the Ministry ruled the TEXT the defect and
+   * confirmed the BOUND (PR #370, 2026-08-27 — the value is in km). See VER-4.
+   */
+  distanceRange: 'Entered distance must be between 0 and 999,999.9.',
+  sizeRange: 'Entered number of persons must be between 1 and 999.',
+  volumeRange: 'Entered volume must be between 0 and 9,999,999.',
+  /** The STANDARD cost band — the eight ordinary categories. */
+  costRange: 'Entered cost must be between -9,999,999 and 9,999,999.',
+  /** Recoveries alone: floored at 0, because it is stored positive and SUBTRACTED. */
+  costRangeNonNegative: 'Entered cost must be between 0 and 9,999,999.',
+} as const;
+
+/** S13's duplicate is typed in a DIFFERENT CASE — BR-02 is case-insensitive. */
+export const DUPLICATE_NAME_UPPERCASE = 'NORTH CAMP';
 
 /** ERR/SUC message text, verbatim from backend `messages.properties`. */
 export const MESSAGES = {

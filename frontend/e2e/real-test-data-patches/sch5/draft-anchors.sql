@@ -83,11 +83,17 @@
 --
 -- WHAT THE FAN-OUT ADDS
 --   1. THE.ILCR_REPORTING_PERIOD rows for 2022 and 2023.
---   2. 21 report-status rows + their eleven category rows each:
+--   2. 22 report-status rows + their eleven category rows each:
 --        2022 — 16 of the 17 ACT mills (every one EXCEPT 16050)
---        2023 —  5 mills (9050, 10050, 12050, 13050, 16050)
---      Twenty are Draft ("D"); ONE (16050/2023) is Submitted ("S") because S19
---      needs a non-Draft document to prove the read-only render.
+--        2023 —  6 mills (9050, 10050, 12050, 13050, 17052, 16050)
+--      Twenty-one are Draft ("D"); ONE (16050/2023) is Submitted ("S") because
+--      S19 needs a non-Draft document to prove the read-only render.
+--      17052/2023 was added 2026-09-09, after S12 was authored: S12 and S15 were
+--      to share the one validate-only anchor, but S12's SECOND arm corrects the
+--      blank field and SAVES. A writer cannot share a key with anything under
+--      `fullyParallel`, so S12 took its own and 13050/2023 stayed validate-only.
+--      This is the fan-out working as designed — 2023 is sch5's own range, so
+--      minting one more cell costs nothing and collides with nobody.
 --   3. Nothing on 16050/2022 — DELIBERATELY. Its ABSENCE is S18's fixture ("No
 --      Schedule 5 Record Found"): with 2022 open but no report-status row, the GET
 --      404s. It is registered in DELIBERATELY_ABSENT in
@@ -142,7 +148,8 @@ DECLARE
     t_anchor( 9050, 2023, 'D'),  -- S23 invalid cost on the sub-page
     t_anchor(10050, 2023, 'D'),  -- S24 check status includes unsaved violation
     t_anchor(12050, 2023, 'D'),  -- S25 check status clears on unsaved correction
-    t_anchor(13050, 2023, 'D'),  -- S12/S15 validate-only (nothing is ever saved here)
+    t_anchor(13050, 2023, 'D'),  -- S15 validate-only (nothing is ever saved here)
+    t_anchor(17052, 2023, 'D'),  -- S12 required-field: its recovery arm DOES save
     t_anchor(16050, 2023, 'S')   -- S19 read-only: Submitted, so the schedule is not editable
   );
 BEGIN

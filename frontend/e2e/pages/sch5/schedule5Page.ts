@@ -139,6 +139,40 @@ export class Schedule5Page {
     await this.descriptor(name).fill(value);
   }
 
+  /**
+   * Fill a descriptor AND blur, so its validator reports.
+   *
+   * "Blur is the commit point: a field's error appears only once the licensee has left it"
+   * (index.tsx:734). A bare `fill()` leaves the field invalid but SILENT, so an inline-error assertion
+   * would fail while the app is behaving correctly.
+   */
+  async fillDescriptorAndCommit(name: string, value: string): Promise<void> {
+    const input = this.descriptor(name);
+    await input.fill(value);
+    await input.blur();
+  }
+
+  /**
+   * The Carbon error rendered under a control, found from the control itself rather than from an id.
+   *
+   * Every `invalid`/`invalidText` Carbon field renders `.cds--form-requirement` inside its enclosing
+   * `.cds--form-item`, so walking up from the labelled input scopes the message to that field without
+   * needing to know the id — which matters here because the category grid's ids are POSITIONAL.
+   */
+  private errorFor(input: Locator): Locator {
+    return input
+      .locator('xpath=ancestor::div[contains(@class,"cds--form-item")][1]')
+      .locator('.cds--form-requirement');
+  }
+
+  descriptorError(name: string): Locator {
+    return this.errorFor(this.descriptor(name));
+  }
+
+  categoryError(category: string, half: 'volume' | 'cost'): Locator {
+    return this.errorFor(this.categoryInput(category, half));
+  }
+
   async selectIsolatedCamp(text: string): Promise<void> {
     await this.descriptor('Isolated Camp').selectOption({ label: text });
   }

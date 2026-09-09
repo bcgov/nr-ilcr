@@ -4,6 +4,11 @@ import {
   CHECK_MET_ANCHOR,
   DELETE_ANCHOR,
   CAMP_SWITCH_ANCHOR,
+  COPY_DUPLICATE_ANCHOR,
+  DUPLICATE_NAME_ANCHOR,
+  REQUIRED_FIELD_ANCHOR,
+  VALIDATION_ANCHOR,
+  VALIDATION_MESSAGES,
   DISCARDED_COST,
   DISCARD_CLOSE_ANCHOR,
   RECOVERIES_ANCHOR,
@@ -50,6 +55,10 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   recoveries: RECOVERIES_ANCHOR,
   'discard-close': DISCARD_CLOSE_ANCHOR,
   'camp-switch': CAMP_SWITCH_ANCHOR,
+  'required-field': REQUIRED_FIELD_ANCHOR,
+  validation: VALIDATION_ANCHOR,
+  'duplicate-name': DUPLICATE_NAME_ANCHOR,
+  'copy-duplicate': COPY_DUPLICATE_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -419,6 +428,80 @@ When(
     );
   },
 );
+
+// ---------------------------------------------------------------------------------------------------
+// S12 / S13 / S14 / S15 — validation
+// ---------------------------------------------------------------------------------------------------
+
+/** Fill a descriptor and blur, so its validator reports. Blur is the commit point (index.tsx:734). */
+When(
+  'I enter {string} in the {string} field',
+  async ({ schedule5Page }, value, field) => {
+    await schedule5Page.fillDescriptorAndCommit(field, value);
+  },
+);
+
+Then(
+  'the {string} field shows the error {string}',
+  async ({ schedule5Page }, field, message) => {
+    await expect(schedule5Page.descriptorError(field)).toHaveText(message);
+  },
+);
+
+Then(
+  'the {string} cost field shows the error {string}',
+  async ({ schedule5Page }, category, message) => {
+    await expect(schedule5Page.categoryError(category, 'cost')).toHaveText(message);
+  },
+);
+
+Then('the {string} field shows no error', async ({ schedule5Page }, field) => {
+  await expect(schedule5Page.descriptorError(field)).toHaveCount(0);
+});
+
+Then('the {string} cost field shows no error', async ({ schedule5Page }, category) => {
+  await expect(schedule5Page.categoryError(category, 'cost')).toHaveCount(0);
+});
+
+/** S13/S14: the duplicate-name rejection is a banner, not an inline field error. */
+Then('I should see the camp-name duplicate error', async ({ page }) => {
+  await expect(page.getByText(VALIDATION_MESSAGES.campNameDuplicate).first()).toBeVisible();
+});
+
+When('I try to save the camp', async ({ schedule5Page }) => {
+  await schedule5Page.save();
+});
+
+/**
+ * Prove the negative for a rejected save.
+ *
+ * The inline error alone only shows the page complained; it does not show that nothing reached the
+ * database. This reads the anchor back and asserts the camp list is unchanged — which is the claim
+ * "the entry is not persisted" actually makes.
+ */
+Then('no camp named {string} is stored', async ({ request, world }, campName) => {
+  const camp = await findCampByName(request, world.scheduleKey!, campName);
+  expect(
+    camp,
+    `"${campName}" must NOT have been persisted — the save was supposed to be rejected`,
+  ).toBeUndefined();
+});
+
+/**
+ * The anchor holds EXACTLY these camps — the right way to prove a duplicate was rejected.
+ *
+ * `no camp named X is stored` cannot do it here: name lookup is case-insensitive (as BR-02 itself is),
+ * so asking whether "NORTH CAMP" exists always finds the seeded "North Camp" and the assertion fails
+ * against a perfectly correct rejection. Pinning the whole list distinguishes "the duplicate was not
+ * created" from "the original is still there", which is exactly the distinction this slice is about.
+ */
+Then('the anchor holds exactly {string}', async ({ request, world }, expected) => {
+  const doc = await getSchedule5(request, world.scheduleKey!);
+  expect(
+    doc.camps.map((c) => c.campName).sort(),
+    'the rejected save must not have added a camp',
+  ).toEqual([expected]);
+});
 
 // ---------------------------------------------------------------------------------------------------
 // S10 — close with unsaved changes  |  S11 — switch camps while editing
