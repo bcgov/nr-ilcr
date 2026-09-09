@@ -217,7 +217,21 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     green, since the two lists are indistinguishable. Discriminating coverage needs a mill the
     submitter is deliberately NOT associated to, plus a scenario asserting it is absent for a
     submitter and present for an admin; that changes what the dropdown contains, so it needs a mill
-    no fixture pins. Not done here.
+    no fixture pins. **Deliberately not done here, because it is not an overall coverage gap** —
+    all three `listMills` branches are pinned at the unit layer, which is the right one for a
+    branch decision: `MillContextServiceTest.listMills_admin_returnsAllMills_ignoringGuid`,
+    `…listMills_submitter_returnsOnlyActivelyAssociatedMills_closedIncluded` (the S06 closed shape)
+    and `…listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed` (strict Mockito proving no
+    repository read). Swap `findMillsForUser` for `findAllMills` and the second fails immediately.
+    Reproducing that in a browser scenario would need a new mill invented in two databases to buy
+    coverage that already exists, faster and more precisely, one layer down.
+  - **The dependency this created, and its guard.** Deleting the workaround means a green run now
+    REQUIRES association rows in whichever database the suite points at — forget
+    `./scripts/apply-patches.sh` on an extract and the dropdown is empty, which would surface as
+    ~240 locator timeouts reading as an app regression. `preflight/mill-scope.setup.ts` closes that:
+    it asserts the list is non-empty AND that every mill the fixtures pin is offered, before any
+    browser starts, with a message naming the command to run. Verified falsifiable — drop the
+    association rows and both checks fail, naming all 20 pinned mills.
   - **What this fix did NOT do, deliberately:** make the two mill-scope gates agree. With security
     off, `validateMillAccess` still EXEMPTS the mock principal outright while `listMills` now scopes
     it, so a mock submitter may still WRITE to a mill it is not associated to. It does not show
