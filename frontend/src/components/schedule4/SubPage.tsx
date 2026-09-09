@@ -33,6 +33,9 @@ const CONFIRM_DELETE_ROW = 'This will delete the current record. Do you want to 
 // The sortable row columns (everything except Actions).
 type SortKey = 'description' | 'distance' | 'volume' | 'cost' | 'cycle' | 'perUnit'
 
+/** The row fields held as numbers — every sortable column except `description` and the derived `perUnit`. */
+type NumericField = 'distance' | 'volume' | 'cost' | 'cycle'
+
 const sum = (rows: SubPageRow[], pick: (r: SubPageRow) => number | null): number =>
   rows.reduce((total, r) => total + (pick(r) ?? 0), 0)
 
@@ -274,10 +277,8 @@ const SubPage: FC<SubPageProps> = ({
 
   // Effective numeric value of a row field: the edited value when the row is touched, else the server
   // value. Drives the live $/m³ + totals so they track edits before Save (legacy parity).
-  const rowNum = (
-    row: SubPageRow,
-    field: 'distance' | 'volume' | 'cost' | 'cycle',
-  ): number | null => (edits[row.id] ? toNum(edits[row.id][field]) : row[field])
+  const rowNum = (row: SubPageRow, field: NumericField): number | null =>
+    edits[row.id] ? toNum(edits[row.id][field]) : row[field]
   const rowPerUnit = (row: SubPageRow): number | null => {
     const cost = rowNum(row, 'cost')
     const volume = rowNum(row, 'volume')
@@ -392,7 +393,7 @@ const SubPage: FC<SubPageProps> = ({
                           />
                         )
                       ) : numeric ? (
-                        fmtNumber(row[field as 'distance' | 'volume' | 'cost' | 'cycle'])
+                        fmtNumber(row[field as NumericField])
                       ) : (
                         (row.description ?? '—')
                       )}
@@ -402,11 +403,7 @@ const SubPage: FC<SubPageProps> = ({
                       <OriginalValueIndicator
                         originals={row.originalValues}
                         field={field}
-                        current={
-                          editable
-                            ? rf[field]
-                            : row[field as 'distance' | 'volume' | 'cost' | 'cycle']
-                        }
+                        current={editable ? rf[field] : row[field as NumericField]}
                         numeric={numeric}
                         label={label}
                       />

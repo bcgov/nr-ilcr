@@ -156,11 +156,9 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               onMask={onMask}
               // The Add panel has no stored row, so nothing was submitted for it to differ from.
               originals={
-                panelMode === 'new'
+                panelMode === 'new' || openDetail === undefined
                   ? null
-                  : openDetail === undefined
-                    ? null
-                    : roadDetailOriginals(openDetail)
+                  : roadDetailOriginals(openDetail)
               }
             />
             <div className="schedule-10__panel-actions">

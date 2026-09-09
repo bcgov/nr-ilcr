@@ -132,7 +132,7 @@ const CategoryCell: FC<{
   // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its keys
   // this cell is. Null at Draft.
   originals?: OriginalValues | null
-  originalField?: 'volume' | 'cost' | 'distance'
+  originalField?: CategoryField
 }> = ({
   inputId,
   label,
@@ -380,19 +380,18 @@ const Schedule4: FC = () => {
 
   const closePanel = () => setPanelMode('closed')
 
-  const setCategoryField =
-    (code: number, field: 'volume' | 'cost' | 'distance') => (value: string) => {
-      // value is already the raw digit string (CommaNumberInput strips its display grouping).
-      setPanelCategories((prev) => ({
-        ...prev,
-        [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
-      }))
-    }
+  const setCategoryField = (code: number, field: CategoryField) => (value: string) => {
+    // value is already the raw digit string (CommaNumberInput strips its display grouping).
+    setPanelCategories((prev) => ({
+      ...prev,
+      [code]: { ...(prev[code] ?? { volume: '', cost: '', distance: '' }), [field]: value },
+    }))
+  }
 
   // Commit one category field (its `onBlur`), advancing the mirror's baseline for that field only.
   // An invalid or unusable entry holds its previous committed value rather than driving the $/m³ from
   // something the server would refuse (ruled 2026-08-21 after code review).
-  const commitCategoryField = (code: number, field: 'volume' | 'cost' | 'distance') => () => {
+  const commitCategoryField = (code: number, field: CategoryField) => () => {
     // Validated here rather than read from `fieldErrors`, which is computed further down (after the
     // early returns); same source of truth, and it only runs on blur.
     const invalid = Boolean(

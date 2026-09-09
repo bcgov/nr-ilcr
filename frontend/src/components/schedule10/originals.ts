@@ -46,12 +46,16 @@ export const roadDetailOriginals = (detail: RoadDetail): OriginalValues | null =
     return null
   }
 
+  // `becbiogeoCatalogueId` is the form's name for the BEC selection; the document calls it
+  // `becClassification`, which is the field the indicator decorates.
+  const becAlias = own?.becClassification
+    ? { becbiogeoCatalogueId: own.becClassification }
+    : undefined
+
   return {
-    ...(own ?? {}),
-    // `becbiogeoCatalogueId` is the form's name for the BEC selection; the document calls it
-    // `becClassification`, which is the field the indicator decorates.
-    ...(own?.becClassification ? { becbiogeoCatalogueId: own.becClassification } : {}),
-    ...(material ?? {}),
+    ...own,
+    ...becAlias,
+    ...material,
     ...prefixed(subGrade, 'sg', {
       length: 'sgLength',
       surfaceWidth: 'sgSurfaceWidth',

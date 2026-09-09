@@ -451,6 +451,30 @@ const CategoryGrid: FC<{
 )
 
 /** The five descriptors, in legacy order and with legacy labels and unit suffixes. */
+/**
+ * The stored form of a Yes/No flag. The form holds `'true'`/`'false'`; the served original is the
+ * stored `'Y'`/`'N'`, and an unset flag has no stored form at all.
+ */
+const storedFlag = (value: string): string => {
+  if (value === 'true') {
+    return 'Y'
+  }
+  return value === 'false' ? 'N' : ''
+}
+
+/**
+ * Whether any entered figure is mid-keystroke and unusable (a lone `-`, say). Checked across the
+ * WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
+ * volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
+ */
+const hasUnusableEntry = (form: CampFormValues): boolean =>
+  isUnusableStrictEntry(form.associatedCampVolume) ||
+  CATEGORY_KEYS.some(
+    (key) =>
+      isUnusableStrictEntry(form.categories[key].volume) ||
+      isUnusableStrictEntry(form.categories[key].cost),
+  )
+
 const DescriptorFields: FC<{
   readonly values: CampFormValues
   readonly readOnly: boolean
@@ -564,7 +588,7 @@ const DescriptorFields: FC<{
     <OriginalValueIndicator
       originals={originals}
       field="isolatedCamp"
-      current={values.isolatedCamp === 'true' ? 'Y' : values.isolatedCamp === 'false' ? 'N' : ''}
+      current={storedFlag(values.isolatedCamp)}
       numeric={false}
       label="Isolated Camp"
     />
@@ -811,17 +835,8 @@ const Schedule5: FC = () => {
   }
 
   const commitEntry = () => {
-    // The WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
-    // volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
     const invalid = Object.keys(validateCamp(form, otherCampNames)).length > 0
-    const unusable =
-      isUnusableStrictEntry(form.associatedCampVolume) ||
-      CATEGORY_KEYS.some(
-        (key) =>
-          isUnusableStrictEntry(form.categories[key].volume) ||
-          isUnusableStrictEntry(form.categories[key].cost),
-      )
-    if (!invalid && !unusable) {
+    if (!invalid && !hasUnusableEntry(form)) {
       setCommitted(form)
     }
   }
