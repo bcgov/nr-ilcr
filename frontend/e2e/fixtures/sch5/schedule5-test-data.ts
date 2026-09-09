@@ -300,6 +300,101 @@ export const campDeleteUrl = (
 ): string =>
   `/api/v1/schedule5/camps/${campId}?millId=${millId}&year=${year}&revisionCount=${revisionCount}`;
 
+// ---------------------------------------------------------------------------------------------------
+// S02 — Edit an Existing Camp.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The camp S02 edits. Created by the scenario's own Given through the app's POST (not SQL), so the
+ * precondition is exactly the shape a user's first save produces. Distinct from S01's name so the two
+ * can never be confused in a failure message, and confirmed unused across the extract.
+ */
+export const EDIT_CAMP_NAME = 'North Camp';
+
+/**
+ * The request body that seeds S02's baseline camp — S01's values, so the two slices share one
+ * arithmetic story and the edit's effect is isolated to the two fields it changes.
+ *
+ * All TWELVE categories are present because an omitted `CategoryEntry` CLEARS both halves server-side
+ * (Schedule5Request.ts) — there is no PATCH semantic. `otherCampExpenses`/`otherAccessExpenses` are
+ * volume-only (their cost is the sub-page row sum) and `recoveries` is cost-only.
+ */
+export const EDIT_CAMP_BASELINE = {
+  campName: EDIT_CAMP_NAME,
+  roadDistanceToOperatingArea: 12.5,
+  sizeOfCamp: 40,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * How the baseline above RENDERS when the camp is reopened — the grouped display form, not the raw one.
+ *
+ * WHY THESE DIFFER FROM THE NUMBERS ABOVE, and why it is not a bug. A freshly typed panel holds the raw
+ * strings the user entered (S01 asserts "5000" on a propagated volume and passes). A REOPENED panel is
+ * seeded from the served document through `components/schedule5/masks.ts`, whose `fmtVolume` and
+ * `fmtCost` are `toLocaleString('en-CA')` with no decimals — so the same 1000 comes back as "1,000".
+ * Both masks are transcribed from the legacy JSF converters (ILCRVolumeConverter `#,###,###`,
+ * ILCRCostConverter `##,###,###`), so the grouping is legacy parity, not a rewrite artefact.
+ *
+ * Measured against the running app on 2026-09-09 — the first version of S02 asserted the raw "1000" and
+ * failed with `Received: "1,000"`, which is exactly the re-grounding this suite exists to do.
+ */
+export const EDIT_CAMP_DISPLAY = {
+  campName: EDIT_CAMP_NAME,
+  roadDistanceToOperatingArea: '12.5',
+  sizeOfCamp: '40',
+  /** The `Select`'s VALUE, not its label — the option text is "Yes". */
+  isolatedCamp: 'true',
+  cateringAndFoodCost: '1,000',
+  cateringAndFoodVolume: '5,000',
+} as const;
+
+/** What S02 changes on screen: one descriptor and one category cost. */
+export const EDIT_CAMP_CHANGES = {
+  roadDistanceToOperatingArea: '15.0',
+  cateringAndFoodCost: '1200',
+} as const;
+
+/**
+ * The server-derived figures after S02's edit. MEASURED on 2026-09-09 by POSTing the baseline to
+ * 9050/2022, PUTting the two changes, reading the 200 back, then deleting the camp.
+ *
+ *   campSubTotal        1200 + 2000 + 500 + 300 = 4000   (catering 1000 -> 1200)
+ *   campTotal           4000 − recoveries (0)   = 4000
+ *   accessExpenseTotal  unchanged               = 1100
+ *   campAndAccessTotal  4000 + 1100             = 5100
+ *
+ * NOTE the per-row `$/m³` are each computed against the 5000 camp volume, NOT against the camp total —
+ * accessExpenseTotal is 1100/5000 = 0.22 and catering is 1200/5000 = 0.24. Measured rather than
+ * derived by hand precisely because that is easy to get wrong.
+ */
+export const EDIT_CAMP_EXPECTED_TOTALS = {
+  campSubTotalCost: 4000,
+  campTotalCost: 4000,
+  accessExpenseTotalCost: 1100,
+  campAndAccessTotalCost: 5100,
+  campTotalCostPerVolume: 0.8,
+  accessExpenseTotalCostPerVolume: 0.22,
+  campAndAccessTotalCostPerVolume: 1.02,
+  cateringAndFoodCostPerVolume: 0.24,
+} as const;
+
+/** A saved camp starts at revisionCount 0; the first edit takes it to 1 (observed on the same probe). */
+export const EDIT_CAMP_EXPECTED_REVISION = 1;
+
 /** ERR/SUC message text, verbatim from backend `messages.properties`. */
 export const MESSAGES = {
   /** `dataSavedSuccesfullyInfoMsg` (messages.properties:168) — the Gherkin's expected text, unchanged. */

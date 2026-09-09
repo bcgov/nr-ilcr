@@ -1,6 +1,12 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  EDIT_ANCHOR,
+  EDIT_CAMP_BASELINE,
+  EDIT_CAMP_CHANGES,
+  EDIT_CAMP_DISPLAY,
+  EDIT_CAMP_EXPECTED_REVISION,
+  EDIT_CAMP_EXPECTED_TOTALS,
   NEW_CAMP_COSTS,
   NEW_CAMP_DESCRIPTORS,
   NEW_CAMP_EXPECTED_TOTALS,
@@ -9,7 +15,7 @@ import {
   millOptionText,
   type Sch5Anchor,
 } from '../../fixtures/sch5/schedule5-test-data';
-import { findCampByName, getSchedule5 } from './schedule5Api';
+import { createCamp, findCampByName, getSchedule5 } from './schedule5Api';
 
 /**
  * UC-SCH5-001 (Schedule 5 — Report Camp and Access Expenses) steps.
@@ -22,6 +28,7 @@ import { findCampByName, getSchedule5 } from './schedule5Api';
 
 const ANCHORS: Record<string, Sch5Anchor> = {
   add: ADD_ANCHOR,
+  edit: EDIT_ANCHOR,
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -60,6 +67,27 @@ Given('no camp named {string} exists for that mill and year', async ({ request, 
       + 'would reject the save as a duplicate. Delete the leftover camp and re-run.',
   ).toBeUndefined();
 });
+
+/**
+ * S02's precondition: a camp that already holds stored values.
+ *
+ * Registers cleanup BEFORE creating, so a failure between the POST and the assertions still tears the
+ * camp down. Created through the app's own POST rather than SQL — see `createCamp`.
+ */
+Given(
+  'a camp named {string} already exists with stored descriptor and expense values',
+  async ({ request, world, schedule5Cleanup }, campName) => {
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    const created = await createCamp(request, world.scheduleKey!, {
+      ...EDIT_CAMP_BASELINE,
+      campName,
+    });
+    expect(
+      created.revisionCount,
+      'a freshly created camp should start at revisionCount 0',
+    ).toBe(0);
+  },
+);
 
 // ---------------------------------------------------------------------------------------------------
 // Navigation
@@ -129,6 +157,91 @@ When('I enter the fixed-category costs', async ({ schedule5Page }) => {
   for (const { label, cost } of NEW_CAMP_COSTS) {
     await schedule5Page.fillCategoryCost(label, cost);
   }
+});
+
+// ---------------------------------------------------------------------------------------------------
+// S02 — editing an existing camp
+// ---------------------------------------------------------------------------------------------------
+
+When('I edit the {string} camp', async ({ schedule5Page }, campName) => {
+  await schedule5Page.openEditPanel(campName);
+});
+
+/**
+ * The panel must open PRE-FILLED with what was stored — the thing that distinguishes an edit from a
+ * blank add, and the precondition for the change assertions that follow.
+ *
+ * Checks all five descriptors and one representative category half rather than every cell: the twelve
+ * categories are rendered by the SAME `CategoryGrid` component from one `GRID_ROWS` table, so they
+ * populate together or not at all. The volume column is separately worth asserting because BR-03's
+ * propagation writes it, and a reopened camp must show the STORED volume rather than a re-propagated
+ * one.
+ */
+Then(
+  'the {string} panel is populated with the stored values',
+  async ({ schedule5Page }, campName) => {
+    await expect(schedule5Page.campPanelHeading(campName)).toBeVisible();
+
+    // The GROUPED display form — a reopened panel is seeded from the served document through
+    // masks.ts, so 1000 comes back as "1,000". See EDIT_CAMP_DISPLAY for why.
+    expect(await schedule5Page.descriptorValue('Camp Name')).toBe(campName);
+    expect(await schedule5Page.descriptorValue('Road Distance to Operating Area')).toBe(
+      EDIT_CAMP_DISPLAY.roadDistanceToOperatingArea,
+    );
+    expect(await schedule5Page.descriptorValue('Size of Camp')).toBe(EDIT_CAMP_DISPLAY.sizeOfCamp);
+    expect(await schedule5Page.descriptorValue('Isolated Camp')).toBe(
+      EDIT_CAMP_DISPLAY.isolatedCamp,
+    );
+
+    expect(await schedule5Page.categoryValue('Catering and Food', 'cost')).toBe(
+      EDIT_CAMP_DISPLAY.cateringAndFoodCost,
+    );
+    expect(await schedule5Page.categoryValue('Catering and Food', 'volume')).toBe(
+      EDIT_CAMP_DISPLAY.cateringAndFoodVolume,
+    );
+  },
+);
+
+When('I change the road distance and the Catering and Food cost', async ({ schedule5Page }) => {
+  await schedule5Page.fillDescriptor(
+    'Road Distance to Operating Area',
+    EDIT_CAMP_CHANGES.roadDistanceToOperatingArea,
+  );
+  await schedule5Page.fillCategoryCost('Catering and Food', EDIT_CAMP_CHANGES.cateringAndFoodCost);
+});
+
+/**
+ * Read-back for the edit. Asserts the derived totals AND `revisionCount`, because only the latter
+ * proves an UPDATE happened rather than the page re-rendering what was already there — the totals
+ * alone would also be satisfied by a create.
+ */
+Then('the edited camp carries the recalculated totals', async ({ request, world }, ) => {
+  await expect
+    .poll(
+      async () => {
+        const camp = await findCampByName(request, world.scheduleKey!, EDIT_CAMP_BASELINE.campName);
+        if (camp === undefined) {
+          return null;
+        }
+        return {
+          campSubTotalCost: camp.campSubTotal.cost,
+          campTotalCost: camp.campTotal.cost,
+          accessExpenseTotalCost: camp.accessExpenseTotal.cost,
+          campAndAccessTotalCost: camp.campAndAccessTotal.cost,
+          campTotalCostPerVolume: camp.campTotal.costPerVolume,
+          accessExpenseTotalCostPerVolume: camp.accessExpenseTotal.costPerVolume,
+          campAndAccessTotalCostPerVolume: camp.campAndAccessTotal.costPerVolume,
+          cateringAndFoodCostPerVolume: camp.cateringAndFood?.costPerVolume ?? null,
+          revisionCount: camp.revisionCount,
+        };
+      },
+      {
+        message:
+          `"${EDIT_CAMP_BASELINE.campName}" did not persist the edit on `
+          + `${world.scheduleKey!.millId}/${world.scheduleKey!.year}`,
+      },
+    )
+    .toEqual({ ...EDIT_CAMP_EXPECTED_TOTALS, revisionCount: EDIT_CAMP_EXPECTED_REVISION });
 });
 
 // ---------------------------------------------------------------------------------------------------

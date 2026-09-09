@@ -30,6 +30,14 @@ export interface Camp {
   campTotal: CampAmount;
   accessExpenseTotal: CampAmount;
   campAndAccessTotal: CampAmount;
+  /**
+   * The twelve stored categories, each a served `CategoryAmount` carrying its own server-derived
+   * `costPerVolume`. Only the ones a spec actually asserts are typed; the rest ride the index
+   * signature rather than being enumerated twice (the authoritative list is GRID_ROWS in
+   * `components/schedule5/validation.ts`).
+   */
+  cateringAndFood?: CampAmount;
+  [category: string]: unknown;
 }
 
 export interface Schedule5Doc {
@@ -38,6 +46,33 @@ export interface Schedule5Doc {
   trackStatus: string | null;
   editable: boolean;
   camps: Camp[];
+}
+
+/**
+ * Create a camp through the app's own POST — for a scenario whose PRECONDITION is an existing camp.
+ *
+ * Seeded through the API rather than SQL on purpose: the row family spans CAMP_REPORT plus twelve
+ * keyed ILCR_COST_REPORT_DETAIL rows, and the server derives every total. Building that by hand would
+ * both duplicate the write path and risk seeding a shape the app never produces — so the precondition
+ * is created exactly the way a user would create it.
+ */
+export async function createCamp(
+  request: APIRequestContext,
+  key: ScheduleKey,
+  body: Record<string, unknown>,
+): Promise<Camp> {
+  const res = await request.post(`/api/v1/schedule5/camps?millId=${key.millId}&year=${key.year}`, {
+    data: body,
+  });
+  await expect(
+    res,
+    `POST camp "${String(body.campName)}" on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+
+  const doc = (await res.json()) as Schedule5Doc;
+  const created = doc.camps.find((c) => c.campName === body.campName);
+  expect(created, `camp "${String(body.campName)}" missing from the 200 response`).toBeDefined();
+  return created!;
 }
 
 /** GET the served Schedule 5 document for a (mill, year). Fails loud on a non-2xx. */

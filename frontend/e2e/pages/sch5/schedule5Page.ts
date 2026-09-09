@@ -62,6 +62,36 @@ export class Schedule5Page {
     await expect(this.newCampPanelHeading).toBeVisible();
   }
 
+  // ---- the existing-camp panel --------------------------------------------------------------------
+
+  /**
+   * The `Edit` action on a camp's row.
+   *
+   * Scoped to the row, not the page: every row carries its own Edit/Copy/Delete trio, so an unscoped
+   * `getByRole('button', { name: 'Edit' })` resolves one per camp and throws in strict mode the moment
+   * a scenario has two (S11's camp-switch will).
+   *
+   * On a NON-editable document the row renders `View` instead of the Edit/Copy/Delete trio
+   * (index.tsx:1198-1207) — so a failure to find Edit here means the document is read-only, which is
+   * S19's fixture rather than a broken locator.
+   */
+  editButtonFor(campName: string): Locator {
+    return this.existingCampRow(campName).getByRole('button', { name: 'Edit' });
+  }
+
+  /**
+   * The open panel's heading. An EXISTING camp's panel is headed by the camp's OWN name; only the new
+   * camp panel uses the `New Camp Details` literal (index.tsx:1280-1284).
+   */
+  campPanelHeading(campName: string): Locator {
+    return this.page.getByRole('heading', { name: campName });
+  }
+
+  async openEditPanel(campName: string): Promise<void> {
+    await this.editButtonFor(campName).click();
+    await expect(this.campPanelHeading(campName)).toBeVisible();
+  }
+
   // ---- descriptors --------------------------------------------------------------------------------
 
   /** The five descriptor controls, keyed by the vocabulary the feature file uses. */
@@ -106,6 +136,10 @@ export class Schedule5Page {
 
   async fillCategoryCost(category: string, value: string): Promise<void> {
     await this.categoryInput(category, 'cost').fill(value);
+  }
+
+  async categoryValue(category: string, half: 'volume' | 'cost'): Promise<string> {
+    return this.categoryInput(category, half).inputValue();
   }
 
   /** A derived row (`Camp Sub-Total: `, `Camp Total: `, …) as its whole table row, for text assertions. */

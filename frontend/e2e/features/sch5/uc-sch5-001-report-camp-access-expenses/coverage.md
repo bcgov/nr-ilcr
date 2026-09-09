@@ -57,7 +57,7 @@ through the API (`happy-path.feature`).
 | Slice | Name | Type | Status | Test / reason |
 |---|---|---|---|---|
 | S01 | Add a New Camp With Descriptors and Fixed-Category Expenses | Happy Path | **covered** | `happy-path.feature` `@p0 @S01` — GREEN |
-| S02 | Edit an Existing Camp | Alternative | deferred | `EDIT_ANCHOR` reserved (9050/2022) — authoring only |
+| S02 | Edit an Existing Camp | Alternative | **covered** | `edit.feature` `@p1 @S02` — GREEN |
 | S03 | Copy an Existing Camp and Save With a New Name | Alternative | deferred | as S02; also pins WRN-001 `{0}` substitution, an unresolved `[UNKNOWN]` in the source Gherkin |
 | S04 | Enter Other Camp/Access Expenses on Sub-Page (existing camp) | Alternative | deferred | as S02 |
 | S05 | Enter Other Camp/Access Expenses on Sub-Page (new, unsaved camp) | Alternative | deferred | as S02 |
@@ -82,7 +82,7 @@ through the API (`happy-path.feature`).
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 1 / 25 slices (4%). P0: 1 / 1 authored.**
+**Coverage: 2 / 25 slices (8%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -125,4 +125,11 @@ through the API (`happy-path.feature`).
   `Action failed Camp name already exists.` verbatim from the app. Recorded here so S13 is re-grounded
   against an observed string rather than the source Gherkin's guess.
 - **Deterministic, unique data**: pass — no `Math.random()`/`Date.now()`, no hardcoded dates (this UC
-  has no date fields); the mutating scenario owns a dedicated anchor, so fixed literals cannot collide.
+  has no date fields); every mutating scenario owns a dedicated anchor, so fixed literals cannot collide.
+- **A typed panel and a REOPENED panel render numbers differently, and S02 pins it.** A freshly entered
+  panel holds the raw strings the user typed (S01 asserts `5000` on a BR-03-propagated volume). A camp
+  reopened for edit is seeded from the served document through `components/schedule5/masks.ts`, whose
+  `fmtVolume` / `fmtCost` are `toLocaleString('en-CA')` — so the same 1000 comes back as `1,000`. That
+  grouping is transcribed from the legacy JSF converters (`ILCRVolumeConverter #,###,###`,
+  `ILCRCostConverter ##,###,###`), so it is parity, not a rewrite artefact. Found by S02 failing with
+  `Expected: "1000" / Received: "1,000"` on its first run; pinned in `EDIT_CAMP_DISPLAY`.
