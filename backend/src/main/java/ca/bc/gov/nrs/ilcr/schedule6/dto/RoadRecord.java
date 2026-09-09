@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule6.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 6 road-maintenance record (AD-12). A record is classified either as a Timber Supply
@@ -27,4 +29,5 @@ public record RoadRecord(
     BigDecimal volume,
     Integer cost,
     BigDecimal costPerVolume,
-    String comments) {}
+    String comments,
+    Map<String, OriginalValue> originalValues) {}

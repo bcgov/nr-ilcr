@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7b.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 7B culvert on the served document (AD-12). The nine entered values are as stored;
@@ -41,4 +43,5 @@ public record Culvert(
     Integer installCost,
     Integer totalCost,
     String comments,
-    int revisionCount) {}
+    int revisionCount,
+    Map<String, OriginalValue> originalValues) {}

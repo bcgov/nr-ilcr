@@ -1,5 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
+
 /**
  * One fixed Schedule 3 admin-cost line in the three-column model (AD-12). Money columns in whole
  * dollars. {@code harvest} and {@code pop} are the entered amounts (a line may be Harvest-only, in
@@ -17,4 +21,10 @@ package ca.bc.gov.nrs.ilcr.schedule3.dto;
  *     Scaling)
  * @param crown the derived Crown amount (harvest &minus; pop; null unless both present)
  */
-public record CostLine(Integer costItemCode, Integer harvest, Integer pop, Integer crown) {}
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record CostLine(
+    Integer costItemCode,
+    Integer harvest,
+    Integer pop,
+    Integer crown,
+    Map<String, OriginalValue> originalValues) {}

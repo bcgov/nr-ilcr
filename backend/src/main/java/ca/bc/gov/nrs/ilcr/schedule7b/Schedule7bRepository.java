@@ -11,6 +11,7 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC reads and writes for Schedule 7B (Culvert Costs) — AD-3: a {@code Repository}
@@ -320,5 +321,53 @@ public interface Schedule7bRepository extends Repository<CulvertReportEntity, Lo
     return findCulvertTypeCodes(effectiveOn(year)).stream()
         .map(r -> new CodeDescriptionDto(r.code(), r.description()))
         .toList();
+  }
+
+  /**
+   * One submitted culvert from {@code THE.CULVERT_REPORT_S_VW} — the licensee's own attributes
+   * (Story 16.2, BR-04).
+   */
+  record CulvertSnapshotRow(
+      long culvertReportId,
+      String culvertTypeCode,
+      Integer spanSize,
+      Integer riseSize,
+      BigDecimal length,
+      Integer culvertPieceCount,
+      String comments) {}
+
+  /** Every submitted culvert for a mill/year (category "7"). */
+  @Query(
+      value =
+          """
+      SELECT CULVERT_REPORT_ID, ILCR_CULVERT_TYPE_CODE, SPAN_SIZE, RISE_SIZE, LENGTH,
+             CULVERT_PIECE_COUNT, COMMENTS
+        FROM THE.CULVERT_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = CulvertSnapshotRowMapper.class)
+  List<CulvertSnapshotRow> findCulvertSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code CULVERT_REPORT_S_VW} row. */
+  class CulvertSnapshotRowMapper implements RowMapper<CulvertSnapshotRow> {
+    @Override
+    public CulvertSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int span = rs.getInt("SPAN_SIZE");
+      Integer spanSize = rs.wasNull() ? null : span;
+      int rise = rs.getInt("RISE_SIZE");
+      Integer riseSize = rs.wasNull() ? null : rise;
+      int pieces = rs.getInt("CULVERT_PIECE_COUNT");
+      Integer pieceCount = rs.wasNull() ? null : pieces;
+      return new CulvertSnapshotRow(
+          rs.getLong("CULVERT_REPORT_ID"),
+          rs.getString("ILCR_CULVERT_TYPE_CODE"),
+          spanSize,
+          riseSize,
+          rs.getBigDecimal("LENGTH"),
+          pieceCount,
+          rs.getString("COMMENTS"));
+    }
   }
 }

@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule7a.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 7A bridge on the served document (AD-12). Attribute, measurement, and cost fields
@@ -74,4 +76,5 @@ public record Bridge(
     Integer totalDeliver,
     Integer totalInstall,
     Integer grandTotal,
-    int revisionCount) {}
+    int revisionCount,
+    Map<String, OriginalValue> originalValues) {}

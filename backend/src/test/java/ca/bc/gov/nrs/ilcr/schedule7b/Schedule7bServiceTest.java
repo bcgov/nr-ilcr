@@ -19,12 +19,16 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -66,6 +71,14 @@ class Schedule7bServiceTest {
 
   @Mock private Schedule7bRepository repository;
   @Mock private MessageSource messageSource;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule7bService service;
 
   @BeforeEach

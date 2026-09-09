@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule4.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 4 transportation-category amount within a location (AD-12). The pinned wire shape,
@@ -20,10 +23,12 @@ import java.math.BigDecimal;
  * <p>All fields are nullable and, with the app-wide Jackson {@code non_null} inclusion, omitted
  * from the JSON when null. Only categories actually stored for the location are present.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record CategoryAmount(
     int code,
     String kind,
     BigDecimal volume,
     Integer cost,
     BigDecimal distance,
-    BigDecimal perUnit) {}
+    BigDecimal perUnit,
+    Map<String, OriginalValue> originalValues) {}

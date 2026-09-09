@@ -1,5 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
+
 /**
  * One itemized Other Acceptable Cost (item 124) group, as seen by the user (AD-12). Stored as a
  * paired TOT + PO&amp;P detail row sharing a group key; {@code id} is the TOT row's detail id (the
@@ -12,5 +16,11 @@ package ca.bc.gov.nrs.ilcr.schedule3.dto;
  * @param pop the PO&amp;P $ (PO&amp;P row cost)
  * @param crown the derived Crown $ (total − pop)
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record OtherAcceptableRow(
-    Integer id, String description, Integer total, Integer pop, Integer crown) {}
+    Integer id,
+    String description,
+    Integer total,
+    Integer pop,
+    Integer crown,
+    Map<String, OriginalValue> originalValues) {}

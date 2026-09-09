@@ -18,11 +18,15 @@ import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule6.Schedule6Repository.RoadRecordRow;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordEntry;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.RoadRecordRequest;
 import ca.bc.gov.nrs.ilcr.schedule6.dto.Schedule6SaveRequest;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +40,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -55,6 +60,14 @@ class Schedule6WriteServiceTest {
   private static final String USER = "tester";
 
   @Mock private Schedule6Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule6Service service;
 

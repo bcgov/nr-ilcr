@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule5.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 5 logging camp (AD-12) — its descriptors, its twelve stored category amounts, the
@@ -61,4 +63,5 @@ public record Camp(
     CategoryAmount accessExpenseTotal,
     CategoryAmount campAndAccessTotal,
     int otherCampExpenseCount,
-    int otherAccessExpenseCount) {}
+    int otherAccessExpenseCount,
+    Map<String, OriginalValue> originalValues) {}
