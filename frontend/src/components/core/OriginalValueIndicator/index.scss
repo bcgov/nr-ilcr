@@ -1,0 +1,24 @@
+// The original-value indicator's trigger (Story 16.2). Follows the one in-repo tooltip-trigger
+// precedent, `.schedule-8__note-trigger`, so the two read as the same affordance.
+//
+// Deliberately carries no colour of its own beyond Carbon's secondary icon token: legacy's version
+// of this feature used no colour at all (an icon, a tooltip, and an input-width change — see
+// `main.css:84-92`), so nothing here may become colour-dependent.
+.original-value-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  margin-inline-start: 0.25rem;
+  border: 0;
+  background: transparent;
+  color: var(--cds-icon-secondary);
+  cursor: help;
+  vertical-align: middle;
+
+  // A visible focus ring is the whole point of making this a real button: the tooltip has to be
+  // reachable without a pointer.
+  &:focus-visible {
+    outline: 2px solid var(--cds-focus);
+    outline-offset: 1px;
+  }
+}

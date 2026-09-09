@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC, ReactNode } from 'react'
 import { Select, SelectItem, TextInput } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
@@ -33,6 +35,11 @@ type RoadDetailFieldsProps = {
   readonly readOnly: boolean
   readonly onChange: (key: keyof RoadDetailFormValues, value: string) => void
   readonly onMask: (key: MaskedField) => void
+  /**
+   * The Licensee's submitted values for this road detail, already flattened onto the form's field
+   * names by {@code roadDetailOriginals} (Story 16.2, BR-04). Null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 /** One of the three legacy columns: Road Information, Sub-Grade, Additional Stabilizing. */
@@ -72,7 +79,20 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   readOnly,
   onChange,
   onMask,
+  originals,
 }) => {
+  // Legacy renders an indicator beside ~27 of these fields. It renders NONE on the derived totals,
+  // and none on ASM Code / Soil Moisture Code / Boulder Area %, which business direction removed
+  // from Schedule 10 entirely (PRD LD-1/2/3) — so those are absent here because the FIELDS are.
+  const indicator = (key: keyof RoadDetailFormValues, label: string, numeric = true): ReactNode => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={key}
+      current={form[key]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const id = (name: string) => `${idPrefix}-${name}`
 
   // `N` and `D` both have their material forced to `NA`; `N` additionally has its dimensions and two
@@ -127,6 +147,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalidText={errors[key] ?? ''}
           onChange={(event) => onChange(key, event.target.value)}
         />
+        {indicator(key, label, false)}
       </Field>
     )
 
@@ -148,6 +169,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           onValueChange={(raw) => onChange(key, raw)}
           onBlur={() => onMask(key)}
         />
+        {indicator(key, labelWithUnit)}
       </Field>
     )
   }
@@ -175,6 +197,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
           invalidText={errors[key]}
           onSelect={(code) => onChange(key, code)}
         />
+        {indicator(key, label, false)}
       </Field>
     )
   }

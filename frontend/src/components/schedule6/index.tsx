@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule6Response from '@/interfaces/Schedule6Response'
 import type { RoadRecord, Schedule6CheckStatusResponse } from '@/interfaces/Schedule6Response'
@@ -205,6 +207,11 @@ type RoadRecordFieldsProps = {
   readonly onFieldChange: (key: keyof RoadRecordFormValues, value: string) => void
   /** Blur commit for the two fields the $ / m³ is computed from (defect #291). */
   readonly onRateCommit: () => void
+  /**
+   * The Licensee's submitted values for this road record (Story 16.2, BR-04) — undefined on the Add
+   * panel, null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
@@ -218,8 +225,21 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
   onAreaTypeChange,
   onFieldChange,
   onRateCommit,
+  originals,
 }) => {
   const tfl = isTfl(form.areaType)
+  // Legacy renders seven indicators on a road record: the three classification codes, volume, cost,
+  // the row comment and the general comment (RoadMaintenanceReportType.java:372-400,
+  // CostVolumeCommentsType.java:101-109). RMG and $/m³ are derived and get none.
+  const indicator = (field: keyof RoadRecordFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   return (
     <div className="schedule-6__fields">
       {/* Corrections 2/3: legacy rendered both as a selectOneMenu over the code's DESCRIPTION
@@ -239,6 +259,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalidText={errors.areaType}
         onSelect={onAreaTypeChange}
       />
+      {indicator('areaType', 'TSA or TFL', false)}
       <TextInput
         id={`${idPrefix}-tfl-number`}
         labelText="TFL"
@@ -250,6 +271,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.tflNumber)}
         invalidText={errors.tflNumber}
       />
+      {indicator('tflNumber', 'TFL', false)}
       <CodeComboBox
         id={`${idPrefix}-supply-block`}
         // Same widening as TSA or TFL above, for the same reason — its options are descriptions too.
@@ -262,6 +284,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalidText={errors.supplyBlock}
         onSelect={(code) => onFieldChange('supplyBlock', code)}
       />
+      {indicator('supplyBlock', 'Supply Block', false)}
       <dl className="schedule-6__derived">
         <FieldValue label="RMG" value={rmg} />
       </dl>
@@ -295,6 +318,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.volume)}
         invalidText={errors.volume}
       />
+      {indicator('volume', 'Volume m³', true)}
       <TextInput
         id={`${idPrefix}-cost`}
         labelText="Cost $"
@@ -319,6 +343,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
         invalid={Boolean(errors.cost)}
         invalidText={errors.cost}
       />
+      {indicator('cost', 'Cost $', true)}
       <dl className="schedule-6__derived">
         <FieldValue label="$ / m³" value={costPerVolume} numeric />
       </dl>
@@ -336,6 +361,7 @@ const RoadRecordFields: FC<RoadRecordFieldsProps> = ({
           invalid={Boolean(errors.comments)}
           invalidText={errors.comments}
         />
+        {indicator('comments', 'Comments', false)}
       </div>
     </div>
   )
@@ -434,6 +460,7 @@ const RoadRecordRow: FC<RoadRecordRowProps> = ({
       onAreaTypeChange={onAreaTypeChange}
       onFieldChange={onFieldChange}
       onRateCommit={onRateCommit}
+      originals={row.originalValues}
     />
     <Button
       className="schedule-6__row-delete"
@@ -1076,6 +1103,15 @@ const Schedule6: FC = () => {
               }}
               invalid={Boolean(commentsError)}
               invalidText={commentsError}
+            />
+            {/* Legacy read the general comment off the LAST road-record row and rendered its own
+                indicator for it (schedule6.xhtml:502-505). */}
+            <OriginalValueIndicator
+              originals={data.originalValues}
+              field="generalComments"
+              current={generalComments}
+              numeric={false}
+              label="General Comments"
             />
           </section>
         </Column>

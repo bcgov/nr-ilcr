@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule5Response from '@/interfaces/Schedule5Response'
 import type {
@@ -198,9 +200,35 @@ const AmountCell: FC<{
   readonly invalidText?: string
   readonly onChange?: (value: string) => void
   readonly onBlur?: () => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange, onBlur }) =>
-  readOnly ? (
-    <TableCell className="schedule-5__num">{value}</TableCell>
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its two
+  // keys this cell is. Null at Draft.
+  readonly originals?: OriginalValues | null
+  readonly originalField?: 'volume' | 'cost'
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onChange,
+  onBlur,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
+  return readOnly ? (
+    <TableCell className="schedule-5__num">
+      {value}
+      {indicator}
+    </TableCell>
   ) : (
     <TableCell className="schedule-5__num">
       <TextInput
@@ -214,8 +242,10 @@ const AmountCell: FC<{
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
+}
 
 /** An empty cell for a column this row genuinely does not have (Recoveries' volume and $/m³). */
 const AbsentCell: FC = () => <TableCell className="schedule-5__num" />
@@ -274,6 +304,8 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.volume`]}
           onChange={(value) => onChange(row.key, 'volume', value)}
           onBlur={() => onBlur(row.key, 'volume')}
+          originals={served?.originalValues}
+          originalField="volume"
         />
       ) : (
         <AbsentCell />
@@ -290,6 +322,8 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.cost`]}
           onChange={(value) => onChange(row.key, 'cost', value)}
           onBlur={() => onBlur(row.key, 'cost')}
+          originals={served?.originalValues}
+          originalField="cost"
         />
       )}
       {row.hasVolume ? (
@@ -425,6 +459,8 @@ const DescriptorFields: FC<{
   readonly onFieldBlur: (field: keyof CampFormValues) => void
   readonly onIsolatedCampChange: (value: string) => void
   readonly onCampVolumeChange: (value: string) => void
+  /** The Licensee's submitted camp attributes (Story 16.2, BR-04). Null at Draft. */
+  readonly originals?: OriginalValues | null
 }> = ({
   values,
   readOnly,
@@ -433,6 +469,7 @@ const DescriptorFields: FC<{
   onFieldBlur,
   onIsolatedCampChange,
   onCampVolumeChange,
+  originals,
 }) => (
   <div className="schedule-5__descriptors">
     <TextInput
@@ -446,6 +483,13 @@ const DescriptorFields: FC<{
       invalid={Boolean(errors.campName)}
       invalidText={errors.campName}
     />
+    <OriginalValueIndicator
+      originals={originals}
+      field="campName"
+      current={values.campName}
+      numeric={false}
+      label="Camp Name"
+    />
     <TextInput
       id="road-distance"
       labelText="Road Distance to Operating Area (km)"
@@ -455,6 +499,13 @@ const DescriptorFields: FC<{
       onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
       invalid={Boolean(errors.roadDistanceToOperatingArea)}
       invalidText={errors.roadDistanceToOperatingArea}
+    />
+    <OriginalValueIndicator
+      originals={originals}
+      field="roadDistanceToOperatingArea"
+      current={values.roadDistanceToOperatingArea}
+      numeric={true}
+      label="Road Distance to Operating Area (km)"
     />
     <TextInput
       id="size-of-camp"
@@ -466,6 +517,13 @@ const DescriptorFields: FC<{
       invalid={Boolean(errors.sizeOfCamp)}
       invalidText={errors.sizeOfCamp}
     />
+    <OriginalValueIndicator
+      originals={originals}
+      field="sizeOfCamp"
+      current={values.sizeOfCamp}
+      numeric={true}
+      label="Size of Camp (number of persons)"
+    />
     <TextInput
       id="associated-camp-volume"
       labelText="Associated Camp Volume (m³)"
@@ -475,6 +533,13 @@ const DescriptorFields: FC<{
       onBlur={() => onFieldBlur('associatedCampVolume')}
       invalid={Boolean(errors.associatedCampVolume)}
       invalidText={errors.associatedCampVolume}
+    />
+    <OriginalValueIndicator
+      originals={originals}
+      field="associatedCampVolume"
+      current={values.associatedCampVolume}
+      numeric={true}
+      label="Associated Camp Volume (m³)"
     />
     <Select
       id="isolated-camp"
@@ -494,6 +559,15 @@ const DescriptorFields: FC<{
       <SelectItem value="false" text="No" />
       <SelectItem value="true" text="Yes" />
     </Select>
+    {/* The form holds 'true'/'false'; the served original is the stored 'Y'/'N', so this cell
+        compares the two through the same shared rule rather than by text. */}
+    <OriginalValueIndicator
+      originals={originals}
+      field="isolatedCamp"
+      current={values.isolatedCamp === 'true' ? 'Y' : values.isolatedCamp === 'false' ? 'N' : ''}
+      numeric={false}
+      label="Isolated Camp"
+    />
   </div>
 )
 
@@ -1292,6 +1366,8 @@ const Schedule5: FC = () => {
         onFieldBlur={commitOnBlur}
         onIsolatedCampChange={handleIsolatedCampChange}
         onCampVolumeChange={handleCampVolumeChange}
+        // The new-camp panel has no stored camp, so nothing was submitted for it to differ from.
+        originals={panelMode === 'new' ? null : servedCamp?.originalValues}
       />
 
       <CategoryGrid

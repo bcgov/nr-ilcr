@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule11Response from '@/interfaces/Schedule11Response'
 import type {
@@ -362,6 +363,13 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.location)}
         invalidText={errors.location}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="location"
+        current={form.location}
+        numeric={false}
+        label="Location"
+      />
     </TableCell>
     <TableCell>
       <BiogeoComboBox
@@ -372,6 +380,13 @@ const EditRow: FC<EditRowProps> = ({
         disabled={saving}
         invalidText={errors.bec}
         onSelect={(o) => onFieldChange('bec', o)}
+      />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="biogeoclimaticCatalogueId"
+        current={form.bec?.id === undefined ? '' : String(form.bec.id)}
+        numeric={false}
+        label="Biogeo/Subzone/Variant"
       />
     </TableCell>
     <TableCell>
@@ -400,6 +415,13 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.netArea)}
         invalidText={errors.netArea}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="netArea"
+        current={form.netArea}
+        numeric={true}
+        label="NAR(ha)"
+      />
     </TableCell>
     <TableCell className="schedule-11__num">
       <TextInput
@@ -414,6 +436,13 @@ const EditRow: FC<EditRowProps> = ({
         invalid={Boolean(errors.actualCost)}
         invalidText={errors.actualCost}
       />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="actualCost"
+        current={form.actualCost}
+        numeric={true}
+        label="Actual Cost ($)"
+      />
     </TableCell>
     <TableCell className="schedule-11__num">
       <TextInput
@@ -427,6 +456,13 @@ const EditRow: FC<EditRowProps> = ({
         onChange={(e) => onFieldChange('plannedCost', e.target.value)}
         invalid={Boolean(errors.plannedCost)}
         invalidText={errors.plannedCost}
+      />
+      <OriginalValueIndicator
+        originals={row.originalValues}
+        field="plannedCost"
+        current={form.plannedCost}
+        numeric={true}
+        label="Planned Cost ($)"
       />
     </TableCell>
     {/* Total Cost + $/NAR are server-derived (AD-5); shown read-only, they refresh on re-save. */}

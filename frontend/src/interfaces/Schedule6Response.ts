@@ -4,6 +4,7 @@
 // the three totals are DERIVED server-side (BR-04/BR-07) and are response-only — never recomputed
 // here (AD-5) and never sent back.
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { CodeDescription } from '@/utils/codes'
 import type { MessageInfo } from './Schedule1Response'
 
@@ -38,6 +39,9 @@ export interface RoadRecord {
   // The PER-RECORD comment: ILCR_COST_REPORT_DETAIL.COMMENTS VARCHAR2(400 BYTE), a different and
   // much narrower column than the schedule-level `generalComments` below.
   readonly comments: string | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // One missing-field finding. `field` names the request field the user must supply (`areaType`,
@@ -90,4 +94,7 @@ export default interface Schedule6Response {
   readonly totalCostPerVolume: number | null
   // Write echoes only (AD-8); absent on the GET.
   readonly message?: MessageInfo | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }

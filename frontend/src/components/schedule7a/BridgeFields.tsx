@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import { Column, Dropdown, Grid, TextInput } from '@carbon/react'
 import CommentsTextArea from '@/components/core/CommentsTextArea'
@@ -83,6 +85,11 @@ type Props = {
   // Re-group a money field once the user leaves it (schedule 3's `groupField` idiom). On blur rather
   // than on change so inserting a separator mid-word cannot move the caret while typing.
   readonly onGroup: (key: CostField) => void
+  /**
+   * The Licensee's submitted values for this bridge (Story 16.2, BR-04) — undefined on the Add
+   * panel, null at Draft.
+   */
+  readonly originals?: OriginalValues | null
 }
 
 const BridgeFields: FC<Props> = ({
@@ -94,7 +101,20 @@ const BridgeFields: FC<Props> = ({
   totals,
   onChange,
   onGroup,
+  originals,
 }) => {
+  // Legacy rendered 23 indicators on a bridge — thirteen attributes plus ten costs
+  // (BridgeReportType.java:548-596, Schedule7aDAO.java:299-432). The four TOTALS get none: legacy's
+  // own OV summing for them is commented out (BridgeReportType.java:408,410,412).
+  const indicator = (field: keyof BridgeFormValues, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={originals}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
   const text = (
     field: keyof BridgeFormValues,
     label: string,
@@ -114,18 +134,25 @@ const BridgeFields: FC<Props> = ({
     // Split off: `rightAlign` is ours, not a TextInput prop, and would reach the DOM via the spread.
     const { rightAlign, ...inputProps } = extra
     return (
-      <TextInput
-        id={`${idPrefix}-${field}`}
-        labelText={label}
-        size="sm"
-        className={rightAlign ? 'schedule-7a__num' : undefined}
-        disabled={disabled}
-        value={form[field]}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        onChange={(event) => onChange(field, event.target.value)}
-        {...inputProps}
-      />
+      <div className="schedule-7a__field">
+        <TextInput
+          id={`${idPrefix}-${field}`}
+          labelText={label}
+          size="sm"
+          className={rightAlign ? 'schedule-7a__num' : undefined}
+          disabled={disabled}
+          value={form[field]}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          onChange={(event) => onChange(field, event.target.value)}
+          {...inputProps}
+        />
+        {indicator(
+          field,
+          label,
+          !(field === 'comments' || field === 'builtDate' || field === 'locationName'),
+        )}
+      </div>
     )
   }
 
@@ -134,30 +161,33 @@ const BridgeFields: FC<Props> = ({
     const items = codeLists[spec.list] as readonly BridgeCodeOption[]
     const selected = items.find((item) => item.code === form[field]) ?? null
     return (
-      <Dropdown<BridgeCodeOption>
-        id={`${idPrefix}-${field}`}
-        titleText={spec.label}
-        label="Select"
-        // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
-        // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
-        // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the
-        // control itself (Dropdown.js:275), so the hover text needs nothing from us. Passing `title`
-        // made it worse: Carbon spreads unknown props onto the WRAPPER, and the menu is a descendant of
-        // that wrapper, so the selected option's tooltip floated over the open list — the one place the
-        // whole description is readable. The other reading is the open menu, which the app already wraps
-        // app-wide (`styles/_overrides.scss`, added for the shared code selectors).
-        items={items as BridgeCodeOption[]}
-        itemToString={(item) => item?.description ?? ''}
-        // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
-        // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
-        // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
-        // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-        selectedItem={selected as BridgeCodeOption | undefined}
-        disabled={disabled}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-        onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
-      />
+      <div className="schedule-7a__field">
+        <Dropdown<BridgeCodeOption>
+          id={`${idPrefix}-${field}`}
+          titleText={spec.label}
+          label="Select"
+          // NO `title` here, deliberately (#295 code review). The New/Used descriptions run to 49
+          // characters ("RU-Replacement installation with a Used structure"), so a narrow cell truncates
+          // the closed control — but Carbon ALREADY sets `title={itemToString(selectedItem)}` on the
+          // control itself (Dropdown.js:275), so the hover text needs nothing from us. Passing `title`
+          // made it worse: Carbon spreads unknown props onto the WRAPPER, and the menu is a descendant of
+          // that wrapper, so the selected option's tooltip floated over the open list — the one place the
+          // whole description is readable. The other reading is the open menu, which the app already wraps
+          // app-wide (`styles/_overrides.scss`, added for the shared code selectors).
+          items={items as BridgeCodeOption[]}
+          itemToString={(item) => item?.description ?? ''}
+          // `null`, not `undefined`: an undefined `selectedItem` hands the control back to downshift's
+          // internal state, so a cleared code would leave the old label on screen. The cast is Carbon's
+          // own type inconsistency — its `onChange` hands back `ItemType | null` while the prop is
+          // declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
+          selectedItem={selected as BridgeCodeOption | undefined}
+          disabled={disabled}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+          onChange={({ selectedItem }) => onChange(field, selectedItem?.code ?? '')}
+        />
+        {indicator(field, spec.label, false)}
+      </div>
     )
   }
 

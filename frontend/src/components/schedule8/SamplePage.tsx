@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
@@ -279,26 +280,43 @@ const SamplePage: FC<SamplePageProps> = ({
       label
     )
 
+  // Legacy rendered nineteen indicators on a sample (TreeToTruckDetailReportDO.java:551-632). Every
+  // form key here already matches the served document's. The derived figures — % Total, Actual
+  // Harvested, the addition/deduction totals and the final rate — get none.
+  const sampleIndicator = (field: keyof SampleForm, label: string, numeric = true) => (
+    <OriginalValueIndicator
+      originals={editId === null ? null : openSample?.originalValues}
+      field={field}
+      current={form[field]}
+      numeric={numeric}
+      label={label}
+    />
+  )
+
   const numberField = (field: keyof SampleForm, label: string, note?: string) => {
     if (readOnly) {
       return (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{fieldLabel(label, note)}</span>
           <span>{form[field] === '' ? '—' : form[field]}</span>
+          {sampleIndicator(field, label)}
         </div>
       )
     }
     return (
-      <TextInput
-        id={`sample-${field}`}
-        labelText={fieldLabel(label, note)}
-        size="sm"
-        inputMode="numeric"
-        value={form[field]}
-        onChange={setField(field)}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        <TextInput
+          id={`sample-${field}`}
+          labelText={fieldLabel(label, note)}
+          size="sm"
+          inputMode="numeric"
+          value={form[field]}
+          onChange={setField(field)}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {sampleIndicator(field, label)}
+      </div>
     )
   }
 
@@ -314,6 +332,7 @@ const SamplePage: FC<SamplePageProps> = ({
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{text}</span>
+          {sampleIndicator(field, label, false)}
         </div>
       )
     }
@@ -428,6 +447,7 @@ const SamplePage: FC<SamplePageProps> = ({
           <div className="schedule-8__field">
             <span className="schedule-8__field-label">Contract ID</span>
             <span>{form.contractId || '—'}</span>
+            {sampleIndicator('contractId', 'Contract ID', false)}
           </div>
         ) : (
           <TextInput
@@ -440,10 +460,12 @@ const SamplePage: FC<SamplePageProps> = ({
             invalidText={errors.contractId}
           />
         )}
+        {!readOnly && sampleIndicator('contractId', 'Contract ID', false)}
         {readOnly ? (
           <div className="schedule-8__field">
             <span className="schedule-8__field-label">Cut Block</span>
             <span>{form.cutBlock || '—'}</span>
+            {sampleIndicator('cutBlock', 'Cut Block', false)}
           </div>
         ) : (
           <TextInput
@@ -454,6 +476,7 @@ const SamplePage: FC<SamplePageProps> = ({
             onChange={setField('cutBlock')}
           />
         )}
+        {!readOnly && sampleIndicator('cutBlock', 'Cut Block', false)}
       </div>
 
       {/* Legacy sectioning (schedule8EditDetail.xhtml): each skidding system is its own section with

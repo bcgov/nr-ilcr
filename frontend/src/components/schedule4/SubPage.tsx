@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { SubPageRow } from '@/interfaces/Schedule4Response'
@@ -395,6 +396,20 @@ const SubPage: FC<SubPageProps> = ({
                       ) : (
                         (row.description ?? '—')
                       )}
+                      {/* Legacy tracked all five of these on a sub-page row
+                          (Schedule4DAO.java:346-382); the cycle only exists on Truck Rehaul, and the
+                          derived $/m³ beside them carries none. */}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field={field}
+                        current={
+                          editable
+                            ? rf[field]
+                            : row[field as 'distance' | 'volume' | 'cost' | 'cycle']
+                        }
+                        numeric={numeric}
+                        label={label}
+                      />
                     </TableCell>
                   )
                   return (

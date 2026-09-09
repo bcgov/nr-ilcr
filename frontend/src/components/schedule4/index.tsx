@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule4Response from '@/interfaces/Schedule4Response'
 import type { Location, Schedule4CheckStatusResponse } from '@/interfaces/Schedule4Response'
@@ -127,10 +129,36 @@ const CategoryCell: FC<{
   invalidText?: string
   onValueChange: (raw: string) => void
   onCommit: () => void
-}> = ({ inputId, label, value, readOnly, invalidText, onValueChange, onCommit }) => {
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its keys
+  // this cell is. Null at Draft.
+  originals?: OriginalValues | null
+  originalField?: 'volume' | 'cost' | 'distance'
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onValueChange,
+  onCommit,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
   if (readOnly) {
     return (
-      <TableCell className="schedule-4__num">{value === '' ? '—' : groupInput(value)}</TableCell>
+      <TableCell className="schedule-4__num">
+        {value === '' ? '—' : groupInput(value)}
+        {indicator}
+      </TableCell>
     )
   }
   return (
@@ -146,6 +174,7 @@ const CategoryCell: FC<{
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
 }
@@ -161,7 +190,9 @@ const CategoryRow: FC<{
   fieldErrors: Record<string, string>
   onFieldChange: (code: number, field: CategoryField) => (raw: string) => void
   onFieldCommit: (code: number, field: CategoryField) => () => void
-}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit }) => {
+  /** The Licensee's submitted values for this category (Story 16.2, BR-04). Null at Draft. */
+  originals?: OriginalValues | null
+}> = ({ def, values, perUnit, readOnly, fieldErrors, onFieldChange, onFieldCommit, originals }) => {
   const isDistance = def.kind === 'DISTANCE'
   return (
     <TableRow>
@@ -175,6 +206,8 @@ const CategoryRow: FC<{
           invalidText={fieldErrors[`${def.code}-distance`]}
           onValueChange={onFieldChange(def.code, 'distance')}
           onCommit={onFieldCommit(def.code, 'distance')}
+          originals={originals}
+          originalField="distance"
         />
       ) : (
         <TableCell className="schedule-4__num">—</TableCell>
@@ -187,6 +220,8 @@ const CategoryRow: FC<{
         invalidText={fieldErrors[`${def.code}-volume`]}
         onValueChange={onFieldChange(def.code, 'volume')}
         onCommit={onFieldCommit(def.code, 'volume')}
+        originals={originals}
+        originalField="volume"
       />
       <CategoryCell
         inputId={`${def.code}-cost`}
@@ -196,6 +231,8 @@ const CategoryRow: FC<{
         invalidText={fieldErrors[`${def.code}-cost`]}
         onValueChange={onFieldChange(def.code, 'cost')}
         onCommit={onFieldCommit(def.code, 'cost')}
+        originals={originals}
+        originalField="cost"
       />
       <TableCell className="schedule-4__num">{fmtCurrency(perUnit)}</TableCell>
       <TableCell className="schedule-4__num">—</TableCell>
@@ -758,6 +795,7 @@ const Schedule4: FC = () => {
       fieldErrors={fieldErrors}
       onFieldChange={setCategoryField}
       onFieldCommit={commitCategoryField}
+      originals={panelLocation?.categories.find((c) => c.code === def.code)?.originalValues ?? null}
     />
   )
 
@@ -812,6 +850,16 @@ const Schedule4: FC = () => {
           invalidText={validation.nameError}
         />
       )}
+      {/* Legacy wires an indicator to the location name; its COMMENTS has no original at all
+          (TransportationReportType.java:30 declares the field and no commentsOriginalVal), so the
+          comments box below gets none — "only if the legacy app does it". */}
+      <OriginalValueIndicator
+        originals={panelMode === 'new' ? null : panelLocation?.originalValues}
+        field="name"
+        current={panelName}
+        numeric={false}
+        label="Location Name"
+      />
 
       <TableContainer className="schedule-4__grid">
         <Table aria-label="Transportation Categories">

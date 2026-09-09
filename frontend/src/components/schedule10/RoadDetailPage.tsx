@@ -1,3 +1,4 @@
+import { roadDetailOriginals } from './originals'
 import type { FC } from 'react'
 import {
   Button,
@@ -68,6 +69,7 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
 
   const openLabel =
     page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)?.roadDetailLabel ?? ''
+  const openDetail = page.roadDetails.find((detail) => detail.roadDetailId === openDetailId)
   const modeWord = readOnly ? 'View' : 'Edit'
   const panelHeading = panelMode === 'new' ? 'New Road' : `${modeWord} Road — ${openLabel}`
 
@@ -152,6 +154,14 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               readOnly={readOnly}
               onChange={onChange}
               onMask={onMask}
+              // The Add panel has no stored row, so nothing was submitted for it to differ from.
+              originals={
+                panelMode === 'new'
+                  ? null
+                  : openDetail === undefined
+                    ? null
+                    : roadDetailOriginals(openDetail)
+              }
             />
             <div className="schedule-10__panel-actions">
               {/* AC11 and deviation 7: rendered and disabled outside Draft, never removed. */}

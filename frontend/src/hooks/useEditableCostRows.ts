@@ -1,3 +1,4 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import { useEffect, useRef, useState } from 'react'
 import apiService from '@/service/api-service'
 import useMillYear from '@/context/millYear/useMillYear'
@@ -10,6 +11,12 @@ export interface EditRow {
   id: number | null
   description: string
   values: Record<string, string>
+  /**
+   * The Licensee's submitted values for this row (Story 16.2, BR-04) — carried through from the
+   * served row so a sub-page grid can render its indicators without a second lookup. Absent on a
+   * row the reporter has just added locally: nothing was submitted for it.
+   */
+  originals?: OriginalValues | null
 }
 
 /** Advisory validation errors keyed by `description` and each editable field key. */
@@ -30,9 +37,12 @@ interface Params<TDoc extends EditableRowsDoc> {
   loadError: string
   saveError: string
   /** Map a loaded document to the seed rows (id + description + raw string field values). */
-  rowsFromDoc: (
-    doc: TDoc,
-  ) => Array<{ id: number; description: string; values: Record<string, string> }>
+  rowsFromDoc: (doc: TDoc) => Array<{
+    id: number
+    description: string
+    values: Record<string, string>
+    originals?: OriginalValues | null
+  }>
   /** Advisory row validation, mirroring the backend request DTO. */
   validate: (description: string, values: Record<string, string>) => RowValidationErrors
   /** Navigate away (the caller owns the typed route). */
@@ -121,6 +131,7 @@ export function useEditableCostRows<TDoc extends EditableRowsDoc>({
       id: r.id,
       description: r.description,
       values: r.values,
+      originals: r.originals,
     }))
 
   useEffect(() => {

@@ -1,3 +1,5 @@
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+
 // Mirrors the backend Schedule1Response DTO (Story 1.2). Numbers are nullable; Jackson omits nulls,
 // so an absent line item / block member simply won't be in the JSON. perUnit and the subtotals are
 // computed server-side and are read-only here — never sent on a write, and the server is the sole
@@ -14,6 +16,10 @@ export interface LineItem {
   readonly volume: number | null
   readonly cost: number | null
   readonly perUnit: number | null
+  // The Licensee's submitted volume and cost, once the track has left Draft (Story 16.2, BR-04).
+  // Absent/null at Draft. Which keys appear is per-item legacy parity, not symmetry: every line item
+  // carries a volume original, only the nine entered items carry a cost one.
+  readonly originalValues?: OriginalValues | null
 }
 
 export interface SilvicultureBlock {
@@ -28,6 +34,9 @@ export interface OtherCostsSummary {
   readonly costSubtotal: number | null
   readonly perUnit: number | null
   readonly count: number
+  // The Licensee's submitted shared Other-Costs volume (Story 16.2). costSubtotal and perUnit are
+  // derived and so have no original.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Success message carried on a mutating response (AD-8): the frontend renders `text` verbatim and
@@ -50,6 +59,9 @@ export default interface Schedule1Response {
   // Unreachable through this page today (the GET 404s when unsaved), typed honestly so it stays safe.
   readonly revisionCount?: number | null
   readonly comments: string | null
+  // Document-level originals (Story 16.2) — only `comments`; every figure's original rides on its own
+  // line item / block / row. Absent at Draft, which is what suppresses every indicator on the page.
+  readonly originalValues?: OriginalValues | null
   readonly lineItems: readonly LineItem[]
   readonly silviculture: SilvicultureBlock
   // BR-04 admin costs pulled from Schedule 3 (read-only): Forest Mgmt Admin (143) / Less Silv Admin (139).
