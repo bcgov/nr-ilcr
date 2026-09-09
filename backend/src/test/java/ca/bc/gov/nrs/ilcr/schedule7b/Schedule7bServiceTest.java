@@ -900,4 +900,59 @@ class Schedule7bServiceTest {
       verify(repository, times(1)).findTrackStatus(MILL, YEAR);
     }
   }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a culvert carries the eight keys legacy renders, and no total")
+    void beyondDraftServesTheSubmittedFigures() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+      when(repository.findCulvertSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule7bRepository.CulvertSnapshotRow(
+                      7801L, "C", 900, 600, new BigDecimal("12.5"), 4, "as submitted")));
+      when(costSnapshots.findByCulvertReports(List.of(7801)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 7801, 77, null, 3000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 7801, 78, null, 1200, null, null)));
+
+      Culvert culvert = service.getSchedule7b(MILL, YEAR, CallerRights.ADMIN).culverts().getFirst();
+
+      // The parity decision, asserted as a SET: legacy draws an indicator on each of these nine
+      // fields and none on the derived Total (schedule7B.xhtml:315-516).
+      assertThat(culvert.originalValues())
+          .containsOnlyKeys(
+              "culvertTypeCode",
+              "spanSize",
+              "riseSize",
+              "length",
+              "culvertPieceCount",
+              "materialCost",
+              "installCost",
+              "comments");
+      assertThat(culvert.originalValues().get("materialCost").value()).isEqualTo("3000");
+      assertThat(culvert.originalValues().get("length").tooltip())
+          .isEqualTo("Original Submission Value: 12.5");
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+
+      Culvert culvert =
+          service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts().getFirst();
+
+      assertThat(culvert.originalValues()).isNull();
+      verify(repository, never()).findCulvertSnapshots(anyLong(), anyInt());
+    }
+  }
 }

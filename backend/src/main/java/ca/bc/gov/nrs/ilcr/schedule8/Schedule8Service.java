@@ -1016,73 +1016,38 @@ public class Schedule8Service {
    */
   private Map<String, OriginalValue> sampleOriginals(
       String trackStatus, Schedule8Repository.SampleSnapshotRow sample) {
-    return originalValues
-        .forTrack(trackStatus)
-        .put("contractId", sample == null ? null : sample.contractId(), OriginalValueFormat.TEXT)
-        .put("cutBlock", sample == null ? null : sample.cutBlock(), OriginalValueFormat.TEXT)
-        .put(
-            "groundBasePct",
-            sample == null ? null : sample.groundBasePct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "grapplePct",
-            sample == null ? null : sample.grapplePct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "skylinePct",
-            sample == null ? null : sample.skylinePct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "highleadPct",
-            sample == null ? null : sample.highleadPct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "helicopterPct",
-            sample == null ? null : sample.helicopterPct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "otherSkiddingPct",
-            sample == null ? null : sample.otherSkiddingPct(),
-            OriginalValueFormat.PERCENTAGE)
-        .put(
-            "skylineSlopeDistance",
-            sample == null ? null : sample.skylineSlopeDistance(),
-            OriginalValueFormat.WHOLE)
-        .put(
-            "skylineSupportNumber",
-            sample == null ? null : sample.skylineSupportNumber(),
-            OriginalValueFormat.WHOLE)
-        .put(
-            "supportAvgDistance",
-            sample == null ? null : sample.supportAverageDistance(),
-            OriginalValueFormat.ONE_DECIMAL)
-        .put("distance", sample == null ? null : sample.distance(), OriginalValueFormat.ONE_DECIMAL)
-        .put(
-            "cycleTime",
-            sample == null ? null : sample.cycleTime(),
-            OriginalValueFormat.ONE_DECIMAL)
-        .put(
-            "uphillDirection",
-            sample == null ? null : sample.uphillDirectionInd(),
-            OriginalValueFormat.UPHILL_DIRECTION)
+    OriginalValues.Builder builder = originalValues.forTrack(trackStatus);
+    if (sample == null) {
+      // Guarded once rather than per field. Nineteen `sample == null ? null : ...` ternaries said
+      // the same thing nineteen times and pushed this method past the cognitive-complexity limit;
+      // the result is identical because `put` ignores a null submitted value, and an EMPTY map is
+      // still the right answer here — it tells the page to evaluate the added-since-submission
+      // branch for every field, which a null map (Draft) would not.
+      return builder.build();
+    }
+    return builder
+        .put("contractId", sample.contractId(), OriginalValueFormat.TEXT)
+        .put("cutBlock", sample.cutBlock(), OriginalValueFormat.TEXT)
+        .put("groundBasePct", sample.groundBasePct(), OriginalValueFormat.PERCENTAGE)
+        .put("grapplePct", sample.grapplePct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylinePct", sample.skylinePct(), OriginalValueFormat.PERCENTAGE)
+        .put("highleadPct", sample.highleadPct(), OriginalValueFormat.PERCENTAGE)
+        .put("helicopterPct", sample.helicopterPct(), OriginalValueFormat.PERCENTAGE)
+        .put("otherSkiddingPct", sample.otherSkiddingPct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylineSlopeDistance", sample.skylineSlopeDistance(), OriginalValueFormat.WHOLE)
+        .put("skylineSupportNumber", sample.skylineSupportNumber(), OriginalValueFormat.WHOLE)
+        .put("supportAvgDistance", sample.supportAverageDistance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("distance", sample.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycleTime", sample.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .put("uphillDirection", sample.uphillDirectionInd(), OriginalValueFormat.UPHILL_DIRECTION)
         .put(
             "waterDumpDestination",
-            sample == null ? null : sample.waterDumpDestinationInd(),
+            sample.waterDumpDestinationInd(),
             OriginalValueFormat.WATER_DUMP)
-        .put(
-            "skidTypeCode", sample == null ? null : sample.skidTypeCode(), OriginalValueFormat.TEXT)
-        .put(
-            "coniferousVolume",
-            sample == null ? null : sample.coniferousVolume(),
-            OriginalValueFormat.WHOLE)
-        .put(
-            "deciduousVolume",
-            sample == null ? null : sample.deciduousVolume(),
-            OriginalValueFormat.WHOLE)
-        .put(
-            "originalRate",
-            sample == null ? null : sample.originalRate(),
-            OriginalValueFormat.TWO_DECIMAL)
+        .put("skidTypeCode", sample.skidTypeCode(), OriginalValueFormat.TEXT)
+        .put("coniferousVolume", sample.coniferousVolume(), OriginalValueFormat.WHOLE)
+        .put("deciduousVolume", sample.deciduousVolume(), OriginalValueFormat.WHOLE)
+        .put("originalRate", sample.originalRate(), OriginalValueFormat.TWO_DECIMAL)
         .build();
   }
 

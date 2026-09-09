@@ -704,35 +704,46 @@ public class Schedule9Service {
    */
   private Map<String, OriginalValue> recordOriginals(
       String trackStatus,
-      Schedule9Repository.ContractualSnapshotRow record,
+      Schedule9Repository.ContractualSnapshotRow submittedRecord,
       CostDetailSnapshotRepository.Row cost) {
     return originalValues
         .forTrack(trackStatus)
         .put(
-            "contractorId", record == null ? null : record.contractorId(), OriginalValueFormat.TEXT)
+            "contractorId",
+            submittedRecord == null ? null : submittedRecord.contractorId(),
+            OriginalValueFormat.TEXT)
         .put(
             "numberOfUnits",
-            record == null ? null : record.performedUnit(),
+            submittedRecord == null ? null : submittedRecord.performedUnit(),
             OriginalValueFormat.ONE_DECIMAL)
         .put(
             "sideSlopePct",
-            record == null ? null : record.sideSlopePct(),
+            submittedRecord == null ? null : submittedRecord.sideSlopePct(),
             OriginalValueFormat.PERCENTAGE)
-        .put("unitType", record == null ? null : record.unitCode(), OriginalValueFormat.TEXT)
+        .put(
+            "unitType",
+            submittedRecord == null ? null : submittedRecord.unitCode(),
+            OriginalValueFormat.TEXT)
         .put(
             "unitDescription",
-            record == null ? null : record.unitDescription(),
+            submittedRecord == null ? null : submittedRecord.unitDescription(),
             OriginalValueFormat.TEXT)
-        .put("source", record == null ? null : record.sourceCode(), OriginalValueFormat.TEXT)
+        .put(
+            "source",
+            submittedRecord == null ? null : submittedRecord.sourceCode(),
+            OriginalValueFormat.TEXT)
         .put(
             "sourceDescription",
-            record == null ? null : record.sourceDescription(),
+            submittedRecord == null ? null : submittedRecord.sourceDescription(),
             OriginalValueFormat.TEXT)
         .put(
             "biogeoclimaticZone",
-            record == null ? null : record.becZoneCode(),
+            submittedRecord == null ? null : submittedRecord.becZoneCode(),
             OriginalValueFormat.TEXT)
-        .put("comments", record == null ? null : record.comments(), OriginalValueFormat.TEXT)
+        .put(
+            "comments",
+            submittedRecord == null ? null : submittedRecord.comments(),
+            OriginalValueFormat.TEXT)
         .put("contractualItem", cost == null ? null : cost.costItemCode(), OriginalValueFormat.TEXT)
         .put(
             "itemDescription",

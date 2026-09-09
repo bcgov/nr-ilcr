@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -33,6 +34,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
@@ -715,5 +718,57 @@ class Schedule11ServiceTest {
     assertTrue(service.searchBiogeoCatalogue("").isEmpty());
     assertTrue(service.searchBiogeoCatalogue(null).isEmpty());
     verify(repository, never()).searchBiogeoCatalogue(anyString());
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a location carries the five keys the silviculture view can supply")
+    void beyondDraftServesTheSubmittedFigures() {
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL))
+          .thenReturn(List.of(cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
+      when(repository.findLocationSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule11Repository.LocationSnapshotRow(
+                      9101L, "Submitted location", 8801L, new BigDecimal("100.0"))));
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 9101, 24, null, 20000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 9101, 23, null, 9000, null, null)));
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.ADMIN).locations().get(0);
+
+      // D5: `enhancedIndicator` and `comments` are ABSENT because the view carries neither column,
+      // so legacy's own indicator for the enhanced flag could never fire either. The other five are
+      // the ones schedule11.xhtml actually draws.
+      assertThat(served.originalValues())
+          .containsOnlyKeys(
+              "location", "biogeoclimaticCatalogueId", "netArea", "actualCost", "plannedCost");
+      assertThat(served.originalValues().get("location").value()).isEqualTo("Submitted location");
+      assertThat(served.originalValues().get("actualCost").value()).isEqualTo("20000");
+    }
+
+    @Test
+    @DisplayName("the gate reads the SILVICULTURE track, never the 1-10 column")
+    void draftSilvicultureExposesNothing() {
+      stubTrack("D");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+      assertThat(served.originalValues()).isNull();
+      verify(repository, never()).findLocationSnapshots(anyLong(), anyInt());
+    }
   }
 }

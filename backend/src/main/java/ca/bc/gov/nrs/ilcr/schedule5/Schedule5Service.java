@@ -81,6 +81,16 @@ public class Schedule5Service {
   static final String FIELD_ROAD_DISTANCE = "roadDistanceToOperatingArea";
   static final String FIELD_SIZE_OF_CAMP = "sizeOfCamp";
   static final String FIELD_ASSOCIATED_CAMP_VOLUME = "associatedCampVolume";
+
+  /**
+   * The two per-category original-value keys (Story 16.2). Named constants because every category
+   * on the page uses the same pair, and because they are the same field vocabulary the check-status
+   * keys above use — a rename has to move both together or the indicator stops addressing the cell
+   * its message names.
+   */
+  static final String FIELD_VOLUME = "volume";
+
+  static final String FIELD_COST = "cost";
   static final String FIELD_OTHER_CAMP_DESCRIPTION = "otherCampExpenseDescription";
   static final String FIELD_OTHER_CAMP_COST = "otherCampExpenseCost";
   static final String FIELD_OTHER_ACCESS_DESCRIPTION = "otherAccessExpenseDescription";
@@ -338,7 +348,7 @@ public class Schedule5Service {
             originals
                 .build()
                 .put(
-                    "volume",
+                    FIELD_VOLUME,
                     originals.volume(ITEM_OTHER_CAMP_EXPENSES_VOLUME),
                     OriginalValueFormat.WHOLE)
                 .build());
@@ -353,7 +363,7 @@ public class Schedule5Service {
             // Recoveries and no volume original, because the category has no volume.
             originals
                 .build()
-                .put("cost", originals.cost(ITEM_RECOVERIES), OriginalValueFormat.WHOLE)
+                .put(FIELD_COST, originals.cost(ITEM_RECOVERIES), OriginalValueFormat.WHOLE)
                 .build());
 
     // (1) Sub-Total over EXACTLY five costs — Recoveries excluded (CampReportType.java:335-347).
@@ -389,7 +399,7 @@ public class Schedule5Service {
             originals
                 .build()
                 .put(
-                    "volume",
+                    FIELD_VOLUME,
                     originals.volume(ITEM_OTHER_ACCESS_EXPENSES_VOLUME),
                     OriginalValueFormat.WHOLE)
                 .build());
@@ -452,19 +462,19 @@ public class Schedule5Service {
         originals
             .build()
             .put(
-                "campName",
+                FIELD_CAMP_NAME,
                 originals.camp(Schedule5Repository.CampSnapshotRow::campName),
                 OriginalValueFormat.TEXT)
             .put(
-                "roadDistanceToOperatingArea",
+                FIELD_ROAD_DISTANCE,
                 originals.camp(Schedule5Repository.CampSnapshotRow::distanceToOperatingArea),
                 OriginalValueFormat.ONE_DECIMAL)
             .put(
-                "sizeOfCamp",
+                FIELD_SIZE_OF_CAMP,
                 originals.camp(Schedule5Repository.CampSnapshotRow::sizeOfCamp),
                 OriginalValueFormat.WHOLE)
             .put(
-                "associatedCampVolume",
+                FIELD_ASSOCIATED_CAMP_VOLUME,
                 originals.camp(Schedule5Repository.CampSnapshotRow::associatedCampVolume),
                 OriginalValueFormat.WHOLE)
             .put(
@@ -511,8 +521,8 @@ public class Schedule5Service {
     Map<String, OriginalValue> submitted =
         originals
             .build()
-            .put("volume", originals.volume(itemId), OriginalValueFormat.WHOLE)
-            .put("cost", originals.cost(itemId), OriginalValueFormat.WHOLE)
+            .put(FIELD_VOLUME, originals.volume(itemId), OriginalValueFormat.WHOLE)
+            .put(FIELD_COST, originals.cost(itemId), OriginalValueFormat.WHOLE)
             .build();
     DetailRow row = details.fixed().get(itemId);
     if (row == null) {
@@ -1619,7 +1629,7 @@ public class Schedule5Service {
             "description",
             snapshot == null ? null : snapshot.itemDescription(),
             OriginalValueFormat.TEXT)
-        .put("cost", snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE)
+        .put(FIELD_COST, snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE)
         .build();
   }
 }

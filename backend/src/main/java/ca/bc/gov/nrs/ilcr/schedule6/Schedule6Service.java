@@ -947,19 +947,22 @@ public class Schedule6Service {
    */
   private Map<String, OriginalValue> roadRecordOriginals(
       String trackStatus,
-      Schedule6Repository.RoadRecordSnapshotRow record,
+      Schedule6Repository.RoadRecordSnapshotRow submittedRecord,
       CostDetailSnapshotRepository.Row detail) {
-    String tsa = record == null ? null : StringUtils.trimToNull(record.tsaNumber());
-    String tsb = record == null ? null : StringUtils.trimToNull(record.tsbNumberCode());
-    String tfl = record == null ? null : StringUtils.trimToNull(record.tflNumberCode());
+    String tsa =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tsaNumber());
+    String tsb =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tsbNumberCode());
+    String tfl =
+        submittedRecord == null ? null : StringUtils.trimToNull(submittedRecord.tflNumberCode());
     boolean submittedAsTfl = tsa == null && tfl != null;
     return originalValues
         .forTrack(trackStatus)
-        .put("areaType", submittedAsTfl ? AREA_TYPE_TFL : tsa, OriginalValueFormat.TEXT)
-        .put("tflNumber", submittedAsTfl ? tfl : null, OriginalValueFormat.TEXT)
-        .put("supplyBlock", submittedAsTfl ? null : tsb, OriginalValueFormat.TEXT)
+        .put(FIELD_AREA_TYPE, submittedAsTfl ? AREA_TYPE_TFL : tsa, OriginalValueFormat.TEXT)
+        .put(FIELD_TFL_NUMBER, submittedAsTfl ? tfl : null, OriginalValueFormat.TEXT)
+        .put(FIELD_SUPPLY_BLOCK, submittedAsTfl ? null : tsb, OriginalValueFormat.TEXT)
         .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
-        .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
+        .put(FIELD_COST, detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
         .put("comments", detail == null ? null : detail.comments(), OriginalValueFormat.TEXT)
         .build();
   }
