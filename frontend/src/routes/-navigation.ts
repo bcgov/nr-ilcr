@@ -20,6 +20,7 @@ export const ROUTES = {
   openReportingYear: '/open-reporting-year',
   homeContent: '/home-content',
   millAssociations: '/mill-associations',
+  mills: '/mills',
   millInformationReport: '/mill-information-report',
   millStatusReport: '/mill-status-report',
   printSchedules: '/print-schedules',
@@ -98,6 +99,11 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
       { name: 'Home Content', path: ROUTES.homeContent },
       { name: 'Table Maintenance', path: ROUTES.codeTables },
       { name: 'Mill Associations', path: ROUTES.millAssociations },
+      // Directly after the users surface, which is where legacy put it: the Administration submenu
+      // ran Users → Mills → Content Editing → Report Year → Table Maintenance (menu.xhtml:32-36).
+      // The absolute order here already diverges from legacy, but Mills' place RELATIVE to the
+      // users screen is preserved, and the two screens cross-navigate to each other (S10).
+      { name: 'Mills', path: ROUTES.mills },
     ],
   },
   {

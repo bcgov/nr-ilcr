@@ -21,6 +21,7 @@ import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
 import type MillSummary from '@/interfaces/MillSummary'
 import {
+  IDP_BCEID_BUSINESS,
   MSG_ALREADY_ASSIGNED,
   type AccountResponse,
   type AssignmentResponse,
@@ -42,6 +43,13 @@ const ASSIGN_FAILED = 'The mill could not be assigned.'
 const END_FAILED = 'The mill assignment could not be ended.'
 const ACCOUNT_FAILED = 'The account could not be updated.'
 const MILLS_FAILED = 'The mill list could not be loaded.'
+/**
+ * The hand-off's own fallback. A 404 here is the expected shape rather than an outage — the
+ * directory is flag-off in every environment today, so a disabled controller leaves no route at
+ * all and no ProblemDetail to extract text from.
+ */
+const CARRIED_USER_FAILED =
+  'The user carried over from the Mills page could not be looked up, so no user is selected.'
 
 /**
  * Users administration (UC-USR-001, legacy `users.xhtml`): choose a licensee from the ministry
@@ -55,7 +63,19 @@ const MILLS_FAILED = 'The mill list could not be loaded.'
  * warning channel the hook has no slot for (an assign that changes nothing answers 200 with a
  * warning), and a 409 on End has to re-read the list, which the hook's catch cannot reach.
  */
-const MillAssociations: FC = () => {
+type MillAssociationsProps = {
+  /**
+   * A user handed over from the Mills page's per-row `View` (UC-MILL-001 S10), already CONSUMED
+   * from the URL by the route so a later open never reuses a stale selection (UC-MILL-002 BR-02).
+   *
+   * <p>A prop rather than a `useSearch()` inside this component: the shipped suite renders this
+   * page bare, outside any router, and the no-param path has to stay observably unchanged. Absent
+   * means absent — nothing below it runs.
+   */
+  readonly carriedUserGuid?: string
+}
+
+const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
   const [mills, setMills] = useState<MillSummary[]>([])
   const [selectedMill, setSelectedMill] = useState<MillSummary | null>(null)
 
@@ -154,6 +174,40 @@ const MillAssociations: FC = () => {
       if (mills.length === 0) loadMills()
     }
   }
+
+  // `onSelectUser` closes over `mills` for its retry, so a fresh identity arrives on every render.
+  // Read through a ref at call time rather than depended upon: the resolve below must fire on the
+  // carried guid ALONE, and depending on the handler would re-run it the moment the mill list
+  // arrived — a second lookup landing over whatever the administrator had since chosen.
+  const selectUserRef = useRef(onSelectUser)
+  selectUserRef.current = onSelectUser
+
+  // Resolves the carried user exactly once. The GUID criterion is a BCeID-business EXACT lookup —
+  // the only endpoint that turns a GUID back into a directory record — and that exactness is why
+  // the route whitelists the param to 32 characters before it ever gets here.
+  //
+  // Guarded by a ref as well as by the dependency list: under StrictMode the mount effect runs
+  // twice, and the second lookup would answer over the first one's selection.
+  const carriedRef = useRef(false)
+  useEffect(() => {
+    if (!carriedUserGuid || carriedRef.current) return
+    carriedRef.current = true
+    api()
+      .get<DirectoryUser[]>('/v1/users/lookup', {
+        params: { idp: IDP_BCEID_BUSINESS, userGuid: carriedUserGuid },
+      })
+      .then((response) => {
+        const candidate = response.data[0]
+        // An empty list is a miss, not a failure — but the page was ASKED to open on this user, so
+        // saying nothing would leave an unexplained empty screen (the ruling Story 23.3 recorded
+        // for 22.3 to inherit: render without a selection and show why).
+        if (candidate) selectUserRef.current(candidate)
+        else setError(CARRIED_USER_FAILED)
+      })
+      .catch((failure: unknown) => {
+        setError(extractDetail(failure) || CARRIED_USER_FAILED)
+      })
+  }, [carriedUserGuid])
 
   /** One guarded write: lock, clear the banners, then re-read the list from the server on success. */
   const write = <T,>(
