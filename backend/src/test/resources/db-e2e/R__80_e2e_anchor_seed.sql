@@ -57,12 +57,12 @@
 -- once, which reads as an authorization regression rather than as missing
 -- fixture rows.
 --
--- TRACKED as bcgov/nr-ilcr#385, so the fix does not rest on someone reading this
--- comment at the right moment. The fix is to add the xref rows HERE (this file
--- already runs after R__70, so the ILCR_USER row its FK needs exists) rather
--- than renumbering either file — #385 records why renumbering was rejected.
--- Note the trigger is NOT a flag flip: the suite has no way to present a real
--- principal today, so #385 is best sequenced with whatever gives it one.
+-- FIXED (bcgov/nr-ilcr#385) at the END of this file — the xref rows are added
+-- here rather than by renumbering either migration. Story 16.1 forced it: once
+-- editability became role-dependent, ILCR_ADMIN lost Draft editing while a
+-- GUID-less mock submitter still saw no mills, so NO single role could run the
+-- suite. MockPrincipalFilter now presents a stand-in directory GUID, so the
+-- dev/e2e principal is a properly scoped submitter. See the block above COMMIT.
 --
 -- NOT REPLICATED, deliberately: THE.ILCR_REPORT_CATEGORY. Three of the patches
 -- seed eleven category rows per anchor because the REAL Oracle has a composite
@@ -841,5 +841,38 @@ INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_
 -- 23050/2016 track-independence rows: "20173" netArea 1.2 / "20173-2" netArea 1.1.
 INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, ENHANCED_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (9357, 2016, 23050, '11', '20173', 8801, 1.2, 'N', NULL, 0, 'E2E_SEED');
 INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, ENHANCED_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (9358, 2016, 23050, '11', '20173-2', 8802, 1.1, 'N', NULL, 0, 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- Mill-user assignments for the anchors above (closes bcgov/nr-ilcr#385).
+--
+-- Since Story 5.5 the Home mill list is IDENTITY-scoped: MillContextService
+-- .listMills looks the caller's directory GUID up in ILCR_MILL_USER_XREF and
+-- fail-closes to an EMPTY list without one. db/R__70_test_scope_canonical
+-- _submitter.sql associates its canonical submitter set-based over the xref
+-- rows that exist WHEN IT RUNS -- and Flyway orders repeatables by
+-- description, so R__70 runs BEFORE this file and cannot see any of the 20
+-- mills created above. A mock/dev submitter therefore saw ZERO mills, while
+-- only ILCR_ADMIN (which bypasses scoping, DL-22) saw any.
+--
+-- That was invisible until Story 16.1 made editability role-dependent: admin
+-- lost Draft editing, so no single role could both reach a mill and edit its
+-- Draft, and the whole e2e suite failed either way. These rows are what let
+-- the suite run as a SUBMITTER -- the persona it is written from -- against
+-- the REAL scoped query rather than bypassing it.
+--
+-- Set-based over this file's own mills (ENTRY_USERID = 'E2E_SEED' selects
+-- exactly the 20 added above; db/ uses 'SEED'), so a 21st anchor is covered
+-- automatically. The GUID matches R__70's ILCR_USER row, which exists by the
+-- time this runs -- that ordering is why the FK (ILCR_IUMX_USER_FK) holds, and
+-- it is also why this insert belongs HERE rather than renumbering R__70.
+-- ACTIVE_DATE set / INACTIVE_DATE null is the app's "active" convention.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.ILCR_MILL_USER_XREF
+    (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
+     ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+SELECT x.ILCR_MILL_STATUS_XREF_ID, 'CANONSUBMITTERBBBBCCCCDDDD000001', SYSDATE, NULL, 0,
+       'E2E_SEED', SYSDATE, 'E2E_SEED', SYSDATE
+  FROM THE.ILCR_MILL_STATUS_XREF x
+ WHERE x.ENTRY_USERID = 'E2E_SEED';
 
 COMMIT;
