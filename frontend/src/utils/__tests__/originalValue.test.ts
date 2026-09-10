@@ -87,6 +87,28 @@ describe('originalValueState', () => {
       ).toBe(true)
     })
 
+    it('flags a text edit that is only whitespace — "exactly" includes the spaces', () => {
+      // Legacy compared with equals (`CoreUtil.java:988-992`), so a trailing space in a comment is
+      // a change and the indicator has to show it. An earlier revision trimmed the current value
+      // before comparing, which made all three of these read as unchanged and cleared the indicator
+      // on a real correction; the trim now applies only to the emptiness test below.
+      expect(
+        originalValueState(submitted, 'comments', 'as the mill reported it ', false).changed,
+      ).toBe(true)
+      expect(
+        originalValueState(submitted, 'comments', ' as the mill reported it', false).changed,
+      ).toBe(true)
+      expect(
+        originalValueState(submitted, 'comments', 'as the  mill reported it', false).changed,
+      ).toBe(true)
+    })
+
+    it('still ignores whitespace on a NUMERIC field, which compares by value', () => {
+      // The two rules coexist: text is exact, figures are parsed. Re-asserted beside the text case
+      // so neither can be "made consistent" with the other by mistake.
+      expect(originalValueState(submitted, 'volume', ' 60000 ').changed).toBe(false)
+    })
+
     it('flags a cleared field — the licensee submitted a value and it has been emptied', () => {
       expect(originalValueState(submitted, 'volume', '').changed).toBe(true)
     })
@@ -107,6 +129,15 @@ describe('originalValueState', () => {
       expect(originalValueState(submitted, 'cost', '').changed).toBe(false)
       expect(originalValueState(submitted, 'cost', null).changed).toBe(false)
       expect(originalValueState(submitted, 'cost', undefined).changed).toBe(false)
+    })
+
+    it('treats a whitespace-only value as empty — legacy trimmed for exactly this question', () => {
+      // `isNullOrEmpty(currentVal, true)` (`CoreUtil.java:994`) passed its own trim flag, so spaces
+      // alone were never "a value added since submission". This is the ONE place a trim survives,
+      // and it is asserted here so removing it would fail rather than quietly put an indicator on
+      // every field a reporter tabbed through.
+      expect(originalValueState(submitted, 'cost', '   ', false).changed).toBe(false)
+      expect(originalValueState(submitted, 'cost', '   ').changed).toBe(false)
     })
   })
 
