@@ -1889,7 +1889,12 @@ describe('Mills page — review round 2 pins (PR #459)', () => {
               'This schedule was changed by another user. Please reload and try again.',
             )
           : HttpResponse.json({
-              mill: { ...CEDAR, millStatusCode: 'CLS', statusDescription: 'Close', revisionCount: 4 },
+              mill: {
+                ...CEDAR,
+                millStatusCode: 'CLS',
+                statusDescription: 'Close',
+                revisionCount: 4,
+              },
               messageKey: 'mill.expired',
               message: 'deactivated',
             })
