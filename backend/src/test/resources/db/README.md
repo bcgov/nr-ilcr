@@ -161,6 +161,26 @@ sense against this directory, `mvn clean` before believing it.
    | Mill Information report   | **730–733**     | `R__40`; 733 is ACT-in-year / CLS-now         |
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
+   | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+
+   **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
+   snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**
+   `ILCR_MILL_STATUS_XREF` row, the only rows the import anti-join can return (every other mill here
+   is 1:1 with a cross-reference, so the importable list would always be empty). `751` is ACTIVE with
+   no assignment, which is the only way the deactivation guard's success path is reachable — and it
+   carries this snapshot's **only mixed-case `MILL_NAME`**, which is what distinguishes a
+   case-insensitive name search from legacy's parameter-only upper-casing. `752` is ACTIVE with one
+   explicitly-inserted active assignment, the guard's blocked path. `753`/`754` are CLOSED, both
+   starting without a current-year status row so each exercises one branch of BR-07 without depending
+   on the other's cleanup. `755` is ACTIVE with a client location holding two contacts, plus contact
+   `7561` on an unrelated location as the BR-09 negative case; client numbers `00075501`/`00075601`
+   and contacts `7551`/`7552`/`7561` are claimed with it.
+
+   Two ordering facts make this file work and are worth not undoing: the `75` band puts it **after**
+   `R__70`, whose set-based insert would otherwise hand every one of these mills an active assignment
+   and make the guard refuse them all; and it seeds **no report year 2021 row**, because the five 2021
+   `ILCR_MILL_REPORT_STATUS` rows are asserted by count in `MillReportStatusIT` and a sixth would
+   redden it. Tests needing a current-year row create and remove their own, as `V20260819` does.
 
    **Editability matrix, per-schedule (`R__51`, Story 16.1 review follow-up)** — one mill per
    authorization suite, `737`–`746`, each 1–10 `'V'` and silviculture `'D'` so a gate reading the wrong
