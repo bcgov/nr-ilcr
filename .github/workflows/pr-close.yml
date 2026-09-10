@@ -33,8 +33,10 @@ jobs:
     secrets:
       oc_namespace: ${{ secrets.oc_namespace }}
       oc_token: ${{ secrets.oc_token }}
-      # Helper defaults oc_server to Silver; this repo is on Gold
-      oc_server: ${{ secrets.oc_server }}
+      # Helper defaults oc_server to Silver; this repo is on Gold. Read the
+      # vars.OC_SERVER variable every other workflow uses, not the stale
+      # same-named secret, which predates the move to Gold.
+      oc_server: ${{ vars.OC_SERVER }}
     with:
       cleanup: label
       # Resources are labeled with three app values: ${NAME}-${ZONE} (init),
