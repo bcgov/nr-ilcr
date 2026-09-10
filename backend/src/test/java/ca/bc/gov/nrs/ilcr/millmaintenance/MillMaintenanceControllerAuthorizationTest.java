@@ -45,15 +45,21 @@ class MillMaintenanceControllerAuthorizationTest {
   @DisplayName("Every endpoint declares @PreAuthorize on MAINTAIN_MILLS — no other action")
   void everyEndpointIsGatedOnMaintainMills() {
     for (String name : GATED_METHODS) {
-      Method method = declaredMethod(name);
-      PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
+      // EVERY method carrying the name, not the first reflected hit: getDeclaredMethods() has no
+      // defined order, so with an overload present findFirst() could verify one signature while
+      // the other slips through gated on a different action (PR #459 review). An UNannotated
+      // overload is already refused by the surface test below; this loop closes the
+      // wrong-action-on-the-other-overload half.
+      for (Method method : declaredMethods(name)) {
+        PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
 
-      assertThat(preAuthorize)
-          .as("%s must carry @PreAuthorize — an unannotated endpoint is an open admin API", name)
-          .isNotNull();
-      assertThat(preAuthorize.value())
-          .as("%s must be gated on MAINTAIN_MILLS, the Mills page's own action", name)
-          .isEqualTo("@permissions.hasPermission(authentication, 'MAINTAIN_MILLS')");
+        assertThat(preAuthorize)
+            .as("%s must carry @PreAuthorize — an unannotated endpoint is an open admin API", name)
+            .isNotNull();
+        assertThat(preAuthorize.value())
+            .as("%s must be gated on MAINTAIN_MILLS, the Mills page's own action", name)
+            .isEqualTo("@permissions.hasPermission(authentication, 'MAINTAIN_MILLS')");
+      }
     }
   }
 
@@ -91,10 +97,16 @@ class MillMaintenanceControllerAuthorizationTest {
     assertThat(permissions.grants(Role.SUBMITTER, Action.MAINTAIN_MILLS)).isFalse();
   }
 
-  private static Method declaredMethod(String name) {
-    return Arrays.stream(MillMaintenanceController.class.getDeclaredMethods())
-        .filter(method -> method.getName().equals(name))
-        .findFirst()
-        .orElseThrow(() -> new AssertionError("no such endpoint method: " + name));
+  private static List<Method> declaredMethods(String name) {
+    List<Method> methods =
+        Arrays.stream(MillMaintenanceController.class.getDeclaredMethods())
+            // Bridge/synthetic methods are compiler artifacts shadowing a real method already in
+            // the stream — same exclusion as the surface test above.
+            .filter(method -> method.getName().equals(name) && !method.isSynthetic())
+            .toList();
+    if (methods.isEmpty()) {
+      throw new AssertionError("no such endpoint method: " + name);
+    }
+    return methods;
   }
 }

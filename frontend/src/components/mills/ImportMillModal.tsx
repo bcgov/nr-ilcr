@@ -94,6 +94,10 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
 
   const search = () => {
     setSearching(true)
+    // The previous query's rows must not survive into this one's outcome: were this request to
+    // fail, the error banner would otherwise stand BESIDE stale results, reading as if those rows
+    // answered the current criteria (PR #459 review).
+    setResults(null)
     setError(null)
     api()
       .get<ImportableMill[]>(IMPORTABLE_PATH, {

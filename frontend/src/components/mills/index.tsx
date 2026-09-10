@@ -156,6 +156,11 @@ const Mills: FC = () => {
   // mill land after a post-write re-read and repaint pre-write rows.
   const usersSeqRef = useRef(0)
   const contactsSeqRef = useRef(0)
+  // The mill record needs its own token: a 409's re-read can still be in flight when a retried
+  // write succeeds, and the mill-equality guard alone would let that stale payload land late,
+  // painting a spent revisionCount over the fresh one — dooming every later save to the very 409
+  // the re-read was meant to resolve. Bumped by everything that installs an authoritative record.
+  const millSeqRef = useRef(0)
 
   const clearNotifications = () => {
     setMessage(null)
@@ -211,6 +216,9 @@ const Mills: FC = () => {
     // Set SYNCHRONOUSLY, before any request: the guards above compare against this, and a ref set
     // after an await would let the outgoing mill's responses through.
     millIdRef.current = next.millId
+    // Re-selecting the SAME mill hands over a fresh record the id key cannot distinguish from the
+    // one an in-flight re-read left for — the token is what refuses that late arrival.
+    millSeqRef.current += 1
     setMill(next)
     setForm(formFor(next))
     // Both belong to the previous mill; carrying either would attribute one mill's state to
@@ -230,14 +238,19 @@ const Mills: FC = () => {
    * is refreshed — the revision token is read off `mill`, never off the form.
    */
   const reread = (millId: number) => {
+    // Sequenced as well as keyed, like the two lists: a slow re-read must not land after a
+    // retried write's response and repaint the mill it just superseded.
+    const seq = ++millSeqRef.current
     api()
       .get<AdminMill>(`${ADMIN_MILLS}/${millId}`)
       .then((response) => {
-        if (millIdRef.current !== millId) return
+        if (millIdRef.current !== millId || seq !== millSeqRef.current) return
         setMill(response.data)
       })
       .catch((failure: unknown) => {
-        if (millIdRef.current === millId) setError(extractDetail(failure) || MILL_FAILED)
+        if (millIdRef.current === millId && seq === millSeqRef.current) {
+          setError(extractDetail(failure) || MILL_FAILED)
+        }
       })
     loadUsers(millId)
   }
@@ -289,6 +302,9 @@ const Mills: FC = () => {
    */
   const applyMillWrite = (data: AdminMillResponse) => {
     millIdRef.current = data.mill.millId
+    // A write's response is the newest record by definition, so any re-read still in flight is
+    // stale from this line on.
+    millSeqRef.current += 1
     setMill(data.mill)
     if (data.message) setMessage(data.message)
   }

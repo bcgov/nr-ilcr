@@ -1870,3 +1870,112 @@ describe('Mills page — review round 1 pins', () => {
     )
   })
 })
+
+describe('Mills page — review round 2 pins (PR #459)', () => {
+  test('a slow 409 re-read cannot repaint the mill a retried write already superseded', async () => {
+    const user = userEvent.setup()
+    let releaseReread!: () => void
+    const rereadHeld = new Promise<void>((resolve) => {
+      releaseReread = resolve
+    })
+    let writeCalls = 0
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/deactivate`, () => {
+        writeCalls += 1
+        // The first attempt conflicts; the retry lands the write.
+        return writeCalls === 1
+          ? problemBody(
+              409,
+              'This schedule was changed by another user. Please reload and try again.',
+            )
+          : HttpResponse.json({
+              mill: { ...CEDAR, millStatusCode: 'CLS', statusDescription: 'Close', revisionCount: 4 },
+              messageKey: 'mill.expired',
+              message: 'deactivated',
+            })
+      }),
+      http.get(`${ADMIN_MILLS}/:millId`, async () => {
+        // The conflict's re-read is HELD past the retry, so it resolves late carrying the
+        // PRE-write record and its spent revision. Same mill throughout — only the sequence
+        // token can refuse it.
+        await rereadHeld
+        return HttpResponse.json(CEDAR)
+      }),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Deactivate' }))
+    await screen.findByText(
+      'This schedule was changed by another user. Please reload and try again.',
+      { normalizer: verbatim },
+    )
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Deactivate' }))
+    await waitFor(() =>
+      expect(within(detailPanel()).getByRole('button', { name: 'Activate' })).toBeInTheDocument(),
+    )
+
+    releaseReread()
+    await drainEventLoop()
+    // The stale payload must NOT paint the mill Active again over revision 4: every later write
+    // would carry the spent revision 3 into an unresolvable 409 loop.
+    expect(
+      within(detailPanel()).queryByRole('button', { name: 'Deactivate' }),
+    ).not.toBeInTheDocument()
+    expect(within(detailPanel()).getByText('Close')).toBeInTheDocument()
+  })
+
+  test('a failed re-search clears the previous rows instead of standing an error beside them', async () => {
+    const user = userEvent.setup()
+    let searchCalls = 0
+    server.use(
+      http.get(ADMIN_MILLS, () => {
+        searchCalls += 1
+        return searchCalls === 1
+          ? HttpResponse.json({ results: [CEDAR] })
+          : problemBody(500, 'The search service is unavailable.')
+      }),
+    )
+    render(<Mills />)
+    await user.click(screen.getByRole('button', { name: 'Select Mill' }))
+    await user.click(within(selectMillDialog()).getByRole('button', { name: 'Search' }))
+    await screen.findByRole('button', { name: 'Select mill 670' })
+
+    await user.click(within(selectMillDialog()).getByRole('button', { name: 'Search' }))
+
+    expect(
+      await within(selectMillDialog()).findByText('The search service is unavailable.', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+    // The first query's rows are gone: stale results under a current error would read as if they
+    // answered the criteria that just failed.
+    expect(screen.queryByRole('button', { name: 'Select mill 670' })).not.toBeInTheDocument()
+  })
+
+  test('a failed importable re-search clears the previous rows the same way', async () => {
+    const user = userEvent.setup()
+    let searchCalls = 0
+    server.use(
+      http.get(IMPORTABLE, () => {
+        searchCalls += 1
+        return searchCalls === 1
+          ? HttpResponse.json([{ millId: 750, millNumber: '750', millName: 'Fresh Mill' }])
+          : problemBody(500, 'The importable search service is unavailable.')
+      }),
+    )
+    render(<Mills />)
+    await user.click(screen.getByRole('button', { name: 'Import Mill' }))
+    await user.click(within(importDialog()).getByRole('button', { name: 'Search' }))
+    await screen.findByRole('button', { name: 'Import mill 750' })
+
+    await user.click(within(importDialog()).getByRole('button', { name: 'Search' }))
+
+    expect(
+      await within(importDialog()).findByText('The importable search service is unavailable.', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Import mill 750' })).not.toBeInTheDocument()
+  })
+})
