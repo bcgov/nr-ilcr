@@ -20,7 +20,6 @@ import {
   MILL_STATUS_OPTIONS,
   type AdminMill,
   type MillSearchResponse,
-  type MillStatusOption,
 } from '@/interfaces/MillMaintenance'
 
 const api = () => apiService.getAxiosInstance()
@@ -29,10 +28,17 @@ const SEARCH_PATH = '/v1/admin/mills'
 
 const SEARCH_FAILED = 'The mill search could not be completed.'
 
-/** The "no status criterion" choice. Legacy's dropdown led with a blank item (mills.xhtml:208). */
-const ANY_STATUS: MillStatusOption = { code: '', description: 'Any' } as MillStatusOption
+/**
+ * A dropdown entry: the two server codes plus the "no criterion" choice. Deliberately wider than
+ * `MillStatusOption` — asserting `{ code: '' }` into that closed union would let a future
+ * exhaustiveness check reason about a value the type says cannot exist.
+ */
+type StatusItem = { readonly code: string; readonly description: string }
 
-const STATUS_ITEMS: MillStatusOption[] = [ANY_STATUS, ...MILL_STATUS_OPTIONS]
+/** The "no status criterion" choice. Legacy's dropdown led with a blank item (mills.xhtml:208). */
+const ANY_STATUS: StatusItem = { code: '', description: 'Any' }
+
+const STATUS_ITEMS: StatusItem[] = [ANY_STATUS, ...MILL_STATUS_OPTIONS]
 
 const dash = (value: string | null | undefined) => (value == null || value === '' ? '—' : value)
 
@@ -58,7 +64,7 @@ type MillSearchModalProps = {
 const MillSearchModal: FC<MillSearchModalProps> = ({ onSelect, onClose }) => {
   const [millNumber, setMillNumber] = useState('')
   const [millName, setMillName] = useState('')
-  const [status, setStatus] = useState<MillStatusOption>(ANY_STATUS)
+  const [status, setStatus] = useState<StatusItem>(ANY_STATUS)
 
   const [results, setResults] = useState<readonly AdminMill[] | null>(null)
   // The zero-match sentence (ERR-001), which arrives on a 200 beside an empty list.
@@ -117,7 +123,15 @@ const MillSearchModal: FC<MillSearchModalProps> = ({ onSelect, onClose }) => {
       aria-label="Find and select Mill"
       onRequestClose={onClose}
     >
-      <div className="mills__criteria">
+      {/* A form, so Enter in either text criterion searches (deviation (J) — additive; legacy
+          suppressed keyCode 13 app-wide, so neither dialog ever had it). */}
+      <form
+        className="mills__criteria"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!searching) search()
+        }}
+      >
         <TextInput
           id="mill-search-number"
           labelText="Number:"
@@ -132,7 +146,7 @@ const MillSearchModal: FC<MillSearchModalProps> = ({ onSelect, onClose }) => {
           value={millName}
           onChange={(event) => setMillName(event.target.value)}
         />
-        <Dropdown<MillStatusOption>
+        <Dropdown<StatusItem>
           id="mill-search-status"
           titleText="Status:"
           label="Any"
@@ -142,13 +156,13 @@ const MillSearchModal: FC<MillSearchModalProps> = ({ onSelect, onClose }) => {
           selectedItem={status}
           onChange={({ selectedItem }) => setStatus(selectedItem ?? ANY_STATUS)}
         />
-        <Button size="sm" disabled={searching} onClick={search}>
+        <Button type="submit" size="sm" disabled={searching}>
           Search
         </Button>
         <Button size="sm" kind="secondary" disabled={searching} onClick={clear}>
           Clear
         </Button>
-      </div>
+      </form>
 
       {/* Severity is carried by BOTH the kind and an explicit title word, never colour alone, and
           InlineNotification is a live region — these appear after the fact, so without one a

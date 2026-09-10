@@ -60,6 +60,18 @@ describe('mill-associations validateSearch (the S10 hand-off channel)', () => {
   test('unrelated params are not carried through — only userGuid is whitelisted', () => {
     expect(validateSearch({ userGuid: GUID, millId: 670 })).toEqual({ userGuid: GUID })
   })
+
+  test('32 characters of the wrong ALPHABET are dropped — the whitelist is hex, not a ruler', () => {
+    // Length alone would wave these through to a lookup that can only miss, producing exactly the
+    // unrequested error banner the whitelist exists to prevent. GUIDs on this surface are 32 hex
+    // characters, either case.
+    expect(validateSearch({ userGuid: '!'.repeat(32) }).userGuid).toBeUndefined()
+    expect(validateSearch({ userGuid: ' '.repeat(32) }).userGuid).toBeUndefined()
+    expect(validateSearch({ userGuid: 'Z'.repeat(32) }).userGuid).toBeUndefined()
+    expect(validateSearch({ userGuid: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6' })).toEqual({
+      userGuid: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6',
+    })
+  })
 })
 
 describe('mill-associations route — consume and clear (AC8)', () => {

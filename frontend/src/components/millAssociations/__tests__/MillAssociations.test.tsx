@@ -816,6 +816,38 @@ describe('Users page — resilience (AC6)', () => {
     expect(await screen.findByText(/could not be looked up/i)).toBeInTheDocument()
   })
 
+  test('a slow carried lookup cannot stomp a selection the administrator made meanwhile', async () => {
+    const user = userEvent.setup()
+    assignmentsAre(activeOn670)
+    let releaseCarried!: () => void
+    const carriedHeld = new Promise<void>((resolve) => {
+      releaseCarried = resolve
+    })
+    server.use(
+      http.get(LOOKUP, async ({ request }) => {
+        // The carried resolve is the GUID-criterion call; the picker searches without it.
+        if (new URL(request.url).searchParams.get('userGuid')) {
+          await carriedHeld
+          return HttpResponse.json([ADA])
+        }
+        return HttpResponse.json([GRACE])
+      }),
+    )
+    render(<MillAssociations carriedUserGuid={GUID} />)
+
+    // The administrator outruns the directory and picks Grace through the picker.
+    await user.type(screen.getByRole('combobox', { name: /user id/i }), 'GH')
+    await user.click(await screen.findByRole('option', { name: 'Grace Hopper (GHOPPER)' }))
+    await screen.findByText(/Grace Hopper/)
+
+    releaseCarried()
+    await drainEventLoop()
+    // The late resolve neither replaces the manual selection nor posts a failure banner over it.
+    expect(screen.getByText(/Grace Hopper/)).toBeInTheDocument()
+    expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/could not be looked up/i)).not.toBeInTheDocument()
+  })
+
   test('with NO carried user the page mounts exactly as it always has', async () => {
     assignmentsAre(activeOn670)
     let lookups = 0

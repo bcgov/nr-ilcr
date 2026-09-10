@@ -23,7 +23,11 @@ import AddUserModal from '@/components/mills/AddUserModal'
 import { canSaveContacts, toSaveRequest, type ContactForm } from '@/components/mills/validation'
 import apiService from '@/service/api-service'
 import { extractDetail } from '@/utils/error'
-import { MSG_ALREADY_ASSIGNED, type MillSubmitter } from '@/interfaces/MillAssociation'
+import {
+  MSG_ALREADY_ASSIGNED,
+  type AssignmentResponse,
+  type MillSubmitter,
+} from '@/interfaces/MillAssociation'
 import {
   MILL_ACTIVE,
   type AddMillUserRequest,
@@ -132,6 +136,9 @@ const Mills: FC = () => {
   // The import dialog's own channel, so a refused import leaves the dialog and its results
   // standing rather than closing over the administrator's search.
   const [importError, setImportError] = useState<string | null>(null)
+  // The add dialog's own channel, for the same reason: a refused add leaves the dialog open, and a
+  // page-level banner would sit unreadable behind the Carbon overlay.
+  const [addError, setAddError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const [selectOpen, setSelectOpen] = useState(false)
@@ -156,6 +163,7 @@ const Mills: FC = () => {
     setError(null)
     setLookupError(null)
     setImportError(null)
+    setAddError(null)
   }
 
   /** `includeEnded` is OMITTED on purpose: it defaults TRUE here (MillAssociationApi.java:57). */
@@ -214,14 +222,19 @@ const Mills: FC = () => {
     loadUsers(next.millId)
   }
 
-  /** Re-read one mill after a conflict, so the next attempt carries a live revision. */
+  /**
+   * Re-read one mill after a conflict, so the next attempt carries a live revision. The staged
+   * contact FORM deliberately survives: legacy's view-scoped bean kept its values across a failed
+   * save and a status action (only row-select and import reset it), and wiping it on a BR-09
+   * refusal would erase the very selection the administrator was just told to correct. Only `mill`
+   * is refreshed — the revision token is read off `mill`, never off the form.
+   */
   const reread = (millId: number) => {
     api()
       .get<AdminMill>(`${ADMIN_MILLS}/${millId}`)
       .then((response) => {
         if (millIdRef.current !== millId) return
         setMill(response.data)
-        setForm(formFor(response.data))
       })
       .catch((failure: unknown) => {
         if (millIdRef.current === millId) setError(extractDetail(failure) || MILL_FAILED)
@@ -277,7 +290,6 @@ const Mills: FC = () => {
   const applyMillWrite = (data: AdminMillResponse) => {
     millIdRef.current = data.mill.millId
     setMill(data.mill)
-    setForm(formFor(data.mill))
     if (data.message) setMessage(data.message)
   }
 
@@ -291,7 +303,12 @@ const Mills: FC = () => {
     write(
       () => api().put<AdminMillResponse>(`${ADMIN_MILLS}/${mill.millId}/contacts`, body),
       SAVE_FAILED,
-      applyMillWrite,
+      (data) => {
+        applyMillWrite(data)
+        // Only a SUCCESSFUL save resets the staged form — to exactly what was saved. A status
+        // action or a 409 re-read leaves it alone, as legacy's view-scoped bean did.
+        setForm(formFor(data.mill))
+      },
     )
   }
 
@@ -329,8 +346,10 @@ const Mills: FC = () => {
     const millId = mill.millId
     const body: AddMillUserRequest = { userGuid }
     write(
-      () =>
-        api().post<{ messageKey: string; message: string }>(`${ADMIN_MILLS}/${millId}/users`, body),
+      // The SHIPPED envelope, not an inline shape: rows 10-12 of the contract serve
+      // AssignmentResponse, and an ad-hoc type claiming `message` is always present would let the
+      // compiler certify a contract the non_null doctrine does not make.
+      () => api().post<AssignmentResponse>(`${ADMIN_MILLS}/${millId}/users`, body),
       ADD_FAILED,
       (data) => {
         setAddOpen(false)
@@ -343,6 +362,9 @@ const Mills: FC = () => {
         // branch that refetch is observably a no-op, which is what keeps the panel unchanged.
         loadUsers(millId)
       },
+      // A refusal renders INSIDE the still-open dialog: the page banner sits behind the Carbon
+      // overlay, so routing it there would show the administrator nothing at all.
+      setAddError,
     )
   }
 
@@ -354,7 +376,7 @@ const Mills: FC = () => {
     const body: ChangeMillUserRequest = { revisionCount: row.revisionCount }
     write(
       () =>
-        api().post<{ message: string }>(
+        api().post<AssignmentResponse>(
           `${ADMIN_MILLS}/${millId}/users/${row.userGuid}/${action}`,
           body,
         ),
@@ -375,8 +397,20 @@ const Mills: FC = () => {
 
   const contactItems: ContactOption[] = [NO_CONTACT, ...contacts]
 
-  const contactItem = (id: number | null) =>
-    id == null ? NO_CONTACT : (contacts.find((option) => option.clientContactId === id) ?? null)
+  /**
+   * The option the stored id resolves to. When the id is absent from the served list — the options
+   * fetch failed, or the contact left the client location — a synthesized placeholder keeps the
+   * display telling the truth about what Save will send: rendering "Select" over a retained id let
+   * the payload and the screen diverge. Legacy's selectOneMenu refused that save outright; here the
+   * server's BR-09 check still guards the genuinely invalid case.
+   */
+  const contactItem = (id: number | null): ContactOption =>
+    id == null
+      ? NO_CONTACT
+      : (contacts.find((option) => option.clientContactId === id) ?? {
+          clientContactId: id,
+          contactName: `Contact ${id} (not in list)`,
+        })
 
   const isActive = mill?.millStatusCode === MILL_ACTIVE
 
@@ -387,7 +421,11 @@ const Mills: FC = () => {
         {message && <NotificationColumn kind="success" title="Success" subtitle={message} />}
         {warning && <NotificationColumn kind="warning" title="Warning" subtitle={warning} />}
         {error && <NotificationColumn kind="error" title="Error" subtitle={error} />}
-        {lookupError && <NotificationColumn kind="error" title="Error" subtitle={lookupError} />}
+        {/* While the add dialog is open this channel renders INSIDE it — a page banner would sit
+            behind the Carbon overlay. It shows here only once the dialog has closed over it. */}
+        {lookupError && !addOpen && (
+          <NotificationColumn kind="error" title="Error" subtitle={lookupError} />
+        )}
 
         <Column sm={4} md={8} lg={16}>
           {/* STA-001 state 1. The two entry controls render only while nothing is selected, exactly
@@ -433,7 +471,7 @@ const Mills: FC = () => {
                   id="mill-head-office"
                   titleText="Head Office :"
                   label="Select"
-                  items={HEAD_OFFICE_ITEMS as unknown as HeadOfficeItem[]}
+                  items={[...HEAD_OFFICE_ITEMS]}
                   itemToString={(item) => item?.label ?? ''}
                   // `null`, never `undefined`: an undefined selectedItem flips Carbon to
                   // uncontrolled and keeps the PREVIOUS mill's value painted after a switch.
@@ -527,7 +565,15 @@ const Mills: FC = () => {
                     opened. The current mill stays selected until a new row is chosen — legacy's
                     `clear(false)` does not clear the selection (MillsMB.java:513-519) — and no
                     message is emitted, the artefacts being silent on one. */}
-                <Button kind="ghost" renderIcon={Edit} onClick={() => setSelectOpen(true)}>
+                <Button
+                  kind="ghost"
+                  renderIcon={Edit}
+                  // Disabled while a write is in flight, like every other write-adjacent control:
+                  // adopting another mill mid-write makes millIdRef drop the response, so a
+                  // completed write's outcome would vanish without a message.
+                  disabled={busy}
+                  onClick={() => setSelectOpen(true)}
+                >
                   Change Mill
                 </Button>
                 <Button
@@ -578,7 +624,12 @@ const Mills: FC = () => {
                       </TableRow>
                     ) : (
                       users.map((row) => {
-                        const active = row.activeDate != null
+                        // The WIRE's two-state vocabulary, never a date heuristic (AC6). The server
+                        // derives status from INACTIVE_DATE alone (MillUserXrefEntity.java:49-51),
+                        // and grandfathered legacy rows can hold BOTH dates — deviation (K)'s own
+                        // premise — so `activeDate != null` would render such a row Active while
+                        // the wire says ENDED.
+                        const active = row.status === 'ACTIVE'
                         return (
                           <TableRow key={row.userGuid}>
                             <TableCell>{row.userGuid}</TableCell>
@@ -681,8 +732,14 @@ const Mills: FC = () => {
       {addOpen && (
         <AddUserModal
           busy={busy}
+          // Both channels render inside the dialog while it is open: the write refusal and the
+          // picker outage alike would otherwise sit page-level behind the overlay.
+          failure={addError ?? lookupError}
           onAdd={(user) => addUser(user.userGuid)}
-          onClose={() => setAddOpen(false)}
+          onClose={() => {
+            setAddOpen(false)
+            setAddError(null)
+          }}
           onError={setLookupError}
         />
       )}

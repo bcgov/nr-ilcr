@@ -14,8 +14,13 @@ export type MillAssociationsSearch = {
   userGuid?: string
 }
 
-/** The directory GUID's exact width, matching the backend's @Size(min = 32, max = 32) boundary. */
-const USER_GUID_LENGTH = 32
+/**
+ * The directory GUID's actual shape — 32 hex characters — not merely the backend's
+ * @Size(min = 32, max = 32) width. Length alone would pass any 32 characters through to a lookup
+ * that can only miss, producing exactly the unrequested error banner this whitelist exists to
+ * prevent. Case-insensitive because GUID casing is not canonical upstream.
+ */
+const USER_GUID_PATTERN = /^[0-9A-Fa-f]{32}$/
 
 const millAssociationsRoute = getRouteApi('/mill-associations')
 
@@ -50,9 +55,9 @@ export const Route = createFileRoute('/mill-associations')({
   validateSearch: (search: Record<string, unknown>): MillAssociationsSearch => {
     const raw = search.userGuid
     // Whitelisted, not merely non-empty: the page spends the value on a directory lookup whose
-    // GUID criterion is an exact 32-character match, so anything else is a request that can only
-    // fail — dropped here instead, which lands the page in its ordinary no-selection state.
-    const isGuid = typeof raw === 'string' && raw.length === USER_GUID_LENGTH
+    // GUID criterion is an exact match, so anything else is a request that can only fail —
+    // dropped here instead, which lands the page in its ordinary no-selection state.
+    const isGuid = typeof raw === 'string' && USER_GUID_PATTERN.test(raw)
     return { userGuid: isGuid ? raw : undefined }
   },
   component: MillAssociationsRoute,

@@ -197,6 +197,10 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
         params: { idp: IDP_BCEID_BUSINESS, userGuid: carriedUserGuid },
       })
       .then((response) => {
+        // The administrator outran the lookup: a selection made through the picker while this was
+        // in flight must not be stomped by the navigation that preceded it — and neither should an
+        // error banner land over their perfectly good manual choice.
+        if (selectedGuidRef.current != null) return
         const candidate = response.data[0]
         // An empty list is a miss, not a failure — but the page was ASKED to open on this user, so
         // saying nothing would leave an unexplained empty screen (the ruling Story 23.3 recorded
@@ -205,6 +209,7 @@ const MillAssociations: FC<MillAssociationsProps> = ({ carriedUserGuid }) => {
         else setError(CARRIED_USER_FAILED)
       })
       .catch((failure: unknown) => {
+        if (selectedGuidRef.current != null) return
         setError(extractDetail(failure) || CARRIED_USER_FAILED)
       })
   }, [carriedUserGuid])

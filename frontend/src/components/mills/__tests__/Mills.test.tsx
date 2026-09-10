@@ -6,7 +6,11 @@ import { server } from '@/test-setup'
 import Mills from '../index'
 
 const navigateSpy = vi.fn()
-vi.mock('@tanstack/react-router', () => ({
+// Spread over the REAL module, not a one-export replacement: a whole-module mock fails every test
+// in this file with an opaque undefined-import error the moment the page (or anything it renders)
+// picks up a second router export.
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useNavigate: () => navigateSpy,
 }))
 
@@ -164,10 +168,15 @@ const detailPanel = () => screen.getByRole('region', { name: /mill details/i })
 
 const usersTable = () => screen.getByRole('table', { name: /associated licensee user/i })
 
-const rowFor = (guid: string) =>
-  within(usersTable())
+const rowFor = (guid: string) => {
+  const row = within(usersTable())
     .getAllByRole('row')
-    .find((row) => within(row).queryByText(guid))!
+    .find((candidate) => within(candidate).queryByText(guid))
+  // Named failure, not a non-null assertion: `.find(...)!` turns a missing row into an opaque
+  // TypeError deep inside within(), and half this suite leans on this helper.
+  if (!row) throw new Error(`no association row renders GUID ${guid}`)
+  return row
+}
 
 /** Open Select Mill, search, and choose Cedar — the entry point for everything below. */
 const selectCedar = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -1402,5 +1411,462 @@ describe('Mills page — the jump-to-user link (AC8, S10)', () => {
     expect(navigateSpy).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('dialog', { name: /confirm/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/unsaved/i)).not.toBeInTheDocument()
+  })
+})
+
+// Pins from the 2026-09-10 adversarial review — each test names the finding it holds closed.
+describe('Mills page — review round 1 pins', () => {
+  const IMPORTABLE_ROW = { millId: 750, millNumber: '750', millName: 'Fresh Mill' }
+
+  const openImport = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Import Mill' }))
+    await user.click(within(importDialog()).getByRole('button', { name: 'Search' }))
+    return screen.findByRole('button', { name: 'Import mill 750' })
+  }
+
+  test('the status cell and row action derive from the WIRE status, never a date heuristic (AC6)', async () => {
+    // A grandfathered legacy row can hold BOTH dates — legacy's deactivate never nulled
+    // ACTIVE_DATE (the InactiveActive defect, deviation (K)) — while the server derives status
+    // from INACTIVE_DATE alone. `activeDate != null` would call this row Active.
+    const legacyBothDates = {
+      userGuid: OTHER_GUID,
+      millId: 670,
+      millNumber: '670',
+      millName: 'Cedar Mill',
+      status: 'ENDED' as const,
+      activeDate: '2024-01-15',
+      inactiveDate: '2024-06-30',
+      revisionCount: 5,
+    }
+    usersAre(ACTIVE_ROW, legacyBothDates)
+    render(<Mills />)
+    await selectCedar(userEvent.setup())
+    await screen.findByRole('table', { name: /associated licensee user/i })
+
+    const contradicted = rowFor(OTHER_GUID)
+    expect(within(contradicted).getByText('Inactive')).toBeInTheDocument()
+    expect(
+      within(contradicted).getByRole('button', { name: /^activate user/i }),
+    ).toBeInTheDocument()
+    expect(
+      within(contradicted).queryByRole('button', { name: /^deactivate user/i }),
+    ).not.toBeInTheDocument()
+    // Positive control: the wire-active row renders Active off the same code path.
+    expect(within(rowFor(GUID)).getByText('Active')).toBeInTheDocument()
+  })
+
+  test('an older in-flight list for the SAME mill cannot repaint a post-write re-read', async () => {
+    const user = userEvent.setup()
+    const endedAfterWrite = {
+      ...ACTIVE_ROW,
+      status: 'ENDED' as const,
+      activeDate: undefined,
+      inactiveDate: '2026-09-10',
+      revisionCount: 8,
+    }
+    let releaseStale!: () => void
+    const staleHeld = new Promise<void>((resolve) => {
+      releaseStale = resolve
+    })
+    let listCalls = 0
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId/users`, async () => {
+        listCalls += 1
+        if (listCalls === 2) {
+          // The first post-write re-read is HELD; a later one lands first. Same mill throughout,
+          // so the millIdRef key alone cannot refuse it — only the sequence token can.
+          await staleHeld
+          return HttpResponse.json([ACTIVE_ROW])
+        }
+        return HttpResponse.json(listCalls >= 3 ? [endedAfterWrite] : [ACTIVE_ROW])
+      }),
+      http.post(`${ADMIN_MILLS}/:millId/users/:userGuid/deactivate`, () =>
+        HttpResponse.json({
+          assignment: ACTIVE_ROW,
+          messageKey: 'assignment.ended',
+          message: 'ended',
+        }),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await screen.findByRole('table', { name: /associated licensee user/i })
+
+    // Write #1's re-read (list call 2) is held; write #2's re-read (call 3) paints the row ended.
+    await user.click(within(rowFor(GUID)).getByRole('button', { name: /^deactivate user/i }))
+    await user.click(within(rowFor(GUID)).getByRole('button', { name: /^deactivate user/i }))
+    await waitFor(() =>
+      expect(
+        within(rowFor(GUID)).getByRole('button', { name: /^activate user/i }),
+      ).toBeInTheDocument(),
+    )
+
+    releaseStale()
+    await drainEventLoop()
+    // The stale pre-write list must NOT repaint a live Deactivate over the spent revision.
+    expect(
+      within(rowFor(GUID)).queryByRole('button', { name: /^deactivate user/i }),
+    ).not.toBeInTheDocument()
+    expect(within(rowFor(GUID)).getByText('Inactive')).toBeInTheDocument()
+  })
+
+  test('a failed mill re-read after a conflict is reported, not swallowed', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/deactivate`, () =>
+        problemBody(409, 'This schedule was changed by another user. Please reload and try again.'),
+      ),
+      http.get(`${ADMIN_MILLS}/:millId`, () =>
+        problemBody(500, 'The mill could not be re-read after the conflict.'),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Deactivate' }))
+
+    expect(
+      await screen.findByText('The mill could not be re-read after the conflict.', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  test('a failed contact-options load is reported, and the stored id is not silently blanked', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(`${ADMIN_MILLS}/:millId/contact-options`, () =>
+        problemBody(500, 'The contact list is unavailable.'),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(
+      await screen.findByText('The contact list is unavailable.', { normalizer: verbatim }),
+    ).toBeInTheDocument()
+    // D-R3: the stored id has no served option, so a placeholder keeps the display telling the
+    // truth about what Save would send — "Select" over a retained id is the lie this pins against.
+    expect(
+      within(detailPanel()).getByRole('combobox', { name: 'Head Office Contact :' }),
+    ).toHaveTextContent('Contact 11 (not in list)')
+  })
+
+  test('a stored contact missing from the served options renders the placeholder, and Save still sends it (D-R3)', async () => {
+    const user = userEvent.setup()
+    server.use(
+      // The list no longer carries contact 11 — it left the client location.
+      http.get(`${ADMIN_MILLS}/:millId/contact-options`, () =>
+        HttpResponse.json([{ clientContactId: 12, contactName: 'Grace Hopper' }]),
+      ),
+    )
+    const bodies: unknown[] = []
+    server.use(
+      http.put(`${ADMIN_MILLS}/:millId/contacts`, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ mill: CEDAR, messageKey: 'mill.updated', message: 'saved' })
+      }),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+
+    expect(
+      within(detailPanel()).getByRole('combobox', { name: 'Head Office Contact :' }),
+    ).toHaveTextContent('Contact 11 (not in list)')
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    // What the screen now SAYS it will send is what it sends; the server's BR-09 check remains
+    // the authority on whether 11 is still legal.
+    expect((bodies[0] as { headOfficeContactId: number }).headOfficeContactId).toBe(11)
+  })
+
+  test('a 409 re-read refreshes the revision but leaves staged contact edits standing (D-R2)', async () => {
+    const user = userEvent.setup()
+    const detail =
+      "The selected contact does not belong to this mill's client location. Please choose from the listed contacts."
+    const bodies: { divisionContactId: number | null; revisionCount: number }[] = []
+    let puts = 0
+    server.use(
+      http.put(`${ADMIN_MILLS}/:millId/contacts`, async ({ request }) => {
+        puts += 1
+        bodies.push((await request.json()) as (typeof bodies)[number])
+        return puts === 1
+          ? problemBody(409, detail)
+          : HttpResponse.json({ mill: CEDAR, messageKey: 'mill.updated', message: 'saved' })
+      }),
+      http.get(`${ADMIN_MILLS}/:millId`, () => HttpResponse.json({ ...CEDAR, revisionCount: 9 })),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await user.click(within(detailPanel()).getByRole('combobox', { name: 'Division Contact :' }))
+    await user.click(await screen.findByRole('option', { name: 'Grace Hopper' }))
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Save' }))
+    await screen.findByText(detail, { normalizer: verbatim })
+
+    // Legacy's view-scoped bean kept its values across a failed save; wiping the form here would
+    // erase the very selection the administrator was told to correct.
+    expect(
+      within(detailPanel()).getByRole('combobox', { name: 'Division Contact :' }),
+    ).toHaveTextContent('Grace Hopper')
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies[1].divisionContactId).toBe(12)
+    // The re-read's revision, so the retry is not doomed to the same conflict.
+    expect(bodies[1].revisionCount).toBe(9)
+  })
+
+  test('a successful status change leaves staged contact edits standing (D-R2)', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/deactivate`, () =>
+        HttpResponse.json({
+          mill: { ...CEDAR, millStatusCode: 'CLS', statusDescription: 'Close', revisionCount: 4 },
+          messageKey: 'mill.expired',
+          message: 'Mill 670 - Cedar Mill has been deactivated.',
+        }),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await user.click(within(detailPanel()).getByRole('combobox', { name: 'Division Contact :' }))
+    await user.click(await screen.findByRole('option', { name: 'Grace Hopper' }))
+
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Deactivate' }))
+    await screen.findByText('Mill 670 - Cedar Mill has been deactivated.', {
+      normalizer: verbatim,
+    })
+
+    // The status action is independent of the contact panel; legacy's bean kept staged values
+    // across it, and so does this page. Only `mill` (status, revision) was refreshed.
+    expect(
+      within(detailPanel()).getByRole('combobox', { name: 'Division Contact :' }),
+    ).toHaveTextContent('Grace Hopper')
+    expect(within(detailPanel()).getByRole('button', { name: 'Activate' })).toBeInTheDocument()
+  })
+
+  test('a refused add renders INSIDE the still-open dialog, and the panel is untouched', async () => {
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/users`, () =>
+        problemBody(500, 'The user could not be added right now.'),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await screen.findByRole('table', { name: /associated licensee user/i })
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const dialog = await screen.findByRole('dialog', { name: /find and add user/i })
+    await user.type(within(dialog).getByRole('combobox', { name: /user id/i }), 'AL')
+    await user.click(await screen.findByRole('option', { name: 'Ada Lovelace (ALOVELAC)' }))
+
+    // A page-level banner would sit unreadable behind the Carbon overlay; the refusal renders in
+    // the dialog, which stays open so the administrator can retry or leave deliberately.
+    expect(
+      await within(dialog).findByText('The user could not be added right now.', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: /find and add user/i })).toBeInTheDocument()
+    expect(within(rowFor(GUID)).getByText('Active')).toBeInTheDocument()
+  })
+
+  test('a standing add failure survives a later successful directory search', async () => {
+    const user = userEvent.setup()
+    usersAre(ACTIVE_ROW)
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/users`, () =>
+        problemBody(500, 'The user could not be added right now.'),
+      ),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await screen.findByRole('table', { name: /associated licensee user/i })
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const dialog = await screen.findByRole('dialog', { name: /find and add user/i })
+    await user.type(within(dialog).getByRole('combobox', { name: /user id/i }), 'AL')
+    await user.click(await screen.findByRole('option', { name: 'Ada Lovelace (ALOVELAC)' }))
+    await within(dialog).findByText('The user could not be added right now.', {
+      normalizer: verbatim,
+    })
+
+    // The picker clears ITS channel on a later success (onError(null)); that clear must not be
+    // able to erase the standing WRITE failure — the reason the two channels exist apart.
+    await user.type(within(dialog).getByRole('combobox', { name: /user id/i }), 'ZZ')
+    await drainEventLoop(30)
+    expect(
+      within(dialog).getByText('The user could not be added right now.', { normalizer: verbatim }),
+    ).toBeInTheDocument()
+  })
+
+  test('a failed CNF-001 fetch fails CLOSED — Yes never confirms against the error sentence (D-R1)', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get(IMPORTABLE, () => HttpResponse.json([IMPORTABLE_ROW])),
+      http.get(MESSAGES, () => problemBody(500, 'bundle down')),
+    )
+    let imports = 0
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/import`, () => {
+        imports += 1
+        return HttpResponse.json({ mill: { ...IMPORTABLE_ROW, revisionCount: 0 } })
+      }),
+    )
+    render(<Mills />)
+    await user.click(await openImport(user))
+
+    const confirm = await screen.findByRole('dialog', { name: /confirmation/i })
+    // The failure sentence explains the dark button; it is NOT a stand-in for CNF-001, so it must
+    // never be what an import is confirmed against.
+    expect(
+      within(confirm).getByText('The confirmation message could not be loaded.'),
+    ).toBeInTheDocument()
+    expect(within(confirm).getByRole('button', { name: 'Yes' })).toBeDisabled()
+    await drainEventLoop()
+    expect(imports).toBe(0)
+  })
+
+  test('Yes stays dark until the CNF-001 text has actually arrived (D-R1)', async () => {
+    const user = userEvent.setup()
+    let releaseText!: () => void
+    const textHeld = new Promise<void>((resolve) => {
+      releaseText = resolve
+    })
+    server.use(
+      http.get(IMPORTABLE, () => HttpResponse.json([IMPORTABLE_ROW])),
+      http.get(MESSAGES, async () => {
+        await textHeld
+        return HttpResponse.json({
+          key: 'confirmImportMill',
+          text: 'The mill will be imported into ILCR. Are you sure you would like to continue?',
+        })
+      }),
+    )
+    render(<Mills />)
+    // The row click outruns the fetch: the confirm mounts over a body that has not arrived.
+    await userEvent.setup().click(await openImport(user))
+
+    const confirm = await screen.findByRole('dialog', { name: /confirmation/i })
+    expect(within(confirm).getByRole('button', { name: 'Yes' })).toBeDisabled()
+
+    releaseText()
+    await waitFor(() => expect(within(confirm).getByRole('button', { name: 'Yes' })).toBeEnabled())
+    expect(
+      within(confirm).getByText(
+        'The mill will be imported into ILCR. Are you sure you would like to continue?',
+        { normalizer: verbatim },
+      ),
+    ).toBeInTheDocument()
+  })
+
+  test('a zero-match importable search says so, instead of rendering nothing', async () => {
+    const user = userEvent.setup()
+    // The default IMPORTABLE handler already answers [] — the bare array carries no ERR-001
+    // envelope, so the sentence is page-owned chrome rather than server text.
+    render(<Mills />)
+    await user.click(screen.getByRole('button', { name: 'Import Mill' }))
+    await user.click(within(importDialog()).getByRole('button', { name: 'Search' }))
+
+    expect(
+      await within(importDialog()).findByText('No importable mills matched the search.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: /importable mill/i })).not.toBeInTheDocument()
+  })
+
+  test('the import dialog cannot be closed over an in-flight import', async () => {
+    const user = userEvent.setup()
+    let releaseImport!: () => void
+    const importHeld = new Promise<void>((resolve) => {
+      releaseImport = resolve
+    })
+    server.use(
+      http.get(IMPORTABLE, () => HttpResponse.json([IMPORTABLE_ROW])),
+      http.post(`${ADMIN_MILLS}/:millId/import`, async () => {
+        await importHeld
+        return problemBody(
+          409,
+          'This mill is already tracked in ILCR and cannot be imported again.',
+        )
+      }),
+    )
+    render(<Mills />)
+    await user.click(await openImport(user))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: /confirmation/i })).getByRole('button', {
+        name: 'Yes',
+      }),
+    )
+
+    // Closing now would unmount the failure's only renderer — the refusal would land nowhere and
+    // resurface stale over the next, unrelated session of this dialog.
+    await user.click(within(importDialog()).getByRole('button', { name: 'Close' }))
+    expect(importDialog()).toBeInTheDocument()
+
+    releaseImport()
+    expect(
+      await within(importDialog()).findByText(
+        'This mill is already tracked in ILCR and cannot be imported again.',
+        { normalizer: verbatim },
+      ),
+    ).toBeInTheDocument()
+    // With the write settled, Close works again.
+    await user.click(within(importDialog()).getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: /find and select mill to import/i }),
+      ).not.toBeInTheDocument(),
+    )
+  })
+
+  test('Enter in a select-dialog criterion searches — deviation (J)', async () => {
+    const user = userEvent.setup()
+    render(<Mills />)
+    await user.click(screen.getByRole('button', { name: 'Select Mill' }))
+    await user.type(
+      within(selectMillDialog()).getByRole('textbox', { name: 'Number:' }),
+      '670{Enter}',
+    )
+
+    // Additive on purpose: legacy suppressed keyCode 13 app-wide (common.js:27-34), so neither
+    // dialog ever had Enter-to-search. No click on Search happened here.
+    expect(await screen.findByRole('table', { name: /mill search results/i })).toBeInTheDocument()
+  })
+
+  test('Enter in an import-dialog criterion searches — deviation (J)', async () => {
+    const user = userEvent.setup()
+    server.use(http.get(IMPORTABLE, () => HttpResponse.json([IMPORTABLE_ROW])))
+    render(<Mills />)
+    await user.click(screen.getByRole('button', { name: 'Import Mill' }))
+    await user.type(within(importDialog()).getByRole('textbox', { name: 'Name:' }), 'Fresh{Enter}')
+
+    expect(await screen.findByRole('table', { name: /importable mill/i })).toBeInTheDocument()
+  })
+
+  test('Change Mill is disabled while a write is in flight', async () => {
+    const user = userEvent.setup()
+    let releaseWrite!: () => void
+    const writeHeld = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    server.use(
+      http.post(`${ADMIN_MILLS}/:millId/deactivate`, async () => {
+        await writeHeld
+        return HttpResponse.json({
+          mill: { ...CEDAR, millStatusCode: 'CLS', statusDescription: 'Close', revisionCount: 4 },
+          messageKey: 'mill.expired',
+          message: 'done',
+        })
+      }),
+    )
+    render(<Mills />)
+    await selectCedar(user)
+    await user.click(within(detailPanel()).getByRole('button', { name: 'Deactivate' }))
+
+    // Adopting another mill mid-write makes millIdRef drop the response — a completed write's
+    // outcome would vanish without a message.
+    expect(within(detailPanel()).getByRole('button', { name: 'Change Mill' })).toBeDisabled()
+    releaseWrite()
+    await waitFor(() =>
+      expect(within(detailPanel()).getByRole('button', { name: 'Change Mill' })).toBeEnabled(),
+    )
   })
 })

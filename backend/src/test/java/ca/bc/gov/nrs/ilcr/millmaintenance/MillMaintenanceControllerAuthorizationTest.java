@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.dto.base.Role;
 import ca.bc.gov.nrs.ilcr.security.Action;
 import ca.bc.gov.nrs.ilcr.security.SchedulePermissions;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -60,10 +61,13 @@ class MillMaintenanceControllerAuthorizationTest {
   @DisplayName("No endpoint is left unguarded — the gated list is the whole public surface")
   void everyPublicEndpointIsAccountedFor() {
     // Guards the list itself: a ninth endpoint added without a @PreAuthorize would otherwise pass
-    // the loop above simply by not being named in it.
+    // the loop above simply by not being named in it. Keyed on public non-synthetic methods, NOT on
+    // @Override — that annotation is @Retention(SOURCE) and invisible to reflection, so filtering
+    // on it keeps zero methods and asserts nothing. Bridge/synthetic methods are compiler artifacts
+    // that shadow a real method already in the stream.
     List<String> unguarded =
         Arrays.stream(MillMaintenanceController.class.getDeclaredMethods())
-            .filter(method -> method.getAnnotation(Override.class) != null)
+            .filter(method -> Modifier.isPublic(method.getModifiers()) && !method.isSynthetic())
             .filter(method -> method.getAnnotation(PreAuthorize.class) == null)
             .map(Method::getName)
             .toList();

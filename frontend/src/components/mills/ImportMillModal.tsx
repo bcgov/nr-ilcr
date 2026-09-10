@@ -28,9 +28,13 @@ const SEARCH_FAILED = 'The importable mill search could not be completed.'
 /**
  * Page-owned, and deliberately NOT a stand-in for CNF-001. The confirmation sentence has a real
  * source and is fetched from it; if that fetch fails this says so rather than inventing a business
- * sentence the bundle would have to be trusted for (AD-8).
+ * sentence the bundle would have to be trusted for (AD-8). The gate FAILS CLOSED while it stands:
+ * Yes is disabled until the real CNF-001 text is on screen (review ruling D-R1) — legacy's bundle
+ * was local, so its confirm never posed anything but the sentence.
  */
 const CONFIRM_TEXT_FAILED = 'The confirmation message could not be loaded.'
+/** Page-owned chrome for a zero-match importable search — the bare array carries no ERR-001. */
+const NO_IMPORTABLE_MATCHES = 'No importable mills matched the search.'
 
 const dash = (value: string | null | undefined) => (value == null || value === '' ? '—' : value)
 
@@ -66,7 +70,10 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
 
   /** The row awaiting confirmation. Null means no confirm dialog is mounted at all. */
   const [pending, setPending] = useState<ImportableMill | null>(null)
+  /** The verbatim CNF-001 sentence — the ONLY value that arms Yes. */
   const [confirmText, setConfirmText] = useState<string | null>(null)
+  /** The fetch failure, rendered in the confirm body while Yes stays disabled (fail closed). */
+  const [confirmError, setConfirmError] = useState<string | null>(null)
 
   // Resolved once, when the dialog opens, rather than per row: the sentence names no mill, so a
   // fetch per click would be the same request repeated.
@@ -78,7 +85,7 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
         if (live) setConfirmText(response.data.text)
       })
       .catch(() => {
-        if (live) setConfirmText(CONFIRM_TEXT_FAILED)
+        if (live) setConfirmError(CONFIRM_TEXT_FAILED)
       })
     return () => {
       live = false
@@ -117,9 +124,22 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
         size="lg"
         modalHeading="Find and select Mill to Import"
         aria-label="Find and select Mill to Import"
-        onRequestClose={onClose}
+        // Ignored while an import is in flight: closing would unmount the failure's only renderer
+        // (`failure` renders here, by design), so a late refusal would land nowhere — and resurface
+        // stale over the next, unrelated session of this dialog.
+        onRequestClose={() => {
+          if (!busy) onClose()
+        }}
       >
-        <div className="mills__criteria">
+        {/* A form, so Enter in either criterion searches (deviation (J) — additive; legacy
+            suppressed keyCode 13 app-wide). */}
+        <form
+          className="mills__criteria"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!searching && !busy) search()
+          }}
+        >
           <TextInput
             id="mill-import-number"
             labelText="Number:"
@@ -134,18 +154,30 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
             value={millName}
             onChange={(event) => setMillName(event.target.value)}
           />
-          <Button size="sm" disabled={searching || busy} onClick={search}>
+          <Button type="submit" size="sm" disabled={searching || busy}>
             Search
           </Button>
           <Button size="sm" kind="secondary" disabled={searching || busy} onClick={clear}>
             Clear
           </Button>
-        </div>
+        </form>
 
         {/* Severity carried by the kind AND an explicit title word; the API text is the subtitle,
             verbatim (AD-8). A refused import renders HERE rather than page-level, so the search
             results the administrator is working through stay on screen. */}
         {notice && <InlineNotification kind="error" lowContrast title="Error" subtitle={notice} />}
+
+        {/* A completed search that matched nothing must be distinguishable from one that never
+            ran: this endpoint answers a bare array with no ERR-001 envelope, so the sentence is
+            page-owned chrome. */}
+        {results !== null && results.length === 0 && (
+          <InlineNotification
+            kind="info"
+            lowContrast
+            title="No matches"
+            subtitle={NO_IMPORTABLE_MATCHES}
+          />
+        )}
 
         {results !== null && results.length > 0 && (
           <TableContainer className="mills__grid">
@@ -195,14 +227,19 @@ const ImportMillModal: FC<ImportMillModalProps> = ({ onConfirm, onClose, busy, f
           aria-label="Confirmation"
           primaryButtonText="Yes"
           secondaryButtonText="No"
+          // FAIL CLOSED (D-R1): an import is never confirmed against a blank body (fetch still in
+          // flight after a fast row click) or against the fetch-failure sentence — AC3 requires the
+          // confirm to pose the verbatim CNF-001 text, so anything else leaves Yes dark.
+          primaryButtonDisabled={confirmText == null}
           onRequestClose={() => setPending(null)}
           onRequestSubmit={() => {
+            if (confirmText == null) return
             const mill = pending
             setPending(null)
             onConfirm(mill)
           }}
         >
-          <p>{confirmText}</p>
+          <p>{confirmText ?? confirmError}</p>
         </Modal>
       )}
     </>

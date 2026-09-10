@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { Modal } from '@carbon/react'
+import { InlineNotification, Modal } from '@carbon/react'
 import DirectoryPicker from '@/components/millAssociations/DirectoryPicker'
 import type { DirectoryUser } from '@/interfaces/MillAssociation'
 
@@ -7,6 +7,11 @@ type AddUserModalProps = {
   readonly onAdd: (user: DirectoryUser) => void
   readonly onClose: () => void
   readonly busy: boolean
+  /**
+   * A failure to render INSIDE the dialog — a refused add or a picker outage. Page-level banners
+   * are unreadable behind the Carbon overlay, so while this dialog is open its failures live here.
+   */
+  readonly failure: string | null
   /** The picker's own channel, so a lookup failure cannot erase a standing write message. */
   readonly onError: (message: string | null) => void
 }
@@ -27,15 +32,20 @@ type AddUserModalProps = {
  * <p>Legacy's dialog also searched IDIR/GOVERNMENT for the Auditors panel; that half retires with
  * the panel (DL-23, deviation (H)).
  */
-const AddUserModal: FC<AddUserModalProps> = ({ onAdd, onClose, busy, onError }) => (
+const AddUserModal: FC<AddUserModalProps> = ({ onAdd, onClose, busy, failure, onError }) => (
   <Modal
     open
     passiveModal
     size="lg"
     modalHeading="Find and Add User"
     aria-label="Find and Add User"
-    onRequestClose={onClose}
+    // Ignored while the add is in flight: closing over it would unmount the failure's only
+    // renderer, and the refusal would land nowhere.
+    onRequestClose={() => {
+      if (!busy) onClose()
+    }}
   >
+    {failure && <InlineNotification kind="error" lowContrast title="Error" subtitle={failure} />}
     <DirectoryPicker
       selected={null}
       disabled={busy}
