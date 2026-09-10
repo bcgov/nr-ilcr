@@ -394,7 +394,9 @@ public class Schedule3Service {
       Integer crown = crownCost(harvest, pop);
       harvestByCode.put(spec.code(), harvest);
       popByCode.put(spec.code(), pop);
-      if (harvest != null || pop != null || crown != null) {
+      // Harvest or PO&P alone is enough: crownCost() returns null unless BOTH are present, so a
+      // non-null crown can never be the only reason a line is served (sonar java:S2589).
+      if (harvest != null || pop != null) {
         lineItems.add(
             new CostLine(
                 spec.code(),

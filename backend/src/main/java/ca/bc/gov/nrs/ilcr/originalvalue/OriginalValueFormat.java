@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.originalvalue;
 
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 
 /**
@@ -129,9 +130,11 @@ public enum OriginalValueFormat {
     if (pattern == null) {
       return value.toString();
     }
-    // A fresh instance per call: DecimalFormat is mutable and not thread-safe, and these are served
+    // A fresh DecimalFormat per call: it is mutable and not thread-safe, and these are served
     // concurrently. Locale.CANADA fixes ',' grouping and '.' decimals regardless of server locale.
-    return new DecimalFormat(pattern, new java.text.DecimalFormatSymbols(Locale.CANADA))
+    // The symbols come from getInstance, which serves a clone off the JDK's per-locale cache
+    // rather than re-reading the locale data on every render.
+    return new DecimalFormat(pattern, DecimalFormatSymbols.getInstance(Locale.CANADA))
         .format(asNumber(value));
   }
 

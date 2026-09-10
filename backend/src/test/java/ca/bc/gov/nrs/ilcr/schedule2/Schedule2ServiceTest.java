@@ -2,11 +2,16 @@ package ca.bc.gov.nrs.ilcr.schedule2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -23,7 +28,9 @@ import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -337,5 +344,142 @@ class Schedule2ServiceTest {
         List.of(new DetailRow(26, new BigDecimal("30000"), 200000)));
     Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
     assertEquals("6.6667", doc.lessLogSales().perUnit().toPlainString());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). The gate is the real OriginalValues; what is pinned
+  // here is the Schedule 2 side of it — which cost item each field reads, and which fields carry
+  // an original at all. A key-to-field slip (item 25's cost landing on lessLogSales, say) leaves
+  // every other assertion in this class passing.
+  // -----------------------------------------------------------------------------------------
+
+  private static final int SUMMARY_ID = 1002;
+
+  /** Submitted (non-Draft) Schedule 2 over the same stored figures as {@link #stubFullDraft()}. */
+  private void stubSubmitted() {
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "current comment", 3)));
+    lenient()
+        .when(repository.findDetails(SUMMARY_ID))
+        .thenReturn(
+            List.of(
+                new DetailRow(25, null, 500000),
+                new DetailRow(26, new BigDecimal("2000"), 100000)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
+  }
+
+  /** A submitted cost-detail row carrying only the columns Schedule 2 reads. */
+  private static CostDetailSnapshotRepository.Row snapshotRow(
+      int costItemCode, String volume, Integer cost) {
+    return new CostDetailSnapshotRepository.Row(
+        900 + costItemCode,
+        SUMMARY_ID,
+        costItemCode,
+        volume == null ? null : new BigDecimal(volume),
+        cost,
+        null,
+        null);
+  }
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    OriginalValue original = originals.get(field);
+    assertNotNull(original, () -> "no original for " + field + " in " + originals.keySet());
+    assertEquals(value, original.value());
+    assertEquals(OriginalValuesFixture.tooltip(formatted), original.tooltip());
+  }
+
+  @Test
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stubFullDraft();
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
+    assertNull(doc.originalValues(), "Draft must serve no original-value map at all");
+    assertNull(doc.purchasedLogCost().originalValues());
+    assertNull(doc.lessLogSales().originalValues());
+    // The gate short-circuits before the read: Draft costs no snapshot query.
+    verify(costSnapshots, never()).findBySummary(anyInt());
+    verify(summarySnapshots, never()).findBySummaryId(anyInt());
+  }
+
+  @Test
+  void originalValues_submitted_mappedFromItems25And26AndTheSummary() {
+    stubSubmitted();
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(
+            List.of(
+                snapshotRow(25, null, 480000), // item 25: cost only
+                snapshotRow(26, "1800.0", 90000))); // item 26: volume + cost
+    when(summarySnapshots.findBySummaryId(SUMMARY_ID))
+        .thenReturn(
+            Optional.of(new ReportSummarySnapshotRepository.Snapshot(null, null, "as submitted")));
+
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertOriginal(doc.originalValues(), "comments", "as submitted", "as submitted");
+    // Item 25 is cost-only: its volume is carried from Schedule 3, never entered here, so a
+    // "volume" key appearing on this row would be a mapping regression (Schedule2DAO.java:122-123).
+    assertOriginal(doc.purchasedLogCost().originalValues(), "cost", "480000", "480,000");
+    assertEquals(Set.of("cost"), doc.purchasedLogCost().originalValues().keySet());
+    // Item 26 has both entered (Schedule2DAO.java:118-119). 1800.0 canonicalizes without its
+    // trailing zero so the client compares 1800 against 1800, and still renders grouped.
+    assertOriginal(doc.lessLogSales().originalValues(), "volume", "1800", "1,800");
+    assertOriginal(doc.lessLogSales().originalValues(), "cost", "90000", "90,000");
+  }
+
+  @Test
+  void originalValues_derivedBlocks_carryNone() {
+    stubSubmitted();
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(List.of(snapshotRow(25, null, 480000)));
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
+    // Nothing on these three rows is entered on Schedule 2, so none of them carries a map at all.
+    assertNull(doc.purchasedWoodOverhead().originalValues());
+    assertNull(doc.subtotal().originalValues());
+    assertNull(doc.netPurchased().originalValues());
+  }
+
+  @Test
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    // Half the live rows have no 'S' snapshot. That is NOT Draft: the page must still evaluate
+    // "value added since submission" per field, so the maps are empty rather than null.
+    stubSubmitted();
+    when(costSnapshots.findBySummary(SUMMARY_ID)).thenReturn(List.of());
+    when(summarySnapshots.findBySummaryId(SUMMARY_ID)).thenReturn(Optional.empty());
+
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNotNull(doc.originalValues());
+    assertTrue(doc.originalValues().isEmpty());
+    assertNotNull(doc.purchasedLogCost().originalValues());
+    assertTrue(doc.purchasedLogCost().originalValues().isEmpty());
+    assertNotNull(doc.lessLogSales().originalValues());
+    assertTrue(doc.lessLogSales().originalValues().isEmpty());
+  }
+
+  @Test
+  void originalValues_unsavedSchedule_noSummaryId_readsNoSnapshot() {
+    // No category-'2' summary beyond Draft: there is no id to read a snapshot against, so the
+    // maps are empty and neither query is issued (a null summary id must not reach the repository).
+    when(repository.findSummary(MILL, YEAR)).thenReturn(Optional.empty());
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    lenient()
+        .when(schedule3Service.findSchedule3(MILL, YEAR, CallerRights.NONE))
+        .thenReturn(Optional.empty());
+    lenient()
+        .when(schedule1CostDerivation.subtotalLoggingNoFmaCost(MILL, YEAR))
+        .thenReturn(Optional.empty());
+
+    Schedule2Response doc = service.getSchedule2(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNotNull(doc.originalValues());
+    assertTrue(doc.originalValues().isEmpty());
+    verify(costSnapshots, never()).findBySummary(anyInt());
+    verify(summarySnapshots, never()).findBySummaryId(anyInt());
   }
 }
