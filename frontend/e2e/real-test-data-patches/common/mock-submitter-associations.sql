@@ -66,8 +66,9 @@ SET DEFINE OFF
 
 DECLARE
   c_user CONSTANT VARCHAR2(30) := 'E2E_SEED_MOCKUSER';
-  c_guid CONSTANT VARCHAR2(32) := 'CANONSUBMITTERBBBBCCCCDDDD000001';
-  l_n    NUMBER;
+  c_guid  CONSTANT VARCHAR2(32) := 'CANONSUBMITTERBBBBCCCCDDDD000001';
+  l_n     NUMBER;
+  l_other NUMBER;
 BEGIN
   -- 1. The identity itself — FK parent of every association below.
   SELECT COUNT(*) INTO l_n FROM THE.ILCR_USER WHERE USER_GUID = c_guid;
@@ -96,6 +97,12 @@ BEGIN
     IF l_n = 0 THEN
       -- Revive a sentinel row that was ended, rather than inserting a duplicate (the PK is
       -- (ILCR_MILL_ID, USER_GUID), so a second INSERT would raise ORA-00001).
+      --
+      -- The UPDATE stays sentinel-keyed ON PURPOSE. Dropping `ENTRY_USERID = c_user` would also
+      -- prevent the ORA-00001 below and is simpler, but it would let this patch modify a row it
+      -- did not create — reviving an association somebody deliberately ended, which breaks this
+      -- folder's rule that a patch touches only its own rows and its teardown removes exactly
+      -- those. So instead the INSERT is guarded on the absence of ANY row for the pair.
       UPDATE THE.ILCR_MILL_USER_XREF
          SET ACTIVE_DATE = SYSDATE, INACTIVE_DATE = NULL,
              UPDATE_USERID = c_user, UPDATE_TIMESTAMP = SYSDATE
@@ -103,10 +110,20 @@ BEGIN
          AND ENTRY_USERID = c_user;
 
       IF SQL%ROWCOUNT = 0 THEN
-        INSERT INTO THE.ILCR_MILL_USER_XREF
-            (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
-             ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
-        VALUES (m.mill, c_guid, SYSDATE, NULL, 0, c_user, SYSDATE, c_user, SYSDATE);
+        -- No sentinel row was revived. Either there is no row at all (insert one), or a row for
+        -- this pair exists under a DIFFERENT ENTRY_USERID and is inactive — someone else's, ended
+        -- on purpose. Inserting then would be ORA-00001 on the PK, and overwriting it would be
+        -- worse than the error. Leave it: the mill simply stays unselectable, and
+        -- `preflight/mill-scope.setup.ts` names it rather than letting a scenario time out.
+        SELECT COUNT(*) INTO l_other
+          FROM THE.ILCR_MILL_USER_XREF
+         WHERE ILCR_MILL_ID = m.mill AND USER_GUID = c_guid;
+        IF l_other = 0 THEN
+          INSERT INTO THE.ILCR_MILL_USER_XREF
+              (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
+               ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+          VALUES (m.mill, c_guid, SYSDATE, NULL, 0, c_user, SYSDATE, c_user, SYSDATE);
+        END IF;
       END IF;
     END IF;
   END LOOP;

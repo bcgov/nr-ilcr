@@ -106,15 +106,20 @@ const GUID_SOURCES = [
     file: 'docker-compose.yml',
     pattern: /ILCR_SECURITY_MOCK_USER_GUID:\s*\$\{ILCR_SECURITY_MOCK_USER_GUID:-([A-Z0-9]+)\}/,
   },
+  // The two SQL sources are anchored on the STATEMENT that uses the GUID, not just on "a 32-char
+  // quoted literal". A bare /'([A-Z0-9]{32})'/ takes the file's FIRST such literal, so any future
+  // 32-character id added above these inserts would be captured instead and fail this check for
+  // the wrong reason. `[\s\S]*?` rather than `.*?` is load-bearing: both statements wrap across
+  // lines, and `.` does not match a newline.
   {
     what: "the CI seed's ILCR_USER row",
     file: 'backend/src/test/resources/db/R__70_test_scope_canonical_submitter.sql',
-    pattern: /'([A-Z0-9]{32})'/,
+    pattern: /INSERT INTO THE\.ILCR_USER[\s\S]*?VALUES\s*\(\s*'([A-Z0-9]{32})'/,
   },
   {
     what: "the CI seed's mill associations",
     file: 'backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql',
-    pattern: /'([A-Z0-9]{32})'/,
+    pattern: /INSERT INTO THE\.ILCR_MILL_USER_XREF[\s\S]*?'([A-Z0-9]{32})'/,
   },
   {
     what: "the extract patch's associations",
