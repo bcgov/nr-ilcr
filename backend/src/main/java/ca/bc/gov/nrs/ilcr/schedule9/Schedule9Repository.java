@@ -3,12 +3,15 @@ package ca.bc.gov.nrs.ilcr.schedule9;
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
 import ca.bc.gov.nrs.ilcr.schedule9.dto.Schedule9CodeLists;
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 9 tables (AD-3): explicit
@@ -482,5 +485,62 @@ public interface Schedule9Repository extends Repository<ContractualWorkReportEnt
 
   private static List<CodeDescriptionDto> toOptions(List<OptionRow> rows) {
     return rows.stream().map(r -> new CodeDescriptionDto(r.code(), r.description())).toList();
+  }
+
+  /**
+   * One submitted contractual-work record from {@code THE.CONTRACTUAL_WORK_REPORT_S_VW} — the
+   * licensee's own values (Story 16.2, BR-04).
+   *
+   * <p>Reading {@code SIDE_SLOPE_PCT} here fixes a legacy defect. Legacy wrote the submitted side
+   * slope into {@code sideSlopePercentageOriginal} ({@code Schedule9DAO.java:409}) but its accessor
+   * read {@code getSideSlopePercentage()} ({@code Schedule9DO.java:441}), which is never assigned —
+   * so the comparison always saw a null original and flagged EVERY non-empty side slope on submit,
+   * whether or not it had changed. Deviation D4.
+   */
+  record ContractualSnapshotRow(
+      int reportId,
+      String contractorId,
+      BigDecimal performedUnit,
+      Integer sideSlopePct,
+      String unitCode,
+      String unitDescription,
+      String sourceCode,
+      String sourceDescription,
+      String becZoneCode,
+      String comments) {}
+
+  /** Every submitted contractual-work record for a mill/year (category "9"). */
+  @Query(
+      value =
+          """
+      SELECT CONTRACTUAL_WORK_REPORT_ID, CONTRACTOR_ID, PERFORMED_UNIT, SIDE_SLOPE_PCT,
+             ILCR_UNIT_CODE, UNIT_DESCRIPTION, ILCR_CONTRACTUAL_SOURCE_CODE, SOURCE_DESCRIPTION,
+             BEC_ZONE_CODE, COMMENTS
+        FROM THE.CONTRACTUAL_WORK_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = ContractualSnapshotRowMapper.class)
+  List<ContractualSnapshotRow> findContractualSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code CONTRACTUAL_WORK_REPORT_S_VW} row. */
+  class ContractualSnapshotRowMapper implements RowMapper<ContractualSnapshotRow> {
+    @Override
+    public ContractualSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int slope = rs.getInt("SIDE_SLOPE_PCT");
+      Integer sideSlopePct = rs.wasNull() ? null : slope;
+      return new ContractualSnapshotRow(
+          rs.getInt("CONTRACTUAL_WORK_REPORT_ID"),
+          rs.getString("CONTRACTOR_ID"),
+          rs.getBigDecimal("PERFORMED_UNIT"),
+          sideSlopePct,
+          rs.getString("ILCR_UNIT_CODE"),
+          rs.getString("UNIT_DESCRIPTION"),
+          rs.getString("ILCR_CONTRACTUAL_SOURCE_CODE"),
+          rs.getString("SOURCE_DESCRIPTION"),
+          rs.getString("BEC_ZONE_CODE"),
+          rs.getString("COMMENTS"));
+    }
   }
 }

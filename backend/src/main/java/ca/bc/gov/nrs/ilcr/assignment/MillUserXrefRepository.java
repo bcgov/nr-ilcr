@@ -130,6 +130,31 @@ public interface MillUserXrefRepository extends Repository<MillUserXrefEntity, L
       @Param("millId") long millId, @Param("userGuid") String userGuid, @Param("user") String user);
 
   /**
+   * Create a new INACTIVE assignment for a pair that has no row yet — the mill-record add.
+   *
+   * <p>Created inactive, matching the legacy Mills-page path, which hard-coded the new association
+   * inactive so that making it effective required the explicit per-row Activate action (and that
+   * action, not this insert, is where the closed-mill activation block applies). The inactive date
+   * must be set: an ended-vs-active row is told apart by {@code INACTIVE_DATE} alone, so a row with
+   * both dates null would read as active.
+   *
+   * @param millId the {@code ILCR_MILL_ID}
+   * @param userGuid the directory GUID ({@code custom:idp_user_id})
+   * @param user the acting administrator's {@code custom:idp_username}, for both audit pairs
+   * @return the number of rows inserted, always 1
+   */
+  @Modifying
+  @Query(
+      """
+      INSERT INTO THE.ILCR_MILL_USER_XREF
+          (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
+           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+      VALUES (:millId, :userGuid, NULL, SYSDATE, 0, :user, SYSDATE, :user, SYSDATE)
+      """)
+  int insertInactiveAssignment(
+      @Param("millId") long millId, @Param("userGuid") String userGuid, @Param("user") String user);
+
+  /**
    * Bring an ended assignment back, in place: set the active date and clear the inactive one.
    *
    * <p>Because one pair admits only one row, this reuses the existing row rather than appending, so

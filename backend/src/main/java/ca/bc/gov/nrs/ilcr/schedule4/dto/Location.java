@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule4.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One Schedule 4 dump location (AD-12) — a family of legacy {@code TRANSPORTATION_REPORT} rows that
@@ -25,10 +28,28 @@ import java.util.List;
  * {@code categories} because they are free-text list rows, not the fixed category grid. Empty when
  * the location has no sub-page rows.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record Location(
     Integer id,
     Integer revisionCount,
     String name,
     String comments,
     List<CategoryAmount> categories,
-    List<SubPageRow> subPageRows) {}
+    List<SubPageRow> subPageRows,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public Location(
+      Integer id,
+      Integer revisionCount,
+      String name,
+      String comments,
+      List<CategoryAmount> categories,
+      List<SubPageRow> subPageRows) {
+    this(id, revisionCount, name, comments, categories, subPageRows, null);
+  }
+}

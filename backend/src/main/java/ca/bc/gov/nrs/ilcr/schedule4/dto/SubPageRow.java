@@ -1,6 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule4.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 4 sub-page transportation-list row within a location (AD-12, Story 4.3). The pinned
@@ -20,6 +23,7 @@ import java.math.BigDecimal;
  * omitted from the JSON when null (app-wide Jackson {@code non_null}); {@code cycle} is null except
  * on 46.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record SubPageRow(
     Integer id,
     int code,
@@ -28,4 +32,23 @@ public record SubPageRow(
     BigDecimal volume,
     Integer cost,
     Integer cycle,
-    BigDecimal perUnit) {}
+    BigDecimal perUnit,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public SubPageRow(
+      Integer id,
+      int code,
+      String description,
+      BigDecimal distance,
+      BigDecimal volume,
+      Integer cost,
+      Integer cycle,
+      BigDecimal perUnit) {
+    this(id, code, description, distance, volume, cost, cycle, perUnit, null);
+  }
+}

@@ -1,12 +1,16 @@
 package ca.bc.gov.nrs.ilcr.schedule7a;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC reads and writes for Schedule 7A (Bridge Costs) — AD-3: a {@code Repository}
@@ -411,5 +415,73 @@ public interface Schedule7aRepository extends Repository<BridgeReportEntity, Lon
 
   default List<CodeDescriptionDto> loadRatingOptions(int year) {
     return asOptions(findLoadRatingCodes(effectiveOn(year)));
+  }
+
+  /**
+   * One submitted bridge from {@code THE.BRIDGE_REPORT_S_VW} — the licensee's own attributes (Story
+   * 16.2, BR-04).
+   *
+   * <p>{@code loadRatingCode} reads the view's {@code ILCR_BRIDGE_LOAD_RATING_CODE}. Legacy's own
+   * accessor for it is spelled {@code getIlcr_bridge_load_rating_span()} ({@code
+   * Schedule7aDAO.java:247-249}) and that is NOT a defect: {@code BridgeReportOv.java:74-76} maps
+   * the oddly-named field onto this column.
+   */
+  record BridgeSnapshotRow(
+      long bridgeReportId,
+      String locationName,
+      java.time.LocalDate builtDate,
+      String constructionTypeCode,
+      String superstructureTypeCode,
+      String deckTypeCode,
+      String abutmentTypeCode,
+      String loadRatingCode,
+      Integer lifeSpan,
+      BigDecimal abutmentHeight,
+      BigDecimal length,
+      BigDecimal deckWidth,
+      Integer distance,
+      String comments) {}
+
+  /** Every submitted bridge for a mill/year (category "7"). */
+  @Query(
+      value =
+          """
+      SELECT BRIDGE_REPORT_ID, LOCATION_NAME, BUILT_DATE, ILCR_BRIDGE_CNSTRCTN_TYPE_CODE,
+             ILCR_BRIDGE_SUPERSTRUCTR_CODE, ILCR_DECK_CODE, ILCR_BRIDGE_ABUTMENT_TYPE_CODE,
+             ILCR_BRIDGE_LOAD_RATING_CODE, EXPECTED_BRIDGE_LIFE_SPAN, HEIGHT, LENGTH, DECK_WIDTH,
+             DISTANCE_FROM_STORAGE, COMMENTS
+        FROM THE.BRIDGE_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = BridgeSnapshotRowMapper.class)
+  List<BridgeSnapshotRow> findBridgeSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code BRIDGE_REPORT_S_VW} row. */
+  class BridgeSnapshotRowMapper implements RowMapper<BridgeSnapshotRow> {
+    @Override
+    public BridgeSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      int lifeSpan = rs.getInt("EXPECTED_BRIDGE_LIFE_SPAN");
+      Integer expectedLifeSpan = rs.wasNull() ? null : lifeSpan;
+      int distance = rs.getInt("DISTANCE_FROM_STORAGE");
+      Integer distanceFromStorage = rs.wasNull() ? null : distance;
+      java.sql.Date built = rs.getDate("BUILT_DATE");
+      return new BridgeSnapshotRow(
+          rs.getLong("BRIDGE_REPORT_ID"),
+          rs.getString("LOCATION_NAME"),
+          built == null ? null : built.toLocalDate(),
+          rs.getString("ILCR_BRIDGE_CNSTRCTN_TYPE_CODE"),
+          rs.getString("ILCR_BRIDGE_SUPERSTRUCTR_CODE"),
+          rs.getString("ILCR_DECK_CODE"),
+          rs.getString("ILCR_BRIDGE_ABUTMENT_TYPE_CODE"),
+          rs.getString("ILCR_BRIDGE_LOAD_RATING_CODE"),
+          expectedLifeSpan,
+          rs.getBigDecimal("HEIGHT"),
+          rs.getBigDecimal("LENGTH"),
+          rs.getBigDecimal("DECK_WIDTH"),
+          distanceFromStorage,
+          rs.getString("COMMENTS"));
+    }
   }
 }

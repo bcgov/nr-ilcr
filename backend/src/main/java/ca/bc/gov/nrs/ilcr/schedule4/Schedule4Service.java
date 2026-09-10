@@ -2,10 +2,14 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
@@ -75,9 +79,23 @@ public class Schedule4Service {
   private static final String MSG_MISSING_REQUIRED = "missingRequiredFieldMsg";
 
   private final Schedule4Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
-  public Schedule4Service(Schedule4Repository repository) {
+  /**
+   * Constructs the Schedule 4 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
+   */
+  public Schedule4Service(
+      Schedule4Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -113,11 +131,64 @@ public class Schedule4Service {
     // per-location value. Report order (legacy findTransportationReportDetails) is by report id;
     // the LinkedHashMap keeps first-seen (lowest report id) location order.
     List<LocationRow> locationRows = repository.findLocations(millId, year);
+    LocationIndex index = indexLocations(locationRows);
+    Snapshots snapshots = loadSnapshots(millId, year, trackStatus, locationRows);
+
+    Map<String, List<CategoryAmount>> categoriesByName =
+        categoriesByName(millId, year, trackStatus, index, snapshots);
+    Map<String, List<SubPageRow>> subPageByName =
+        subPageRowsByName(millId, year, trackStatus, snapshots);
+
+    List<Location> locations = new ArrayList<>(categoriesByName.size());
+    categoriesByName.forEach(
+        (name, categories) -> {
+          Integer primaryId =
+              index.primaryIdByName().getOrDefault(name, index.minIdByName().get(name));
+          locations.add(
+              new Location(
+                  primaryId,
+                  index.revisionByReport().get(primaryId),
+                  name,
+                  index.commentsByReport().get(primaryId),
+                  categories,
+                  subPageByName.getOrDefault(name, List.of()),
+                  locationOriginals(trackStatus, snapshots.byReport().get(primaryId))));
+        });
+
+    return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+  }
+
+  /**
+   * The per-report lookups a location family is assembled from, all keyed by transportation report
+   * id except the two name-keyed id resolvers.
+   *
+   * @param distanceByReport each report's own distance (null on a primary report)
+   * @param nameByReport the location name a report belongs to
+   * @param commentsByReport the report's comments
+   * @param revisionByReport the report's optimistic-lock revision
+   * @param categoryOrder location names in first-seen (lowest report id) order, pre-seeded empty
+   * @param primaryIdByName the distance-null primary report id for a location, when it has one
+   * @param minIdByName the lowest report id for a location, the fallback identity (§Decision 2)
+   */
+  private record LocationIndex(
+      Map<Integer, BigDecimal> distanceByReport,
+      Map<Integer, String> nameByReport,
+      Map<Integer, String> commentsByReport,
+      Map<Integer, Integer> revisionByReport,
+      Map<String, List<CategoryAmount>> categoryOrder,
+      Map<String, Integer> primaryIdByName,
+      Map<String, Integer> minIdByName) {}
+
+  /**
+   * Index the location rows once. {@code categoryOrder} is seeded here rather than on demand so a
+   * location with no in-scope details still appears in the document, in report-id order.
+   */
+  private static LocationIndex indexLocations(List<LocationRow> locationRows) {
     Map<Integer, BigDecimal> distanceByReport = new HashMap<>();
     Map<Integer, String> nameByReport = new HashMap<>();
     Map<Integer, String> commentsByReport = new HashMap<>();
     Map<Integer, Integer> revisionByReport = new HashMap<>();
-    Map<String, List<CategoryAmount>> categoriesByName = new LinkedHashMap<>();
+    Map<String, List<CategoryAmount>> categoryOrder = new LinkedHashMap<>();
     // The location's stable, rename-safe id (§Decision 2): the distance-null primary report if the
     // family has one, else its lowest report id.
     Map<String, Integer> primaryIdByName = new HashMap<>();
@@ -127,24 +198,79 @@ public class Schedule4Service {
       nameByReport.put(loc.transportationReportId(), loc.locationDescription());
       commentsByReport.put(loc.transportationReportId(), loc.comments());
       revisionByReport.put(loc.transportationReportId(), loc.revisionCount());
-      categoriesByName.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
+      categoryOrder.computeIfAbsent(loc.locationDescription(), k -> new ArrayList<>());
       minIdByName.merge(loc.locationDescription(), loc.transportationReportId(), Math::min);
       if (loc.distance() == null) {
         primaryIdByName.putIfAbsent(loc.locationDescription(), loc.transportationReportId());
       }
     }
+    return new LocationIndex(
+        distanceByReport,
+        nameByReport,
+        commentsByReport,
+        revisionByReport,
+        categoryOrder,
+        primaryIdByName,
+        minIdByName);
+  }
 
-    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
-      if (d.costItemCode() == null) {
-        continue;
+  /**
+   * The licensee's submitted figures (Story 16.2, BR-04), indexed two ways because Schedule 4
+   * addresses a value two ways: the report-level fields by report id, and the cost rows by (report
+   * id, cost item) since one location's family spans several reports that all reuse the same cost
+   * items.
+   *
+   * @param byReport report-level submitted fields, by transportation report id
+   * @param byReportAndItem submitted cost rows, keyed {@code reportId + ":" + costItemCode}
+   */
+  private record Snapshots(
+      Map<Integer, Schedule4Repository.TransportationSnapshotRow> byReport,
+      Map<String, CostDetailSnapshotRepository.Row> byReportAndItem) {}
+
+  /** Load both snapshot indexes, or a pair of empty maps at Draft (no query is issued). */
+  private Snapshots loadSnapshots(
+      long millId, int year, String trackStatus, List<LocationRow> locationRows) {
+    Map<Integer, Schedule4Repository.TransportationSnapshotRow> byReport = new HashMap<>();
+    Map<String, CostDetailSnapshotRepository.Row> byReportAndItem = new HashMap<>();
+    if (!originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(byReport, byReportAndItem);
+    }
+    for (Schedule4Repository.TransportationSnapshotRow r :
+        repository.findTransportationSnapshots(millId, year)) {
+      byReport.putIfAbsent(r.transportationReportId(), r);
+    }
+    if (locationRows.isEmpty()) {
+      return new Snapshots(byReport, byReportAndItem);
+    }
+    // Widened, not narrowed: the location ids are int on LocationRow and the shared snapshot
+    // finder speaks Long, so this conversion cannot lose a value.
+    List<Long> reportIds =
+        locationRows.stream().map(row -> (long) row.transportationReportId()).distinct().toList();
+    for (CostDetailSnapshotRepository.Row r :
+        costSnapshots.findByTransportationReports(reportIds)) {
+      if (r.parentId() != null && r.costItemCode() != null) {
+        byReportAndItem.putIfAbsent(r.parentId() + ":" + r.costItemCode(), r);
       }
-      String name = nameByReport.get(d.transportationReportId());
+    }
+    return new Snapshots(byReport, byReportAndItem);
+  }
+
+  /**
+   * The fixed and distance-based category grid per location. A detail whose report is not a
+   * category-"4" location row is skipped defensively.
+   */
+  private Map<String, List<CategoryAmount>> categoriesByName(
+      long millId, int year, String trackStatus, LocationIndex index, Snapshots snapshots) {
+    Map<String, List<CategoryAmount>> categoriesByName = index.categoryOrder();
+    for (DetailRow d : repository.findInScopeDetails(millId, year)) {
+      String name =
+          d.costItemCode() == null ? null : index.nameByReport().get(d.transportationReportId());
       if (name == null) {
-        continue; // detail's report is not a category-"4" location row (defensive)
+        continue;
       }
       boolean isDistance = DISTANCE_CODES.contains(d.costItemCode());
       BigDecimal categoryDistance =
-          isDistance ? normalize(distanceByReport.get(d.transportationReportId())) : null;
+          isDistance ? normalize(index.distanceByReport().get(d.transportationReportId())) : null;
       categoriesByName
           .get(name)
           .add(
@@ -154,11 +280,23 @@ public class Schedule4Service {
                   normalize(d.volume()),
                   d.cost(),
                   categoryDistance,
-                  perUnit(bd(d.cost()), d.volume())));
+                  perUnit(bd(d.cost()), d.volume()),
+                  categoryOriginals(
+                      trackStatus,
+                      snapshots
+                          .byReportAndItem()
+                          .get(d.transportationReportId() + ":" + d.costItemCode()),
+                      isDistance ? snapshots.byReport().get(d.transportationReportId()) : null)));
     }
+    return categoriesByName;
+  }
 
-    // Sub-page list rows (Story 4.3): each its own report sharing the location name; grouped under
-    // the location, kept separate from the fixed/distance category grid.
+  /**
+   * Sub-page list rows (Story 4.3): each its own report sharing the location name; grouped under
+   * the location, kept separate from the fixed/distance category grid.
+   */
+  private Map<String, List<SubPageRow>> subPageRowsByName(
+      long millId, int year, String trackStatus, Snapshots snapshots) {
     Map<String, List<SubPageRow>> subPageByName = new HashMap<>();
     for (SubPageRowRow r : repository.findSubPageRows(millId, year)) {
       if (r.costItemCode() == null) {
@@ -175,24 +313,15 @@ public class Schedule4Service {
                   normalize(r.volume()),
                   r.cost(),
                   r.cycle(),
-                  perUnit(bd(r.cost()), r.volume())));
+                  perUnit(bd(r.cost()), r.volume()),
+                  subPageOriginals(
+                      trackStatus,
+                      snapshots
+                          .byReportAndItem()
+                          .get(r.transportationReportId() + ":" + r.costItemCode()),
+                      snapshots.byReport().get(r.transportationReportId()))));
     }
-
-    List<Location> locations = new ArrayList<>(categoriesByName.size());
-    categoriesByName.forEach(
-        (name, categories) -> {
-          Integer primaryId = primaryIdByName.getOrDefault(name, minIdByName.get(name));
-          locations.add(
-              new Location(
-                  primaryId,
-                  revisionByReport.get(primaryId),
-                  name,
-                  commentsByReport.get(primaryId),
-                  categories,
-                  subPageByName.getOrDefault(name, List.of())));
-        });
-
-    return new Schedule4Response(millId, year, trackStatus, editable, locations, null);
+    return subPageByName;
   }
 
   /**
@@ -599,5 +728,65 @@ public class Schedule4Service {
     }
     BigDecimal result = cost.divide(volume, 4, RoundingMode.HALF_UP).stripTrailingZeros();
     return result.scale() < 1 ? result.setScale(1, RoundingMode.HALF_UP) : result;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Original-value helpers (Story 16.2, BR-04).
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * A location's submitted name. Legacy declares no original for a location's COMMENTS ({@code
+   * TransportationReportType.java:30} has the field and no {@code commentsOriginalVal}), so none is
+   * served — "only if the legacy app does it".
+   */
+  private Map<String, OriginalValue> locationOriginals(
+      String trackStatus, Schedule4Repository.TransportationSnapshotRow report) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("name", report == null ? null : report.locationDescription(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /**
+   * One category cell's submitted figures: volume and cost from the cost row, plus the report's own
+   * submitted distance for the three distance categories (47/48/52), whose distance lives on the
+   * report rather than on the detail.
+   */
+  private Map<String, OriginalValue> categoryOriginals(
+      String trackStatus,
+      CostDetailSnapshotRepository.Row detail,
+      Schedule4Repository.TransportationSnapshotRow distanceReport) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+            .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE);
+    if (distanceReport != null) {
+      builder.put("distance", distanceReport.distance(), OriginalValueFormat.ONE_DECIMAL);
+    }
+    return builder.build();
+  }
+
+  /**
+   * One sub-page row's submitted figures. Legacy tracked all five on these rows — description,
+   * distance, volume, cost and, on Truck Rehaul only, the cycle time ({@code
+   * Schedule4DAO.java:346-382}); the cycle key simply stays absent for the other two row types,
+   * whose reports have no submitted cycle.
+   */
+  private Map<String, OriginalValue> subPageOriginals(
+      String trackStatus,
+      CostDetailSnapshotRepository.Row detail,
+      Schedule4Repository.TransportationSnapshotRow report) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "description",
+            detail == null ? null : detail.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put("volume", detail == null ? null : detail.volume(), OriginalValueFormat.WHOLE)
+        .put("cost", detail == null ? null : detail.cost(), OriginalValueFormat.WHOLE)
+        .put("distance", report == null ? null : report.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycle", report == null ? null : report.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .build();
   }
 }

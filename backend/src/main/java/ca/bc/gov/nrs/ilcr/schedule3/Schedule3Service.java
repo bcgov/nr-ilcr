@@ -5,10 +5,15 @@ import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.isTotalComments;
 import static ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.resolvePop;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Constants.LineSpec;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
@@ -140,6 +145,9 @@ public class Schedule3Service {
   private final Schedule3Repository repository;
   private final Schedule1Service schedule1Service;
   private final MessageSource messageSource;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
   /**
    * Constructs the Schedule 3 service.
@@ -151,10 +159,16 @@ public class Schedule3Service {
   public Schedule3Service(
       Schedule3Repository repository,
       Schedule1Service schedule1Service,
-      MessageSource messageSource) {
+      MessageSource messageSource,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
     this.schedule1Service = schedule1Service;
     this.messageSource = messageSource;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
@@ -204,6 +218,10 @@ public class Schedule3Service {
         summary == null ? List.of() : repository.findDetails(summary.summaryId());
     final String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
 
+    Snapshots snapshots = loadSnapshots(trackStatus, summary);
+    final Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode = snapshots.byCode();
+    final ReportSummarySnapshotRepository.Snapshot summarySnapshot = snapshots.summary();
+
     PartitionedDetails partitioned = partitionDetails(details);
     Map<Integer, DetailRow> byCode = partitioned.byCode();
     List<DetailRow> acceptableRows = partitioned.acceptable();
@@ -217,19 +235,11 @@ public class Schedule3Service {
     BigDecimal overheadVolume = add(popTimberVolume, crownTimberVolume);
 
     // --- Fixed lines (harvest/pop/crown) -------------------------------------------------------
-    Map<Integer, Integer> harvestByCode = new HashMap<>();
-    Map<Integer, Integer> popByCode = new HashMap<>();
-    List<CostLine> lineItems = new ArrayList<>();
-    for (LineSpec spec : LINES) {
-      Integer harvest = costOf(byCode.get(spec.code()));
-      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
-      Integer crown = crownCost(harvest, pop);
-      harvestByCode.put(spec.code(), harvest);
-      popByCode.put(spec.code(), pop);
-      if (harvest != null || pop != null || crown != null) {
-        lineItems.add(new CostLine(spec.code(), harvest, pop, crown));
-      }
-    }
+    FixedLines fixed =
+        fixedLines(trackStatus, byCode, popTimberVolume, overheadVolume, snapshotByCode);
+    final List<CostLine> lineItems = fixed.lineItems();
+    final Map<Integer, Integer> harvestByCode = fixed.harvestByCode();
+    final Map<Integer, Integer> popByCode = fixed.popByCode();
 
     // --- Subtotal Other Costs (from item-124 groups) -------------------------------------------
     ThreeColumnTotal subtotalOtherCosts = subtotalOtherCosts(acceptableRows);
@@ -264,16 +274,22 @@ public class Schedule3Service {
     Long popTimberCost = totalCosts.pop(); // legacy getPopTimber().cost = totalCost.popCost
     Long crownTimberCost = totalCosts.crown(); // legacy getCrownTimber().cost = totalCost.crownCost
     Long overheadCost = addLong(popTimberCost, crownTimberCost);
+    // The two timber VOLUMES are entered and carry submitted originals (Schedule3DAO.java:310-321);
+    // their costs are the derived total columns, so neither carries one, and totalOverhead —
+    // derived
+    // outright — carries none at all.
     TimberBlock popTimber =
         new TimberBlock(
             normalizeVolume(popTimberVolume),
             popTimberCost,
-            perUnit(popTimberCost, popTimberVolume));
+            perUnit(popTimberCost, popTimberVolume),
+            volumeOriginal(trackStatus, snapshotByCode.get(CODE_POP_TIMBER)));
     TimberBlock crownTimber =
         new TimberBlock(
             normalizeVolume(crownTimberVolume),
             crownTimberCost,
-            perUnit(crownTimberCost, crownTimberVolume));
+            perUnit(crownTimberCost, crownTimberVolume),
+            volumeOriginal(trackStatus, snapshotByCode.get(CODE_CROWN_TIMBER)));
     TimberBlock totalOverhead =
         new TimberBlock(
             normalizeVolume(overheadVolume), overheadCost, perUnit(overheadCost, overheadVolume));
@@ -294,6 +310,20 @@ public class Schedule3Service {
         summary == null ? null : summary.revisionCount(),
         override,
         summary == null ? null : summary.comments(),
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            // Not a location: Schedule 3 stores its override-total-PO&P flag in the summary's
+            // LOCATION column, which is where legacy read both the current and the submitted value
+            // (Schedule3DAO.java:135-136).
+            .put(
+                "overrideHarvestTotalPop",
+                summarySnapshot == null ? null : summarySnapshot.overrideTotalPop(),
+                OriginalValueFormat.TEXT)
+            .build(),
         lineItems,
         popTimber,
         crownTimber,
@@ -313,6 +343,71 @@ public class Schedule3Service {
    */
   private record PartitionedDetails(
       Map<Integer, DetailRow> byCode, List<DetailRow> acceptable, List<DetailRow> unacceptable) {}
+
+  /**
+   * The licensee's submitted figures for one summary (Story 16.2, BR-04).
+   *
+   * @param byCode a fixed line's submitted cost row, by cost-item code
+   * @param summary the submitted summary-level figures (comments, override-total-PO&amp;P)
+   */
+  private record Snapshots(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      ReportSummarySnapshotRepository.Snapshot summary) {}
+
+  /** Read both snapshots, or neither at Draft — where no query is issued at all. */
+  private Snapshots loadSnapshots(String trackStatus, SummaryRow summary) {
+    if (summary == null || !originalValues.exposesOriginalValues(trackStatus)) {
+      return new Snapshots(Map.of(), null);
+    }
+    return new Snapshots(
+        indexSnapshots(costSnapshots.findBySummary(summary.summaryId())),
+        summarySnapshots.findBySummaryId(summary.summaryId()).orElse(null));
+  }
+
+  /**
+   * The eleven fixed lines, plus the per-code Harvest and PO&amp;P costs the subtotals sum. Both
+   * maps are keyed by cost-item code and carry an entry for every line, present or not, because the
+   * subtotal loop iterates {@code LINES} rather than the served rows.
+   */
+  private record FixedLines(
+      List<CostLine> lineItems,
+      Map<Integer, Integer> harvestByCode,
+      Map<Integer, Integer> popByCode) {}
+
+  /**
+   * Build the fixed lines. A line is served only when at least one of its three columns has a value
+   * — legacy's own emptiness rule — but its costs are recorded either way so the subtotals see
+   * them.
+   */
+  private FixedLines fixedLines(
+      String trackStatus,
+      Map<Integer, DetailRow> byCode,
+      BigDecimal popTimberVolume,
+      BigDecimal overheadVolume,
+      Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode) {
+    Map<Integer, Integer> harvestByCode = new HashMap<>();
+    Map<Integer, Integer> popByCode = new HashMap<>();
+    List<CostLine> lineItems = new ArrayList<>();
+    for (LineSpec spec : LINES) {
+      Integer harvest = costOf(byCode.get(spec.code()));
+      Integer pop = resolvePop(spec, harvest, byCode, popTimberVolume, overheadVolume);
+      Integer crown = crownCost(harvest, pop);
+      harvestByCode.put(spec.code(), harvest);
+      popByCode.put(spec.code(), pop);
+      // Harvest or PO&P alone is enough: crownCost() returns null unless BOTH are present, so a
+      // non-null crown can never be the only reason a line is served (sonar java:S2589).
+      if (harvest != null || pop != null) {
+        lineItems.add(
+            new CostLine(
+                spec.code(),
+                harvest,
+                pop,
+                crown,
+                lineOriginals(trackStatus, spec, snapshotByCode)));
+      }
+    }
+    return new FixedLines(lineItems, harvestByCode, popByCode);
+  }
 
   /**
    * Partition detail rows: one row per (summary, cost-item) is the invariant; if a duplicate ever
@@ -467,8 +562,9 @@ public class Schedule3Service {
       long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable = caller.allows(repository.findTrackStatus(millId, year).orElse(null));
-    return buildOtherAcceptableDocument(summary.summaryId(), editable);
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    boolean editable = caller.allows(trackStatus);
+    return buildOtherAcceptableDocument(summary.summaryId(), editable, trackStatus);
   }
 
   /**
@@ -507,7 +603,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -547,7 +644,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -575,7 +673,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotDeletedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** How one batch-save row maps onto the stored rows during reconcile. */
@@ -681,7 +780,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildOtherAcceptableDocument(summaryId, true);
+    return buildOtherAcceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** The TOT row for a group id under this summary, or {@link OtherCostNotFoundException} (404). */
@@ -728,7 +828,12 @@ public class Schedule3Service {
    * Assemble the Other Acceptable document: pair TOT+PO&P rows by group key, derive crown +
    * subtotal.
    */
-  private OtherAcceptableDocument buildOtherAcceptableDocument(int summaryId, boolean editable) {
+  private OtherAcceptableDocument buildOtherAcceptableDocument(
+      int summaryId, boolean editable, String trackStatus) {
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
+        originalValues.exposesOriginalValues(trackStatus)
+            ? indexSnapshotsByDetailId(costSnapshots.findBySummary(summaryId))
+            : Map.of();
     List<SubPageRow> rows = repository.findSubPageRows(summaryId, CODE_OTHER_ACCEPTABLE);
     Map<String, SubPageRow[]> groups = new LinkedHashMap<>(); // key -> [tot, pop]
     for (SubPageRow row : rows) {
@@ -761,7 +866,35 @@ public class Schedule3Service {
               tot.itemDescription(),
               tot.cost(),
               popCost,
-              otherAcceptableCrown(tot.cost(), popCost)));
+              otherAcceptableCrown(tot.cost(), popCost),
+              // Description, Harvest total and PO&P all carry submitted originals
+              // (Schedule3DAO.java:357-381). Crown is derived from the other two.
+              originalValues
+                  .forTrack(trackStatus)
+                  .put(
+                      "description",
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
+                      OriginalValueFormat.TEXT)
+                  .put(
+                      "total",
+                      snapshotField(
+                          snapshotByDetailId,
+                          tot.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .put(
+                      "pop",
+                      pair[1] == null
+                          ? null
+                          : snapshotField(
+                              snapshotByDetailId,
+                              pair[1].detailId(),
+                              CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .build()));
       harvest += nullToZero(tot.cost());
       pop += nullToZero(popCost);
     }
@@ -779,8 +912,9 @@ public class Schedule3Service {
       long millId, int year, EditableStatuses caller) {
     SummaryRow summary =
         repository.findSummary(millId, year).orElseThrow(ScheduleNotFoundException::new);
-    boolean editable = caller.allows(repository.findTrackStatus(millId, year).orElse(null));
-    return buildUnacceptableDocument(summary.summaryId(), editable);
+    String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
+    boolean editable = caller.allows(trackStatus);
+    return buildUnacceptableDocument(summary.summaryId(), editable, trackStatus);
   }
 
   /** Add one Included Unacceptable row (item 38, null comments). editability-gated. */
@@ -801,7 +935,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -836,7 +971,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -864,7 +1000,8 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotDeletedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -920,16 +1057,45 @@ public class Schedule3Service {
           ex.getClass().getSimpleName());
       throw new ScheduleNotSavedException();
     }
-    return buildUnacceptableDocument(summaryId, true);
+    return buildUnacceptableDocument(
+        summaryId, true, repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /** Assemble the Included Unacceptable document (item-38 rows + subtotal + Annual Rents S111). */
-  private UnacceptableDocument buildUnacceptableDocument(int summaryId, boolean editable) {
+  private UnacceptableDocument buildUnacceptableDocument(
+      int summaryId, boolean editable, String trackStatus) {
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId =
+        originalValues.exposesOriginalValues(trackStatus)
+            ? indexSnapshotsByDetailId(costSnapshots.findBySummary(summaryId))
+            : Map.of();
     List<SubPageRow> rows = repository.findSubPageRows(summaryId, CODE_UNACCEPTABLE);
     List<UnacceptableRow> rowDtos = new ArrayList<>();
     long rowsTotal = 0L;
     for (SubPageRow row : rows) {
-      rowDtos.add(new UnacceptableRow(row.detailId(), row.itemDescription(), row.cost()));
+      rowDtos.add(
+          new UnacceptableRow(
+              row.detailId(),
+              row.itemDescription(),
+              row.cost(),
+              // Description and total, the two fields legacy's row template flagged
+              // (Schedule3DAO.java:288-292 via DescriptionTotalType).
+              originalValues
+                  .forTrack(trackStatus)
+                  .put(
+                      "description",
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::itemDescription),
+                      OriginalValueFormat.TEXT)
+                  .put(
+                      "total",
+                      snapshotField(
+                          snapshotByDetailId,
+                          row.detailId(),
+                          CostDetailSnapshotRepository.Row::cost),
+                      OriginalValueFormat.WHOLE)
+                  .build()));
       rowsTotal += nullToZero(row.cost());
     }
     Integer annualRents = firstCost(summaryId, CODE_ANNUAL_RENTS);
@@ -1399,5 +1565,84 @@ public class Schedule3Service {
 
   private static long nullToZero(Integer value) {
     return value == null ? 0L : value;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Original-value helpers (Story 16.2). One place per index shape, so a schedule with three
+  // different ways of addressing a cost row cannot key one of them wrongly.
+  // -------------------------------------------------------------------------------------------
+
+  /** Submitted cost-detail rows by cost item — the fixed lines and the two timber volumes. */
+  private static Map<Integer, CostDetailSnapshotRepository.Row> indexSnapshots(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    Map<Integer, CostDetailSnapshotRepository.Row> byCode = new HashMap<>();
+    for (CostDetailSnapshotRepository.Row row : rows) {
+      if (row.costItemCode() != null) {
+        byCode.putIfAbsent(row.costItemCode(), row);
+      }
+    }
+    return byCode;
+  }
+
+  /**
+   * Submitted cost-detail rows by their own detail id — the sub-page rows, which all share one cost
+   * item (124 or 38) and so cannot be addressed by it.
+   */
+  private static Map<Integer, CostDetailSnapshotRepository.Row> indexSnapshotsByDetailId(
+      List<CostDetailSnapshotRepository.Row> rows) {
+    Map<Integer, CostDetailSnapshotRepository.Row> byId = new HashMap<>();
+    for (CostDetailSnapshotRepository.Row row : rows) {
+      if (row.detailId() != null) {
+        byId.putIfAbsent(row.detailId(), row);
+      }
+    }
+    return byId;
+  }
+
+  /** One field of one submitted row, or null when that row is not on file. */
+  private static <T> T snapshotField(
+      Map<Integer, CostDetailSnapshotRepository.Row> byId,
+      Integer detailId,
+      java.util.function.Function<CostDetailSnapshotRepository.Row, T> field) {
+    CostDetailSnapshotRepository.Row row = detailId == null ? null : byId.get(detailId);
+    return row == null ? null : field.apply(row);
+  }
+
+  /**
+   * One fixed line's submitted figures: its Harvest cost always, and its PO&amp;P cost only when
+   * the line HAS a stored PO&amp;P item. That is exactly {@code popCode != null}, so the three
+   * lines legacy left without a PO&amp;P original need no special case here — Annual Rents (29) and
+   * Silviculture Admin (37) force PO&amp;P to zero and Scaling (33) derives it from the
+   * timber-volume ratio, so none of the three has a PO&amp;P row to have submitted.
+   */
+  private Map<String, OriginalValue> lineOriginals(
+      String trackStatus,
+      LineSpec spec,
+      Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode) {
+    OriginalValues.Builder builder =
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "harvest",
+                costOfSnapshot(snapshotByCode.get(spec.code())),
+                OriginalValueFormat.WHOLE);
+    if (spec.popCode() != null) {
+      builder.put(
+          "pop", costOfSnapshot(snapshotByCode.get(spec.popCode())), OriginalValueFormat.WHOLE);
+    }
+    return builder.build();
+  }
+
+  /** A submitted volume, for the two entered timber volumes. */
+  private Map<String, OriginalValue> volumeOriginal(
+      String trackStatus, CostDetailSnapshotRepository.Row snapshot) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("volume", snapshot == null ? null : snapshot.volume(), OriginalValueFormat.WHOLE)
+        .build();
+  }
+
+  private static Integer costOfSnapshot(CostDetailSnapshotRepository.Row row) {
+    return row == null ? null : row.cost();
   }
 }

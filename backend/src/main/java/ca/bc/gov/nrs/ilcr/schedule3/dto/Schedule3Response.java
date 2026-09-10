@@ -1,7 +1,9 @@
 package ca.bc.gov.nrs.ilcr.schedule3.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Schedule 3 aggregate document (AD-5, AD-12) — the pinned GET response for the Forest
@@ -48,6 +50,7 @@ public record Schedule3Response(
     Integer revisionCount,
     String overrideHarvestTotalPop,
     String comments,
+    Map<String, OriginalValue> originalValues,
     List<CostLine> lineItems,
     TimberBlock popTimber,
     TimberBlock crownTimber,
@@ -71,6 +74,7 @@ public record Schedule3Response(
         revisionCount,
         overrideHarvestTotalPop,
         comments,
+        originalValues,
         lineItems,
         popTimber,
         crownTimber,
@@ -98,6 +102,7 @@ public record Schedule3Response(
         revisionCount,
         overrideHarvestTotalPop,
         comments,
+        originalValues,
         lineItems,
         popTimber,
         crownTimber,
