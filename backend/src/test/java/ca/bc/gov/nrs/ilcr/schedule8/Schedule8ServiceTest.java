@@ -1,25 +1,37 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Options;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8Response;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -37,6 +49,14 @@ class Schedule8ServiceTest {
   private static final int YEAR = 2021;
 
   @Mock private Schedule8Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule8Service service;
 
@@ -317,5 +337,110 @@ class Schedule8ServiceTest {
     assertEquals(0, sample.deductionCount());
     eq("0", sample.additionsTotal());
     eq("25.5", sample.finalRate()); // originalRate only
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft the page, its sample and its rate rows each carry their own keys")
+    void beyondDraftServesAllThreeLevels() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR))
+          .thenReturn(List.of(rate(8700, 8600, "CT1", 82, "Add A", "5.00")));
+      when(repository.findPageSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.PageSnapshotRow(
+                      8500,
+                      "Div",
+                      "L1",
+                      "Contact",
+                      "222-222-2222",
+                      "CP",
+                      "SC",
+                      "R",
+                      "BEC",
+                      "07",
+                      null,
+                      null,
+                      "page note")));
+      when(repository.findSampleSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.SampleSnapshotRow(
+                      8600,
+                      "C1",
+                      "B1",
+                      60,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      new BigDecimal("1.5"),
+                      "Y",
+                      "N",
+                      "S",
+                      null,
+                      null,
+                      new BigDecimal("12.34"))));
+      when(repository.findRateSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule8Repository.RateSnapshotRow(
+                      8700, 82, "Add A", new BigDecimal("4.00"), "CT1")));
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0);
+      Sample servedSample = servedPage.samples().get(0);
+
+      // Legacy draws twelve indicators on a page, nineteen on a sample and four on a rate row.
+      assertThat(servedPage.originalValues()).containsKeys("division", "license", "comments");
+      assertThat(servedSample.originalValues())
+          .containsKeys("contractId", "cutBlock", "groundBasePct", "cycleTime", "originalRate");
+      // D3: uphill and water dump come from their OWN columns, which legacy crossed.
+      assertThat(servedSample.originalValues().get("uphillDirection").tooltip())
+          .isEqualTo("Original Submission Value: Uphill");
+      assertThat(servedSample.originalValues().get("waterDumpDestination").tooltip())
+          .isEqualTo("Original Submission Value: Land Dump");
+      assertThat(servedSample.additions().get(0).originalValues())
+          .containsOnlyKeys("costItemCode", "itemDescription", "costingRate", "costTypeCode");
+    }
+
+    @Test
+    @DisplayName("a sample with nothing on file gets an empty map, not a null one")
+    void noSnapshotIsEmptyNotNull() {
+      // Empty-not-null is what tells the page to evaluate the added-since-submission branch for
+      // every field; a null map would suppress the indicators altogether, which is the Draft
+      // answer.
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("V"));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(8500)));
+      when(repository.findSamples(MILL, YEAR)).thenReturn(List.of(sample(8600, 8500)));
+      when(repository.findRateRows(MILL, YEAR)).thenReturn(List.of());
+
+      Sample servedSample =
+          service.getSchedule8(MILL, YEAR, CallerRights.ADMIN).pages().get(0).samples().get(0);
+
+      assertThat(servedSample.originalValues()).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      stubOnePageOneSample();
+
+      Page servedPage = service.getSchedule8(MILL, YEAR, CallerRights.SUBMITTER).pages().get(0);
+
+      assertThat(servedPage.originalValues()).isNull();
+      assertThat(servedPage.samples().get(0).originalValues()).isNull();
+      verify(repository, never()).findPageSnapshots(anyLong(), anyInt());
+    }
   }
 }

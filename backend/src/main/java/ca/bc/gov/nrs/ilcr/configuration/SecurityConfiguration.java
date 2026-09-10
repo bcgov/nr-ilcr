@@ -28,6 +28,9 @@ public class SecurityConfiguration {
    * @param http the HttpSecurity to configure
    * @param securityEnabled whether security is enabled
    * @param mockRoleName the mock role name to use when security is disabled
+   * @param mockUserGuid the stand-in directory GUID the mock principal presents, so the
+   *     identity-scoped Home mill list (Story 5.5) resolves for a mock submitter instead of
+   *     fail-closing to an empty list
    * @param cognitoGroupsConverter the converter for Cognito groups
    * @return the configured security filter chain
    * @throws Exception if an error occurs during configuration
@@ -43,6 +46,8 @@ public class SecurityConfiguration {
       HttpSecurity http,
       @Value("${ilcr.security.enabled:false}") boolean securityEnabled,
       @Value("${ilcr.security.mock-role:ILCR_SUBMITTER}") String mockRoleName,
+      @Value("${ilcr.security.mock-user-guid:CANONSUBMITTERBBBBCCCCDDDD000001}")
+          String mockUserGuid,
       CognitoGroupsJwtAuthenticationConverter cognitoGroupsConverter)
       throws Exception {
     http.csrf(AbstractHttpConfigurer::disable)
@@ -102,7 +107,7 @@ public class SecurityConfiguration {
       // still evaluates against the mock authority.
       Role mockRole = Role.fromValue(mockRoleName);
       http.addFilterBefore(
-          new MockPrincipalFilter(mockRole != null ? mockRole : Role.SUBMITTER),
+          new MockPrincipalFilter(mockRole != null ? mockRole : Role.SUBMITTER, mockUserGuid),
           UsernamePasswordAuthenticationFilter.class);
       http.authorizeHttpRequests(
           authorize ->

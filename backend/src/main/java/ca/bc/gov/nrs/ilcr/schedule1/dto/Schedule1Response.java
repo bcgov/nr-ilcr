@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule1.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Schedule 1 aggregate document (AD-5, AD-12) — the pinned GET response. All derived/read-only
@@ -17,6 +19,13 @@ import java.util.List;
  * WRN-001 (crown pre-fill) rides on {@code warnings}. {@code forestMgmtAdminCost} and {@code
  * lessSilvAdminCost} are the BR-04 costs pulled from Schedule 3 (not from Schedule 1's own rows)
  * and are ignored on write.
+ *
+ * <p>Story 16.2 adds {@code originalValues} — the licensee's submitted values for the
+ * document-level fields, carried once the track has left Draft and null at Draft (BR-04). Only
+ * {@code comments} appears here; every entered figure's original rides on its own {@link LineItem},
+ * {@link OtherCostsSummary} or {@link OtherCostRow}. {@code crownVolume} gets none: the snapshot
+ * view exposes the column but no legacy DAO read it and no legacy screen rendered an indicator for
+ * it (deviation D9).
  */
 public record Schedule1Response(
     long millId,
@@ -27,6 +36,7 @@ public record Schedule1Response(
     BigDecimal schedule3CrownVolume,
     Integer revisionCount,
     String comments,
+    Map<String, OriginalValue> originalValues,
     List<LineItem> lineItems,
     SilvicultureBlock silviculture,
     Long forestMgmtAdminCost,
@@ -61,6 +71,7 @@ public record Schedule1Response(
         schedule3CrownVolume,
         revisionCount,
         comments,
+        originalValues,
         lineItems,
         silviculture,
         forestMgmtAdminCost,

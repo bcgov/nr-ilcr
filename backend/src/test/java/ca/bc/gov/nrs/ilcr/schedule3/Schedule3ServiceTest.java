@@ -11,19 +11,29 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.CostLine;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.OtherAcceptableDocument;
 import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
+import ca.bc.gov.nrs.ilcr.schedule3.dto.UnacceptableDocument;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -42,6 +52,14 @@ class Schedule3ServiceTest {
   @Mock private ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service schedule1Service;
 
   @Mock private org.springframework.context.MessageSource messageSource;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule3Service service;
 
@@ -274,5 +292,178 @@ class Schedule3ServiceTest {
   void editable_falseWhenCallerMayNotEdit() {
     stub("D", "N", List.of());
     assertFalse(service.getSchedule3(MILL, YEAR, CallerRights.NONE).editable());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). The gate itself is OriginalValuesTest's; what is pinned
+  // here is Schedule 3's own mapping — which cost item each field reads its snapshot from, and
+  // which fields carry one. A fixed line reads two DIFFERENT items (its Harvest code and its
+  // PO&P code) and the sub-page rows key by detail id rather than by item, so a key slip is
+  // invisible to every other assertion in this class.
+  // -----------------------------------------------------------------------------------------
+
+  private static final int SUMMARY_ID = 1003;
+
+  /** A submitted cost-detail row keyed by cost item — the fixed lines and timber volumes. */
+  private static CostDetailSnapshotRepository.Row byItem(
+      int costItemCode, String vol, Integer cost) {
+    return new CostDetailSnapshotRepository.Row(
+        900 + costItemCode,
+        (long) SUMMARY_ID,
+        costItemCode,
+        vol == null ? null : new BigDecimal(vol),
+        cost,
+        null,
+        null);
+  }
+
+  /** A submitted sub-page row, addressed by its own detail id (item 19 repeats within a parent). */
+  private static CostDetailSnapshotRepository.Row byDetail(
+      int detailId, int costItemCode, Integer cost, String description) {
+    return new CostDetailSnapshotRepository.Row(
+        detailId, (long) SUMMARY_ID, costItemCode, null, cost, description, null);
+  }
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    OriginalValue original = originals.get(field);
+    assertNotNull(original, () -> "no original for " + field + " in " + originals.keySet());
+    assertEquals(value, original.value());
+    assertEquals(OriginalValuesFixture.tooltip(formatted), original.tooltip());
+  }
+
+  @Test
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stub("D", "N", List.of(cost(27, 100000), cost(125, 40000), volume(118, "54321")));
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
+    assertNull(doc.originalValues(), "Draft must serve no original-value map at all");
+    assertNull(line(doc, 27).originalValues());
+    assertNull(doc.popTimber().originalValues());
+    verify(costSnapshots, never()).findBySummary(anyInt());
+    verify(summarySnapshots, never()).findBySummaryId(anyInt());
+  }
+
+  @Test
+  void originalValues_fixedLine_harvestAndPopReadTheirOwnCostItems() {
+    stub("S", "N", List.of(cost(27, 100000), cost(125, 40000)));
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(List.of(byItem(27, null, 95000), byItem(125, null, 38000)));
+
+    CostLine licenses = line(service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER), 27);
+
+    // Harvest comes from item 27, PO&P from item 125 — swapping the two would still populate both
+    // keys, so both values are asserted, not merely their presence.
+    assertOriginal(licenses.originalValues(), "harvest", "95000", "95,000");
+    assertOriginal(licenses.originalValues(), "pop", "38000", "38,000");
+  }
+
+  @Test
+  void originalValues_harvestOnlyLines_carryNoPopKey() {
+    // Annual Rents (29) and Silviculture Admin (37) force PO&P to zero and Scaling (33) derives it,
+    // so none of the three has a PO&P item to have submitted — the key must stay absent, which is
+    // what tells the client "no original on file" rather than "submitted as blank".
+    stub("S", "N", List.of(cost(29, 30000), cost(33, 60000), cost(37, 150000)));
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(
+            List.of(byItem(29, null, 28000), byItem(33, null, 55000), byItem(37, null, 140000)));
+
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertEquals(Set.of("harvest"), line(doc, 29).originalValues().keySet());
+    assertEquals(Set.of("harvest"), line(doc, 33).originalValues().keySet());
+    assertEquals(Set.of("harvest"), line(doc, 37).originalValues().keySet());
+    assertOriginal(line(doc, 29).originalValues(), "harvest", "28000", "28,000");
+  }
+
+  @Test
+  void originalValues_timberVolumes_readItems118And119() {
+    stub("S", "N", List.of(volume(118, "54321"), volume(119, "12000")));
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(List.of(byItem(118, "50000.0", null), byItem(119, "11000", null)));
+
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
+
+    // The two ENTERED volumes carry an original; their costs are derived totals and carry none.
+    assertOriginal(doc.popTimber().originalValues(), "volume", "50000", "50,000");
+    assertEquals(Set.of("volume"), doc.popTimber().originalValues().keySet());
+    assertOriginal(doc.crownTimber().originalValues(), "volume", "11000", "11,000");
+    // Total Overhead is derived outright — no map at all.
+    assertNull(doc.totalOverhead().originalValues());
+  }
+
+  @Test
+  void originalValues_summary_carriesCommentsAndTheOverrideFlag() {
+    stub("S", "Y", List.of());
+    when(summarySnapshots.findBySummaryId(SUMMARY_ID))
+        .thenReturn(
+            Optional.of(
+                new ReportSummarySnapshotRepository.Snapshot(null, "N", "submitted comment")));
+
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertOriginal(doc.originalValues(), "comments", "submitted comment", "submitted comment");
+    // Not a location: Schedule 3 stores the override-total-PO&P flag in the summary LOCATION
+    // column, and the submitted "N" here differs from the current "Y" the stub carries.
+    assertOriginal(doc.originalValues(), "overrideHarvestTotalPop", "N", "N");
+  }
+
+  @Test
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    stub("S", "N", List.of(cost(27, 100000)));
+    when(costSnapshots.findBySummary(SUMMARY_ID)).thenReturn(List.of());
+    when(summarySnapshots.findBySummaryId(SUMMARY_ID)).thenReturn(Optional.empty());
+
+    Schedule3Response doc = service.getSchedule3(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNotNull(doc.originalValues());
+    assertTrue(doc.originalValues().isEmpty());
+    assertNotNull(line(doc, 27).originalValues());
+    assertTrue(line(doc, 27).originalValues().isEmpty());
+  }
+
+  @Test
+  void originalValues_otherAcceptableRow_keyedByDetailId_popFromThePopRow() {
+    // The TOT row's description + harvest total, and the PO&P PEER row's cost, all addressed by
+    // detail id — item 124 repeats within the summary, so a code-keyed lookup would collide.
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "N", "comment", 0)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findSubPageRows(SUMMARY_ID, 124))
+        .thenReturn(
+            List.of(
+                new Schedule3Repository.SubPageRow(501, 10000, "Fuel", "SCH3_2_TOT_GRP1"),
+                new Schedule3Repository.SubPageRow(502, 4000, "Fuel", "SCH3_2_POP_GRP1")));
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(
+            List.of(byDetail(501, 124, 9000, "Diesel"), byDetail(502, 124, 3500, "Diesel")));
+
+    OtherAcceptableDocument doc =
+        service.getOtherAcceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
+
+    Map<String, OriginalValue> originals = doc.rows().get(0).originalValues();
+    assertOriginal(originals, "description", "Diesel", "Diesel");
+    assertOriginal(originals, "total", "9000", "9,000"); // detail 501, the TOT row
+    assertOriginal(originals, "pop", "3500", "3,500"); // detail 502, the PO&P peer
+    // Crown is derived from the other two and never carries one.
+    assertEquals(Set.of("description", "total", "pop"), originals.keySet());
+  }
+
+  @Test
+  void originalValues_unacceptableRow_keyedByDetailId() {
+    when(repository.findSummary(MILL, YEAR))
+        .thenReturn(Optional.of(new SummaryRow(SUMMARY_ID, "N", "comment", 0)));
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findSubPageRows(SUMMARY_ID, 38))
+        .thenReturn(List.of(new Schedule3Repository.SubPageRow(601, 1000, "Fine A", null)));
+    when(costSnapshots.findBySummary(SUMMARY_ID))
+        .thenReturn(List.of(byDetail(601, 38, 800, "Penalty A")));
+    lenient().when(repository.findDetails(SUMMARY_ID)).thenReturn(List.of());
+
+    UnacceptableDocument doc = service.getUnacceptableDocument(MILL, YEAR, CallerRights.SUBMITTER);
+
+    Map<String, OriginalValue> originals = doc.rows().get(0).originalValues();
+    assertOriginal(originals, "description", "Penalty A", "Penalty A");
+    assertOriginal(originals, "total", "800", "800");
+    assertEquals(Set.of("description", "total"), originals.keySet());
   }
 }

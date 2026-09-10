@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.WorkingContext;
 import ca.bc.gov.nrs.ilcr.security.JwtRoleChecker;
+import ca.bc.gov.nrs.ilcr.security.MockUserPrincipal;
 import ca.bc.gov.nrs.ilcr.util.JwtPrincipalUtil;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -45,15 +46,28 @@ public class MillContextController implements MillContextApi {
 
   /**
    * The caller's raw {@code custom:idp_user_id} directory GUID (the {@code ILCR_MILL_USER_XREF}
-   * association key), or {@code ""} when unavailable — i.e. the dev mock principal, which is a
-   * {@code UsernamePasswordAuthenticationToken} carrying no JWT claims. Blank ⇒ a submitter is
+   * association key), or the stand-in GUID carried by a dev {@link MockUserPrincipal}. Any other
+   * principal has no usable directory identity and returns {@code ""}; blank ⇒ a submitter is
    * scoped to an empty list (fail-closed) by {@link MillContextService#listMills(boolean, String)}.
    */
   private static String currentUserGuid() {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+    if (auth == null) {
+      return "";
+    }
+    if (auth.getPrincipal() instanceof Jwt jwt) {
       return JwtPrincipalUtil.getIdpUserId(jwt);
     }
+    // Dev/UAT mock principal (security off): MockPrincipalFilter presents a MockUserPrincipal
+    // carrying a stand-in directory GUID — not as the principal NAME, which feeds the
+    // VARCHAR2(30) audit columns (a FAM GUID is 32 chars). Without it the mock fail-closed to an
+    // empty mill list, so only ILCR_ADMIN saw any mill; once Story 16.1 took Draft editing from
+    // admins, no single role could run the e2e suite. Unreachable when deployed: that filter is
+    // not registered then.
+    if (auth.getPrincipal() instanceof MockUserPrincipal mock) {
+      return mock.userGuid();
+    }
+    // Any other non-Jwt principal carries no identity we can scope by: fail closed, never all.
     return "";
   }
 

@@ -94,6 +94,7 @@ class Schedule1SectionMapperTest {
             null,
             0,
             null,
+            null, // originalValues — Draft, so none
             List.of(), // no line items
             null, // no silviculture
             25_000L, // forestMgmtAdminCost (Schedule-3 pull)
@@ -147,7 +148,8 @@ class Schedule1SectionMapperTest {
         code,
         vol == null ? null : new BigDecimal(vol),
         cost,
-        perUnit == null ? null : new BigDecimal(perUnit));
+        perUnit == null ? null : new BigDecimal(perUnit),
+        null);
   }
 
   private static Schedule1Response fullResponse() {
@@ -177,6 +179,7 @@ class Schedule1SectionMapperTest {
         new BigDecimal("12345"), // schedule3CrownVolume
         0,
         "See the notes",
+        null, // originalValues — Draft, so none
         lineItems,
         silv,
         25_000L, // forestMgmtAdminCost (143 cost — Schedule 3 pull)
@@ -201,8 +204,8 @@ class Schedule1SectionMapperTest {
         new BigDecimal("0.24"),
         2,
         List.of(
-            new OtherCostRow(1, "Aerial survey", 1_200, new BigDecimal("0.10")),
-            new OtherCostRow(2, "Consulting", 1_800, new BigDecimal("0.14"))),
+            new OtherCostRow(1, "Aerial survey", 1_200, new BigDecimal("0.10"), null),
+            new OtherCostRow(2, "Consulting", 1_800, new BigDecimal("0.14"), null)),
         false,
         null);
   }

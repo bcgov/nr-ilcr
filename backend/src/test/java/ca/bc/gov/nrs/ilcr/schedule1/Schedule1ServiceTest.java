@@ -13,6 +13,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Repository.SummaryRow;
 import ca.bc.gov.nrs.ilcr.schedule1.dto.LineItem;
@@ -20,6 +23,7 @@ import ca.bc.gov.nrs.ilcr.schedule1.dto.Schedule1Response;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule3.Schedule3CostDerivation.Schedule1Sources;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
@@ -28,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 
@@ -50,6 +55,14 @@ class Schedule1ServiceTest {
   @Mock private Schedule3CostDerivation schedule3CostDerivation;
 
   @Mock private MessageSource messageSource;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", and a mock would make every
+  // original-value assertion below an assertion about the mock (Story 16.2).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule1Service service;
 

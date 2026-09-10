@@ -119,7 +119,7 @@ test('mock-user preflight: the seeded id still reaches the backend as a role', a
     source,
     `${API_SERVICE_TS} no longer sends the ${MOCK_GROUPS_HEADER} header, so the browser no longer `
       + "drives the backend principal at all: every request falls back to the backend's mock-role "
-      + 'property, AND `grantAdminOnMillList` — which rewrites that header to reach the Home mill '
-      + 'list — silently stops having any effect, leaving the dropdown empty',
+      + 'property — a DIFFERENT identity, chosen by a property nobody editing this suite would '
+      + 'think to look at, and one whose role need not match the seeded mock user',
   ).toContain(MOCK_GROUPS_HEADER);
 });
