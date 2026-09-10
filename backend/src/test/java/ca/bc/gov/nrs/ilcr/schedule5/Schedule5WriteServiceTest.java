@@ -18,9 +18,12 @@ import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CampRequest;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.CategoryEntry;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
@@ -70,11 +73,16 @@ class Schedule5WriteServiceTest {
 
   @Mock private Schedule5Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule5Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule5Service(repository);
+    service = new Schedule5Service(repository, originalValues, costSnapshots);
     // Draft by default; the document rebuild at the end of every write reads an empty mill. These
     // four are lenient() INDIVIDUALLY — the rejection tests never reach the rebuild, so class-wide
     // LENIENT would be the alternative, and that would also disable unnecessary-stubbing detection

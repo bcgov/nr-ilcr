@@ -260,7 +260,7 @@ class Schedule4ServiceTest {
       int reportId, int costItemCode, String volume, Integer cost, String description) {
     return new CostDetailSnapshotRepository.Row(
         reportId * 10 + costItemCode,
-        reportId,
+        (long) reportId,
         costItemCode,
         volume == null ? null : new BigDecimal(volume),
         cost,
@@ -313,7 +313,7 @@ class Schedule4ServiceTest {
                 new TransportationSnapshotRow(7001, "Harbour Dock", null, null, "old comment"),
                 new TransportationSnapshotRow(
                     7011, "Harbour Dock", new BigDecimal("110.5"), null, null)));
-    when(costSnapshots.findByTransportationReports(List.of(7001, 7011)))
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L)))
         .thenReturn(
             List.of(
                 snapshotDetail(7001, 40, "1900", 95000, null),
@@ -343,7 +343,7 @@ class Schedule4ServiceTest {
                 new TransportationSnapshotRow(7001, "Harbour Dock", null, null, null),
                 new TransportationSnapshotRow(
                     7011, "Harbour Dock", new BigDecimal("110.5"), null, null)));
-    when(costSnapshots.findByTransportationReports(List.of(7001, 7011)))
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L)))
         .thenReturn(List.of(snapshotDetail(7011, 47, "450", 22000, null)));
 
     Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
@@ -383,7 +383,7 @@ class Schedule4ServiceTest {
                 new TransportationSnapshotRow(7001, "Harbour Dock", null, null, null),
                 new TransportationSnapshotRow(
                     7046, "Harbour Dock", new BigDecimal("28.5"), new BigDecimal("6.5"), null)));
-    when(costSnapshots.findByTransportationReports(List.of(7001, 7046)))
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7046L)))
         .thenReturn(List.of(snapshotDetail(7046, 46, "750", 11000, "Rehaul Original")));
 
     Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
@@ -404,7 +404,7 @@ class Schedule4ServiceTest {
     // "value added since submission" branch per field, so the maps are empty rather than null.
     stubSubmittedFamily();
     when(repository.findTransportationSnapshots(MILL, YEAR)).thenReturn(List.of());
-    when(costSnapshots.findByTransportationReports(List.of(7001, 7011))).thenReturn(List.of());
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L))).thenReturn(List.of());
 
     Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
 

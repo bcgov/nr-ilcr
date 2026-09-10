@@ -1,12 +1,17 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableInt;
+
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC access to the legacy {@code THE} Schedule 10 tables (AD-3): explicit
@@ -941,4 +946,134 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
       Integer becId,
       String asmCode,
       String soilMoistureCode) {}
+
+  /**
+   * One submitted construction page from {@code THE.ROAD_CONSTRUCTION_REPRT_S_VW} (Story 16.2,
+   * BR-04).
+   */
+  record PageSnapshotRow(
+      int pageId,
+      String divisionName,
+      String constructionPeriod,
+      String forestRegionCode,
+      String tsaNumber,
+      String tsbNumberCode,
+      String tflNumberCode) {}
+
+  /**
+   * One submitted road detail from {@code THE.ROAD_CONSTRUCTN_RPT_DTL_S_VW} (Story 16.2, BR-04).
+   *
+   * <p>Three legacy fields are deliberately absent because the FIELDS are: ASM Code, Soil Moisture
+   * Code and Boulder Area % were removed from Schedule 10 by business direction (PRD LD-1/2/3), so
+   * there is nothing on this document for their indicators to decorate.
+   */
+  record DetailSnapshotRow(
+      int detailId,
+      String roadName,
+      String roadLifetimeCode,
+      Integer becCatalogueId,
+      String relSoilMoistRgmClsCode,
+      Integer sideSlopePct,
+      Integer solidRockPct,
+      Integer rippableRockPct,
+      Integer coarseMaterialPct,
+      Integer fineMaterialPct,
+      Integer organicMaterialPct,
+      BigDecimal subGradeLength,
+      BigDecimal subGradeSurfaceWidth,
+      String ballastMethodCode,
+      String ballastMaterialCode,
+      BigDecimal stabilizingLength,
+      BigDecimal stabilizingSurfaceWidth,
+      BigDecimal stabilizingDepth,
+      BigDecimal stabilizingDistanceToSource,
+      String detailEngineeringCostInd,
+      BigDecimal endHaulDistance,
+      BigDecimal endHaulVolume,
+      BigDecimal overlandDistance,
+      BigDecimal overlandVolume,
+      String comments) {}
+
+  /** Every submitted construction page for a mill/year (category "10"). */
+  @Query(
+      value =
+          """
+      SELECT ROAD_CONSTRUCTION_REPRT_ID, CONSTRUCTION_DIVISION_NAME, CONSTRUCTION_PERIOD,
+             ILCR_FOREST_REGION_CODE, TSA_NUMBER, TSB_NUMBER_CODE, TFL_NUMBER_CODE
+        FROM THE.ROAD_CONSTRUCTION_REPRT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = PageSnapshotRowMapper.class)
+  List<PageSnapshotRow> findPageSnapshots(@Param("millId") long millId, @Param("year") int year);
+
+  /** Every submitted road detail under a mill/year's construction pages. */
+  @Query(
+      value =
+          """
+      SELECT d.ROAD_CONSTRUCTION_REPRT_DTL_ID, d.ROAD_NAME, d.ILCR_ROAD_LIFETIME_CODE,
+             d.BECBIOGEO_CATALOGUE_ID, d.REL_SOIL_MOIST_RGM_CLS_CODE, d.SIDE_SLOPE_PCT,
+             d.SOLID_ROCK_PCT, d.RIPPABLE_ROCK_PCT, d.COARSE_MATERIAL_PCT, d.FINE_MATERIAL_PCT,
+             d.ORGANIC_MATERIAL_PCT, d.SUB_GRADE_LENGTH, d.SUB_GRADE_SURFACE_WIDTH,
+             d.ILCR_ROAD_BALLAST_METHOD_CODE, d.ILCR_ROAD_BALLAST_MATERL_CODE,
+             d.STABILIZING_LENGTH, d.STABILIZING_SURFACE_WIDTH, d.STABILIZING_DEPTH,
+             d.STABILIZING_DISTANCE_TO_SOURCE, d.DETAIL_ENGINEERING_COST_IND, d.END_HAUL_DISTANCE,
+             d.END_HAUL_VOLUME, d.OVERLAND_DISTANCE, d.OVERLAND_VOLUME, d.COMMENTS
+        FROM THE.ROAD_CONSTRUCTN_RPT_DTL_S_VW d
+        JOIN THE.ROAD_CONSTRUCTION_REPRT r
+          ON r.ROAD_CONSTRUCTION_REPRT_ID = d.ROAD_CONSTRUCTION_REPRT_ID
+       WHERE r.ILCR_MILL_ID = :millId
+         AND r.REPORT_YEAR = :year
+      """,
+      rowMapperClass = DetailSnapshotRowMapper.class)
+  List<DetailSnapshotRow> findDetailSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code ROAD_CONSTRUCTION_REPRT_S_VW} row. */
+  class PageSnapshotRowMapper implements RowMapper<PageSnapshotRow> {
+    @Override
+    public PageSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new PageSnapshotRow(
+          rs.getInt("ROAD_CONSTRUCTION_REPRT_ID"),
+          rs.getString("CONSTRUCTION_DIVISION_NAME"),
+          rs.getString("CONSTRUCTION_PERIOD"),
+          rs.getString("ILCR_FOREST_REGION_CODE"),
+          rs.getString("TSA_NUMBER"),
+          rs.getString("TSB_NUMBER_CODE"),
+          rs.getString("TFL_NUMBER_CODE"));
+    }
+  }
+
+  /** Maps a {@code ROAD_CONSTRUCTN_RPT_DTL_S_VW} row. */
+  class DetailSnapshotRowMapper implements RowMapper<DetailSnapshotRow> {
+    @Override
+    public DetailSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      return new DetailSnapshotRow(
+          rs.getInt("ROAD_CONSTRUCTION_REPRT_DTL_ID"),
+          rs.getString("ROAD_NAME"),
+          rs.getString("ILCR_ROAD_LIFETIME_CODE"),
+          nullableInt(rs, "BECBIOGEO_CATALOGUE_ID"),
+          rs.getString("REL_SOIL_MOIST_RGM_CLS_CODE"),
+          nullableInt(rs, "SIDE_SLOPE_PCT"),
+          nullableInt(rs, "SOLID_ROCK_PCT"),
+          nullableInt(rs, "RIPPABLE_ROCK_PCT"),
+          nullableInt(rs, "COARSE_MATERIAL_PCT"),
+          nullableInt(rs, "FINE_MATERIAL_PCT"),
+          nullableInt(rs, "ORGANIC_MATERIAL_PCT"),
+          rs.getBigDecimal("SUB_GRADE_LENGTH"),
+          rs.getBigDecimal("SUB_GRADE_SURFACE_WIDTH"),
+          rs.getString("ILCR_ROAD_BALLAST_METHOD_CODE"),
+          rs.getString("ILCR_ROAD_BALLAST_MATERL_CODE"),
+          rs.getBigDecimal("STABILIZING_LENGTH"),
+          rs.getBigDecimal("STABILIZING_SURFACE_WIDTH"),
+          rs.getBigDecimal("STABILIZING_DEPTH"),
+          rs.getBigDecimal("STABILIZING_DISTANCE_TO_SOURCE"),
+          rs.getString("DETAIL_ENGINEERING_COST_IND"),
+          rs.getBigDecimal("END_HAUL_DISTANCE"),
+          rs.getBigDecimal("END_HAUL_VOLUME"),
+          rs.getBigDecimal("OVERLAND_DISTANCE"),
+          rs.getBigDecimal("OVERLAND_VOLUME"),
+          rs.getString("COMMENTS"));
+    }
+  }
 }

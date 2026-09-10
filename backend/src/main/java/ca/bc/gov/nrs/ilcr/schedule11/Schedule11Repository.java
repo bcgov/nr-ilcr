@@ -1,11 +1,14 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import org.springframework.data.jdbc.repository.query.Modifying;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.jdbc.core.RowMapper;
 
 /**
  * Spring Data JDBC reads for the Schedule 11 locations document (AD-3: repository interface +
@@ -299,4 +302,47 @@ public interface Schedule11Repository extends Repository<SilvicultureLocationEnt
          AND ILCR_REPORT_COST_ITEM_ID = :costItemId
       """)
   void deleteCost(@Param("locationId") long locationId, @Param("costItemId") int costItemId);
+
+  /**
+   * One submitted silviculture location from {@code THE.BASIC_SILVICULTURE_REPORT_S_VW} (Story
+   * 16.2, BR-04).
+   *
+   * <p><b>The view carries only these four columns</b>, and that is the root cause of two legacy
+   * indicators that can never fire. {@code BASIC_SILVICULTURE_RPRT_AUD} stores {@code ENHANCED_IND}
+   * and {@code COMMENTS} but the view selects neither, so legacy's DAO substituted the CURRENT
+   * values ({@code Schedule11DAO.java:226,228}) and its enhanced-indicator comparison is therefore
+   * always equal. Widening the view is DDL on the delivery schema, outside the FAM-only sanction —
+   * so the behaviour is reproduced rather than fixed (deviation D5), and the enhanced-indicator key
+   * stays structurally present but never populated.
+   */
+  record LocationSnapshotRow(
+      long locationId, String location, Long biogeoclimaticCatalogueId, BigDecimal netArea) {}
+
+  /** Every submitted silviculture location for a mill/year. */
+  @Query(
+      value =
+          """
+      SELECT BASIC_SILVICULTURE_REPORT_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID,
+             REFORESTED_NET_AREA
+        FROM THE.BASIC_SILVICULTURE_REPORT_S_VW
+       WHERE ILCR_MILL_ID = :millId
+         AND REPORT_YEAR = :year
+      """,
+      rowMapperClass = LocationSnapshotRowMapper.class)
+  List<LocationSnapshotRow> findLocationSnapshots(
+      @Param("millId") long millId, @Param("year") int year);
+
+  /** Maps a {@code BASIC_SILVICULTURE_REPORT_S_VW} row. */
+  class LocationSnapshotRowMapper implements RowMapper<LocationSnapshotRow> {
+    @Override
+    public LocationSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
+      long catalogueId = rs.getLong("BECBIOGEOCLIMATIC_CATALOGUE_ID");
+      Long biogeoclimaticCatalogueId = rs.wasNull() ? null : catalogueId;
+      return new LocationSnapshotRow(
+          rs.getLong("BASIC_SILVICULTURE_REPORT_ID"),
+          rs.getString("LOCATION"),
+          biogeoclimaticCatalogueId,
+          rs.getBigDecimal("REFORESTED_NET_AREA"));
+    }
+  }
 }

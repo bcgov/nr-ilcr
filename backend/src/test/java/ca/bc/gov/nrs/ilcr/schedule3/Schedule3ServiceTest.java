@@ -309,7 +309,7 @@ class Schedule3ServiceTest {
       int costItemCode, String vol, Integer cost) {
     return new CostDetailSnapshotRepository.Row(
         900 + costItemCode,
-        SUMMARY_ID,
+        (long) SUMMARY_ID,
         costItemCode,
         vol == null ? null : new BigDecimal(vol),
         cost,
@@ -321,7 +321,7 @@ class Schedule3ServiceTest {
   private static CostDetailSnapshotRepository.Row byDetail(
       int detailId, int costItemCode, Integer cost, String description) {
     return new CostDetailSnapshotRepository.Row(
-        detailId, SUMMARY_ID, costItemCode, null, cost, description, null);
+        detailId, (long) SUMMARY_ID, costItemCode, null, cost, description, null);
   }
 
   private static void assertOriginal(

@@ -2,10 +2,14 @@ package ca.bc.gov.nrs.ilcr.schedule5;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.CampRow;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
@@ -77,6 +81,16 @@ public class Schedule5Service {
   static final String FIELD_ROAD_DISTANCE = "roadDistanceToOperatingArea";
   static final String FIELD_SIZE_OF_CAMP = "sizeOfCamp";
   static final String FIELD_ASSOCIATED_CAMP_VOLUME = "associatedCampVolume";
+
+  /**
+   * The two per-category original-value keys (Story 16.2). Named constants because every category
+   * on the page uses the same pair, and because they are the same field vocabulary the check-status
+   * keys above use — a rename has to move both together or the indicator stops addressing the cell
+   * its message names.
+   */
+  static final String FIELD_VOLUME = "volume";
+
+  static final String FIELD_COST = "cost";
   static final String FIELD_OTHER_CAMP_DESCRIPTION = "otherCampExpenseDescription";
   static final String FIELD_OTHER_CAMP_COST = "otherCampExpenseCost";
   static final String FIELD_OTHER_ACCESS_DESCRIPTION = "otherAccessExpenseDescription";
@@ -137,10 +151,17 @@ public class Schedule5Service {
           ITEM_OTHER_ACCESS_EXPENSES_VOLUME);
 
   private final Schedule5Repository repository;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
 
   /** Wires the Schedule 5 repository. */
-  public Schedule5Service(Schedule5Repository repository) {
+  public Schedule5Service(
+      Schedule5Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
   }
 
   /**
@@ -183,11 +204,35 @@ public class Schedule5Service {
     // camp: wrong money, silently. 7.2's write path makes that reachable in normal use.
     List<CampRow> campRows = repository.findCamps(millId, year);
     Map<Integer, CampDetails> detailsByCamp = groupDetails(millId, year);
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft; read once for every
+    // camp rather than per camp, so the page costs two queries however many camps it holds.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule5Repository.CampSnapshotRow> campSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, CostDetailSnapshotRepository.Row>> detailSnapshots = new HashMap<>();
+    if (exposeOriginals && !campRows.isEmpty()) {
+      for (Schedule5Repository.CampSnapshotRow snap : repository.findCampSnapshots(millId, year)) {
+        campSnapshots.putIfAbsent(snap.campId(), snap);
+      }
+      List<Long> campIds = campRows.stream().map(row -> (long) row.campId()).distinct().toList();
+      for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCampReports(campIds)) {
+        if (r.parentId() != null && r.costItemCode() != null) {
+          detailSnapshots
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
+              .putIfAbsent(r.costItemCode(), r);
+        }
+      }
+    }
     List<Camp> camps =
         campRows.stream()
             .map(
                 row ->
                     toCamp(
+                        new CampOriginals(
+                            originalValues,
+                            trackStatus,
+                            campSnapshots.get(row.campId()),
+                            detailSnapshots.getOrDefault((long) row.campId(), Map.of())),
                         millId,
                         year,
                         row,
@@ -279,13 +324,14 @@ public class Schedule5Service {
    * campTotal} would get {@code null - recoveries} and silently collapse {@code campAndAccessTotal}
    * to the Access total alone.
    */
-  private Camp toCamp(long millId, int year, CampRow row, CampDetails details) {
+  private Camp toCamp(
+      CampOriginals originals, long millId, int year, CampRow row, CampDetails details) {
     BigDecimal campVolume = row.associatedCampVolume();
 
-    CategoryAmount cateringAndFood = amount(details, ITEM_CATERING_AND_FOOD);
-    CategoryAmount wagesAndBenefits = amount(details, ITEM_WAGES_AND_BENEFITS);
-    CategoryAmount depreciationLease = amount(details, ITEM_DEPRECIATION_LEASE);
-    CategoryAmount generalCampExpenses = amount(details, ITEM_GENERAL_CAMP_EXPENSES);
+    CategoryAmount cateringAndFood = amount(details, ITEM_CATERING_AND_FOOD, originals);
+    CategoryAmount wagesAndBenefits = amount(details, ITEM_WAGES_AND_BENEFITS, originals);
+    CategoryAmount depreciationLease = amount(details, ITEM_DEPRECIATION_LEASE, originals);
+    CategoryAmount generalCampExpenses = amount(details, ITEM_GENERAL_CAMP_EXPENSES, originals);
 
     // Other Camp Expenses: volume is the STORED item-141 amount (never a sum of the rows); cost is
     // the sum of the item-62 row costs; $/m3 is per-term-rounded (see costPerVolumePerTerm).
@@ -295,10 +341,30 @@ public class Schedule5Service {
         new CategoryAmount(
             otherCampVolume,
             otherCampCost,
-            costPerVolumePerTerm(details.otherCampRows(), otherCampVolume));
+            costPerVolumePerTerm(details.otherCampRows(), otherCampVolume),
+            // Volume only. The volume is the stored item-141 amount and legacy set its original
+            // (Schedule5DAO.java:240); the cost is the SUM of the sub-page rows, so it has no
+            // snapshot column of its own and legacy set none.
+            originals
+                .builder()
+                .put(
+                    FIELD_VOLUME,
+                    originals.volume(ITEM_OTHER_CAMP_EXPENSES_VOLUME),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // Recoveries is the volume-less category: legacy sets cost only (Schedule5DAO.java:242-244).
-    CategoryAmount recoveries = new CategoryAmount(null, costOf(details, ITEM_RECOVERIES), null);
+    CategoryAmount recoveries =
+        new CategoryAmount(
+            null,
+            costOf(details, ITEM_RECOVERIES),
+            null,
+            // Cost only, matching legacy: Schedule5DAO.java:242-244 sets a cost original for
+            // Recoveries and no volume original, because the category has no volume.
+            originals
+                .builder()
+                .put(FIELD_COST, originals.cost(ITEM_RECOVERIES), OriginalValueFormat.WHOLE)
+                .build());
 
     // (1) Sub-Total over EXACTLY five costs — Recoveries excluded (CampReportType.java:335-347).
     Long campSubTotalCost =
@@ -316,11 +382,11 @@ public class Schedule5Service {
     CategoryAmount campTotal =
         derived(subtractCost(campSubTotalCost, recoveries.cost()), campVolume);
 
-    CategoryAmount crewTransportation = amount(details, ITEM_CREW_TRANSPORTATION);
-    CategoryAmount equipAndSuppliesLand = amount(details, ITEM_EQUIP_LAND);
-    CategoryAmount equipAndSuppliesRail = amount(details, ITEM_EQUIP_RAIL);
-    CategoryAmount equipAndSuppliesAir = amount(details, ITEM_EQUIP_AIR);
-    CategoryAmount equipAndSuppliesWater = amount(details, ITEM_EQUIP_WATER);
+    CategoryAmount crewTransportation = amount(details, ITEM_CREW_TRANSPORTATION, originals);
+    CategoryAmount equipAndSuppliesLand = amount(details, ITEM_EQUIP_LAND, originals);
+    CategoryAmount equipAndSuppliesRail = amount(details, ITEM_EQUIP_RAIL, originals);
+    CategoryAmount equipAndSuppliesAir = amount(details, ITEM_EQUIP_AIR, originals);
+    CategoryAmount equipAndSuppliesWater = amount(details, ITEM_EQUIP_WATER, originals);
 
     BigDecimal otherAccessVolume = volumeOf(details, ITEM_OTHER_ACCESS_EXPENSES_VOLUME);
     Long otherAccessCost = otherAccessExpensesCost(details.otherAccessRows());
@@ -328,7 +394,15 @@ public class Schedule5Service {
         new CategoryAmount(
             otherAccessVolume,
             otherAccessCost,
-            costPerVolumePerTerm(details.otherAccessRows(), otherAccessVolume));
+            costPerVolumePerTerm(details.otherAccessRows(), otherAccessVolume),
+            // Volume only, for the same reason (Schedule5DAO.java:281).
+            originals
+                .builder()
+                .put(
+                    FIELD_VOLUME,
+                    originals.volume(ITEM_OTHER_ACCESS_EXPENSES_VOLUME),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // (3) Access Expense Total over EXACTLY six costs (CampReportType.java:413-425). It sums the
     // CORRECT item-68 total; legacy's getOtherAccessExpenses() cross-wiring bug (:404-407, which
@@ -378,7 +452,36 @@ public class Schedule5Service {
         // cost still count (CampReportType.java:474-482; DescriptionCostVolumeType.
         // countTowardsTotal() exists for that case and is never called on the read path).
         details.otherCampRows().size(),
-        details.otherAccessRows().size());
+        details.otherAccessRows().size(),
+        // The camp's own attributes. Legacy declares NO original for a camp's comments
+        // (CampReportType.java:29 has the field and no commentsOriginalVal), so none is served.
+        // isolatedCamp is included through the SHARED rule rather than legacy's hand-rolled
+        // isIsolatedCampOriginalValue() (CampReportType.java:559), which took no isSubmit, bypassed
+        // CoreUtil, never flagged a camp that GAINED the flag on submit, and NPE'd on a null
+        // current value — deviation D6.
+        originals
+            .builder()
+            .put(
+                FIELD_CAMP_NAME,
+                originals.camp(Schedule5Repository.CampSnapshotRow::campName),
+                OriginalValueFormat.TEXT)
+            .put(
+                FIELD_ROAD_DISTANCE,
+                originals.camp(Schedule5Repository.CampSnapshotRow::distanceToOperatingArea),
+                OriginalValueFormat.ONE_DECIMAL)
+            .put(
+                FIELD_SIZE_OF_CAMP,
+                originals.camp(Schedule5Repository.CampSnapshotRow::sizeOfCamp),
+                OriginalValueFormat.WHOLE)
+            .put(
+                FIELD_ASSOCIATED_CAMP_VOLUME,
+                originals.camp(Schedule5Repository.CampSnapshotRow::associatedCampVolume),
+                OriginalValueFormat.WHOLE)
+            .put(
+                "isolatedCamp",
+                originals.camp(Schedule5Repository.CampSnapshotRow::isolatedCampInd),
+                OriginalValueFormat.YES_NO)
+            .build());
   }
 
   /**
@@ -405,17 +508,31 @@ public class Schedule5Service {
     return INDICATOR_YES.equals(row.isolatedCampInd());
   }
 
-  /** A stored category amount: volume and cost as saved, $/m&sup3; derived from the pair. */
-  private CategoryAmount amount(CampDetails details, int itemId) {
+  /**
+   * A stored category amount: volume and cost as saved, $/m&sup3; derived from the pair, and both
+   * submitted originals (legacy set the pair on all nine of these — {@code
+   * Schedule5DAO.java:214-274}).
+   *
+   * <p>An absent row still carries the map, because "no row stored" and "no value submitted" are
+   * different states: a category the licensee filled and the ministry then cleared must still show
+   * its indicator.
+   */
+  private CategoryAmount amount(CampDetails details, int itemId, CampOriginals originals) {
+    Map<String, OriginalValue> submitted =
+        originals
+            .builder()
+            .put(FIELD_VOLUME, originals.volume(itemId), OriginalValueFormat.WHOLE)
+            .put(FIELD_COST, originals.cost(itemId), OriginalValueFormat.WHOLE)
+            .build();
     DetailRow row = details.fixed().get(itemId);
     if (row == null) {
       // The category still exists in the response as an empty object — legacy pre-initializes every
       // CostVolumeType field, so an absent row reads as null cost/volume, not as a missing
       // category.
-      return new CategoryAmount(null, null, null);
+      return new CategoryAmount(null, null, null, submitted);
     }
     Long cost = row.cost() == null ? null : row.cost().longValue();
-    return new CategoryAmount(row.volume(), cost, costPerVolume(cost, row.volume()));
+    return new CategoryAmount(row.volume(), cost, costPerVolume(cost, row.volume()), submitted);
   }
 
   /** A derived total: the camp's associated volume, the computed cost, and their $/m&sup3;. */
@@ -1151,7 +1268,13 @@ public class Schedule5Service {
   public SubPageDocument getSubPage(
       long millId, int year, int campId, SubPage page, EditableStatuses caller) {
     CampRow camp = requireCamp(millId, year, campId);
-    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -1255,7 +1378,13 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -1293,7 +1422,13 @@ public class Schedule5Service {
           NestedExceptionUtils.getMostSpecificCause(ex).getMessage());
       throw new ScheduleNotSavedException();
     }
-    return buildSubPageDocument(millId, year, camp, page, subPageEditable(millId, year, caller));
+    return buildSubPageDocument(
+        millId,
+        year,
+        camp,
+        page,
+        subPageEditable(millId, year, caller),
+        repository.findTrackStatus(millId, year).orElse(null));
   }
 
   /**
@@ -1332,9 +1467,22 @@ public class Schedule5Service {
 
   /** Reads the rows back and assembles the document — never hand-patches a total. */
   private SubPageDocument buildSubPageDocument(
-      long millId, int year, CampRow camp, SubPage page, boolean editable) {
+      long millId, int year, CampRow camp, SubPage page, boolean editable, String trackStatus) {
     BigDecimal stampedVolume = stampedVolume(millId, year, camp.campId(), page);
     List<DetailRow> stored = repository.findSubPageRows(camp.campId(), page.itemId(), millId, year);
+
+    // The licensee's submitted rows, keyed by detail id: every row on this page shares one cost
+    // item (62 or 68), so the item cannot address them (Story 16.2).
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId = new HashMap<>();
+    if (originalValues.exposesOriginalValues(trackStatus)) {
+      for (CostDetailSnapshotRepository.Row r :
+          costSnapshots.findByCampReports(List.of((long) camp.campId()))) {
+        if (r.detailId() != null) {
+          snapshotByDetailId.putIfAbsent(r.detailId(), r);
+        }
+      }
+    }
+
     List<SubPageRow> rows =
         stored.stream()
             .map(
@@ -1345,7 +1493,8 @@ public class Schedule5Service {
                         stampedVolume,
                         row.cost(),
                         costPerVolume(
-                            row.cost() == null ? null : row.cost().longValue(), stampedVolume)))
+                            row.cost() == null ? null : row.cost().longValue(), stampedVolume),
+                        subPageRowOriginals(trackStatus, snapshotByDetailId.get(row.detailId()))))
             .toList();
     return new SubPageDocument(
         camp.campId(),
@@ -1430,5 +1579,63 @@ public class Schedule5Service {
             ? BigDecimal.ZERO
             : stampedVolume.multiply(BigDecimal.valueOf(rows.size()));
     return new CategoryAmount(summedVolume, cost, costPerVolume(cost, summedVolume));
+  }
+
+  /**
+   * One camp's submitted state, gathered so {@code toCamp} and its per-category helpers can ask for
+   * a field without each of them re-deciding how a snapshot is addressed (Story 16.2).
+   *
+   * @param gate the shared original-value component
+   * @param trackStatus the track's status, which decides whether anything is exposed at all
+   * @param camp the submitted camp attributes, or null when the camp is not in the snapshot
+   * @param byItem the submitted cost rows for this camp, keyed by cost item
+   */
+  private record CampOriginals(
+      OriginalValues gate,
+      String trackStatus,
+      Schedule5Repository.CampSnapshotRow camp,
+      Map<Integer, CostDetailSnapshotRepository.Row> byItem) {
+
+    /**
+     * A fresh builder for one object's map. Named {@code builder()}, not {@code build()}: the thing
+     * it returns is a builder, and the collected map comes from {@link
+     * OriginalValues.Builder#build()} at the end of the chain — {@code originals.build()...build()}
+     * read as though the same call were being made twice.
+     */
+    OriginalValues.Builder builder() {
+      return gate.forTrack(trackStatus);
+    }
+
+    Object volume(int itemId) {
+      CostDetailSnapshotRepository.Row row = byItem.get(itemId);
+      return row == null ? null : row.volume();
+    }
+
+    Object cost(int itemId) {
+      CostDetailSnapshotRepository.Row row = byItem.get(itemId);
+      return row == null ? null : row.cost();
+    }
+
+    <T> T camp(java.util.function.Function<Schedule5Repository.CampSnapshotRow, T> field) {
+      return camp == null ? null : field.apply(camp);
+    }
+  }
+
+  /**
+   * One sub-page row's submitted figures: description and cost only. The volume shown on these rows
+   * is the camp's stamped item-141/168 volume, shared by every row rather than stored per row, so
+   * legacy set no volume original for them ({@code Schedule5DAO.java:288-300} — description and
+   * cost, and nothing else).
+   */
+  private Map<String, OriginalValue> subPageRowOriginals(
+      String trackStatus, CostDetailSnapshotRepository.Row snapshot) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put(
+            "description",
+            snapshot == null ? null : snapshot.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put(FIELD_COST, snapshot == null ? null : snapshot.cost(), OriginalValueFormat.WHOLE)
+        .build();
   }
 }

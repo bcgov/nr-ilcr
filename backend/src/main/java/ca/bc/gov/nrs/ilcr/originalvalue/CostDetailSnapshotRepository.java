@@ -1,5 +1,8 @@
 package ca.bc.gov.nrs.ilcr.originalvalue;
 
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableInt;
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableLong;
+
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -45,11 +48,16 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
    *     Other-Costs row is addressed by, since cost item 19 repeats within one parent and so cannot
    *     be keyed by its cost item
    * @param parentId the value of whichever parent foreign key the finder filtered on, so a caller
-   *     grouping several parents' rows in one query can bucket them without a second read
+   *     grouping several parents' rows in one query can bucket them without a second read. A {@code
+   *     Long} because the owning entities' ids are: {@code BRIDGE_REPORT_ID}, {@code
+   *     CULVERT_REPORT_ID} and {@code BASIC_SILVICULTURE_REPORT_ID} are all {@code long} on their
+   *     entity records, and an {@code int} here would have had those callers cast on the way in — a
+   *     silent truncation past {@link Integer#MAX_VALUE} that turns into an empty snapshot rather
+   *     than an error. Callers whose own ids are {@code int} widen losslessly instead.
    */
   record Row(
       Integer detailId,
-      Integer parentId,
+      Long parentId,
       Integer costItemCode,
       BigDecimal volume,
       Integer cost,
@@ -80,10 +88,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE CAMP_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByCampReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByCampReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByCampReports(List<Integer> parentIds) {
+  default List<Row> findByCampReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty() ? List.of() : findByCampReportsIn(parentIds);
   }
 
@@ -98,10 +106,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE TRANSPORTATION_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByTransportationReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByTransportationReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByTransportationReports(List<Integer> parentIds) {
+  default List<Row> findByTransportationReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty()
         ? List.of()
         : findByTransportationReportsIn(parentIds);
@@ -118,10 +126,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE ROAD_MAINTENANCE_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByRoadMaintenanceReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByRoadMaintenanceReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByRoadMaintenanceReports(List<Integer> parentIds) {
+  default List<Row> findByRoadMaintenanceReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty()
         ? List.of()
         : findByRoadMaintenanceReportsIn(parentIds);
@@ -138,10 +146,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE BRIDGE_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByBridgeReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByBridgeReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByBridgeReports(List<Integer> parentIds) {
+  default List<Row> findByBridgeReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty() ? List.of() : findByBridgeReportsIn(parentIds);
   }
 
@@ -156,10 +164,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE CULVERT_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByCulvertReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByCulvertReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByCulvertReports(List<Integer> parentIds) {
+  default List<Row> findByCulvertReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty() ? List.of() : findByCulvertReportsIn(parentIds);
   }
 
@@ -174,10 +182,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE CONTRACTUAL_WORK_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByContractualWorkReportsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByContractualWorkReportsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByContractualWorkReports(List<Integer> parentIds) {
+  default List<Row> findByContractualWorkReports(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty()
         ? List.of()
         : findByContractualWorkReportsIn(parentIds);
@@ -194,10 +202,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE ROAD_CONSTRUCTION_REPRT_DTL_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findByRoadConstructionDetailsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findByRoadConstructionDetailsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findByRoadConstructionDetails(List<Integer> parentIds) {
+  default List<Row> findByRoadConstructionDetails(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty()
         ? List.of()
         : findByRoadConstructionDetailsIn(parentIds);
@@ -214,10 +222,10 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
        WHERE BASIC_SILVICULTURE_REPORT_ID IN (:parentIds)
       """,
       rowMapperClass = RowMapperImpl.class)
-  List<Row> findBySilvicultureLocationsIn(@Param("parentIds") List<Integer> parentIds);
+  List<Row> findBySilvicultureLocationsIn(@Param("parentIds") List<Long> parentIds);
 
   /** Guarded entry point: an empty parent set reads as no rows, with no statement issued. */
-  default List<Row> findBySilvicultureLocations(List<Integer> parentIds) {
+  default List<Row> findBySilvicultureLocations(List<Long> parentIds) {
     return parentIds == null || parentIds.isEmpty()
         ? List.of()
         : findBySilvicultureLocationsIn(parentIds);
@@ -229,17 +237,12 @@ public interface CostDetailSnapshotRepository extends Repository<CostDetailSnaps
     public Row mapRow(ResultSet rs, int rowNum) throws SQLException {
       return new Row(
           nullableInt(rs, "ILCR_COST_REPORT_DETAIL_ID"),
-          nullableInt(rs, "PARENT_ID"),
+          nullableLong(rs, "PARENT_ID"),
           nullableInt(rs, "ILCR_REPORT_COST_ITEM_ID"),
           rs.getBigDecimal("VOLUME"),
           nullableInt(rs, "COST"),
           rs.getString("ITEM_DESCRIPTION"),
           rs.getString("COMMENTS"));
-    }
-
-    private static Integer nullableInt(ResultSet rs, String column) throws SQLException {
-      int value = rs.getInt(column);
-      return rs.wasNull() ? null : value;
     }
   }
 }

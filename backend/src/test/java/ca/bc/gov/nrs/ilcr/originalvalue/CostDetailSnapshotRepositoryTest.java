@@ -74,9 +74,9 @@ class CostDetailSnapshotRepositoryTest {
         .when(repository)
         .findByCampReportsIn(anyList());
 
-    repository.findByCampReports(List.of(11, 22));
+    repository.findByCampReports(List.of(11L, 22L));
 
     // The guard is a pass-through, not a filter: the parent ids arrive unaltered and in order.
-    assertEquals(List.of(List.of(11, 22)), seen);
+    assertEquals(List.of(List.of(11L, 22L)), seen);
   }
 }
