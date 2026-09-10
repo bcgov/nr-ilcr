@@ -22,6 +22,8 @@ import static ca.bc.gov.nrs.ilcr.schedule10.Schedule10PersistenceException.PAGE_
 import ca.bc.gov.nrs.ilcr.exception.RevisionCountRequiredException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CodeRow;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.MoistureCodePair;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPageRequest;
@@ -88,10 +90,15 @@ public class Schedule10Service {
    * single-argument constructor that every test already uses.
    *
    * @param repository the Schedule 10 data access
+   * @param originalValues the original-value gate (Story 16.2)
+   * @param costSnapshots the shared submitted cost-detail view
    */
-  public Schedule10Service(Schedule10Repository repository) {
+  public Schedule10Service(
+      Schedule10Repository repository,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots) {
     this.repository = repository;
-    this.assembler = new Schedule10DocumentAssembler(repository);
+    this.assembler = new Schedule10DocumentAssembler(repository, originalValues, costSnapshots);
   }
 
   /**

@@ -2,25 +2,42 @@ package ca.bc.gov.nrs.ilcr.schedule4;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.LocationRow;
+import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.SubPageRowRow;
+import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Repository.TransportationSnapshotRow;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.CategoryAmount;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.schedule4.dto.SubPageRow;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -38,6 +55,14 @@ class Schedule4ServiceTest {
   private static final int YEAR = 2021;
 
   @Mock private Schedule4Repository repository;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule4Service service;
 
@@ -221,5 +246,183 @@ class Schedule4ServiceTest {
     Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
     assertEquals("2000", categoryByCode(a, 40).volume().toPlainString());
     assertEquals("120.5", categoryByCode(a, 47).distance().toPlainString());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). Schedule 4 addresses a submitted value TWO ways — the
+  // report-level fields by report id, the cost figures by (report id, cost item) — because one
+  // location's family spans several reports that all reuse the same cost items. A key slip
+  // between the two is invisible to every other assertion in this class.
+  // -----------------------------------------------------------------------------------------
+
+  /** A submitted cost-detail row, addressed by its owning report + cost item. */
+  private static CostDetailSnapshotRepository.Row snapshotDetail(
+      int reportId, int costItemCode, String volume, Integer cost, String description) {
+    return new CostDetailSnapshotRepository.Row(
+        reportId * 10 + costItemCode,
+        (long) reportId,
+        costItemCode,
+        volume == null ? null : new BigDecimal(volume),
+        cost,
+        description,
+        null);
+  }
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    OriginalValue original = originals.get(field);
+    assertNotNull(original, () -> "no original for " + field + " in " + originals.keySet());
+    assertEquals(value, original.value());
+    assertEquals(OriginalValuesFixture.tooltip(formatted), original.tooltip());
+  }
+
+  /**
+   * One submitted location family: primary report 7001 (fixed category 40) plus report 7011, which
+   * owns distance category 47 and its own distance.
+   */
+  private void stubSubmittedFamily() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(7001, "Harbour Dump", null, null, 3),
+                new LocationRow(7011, "Harbour Dump", new BigDecimal("120.5"), null, 3)));
+    when(repository.findInScopeDetails(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new DetailRow(7001, 40, new BigDecimal("2000"), 100000),
+                new DetailRow(7011, 47, new BigDecimal("500"), 25000)));
+  }
+
+  @Test
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stubTwoLocationDraft();
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+    assertNull(a.originalValues(), "Draft must serve no original-value map at all");
+    assertNull(categoryByCode(a, 40).originalValues());
+    verify(repository, never()).findTransportationSnapshots(anyLong(), anyInt());
+    verify(costSnapshots, never()).findByTransportationReports(anyList());
+  }
+
+  @Test
+  void originalValues_submitted_locationNameAndPerCategoryFigures() {
+    stubSubmittedFamily();
+    when(repository.findTransportationSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new TransportationSnapshotRow(7001, "Harbour Dock", null, null, "old comment"),
+                new TransportationSnapshotRow(
+                    7011, "Harbour Dock", new BigDecimal("110.5"), null, null)));
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L)))
+        .thenReturn(
+            List.of(
+                snapshotDetail(7001, 40, "1900", 95000, null),
+                snapshotDetail(7011, 47, "450", 22000, null)));
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+    // The location name is read off the PRIMARY report (7001) of the family.
+    assertOriginal(a.originalValues(), "name", "Harbour Dock", "Harbour Dock");
+    // Legacy declares no original for a location's comments, so the key must stay absent even
+    // though the snapshot row carries one.
+    assertEquals(Set.of("name"), a.originalValues().keySet());
+
+    // A FIXED category: volume + cost from its own report's row, and no distance at all.
+    Map<String, OriginalValue> fixed = categoryByCode(a, 40).originalValues();
+    assertOriginal(fixed, "volume", "1900", "1,900");
+    assertOriginal(fixed, "cost", "95000", "95,000");
+    assertEquals(Set.of("volume", "cost"), fixed.keySet());
+  }
+
+  @Test
+  void originalValues_distanceCategory_readsItsOwnReportsSubmittedDistance() {
+    stubSubmittedFamily();
+    when(repository.findTransportationSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new TransportationSnapshotRow(7001, "Harbour Dock", null, null, null),
+                new TransportationSnapshotRow(
+                    7011, "Harbour Dock", new BigDecimal("110.5"), null, null)));
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L)))
+        .thenReturn(List.of(snapshotDetail(7011, 47, "450", 22000, null)));
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+    // Distance lives on the REPORT, not the detail — and on 47's own report (7011), not the
+    // family primary. Reading the primary would yield no distance key at all here.
+    Map<String, OriginalValue> distance = categoryByCode(a, 47).originalValues();
+    assertOriginal(distance, "volume", "450", "450");
+    assertOriginal(distance, "cost", "22000", "22,000");
+    assertOriginal(distance, "distance", "110.5", "110.5");
+  }
+
+  @Test
+  void originalValues_subPageRow_allFiveFields_cycleFromTheReport() {
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findLocations(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new LocationRow(7001, "Harbour Dump", null, null, 3),
+                new LocationRow(7046, "Harbour Dump", new BigDecimal("30.0"), null, 3)));
+    when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+    when(repository.findSubPageRows(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new SubPageRowRow(
+                    7046,
+                    "Harbour Dump",
+                    46, // Truck Rehaul — the one sub-page whose report carries a cycle time
+                    "Rehaul A",
+                    new BigDecimal("30.0"),
+                    7,
+                    new BigDecimal("800"),
+                    12000)));
+    when(repository.findTransportationSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new TransportationSnapshotRow(7001, "Harbour Dock", null, null, null),
+                new TransportationSnapshotRow(
+                    7046, "Harbour Dock", new BigDecimal("28.5"), new BigDecimal("6.5"), null)));
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7046L)))
+        .thenReturn(List.of(snapshotDetail(7046, 46, "750", 11000, "Rehaul Original")));
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+    SubPageRow row = a.subPageRows().get(0);
+
+    // Description/volume/cost off the cost row; distance/cycle off the row's own report — the two
+    // sources legacy tracked together on these rows (Schedule4DAO.java:346-382).
+    assertOriginal(row.originalValues(), "description", "Rehaul Original", "Rehaul Original");
+    assertOriginal(row.originalValues(), "volume", "750", "750");
+    assertOriginal(row.originalValues(), "cost", "11000", "11,000");
+    assertOriginal(row.originalValues(), "distance", "28.5", "28.5");
+    assertOriginal(row.originalValues(), "cycle", "6.5", "6.5");
+  }
+
+  @Test
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    // Beyond Draft with nothing on file is NOT Draft: the page must still evaluate the
+    // "value added since submission" branch per field, so the maps are empty rather than null.
+    stubSubmittedFamily();
+    when(repository.findTransportationSnapshots(MILL, YEAR)).thenReturn(List.of());
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L))).thenReturn(List.of());
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+    assertNotNull(a.originalValues());
+    assertTrue(a.originalValues().isEmpty());
+    assertNotNull(categoryByCode(a, 40).originalValues());
+    assertTrue(categoryByCode(a, 40).originalValues().isEmpty());
+  }
+
+  @Test
+  void originalValues_noLocations_readsNoCostSnapshot() {
+    // No locations beyond Draft: there is no parent id to filter on, so the bulk cost query must
+    // not be issued at all — an empty IN-list is a syntax error on Oracle.
+    when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+    when(repository.findLocations(MILL, YEAR)).thenReturn(List.of());
+    lenient().when(repository.findInScopeDetails(MILL, YEAR)).thenReturn(List.of());
+
+    assertTrue(service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().isEmpty());
+    verify(costSnapshots, never()).findByTransportationReports(anyList());
   }
 }

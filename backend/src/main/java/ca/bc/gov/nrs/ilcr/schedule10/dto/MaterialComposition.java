@@ -1,6 +1,8 @@
 package ca.bc.gov.nrs.ilcr.schedule10.dto;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
 
 /**
  * The material composition percentages.
@@ -26,4 +28,21 @@ public record MaterialComposition(
     Integer coarsePct,
     Integer finePct,
     Integer organicPct,
-    Integer totalPct) {}
+    Integer totalPct,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public MaterialComposition(
+      Integer solidRockPct,
+      Integer rippableRockPct,
+      Integer coarsePct,
+      Integer finePct,
+      Integer organicPct,
+      Integer totalPct) {
+    this(solidRockPct, rippableRockPct, coarsePct, finePct, organicPct, totalPct, null);
+  }
+}

@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.schedule9.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * One Schedule 9 contractual work record (AD-12) — a miscellaneous/unique logging cost item. Field
@@ -60,4 +62,46 @@ public record ContractualWorkRecord(
     Integer sideSlopePct,
     CodeDescriptionDto source,
     String sourceDescription,
-    String comments) {}
+    String comments,
+    Map<String, OriginalValue> originalValues) {
+
+  /**
+   * Without original values — the shape every caller that is not serving a stored, beyond-Draft
+   * document uses (a print mapper, a check-status projection, a test fixture). The canonical
+   * constructor is the one the read path uses (Story 16.2).
+   */
+  public ContractualWorkRecord(
+      int id,
+      int revisionCount,
+      String contractorId,
+      CodeDescriptionDto contractualItem,
+      String itemDescription,
+      CodeDescriptionDto unitType,
+      String unitDescription,
+      BigDecimal numberOfUnits,
+      CodeDescriptionDto biogeoclimaticZone,
+      Integer cost,
+      BigDecimal costPerUnit,
+      Integer sideSlopePct,
+      CodeDescriptionDto source,
+      String sourceDescription,
+      String comments) {
+    this(
+        id,
+        revisionCount,
+        contractorId,
+        contractualItem,
+        itemDescription,
+        unitType,
+        unitDescription,
+        numberOfUnits,
+        biogeoclimaticZone,
+        cost,
+        costPerUnit,
+        sideSlopePct,
+        source,
+        sourceDescription,
+        comments,
+        null);
+  }
+}

@@ -1,16 +1,26 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule10.Schedule10Repository.CostLineRow;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.ConstructionPage;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.RoadDetail;
 import ca.bc.gov.nrs.ilcr.schedule10.dto.Schedule10Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,11 +50,16 @@ class Schedule10ServiceTest {
 
   @Mock private Schedule10Repository repository;
 
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  // The real gate, not a stub (Story 16.2, OriginalValuesFixture).
+  private final OriginalValues originalValues = OriginalValuesFixture.real();
+
   private Schedule10Service service;
 
   @BeforeEach
   void setUp() {
-    service = new Schedule10Service(repository);
+    service = new Schedule10Service(repository, originalValues, costSnapshots);
     // Default: no data anywhere. Individual tests override what they need.
     when(repository.findPages(MILL, YEAR)).thenReturn(List.of());
     when(repository.findRoadDetails(MILL, YEAR)).thenReturn(List.of());
@@ -494,6 +509,128 @@ class Schedule10ServiceTest {
       assertThat(detail.subGrade().costPerLength()).isEqualByComparingTo("0");
       // Material total is int arithmetic and is always present.
       assertThat(detail.materialComposition().totalPct()).isZero();
+    }
+  }
+
+  @Nested
+  @DisplayName("original values (Story 16.2, BR-04)")
+  class OriginalValuesIndicators {
+
+    // A road detail's submitted attributes come from the detail view and its substructure costs
+    // from the shared cost view, joined on the ROAD detail id — the shared finder's parent here is
+    // the detail row, not the page, which is what makes this join worth pinning.
+
+    private void storedDocument(String trackStatus) {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of(trackStatus));
+      when(repository.findPages(MILL, YEAR)).thenReturn(List.of(page(9001, "01", "01B", null)));
+      when(repository.findRoadDetails(MILL, YEAR))
+          .thenReturn(List.of(detail(8801, 9001, "Ridge Road")));
+      when(repository.findCostLines(MILL, YEAR))
+          .thenReturn(List.of(new CostLineRow(8801, 20, new BigDecimal("50000"))));
+    }
+
+    private void assertOriginal(
+        Map<String, OriginalValue> originals, String field, String value, String formatted) {
+      assertThat(originals).containsKey(field);
+      assertThat(originals.get(field).value()).isEqualTo(value);
+      assertThat(originals.get(field).tooltip())
+          .isEqualTo(OriginalValuesFixture.tooltip(formatted));
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and no snapshot view is read")
+    void draft_exposesNothing_andSkipsTheSnapshotReads() {
+      storedDocument("D");
+
+      Schedule10Response doc = service.getSchedule10(MILL, YEAR, CallerRights.SUBMITTER);
+      RoadDetail road = doc.pages().get(0).roadDetails().get(0);
+
+      assertThat(road.originalValues()).isNull();
+      assertThat(doc.pages().get(0).originalValues()).isNull();
+      verify(repository, never()).findDetailSnapshots(anyLong(), anyInt());
+      verify(costSnapshots, never()).findByRoadConstructionDetails(anyList());
+    }
+
+    @Test
+    @DisplayName("beyond Draft the detail's attributes and its costs join on the detail id")
+    void submitted_joinDetailAndCostSnapshotsOnTheDetailId() {
+      storedDocument("S");
+      when(repository.findPageSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule10Repository.PageSnapshotRow(
+                      9001, "South Division", "2021-05", "RNI", "02", "02B", null)));
+      when(repository.findDetailSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule10Repository.DetailSnapshotRow(
+                      8801,
+                      "Creek Road",
+                      "P",
+                      8801,
+                      "C",
+                      15,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      new BigDecimal("11.000"),
+                      new BigDecimal("2.500"),
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      null,
+                      "N",
+                      null,
+                      null,
+                      null,
+                      null,
+                      "submitted comment")));
+      when(costSnapshots.findByRoadConstructionDetails(List.of(8801L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 8801L, 20, null, 45000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 8801L, 7, null, 1500, null, null)));
+
+      RoadDetail road =
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
+
+      // Off the detail snapshot.
+      assertOriginal(road.originalValues(), "roadName", "Creek Road", "Creek Road");
+      assertOriginal(road.originalValues(), "comments", "submitted comment", "submitted comment");
+      // Off the shared cost snapshot, routed per cost item onto the sub-grade substructure —
+      // the parent id there is the DETAIL id, so a mis-keyed join empties exactly these.
+      assertOriginal(road.subGrade().originalValues(), "actualCost", "45000", "45,000");
+      assertOriginal(road.subGrade().originalValues(), "lessBridges", "1500", "1,500");
+      // An item with no submitted row keeps no key.
+      assertThat(road.subGrade().originalValues()).doesNotContainKey("lessCulverts");
+    }
+
+    @Test
+    @DisplayName("beyond Draft with nothing on file the maps are empty, never null")
+    void submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+      storedDocument("S");
+      when(repository.findPageSnapshots(MILL, YEAR)).thenReturn(List.of());
+      when(repository.findDetailSnapshots(MILL, YEAR)).thenReturn(List.of());
+
+      RoadDetail road =
+          service
+              .getSchedule10(MILL, YEAR, CallerRights.SUBMITTER)
+              .pages()
+              .get(0)
+              .roadDetails()
+              .get(0);
+
+      assertThat(road.originalValues()).isEmpty();
+      assertThat(road.subGrade().originalValues()).isEmpty();
     }
   }
 }
