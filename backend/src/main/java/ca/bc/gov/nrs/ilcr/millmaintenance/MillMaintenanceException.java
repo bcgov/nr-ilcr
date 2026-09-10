@@ -42,10 +42,15 @@ public class MillMaintenanceException extends BusinessException {
   }
 
   /**
-   * Activation found the current year's report records in a partial state — the status row absent
-   * but per-category rows present — so re-creating the set collided and rolled back. Legacy reached
-   * the same state and surfaced it as its generic unhandled 500; naming it as a conflict is the D7
-   * ruling (a business error, not a 500) and the AD-8 house rule.
+   * Activation found the current year's report records in a partial state — either half of the set
+   * present without the other — so it refused and rolled back rather than activate a mill that
+   * cannot be guaranteed the records BR-07 promises. Legacy reached the same state and surfaced it
+   * as its generic unhandled 500; naming it as a conflict is the D7 ruling (a business error, not a
+   * 500) and the AD-8 house rule.
+   *
+   * <p>The set is never repaired here: completing it would write into a shared table on a guess
+   * about what the missing rows should hold. The refusal is deliberate, and it is safe against real
+   * data — no mill in delivery holds a partial set.
    */
   public static MillMaintenanceException partialReportRecords() {
     return new MillMaintenanceException(HttpStatus.CONFLICT, "error.mill.activate.partialrecords");

@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillYearContextNotFoundException;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,6 +53,7 @@ public class AssignmentService {
   private final IlcrUserRepository users;
   private final MillUserXrefRepository assignments;
   private final MillContextRepository mills;
+  private final MillMaintenanceRepository millStatus;
 
   /**
    * Creates the service over the two legacy tables plus the shared mill lookup.
@@ -59,12 +61,17 @@ public class AssignmentService {
    * @param users the licensee account rows
    * @param assignments the submitter-to-mill cross-reference rows
    * @param mills the shared mill lookup, for the mill number, name and status
+   * @param millStatus the mill cross-reference, for the row lock the closed-mill rule serializes on
    */
   public AssignmentService(
-      IlcrUserRepository users, MillUserXrefRepository assignments, MillContextRepository mills) {
+      IlcrUserRepository users,
+      MillUserXrefRepository assignments,
+      MillContextRepository mills,
+      MillMaintenanceRepository millStatus) {
     this.users = users;
     this.assignments = assignments;
     this.mills = mills;
+    this.millStatus = millStatus;
   }
 
   /**
@@ -130,7 +137,10 @@ public class AssignmentService {
       if (row.isActive()) {
         return new Outcome(toSubmitter(row, mill), MSG_ALREADY_ASSIGNED);
       }
-      requireMillActive(mill);
+      // The status is re-read under the mill row's lock, not reused from the display read above.
+      // The deactivation side locks the same row, so this revive and a concurrent mill closure
+      // serialize rather than both succeeding (BR-01, MillMaintenanceRepository#lockStatusCode).
+      requireMillActive(millStatus.lockStatusCode(millId).orElse(null));
       if (assignments.reactivateAssignment(millId, userGuid, row.revisionCount(), actingUser)
           == 0) {
         throw new StaleRevisionException();
@@ -270,14 +280,13 @@ public class AssignmentService {
     return mills.findSelectableMillById(millId).orElseThrow(MillYearContextNotFoundException::new);
   }
 
-  private void requireMillActive(MillSummary mill) {
-    requireMillActive(mill.millStatusCode());
-  }
-
   /**
    * Refuse when the mill is anything but active — the closed-mill activation block, shared with the
    * mill-record association surface (both screens enforce the same legacy rule with the same
    * message).
+   *
+   * <p>A null code refuses too, which is what a mill with no cross-reference row reads as. Callers
+   * pass the code read under the row lock, not one read earlier in the request.
    */
   void requireMillActive(String millStatusCode) {
     if (!MILL_STATUS_ACTIVE.equals(millStatusCode)) {

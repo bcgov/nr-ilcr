@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -52,9 +54,11 @@ class MillAssociationServiceTest {
   @BeforeEach
   void setUp() {
     service = new MillAssociationService(assignments, mills, accounts);
-    // lenient(): the tracked-mill read serves most tests but not the unknown-mill refusals, and
-    // strict stubbing — which the rest of the class deliberately keeps — would reject those.
+    // lenient(): these serve most tests but not the unknown-mill refusals or the paths that never
+    // reach the lock, and strict stubbing — which the rest of the class deliberately keeps — would
+    // reject those.
     lenient().when(mills.findById(MILL_ID)).thenReturn(Optional.of(mill("ACT")));
+    lenient().when(mills.lockStatusCode(MILL_ID)).thenReturn(Optional.of("ACT"));
   }
 
   @Test
@@ -164,7 +168,7 @@ class MillAssociationServiceTest {
   @Test
   @DisplayName("Activation consults the mill-status guard and writes nothing when it refuses (S13)")
   void activationGuardsTheMillStatusBeforeTheWrite() {
-    when(mills.findById(MILL_ID)).thenReturn(Optional.of(mill("CLS")));
+    when(mills.lockStatusCode(MILL_ID)).thenReturn(Optional.of("CLS"));
     when(assignments.findAssignment(MILL_ID, GUID)).thenReturn(Optional.of(inactiveRow(0)));
     doThrow(new MillNotActiveException()).when(accounts).requireMillActive("CLS");
 
@@ -172,6 +176,43 @@ class MillAssociationServiceTest {
         .isInstanceOf(MillNotActiveException.class);
 
     verify(assignments, never()).reactivateAssignment(anyLong(), anyString(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("Activation guards on the LOCKED status, not the one the display read returned")
+  void activationGuardsOnTheLockedStatusNotTheDisplayRead() {
+    // The two reads disagree on purpose: the display read still says ACT while the locked read says
+    // CLS, which is exactly the state a mill closed between them leaves behind. Guarding on the
+    // display read would activate an association on a closed mill and break BR-01 — and because
+    // both reads go through the same repository, only distinguishing WHICH one feeds the guard
+    // catches it.
+    when(mills.findById(MILL_ID)).thenReturn(Optional.of(mill("ACT")));
+    when(mills.lockStatusCode(MILL_ID)).thenReturn(Optional.of("CLS"));
+    when(assignments.findAssignment(MILL_ID, GUID)).thenReturn(Optional.of(inactiveRow(0)));
+    doThrow(new MillNotActiveException()).when(accounts).requireMillActive("CLS");
+
+    assertThatThrownBy(() -> service.activate(MILL_ID, GUID, 0, ADMIN))
+        .isInstanceOf(MillNotActiveException.class);
+
+    verify(accounts, never()).requireMillActive("ACT");
+    verify(assignments, never()).reactivateAssignment(anyLong(), anyString(), anyInt(), any());
+  }
+
+  @Test
+  @DisplayName("Activation takes the mill row lock before it reads the status it guards on")
+  void activationLocksBeforeReadingTheStatus() {
+    when(assignments.findAssignment(MILL_ID, GUID))
+        .thenReturn(Optional.of(inactiveRow(0)))
+        .thenReturn(Optional.of(activeRow(1)));
+    when(assignments.reactivateAssignment(MILL_ID, GUID, 0, ADMIN)).thenReturn(1);
+
+    service.activate(MILL_ID, GUID, 0, ADMIN);
+
+    // Locking after the write would serialize nothing against a concurrent mill closure.
+    InOrder serialized = inOrder(mills, accounts, assignments);
+    serialized.verify(mills).lockStatusCode(MILL_ID);
+    serialized.verify(accounts).requireMillActive("ACT");
+    serialized.verify(assignments).reactivateAssignment(MILL_ID, GUID, 0, ADMIN);
   }
 
   @Test

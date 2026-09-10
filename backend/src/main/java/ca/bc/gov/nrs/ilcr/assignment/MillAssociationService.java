@@ -140,7 +140,7 @@ public class MillAssociationService {
   @Transactional
   public AssignmentService.Outcome activate(
       long millId, String userGuid, int revisionCount, String actingUser) {
-    AdminMillEntity mill = requireTrackedMill(millId);
+    final AdminMillEntity mill = requireTrackedMill(millId);
     MillUserXrefEntity row =
         assignments.findAssignment(millId, userGuid).orElseThrow(AssignmentNotFoundException::new);
     if (row.isActive()) {
@@ -149,7 +149,11 @@ public class MillAssociationService {
       throw new StaleRevisionException();
     }
 
-    accounts.requireMillActive(mill.statusCode());
+    // The status is re-read under the mill row's lock, not taken from the display read above: it is
+    // the deactivation side's serialization point, and without it a mill closed between that read
+    // and this write would end up closed with an active association (BR-01/BR-02). See
+    // MillMaintenanceRepository#lockStatusCode.
+    accounts.requireMillActive(mills.lockStatusCode(millId).orElse(null));
 
     if (assignments.reactivateAssignment(millId, userGuid, revisionCount, actingUser) == 0) {
       throw new StaleRevisionException();

@@ -136,9 +136,48 @@ public class ReportingYearService {
     return repository.findMaxReportYear();
   }
 
-  /** Whether a mill already has a report-status row for a year. */
-  public boolean isMillEnrolled(long millId, int year) {
-    return repository.millReportStatusExists(millId, year);
+  /**
+   * How completely a mill is enrolled for a year — the whole record set, not just its status row.
+   *
+   * <p>{@link #enrolMillInYear} writes the status row and all eleven category rows as one set, so
+   * only both counts together tell a complete set from a half-written one. Asking about the status
+   * row alone (legacy's own check, ILCRMillReportStatus.java:28) reports a mill enrolled while its
+   * category rows are missing, which is how an activation could report success on a mill that still
+   * lacked the records BR-07 promises.
+   *
+   * @param millId the mill
+   * @param year the reporting year
+   * @return {@link EnrolmentState#COMPLETE}, {@link EnrolmentState#NONE} or {@link
+   *     EnrolmentState#PARTIAL}
+   */
+  public EnrolmentState enrolmentState(long millId, int year) {
+    boolean hasStatusRow = repository.millReportStatusExists(millId, year);
+    int categories = repository.countMillReportCategories(millId, year);
+    if (hasStatusRow && categories == CATEGORY_IDS.size()) {
+      return EnrolmentState.COMPLETE;
+    }
+    if (!hasStatusRow && categories == 0) {
+      return EnrolmentState.NONE;
+    }
+    return EnrolmentState.PARTIAL;
+  }
+
+  /**
+   * How much of a mill's report-record set exists for a year. Three states rather than a boolean,
+   * because the two ways a set can be incomplete are not the same answer: one is work to do, the
+   * other is a database the application must not write into.
+   */
+  public enum EnrolmentState {
+    /** No status row and no category rows — the set has to be created. */
+    NONE,
+    /** The status row and every category row are present — nothing to do. */
+    COMPLETE,
+    /**
+     * Some of the set exists and some does not. Not repaired: completing it would write into a
+     * shared table on a guess about what the missing rows should hold, and nothing in legacy
+     * repaired it either. Callers refuse instead.
+     */
+    PARTIAL
   }
 
   /**
@@ -149,7 +188,8 @@ public class ReportingYearService {
    * that owns these three tables, rather than being reproduced by every caller (AD-14).
    *
    * <p>Not idempotent by itself: both the composite primary keys would reject a second call.
-   * Callers decide whether the mill already has records; {@link #isMillEnrolled} is that check.
+   * Callers decide whether the mill already has records; {@link #enrolmentState} is that check, and
+   * only its {@link EnrolmentState#NONE} answer makes this call safe.
    */
   @Transactional
   public void enrolMillInYear(long millId, int year, String user) {

@@ -19,8 +19,11 @@ import org.springframework.data.repository.query.Param;
  * <p>Every column is listed explicitly rather than selected with a star, so a snapshot that drifts
  * from delivery fails here instead of surfacing as a null field far downstream. The audit quartet
  * and {@code REVISION_COUNT} are stamped on every write: all five are NOT NULL in delivery with no
- * DEFAULT and no trigger that fills them (the one trigger on this table copies the row into its
- * audit shadow), so an omission is ORA-01400 in production.
+ * DEFAULT and no trigger that fills them — the one trigger on this table, {@code IMSXA_B_I_U},
+ * copies {@code :NEW} into the pre-existing delivery table {@code THE.ILCR_MILL_STATUS_XREF_AUDIT}
+ * and touches neither the audit columns nor {@code REVISION_COUNT} (read from {@code ALL_TRIGGERS},
+ * Story 22.1) — so an omission is ORA-01400 in production, and the optimistic lock is safe from a
+ * trigger-side revision bump.
  *
  * <p>{@code SYSDATE} rather than {@code SYSTIMESTAMP} because both timestamp columns are {@code
  * DATE} in delivery.
@@ -176,11 +179,43 @@ public interface MillMaintenanceRepository extends Repository<AdminMillEntity, L
       @Param("millId") long millId, @Param("clientContactId") long clientContactId);
 
   /**
+   * Take the mill's cross-reference row for the rest of the transaction — the serialization point
+   * the two halves of BR-01 share.
+   *
+   * <p>Closing a mill and activating an assignment on it are opposite sides of one invariant (a
+   * closed mill has no active assignment) enforced by two different transactions reading two
+   * different tables. Under read-committed, each one's guard can be true when it is read and false
+   * when it commits: the deactivation checks for active assignments and then writes the status,
+   * while the activation checks the status and then writes the assignment, so either can commit
+   * inside the other's window and leave a closed mill holding an active assignment.
+   *
+   * <p>Both sides therefore lock THIS row — the mill's own {@code ILCR_MILL_STATUS_XREF} row, the
+   * one thing both invariants are about — before reading the guard they act on. Whichever
+   * transaction takes it first runs to completion; the second blocks, and reads the first's
+   * committed result rather than the state it started from. The lock is on the parent mill row, not
+   * on the assignment rows, because the assignment side may need to lock a row that does not exist
+   * yet.
+   *
+   * <p>Callers must lock BEFORE reading the guard — locking after the read serializes nothing,
+   * because the stale value has already been taken.
+   *
+   * @param millId the mill id
+   * @return the locked row's status code, or empty when the mill has no cross-reference row
+   */
+  @Query(
+      """
+      SELECT ILCR_MILL_STATUS_CODE
+        FROM THE.ILCR_MILL_STATUS_XREF
+       WHERE ILCR_MILL_STATUS_XREF_ID = :millId
+         FOR UPDATE
+      """)
+  Optional<String> lockStatusCode(@Param("millId") long millId);
+
+  /**
    * Whether the mill still has an active user assignment — the BR-01 deactivation guard, evaluated
-   * live against the table when the deactivation runs. The guard and the status write are separate
-   * read-committed statements, so an assignment activated between them can still slip through; that
-   * residual window is a known, repo-wide trait of the mill⇄assignment guards (the assignment side
-   * has the mirror image) and is orders of magnitude narrower than what it replaces.
+   * live against the table when the deactivation runs. Read AFTER {@link #lockStatusCode}, which
+   * serializes this guard against the assignment side that would otherwise be able to activate an
+   * assignment between this check and the status write.
    *
    * <p>Active means {@code INACTIVE_DATE IS NULL}, the convention {@code
    * MillUserXrefEntity.isActive()} owns and the only one the delivery data supports (the two dates

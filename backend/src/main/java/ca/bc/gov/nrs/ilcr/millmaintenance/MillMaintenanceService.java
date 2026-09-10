@@ -5,6 +5,7 @@ import ca.bc.gov.nrs.ilcr.millmaintenance.dto.AdminMill;
 import ca.bc.gov.nrs.ilcr.millmaintenance.dto.ContactOption;
 import ca.bc.gov.nrs.ilcr.millmaintenance.dto.ImportableMill;
 import ca.bc.gov.nrs.ilcr.reportingyear.ReportingYearService;
+import ca.bc.gov.nrs.ilcr.reportingyear.ReportingYearService.EnrolmentState;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -37,8 +38,15 @@ public class MillMaintenanceService {
 
   /**
    * Stamped on every imported cross-reference, verbatim from legacy (MillDAO.java:189). It is the
-   * only record of how a cross-reference came to exist, and the delivery audit trigger copies it
-   * into the audit shadow table, so it is worth keeping rather than quietly dropping.
+   * only record of how a cross-reference came to exist, so it is worth keeping rather than quietly
+   * dropping.
+   *
+   * <p>It also outlives the row: delivery's pre-existing trigger {@code IMSXA_B_I_U} copies {@code
+   * :NEW} — {@code COMMENTS} included — into {@code THE.ILCR_MILL_STATUS_XREF_AUDIT}, read from
+   * {@code ALL_TRIGGERS} on the seeded delivery database (Story 22.1, 2026-09-09). That is an
+   * existing delivery table this application neither creates nor writes, and it is unrelated to the
+   * A-9 shadow/audit table on {@code ILCR_MILL_USER_XREF} — a table that was only ever PROPOSED and
+   * that the business dropped on 2026-08-11 (DL-7; epics.md:2430).
    */
   static final String IMPORT_COMMENT = "Imported from ISP Mill table";
 
@@ -181,10 +189,18 @@ public class MillMaintenanceService {
   /**
    * Reopen a closed mill for reporting (S04) and guarantee its current-year report records (BR-07).
    *
-   * <p>The records check is legacy's, and so is its depth: it asks only whether a report-status row
-   * exists for the year. A mill whose status row is present but whose per-category rows are missing
-   * is not repaired, because nothing in legacy repaired it and inventing that here would be a new
-   * behaviour on a shared table.
+   * <p>The records check asks about the WHOLE set — the report-status row and all eleven
+   * per-category rows — not just the status row legacy asked about (ILCRMillReportStatus.java:28).
+   * Legacy's shallower check reported a mill enrolled whenever its status row existed, so a mill
+   * whose category rows were missing activated successfully and BR-07 went unmet with nothing said.
+   * Both ways of being half-enrolled are now refused by the same conflict, and neither is repaired:
+   * completing the set would write into a shared table on a guess about what the missing rows
+   * should hold, and nothing in legacy repaired it either.
+   *
+   * <p>Refusing costs nothing against real data. All 118 (mill, year) pairs in delivery that carry
+   * a status row carry exactly eleven category rows, and no category set exists without its status
+   * row (verified against the seeded delivery database, 2026-09-10) — so a partial set is
+   * corruption, not a shape an ordinary mill takes.
    *
    * <p>No precondition on the current status. Legacy's activate had no guard of any kind, unlike
    * its deactivate, and re-activating an already-active mill is harmless.
@@ -204,23 +220,34 @@ public class MillMaintenanceService {
 
     applyStatus(millId, AdminMill.ACTIVE, revisionCount, user);
 
-    if (!reportingYears.isMillEnrolled(millId, year)) {
+    EnrolmentState enrolment = reportingYears.enrolmentState(millId, year);
+    if (enrolment == EnrolmentState.PARTIAL) {
+      // Some of the set exists and some does not, either way round. Legacy reached this state and
+      // surfaced it as its generic unhandled error, sending the administrator to the logs; this
+      // names the inconsistency as a conflict instead (D7: a business error, not a 500). The status
+      // change above is rolled back with it, so the mill is left exactly as it was found.
+      log.warn(
+          "Mill {} has partial report records for year {}; activation rolled back", millId, year);
+      throw MillMaintenanceException.partialReportRecords();
+    }
+    if (enrolment == EnrolmentState.NONE) {
       try {
         reportingYears.enrolMillInYear(millId, year, user);
-      } catch (DataIntegrityViolationException partial) {
-        // The status row was absent but some per-category rows were not, so re-creating the set
-        // collides. Legacy reached the same state and surfaced it as its generic unhandled error,
-        // sending the administrator to the logs; this names the inconsistency as a conflict instead
-        // (D7: a business error, not a 500). The status change above is rolled back with it, so the
-        // mill is left exactly as it was found.
+      } catch (DataIntegrityViolationException lostRace) {
+        // The set was absent when checked and is not now, so a concurrent activation or a
+        // reporting-year open created it in between. Same answer as the partial state: the records
+        // this transaction was asked to guarantee are not the ones it wrote, and the rollback
+        // leaves
+        // the mill as it was found.
         log.warn(
-            "Mill {} has partial report records for year {}; activation rolled back",
+            "Mill {} report records for year {} appeared concurrently; activation rolled back",
             millId,
             year,
-            partial);
+            lostRace);
         throw MillMaintenanceException.partialReportRecords();
       }
     }
+    // COMPLETE falls through untouched: the guarantee is "records exist", not "records are reset".
 
     log.info("Mill {} activated by {}", millId, user);
     return new Outcome(requireTrackedMill(millId), MSG_ACTIVATED);
@@ -235,6 +262,11 @@ public class MillMaintenanceService {
    * (BR-06, enforced by the mill/year context owner), cannot have an assignment revived, and is
    * excluded from the next reporting year that is opened.
    *
+   * <p>The guard and the status write are one serialized unit, not two independent statements: the
+   * mill's cross-reference row is locked first, so an assignment cannot be activated between the
+   * check and the write and leave a closed mill holding an active one. The assignment side takes
+   * the same lock — see {@link MillMaintenanceRepository#lockStatusCode}.
+   *
    * @param millId the mill id
    * @param revisionCount the revision the caller read
    * @param user the acting administrator
@@ -245,6 +277,9 @@ public class MillMaintenanceService {
   @Transactional
   public Outcome deactivate(long millId, int revisionCount, String user) {
     requireTrackedMill(millId);
+    // Before the guard, never after: the lock is what makes the guard and the write below one
+    // decision rather than two racing ones.
+    repository.lockStatusCode(millId).orElseThrow(MillMaintenanceException::millNotFound);
     if (repository.hasActiveAssignment(millId)) {
       throw MillMaintenanceException.hasActiveUsers();
     }

@@ -448,23 +448,22 @@ class MillMaintenanceIT extends AbstractOracleIT {
   void activateLeavesExistingRecordsAlone() throws Exception {
     // Created here rather than seeded: a 2021 status row in the shared fixtures would change the
     // count another IT class asserts.
-    jdbcTemplate.update(
-        "INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, "
-            + "ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
-            + "REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
-            + "VALUES (?, ?, 'S', 'S', 'N', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
-        CURRENT_YEAR,
-        CLOSED_MILL_WITH_RECORDS);
+    //
+    // The COMPLETE set is seeded, status row plus all eleven categories, because that is the only
+    // shape delivery actually holds — every one of its 118 enrolled (mill, year) pairs carries
+    // exactly eleven category rows (verified 2026-09-10). Seeding the status row alone would seed a
+    // half-enrolled mill, which is now a conflict and is covered by its own test below.
+    seedCompleteReportRecords(CLOSED_MILL_WITH_RECORDS);
 
     mockMvc
         .perform(changeStatus("/api/v1/admin/mills/{id}/activate", CLOSED_MILL_WITH_RECORDS, 0))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.mill.millStatusCode").value("ACT"));
 
+    // Nothing was duplicated and the existing status row keeps the state it had: the guarantee is
+    // "records exist", not "records are reset".
     assertEquals(1, statusRowCount(CLOSED_MILL_WITH_RECORDS, CURRENT_YEAR));
-    // No categories were created, and the existing status row keeps the state it had: the guarantee
-    // is "records exist", not "records are reset".
-    assertEquals(0, categoryRowCount(CLOSED_MILL_WITH_RECORDS, CURRENT_YEAR));
+    assertEquals(11, categoryRowCount(CLOSED_MILL_WITH_RECORDS, CURRENT_YEAR));
     assertEquals(
         "S", statusRow(CLOSED_MILL_WITH_RECORDS, CURRENT_YEAR).get("ILCR_MILL_REPORT_STATUS_CODE"));
   }
@@ -472,9 +471,8 @@ class MillMaintenanceIT extends AbstractOracleIT {
   @Test
   @DisplayName("Activation over partial report records is a named conflict and rolls back (D7)")
   void activationOverPartialRecordsIsANamedConflict() throws Exception {
-    // The inverse partial state: category rows present but the status row absent, so the records
-    // check says "create" and the category insert collides. Legacy 500'd this as its generic
-    // unhandled error; D7 rules a business conflict that leaves the mill exactly as found.
+    // One partial state: category rows present but the status row absent. Legacy 500'd this as its
+    // generic unhandled error; D7 rules a business conflict that leaves the mill exactly as found.
     jdbcTemplate.update(
         "INSERT INTO THE.ILCR_REPORT_CATEGORY (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, "
             + "CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID, "
@@ -492,6 +490,46 @@ class MillMaintenanceIT extends AbstractOracleIT {
     assertEquals("CLS", statusCode(CLOSED_MILL));
     assertEquals(0, ((Number) xrefRow(CLOSED_MILL).get("REVISION_COUNT")).intValue());
     assertEquals(0, statusRowCount(CLOSED_MILL, CURRENT_YEAR));
+  }
+
+  @Test
+  @DisplayName("A status row without its category rows is refused, not reported as activated")
+  void activationOverAStatusRowMissingItsCategoriesIsRefused() throws Exception {
+    // The mirror partial state, and the one that used to pass. The enrolment check asked only
+    // whether the report-status row existed, so this mill activated with a 200 while nine of its
+    // eleven category rows were missing — the endpoint reported a mill enrolled that still lacked
+    // the records BR-07 promises, and said nothing. Both partial states now answer the same
+    // conflict.
+    jdbcTemplate.update(
+        "INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, "
+            + "ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
+            + "REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+            + "VALUES (?, ?, 'D', 'D', 'N', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
+        CURRENT_YEAR,
+        CLOSED_MILL_WITH_RECORDS);
+    // Two of eleven: enough that the status row exists, few enough that the set is incomplete.
+    // A count-based check is what tells this from the complete set — an existence check cannot.
+    for (String categoryId : List.of("1", "2")) {
+      jdbcTemplate.update(
+          "INSERT INTO THE.ILCR_REPORT_CATEGORY (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, "
+              + "CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID, "
+              + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+              + "VALUES (?, ?, ?, 'D', 'Y', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
+          CURRENT_YEAR,
+          CLOSED_MILL_WITH_RECORDS,
+          categoryId);
+    }
+
+    mockMvc
+        .perform(changeStatus("/api/v1/admin/mills/{id}/activate", CLOSED_MILL_WITH_RECORDS, 0))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value(containsString("incomplete")));
+
+    // Left exactly as found: still closed, still at revision 0, and the incomplete set is NOT
+    // repaired — completing it would guess at what the missing rows should hold.
+    assertEquals("CLS", statusCode(CLOSED_MILL_WITH_RECORDS));
+    assertEquals(0, ((Number) xrefRow(CLOSED_MILL_WITH_RECORDS).get("REVISION_COUNT")).intValue());
+    assertEquals(2, categoryRowCount(CLOSED_MILL_WITH_RECORDS, CURRENT_YEAR));
   }
 
   @Test
@@ -820,6 +858,35 @@ class MillMaintenanceIT extends AbstractOracleIT {
         Integer.class,
         millId,
         year);
+  }
+
+  /**
+   * Seed a mill's complete current-year report-record set: the status row plus one row for every
+   * one of the eleven schedule categories. This is the only enrolled shape delivery holds, so a
+   * test that wants "already enrolled" must seed all twelve rows — seeding the status row alone
+   * seeds a half-enrolled mill, which activation now refuses.
+   *
+   * <p>The status row is stamped {@code 'S'} rather than the {@code 'D'} enrolment writes, so an
+   * assertion that the existing states are left alone cannot pass by coincidence.
+   */
+  private void seedCompleteReportRecords(long millId) {
+    jdbcTemplate.update(
+        "INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, "
+            + "ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, REPORT_COMPLETED_IND, "
+            + "REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+            + "VALUES (?, ?, 'S', 'S', 'N', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
+        CURRENT_YEAR,
+        millId);
+    for (String categoryId : List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")) {
+      jdbcTemplate.update(
+          "INSERT INTO THE.ILCR_REPORT_CATEGORY (REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, "
+              + "CATEGORY_STATE_CODE, REPORTABLE_DETAIL_IND, REVISION_COUNT, ENTRY_USERID, "
+              + "ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP) "
+              + "VALUES (?, ?, ?, 'D', 'Y', 0, 'SEED', SYSDATE, 'SEED', SYSDATE)",
+          CURRENT_YEAR,
+          millId,
+          categoryId);
+    }
   }
 
   private void resetMill(long millId, String statusCode) {

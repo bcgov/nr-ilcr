@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,12 +17,14 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.exception.BusinessException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.reportingyear.ReportingYearService;
+import ca.bc.gov.nrs.ilcr.reportingyear.ReportingYearService.EnrolmentState;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -46,11 +49,12 @@ class MillMaintenanceServiceTest {
   @BeforeEach
   void setUp() {
     service = new MillMaintenanceService(repository, reportingYears);
-    // lenient(): these two baseline stubs serve most tests but not all, and strict stubbing —
-    // which the rest of the class deliberately keeps, so a dead stub fails rather than lying —
-    // would otherwise reject every test that skips them.
+    // lenient(): these baseline stubs serve most tests but not all, and strict stubbing — which the
+    // rest of the class deliberately keeps, so a dead stub fails rather than lying — would
+    // otherwise reject every test that skips them.
     lenient().when(reportingYears.currentReportingYear()).thenReturn(2021);
     lenient().when(repository.findById(MILL_ID)).thenReturn(Optional.of(entity("ACT", 0)));
+    lenient().when(repository.lockStatusCode(MILL_ID)).thenReturn(Optional.of("ACT"));
   }
 
   @Test
@@ -111,10 +115,41 @@ class MillMaintenanceServiceTest {
   }
 
   @Test
+  @DisplayName("Deactivation locks the mill row before it reads the active-user guard")
+  void deactivationLocksBeforeReadingTheGuard() {
+    when(repository.hasActiveAssignment(MILL_ID)).thenReturn(false);
+    when(repository.updateStatusCode(MILL_ID, "CLS", 0, "TESTADMN")).thenReturn(1);
+
+    service.deactivate(MILL_ID, 0, "TESTADMN");
+
+    // The order is the whole point. Locking the mill row AFTER reading the guard would serialize
+    // nothing — the stale answer has already been taken — so a plain verify() of both calls would
+    // pass on the broken ordering too. The assignment side takes the same lock, which is what makes
+    // the guard and the write below one decision rather than two racing ones.
+    InOrder serialized = inOrder(repository);
+    serialized.verify(repository).lockStatusCode(MILL_ID);
+    serialized.verify(repository).hasActiveAssignment(MILL_ID);
+    serialized.verify(repository).updateStatusCode(MILL_ID, "CLS", 0, "TESTADMN");
+  }
+
+  @Test
+  @DisplayName("Deactivation refuses when the mill's cross-reference row cannot be locked")
+  void deactivationRefusesWhenTheRowIsGone() {
+    when(repository.lockStatusCode(MILL_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.deactivate(MILL_ID, 0, "TESTADMN"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getStatus())
+        .isEqualTo(HttpStatus.NOT_FOUND);
+
+    verify(repository, never()).hasActiveAssignment(anyLong());
+  }
+
+  @Test
   @DisplayName("Activation has no user guard, matching legacy's asymmetry")
   void activationIgnoresActiveUsers() {
     when(repository.updateStatusCode(MILL_ID, "ACT", 0, "TESTADMN")).thenReturn(1);
-    when(reportingYears.isMillEnrolled(MILL_ID, 2021)).thenReturn(true);
+    when(reportingYears.enrolmentState(MILL_ID, 2021)).thenReturn(EnrolmentState.COMPLETE);
 
     service.activate(MILL_ID, 0, "TESTADMN");
 
@@ -128,17 +163,41 @@ class MillMaintenanceServiceTest {
   @DisplayName("Activation creates report records only when the mill has none for the year")
   void activationCreatesRecordsOnlyWhenMissing() {
     when(repository.updateStatusCode(anyLong(), anyString(), anyInt(), anyString())).thenReturn(1);
-    when(reportingYears.isMillEnrolled(MILL_ID, 2021)).thenReturn(true);
+    when(reportingYears.enrolmentState(MILL_ID, 2021)).thenReturn(EnrolmentState.COMPLETE);
 
     service.activate(MILL_ID, 0, "TESTADMN");
 
     verify(reportingYears, never()).enrolMillInYear(anyLong(), anyInt(), anyString());
 
-    when(reportingYears.isMillEnrolled(MILL_ID, 2021)).thenReturn(false);
+    when(reportingYears.enrolmentState(MILL_ID, 2021)).thenReturn(EnrolmentState.NONE);
 
     service.activate(MILL_ID, 0, "TESTADMN");
 
     verify(reportingYears).enrolMillInYear(MILL_ID, 2021, "TESTADMN");
+  }
+
+  @Test
+  @DisplayName("Activation refuses a half-enrolled mill instead of reporting a false success")
+  void activationRefusesAPartialRecordSet() {
+    // The gap this closes: the enrolment check used to ask only whether the report-status row
+    // existed, so a mill whose category rows were missing activated with nothing said and BR-07
+    // went unmet. Both halves of a partial set now answer the same conflict, and the status write
+    // rolls back with it.
+    when(repository.updateStatusCode(MILL_ID, "ACT", 0, "TESTADMN")).thenReturn(1);
+    when(reportingYears.enrolmentState(MILL_ID, 2021)).thenReturn(EnrolmentState.PARTIAL);
+
+    assertThatThrownBy(() -> service.activate(MILL_ID, 0, "TESTADMN"))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(
+            e -> {
+              assertThat(((BusinessException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+              assertThat(((BusinessException) e).getMessageKey())
+                  .isEqualTo("error.mill.activate.partialrecords");
+            });
+
+    // Nothing was written to repair it: completing the set would guess at what the missing rows
+    // should hold, on a table three other domains read.
+    verify(reportingYears, never()).enrolMillInYear(anyLong(), anyInt(), anyString());
   }
 
   @Test
@@ -242,10 +301,13 @@ class MillMaintenanceServiceTest {
   }
 
   @Test
-  @DisplayName("Activation over partial report records is a named conflict, not a 500 (D7)")
+  @DisplayName("Report records appearing concurrently is a named conflict, not a 500 (D7)")
   void activationOverPartialRecordsIsANamedConflict() {
+    // The set was absent when checked and is not now — a concurrent activation or year-open wrote
+    // it in between, so the insert collides. Same answer as a partial set found up front: the
+    // records this transaction was asked to guarantee are not the ones it wrote.
     when(repository.updateStatusCode(MILL_ID, "ACT", 0, "TESTADMN")).thenReturn(1);
-    when(reportingYears.isMillEnrolled(MILL_ID, 2021)).thenReturn(false);
+    when(reportingYears.enrolmentState(MILL_ID, 2021)).thenReturn(EnrolmentState.NONE);
     doThrow(new DataIntegrityViolationException("category PK collision"))
         .when(reportingYears)
         .enrolMillInYear(MILL_ID, 2021, "TESTADMN");
