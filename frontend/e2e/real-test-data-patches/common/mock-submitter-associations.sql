@@ -95,7 +95,29 @@ BEGIN
 END;
 /
 
--- RE-VERIFY QUERY (re-pick is never needed — the patch is set-based — but this
--- is what proves it took, and that the scoped list matches the admin's):
---   SELECT COUNT(*) associations FROM THE.ILCR_MILL_USER_XREF
---    WHERE USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001';
+-- RE-VERIFY QUERIES (re-pick is never needed — the patch is set-based).
+-- The first query must return 0; it proves every association for the mock is active:
+--   SELECT COUNT(*) inactive_associations FROM THE.ILCR_MILL_USER_XREF
+--    WHERE USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001'
+--      AND (ACTIVE_DATE IS NULL OR INACTIVE_DATE IS NOT NULL);
+-- Both MINUS queries must return no rows; together they prove the active scoped set matches the
+-- full mill set in the extract:
+--   SELECT x.ILCR_MILL_STATUS_XREF_ID FROM THE.ILCR_MILL_STATUS_XREF x
+--    WHERE EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s
+--                   WHERE s.ILCR_MILL_ID = x.ILCR_MILL_STATUS_XREF_ID)
+--   MINUS
+--   SELECT u.ILCR_MILL_ID FROM THE.ILCR_MILL_USER_XREF u
+--    WHERE u.USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001'
+--      AND u.ACTIVE_DATE IS NOT NULL AND u.INACTIVE_DATE IS NULL
+--      AND EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s
+--                   WHERE s.ILCR_MILL_ID = u.ILCR_MILL_ID);
+--
+--   SELECT u.ILCR_MILL_ID FROM THE.ILCR_MILL_USER_XREF u
+--    WHERE u.USER_GUID = 'CANONSUBMITTERBBBBCCCCDDDD000001'
+--      AND u.ACTIVE_DATE IS NOT NULL AND u.INACTIVE_DATE IS NULL
+--      AND EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s
+--                   WHERE s.ILCR_MILL_ID = u.ILCR_MILL_ID)
+--   MINUS
+--   SELECT x.ILCR_MILL_STATUS_XREF_ID FROM THE.ILCR_MILL_STATUS_XREF x
+--    WHERE EXISTS (SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS s
+--                   WHERE s.ILCR_MILL_ID = x.ILCR_MILL_STATUS_XREF_ID);

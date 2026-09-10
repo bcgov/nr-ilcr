@@ -46,8 +46,8 @@ public class MillContextController implements MillContextApi {
 
   /**
    * The caller's raw {@code custom:idp_user_id} directory GUID (the {@code ILCR_MILL_USER_XREF}
-   * association key), or {@code ""} when unavailable — i.e. the dev mock principal, which is a
-   * {@code UsernamePasswordAuthenticationToken} carrying no JWT claims. Blank ⇒ a submitter is
+   * association key), or the stand-in GUID carried by a dev {@link MockUserPrincipal}. Any other
+   * principal has no usable directory identity and returns {@code ""}; blank ⇒ a submitter is
    * scoped to an empty list (fail-closed) by {@link MillContextService#listMills(boolean, String)}.
    */
   private static String currentUserGuid() {

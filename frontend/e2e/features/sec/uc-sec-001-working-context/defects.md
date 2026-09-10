@@ -186,12 +186,12 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     `listMills` as `validateMillAccess` does was rejected: it makes the gates agree but has the
     suite BYPASS the scoped query, so the coverage above stays lost. Instead `MockPrincipalFilter`
     now presents a stand-in directory GUID (`ilcr.security.mock-user-guid`, defaulting to the
-    test-scope canonical submitter) in the token's `details` — not its name, which feeds the
+    test-scope canonical submitter) in a typed `MockUserPrincipal` — not its name, which feeds the
     `VARCHAR2(30)` `ENTRY_USERID`/`UPDATE_USERID` audit columns while a FAM GUID is 32 chars, so
     naming the principal after it would `ORA-12899` every save. `MillContextController
-    .currentUserGuid()` reads `details` for a non-`Jwt` caller. Unreachable when deployed: that
-    filter is not registered with security on, and `DeployedSecurityGuard` forbids security-off
-    beside a datasource on a pod.
+    .currentUserGuid()` reads the typed principal's `userGuid` for a non-`Jwt` caller. Unreachable
+    when deployed: that filter is not registered with security on, and `DeployedSecurityGuard`
+    forbids security-off beside a datasource on a pod.
   - **The data half, which the identity is useless without.** That GUID needs active
     `ILCR_MILL_USER_XREF` rows in BOTH e2e databases, and `R__70_test_scope_canonical_submitter.sql`
     sorts BEFORE `R__80_e2e_anchor_seed.sql` so its set-based association cannot reach the e2e
