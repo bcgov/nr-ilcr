@@ -57,9 +57,29 @@ public class MockPrincipalFilter extends OncePerRequestFilter {
   private final Role defaultRole;
   private final String userGuid;
 
+  /**
+   * Creates the dev/UAT mock principal filter.
+   *
+   * @param defaultRole the role to present when {@code X-Mock-Groups} is absent or names no known
+   *     role ({@code ilcr.security.mock-role})
+   * @param userGuid the stand-in directory GUID to present ({@code ilcr.security.mock-user-guid});
+   *     trimmed, and warned about if blank, because a GUID that matches no {@code
+   *     ILCR_MILL_USER_XREF} row shows up only as an empty Home dropdown
+   */
   public MockPrincipalFilter(Role defaultRole, String userGuid) {
     this.defaultRole = defaultRole;
-    this.userGuid = userGuid;
+    // Trimmed because a stray space in YAML or an env var would not match any ILCR_MILL_USER_XREF
+    // row, and the only symptom is an empty Home dropdown — indistinguishable from missing data.
+    this.userGuid = (userGuid == null) ? "" : userGuid.trim();
+    if (this.userGuid.isEmpty()) {
+      // Not fatal: an ADMIN mock still works (admins bypass scoping), so failing startup would be
+      // disproportionate. But say it once, loudly, at the only moment anyone is looking — the
+      // alternative is a submitter silently seeing zero mills and it reading as an app defect.
+      logger.warn(
+          "ilcr.security.mock-user-guid is blank: a mock SUBMITTER will be scoped to NO mills "
+              + "(fail-closed). Set it to a directory GUID this database associates in "
+              + "ILCR_MILL_USER_XREF, or select the admin mock user.");
+    }
   }
 
   @Override

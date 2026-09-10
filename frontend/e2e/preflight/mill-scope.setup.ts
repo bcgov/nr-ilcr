@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -62,8 +63,91 @@ async function millsOffered(request: APIRequestContext): Promise<MillSummary[]> 
     `[preflight] GET /api/v1/mills returned HTTP ${res.status()}. The backend is up (other ` +
       `preflights reached it), so this is the endpoint itself, not the environment.`,
   ).toBeTruthy()
-  return (await res.json()) as MillSummary[]
+
+  // Validate the SHAPE before trusting it. A blind cast would turn contract drift into a confusing
+  // downstream failure: `mills.length` on an object is `undefined`, which fails the emptiness check
+  // below with "expected undefined to be greater than 0" and sends the reader hunting for missing
+  // data that is not missing.
+  const body: unknown = await res.json()
+  expect(
+    Array.isArray(body),
+    `[preflight] GET /api/v1/mills did not return a JSON array (got ${typeof body}). The endpoint's ` +
+      `contract changed; this preflight and the Home dropdown both read it as MillSummary[].`,
+  ).toBeTruthy()
+  const mills = body as MillSummary[]
+  const malformed = mills.filter((m) => !Number.isInteger(m?.millId))
+  expect(
+    malformed.length,
+    `[preflight] ${malformed.length} entry/entries from GET /api/v1/mills have no integer millId, ` +
+      `so the pinned-mill comparison below cannot be trusted. First: ${JSON.stringify(malformed[0])}`,
+  ).toBe(0)
+  return mills
 }
+
+/**
+ * Every place the mock directory GUID is written down. It is duplicated by necessity — a Spring
+ * default, a Compose default, and three SQL seeds cannot import a shared constant — so the only
+ * protection against drift is asserting they agree. Change it in one place and this fails naming
+ * both values, instead of a healthy backend serving an empty dropdown.
+ */
+const GUID_SOURCES = [
+  {
+    what: 'the Spring property default',
+    file: 'backend/src/main/resources/application.yml',
+    pattern: /mock-user-guid:\s*\$\{ILCR_SECURITY_MOCK_USER_GUID:([A-Z0-9]+)\}/,
+  },
+  {
+    what: 'the @Value fallback',
+    file: 'backend/src/main/java/ca/bc/gov/nrs/ilcr/configuration/SecurityConfiguration.java',
+    pattern: /ilcr\.security\.mock-user-guid:([A-Z0-9]+)\}/,
+  },
+  {
+    what: 'the Compose default',
+    file: 'docker-compose.yml',
+    pattern: /ILCR_SECURITY_MOCK_USER_GUID:\s*\$\{ILCR_SECURITY_MOCK_USER_GUID:-([A-Z0-9]+)\}/,
+  },
+  {
+    what: "the CI seed's ILCR_USER row",
+    file: 'backend/src/test/resources/db/R__70_test_scope_canonical_submitter.sql',
+    pattern: /'([A-Z0-9]{32})'/,
+  },
+  {
+    what: "the CI seed's mill associations",
+    file: 'backend/src/test/resources/db-e2e/R__80_e2e_anchor_seed.sql',
+    pattern: /'([A-Z0-9]{32})'/,
+  },
+  {
+    what: "the extract patch's associations",
+    file: 'frontend/e2e/real-test-data-patches/common/mock-submitter-associations.sql',
+    pattern: /c_guid\s+CONSTANT\s+VARCHAR2\(32\)\s*:=\s*'([A-Z0-9]+)'/,
+  },
+]
+
+test('preflight: the mock directory GUID is the same in every place it is written', async () => {
+  const repoRoot = path.join(HERE, '../../..')
+  const found = GUID_SOURCES.map((src) => {
+    const source = fs.readFileSync(path.join(repoRoot, src.file), 'utf8')
+    const guid = source.match(src.pattern)?.[1]
+    // Assert the MATCH before comparing values, or a moved key makes every regex miss and the
+    // whole check pass vacuously on an empty set — the trap `mock-user.setup.ts` also guards.
+    expect(
+      guid,
+      `[preflight] Could not find the mock GUID in ${src.file} (${src.what}). Either it moved or ` +
+        `its shape changed; this check is reading the wrong thing and would otherwise pass ` +
+        `vacuously. Update GUID_SOURCES in this file.`,
+    ).toBeTruthy()
+    return { ...src, guid }
+  })
+
+  const distinct = [...new Set(found.map((f) => f.guid))]
+  expect(
+    distinct.length,
+    `[preflight] The mock directory GUID DISAGREES across the places it is written, so the backend ` +
+      `can present an identity that its database never associates — a healthy app with an empty ` +
+      `Home dropdown. Found:\n` +
+      found.map((f) => `  ${f.guid}  ${f.what} (${f.file})`).join('\n'),
+  ).toBe(1)
+})
 
 test("preflight: the suite's identity is offered at least one mill", async ({ request }) => {
   const mills = await millsOffered(request)

@@ -79,15 +79,35 @@ BEGIN
   END IF;
 
   -- 2. One ACTIVE association per mill this extract carries.
+  --
+  -- The guard counts ACTIVE rows, not rows. Counting rows was a real hole: `findMillsForUser`
+  -- requires ACTIVE_DATE IS NOT NULL AND INACTIVE_DATE IS NULL, and the app's own Mill
+  -- Associations admin screen can END an association — so a row could exist while the mill was
+  -- unselectable, and a re-apply would see "already there", do nothing, and leave the dropdown
+  -- short. Reapply now REACTIVATES its own sentinel rows, so this is genuinely idempotent in the
+  -- sense that matters: after it runs, every mill is selectable. Only rows this patch created are
+  -- ever updated (sentinel-keyed) — a real association that someone deliberately ended is left
+  -- exactly as it is.
   FOR m IN (SELECT x.ILCR_MILL_STATUS_XREF_ID mill FROM THE.ILCR_MILL_STATUS_XREF x) LOOP
     SELECT COUNT(*) INTO l_n
       FROM THE.ILCR_MILL_USER_XREF
-     WHERE ILCR_MILL_ID = m.mill AND USER_GUID = c_guid;
+     WHERE ILCR_MILL_ID = m.mill AND USER_GUID = c_guid
+       AND ACTIVE_DATE IS NOT NULL AND INACTIVE_DATE IS NULL;
     IF l_n = 0 THEN
-      INSERT INTO THE.ILCR_MILL_USER_XREF
-          (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
-           ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
-      VALUES (m.mill, c_guid, SYSDATE, NULL, 0, c_user, SYSDATE, c_user, SYSDATE);
+      -- Revive a sentinel row that was ended, rather than inserting a duplicate (the PK is
+      -- (ILCR_MILL_ID, USER_GUID), so a second INSERT would raise ORA-00001).
+      UPDATE THE.ILCR_MILL_USER_XREF
+         SET ACTIVE_DATE = SYSDATE, INACTIVE_DATE = NULL,
+             UPDATE_USERID = c_user, UPDATE_TIMESTAMP = SYSDATE
+       WHERE ILCR_MILL_ID = m.mill AND USER_GUID = c_guid
+         AND ENTRY_USERID = c_user;
+
+      IF SQL%ROWCOUNT = 0 THEN
+        INSERT INTO THE.ILCR_MILL_USER_XREF
+            (ILCR_MILL_ID, USER_GUID, ACTIVE_DATE, INACTIVE_DATE, REVISION_COUNT,
+             ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+        VALUES (m.mill, c_guid, SYSDATE, NULL, 0, c_user, SYSDATE, c_user, SYSDATE);
+      END IF;
     END IF;
   END LOOP;
 

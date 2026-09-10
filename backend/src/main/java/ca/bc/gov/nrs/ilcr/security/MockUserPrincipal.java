@@ -32,4 +32,22 @@ public record MockUserPrincipal(String name, String userGuid) implements Authent
   public String getName() {
     return name;
   }
+
+  /**
+   * The name only — deliberately NOT the record's generated {@code toString()}, which would include
+   * {@code userGuid}.
+   *
+   * <p>Spring Security's {@code AbstractAuthenticationToken.toString()} embeds {@code Principal:
+   * <principal>}, and authentication objects reach logs on their own (framework DEBUG, and any
+   * {@code log.*("… {}", auth)} anywhere). The default GUID is synthetic and harmless, but this
+   * class's own javadoc tells operators to point {@code ilcr.security.mock-user-guid} at a GUID
+   * their database associates — which on a real dataset means a REAL directory identifier of a real
+   * person. Printing the name alone keeps that out of log aggregation while losing nothing: the
+   * GUID is read through {@link #userGuid()} by the one caller that needs it (NFR3/AD-11 — logs
+   * carry mill/user references, never identifiers or tokens).
+   */
+  @Override
+  public String toString() {
+    return name;
+  }
 }

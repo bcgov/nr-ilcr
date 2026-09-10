@@ -123,6 +123,31 @@ class MockPrincipalFilterTest {
   }
 
   @Test
+  void trimsTheConfiguredGuid_soStrayWhitespaceCannotSilentlyMatchNothing() throws Exception {
+    // A trailing space in application.yml or an env var matches no ILCR_MILL_USER_XREF row, and the
+    // ONLY symptom is an empty Home dropdown — indistinguishable from missing seed data, which is
+    // the confusion this whole change set exists to remove.
+    new MockPrincipalFilter(Role.SUBMITTER, "  " + TEST_GUID + "  ")
+        .doFilterInternal(request, response, chain);
+
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    assertEquals(TEST_GUID, ((MockUserPrincipal) auth.getPrincipal()).userGuid());
+  }
+
+  @Test
+  void blankConfiguredGuid_stillSeedsAPrincipal_ratherThanFailing() throws Exception {
+    // Deliberately NOT fatal: an ADMIN mock bypasses scoping and still works, so refusing to start
+    // would be disproportionate. The filter warns instead (see its constructor). What must hold is
+    // that the request still gets a principal, and the GUID is blank rather than null — blank is
+    // what MillContextService.listMills fail-closes on.
+    new MockPrincipalFilter(Role.SUBMITTER, "   ").doFilterInternal(request, response, chain);
+
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    assertEquals("", ((MockUserPrincipal) auth.getPrincipal()).userGuid());
+    verify(chain).doFilter(request, response);
+  }
+
+  @Test
   void carriesTheDirectoryGuid_inATypedPrincipalNotTheName() throws Exception {
     filter(Role.SUBMITTER).doFilterInternal(request, response, chain);
 
