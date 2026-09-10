@@ -2,7 +2,7 @@ import { test as base } from 'playwright-bdd';
 
 import { HomePage } from '../../pages/common/homePage';
 import { AppShellPage } from '../../pages/common/appShell';
-import { grantAdminOnMillList, seedMockUser } from '../../pages/common/mockUser';
+import { seedMockUser } from '../../pages/common/mockUser';
 import { type ScheduleKey } from '../../fixtures/sch1/schedule1-test-data';
 
 /**
@@ -141,13 +141,12 @@ export const globalTest = base.extend<GlobalFixtures>({
    * `seedMockUser(page, 'admin')` itself — `pages/common/appShell.ts` is the one that does.
    */
   page: async ({ page }, use) => {
+    // No exception any more: since bcgov/nr-ilcr#385 the mock principal carries a directory GUID
+    // that is associated with the mills in both e2e databases, so Home offers the submitter its
+    // OWN scoped list. This used to also install `grantAdminOnMillList`, which borrowed the
+    // administrator for `GET /api/v1/mills` because a mock submitter was offered no mill at all —
+    // see `pages/common/mockUser.ts` for why that is gone and what it had cost.
     await seedMockUser(page, 'submitter');
-    // The single exception, and it is an app-side gap rather than a preference: a mock submitter is
-    // offered NO mill on Home, because listMills fail-closes a blank directory GUID while
-    // validateMillAccess exempts the very same principal. `grantAdminOnMillList` borrows the
-    // administrator for that ONE read; every schedule GET, write and check-status stays the
-    // submitter. The full account, including what it costs, is in pages/common/mockUser.ts.
-    await grantAdminOnMillList(page);
     await use(page);
   },
 

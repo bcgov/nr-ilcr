@@ -1,9 +1,11 @@
 package ca.bc.gov.nrs.ilcr.schedule6.dto;
 
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Schedule 6 (Road Management Costs) read document (AD-5, AD-12) — the pinned GET response,
@@ -38,6 +40,7 @@ public record Schedule6Response(
     String trackStatus,
     boolean editable,
     String generalComments,
+    Map<String, OriginalValue> originalValues,
     List<RoadRecord> roadRecords,
     BigDecimal totalVolume,
     Long totalCost,
@@ -53,6 +56,7 @@ public record Schedule6Response(
         trackStatus,
         editable,
         generalComments,
+        originalValues,
         roadRecords,
         totalVolume,
         totalCost,

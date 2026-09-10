@@ -19,12 +19,16 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Culvert;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.CulvertSaveAllRequest;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bCheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule7b.dto.Schedule7bResponse;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -66,6 +71,14 @@ class Schedule7bServiceTest {
 
   @Mock private Schedule7bRepository repository;
   @Mock private MessageSource messageSource;
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
+
   @InjectMocks private Schedule7bService service;
 
   @BeforeEach
@@ -885,6 +898,61 @@ class Schedule7bServiceTest {
       assertThat(echoed.editable()).isTrue();
       // Exactly one status read: the Draft gate. The echo must not issue a second one.
       verify(repository, times(1)).findTrackStatus(MILL, YEAR);
+    }
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a culvert carries the eight keys legacy renders, and no total")
+    void beyondDraftServesTheSubmittedFigures() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("S"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+      when(repository.findCulvertSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule7bRepository.CulvertSnapshotRow(
+                      7801L, "C", 900, 600, new BigDecimal("12.5"), 4, "as submitted")));
+      when(costSnapshots.findByCulvertReports(List.of(7801L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 7801L, 77, null, 3000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 7801L, 78, null, 1200, null, null)));
+
+      Culvert culvert = service.getSchedule7b(MILL, YEAR, CallerRights.ADMIN).culverts().getFirst();
+
+      // The parity decision, asserted as a SET: legacy draws an indicator on each of these nine
+      // fields and none on the derived Total (schedule7B.xhtml:315-516).
+      assertThat(culvert.originalValues())
+          .containsOnlyKeys(
+              "culvertTypeCode",
+              "spanSize",
+              "riseSize",
+              "length",
+              "culvertPieceCount",
+              "materialCost",
+              "installCost",
+              "comments");
+      assertThat(culvert.originalValues().get("materialCost").value()).isEqualTo("3000");
+      assertThat(culvert.originalValues().get("length").tooltip())
+          .isEqualTo("Original Submission Value: 12.5");
+    }
+
+    @Test
+    @DisplayName("at Draft nothing is exposed and the snapshot views are never read")
+    void draftSkipsTheSnapshotReads() {
+      when(repository.findTrackStatus(MILL, YEAR)).thenReturn(Optional.of("D"));
+      when(repository.findCulverts(MILL, YEAR)).thenReturn(List.of(completeRound(7801)));
+      when(repository.findCostDetails(MILL, YEAR)).thenReturn(bothCosts(7801, 4000, 1500));
+
+      Culvert culvert =
+          service.getSchedule7b(MILL, YEAR, CallerRights.SUBMITTER).culverts().getFirst();
+
+      assertThat(culvert.originalValues()).isNull();
+      verify(repository, never()).findCulvertSnapshots(anyLong(), anyInt());
     }
   }
 }

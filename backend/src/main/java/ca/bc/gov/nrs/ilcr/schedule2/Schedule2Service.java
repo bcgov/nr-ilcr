@@ -5,6 +5,10 @@ import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1CostDerivation;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.DetailRow;
 import ca.bc.gov.nrs.ilcr.schedule2.Schedule2Repository.SummaryRow;
@@ -18,7 +22,9 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.NestedExceptionUtils;
@@ -89,6 +95,9 @@ public class Schedule2Service {
   private final Schedule2Repository repository;
   private final Schedule1CostDerivation schedule1CostDerivation;
   private final Schedule3Service schedule3Service;
+  private final OriginalValues originalValues;
+  private final CostDetailSnapshotRepository costSnapshots;
+  private final ReportSummarySnapshotRepository summarySnapshots;
 
   /**
    * Constructs the Schedule 2 service.
@@ -102,10 +111,16 @@ public class Schedule2Service {
   public Schedule2Service(
       Schedule2Repository repository,
       Schedule1CostDerivation schedule1CostDerivation,
-      Schedule3Service schedule3Service) {
+      Schedule3Service schedule3Service,
+      OriginalValues originalValues,
+      CostDetailSnapshotRepository costSnapshots,
+      ReportSummarySnapshotRepository summarySnapshots) {
     this.repository = repository;
     this.schedule1CostDerivation = schedule1CostDerivation;
     this.schedule3Service = schedule3Service;
+    this.originalValues = originalValues;
+    this.costSnapshots = costSnapshots;
+    this.summarySnapshots = summarySnapshots;
   }
 
   /**
@@ -284,9 +299,23 @@ public class Schedule2Service {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     final boolean editable = caller.allows(trackStatus);
 
-    // Stored line items 25/26 (empty when unsaved — AC6).
-    StoredItems stored =
-        repository.findSummary(millId, year).map(this::readStoredItems).orElse(StoredItems.EMPTY);
+    // Stored line items 25/26 (empty when unsaved — AC6). The summary row itself is kept so the
+    // submitted snapshot can be read against the SAME summary id (Story 16.2).
+    SummaryRow summaryRow = repository.findSummary(millId, year).orElse(null);
+    StoredItems stored = summaryRow == null ? StoredItems.EMPTY : readStoredItems(summaryRow);
+
+    // The licensee's submitted figures, skipped entirely at Draft where they would all be null.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, CostDetailSnapshotRepository.Row> snapshotByCode =
+        summaryRow == null || !exposeOriginals
+            ? Map.of()
+            : costSnapshots.findBySummary(summaryRow.summaryId()).stream()
+                .filter(r -> r.costItemCode() != null)
+                .collect(HashMap::new, (m, r) -> m.putIfAbsent(r.costItemCode(), r), Map::putAll);
+    ReportSummarySnapshotRepository.Snapshot summarySnapshot =
+        summaryRow == null || !exposeOriginals
+            ? null
+            : summarySnapshots.findBySummaryId(summaryRow.summaryId()).orElse(null);
     Integer purchasedLogCostAmount = stored.purchasedLogCostAmount(); // item 25 cost
     BigDecimal lessLogSalesVolume = stored.lessLogSalesVolume(); // item 26 volume
     Integer lessLogSalesCost = stored.lessLogSalesCost(); // item 26 cost
@@ -344,7 +373,20 @@ public class Schedule2Service {
         new CostBlock(
             normalizeVolume(popTimberVolume),
             purchasedLogCostAmount,
-            perUnit(bd(purchasedLogCostAmount), popTimberVolume)); // getPurchasedLogCostCal
+            perUnit(bd(purchasedLogCostAmount), popTimberVolume), // getPurchasedLogCostCal
+            // Cost only. Legacy set item 25's cost original and never its volume original
+            // (Schedule2DAO.java:122-123) — the volume is carried from Schedule 3, not entered here
+            // — and schedule2.xhtml renders exactly one indicator on this row to match.
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_PURCHASED_LOG_COST,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // --- purchasedWoodOverhead: all carried from Sch3 (vol 118, cost 135).
     // ------------------------
@@ -371,7 +413,25 @@ public class Schedule2Service {
         new CostBlock(
             normalizeVolume(lessLogSalesVolume),
             lessLogSalesCost,
-            perUnit(bd(lessLogSalesCost), lessLogSalesVolume));
+            perUnit(bd(lessLogSalesCost), lessLogSalesVolume),
+            // Both, because both are entered here (Schedule2DAO.java:118-119).
+            originalValues
+                .forTrack(trackStatus)
+                .put(
+                    "volume",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::volume),
+                    OriginalValueFormat.WHOLE)
+                .put(
+                    "cost",
+                    snapshot(
+                        snapshotByCode,
+                        ITEM_LESS_LOG_SALES,
+                        CostDetailSnapshotRepository.Row::cost),
+                    OriginalValueFormat.WHOLE)
+                .build());
 
     // --- netPurchased: volume = Sch3 118 - lessLogSales.volume (getNetPurchasedVolume);
     // ------------
@@ -433,6 +493,13 @@ public class Schedule2Service {
         editable,
         revisionCount,
         comments,
+        originalValues
+            .forTrack(trackStatus)
+            .put(
+                "comments",
+                summarySnapshot == null ? null : summarySnapshot.comments(),
+                OriginalValueFormat.TEXT)
+            .build(),
         purchasedLogCost,
         purchasedWoodOverhead,
         subtotal,
@@ -441,6 +508,18 @@ public class Schedule2Service {
         totalCompanyLogging,
         totalAverage,
         null); // success message is set by the controller on the PUT echo (AD-8)
+  }
+
+  /**
+   * One field of one submitted cost-detail row, or null when that row is not on file — the shape
+   * {@code OriginalValues.Builder.put} expects for "no original".
+   */
+  private static <T> T snapshot(
+      Map<Integer, CostDetailSnapshotRepository.Row> byCode,
+      int costItemCode,
+      java.util.function.Function<CostDetailSnapshotRepository.Row, T> field) {
+    CostDetailSnapshotRepository.Row row = byCode.get(costItemCode);
+    return row == null ? null : field.apply(row);
   }
 
   /**

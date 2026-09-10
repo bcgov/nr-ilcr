@@ -1,5 +1,6 @@
 package ca.bc.gov.nrs.ilcr.schedule11;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -19,21 +20,28 @@ import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
+import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.BiogeoclimaticOption;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11CheckStatusResponse;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.Schedule11Response;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocation;
 import ca.bc.gov.nrs.ilcr.schedule11.dto.SilvicultureLocationRequest;
 import ca.bc.gov.nrs.ilcr.support.CallerRights;
+import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -58,6 +66,14 @@ class Schedule11ServiceTest {
   @Mock private MillContextService millContextService;
 
   @Mock private MessageSource messageSource;
+
+  @Mock private CostDetailSnapshotRepository costSnapshots;
+
+  @Mock private ReportSummarySnapshotRepository summarySnapshots;
+
+  // The real gate, not a stub: its whole substance is "not Draft", so a mock would turn every
+  // original-value assertion into an assertion about the mock (Story 16.2, OriginalValuesFixture).
+  @Spy private OriginalValues originalValues = OriginalValuesFixture.real();
 
   @InjectMocks private Schedule11Service service;
 
@@ -702,5 +718,57 @@ class Schedule11ServiceTest {
     assertTrue(service.searchBiogeoCatalogue("").isEmpty());
     assertTrue(service.searchBiogeoCatalogue(null).isEmpty());
     verify(repository, never()).searchBiogeoCatalogue(anyString());
+  }
+
+  @Nested
+  @DisplayName("original-value indicators (Story 16.2, BR-04)")
+  class OriginalValueIndicators {
+
+    @Test
+    @DisplayName("beyond Draft a location carries the five keys the silviculture view can supply")
+    void beyondDraftServesTheSubmittedFigures() {
+      stubTrack("S");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL))
+          .thenReturn(List.of(cost(1L, 9101L, 24, 25000), cost(2L, 9101L, 23, 10000)));
+      when(repository.findLocationSnapshots(MILL, YEAR))
+          .thenReturn(
+              List.of(
+                  new Schedule11Repository.LocationSnapshotRow(
+                      9101L, "Submitted location", 8801L, new BigDecimal("100.0"))));
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L)))
+          .thenReturn(
+              List.of(
+                  new CostDetailSnapshotRepository.Row(1, 9101L, 24, null, 20000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 9101L, 23, null, 9000, null, null)));
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.ADMIN).locations().get(0);
+
+      // D5: `enhancedIndicator` and `comments` are ABSENT because the view carries neither column,
+      // so legacy's own indicator for the enhanced flag could never fire either. The other five are
+      // the ones schedule11.xhtml actually draws.
+      assertThat(served.originalValues())
+          .containsOnlyKeys(
+              "location", "biogeoclimaticCatalogueId", "netArea", "actualCost", "plannedCost");
+      assertThat(served.originalValues().get("location").value()).isEqualTo("Submitted location");
+      assertThat(served.originalValues().get("actualCost").value()).isEqualTo("20000");
+    }
+
+    @Test
+    @DisplayName("the gate reads the SILVICULTURE track, never the 1-10 column")
+    void draftSilvicultureExposesNothing() {
+      stubTrack("D");
+      when(repository.findLocations(YEAR, MILL))
+          .thenReturn(List.of(location(9101L, new BigDecimal("120.5"), "N")));
+      when(repository.findCostDetails(YEAR, MILL)).thenReturn(List.of());
+
+      SilvicultureLocation served =
+          service.getSchedule11(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+      assertThat(served.originalValues()).isNull();
+      verify(repository, never()).findLocationSnapshots(anyLong(), anyInt());
+    }
   }
 }

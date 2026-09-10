@@ -2,10 +2,13 @@ package ca.bc.gov.nrs.ilcr.schedule8;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CheckStatusOutcome;
 import ca.bc.gov.nrs.ilcr.dto.base.MessageInfo;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValueFormat;
+import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Page;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.RateRow;
 import ca.bc.gov.nrs.ilcr.schedule8.dto.Sample;
@@ -21,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.schedule8.dto.Schedule8SampleRequest;
 import ca.bc.gov.nrs.ilcr.security.EditableStatuses;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,9 +86,17 @@ public class Schedule8Service {
   private static final Set<String> DEDUCTION_SUBCATEGORIES = Set.of("3", "4");
 
   private final Schedule8Repository repository;
+  private final OriginalValues originalValues;
 
-  public Schedule8Service(Schedule8Repository repository) {
+  /**
+   * Constructs the Schedule 8 service.
+   *
+   * @param repository the repository
+   * @param originalValues the original-value gate (Story 16.2)
+   */
+  public Schedule8Service(Schedule8Repository repository, OriginalValues originalValues) {
     this.repository = repository;
+    this.originalValues = originalValues;
   }
 
   /**
@@ -100,16 +112,36 @@ public class Schedule8Service {
     String trackStatus = repository.findTrackStatus(millId, year).orElse(null);
     final boolean editable = caller.allows(trackStatus);
 
-    // Label maps + the addition/deduction discriminator, loaded once per read.
-    Map<String, String> supportCentre = repository.supportCentreLabels();
-    Map<String, String> region = repository.regionLabels();
-    Map<String, String> becZone = repository.becZoneLabels();
-    Map<String, String> tsa = repository.tsaNumberLabels();
-    Map<String, String> supplyBlock = repository.supplyBlockLabels();
-    Map<String, String> tfl = repository.tflNumberLabels();
+    // Label maps + the addition/deduction discriminator, loaded once per read. Declared final:
+    // the snapshot reads below sit between these and their first use, and the checkstyle
+    // declaration-distance rule accepts the distance once the value provably cannot change.
+    final Map<String, String> supportCentre = repository.supportCentreLabels();
+    final Map<String, String> region = repository.regionLabels();
+    final Map<String, String> becZone = repository.becZoneLabels();
+    final Map<String, String> tsa = repository.tsaNumberLabels();
+    final Map<String, String> supplyBlock = repository.supplyBlockLabels();
+    final Map<String, String> tfl = repository.tflNumberLabels();
     Map<String, String> skidType = repository.skidTypeLabels();
     Map<String, String> costType = repository.costTypeLabels();
     Map<Integer, String> subcategories = repository.costItemSubcategories();
+
+    // The licensee's submitted figures (Story 16.2, BR-04). Three views, because Schedule 8's
+    // document is three levels deep and each level has its own snapshot. Skipped at Draft.
+    boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
+    Map<Integer, Schedule8Repository.PageSnapshotRow> pageSnapshots = new HashMap<>();
+    Map<Integer, Schedule8Repository.SampleSnapshotRow> sampleSnapshots = new HashMap<>();
+    Map<Integer, Schedule8Repository.RateSnapshotRow> rateSnapshots = new HashMap<>();
+    if (exposeOriginals) {
+      for (Schedule8Repository.PageSnapshotRow r : repository.findPageSnapshots(millId, year)) {
+        pageSnapshots.putIfAbsent(r.id(), r);
+      }
+      for (Schedule8Repository.SampleSnapshotRow r : repository.findSampleSnapshots(millId, year)) {
+        sampleSnapshots.putIfAbsent(r.id(), r);
+      }
+      for (Schedule8Repository.RateSnapshotRow r : repository.findRateSnapshots(millId, year)) {
+        rateSnapshots.putIfAbsent(r.id(), r);
+      }
+    }
 
     // Rate rows grouped under their sample; each sample's rows grouped under its page.
     Map<Integer, List<TreeToTruckRateDetailEntity>> ratesBySample = new LinkedHashMap<>();
@@ -120,7 +152,14 @@ public class Schedule8Service {
     for (TreeToTruckDetailReportEntity s : repository.findSamples(millId, year)) {
       Sample sample =
           toSample(
-              s, ratesBySample.getOrDefault(s.id(), List.of()), subcategories, skidType, costType);
+              s,
+              ratesBySample.getOrDefault(s.id(), List.of()),
+              subcategories,
+              skidType,
+              costType,
+              trackStatus,
+              sampleSnapshots.get(s.id()),
+              rateSnapshots);
       samplesByPage.computeIfAbsent(s.reportId(), k -> new ArrayList<>()).add(sample);
     }
 
@@ -150,7 +189,8 @@ public class Schedule8Service {
               labelFor(supplyBlock, p.supplyBlock()),
               p.comments(),
               samples.size(),
-              samples));
+              samples,
+              pageOriginals(trackStatus, pageSnapshots.get(p.id()))));
     }
 
     return new Schedule8Response(millId, year, trackStatus, editable, pages, null);
@@ -768,7 +808,10 @@ public class Schedule8Service {
       List<TreeToTruckRateDetailEntity> rateRows,
       Map<Integer, String> subcategories,
       Map<String, String> skidType,
-      Map<String, String> costType) {
+      Map<String, String> costType,
+      String trackStatus,
+      Schedule8Repository.SampleSnapshotRow sampleSnapshot,
+      Map<Integer, Schedule8Repository.RateSnapshotRow> rateSnapshots) {
     List<RateRow> additions = new ArrayList<>();
     List<RateRow> deductions = new ArrayList<>();
     BigDecimal additionsTotal = BigDecimal.ZERO;
@@ -782,7 +825,8 @@ public class Schedule8Service {
               r.itemDescription(),
               normalize(r.costingRate()),
               r.costTypeCode(),
-              labelFor(costType, r.costTypeCode()));
+              labelFor(costType, r.costTypeCode()),
+              rateOriginals(trackStatus, rateSnapshots.get(r.id())));
       switch (classifyRate(subcategories, r.costItemCode())) {
         case ADDITION -> {
           additions.add(row);
@@ -848,7 +892,8 @@ public class Schedule8Service {
         additions.size(),
         deductions.size(),
         additions,
-        deductions);
+        deductions,
+        sampleOriginals(trackStatus, sampleSnapshot));
   }
 
   private static BigDecimal zeroIfNull(BigDecimal value) {
@@ -924,5 +969,109 @@ public class Schedule8Service {
     }
     BigDecimal stripped = value.stripTrailingZeros();
     return stripped.scale() < 0 ? stripped.setScale(0) : stripped;
+  }
+
+  /**
+   * One page's submitted values (Story 16.2, BR-04) — the twelve legacy tracked on {@code
+   * TreeToTruckReportDO} ({@code :528-561}). The code fields are served as their submitted CODES,
+   * which is what legacy compared and what the page's dropdowns hold; the resolved labels alongside
+   * them are display-only and legacy gave them no indicator.
+   *
+   * <p>Legacy also populated a thirteenth field, {@code supplyBlockOriginalVal} ({@code
+   * Schedule8DAO.java:287}), from the same column as {@code tsbNumberCodeOriginal} — with no
+   * accessor and no view reference, so nothing is served for it (deviation D9).
+   */
+  private Map<String, OriginalValue> pageOriginals(
+      String trackStatus, Schedule8Repository.PageSnapshotRow page) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("division", page == null ? null : page.division(), OriginalValueFormat.TEXT)
+        .put("license", page == null ? null : page.license(), OriginalValueFormat.TEXT)
+        .put("contact", page == null ? null : page.contact(), OriginalValueFormat.TEXT)
+        .put("phone", page == null ? null : page.phone(), OriginalValueFormat.TEXT)
+        .put("cuttingPermit", page == null ? null : page.cuttingPermit(), OriginalValueFormat.TEXT)
+        .put("supportCentre", page == null ? null : page.supportCentre(), OriginalValueFormat.TEXT)
+        .put("region", page == null ? null : page.region(), OriginalValueFormat.TEXT)
+        .put("becZone", page == null ? null : page.becZone(), OriginalValueFormat.TEXT)
+        .put("tsaNumber", page == null ? null : page.tsaNumber(), OriginalValueFormat.TEXT)
+        .put("tflNumber", page == null ? null : page.tflNumber(), OriginalValueFormat.TEXT)
+        .put("supplyBlock", page == null ? null : page.supplyBlock(), OriginalValueFormat.TEXT)
+        .put("comments", page == null ? null : page.comments(), OriginalValueFormat.TEXT)
+        .build();
+  }
+
+  /**
+   * One sample's submitted values — the nineteen legacy tracked on {@code
+   * TreeToTruckDetailReportDO} ({@code :551-632}) that this document actually carries.
+   *
+   * <p>Two legacy fields are deliberately absent. {@code skidTypeDescOriginalVal} ({@code :45}) is
+   * never populated and never read, and {@code ilcrSkidTypeDescOV} ({@code :48}) is display-only
+   * with no boolean accessor, so the resolved skid-type label carries no indicator (deviation D9).
+   * The sample's own submitted COMMENTS has no counterpart either — this document has never served
+   * a sample-level comments field at all, so there is nothing for an indicator to decorate; that is
+   * a pre-existing read-contract gap, not one this story introduces.
+   *
+   * <p>Every derived figure — {@code percentTotal}, {@code actualHarvested}, the addition and
+   * deduction totals and {@code finalRate} — carries none, having no snapshot column.
+   */
+  private Map<String, OriginalValue> sampleOriginals(
+      String trackStatus, Schedule8Repository.SampleSnapshotRow sample) {
+    OriginalValues.Builder builder = originalValues.forTrack(trackStatus);
+    if (sample == null) {
+      // Guarded once here rather than once per field: repeating the null check on all nineteen
+      // fields said the same thing nineteen times and pushed this method past the
+      // cognitive-complexity limit. The result is identical, because the builder already ignores a
+      // null submitted value. An EMPTY map is the right answer for a sample with nothing on file —
+      // it tells the page to evaluate the added-since-submission branch for every field, which a
+      // null map (the Draft answer) would not.
+      return builder.build();
+    }
+    return builder
+        .put("contractId", sample.contractId(), OriginalValueFormat.TEXT)
+        .put("cutBlock", sample.cutBlock(), OriginalValueFormat.TEXT)
+        .put("groundBasePct", sample.groundBasePct(), OriginalValueFormat.PERCENTAGE)
+        .put("grapplePct", sample.grapplePct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylinePct", sample.skylinePct(), OriginalValueFormat.PERCENTAGE)
+        .put("highleadPct", sample.highleadPct(), OriginalValueFormat.PERCENTAGE)
+        .put("helicopterPct", sample.helicopterPct(), OriginalValueFormat.PERCENTAGE)
+        .put("otherSkiddingPct", sample.otherSkiddingPct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylineSlopeDistance", sample.skylineSlopeDistance(), OriginalValueFormat.WHOLE)
+        .put("skylineSupportNumber", sample.skylineSupportNumber(), OriginalValueFormat.WHOLE)
+        .put("supportAvgDistance", sample.supportAverageDistance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("distance", sample.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycleTime", sample.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .put("uphillDirection", sample.uphillDirectionInd(), OriginalValueFormat.UPHILL_DIRECTION)
+        .put(
+            "waterDumpDestination",
+            sample.waterDumpDestinationInd(),
+            OriginalValueFormat.WATER_DUMP)
+        .put("skidTypeCode", sample.skidTypeCode(), OriginalValueFormat.TEXT)
+        .put("coniferousVolume", sample.coniferousVolume(), OriginalValueFormat.WHOLE)
+        .put("deciduousVolume", sample.deciduousVolume(), OriginalValueFormat.WHOLE)
+        .put("originalRate", sample.originalRate(), OriginalValueFormat.TWO_DECIMAL)
+        .build();
+  }
+
+  /**
+   * One rate row's submitted values — the five legacy tracked on {@code TreeToTruckRateDetailDO}
+   * ({@code :270-282}) minus {@code isCostItemOriginal} ({@code :270}), which compares whole
+   * entities and no view invokes (its sibling {@code isCostItemIDOriginal} is the one that
+   * renders).
+   */
+  private Map<String, OriginalValue> rateOriginals(
+      String trackStatus, Schedule8Repository.RateSnapshotRow rate) {
+    return originalValues
+        .forTrack(trackStatus)
+        .put("costItemCode", rate == null ? null : rate.costItemCode(), OriginalValueFormat.TEXT)
+        .put(
+            "itemDescription",
+            rate == null ? null : rate.itemDescription(),
+            OriginalValueFormat.TEXT)
+        .put(
+            "costingRate",
+            rate == null ? null : rate.costingRate(),
+            OriginalValueFormat.TWO_DECIMAL)
+        .put("costTypeCode", rate == null ? null : rate.costTypeCode(), OriginalValueFormat.TEXT)
+        .build();
   }
 }
