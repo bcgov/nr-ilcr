@@ -223,8 +223,15 @@ fixtures pinned in `fixtures/sec/working-context-test-data.ts`. Verified on real
     `…listMills_submitter_returnsOnlyActivelyAssociatedMills_closedIncluded` (the S06 closed shape)
     and `…listMills_submitterBlankOrNullGuid_returnsEmpty_failClosed` (strict Mockito proving no
     repository read). Swap `findMillsForUser` for `findAllMills` and the second fails immediately.
-    Reproducing that in a browser scenario would need a new mill invented in two databases to buy
-    coverage that already exists, faster and more precisely, one layer down.
+    **And the discriminating case exists at the INTEGRATION layer too**, against real Oracle:
+    `MillContextListScopeIT` ("Home mill list — per-user scoping (Story 5.5)") has
+    `submitter_seesOnlyActivelyAssociatedMills` and `submitter_noAssociations_returnsEmpty` — i.e.
+    the exact "a submitter does NOT see an unassociated mill" assertion this suite cannot make.
+    Reproducing it in a browser scenario would need a new mill invented in two databases to buy
+    coverage that already exists twice over, faster and more precisely, one and two layers down.
+    NOTE for whoever relies on that: the IT suite is **not run by CI** (`pom.xml` defaults
+    `skip.integration.tests=true`), so it has to be run locally —
+    `mvn -B -ntp clean -P all-tests verify`.
   - **The dependency this created, and its guard.** Deleting the workaround means a green run now
     REQUIRES association rows in whichever database the suite points at — forget
     `./scripts/apply-patches.sh` on an extract and the dropdown is empty, which would surface as
