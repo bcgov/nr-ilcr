@@ -379,7 +379,7 @@ class Schedule2ServiceTest {
       int costItemCode, String volume, Integer cost) {
     return new CostDetailSnapshotRepository.Row(
         900 + costItemCode,
-        SUMMARY_ID,
+        (long) SUMMARY_ID,
         costItemCode,
         volume == null ? null : new BigDecimal(volume),
         cost,

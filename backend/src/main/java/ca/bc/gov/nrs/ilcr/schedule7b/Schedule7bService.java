@@ -139,12 +139,12 @@ public class Schedule7bService {
           repository.findCulvertSnapshots(millId, year)) {
         culvertSnapshots.putIfAbsent(snap.culvertReportId(), snap);
       }
-      List<Integer> culvertIds =
-          rows.stream().map(c -> (int) c.culvertReportId()).distinct().toList();
+      List<Long> culvertIds =
+          rows.stream().map(CulvertReportEntity::culvertReportId).distinct().toList();
       for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCulvertReports(culvertIds)) {
         if (r.parentId() != null && r.costItemCode() != null) {
           costSnapshotsByCulvert
-              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
               .putIfAbsent(r.costItemCode(), r.cost());
         }
       }

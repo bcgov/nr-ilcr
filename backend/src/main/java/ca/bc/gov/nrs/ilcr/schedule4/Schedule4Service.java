@@ -242,8 +242,10 @@ public class Schedule4Service {
     if (locationRows.isEmpty()) {
       return new Snapshots(byReport, byReportAndItem);
     }
-    List<Integer> reportIds =
-        locationRows.stream().map(LocationRow::transportationReportId).distinct().toList();
+    // Widened, not narrowed: the location ids are int on LocationRow and the shared snapshot
+    // finder speaks Long, so this conversion cannot lose a value.
+    List<Long> reportIds =
+        locationRows.stream().map(row -> (long) row.transportationReportId()).distinct().toList();
     for (CostDetailSnapshotRepository.Row r :
         costSnapshots.findByTransportationReports(reportIds)) {
       if (r.parentId() != null && r.costItemCode() != null) {

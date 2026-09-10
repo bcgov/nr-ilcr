@@ -164,13 +164,13 @@ public class Schedule11Service {
           repository.findLocationSnapshots(millId, year)) {
         locationSnapshots.putIfAbsent(snap.locationId(), snap);
       }
-      List<Integer> locationIds =
-          locationRows.stream().map(l -> (int) l.locationId()).distinct().toList();
+      List<Long> locationIds =
+          locationRows.stream().map(SilvicultureLocationEntity::locationId).distinct().toList();
       for (CostDetailSnapshotRepository.Row r :
           costSnapshots.findBySilvicultureLocations(locationIds)) {
         if (r.parentId() != null && r.costItemCode() != null) {
           costSnapshotsByLocation
-              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
               .putIfAbsent(r.costItemCode(), r.cost());
         }
       }

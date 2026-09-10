@@ -2,10 +2,18 @@ package ca.bc.gov.nrs.ilcr.schedule6;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -18,7 +26,9 @@ import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -287,5 +297,113 @@ class Schedule6ServiceTest {
   private boolean editableFor(String trackStatus, EditableStatuses callerMayEdit) {
     stub(trackStatus, List.of(), List.of());
     return service.getSchedule6(MILL, YEAR, callerMayEdit).editable();
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). Schedule 6 reads a road record's submitted figures from
+  // TWO snapshots — the report view for its classification, the shared cost view for its volume,
+  // cost and comments — joined on the record id. The join is the thing worth pinning: it is the
+  // only place the shared finder's parent id has to line up with this schedule's own record id.
+  // -----------------------------------------------------------------------------------------
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    OriginalValue original = originals.get(field);
+    assertNotNull(original, () -> "no original for " + field + " in " + originals.keySet());
+    assertEquals(value, original.value());
+    assertEquals(OriginalValuesFixture.tooltip(formatted), original.tooltip());
+  }
+
+  @Test
+  @DisplayName("at Draft nothing is exposed and neither snapshot view is read")
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stub(
+        "D",
+        List.of(new RoadRecordRow(8001, "01", "01B", null, "GC", 0)),
+        List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, "note")));
+
+    Schedule6Response doc = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNull(doc.originalValues());
+    assertNull(doc.roadRecords().get(0).originalValues());
+    verify(repository, never()).findRoadRecordSnapshots(anyLong(), anyInt());
+    verify(costSnapshots, never()).findByRoadMaintenanceReports(anyList());
+  }
+
+  @Test
+  @DisplayName("beyond Draft a record joins its report snapshot to its cost snapshot by record id")
+  void originalValues_submitted_joinReportAndCostSnapshotsOnTheRecordId() {
+    stub(
+        "S",
+        List.of(new RoadRecordRow(8001, "01", "01B", null, "current note", 0)),
+        List.of(new CostDetailRow(8001, new BigDecimal("1000"), 50000, "note")));
+    when(repository.findRoadRecordSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new Schedule6Repository.RoadRecordSnapshotRow(
+                    8001, "02", "02B", null, "submitted general")));
+    when(costSnapshots.findByRoadMaintenanceReports(List.of(8001L)))
+        .thenReturn(
+            List.of(
+                new CostDetailSnapshotRepository.Row(
+                    1, 8001L, 71, new BigDecimal("900"), 45000, null, "submitted note")));
+
+    Schedule6Response doc = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
+    Map<String, OriginalValue> originals = doc.roadRecords().get(0).originalValues();
+
+    // Classification off the report snapshot; volume/cost/comments off the cost snapshot. The
+    // record id is the only key joining them — a widened-or-narrowed mismatch drops half of these.
+    assertOriginal(originals, "areaType", "02", "02");
+    assertOriginal(originals, "supplyBlock", "02B", "02B");
+    assertOriginal(originals, "volume", "900", "900");
+    assertOriginal(originals, "cost", "45000", "45,000");
+    assertOriginal(originals, "comments", "submitted note", "submitted note");
+    // The document-level general comment is the replicated per-row COMMENTS, not the cost row's.
+    assertOriginal(
+        doc.originalValues(), "generalComments", "submitted general", "submitted general");
+  }
+
+  @Test
+  @DisplayName("a record submitted as TFL exposes the TFL number and no supply block")
+  void originalValues_submittedAsTfl_swapsTheClassificationKeys() {
+    stub(
+        "S",
+        List.of(new RoadRecordRow(8002, "01", "01B", null, null, 0)),
+        List.of(new CostDetailRow(8002, new BigDecimal("10"), 100, null)));
+    when(repository.findRoadRecordSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(new Schedule6Repository.RoadRecordSnapshotRow(8002, null, null, "08", null)));
+    when(costSnapshots.findByRoadMaintenanceReports(List.of(8002L))).thenReturn(List.of());
+
+    Map<String, OriginalValue> originals =
+        service
+            .getSchedule6(MILL, YEAR, CallerRights.SUBMITTER)
+            .roadRecords()
+            .get(0)
+            .originalValues();
+
+    // Submitted as a TFL: areaType reads the literal "TFL" and the supply-block key stays absent,
+    // mirroring how the current-side record is split.
+    assertOriginal(originals, "areaType", "TFL", "TFL");
+    assertOriginal(originals, "tflNumber", "08", "08");
+    assertEquals(Set.of("areaType", "tflNumber"), originals.keySet());
+  }
+
+  @Test
+  @DisplayName("beyond Draft with nothing on file the maps are empty, never null")
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    stub(
+        "S",
+        List.of(new RoadRecordRow(8003, "01", "01B", null, "note", 0)),
+        List.of(new CostDetailRow(8003, new BigDecimal("10"), 100, null)));
+    when(repository.findRoadRecordSnapshots(MILL, YEAR)).thenReturn(List.of());
+    when(costSnapshots.findByRoadMaintenanceReports(List.of(8003L))).thenReturn(List.of());
+
+    Schedule6Response doc = service.getSchedule6(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNotNull(doc.originalValues());
+    assertTrue(doc.originalValues().isEmpty());
+    assertNotNull(doc.roadRecords().get(0).originalValues());
+    assertTrue(doc.roadRecords().get(0).originalValues().isEmpty());
   }
 }

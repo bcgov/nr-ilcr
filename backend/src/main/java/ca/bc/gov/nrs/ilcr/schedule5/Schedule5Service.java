@@ -209,12 +209,12 @@ public class Schedule5Service {
     // camp rather than per camp, so the page costs two queries however many camps it holds.
     boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
     Map<Integer, Schedule5Repository.CampSnapshotRow> campSnapshots = new HashMap<>();
-    Map<Integer, Map<Integer, CostDetailSnapshotRepository.Row>> detailSnapshots = new HashMap<>();
+    Map<Long, Map<Integer, CostDetailSnapshotRepository.Row>> detailSnapshots = new HashMap<>();
     if (exposeOriginals && !campRows.isEmpty()) {
       for (Schedule5Repository.CampSnapshotRow snap : repository.findCampSnapshots(millId, year)) {
         campSnapshots.putIfAbsent(snap.campId(), snap);
       }
-      List<Integer> campIds = campRows.stream().map(CampRow::campId).distinct().toList();
+      List<Long> campIds = campRows.stream().map(row -> (long) row.campId()).distinct().toList();
       for (CostDetailSnapshotRepository.Row r : costSnapshots.findByCampReports(campIds)) {
         if (r.parentId() != null && r.costItemCode() != null) {
           detailSnapshots
@@ -232,7 +232,7 @@ public class Schedule5Service {
                             originalValues,
                             trackStatus,
                             campSnapshots.get(row.campId()),
-                            detailSnapshots.getOrDefault(row.campId(), Map.of())),
+                            detailSnapshots.getOrDefault((long) row.campId(), Map.of())),
                         millId,
                         year,
                         row,
@@ -346,7 +346,7 @@ public class Schedule5Service {
             // (Schedule5DAO.java:240); the cost is the SUM of the sub-page rows, so it has no
             // snapshot column of its own and legacy set none.
             originals
-                .build()
+                .builder()
                 .put(
                     FIELD_VOLUME,
                     originals.volume(ITEM_OTHER_CAMP_EXPENSES_VOLUME),
@@ -362,7 +362,7 @@ public class Schedule5Service {
             // Cost only, matching legacy: Schedule5DAO.java:242-244 sets a cost original for
             // Recoveries and no volume original, because the category has no volume.
             originals
-                .build()
+                .builder()
                 .put(FIELD_COST, originals.cost(ITEM_RECOVERIES), OriginalValueFormat.WHOLE)
                 .build());
 
@@ -397,7 +397,7 @@ public class Schedule5Service {
             costPerVolumePerTerm(details.otherAccessRows(), otherAccessVolume),
             // Volume only, for the same reason (Schedule5DAO.java:281).
             originals
-                .build()
+                .builder()
                 .put(
                     FIELD_VOLUME,
                     originals.volume(ITEM_OTHER_ACCESS_EXPENSES_VOLUME),
@@ -460,7 +460,7 @@ public class Schedule5Service {
         // CoreUtil, never flagged a camp that GAINED the flag on submit, and NPE'd on a null
         // current value — deviation D6.
         originals
-            .build()
+            .builder()
             .put(
                 FIELD_CAMP_NAME,
                 originals.camp(Schedule5Repository.CampSnapshotRow::campName),
@@ -520,7 +520,7 @@ public class Schedule5Service {
   private CategoryAmount amount(CampDetails details, int itemId, CampOriginals originals) {
     Map<String, OriginalValue> submitted =
         originals
-            .build()
+            .builder()
             .put(FIELD_VOLUME, originals.volume(itemId), OriginalValueFormat.WHOLE)
             .put(FIELD_COST, originals.cost(itemId), OriginalValueFormat.WHOLE)
             .build();
@@ -1476,7 +1476,7 @@ public class Schedule5Service {
     Map<Integer, CostDetailSnapshotRepository.Row> snapshotByDetailId = new HashMap<>();
     if (originalValues.exposesOriginalValues(trackStatus)) {
       for (CostDetailSnapshotRepository.Row r :
-          costSnapshots.findByCampReports(List.of(camp.campId()))) {
+          costSnapshots.findByCampReports(List.of((long) camp.campId()))) {
         if (r.detailId() != null) {
           snapshotByDetailId.putIfAbsent(r.detailId(), r);
         }
@@ -1596,7 +1596,13 @@ public class Schedule5Service {
       Schedule5Repository.CampSnapshotRow camp,
       Map<Integer, CostDetailSnapshotRepository.Row> byItem) {
 
-    OriginalValues.Builder build() {
+    /**
+     * A fresh builder for one object's map. Named {@code builder()}, not {@code build()}: the thing
+     * it returns is a builder, and the collected map comes from {@link
+     * OriginalValues.Builder#build()} at the end of the chain — {@code originals.build()...build()}
+     * read as though the same call were being made twice.
+     */
+    OriginalValues.Builder builder() {
       return gate.forTrack(trackStatus);
     }
 

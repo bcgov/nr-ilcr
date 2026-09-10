@@ -129,12 +129,12 @@ public class Schedule7aService {
           repository.findBridgeSnapshots(millId, year)) {
         bridgeSnapshots.putIfAbsent(snap.bridgeReportId(), snap);
       }
-      List<Integer> bridgeIds =
-          bridgeRows.stream().map(b -> (int) b.bridgeReportId()).distinct().toList();
+      List<Long> bridgeIds =
+          bridgeRows.stream().map(BridgeReportEntity::bridgeReportId).distinct().toList();
       for (CostDetailSnapshotRepository.Row r : costSnapshots.findByBridgeReports(bridgeIds)) {
         if (r.parentId() != null && r.costItemCode() != null) {
           costSnapshotsByBridge
-              .computeIfAbsent(r.parentId().longValue(), id -> new HashMap<>())
+              .computeIfAbsent(r.parentId(), id -> new HashMap<>())
               .putIfAbsent(r.costItemCode(), r.cost());
         }
       }

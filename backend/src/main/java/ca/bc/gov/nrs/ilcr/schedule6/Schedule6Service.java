@@ -131,7 +131,7 @@ public class Schedule6Service {
     // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
     boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
     Map<Integer, Schedule6Repository.RoadRecordSnapshotRow> recordSnapshots = new HashMap<>();
-    Map<Integer, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
+    Map<Long, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
     String submittedGeneralComment = null;
     if (exposeOriginals && !rows.isEmpty()) {
       for (Schedule6Repository.RoadRecordSnapshotRow snap :
@@ -141,7 +141,7 @@ public class Schedule6Service {
         // row, so the submitted general comment follows the same last-one-wins rule.
         submittedGeneralComment = snap.generalComment();
       }
-      List<Integer> recordIds = rows.stream().map(RoadRecordRow::recordId).distinct().toList();
+      List<Long> recordIds = rows.stream().map(row -> (long) row.recordId()).distinct().toList();
       for (CostDetailSnapshotRepository.Row r :
           costSnapshots.findByRoadMaintenanceReports(recordIds)) {
         if (r.parentId() != null) {
@@ -202,7 +202,7 @@ public class Schedule6Service {
               roadRecordOriginals(
                   trackStatus,
                   recordSnapshots.get(row.recordId()),
-                  costSnapshotByRecord.get(row.recordId()))));
+                  costSnapshotByRecord.get((long) row.recordId()))));
 
       if (cost != null) {
         totalCost += cost;

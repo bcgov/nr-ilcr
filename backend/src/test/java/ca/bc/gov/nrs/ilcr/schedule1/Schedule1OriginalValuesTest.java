@@ -91,9 +91,21 @@ class Schedule1OriginalValuesTest {
         .thenReturn(
             List.of(
                 new CostDetailSnapshotRepository.Row(
-                    7101, SUMMARY_ID, CODE_STANDING_TREE, new BigDecimal("60000"), 600, null, null),
+                    7101,
+                    (long) SUMMARY_ID,
+                    CODE_STANDING_TREE,
+                    new BigDecimal("60000"),
+                    600,
+                    null,
+                    null),
                 new CostDetailSnapshotRepository.Row(
-                    7102, SUMMARY_ID, CODE_SUBTOTAL, new BigDecimal("60000"), 98_000, null, null)));
+                    7102,
+                    (long) SUMMARY_ID,
+                    CODE_SUBTOTAL,
+                    new BigDecimal("60000"),
+                    98_000,
+                    null,
+                    null)));
     when(summarySnapshots.findBySummaryId(SUMMARY_ID))
         .thenReturn(
             Optional.of(
@@ -199,7 +211,7 @@ class Schedule1OriginalValuesTest {
         .thenReturn(
             List.of(
                 new CostDetailSnapshotRepository.Row(
-                    7101, SUMMARY_ID, CODE_STANDING_TREE, null, null, null, null)));
+                    7101, (long) SUMMARY_ID, CODE_STANDING_TREE, null, null, null, null)));
     when(summarySnapshots.findBySummaryId(SUMMARY_ID))
         .thenReturn(Optional.of(new ReportSummarySnapshotRepository.Snapshot(null, null, null)));
 
@@ -220,9 +232,9 @@ class Schedule1OriginalValuesTest {
         .thenReturn(
             List.of(
                 new CostDetailSnapshotRepository.Row(
-                    7201, SUMMARY_ID, 19, new BigDecimal("12345"), null, null, null),
+                    7201, (long) SUMMARY_ID, 19, new BigDecimal("12345"), null, null, null),
                 new CostDetailSnapshotRepository.Row(
-                    7202, SUMMARY_ID, 19, null, 1_200, "Aerial survey", null)));
+                    7202, (long) SUMMARY_ID, 19, null, 1_200, "Aerial survey", null)));
     when(summarySnapshots.findBySummaryId(SUMMARY_ID)).thenReturn(Optional.empty());
 
     Schedule1Response doc = served("S");

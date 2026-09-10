@@ -331,10 +331,14 @@ class Schedule10DocumentAssembler {
       Map<Integer, BigDecimal> costs,
       Map<Integer, BecClassification> becById,
       Submitted submitted) {
-    Schedule10Repository.DetailSnapshotRow snapshot =
-        submitted.details().get(detail.roadConstructionReprtDtlId());
+    Integer detailId = detail.roadConstructionReprtDtlId();
+    Schedule10Repository.DetailSnapshotRow snapshot = submitted.details().get(detailId);
+    // The shared cost snapshot is keyed by the finder's Long parent id; the lookup stays as
+    // null-tolerant as the detail lookup above it.
     Map<Integer, Integer> submittedCosts =
-        submitted.costs().getOrDefault(detail.roadConstructionReprtDtlId(), Map.of());
+        detailId == null
+            ? Map.of()
+            : submitted.costs().getOrDefault(detailId.longValue(), Map.of());
 
     BigDecimal subGradeActual = costs.get(SUB_GRADE_ACTUAL);
     BigDecimal subGradeTt = costs.get(SUB_GRADE_TRANSFER);
@@ -465,7 +469,7 @@ class Schedule10DocumentAssembler {
       String trackStatus,
       Map<Integer, Schedule10Repository.PageSnapshotRow> pages,
       Map<Integer, Schedule10Repository.DetailSnapshotRow> details,
-      Map<Integer, Map<Integer, Integer>> costs) {}
+      Map<Long, Map<Integer, Integer>> costs) {}
 
   private Submitted loadSubmitted(long millId, int year, String trackStatus) {
     if (!originalValues.exposesOriginalValues(trackStatus)) {
@@ -480,10 +484,11 @@ class Schedule10DocumentAssembler {
         repository.findDetailSnapshots(millId, year)) {
       details.putIfAbsent(row.detailId(), row);
     }
-    Map<Integer, Map<Integer, Integer>> costs = new HashMap<>();
+    Map<Long, Map<Integer, Integer>> costs = new HashMap<>();
     if (!details.isEmpty()) {
       for (CostDetailSnapshotRepository.Row row :
-          costSnapshots.findByRoadConstructionDetails(List.copyOf(details.keySet()))) {
+          costSnapshots.findByRoadConstructionDetails(
+              details.keySet().stream().map(Integer::longValue).toList())) {
         if (row.parentId() != null && row.costItemCode() != null) {
           costs
               .computeIfAbsent(row.parentId(), id -> new HashMap<>())

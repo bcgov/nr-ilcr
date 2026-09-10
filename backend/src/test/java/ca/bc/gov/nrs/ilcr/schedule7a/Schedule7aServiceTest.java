@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ca.bc.gov.nrs.ilcr.dto.base.CodeDescriptionDto;
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotEditableException;
 import ca.bc.gov.nrs.ilcr.exception.ScheduleNotSavedException;
 import ca.bc.gov.nrs.ilcr.exception.StaleRevisionException;
@@ -31,6 +33,7 @@ import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -832,5 +835,103 @@ class Schedule7aServiceTest {
         100,
         null,
         revisionCount);
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). A bridge's submitted attributes come from the bridge
+  // report view and its ten submitted costs from the shared cost view, joined on the bridge
+  // report id — the one id in this schedule that is a long end to end.
+  // -----------------------------------------------------------------------------------------
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    assertThat(originals).containsKey(field);
+    assertThat(originals.get(field).value()).isEqualTo(value);
+    assertThat(originals.get(field).tooltip()).isEqualTo(OriginalValuesFixture.tooltip(formatted));
+  }
+
+  @Test
+  @DisplayName("original values: at Draft nothing is exposed and neither snapshot view is read")
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("D"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+
+    Schedule7aResponse doc = service.getSchedule7a(514, 2021, CallerRights.SUBMITTER);
+
+    assertThat(doc.bridges().get(0).originalValues()).isNull();
+    verify(repository, never()).findBridgeSnapshots(anyLong(), anyInt());
+    verify(costSnapshots, never()).findByBridgeReports(anyList());
+  }
+
+  @Test
+  @DisplayName("original values: attributes and costs join on the bridge report id")
+  void originalValues_submitted_joinBridgeAndCostSnapshotsOnTheReportId() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+    when(repository.findBridgeSnapshots(514, 2021))
+        .thenReturn(
+            List.of(
+                new Schedule7aRepository.BridgeSnapshotRow(
+                    7601L,
+                    "South Fork",
+                    LocalDate.of(2019, 3, 1),
+                    "U",
+                    "STL",
+                    "WD",
+                    "CONC",
+                    "L100",
+                    40,
+                    new BigDecimal("4.5"),
+                    new BigDecimal("18.0"),
+                    new BigDecimal("3.5"),
+                    11,
+                    "submitted comment")));
+    when(costSnapshots.findByBridgeReports(List.of(7601L)))
+        .thenReturn(
+            List.of(
+                new CostDetailSnapshotRepository.Row(1, 7601L, 70, null, 900, null, null),
+                new CostDetailSnapshotRepository.Row(2, 7601L, 79, null, 4800, null, null)));
+
+    Map<String, OriginalValue> originals =
+        service.getSchedule7a(514, 2021, CallerRights.SUBMITTER).bridges().get(0).originalValues();
+
+    // Off the bridge snapshot. The built date is rendered yyyy-MM, as the current side is.
+    assertOriginal(originals, "locationName", "South Fork", "South Fork");
+    assertOriginal(originals, "builtDate", "2019-03", "2019-03");
+    assertOriginal(originals, "constructionTypeCode", "U", "U");
+    assertOriginal(originals, "lifeSpan", "40", "40");
+    assertOriginal(originals, "abutmentHeight", "4.5", "4.5");
+    assertOriginal(originals, "comments", "submitted comment", "submitted comment");
+    // Off the shared cost snapshot, routed per cost item — the half the report-id join reaches.
+    assertOriginal(originals, "sitePlanCost", "900", "900");
+    assertOriginal(originals, "superstructureMaterialCost", "4800", "4,800");
+    // An item with no submitted row keeps no key at all.
+    assertThat(originals).doesNotContainKey("otherCost");
+  }
+
+  @Test
+  @DisplayName("original values: beyond Draft with nothing on file the map is empty, never null")
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    stubCodeOptions();
+    when(repository.findTrackStatus(514, 2021)).thenReturn(Optional.of("S"));
+    when(repository.findBridges(514, 2021))
+        .thenReturn(List.of(bridge(7601, "North Fork", LocalDate.of(2020, 6, 1))));
+    when(repository.findCostDetails(514, 2021)).thenReturn(List.of(cost(1, 7601, 70, 1000)));
+    when(repository.findBridgeSnapshots(514, 2021)).thenReturn(List.of());
+    when(costSnapshots.findByBridgeReports(List.of(7601L))).thenReturn(List.of());
+
+    assertThat(
+            service
+                .getSchedule7a(514, 2021, CallerRights.SUBMITTER)
+                .bridges()
+                .get(0)
+                .originalValues())
+        .isEmpty();
   }
 }

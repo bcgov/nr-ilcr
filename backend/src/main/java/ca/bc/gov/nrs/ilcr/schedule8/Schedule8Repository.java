@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule8;
 
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableInt;
+
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -906,22 +908,22 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
           rs.getInt("TREE_TO_TRUCK_DETAIL_REPORT_ID"),
           rs.getString("CONTRACTOR_ID"),
           rs.getString("CUT_BLOCK"),
-          nullableInteger(rs, "GROUND_BASE_PCT"),
-          nullableInteger(rs, "GRAPPLE_PCT"),
-          nullableInteger(rs, "SKYLINE_PCT"),
-          nullableInteger(rs, "HIGHLEAD_PCT"),
-          nullableInteger(rs, "HELICOPTER_PCT"),
-          nullableInteger(rs, "OTHER_SKIDDING_PCT"),
-          nullableInteger(rs, "SKYLINE_SLOPE_DISTANCE"),
-          nullableInteger(rs, "SKYLINE_SUPPORT_NUMBER"),
+          nullableInt(rs, "GROUND_BASE_PCT"),
+          nullableInt(rs, "GRAPPLE_PCT"),
+          nullableInt(rs, "SKYLINE_PCT"),
+          nullableInt(rs, "HIGHLEAD_PCT"),
+          nullableInt(rs, "HELICOPTER_PCT"),
+          nullableInt(rs, "OTHER_SKIDDING_PCT"),
+          nullableInt(rs, "SKYLINE_SLOPE_DISTANCE"),
+          nullableInt(rs, "SKYLINE_SUPPORT_NUMBER"),
           rs.getBigDecimal("SUPPORT_AVERAGE_DISTANCE"),
           rs.getBigDecimal("DISTANCE"),
           rs.getBigDecimal("CYCLE_TIME"),
           rs.getString("UPHILL_DIRECTION_IND"),
           rs.getString("WATER_DUMP_DESTINATION_IND"),
           rs.getString("ILCR_SKID_TYPE_CODE"),
-          nullableInteger(rs, "CONIFEROUS_VOLUME"),
-          nullableInteger(rs, "DECIDUOUS_VOLUME"),
+          nullableInt(rs, "CONIFEROUS_VOLUME"),
+          nullableInt(rs, "DECIDUOUS_VOLUME"),
           rs.getBigDecimal("ORIGINAL_TREE_TO_TRUCK_RATE"));
     }
   }
@@ -932,16 +934,10 @@ public interface Schedule8Repository extends Repository<TreeToTruckReportEntity,
     public RateSnapshotRow mapRow(ResultSet rs, int rowNum) throws SQLException {
       return new RateSnapshotRow(
           rs.getInt("TREE_TO_TRUCK_RATE_DETAIL_ID"),
-          nullableInteger(rs, "ILCR_REPORT_COST_ITEM_ID"),
+          nullableInt(rs, "ILCR_REPORT_COST_ITEM_ID"),
           rs.getString("ITEM_DESCRIPTION"),
           rs.getBigDecimal("COSTING_RATE"),
           rs.getString("ILCR_RATE_COST_TYPE_CODE"));
     }
-  }
-
-  /** {@code getInt} with a real null, captured before the next column is read. */
-  private static Integer nullableInteger(ResultSet rs, String column) throws SQLException {
-    int value = rs.getInt(column);
-    return rs.wasNull() ? null : value;
   }
 }

@@ -801,13 +801,13 @@ class Schedule5ServiceTest {
                       new BigDecimal("110000"),
                       "Y",
                       "submitted comment")));
-      when(costSnapshots.findByCampReports(List.of(CAMP)))
+      when(costSnapshots.findByCampReports(List.of((long) CAMP)))
           .thenReturn(
               List.of(
                   new CostDetailSnapshotRepository.Row(
-                      1, CAMP, 58, new BigDecimal("110000"), 4000, null, null),
+                      1, (long) CAMP, 58, new BigDecimal("110000"), 4000, null, null),
                   // Item 61 is Recoveries — the volume-less category, so only its cost is on file.
-                  new CostDetailSnapshotRepository.Row(2, CAMP, 61, null, 750, null, null)));
+                  new CostDetailSnapshotRepository.Row(2, (long) CAMP, 61, null, 750, null, null)));
 
       Camp served = service.getSchedule5(MILL, YEAR, CallerRights.ADMIN).camps().getFirst();
 

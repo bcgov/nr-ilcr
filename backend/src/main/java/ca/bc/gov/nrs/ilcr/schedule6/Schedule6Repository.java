@@ -562,7 +562,16 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
       String tflNumberCode,
       String generalComment) {}
 
-  /** Every submitted road-maintenance report for a mill/year. */
+  /**
+   * Every submitted road-maintenance report for a mill/year.
+   *
+   * <p>The {@code ORDER BY} is load-bearing, not cosmetic. The general comment is stored replicated
+   * on every road-record row and legacy reads the LAST row's copy, so {@code Schedule6Service}
+   * takes the last one it sees. Without an explicit order the "last" row is whatever the plan
+   * happens to return, and the submitted general comment could differ between two reads of the same
+   * unchanged data. The current-value query above orders by the same column, so the submitted
+   * comment is now taken from the same row of the family as the current one.
+   */
   @Query(
       value =
           """
@@ -570,6 +579,7 @@ public interface Schedule6Repository extends Repository<RoadMaintenanceReportEnt
         FROM THE.ROAD_MAINTENANCE_REPORT_S_VW
        WHERE ILCR_MILL_ID = :millId
          AND REPORT_YEAR = :year
+       ORDER BY ROAD_MAINTENANCE_REPORT_ID
       """,
       rowMapperClass = RoadRecordSnapshotRowMapper.class)
   List<RoadRecordSnapshotRow> findRoadRecordSnapshots(

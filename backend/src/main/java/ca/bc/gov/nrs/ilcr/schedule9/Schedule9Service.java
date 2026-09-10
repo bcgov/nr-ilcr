@@ -198,15 +198,14 @@ public class Schedule9Service {
     // The licensee's submitted figures (Story 16.2, BR-04). Skipped at Draft.
     boolean exposeOriginals = originalValues.exposesOriginalValues(trackStatus);
     Map<Integer, Schedule9Repository.ContractualSnapshotRow> recordSnapshots = new HashMap<>();
-    Map<Integer, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
+    Map<Long, CostDetailSnapshotRepository.Row> costSnapshotByRecord = new HashMap<>();
     List<Schedule9Repository.RecordRow> recordRows = repository.findRecords(millId, year);
     if (exposeOriginals && !recordRows.isEmpty()) {
       for (Schedule9Repository.ContractualSnapshotRow snap :
           repository.findContractualSnapshots(millId, year)) {
         recordSnapshots.putIfAbsent(snap.reportId(), snap);
       }
-      List<Integer> reportIds =
-          recordRows.stream().map(Schedule9Repository.RecordRow::id).distinct().toList();
+      List<Long> reportIds = recordRows.stream().map(row -> (long) row.id()).distinct().toList();
       for (CostDetailSnapshotRepository.Row r :
           costSnapshots.findByContractualWorkReports(reportIds)) {
         if (r.parentId() != null) {
@@ -225,7 +224,7 @@ public class Schedule9Service {
                         recordOriginals(
                             trackStatus,
                             recordSnapshots.get(row.id()),
-                            costSnapshotByRecord.get(row.id()))))
+                            costSnapshotByRecord.get((long) row.id()))))
             .toList();
 
     return new Schedule9Response(

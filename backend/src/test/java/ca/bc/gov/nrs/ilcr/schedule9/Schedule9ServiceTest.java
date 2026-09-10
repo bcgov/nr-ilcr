@@ -2,10 +2,17 @@ package ca.bc.gov.nrs.ilcr.schedule9;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dto.base.OriginalValue;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.OriginalValues;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -17,6 +24,7 @@ import ca.bc.gov.nrs.ilcr.support.CallerRights;
 import ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -163,5 +171,95 @@ class Schedule9ServiceTest {
     assertFalse(response.editable());
     assertEquals("S", response.trackStatus());
     assertEquals(1, response.records().size());
+  }
+
+  // -----------------------------------------------------------------------------------------
+  // Original values (Story 16.2, BR-04). A record's submitted figures come from two snapshots
+  // joined on the record id — the contractual-work report view for its own ten fields, the
+  // shared cost view for the contractual item, its free text and its cost.
+  // -----------------------------------------------------------------------------------------
+
+  private static void assertOriginal(
+      Map<String, OriginalValue> originals, String field, String value, String formatted) {
+    OriginalValue original = originals.get(field);
+    assertNotNull(original, () -> "no original for " + field + " in " + originals.keySet());
+    assertEquals(value, original.value());
+    assertEquals(OriginalValuesFixture.tooltip(formatted), original.tooltip());
+  }
+
+  @Test
+  @DisplayName("at Draft nothing is exposed and neither snapshot view is read")
+  void originalValues_absentAtDraft_andNoSnapshotQueryIssued() {
+    stub(
+        "D",
+        List.of(record(9001, new BigDecimal("100"))),
+        List.of(new CostRow(9001, 108, "Falling", null, 50000)));
+
+    Schedule9Response doc = service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER);
+
+    assertNull(doc.records().get(0).originalValues());
+    verify(repository, never()).findContractualSnapshots(anyLong(), anyInt());
+    verify(costSnapshots, never()).findByContractualWorkReports(anyList());
+  }
+
+  @Test
+  @DisplayName("beyond Draft a record joins its report snapshot to its cost snapshot by record id")
+  void originalValues_submitted_joinReportAndCostSnapshotsOnTheRecordId() {
+    stub(
+        "S",
+        List.of(record(9001, new BigDecimal("100"))),
+        List.of(new CostRow(9001, 108, "Falling", null, 50000)));
+    when(repository.findContractualSnapshots(MILL, YEAR))
+        .thenReturn(
+            List.of(
+                new Schedule9Repository.ContractualSnapshotRow(
+                    9001,
+                    "CTR-0",
+                    new BigDecimal("90.5"),
+                    30,
+                    "HA",
+                    "Hectares",
+                    "E",
+                    "Estimated",
+                    "BZ2",
+                    "submitted comment")));
+    when(costSnapshots.findByContractualWorkReports(List.of(9001L)))
+        .thenReturn(
+            List.of(
+                new CostDetailSnapshotRepository.Row(
+                    1, 9001L, 114, null, 44000, "Other work", null)));
+
+    Map<String, OriginalValue> originals =
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0).originalValues();
+
+    // Off the report snapshot.
+    assertOriginal(originals, "contractorId", "CTR-0", "CTR-0");
+    assertOriginal(originals, "numberOfUnits", "90.5", "90.5");
+    assertOriginal(originals, "sideSlopePct", "30", "30");
+    assertOriginal(originals, "unitType", "HA", "HA");
+    assertOriginal(originals, "source", "E", "E");
+    assertOriginal(originals, "biogeoclimaticZone", "BZ2", "BZ2");
+    assertOriginal(originals, "comments", "submitted comment", "submitted comment");
+    // Off the shared cost snapshot — the half the record-id join has to reach.
+    assertOriginal(originals, "contractualItem", "114", "114");
+    assertOriginal(originals, "itemDescription", "Other work", "Other work");
+    assertOriginal(originals, "cost", "44000", "44,000");
+  }
+
+  @Test
+  @DisplayName("beyond Draft with nothing on file the map is empty, never null")
+  void originalValues_submittedButNoSnapshotOnFile_isEmptyMapNotNull() {
+    stub(
+        "S",
+        List.of(record(9002, new BigDecimal("100"))),
+        List.of(new CostRow(9002, 108, "Falling", null, 50000)));
+    when(repository.findContractualSnapshots(MILL, YEAR)).thenReturn(List.of());
+    when(costSnapshots.findByContractualWorkReports(List.of(9002L))).thenReturn(List.of());
+
+    Map<String, OriginalValue> originals =
+        service.getSchedule9(MILL, YEAR, CallerRights.SUBMITTER).records().get(0).originalValues();
+
+    assertNotNull(originals);
+    assertTrue(originals.isEmpty());
   }
 }

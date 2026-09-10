@@ -916,11 +916,11 @@ class Schedule7bServiceTest {
               List.of(
                   new Schedule7bRepository.CulvertSnapshotRow(
                       7801L, "C", 900, 600, new BigDecimal("12.5"), 4, "as submitted")));
-      when(costSnapshots.findByCulvertReports(List.of(7801)))
+      when(costSnapshots.findByCulvertReports(List.of(7801L)))
           .thenReturn(
               List.of(
-                  new CostDetailSnapshotRepository.Row(1, 7801, 77, null, 3000, null, null),
-                  new CostDetailSnapshotRepository.Row(2, 7801, 78, null, 1200, null, null)));
+                  new CostDetailSnapshotRepository.Row(1, 7801L, 77, null, 3000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 7801L, 78, null, 1200, null, null)));
 
       Culvert culvert = service.getSchedule7b(MILL, YEAR, CallerRights.ADMIN).culverts().getFirst();
 

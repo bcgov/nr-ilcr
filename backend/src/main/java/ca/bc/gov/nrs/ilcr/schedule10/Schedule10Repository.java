@@ -1,5 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule10;
 
+import static ca.bc.gov.nrs.ilcr.util.ResultSetUtil.nullableInt;
+
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -1072,12 +1074,6 @@ public interface Schedule10Repository extends Repository<RoadConstructionReportE
           rs.getBigDecimal("OVERLAND_DISTANCE"),
           rs.getBigDecimal("OVERLAND_VOLUME"),
           rs.getString("COMMENTS"));
-    }
-
-    /** {@code getInt} with a real null, captured before the next column is read. */
-    private static Integer nullableInt(ResultSet rs, String column) throws SQLException {
-      int value = rs.getInt(column);
-      return rs.wasNull() ? null : value;
     }
   }
 }

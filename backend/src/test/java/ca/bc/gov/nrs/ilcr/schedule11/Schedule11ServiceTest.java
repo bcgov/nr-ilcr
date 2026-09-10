@@ -737,11 +737,11 @@ class Schedule11ServiceTest {
               List.of(
                   new Schedule11Repository.LocationSnapshotRow(
                       9101L, "Submitted location", 8801L, new BigDecimal("100.0"))));
-      when(costSnapshots.findBySilvicultureLocations(List.of(9101)))
+      when(costSnapshots.findBySilvicultureLocations(List.of(9101L)))
           .thenReturn(
               List.of(
-                  new CostDetailSnapshotRepository.Row(1, 9101, 24, null, 20000, null, null),
-                  new CostDetailSnapshotRepository.Row(2, 9101, 23, null, 9000, null, null)));
+                  new CostDetailSnapshotRepository.Row(1, 9101L, 24, null, 20000, null, null),
+                  new CostDetailSnapshotRepository.Row(2, 9101L, 23, null, 9000, null, null)));
 
       SilvicultureLocation served =
           service.getSchedule11(MILL, YEAR, CallerRights.ADMIN).locations().get(0);
