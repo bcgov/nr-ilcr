@@ -112,6 +112,7 @@ body {
 .schedule-11__heading,
 .code-tables__heading,
 .mill-associations__heading,
+.mills__heading,
 .#{$bcgov-prefix}--data-table-header__title {
   font-size: 1.25rem;
 }
@@ -178,6 +179,45 @@ body {
   .mill-associations__picker-note {
     flex-basis: 100%;
     font-size: 0.875rem;
+  }
+
+  // Mill administration: the same stacked-panel rhythm as the users screen above (Mill Details,
+  // Associated Licensee User). Declares NO control heights and passes no size prop to any field —
+  // one height app-wide comes from _overrides.scss and is pinned by controlHeightContract.
+  .mills__section + .mills__section {
+    margin-top: 2rem;
+  }
+
+  .mills__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  // The two entry controls, the search dialogs' criteria rows, the detail panel's three editable
+  // controls, the status/Save action bar, and the panel's Add button all read as one row of
+  // controls. Bottom-aligned so a button sits on its neighbour's baseline, not its label's.
+  .mills__entry,
+  .mills__criteria,
+  .mills__editable,
+  .mills__actions,
+  .mills__add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  // The read-only identity line: "Mill #: 670 - Cedar Mill   Status: Active", with the two labels
+  // carrying legacy's `header` emphasis.
+  .mills__identity {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .mills__label {
+    font-weight: 600;
   }
 
   // #312 (Table Maintenance, screen item 1): the Code List drop-list should not span the entire
