@@ -29,6 +29,13 @@ import {
   NEW_CAMP_EXPECTED_TOTALS,
   NEW_CAMP_NAME,
   VOLUME_BEARING_CATEGORY_LABELS,
+  GUARDS,
+  GUARD_MESSAGES,
+  READ_ONLY_ANCHOR,
+  VIEW_CAMP_DERIVED,
+  VIEW_CAMP_DISPLAY,
+  VIEW_CAMP_NAME,
+  scheduleUrl,
   millOptionText,
   type Sch5Anchor,
 } from '../../fixtures/sch5/schedule5-test-data';
@@ -669,6 +676,173 @@ When('I save the camp', async ({ schedule5Page }) => {
 
 Then('{string} is listed in the Existing Camps table', async ({ schedule5Page }, campName) => {
   await expect(schedule5Page.existingCampRow(campName)).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------------
+// S16 / S17 / S18 — the EF2 guards  |  S19 — the read-only render
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * A guard anchor, proved at the API BEFORE the browser is driven.
+ *
+ * The check is not ceremony: both fixtures ARE failure responses, so nothing about them is
+ * self-evident from a passing suite. If 25051 were ever re-opened, or 16050/2022 seeded, the scenario
+ * would fail with a missing banner — which reads as an app defect. Asserting the status here makes it
+ * read as the data problem it would be.
+ */
+Given('the Schedule 5 guard anchor {string}', async ({ request, world }, name) => {
+  const guard = GUARDS[name];
+  expect(
+    guard,
+    `unknown Schedule 5 guard anchor "${name}" — known: ${Object.keys(GUARDS).join(', ')}`,
+  ).toBeTruthy();
+
+  world.scheduleKey = guard.anchor.key;
+  world.millOption = millOptionText(guard.anchor.mill);
+
+  const res = await request.get(scheduleUrl(guard.anchor.key.millId, guard.anchor.key.year));
+  expect(
+    res.status(),
+    `precondition: Schedule 5 guard anchor "${name}" `
+      + `(${guard.anchor.key.millId}/${guard.anchor.key.year}) must still answer HTTP `
+      + `${guard.expectHttp}`,
+  ).toBe(guard.expectHttp);
+});
+
+/**
+ * S19's anchor: the one Submitted document, holding the one seeded camp.
+ *
+ * Asserts BOTH halves at the API first — non-editable AND holding exactly the seeded camp. The second
+ * is what keeps "the row-action column shows a single View button" unambiguous: with two camps the
+ * assertion could pass on the wrong row.
+ */
+Given('the Schedule 5 read-only anchor holds the seeded camp', async ({ request, world }) => {
+  world.scheduleKey = READ_ONLY_ANCHOR.key;
+  world.millOption = millOptionText(READ_ONLY_ANCHOR.mill);
+
+  const doc = await getSchedule5(request, READ_ONLY_ANCHOR.key);
+  expect(
+    doc.editable,
+    `the read-only anchor (${READ_ONLY_ANCHOR.key.millId}/${READ_ONLY_ANCHOR.key.year}) must NOT be `
+      + 'editable — S19 is the non-Draft render',
+  ).toBe(false);
+  expect(
+    doc.camps.map((c) => c.campName),
+    `the read-only anchor must hold exactly "${VIEW_CAMP_NAME}" — seeded by `
+      + 'real-test-data-patches/sch5/view-mode-camp.sql. Run frontend/e2e/scripts/apply-patches.sh.',
+  ).toEqual([VIEW_CAMP_NAME]);
+});
+
+When('I open Schedule 5 with no working context', async ({ schedule5Page }) => {
+  await schedule5Page.openWithNoContext();
+});
+
+When('I open Schedule 5 expecting a guard message', async ({ schedule5Page }) => {
+  await schedule5Page.openViaNavExpectingGuard();
+});
+
+Then('the Schedule 5 mill and reporting year guard message is shown', async ({ schedule5Page }) => {
+  await expect(schedule5Page.notification(GUARD_MESSAGES.millYearNotSelected)).toBeVisible();
+  await expect(schedule5Page.notification(GUARD_MESSAGES.millYearNotSelectedTitle)).toBeVisible();
+});
+
+/** The API's own `detail`, rendered under the load-failure title rather than in a `p:messages` panel. */
+Then('the Schedule 5 page is blocked with {string}', async ({ schedule5Page }, detail) => {
+  await expect(schedule5Page.notification(detail)).toBeVisible();
+  await expect(schedule5Page.notification(GUARD_MESSAGES.loadFailedTitle)).toBeVisible();
+});
+
+Then('the Schedule 5 data-entry panel is suppressed', async ({ schedule5Page }) => {
+  await schedule5Page.expectDataEntrySuppressed();
+});
+
+Then('the Schedule 5 page-level actions are disabled', async ({ schedule5Page }) => {
+  await expect(schedule5Page.addNewCampButton).toBeDisabled();
+  await expect(schedule5Page.checkStatusButton).toBeDisabled();
+});
+
+/**
+ * STA-001, re-grounded. The source Gherkin expects Delete and Copy to be RENDERED-BUT-DISABLED; the
+ * rewrite drops them from the DOM entirely and leaves a single `View` (index.tsx:1193-1208, which
+ * cites the epics AC and Schedule 6's precedent as deviation (B)). Net user-reachable behaviour is
+ * identical — there is no write action either way — so this asserts the ABSENCE rather than a
+ * disabled state, and the feature file records why.
+ */
+Then('the {string} row offers only a View action', async ({ schedule5Page }, campName) => {
+  await expect(schedule5Page.viewButtonFor(campName)).toBeVisible();
+  await expect(
+    schedule5Page.rowWriteActionsFor(campName),
+    'a non-editable document must render no Edit/Delete/Copy at all (deviation (B))',
+  ).toHaveCount(0);
+});
+
+When('I view the {string} camp', async ({ schedule5Page }, campName) => {
+  await schedule5Page.openViewPanel(campName);
+});
+
+/**
+ * The panel opened for VIEWING carries the stored values and cannot be edited.
+ *
+ * Two different mechanisms, asserted separately because they differ: the four descriptors stay Carbon
+ * `TextInput`s with `readOnly` (so the value is in `inputValue()`), while `Isolated Camp` is a
+ * `Select` and is `disabled` instead. The category grid meanwhile holds no inputs at all.
+ */
+Then('the {string} panel is read-only with the stored values', async ({ schedule5Page }, campName) => {
+  await expect(schedule5Page.campPanelHeading(campName)).toBeVisible();
+
+  expect(await schedule5Page.descriptorValue('Camp Name')).toBe(VIEW_CAMP_DISPLAY.campName);
+  expect(await schedule5Page.descriptorValue('Road Distance to Operating Area')).toBe(
+    VIEW_CAMP_DISPLAY.roadDistanceToOperatingArea,
+  );
+  expect(await schedule5Page.descriptorValue('Size of Camp')).toBe(VIEW_CAMP_DISPLAY.sizeOfCamp);
+  expect(await schedule5Page.descriptorValue('Associated Camp Volume')).toBe(
+    VIEW_CAMP_DISPLAY.associatedCampVolume,
+  );
+  expect(await schedule5Page.descriptorValue('Isolated Camp')).toBe(VIEW_CAMP_DISPLAY.isolatedCamp);
+
+  for (const name of [
+    'Camp Name',
+    'Road Distance to Operating Area',
+    'Size of Camp',
+    'Associated Camp Volume',
+  ]) {
+    await schedule5Page.expectDescriptorReadOnly(name);
+  }
+  await schedule5Page.expectIsolatedCampDisabled();
+});
+
+Then('the Schedule 5 category grid is read-only', async ({ schedule5Page }) => {
+  await schedule5Page.expectCategoryGridReadOnly();
+});
+
+/**
+ * The category amounts render as TEXT, and the derived rows carry the SERVED figures.
+ *
+ * `derived` is null on a non-editable document (index.tsx:1191), so none of these can be the
+ * client-side mirror — which is the point: S19 proves the read path, where S01 proved the write path
+ * that produced the very same numbers.
+ */
+Then('the read-only panel shows the stored amounts and totals', async ({ schedule5Page }) => {
+  await expect(schedule5Page.categoryRow('Catering and Food: ')).toContainText(
+    VIEW_CAMP_DISPLAY.cateringAndFoodCost,
+  );
+  await expect(schedule5Page.categoryRow('Catering and Food: ')).toContainText(
+    VIEW_CAMP_DISPLAY.cateringAndFoodVolume,
+  );
+
+  for (const { label, cost, perVolume } of VIEW_CAMP_DERIVED) {
+    const row = schedule5Page.derivedRow(label);
+    await expect(row, `the "${label.trim()}" row should show ${cost}`).toContainText(cost);
+    await expect(row, `the "${label.trim()}" row should show $/m³ ${perVolume}`).toContainText(
+      perVolume,
+    );
+  }
+});
+
+/** Save must be disabled in a View panel; Close must NOT be — it is the only way out (index.tsx:1327-1346). */
+Then('the read-only panel offers no Save but can be closed', async ({ schedule5Page }) => {
+  await expect(schedule5Page.saveButton).toBeDisabled();
+  await expect(schedule5Page.closeButton).toBeEnabled();
 });
 
 /**

@@ -7,18 +7,37 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 
-**As of 2026-09-09**, this UC has **no Divergence and no Bug/Regression entries**. Five slices are
-authored (S01–S05) and all are green: where the app and the legacy-derived Gherkin disagreed, the
+**As of 2026-09-10**, this UC has **no Divergence and no Bug/Regression entries**. Nineteen slices are
+authored (S01–S19) and all are green: where the app and the legacy-derived Gherkin disagreed, the
 Gherkin turned out to be wrong about legacy — see SPEC-2, which was settled by reading the legacy
 source rather than by trusting either document.
+
+That clean record comes with a caveat worth stating plainly: **the six slices still unauthored include
+the two most likely to produce a divergence.** S24/S25 are the BR-12 "Check Status includes unsaved
+edits" pair, where schedules 1, 2, 4 and 11 all carry an open `@discovered-divergence` (issue #359).
+So "no divergences" describes what has been looked at, not a verdict on Schedule 5 as a whole.
 
 ---
 
 ## Divergence (app behaves differently from the legacy-derived spec)
 
-*None found in S01.* The re-grounded happy path matched the source Gherkin in every respect that was
-checkable: the panel title (`New Camp Details`), the five descriptor fields starting blank, BR-03's
-propagation into exactly eleven volume fields, the four recomputed totals, and the success message.
+*None found in S01–S19.* The re-grounded happy path matched the source Gherkin in every respect that
+was checkable: the panel title (`New Camp Details`), the five descriptor fields starting blank,
+BR-03's propagation into exactly eleven volume fields, the four recomputed totals, and the success
+message.
+
+Two places where the app and the source Gherkin visibly differ were examined and deliberately NOT
+logged here, because in both the difference is mechanism rather than behaviour:
+
+- **The guard messages moved out of the `p:messages` panel** (S16/S17/S18). The source expects a
+  PrimeFaces business-exception panel; the rewrite renders the API's own `detail` inside a Carbon
+  notification. Both error strings are byte-identical to the source's ERR-004/ERR-005 — confirmed
+  against the running app 2026-09-10 — so the reporter reads exactly the same words.
+- **S19's row actions collapse to a single `View`** instead of a `View` beside a disabled Delete and
+  Copy — deviation (B), which the app's own source names and justifies (index.tsx:1193-1197). Legacy
+  rendered a permanently-disabled Delete; neither system offers a reachable write action, so there is
+  no user-visible difference to log. Recorded in coverage.md so a future reader does not "fix" the
+  test back to the Gherkin's wording.
 
 ---
 
@@ -74,14 +93,72 @@ propagation into exactly eleven volume fields, the four recomputed totals, and t
     break their tests.
   - **Status:** RESOLVED — the decision was taken and applied the same day; see the summary above.
 
-- **GAP-2 — OPEN: S02–S25 are anchored and preflighted, but not yet authored.**
-  - **What this means.** Every remaining slice now has a dedicated, verified anchor reserved and named
+- **GAP-3 — RESOLVED 2026-09-10: S19's read-only anchor had no camp on it, so most of the slice was
+  unassertable.**
+  - **What this means in plain language.** S19 checks what a licensee sees once the report has been
+    submitted and can no longer be edited: the camp is still listed, but the only thing you can do
+    with it is *View* it — no Edit, no Delete, no Copy, no Add New Camp, no Check Status. Every one of
+    those checks needs a camp to actually be on the schedule. The anchor reserved for S19
+    (mill 16050, year 2023) was correctly set up as a Submitted report, but it was **empty**. On an
+    empty read-only schedule the only thing S19 could have proved is that two buttons are greyed out
+    — the weakest part of the slice, and the part least likely to break.
+  - **How caught.** Probing the anchor through the app's own API before authoring:
+    `GET /api/v1/schedule5?millId=16050&year=2023` returned `200`, `trackStatus "S"`, `editable false`
+    and `camps: []`. Preflight had been asserting the first three and not the fourth.
+  - **Why the test could not just create the camp itself.** Every write to a non-Draft document is
+    refused with HTTP 409 — and that refusal *is* the condition S19 exists to prove. So the camp can
+    only arrive as seed data. This is the identical wall Schedule 4 hit on its own read-only arm, and
+    the fix follows that precedent deliberately (`real-test-data-patches/sch4/view-mode-amounts.sql`).
+  - **What was done.** A new patch, `real-test-data-patches/sch5/view-mode-camp.sql`, seeds ONE camp
+    with its twelve category rows onto that anchor, and it is folded into the CI seed
+    (`db-e2e/R__80_e2e_anchor_seed.sql`) in the same change — a patch not folded in does not exist in
+    CI, which is the mistake GAP-1 records being caught the hard way. Kept as a SEPARATE file from
+    `draft-anchors.sql` on purpose: that file's header promises every anchor it opens holds no camps,
+    and this is the single exception to that rule. Burying the exception inside the file that states
+    the opposite would have been the wrong kind of tidy.
+  - **The amounts are S01's, and that was the point.** Rather than invent figures, the seed reuses the
+    happy path's numbers, so the totals S19 reads back (3,800 / 3,800 / 1,100 / 4,900 and $/m³ 0.76 /
+    0.98) are ones the suite already proves the server derives. Confirmed through the API after
+    seeding, not computed by hand.
+  - **Preflight now states the exception rather than leaving it implicit:** every other anchor must
+    hold no camps, this one must hold exactly `E2E View Camp`, and the failure messages distinguish
+    "the patch was never applied" (zero camps) from "the single-View assertion is now ambiguous" (two
+    or more).
+  - **Status:** RESOLVED 2026-09-10. S19 is authored and GREEN.
+
+- **VER-5 — the CI-seed parity gate reported the new camp's twelve rows as orphans. The gate was
+  right to complain, and it was the gate that was incomplete.**
+  - **What was seen.** Adding the Schedule 5 read-only camp to `R__80_e2e_anchor_seed.sql` immediately
+    failed `seed parity: the seed's explicit ids are unique, unclaimed, and parented` with
+    *"12 detail row(s) have no parent in the seed"*.
+  - **Why it was not a real orphan.** `ILCR_COST_REPORT_DETAIL` carries one foreign key per report
+    family, and they are mutually exclusive: a row belongs to a summary (schedules 1/2/3), a
+    transportation report (schedule 4), or a camp (schedule 5). The gate knew the first two and had
+    never seen the third, so it read "no parent column I recognise" as "no parent at all".
+  - **Why it is recorded rather than just fixed.** A missing FAMILY and a genuine orphan produce the
+    identical message, so the next person to add a schedule with its own report table will hit this
+    and may reasonably conclude their ids are wrong. The gate now iterates a named list of parent
+    columns with a comment saying exactly that, and naming `ROAD_MAINTENANCE_REPORT_ID` (V31's) as the
+    likely next one.
+  - **The gate earned its keep, for the second time on this UC.** GAP-1 records it catching a row that
+    existed locally but not in CI. This time it caught a transcription that would have inserted twelve
+    unreachable rows in CI — S19 would then have failed only in CI, on a read-only panel showing no
+    amounts, which reads as an app defect.
+  - **Status:** CLOSED as verified 2026-09-10 — no defect in the seed; the gate was extended.
+
+- **GAP-2 — OPEN (narrowed 2026-09-10): S20–S25 are anchored and preflighted, but not yet authored.**
+  - **Progress.** S01–S19 are now authored and green. **19 of 25 slices (76%).** Originally raised
+    covering S02–S25.
+  - **What this means.** Every remaining slice has a dedicated, verified anchor reserved and named
     for it (`fixtures/sch5/schedule5-test-data.ts`, one export per slice), and `preflight/sch5-anchors.setup.ts`
     proves all 22 resolve with no camps at rest plus both guard responses on every run. What is missing
     is the `.feature` / step / page-object work itself.
-  - **Sizing note for planning.** The anchors were allocated per slice, so the remaining work is
-    mechanical rather than exploratory: 19 mutating scenarios, 2 validate-only (sharing one anchor),
-    1 read-only, 2 guards and 1 context-only case (S16, which needs no anchor).
+  - **Sizing note for planning.** The six remaining are all mutating scenarios with anchors already
+    allocated: S20 (`check-missing`), S21 (`access-desc-blank`), S22 (`camp-desc-blank`),
+    S23 (`subpage-cost`), S24 (`check-unsaved-violation`) and S25 (`check-unsaved-fix`). The two
+    sub-page description cases (S21/S22) and the sub-page cost case (S23) should re-use the S04/S05
+    page-object work; S20 re-uses S06's Check Status path.
+  - **Watch item, restated because it is now imminent.** S24/S25 are the BR-12 pair below.
   - **Watch item.** S24/S25 are the BR-12 "Check Status includes unsaved edits" pair. Schedules 1, 2, 4
     and 11 all carry an OPEN `@discovered-divergence` there (issue #359 — Check Status judges the SAVED
     document and ignores the screen). Expect Schedule 5 to reproduce it; if it does, that is a fifth

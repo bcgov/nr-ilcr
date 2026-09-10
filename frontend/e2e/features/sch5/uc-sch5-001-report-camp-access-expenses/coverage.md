@@ -15,11 +15,21 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S15 AUTHORED AND GREEN; S16–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 15/25 rather than held back, so the ledger reflects reality rather than an
+**STATUS: S01–S19 AUTHORED AND GREEN; S20–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
+deliberately published at 19/25 rather than held back, so the ledger reflects reality rather than an
 intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
 preflight proves all 23 resolve on every run — so the `deferred` rows below are waiting on authoring
 effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
+
+**S16–S19 added 2026-09-10** as one `render-states.feature`, following the per-domain convention
+(sch1/sch2/sch3/sch4/sch11 all group their guard and read-only slices in a file of that name). Three
+are guards that need no capacity; S19 needed something the anchor did not have, and that is recorded
+as GAP-3 in defects.md rather than quietly fixed: the read-only anchor held **no camps**, so
+"the row-action column shows a single View button" was unassertable. A camp cannot be created there
+through the app — every write to a non-Draft document is refused with HTTP 409, which is the very
+condition S19 proves — so it is seeded by `real-test-data-patches/sch5/view-mode-camp.sql` and folded
+into the CI seed in the same change. Its amounts are S01's, so S19 reads back off the READ path the
+same arithmetic S01 proves on the WRITE path.
 
 Test data (real, discovered 2026-09-08): pinned in `fixtures/sch5/schedule5-test-data.ts` with the
 finding queries in comments. `preflight/sch5-anchors.setup.ts` asserts the anchor resolves as an
@@ -42,6 +52,8 @@ empty ON PURPOSE as S18's 404 fixture and is registered in `DELIBERATELY_ABSENT`
 
 **Anchor inventory (23 pinned, all verified through the API):** 22 empty editable Drafts (21 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). 17052/2023 was added on 2026-09-09 when S12 turned out to need a mutating anchor of its own: its second arm corrects the blank field and SAVES, and a writer cannot share a key under `fullyParallel`.
 
+**The read-only anchor is the one exception to "empty at rest", and preflight states it as such.** Every other anchor must hold no camps; 16050/2023 must hold exactly one, the seeded `E2E View Camp`. Both are asserted, with messages that distinguish the two ways it can go wrong — zero camps means the patch was never applied, two or more means S19's "a single View button" is no longer unambiguous.
+
 **Cross-schedule note:** Schedule 5 is one of the domains that reads Schedule 3 (`Schedule3Service`'s
 consumer list is schedule1, schedule2, schedule5, reporting), so a sch3 scenario on a shared
 (mill, year) could move figures under a Schedule 5 assertion. 9050/2016 is pinned by no other fixture.
@@ -53,7 +65,7 @@ through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCoun
 (`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
 CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`); S06 Check Status on a passing
 schedule, asserting the per-camp line is ABSENT (`check-status.feature`, SPEC-3); S07 delete behind the
-CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`).
+CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`); S16/S17/S18 the three EF2 guards and S19 the read-only render, all in `render-states.feature`.
 
 ## Slice ledger
 
@@ -74,10 +86,10 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S13 | Duplicate Camp Name on Save (Case-Insensitive) | Exception | **covered** | `name-validation.feature` `@p1 @S13 @ERR-001 @BR-02` — GREEN |
 | S14 | Save a Copied Camp Without Renaming It (Duplicate Name Error) | Exception | **covered** | `name-validation.feature` `@p1 @S14 @FLD-001` — GREEN, re-grounded per SPEC-2: rejected as REQUIRED, not duplicate. Prediction CONFIRMED |
 | S15 | Numeric Field Fails Range/Format Validation | Exception | **covered** | `numeric-validation.feature` `@p1 @S15 @FLD-002` — GREEN, 5 outline rows. WIDE band (Wages) not exercised — see note |
-| S16 | No Mill/Year Selected in Session | Exception | deferred | context guard; no anchor needed |
-| S17 | Selected Mill Not Active for the Reporting Year | Exception | deferred | guard anchor (409) — a CLS mill, no capacity needed |
-| S18 | No Schedule 5 Record Found for Mill/Year | Exception | deferred | guard anchor (404) — absence IS the fixture |
-| S19 | Schedule Not Editable — Report Not in Draft (Read-Only View) | Exception | deferred | read-only anchor (S/V) — no exclusivity needed |
+| S16 | No Mill/Year Selected in Session | Exception | **covered** | `render-states.feature` `@p1 @S16 @ERR-003` — GREEN. Client-side guard; no anchor and no request |
+| S17 | Selected Mill Not Active for the Reporting Year | Exception | **covered** | `render-states.feature` `@p1 @S17` — GREEN. 409 detail asserted verbatim |
+| S18 | No Schedule 5 Record Found for Mill/Year | Exception | **covered** | `render-states.feature` `@p1 @S18` — GREEN. 404; absence IS the fixture |
+| S19 | Schedule Not Editable — Report Not in Draft (Read-Only View) | Exception | **covered** | `render-states.feature` `@p1 @S19 @STA-001 @BR-06` — GREEN. Needed a SEEDED camp — see GAP-3 |
 | S20 | Check Status Finds Missing Required Values | Exception | deferred | as S02 |
 | S21 | Other Access Expense Description Left Blank | Exception | deferred | validate-only; FLD `[UNKNOWN]` as S12 |
 | S22 | Other Camp Expense Added With Blank Description, Blocked at Sub-Page Save | Exception | deferred | as S21 |
@@ -85,7 +97,7 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 15 / 25 slices (60%). P0: 1 / 1 authored.**
+**Coverage: 19 / 25 slices (76%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -120,6 +132,29 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | Panel redisplays with recalculated values after save | S01 | **deferred** | the API read-back proves persistence, which is the stronger claim; re-render fidelity rides S02's reopen |
 
 ## Notes
+
+- **S19's two read-only mechanisms are different, and both are asserted.** It would be easy to write
+  one "the panel is read-only" step and think the slice covered. Schedule 5 does it two ways at once:
+  the four text descriptors stay Carbon `TextInput`s and take the `readonly` ATTRIBUTE (index.tsx:438-478),
+  `Isolated Camp` is a `Select` and is DISABLED instead (:479-483), and only the category grid drops
+  its inputs entirely (`AmountCell`, :202-203). So the grid check ("zero inputs") and the descriptor
+  check ("readonly attribute") are genuinely independent, and the grid one is what makes the amount
+  assertions meaningful — they read rendered text rather than the contents of boxes. Worth knowing
+  because **Schedule 4 renders view mode as text throughout**, so the obvious cross-domain copy of its
+  step would have silently asserted nothing here.
+
+- **S19 asserts the ABSENCE of Edit/Delete/Copy, not a disabled state — deviation (B).** The source
+  Gherkin expects them rendered-but-disabled beside a `View`; the rewrite drops them from the DOM and
+  leaves View alone (index.tsx:1193-1208), citing the epics AC and Schedule 6's precedent. Legacy
+  rendered a permanently-disabled Delete. Net user-reachable behaviour is identical — no write action
+  either way — so this is a mechanism difference, not a divergence, and it is not logged as one. Same
+  call sch4 made on its own read-only arm.
+
+- **S19 also pins that Check Status is disabled outside Draft, and that is deliberately defensive.**
+  Schedule 5 includes the `!editable` term on both `Add New Camp` (index.tsx:1404) and `Check Status`
+  (:1419). Schedule 4 and Schedule 8 each SHIPPED a defect by omitting exactly that term (#293 fixed,
+  #322 still open), so this is the one place in the codebase where the same one-line mistake has
+  already been made twice. Asserting it here costs one line and stops Schedule 5 becoming the third.
 
 - **S15 does not exercise the WIDE cost band, and that is a real gap rather than an oversight.**
   `validation.ts` declares four bands: STANDARD (±9,999,999, eight categories), **WIDE**

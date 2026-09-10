@@ -95,8 +95,11 @@
 --                                        in V2/V8; 2022-2023 opened 2026-09-09
 --                                        for the sch5 fan-out)
 --   ILCR_REPORT_SUMMARY_ID             : 3001-3044   (db/ uses 1001-1228)
---   ILCR_COST_REPORT_DETAIL_ID         : 4001-4305   (db/ uses 5001-9506)
+--   ILCR_COST_REPORT_DETAIL_ID         : 4001-4317   (db/ uses 5001-9506;
+--                                        4306-4317 added 2026-09-10 for the
+--                                        sch5 read-only camp)
 --   TRANSPORTATION_REPORT_ID           : 4801-4808
+--   CAMP_REPORT_ID                     : 4901        (db/V34 uses 8401-8410)
 --   BASIC_SILVICULTURE_REPORT_ID       : 9351-9358
 --   BIOGEOCLIMATIC_CATALOGUE_ID        : 40, 171, 8850-8855
 -- All explicit ids sit below the runtime sequences (ILCR_REPORT_COMMON_SEQ
@@ -894,6 +897,47 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTAT
 INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (4807, 2015, 23050, '4', 'E2E View Location', 12.5, NULL, NULL, 0, 'E2E_SEED');
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4066, 4807, 43, 500, 1500, 'Camp haul', 'E2E_SEED');
 INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (4808, 2015, 23050, '4', 'loc 1', NULL, NULL, NULL, 0, 'E2E_SEED');
+
+-- ----------------------------------------------------------------------------
+-- SCHEDULE 5 read-only camp (folded in from frontend/e2e/
+-- real-test-data-patches/sch5/view-mode-camp.sql — same rows, explicit ids).
+--
+-- 16050/2023 is the suite's only Submitted ("S") Schedule 5 document, seeded a
+-- few hundred lines above. S19 (STA-001) asserts the read-only render: the
+-- row-action column collapsing to a single `View`, `Add New Camp` and
+-- `Check Status` disabled, and the panel opening with values as TEXT. All of
+-- that needs a CAMP on the anchor, and the app cannot create one — every write
+-- to a non-Draft document is refused (HTTP 409), which IS the condition under
+-- test. So the row can only arrive as seed data.
+--
+-- ONE camp, and exactly one: preflight asserts that, because "the row-action
+-- column shows a single View button" is ambiguous with two rows.
+--
+-- The amounts are S01's, so the derived figures are ones the suite already
+-- proves the server computes (campSubTotal 3800, campTotal 3800,
+-- accessExpenseTotal 1100, campAndAccessTotal 4900; $/m3 0.76 and 0.98 against
+-- the 5000 camp volume). Verified through GET /api/v1/schedule5 on 2026-09-10.
+--
+-- Items 62/68 (the Other Camp / Other Access sub-page rows) are deliberately
+-- NOT seeded — an empty expense list is the simpler read-only fixture, and 141 /
+-- 142 carry volume only precisely because their cost is that row sum.
+-- ----------------------------------------------------------------------------
+INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID) VALUES (4901, 2023, 16050, '5', 'E2E View Camp', 12.5, 40, 5000, 'Y', 'Read-only sample comments (E2E_SEED).', 0, 'E2E_SEED');
+-- The twelve fixed-grid categories. NULLs are meaningful: 61 (Recoveries) is the
+-- volume-less category, 141/142 (the two Other ... rows) carry no cost of their own.
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4306, 4901,  56, 5000, 1000, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4307, 4901,  58, 5000, 2000, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4308, 4901,  59, 5000,  500, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4309, 4901,  60, 5000,  300, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4310, 4901, 141, 5000, NULL, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4311, 4901,  61, NULL,    0, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4312, 4901,  63, 5000,  700, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4313, 4901,  64, 5000,  400, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4314, 4901,  65, 5000,    0, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4315, 4901,  66, 5000,    0, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4316, 4901,  67, 5000,    0, NULL, 'E2E_SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID) VALUES (4317, 4901, 142, 5000, NULL, NULL, 'E2E_SEED');
+-- (camp id 4901, detail ids 4306-4317)
 
 -- ----------------------------------------------------------------------------
 -- SCHEDULE 11 anchors (fixtures/sch11/schedule11-test-data.ts).

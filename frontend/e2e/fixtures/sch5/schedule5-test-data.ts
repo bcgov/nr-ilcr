@@ -298,6 +298,9 @@ export const NEW_CAMP_EXPECTED_TOTALS = {
 /** Carbon Dropdown option text for a mill — mirrors Home's `millItemToString` ("760 - WESTEROS"). */
 export const millOptionText = (m: MillRef): string => `${m.millNumber} - ${m.millName}`;
 
+/** The in-memory MillYearContext localStorage key (context/millYear/MillYearProvider.tsx). */
+export const MILL_YEAR_STORAGE_KEY = 'ilcr:mill-year-context';
+
 /** The Schedule 5 read endpoint for a (mill, year) — the one place the query shape is spelled out. */
 export const scheduleUrl = (millId: number, year: number): string =>
   `/api/v1/schedule5?millId=${millId}&year=${year}`;
@@ -562,6 +565,98 @@ export const VALIDATION_MESSAGES = {
 
 /** S13's duplicate is typed in a DIFFERENT CASE — BR-02 is case-insensitive. */
 export const DUPLICATE_NAME_UPPERCASE = 'NORTH CAMP';
+
+// ---------------------------------------------------------------------------------------------------
+// S16 / S17 / S18 — the three EF2 guards, and S19 — the read-only render.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The guard banners, keyed by the vocabulary `render-states.feature` uses.
+ *
+ * RE-GROUNDED, and the shape matters more than the text. The source Gherkin expects all three in a
+ * PrimeFaces "business-exception panel" driven by `isScheduleNotFound()`-style flags. The rewrite has
+ * no `p:messages` panel at all: S17/S18 render the API's OWN `detail` inside a Carbon notification
+ * titled "Unable to load Schedule 5" (index.tsx:1151-1161), and S16 never issues a request — it is a
+ * client-side guard on the missing working context (index.tsx:1130-1141). So the SEVERITY and the
+ * MESSAGE survive re-grounding; the mechanism does not.
+ *
+ * Both server details were confirmed verbatim against the running app on 2026-09-10:
+ *   GET /api/v1/schedule5?millId=25051&year=2017 -> 409 {"detail":"This Mill is not active …"}
+ *   GET /api/v1/schedule5?millId=16050&year=2022 -> 404 {"detail":"Schedule not found."}
+ * They match the source Gherkin's ERR-004 / ERR-005 strings exactly, so nothing was re-worded.
+ */
+export const GUARD_MESSAGES = {
+  /** ERR-003 — the client-only banner, `ERR_MILL_YEAR_NOT_SELECTED` (index.tsx:67). */
+  millYearNotSelected: 'Please Select Mill and Reporting Year in the Home Page.',
+  /** Its notification TITLE. Severity is carried by a word, never by colour alone (WCAG 2.1 AA). */
+  millYearNotSelectedTitle: 'Mill and Reporting Year required',
+  /** ERR-004 — the 409 detail, served by the API and echoed unchanged. */
+  millNotActive:
+    'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
+  /** ERR-005 — the 404 detail. */
+  scheduleNotFound: 'Schedule not found.',
+  /** The title both server-side guards render under (index.tsx:1157). */
+  loadFailedTitle: 'Unable to load Schedule 5',
+} as const;
+
+/** The two guard anchors keyed for the step, with the status each must still answer. */
+export const GUARDS: Record<string, { anchor: Sch5Anchor; expectHttp: number; detail: string }> = {
+  'closed-mill': {
+    anchor: CLOSED_MILL_ANCHOR,
+    expectHttp: 409,
+    detail: GUARD_MESSAGES.millNotActive,
+  },
+  'not-found': {
+    anchor: NO_SCHEDULE_ANCHOR,
+    expectHttp: 404,
+    detail: GUARD_MESSAGES.scheduleNotFound,
+  },
+};
+
+/**
+ * S19's camp — seeded by `real-test-data-patches/sch5/view-mode-camp.sql`, NOT created by the
+ * scenario.
+ *
+ * WHY IT CANNOT BE CREATED BY THE TEST: the anchor is Submitted, and every write to a non-Draft
+ * document is refused with HTTP 409 — which is the very condition S19 exists to prove. So the camp is
+ * seed data, exactly as sch4's read-only arm had to be (`sch4/view-mode-amounts.sql`).
+ */
+export const VIEW_CAMP_NAME = 'E2E View Camp';
+
+/**
+ * How the seeded camp RENDERS in the read-only panel — the grouped display form.
+ *
+ * The panel is seeded from the served document through `masks.ts`, so 5000 comes back as "5,000"
+ * (`numStrGroup`), while `sizeOfCamp` is ungrouped by design (legacy's `numberOfPersonsConverter`,
+ * index.tsx:142-143). The `Select`'s VALUE is the string "true", not its "Yes" label.
+ *
+ * MEASURED against the running app on 2026-09-10, not derived from the SQL by hand.
+ */
+export const VIEW_CAMP_DISPLAY = {
+  campName: VIEW_CAMP_NAME,
+  roadDistanceToOperatingArea: '12.5',
+  sizeOfCamp: '40',
+  associatedCampVolume: '5,000',
+  isolatedCamp: 'true',
+  cateringAndFoodCost: '1,000',
+  cateringAndFoodVolume: '5,000',
+} as const;
+
+/**
+ * The derived rows as the read-only panel prints them.
+ *
+ * These are the SERVED figures — `derived` is null on a non-editable document (index.tsx:1191), so
+ * nothing here is a client-side mirror. They are S01's arithmetic (see the seed patch header), which
+ * is why they are the same numbers `NEW_CAMP_EXPECTED_TOTALS` already pins: the suite proves the
+ * server computes them on the write path, and S19 reads them back on the read path.
+ */
+export const VIEW_CAMP_DERIVED: ReadonlyArray<{ label: string; cost: string; perVolume: string }> = [
+  { label: 'Camp Sub-Total: ', cost: '3,800', perVolume: '0.76' },
+  { label: 'Camp Total: ', cost: '3,800', perVolume: '0.76' },
+  { label: 'Access Expense Total: ', cost: '1,100', perVolume: '0.22' },
+  // NOTE the label is 'Camp and Access: ', NOT 'Camp and Access Total: ' — GRID_ROWS:220.
+  { label: 'Camp and Access: ', cost: '4,900', perVolume: '0.98' },
+];
 
 /** ERR/SUC message text, verbatim from backend `messages.properties`. */
 export const MESSAGES = {

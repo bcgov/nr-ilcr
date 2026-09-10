@@ -5,6 +5,7 @@ import {
   GUARD_ANCHORS,
   NEW_CAMP_NAME,
   READ_ONLY_ANCHOR,
+  VIEW_CAMP_NAME,
   scheduleUrl,
 } from '../fixtures/sch5/schedule5-test-data';
 
@@ -134,6 +135,37 @@ test('preflight: Schedule 5 read-only anchor is still non-Draft', async ({ reque
       + `non-Draft for S19; it is "${doc.trackStatus}". ${HINT}`,
   ).not.toBe('D');
   expect(doc.editable, 'the read-only anchor must not be editable').toBe(false);
+});
+
+/**
+ * The read-only anchor must hold EXACTLY the one seeded camp.
+ *
+ * This is the mirror of the "no camps at rest" check above, and it is the one anchor exempt from it:
+ * S19 asserts a rendered camp row, its single `View` action and the stored amounts, none of which
+ * exist on an empty schedule. Two things can go wrong and they need different messages —
+ *   * ZERO camps  -> `view-mode-camp.sql` was never applied (or was torn down and not re-applied);
+ *   * TWO or more -> "the row-action column shows a single View button" is no longer unambiguous.
+ * Asserting the whole list rather than "at least one" catches both, and pinning the NAME catches a
+ * re-extract that renumbered or renamed the row.
+ *
+ * Deliberately does NOT assert the amounts: those are the scenario's own subject, and duplicating
+ * them here would mean two places to update for one change. The row's existence is the fixture; the
+ * figures are the test.
+ */
+test('preflight: Schedule 5 read-only anchor holds exactly the seeded view camp', async ({
+  request,
+}) => {
+  const res = await request.get(scheduleUrl(READ_ONLY_ANCHOR.key.millId, READ_ONLY_ANCHOR.key.year));
+  await expect(res, `Schedule 5 read-only anchor GET -> HTTP ${res.status()}. ${HINT}`).toBeOK();
+
+  const doc = (await res.json()) as Schedule5Doc;
+  expect(
+    (doc.camps ?? []).map((c) => c.campName),
+    `Schedule 5's read-only anchor (${READ_ONLY_ANCHOR.key.millId}/${READ_ONLY_ANCHOR.key.year}) must `
+      + `hold exactly ["${VIEW_CAMP_NAME}"] for S19. An EMPTY list almost always means `
+      + 'real-test-data-patches/sch5/view-mode-camp.sql was not applied — run '
+      + `frontend/e2e/scripts/apply-patches.sh. ${HINT}`,
+  ).toEqual([VIEW_CAMP_NAME]);
 });
 
 /**

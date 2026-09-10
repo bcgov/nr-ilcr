@@ -1,5 +1,6 @@
 import { type Locator, type Page, expect } from '@playwright/test';
 import { navigateViaSideNav } from '../common/authNav';
+import { MILL_YEAR_STORAGE_KEY } from '../../fixtures/sch5/schedule5-test-data';
 
 /**
  * Schedule 5 — Camp and Access Expenses (components/schedule5/index.tsx). All Schedule 5 DOM knowledge
@@ -44,6 +45,38 @@ export class Schedule5Page {
     await navigateViaSideNav(this.page, { group: 'Schedules', link: 'Schedule 5' });
     await expect(this.page).toHaveURL(/\/schedule-5$/);
     await expect(this.campsTable).toBeVisible();
+  }
+
+  /**
+   * Navigate for a GUARD state (S17's closed mill -> 409, S18's absent record -> 404).
+   *
+   * Separate from `openViaNav` because that one waits for the Existing Camps table, which a guard
+   * state never renders: the document GET fails, so the component returns a `PageState` carrying only
+   * the error notification (index.tsx:1151-1161). Waiting on the table here would time out on a page
+   * that is behaving exactly as the slice requires.
+   */
+  async openViaNavExpectingGuard(): Promise<void> {
+    await navigateViaSideNav(this.page, { group: 'Schedules', link: 'Schedule 5' });
+    await expect(this.page).toHaveURL(/\/schedule-5/);
+  }
+
+  /**
+   * Open Schedule 5 with NO working context (S16).
+   *
+   * Seeds an EMPTY MillYearContext into localStorage — the supported empty state
+   * (`MillYearProvider.tsx`) — and loads the route directly, so the page renders its `contextMissing`
+   * guard (index.tsx:1130-1141) without ever issuing a request. Going through Home and declining to
+   * pick a mill would leave the context unset rather than empty, which is a different state.
+   */
+  async openWithNoContext(): Promise<void> {
+    await this.page.addInitScript(
+      ([key]) => {
+        window.localStorage.setItem(key, JSON.stringify({ millId: null, year: null }));
+      },
+      [MILL_YEAR_STORAGE_KEY],
+    );
+    await this.page.goto('/schedule-5');
+    await expect(this.page).toHaveURL(/\/schedule-5$/);
   }
 
   // ---- the New Camp panel -------------------------------------------------------------------------
@@ -355,6 +388,82 @@ export class Schedule5Page {
   /** A row in the Existing Camps table, by camp name. */
   existingCampRow(campName: string): Locator {
     return this.campsTable.getByRole('row').filter({ hasText: campName });
+  }
+
+  // ---- guards (S16 / S17 / S18) and the read-only view (S19) ----------------------------------------
+
+  /**
+   * A Carbon notification carrying `text` — the title or the subtitle.
+   *
+   * Addressed by ROLE rather than by Carbon's `.cds--inline-notification` class: Carbon gives the
+   * container `role="status"` for every kind, error included, and a role survives a Carbon class
+   * rename where a class would not. Same choice as `pages/sch4/schedule4Page.ts:518`.
+   */
+  notification(text: string): Locator {
+    return this.page.getByRole('status').filter({ hasText: text });
+  }
+
+  /** The whole data-entry surface the three guards must suppress. */
+  async expectDataEntrySuppressed(): Promise<void> {
+    await expect(this.campsTable).toHaveCount(0);
+    await expect(this.addNewCampButton).toHaveCount(0);
+    await expect(this.checkStatusButton).toHaveCount(0);
+  }
+
+  /**
+   * The `View` action on a camp's row — the ONLY action a non-editable document renders.
+   *
+   * On an editable document this resolves nothing: `rowActions` returns the Edit/Delete/Copy trio and
+   * View does not exist (index.tsx:1193-1208). That asymmetry is the assertion, so S19 checks both
+   * directions rather than only the presence of View.
+   */
+  viewButtonFor(campName: string): Locator {
+    return this.existingCampRow(campName).getByRole('button', { name: 'View', exact: true });
+  }
+
+  /** Every write action a camp row can carry — asserted ABSENT on a read-only document. */
+  rowWriteActionsFor(campName: string): Locator {
+    return this.existingCampRow(campName).getByRole('button', {
+      name: /^(Edit|Delete|Copy)$/,
+    });
+  }
+
+  async openViewPanel(campName: string): Promise<void> {
+    await this.viewButtonFor(campName).click();
+    await expect(this.campPanelHeading(campName)).toBeVisible();
+  }
+
+  /**
+   * A descriptor is READ-ONLY but still an input.
+   *
+   * This is where Schedule 5 differs from Schedule 4, and the difference is worth pinning rather than
+   * glossing. Schedule 4's view mode renders its values as text; Schedule 5 keeps the Carbon
+   * `TextInput`s and sets `readOnly` on them (index.tsx:438-478), so the value is still in
+   * `inputValue()` and the proof of read-only-ness is the attribute. `Isolated Camp` is the odd one
+   * out — it is a `Select`, which Carbon disables rather than marking readonly (:479-483).
+   */
+  async expectDescriptorReadOnly(name: string): Promise<void> {
+    await expect(this.descriptor(name)).toHaveAttribute('readonly', '');
+  }
+
+  async expectIsolatedCampDisabled(): Promise<void> {
+    await expect(this.descriptor('Isolated Camp')).toBeDisabled();
+  }
+
+  /**
+   * The category grid holds NO inputs at all in view mode.
+   *
+   * `AmountCell` renders a bare `TableCell` when read-only (index.tsx:202-203), so this is what makes
+   * the value assertions meaningful: they are reading rendered text, not the contents of pre-filled
+   * boxes a user could still type into.
+   */
+  async expectCategoryGridReadOnly(): Promise<void> {
+    await expect(this.page.locator('.schedule-5__panel table').getByRole('textbox')).toHaveCount(0);
+  }
+
+  /** A category row as its whole table row, for text assertions when the cells are not inputs. */
+  categoryRow(label: string): Locator {
+    return this.campsTablePanelRow(label);
   }
 }
 
