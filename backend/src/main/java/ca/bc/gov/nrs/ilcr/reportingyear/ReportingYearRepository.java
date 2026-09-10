@@ -94,6 +94,43 @@ public class ReportingYearRepository {
   }
 
   /**
+   * Whether a mill already holds a report-status row for a year. This is legacy's {@code
+   * findMillReportStatus} named query (ILCRMillReportStatus.java:28), the existence check that
+   * decides whether activating a mill has to create its current-year records (BR-07).
+   */
+  public boolean millReportStatusExists(long millId, int year) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT CASE WHEN EXISTS ("
+                + "SELECT 1 FROM THE.ILCR_MILL_REPORT_STATUS "
+                + "WHERE ILCR_MILL_ID = :millId AND REPORT_YEAR = :year) THEN 1 ELSE 0 END FROM DUAL",
+            new MapSqlParameterSource().addValue("millId", millId).addValue("year", year),
+            Boolean.class));
+  }
+
+  /**
+   * How many per-category rows a mill holds for a year. The companion to {@link
+   * #millReportStatusExists}: the status row alone does not prove the mill is enrolled, because
+   * {@code enrolMillInYear} writes the status row AND one row per schedule category as a set, and
+   * only the two counts together tell a complete set from a half-written one.
+   *
+   * <p>Legacy had no equivalent — its check stopped at the status row
+   * (ILCRMillReportStatus.java:28) — and the delivery data says why that was survivable rather than
+   * right: all 118 (mill, year) pairs carrying a status row carry exactly 11 category rows, and no
+   * category set exists without its status row (verified against the seeded delivery database,
+   * 2026-09-10). A partial set is therefore corruption, not a shape real data takes.
+   */
+  public int countMillReportCategories(long millId, int year) {
+    Integer count =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM THE.ILCR_REPORT_CATEGORY "
+                + "WHERE ILCR_MILL_ID = :millId AND REPORT_YEAR = :year",
+            new MapSqlParameterSource().addValue("millId", millId).addValue("year", year),
+            Integer.class);
+    return count == null ? 0 : count;
+  }
+
+  /**
    * Insert one mill's report-status row for the new year, initializing BOTH independent tracks
    * (Schedules 1–10 and Schedule 11) to the same status code and report-completed indicator (A-8:
    * Draft, not completed). The audit quartet + {@code REVISION_COUNT} are NOT NULL in delivery and

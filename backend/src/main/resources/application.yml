@@ -88,6 +88,7 @@ ilcr:
   version: ${APP_VERSION:0.0.1-SNAPSHOT}
   security:
     enabled: ${ILCR_SECURITY_ENABLED:false}
+    mock-user-guid: ${ILCR_SECURITY_MOCK_USER_GUID:CANONSUBMITTERBBBBCCCCDDDD000001}
   datasource:
     enabled: ${ILCR_DATASOURCE_ENABLED:false}
     validation-query: ${ILCR_DATASOURCE_VALIDATION_QUERY:SELECT 1 FROM DUAL}

@@ -4,6 +4,7 @@ import ca.bc.gov.nrs.ilcr.assignment.IlcrUserRepository;
 import ca.bc.gov.nrs.ilcr.assignment.MillUserXrefRepository;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.millinformation.MillInformationRepository;
+import ca.bc.gov.nrs.ilcr.millmaintenance.MillMaintenanceRepository;
 import ca.bc.gov.nrs.ilcr.millreportstatus.MillReportStatusRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.CostDetailSnapshotRepository;
 import ca.bc.gov.nrs.ilcr.originalvalue.ReportSummarySnapshotRepository;
@@ -60,6 +61,7 @@ import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
       MillInformationRepository.class,
       MillReportStatusRepository.class,
       IlcrUserRepository.class,
-      MillUserXrefRepository.class
+      MillUserXrefRepository.class,
+      MillMaintenanceRepository.class
     })
 public class SpringDataJdbcConfiguration extends AbstractJdbcConfiguration {}
