@@ -5,10 +5,12 @@ import type { RoadDetail } from '@/interfaces/Schedule10Response'
  * Re-key one sub-object's originals onto the form's names. Keys the rename table does not mention
  * pass through unchanged — the sub-grade deductions (`lessBridges`, `lessCulverts`, …) are named the
  * same on both sides, so listing them would be noise that could drift.
+ *
+ * The rename table already carries each target name in full (`sgLength`, `stDepth`), so there is
+ * no prefix to apply separately — an earlier signature took one and never used it.
  */
-const prefixed = (
+const renamed = (
   values: OriginalValues | null | undefined,
-  _prefix: string,
   renames: Readonly<Record<string, string>>,
 ): OriginalValues => {
   if (values == null) {
@@ -56,14 +58,14 @@ export const roadDetailOriginals = (detail: RoadDetail): OriginalValues | null =
     ...own,
     ...becAlias,
     ...material,
-    ...prefixed(subGrade, 'sg', {
+    ...renamed(subGrade, {
       length: 'sgLength',
       surfaceWidth: 'sgSurfaceWidth',
       actualCost: 'sgActualCost',
       ttTransfer: 'sgTtTransfer',
       otherTransfer: 'sgOtherTransfer',
     }),
-    ...prefixed(stabilizing, 'st', {
+    ...renamed(stabilizing, {
       ballastMethodCode: 'stBallastMethodCode',
       ballastMaterialCode: 'stBallastMaterialCode',
       length: 'stLength',

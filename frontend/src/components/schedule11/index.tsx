@@ -384,7 +384,7 @@ const EditRow: FC<EditRowProps> = ({
       <OriginalValueIndicator
         originals={row.originalValues}
         field="biogeoclimaticCatalogueId"
-        current={form.bec?.id === undefined ? '' : String(form.bec.id)}
+        current={form.bec === null ? '' : String(form.bec.id)}
         numeric={false}
         label="Biogeo/Subzone/Variant"
       />

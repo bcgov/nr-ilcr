@@ -57,6 +57,27 @@ describe('originalValueState', () => {
       expect(originalValueState(submitted, 'volume', ' 60000 ').changed).toBe(false)
     })
 
+    it('compares parsed numbers EXACTLY — no epsilon tolerance', () => {
+      // Deliberate, and asserted so it is not "tidied" into an approximate compare later. Both
+      // sides are parsed straight from decimal strings by `parseDecimalInput` (a bare `Number()`
+      // with the grouping stripped) and no arithmetic happens in between, so two strings denoting
+      // the same decimal always yield bit-identical doubles — there is no drift for a tolerance to
+      // absorb. A tolerance would instead LOSE real differences: these two cost figures are 1 cent
+      // apart, a genuine ministry correction, and any epsilon wide enough to matter hides it.
+      const cents: OriginalValues = {
+        cost: { value: '0.1', tooltip: 'Original Submission Value: 0.10' },
+      }
+      expect(originalValueState(cents, 'cost', '0.10').changed).toBe(false)
+      expect(originalValueState(cents, 'cost', '0.11').changed).toBe(true)
+      // The classic 0.1 + 0.2 case cannot arise here, because nothing on this path adds: the
+      // string "0.30000000000000004" is simply a different value from "0.3", and is flagged.
+      const third: OriginalValues = {
+        cost: { value: '0.3', tooltip: 'Original Submission Value: 0.30' },
+      }
+      expect(originalValueState(third, 'cost', '0.3').changed).toBe(false)
+      expect(originalValueState(third, 'cost', String(0.1 + 0.2)).changed).toBe(true)
+    })
+
     it('compares text exactly when told the field is not numeric', () => {
       expect(
         originalValueState(submitted, 'comments', 'as the mill reported it', false).changed,

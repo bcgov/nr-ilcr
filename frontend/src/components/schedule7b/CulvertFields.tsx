@@ -117,27 +117,33 @@ const CulvertFields: FC<Props> = ({
           parts. */}
       <Column sm={4} md={8} lg={16}>
         <div className="schedule-7b__field-grid">
-          <Dropdown<CulvertCodeOption>
-            id={`${idPrefix}-culvertTypeCode`}
-            titleText="Type"
-            label="Select"
-            items={items}
-            itemToString={(item) => item?.description ?? ''}
-            // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
-            // downshift's internal state, so a cleared code would leave the old label on screen. The
-            // cast is Carbon's own type inconsistency — its `onChange` hands back `ItemType | null`
-            // while the prop is declared `ItemType | undefined` (Dropdown.d.ts:13 vs :123).
-            selectedItem={
-              (items.find((item) => item.code === form.culvertTypeCode) ?? null) as
-                CulvertCodeOption | undefined
-            }
-            disabled={disabled}
-            invalid={Boolean(errors.culvertTypeCode)}
-            invalidText={errors.culvertTypeCode}
-            onChange={({ selectedItem }) => onChange('culvertTypeCode', selectedItem?.code ?? '')}
-          />
-          {/* A dropdown compares its stored CODE, which is what legacy compared too. */}
-          {indicator('culvertTypeCode', 'Type', false)}
+          {/* Wrapped exactly as `text()` wraps its inputs: the control and its indicator have to be
+              ONE grid item, or an indicator that appears takes a cell of its own and pushes Span and
+              Rise out of the row. */}
+          <div className="schedule-7b__field">
+            <Dropdown<CulvertCodeOption>
+              id={`${idPrefix}-culvertTypeCode`}
+              titleText="Type"
+              label="Select"
+              items={items}
+              itemToString={(item) => item?.description ?? ''}
+              // `null`, not `undefined`: an undefined `selectedItem` hands the control back to
+              // downshift's internal state, so a cleared code would leave the old label on screen.
+              // The cast is Carbon's own type inconsistency — its `onChange` hands back
+              // `ItemType | null` while the prop is declared `ItemType | undefined`
+              // (Dropdown.d.ts:13 vs :123).
+              selectedItem={
+                (items.find((item) => item.code === form.culvertTypeCode) ?? null) as
+                  CulvertCodeOption | undefined
+              }
+              disabled={disabled}
+              invalid={Boolean(errors.culvertTypeCode)}
+              invalidText={errors.culvertTypeCode}
+              onChange={({ selectedItem }) => onChange('culvertTypeCode', selectedItem?.code ?? '')}
+            />
+            {/* A dropdown compares its stored CODE, which is what legacy compared too. */}
+            {indicator('culvertTypeCode', 'Type', false)}
+          </div>
           {masked('spanSize', 'Span (mm)', 'numeric')}
           {masked('riseSize', 'Rise (mm)', 'numeric')}
 

@@ -672,11 +672,11 @@ const Schedule3: FC = () => {
                     originals, so the served block's map is spread back on. */}
                 {timberRow('Privately Owned & Purchased (PO&P) Timber', 'popTimberVolume', {
                   ...(derived ? derived.popTimber : data.popTimber),
-                  originalValues: data.popTimber?.originalValues,
+                  originalValues: data.popTimber.originalValues,
                 })}
                 {timberRow('Crown Timber', 'crownTimberVolume', {
                   ...(derived ? derived.crownTimber : data.crownTimber),
-                  originalValues: data.crownTimber?.originalValues,
+                  originalValues: data.crownTimber.originalValues,
                 })}
                 {timberRow(
                   'Total Overhead',
