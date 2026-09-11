@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { RateRow } from '@/interfaces/Schedule8Response'
@@ -285,10 +286,48 @@ const RatesPage: FC<RatesPageProps> = ({
               ) : (
                 rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{costItemName(row.costItemCode)}</TableCell>
-                    <TableCell>{row.itemDescription ?? '—'}</TableCell>
-                    <TableCell className="schedule-8__num">{fmt(row.costingRate)}</TableCell>
-                    <TableCell>{row.costTypeDescription ?? row.costTypeCode ?? '—'}</TableCell>
+                    {/* Legacy rendered four indicators on a rate row
+                        (TreeToTruckRateDetailDO.java:273-282); the row grid is read-only here, so
+                        each cell compares its SERVED value. */}
+                    <TableCell>
+                      {costItemName(row.costItemCode)}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costItemCode"
+                        current={row.costItemCode}
+                        numeric={false}
+                        label="Cost Item"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {row.itemDescription ?? '—'}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="itemDescription"
+                        current={row.itemDescription}
+                        numeric={false}
+                        label="Description"
+                      />
+                    </TableCell>
+                    <TableCell className="schedule-8__num">
+                      {fmt(row.costingRate)}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costingRate"
+                        current={row.costingRate}
+                        label="$/m³"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {row.costTypeDescription ?? row.costTypeCode ?? '—'}
+                      <OriginalValueIndicator
+                        originals={row.originalValues}
+                        field="costTypeCode"
+                        current={row.costTypeCode}
+                        numeric={false}
+                        label="Cost Type"
+                      />
+                    </TableCell>
                     {editable && (
                       <TableCell>
                         <Button

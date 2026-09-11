@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -134,6 +136,8 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
         id: r.id,
         description: r.description,
         values: Object.fromEntries(config.fields.map((f) => [f.key, numStrGroup(f.get(r))])),
+        // The Licensee's submitted description and amounts for this row (Story 16.2, BR-04).
+        originals: (r as { originalValues?: OriginalValues | null }).originalValues,
       })),
     validate: config.validate,
     onBack: () => navigate({ to: '/schedule-3' }),
@@ -230,6 +234,13 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
               invalid={Boolean(errs.description)}
               invalidText={errs.description}
             />
+            <OriginalValueIndicator
+              originals={row.originals}
+              field="description"
+              current={row.description}
+              numeric={false}
+              label="Description"
+            />
           </TableCell>
           {config.fields.map((field) => (
             <TableCell key={field.key} className="schedule-3__num schedule-3__num--input">
@@ -273,6 +284,12 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
                 invalid={Boolean(errs[field.key])}
                 invalidText={errs[field.key]}
               />
+              <OriginalValueIndicator
+                originals={row.originals}
+                field={field.key}
+                current={row.values[field.key] ?? ''}
+                label={field.label}
+              />
             </TableCell>
           ))}
           {readonlyColumns.map((col) => (
@@ -296,7 +313,16 @@ function Schedule3SubPage<TRow extends Schedule3SubPageRow, TDoc extends Schedul
     }
     return (
       <>
-        <TableCell>{row.description}</TableCell>
+        <TableCell>
+          {row.description}
+          <OriginalValueIndicator
+            originals={row.originals}
+            field="description"
+            current={row.description}
+            numeric={false}
+            label="Description"
+          />
+        </TableCell>
         {config.fields.map((field) => (
           <TableCell key={field.key} className="schedule-3__num">
             {fmtNumber(nums[field.key])}

@@ -1,3 +1,5 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { FC } from 'react'
 import type Schedule3Response from '@/interfaces/Schedule3Response'
 import type { CostLine, ThreeColumnTotal } from '@/interfaces/Schedule3Response'
@@ -345,12 +347,32 @@ const Schedule3: FC = () => {
 
   // A value cell: an editable TextInput when writable and the schedule is editable, else read-only
   // text. `onBlur` lets the Annual Rents Harvest field raise the S111 alert (legacy onchange).
+  // Legacy paired each entered cell with an indicator (Schedule3DAO.java:147-321). The derived
+  // total rows and the crown column carry none: nothing stores them.
+  const indicator = (
+    originals: OriginalValues | null | undefined,
+    field: string | undefined,
+    label: string,
+    current: number | null | undefined,
+    typed?: string,
+  ) =>
+    field === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={field}
+        current={typed ?? current}
+        label={label}
+      />
+    )
+
   const numberCell = (
     fieldKey: string,
     label: string,
     writable: boolean,
     current: number | null | undefined,
     onBlur?: () => void,
+    originals?: OriginalValues | null,
+    originalField?: string,
   ) =>
     editable && writable ? (
       // --input: the value lives inside a TextInput, which supplies its own inline padding. The
@@ -378,9 +400,13 @@ const Schedule3: FC = () => {
           invalid={Boolean(fieldErrors[fieldKey])}
           invalidText={fieldErrors[fieldKey]}
         />
+        {indicator(originals, originalField, label, current, form[fieldKey])}
       </TableCell>
     ) : (
-      <TableCell className="schedule-3__num">{fmtNumber(current)}</TableCell>
+      <TableCell className="schedule-3__num">
+        {fmtNumber(current)}
+        {indicator(originals, originalField, label, current)}
+      </TableCell>
     )
 
   const lineRow = (line: CostLine) => {
@@ -397,12 +423,28 @@ const Schedule3: FC = () => {
     const popCell = POP_HIDDEN.has(code) ? (
       <TableCell className="schedule-3__num">—</TableCell>
     ) : (
-      numberCell(`pop-${code}`, `${label} PO&P`, showPop, shown.pop)
+      numberCell(
+        `pop-${code}`,
+        `${label} PO&P`,
+        showPop,
+        shown.pop,
+        undefined,
+        line.originalValues,
+        'pop',
+      )
     )
     return (
       <TableRow key={code}>
         <TableCell>{label}</TableCell>
-        {numberCell(`harvest-${code}`, `${label} Harvest`, true, line.harvest, harvestBlur)}
+        {numberCell(
+          `harvest-${code}`,
+          `${label} Harvest`,
+          true,
+          line.harvest,
+          harvestBlur,
+          line.originalValues,
+          'harvest',
+        )}
         {popCell}
         <TableCell className="schedule-3__num">{fmtNumber(shown.crown)}</TableCell>
       </TableRow>
@@ -455,12 +497,25 @@ const Schedule3: FC = () => {
   const timberRow = (
     label: string,
     fieldKey: string | null,
-    block: { volume: number | null; cost: number | null; perUnit: number | null },
+    block: {
+      volume: number | null
+      cost: number | null
+      perUnit: number | null
+      originalValues?: OriginalValues | null
+    },
   ) => (
     <TableRow key={label}>
       <TableCell>{label}</TableCell>
       {fieldKey !== null ? (
-        numberCell(fieldKey, `${label} Harvest Volume`, true, block.volume)
+        numberCell(
+          fieldKey,
+          `${label} Harvest Volume`,
+          true,
+          block.volume,
+          undefined,
+          block.originalValues,
+          'volume',
+        )
       ) : (
         <TableCell className="schedule-3__num">{fmtNumber(block.volume)}</TableCell>
       )}
@@ -613,16 +668,16 @@ const Schedule3: FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {timberRow(
-                  'Privately Owned & Purchased (PO&P) Timber',
-                  'popTimberVolume',
-                  derived ? derived.popTimber : data.popTimber,
-                )}
-                {timberRow(
-                  'Crown Timber',
-                  'crownTimberVolume',
-                  derived ? derived.crownTimber : data.crownTimber,
-                )}
+                {/* The live mirror supplies the figures while editing (#291) but carries no
+                    originals, so the served block's map is spread back on. */}
+                {timberRow('Privately Owned & Purchased (PO&P) Timber', 'popTimberVolume', {
+                  ...(derived ? derived.popTimber : data.popTimber),
+                  originalValues: data.popTimber.originalValues,
+                })}
+                {timberRow('Crown Timber', 'crownTimberVolume', {
+                  ...(derived ? derived.crownTimber : data.crownTimber),
+                  originalValues: data.crownTimber.originalValues,
+                })}
                 {timberRow(
                   'Total Overhead',
                   null,
@@ -648,6 +703,13 @@ const Schedule3: FC = () => {
               <p className="schedule-3__comments">{data.comments ?? '—'}</p>
             </>
           )}
+          <OriginalValueIndicator
+            originals={data.originalValues}
+            field="comments"
+            current={editable ? (form['comments'] ?? '') : data.comments}
+            numeric={false}
+            label="Comments"
+          />
         </Column>
 
         {actionBar(true)}

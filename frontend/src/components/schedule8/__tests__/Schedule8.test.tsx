@@ -1458,6 +1458,104 @@ describe('Schedule8 additions/deductions level', () => {
   })
 })
 
+/**
+ * The page comments indicator (Story 16.2 AC7, added in review of PR #452).
+ *
+ * Comments is the twelfth of the page's indicators and the only one that does not come through the
+ * `textField` helper, so it was the one field the first cut of the wiring missed. The backend has
+ * always served the key (`Schedule8Service.pageOriginals` puts `comments`), which is why the gap was
+ * invisible from the API side.
+ */
+describe('Schedule8 page comments original-value indicator', () => {
+  const submittedPage = (): Page => ({
+    ...fullPage,
+    comments: 'the ministry corrected this',
+    originalValues: {
+      comments: {
+        value: 'what the mill actually reported',
+        tooltip: 'Original Submission Value: what the mill actually reported',
+      },
+    },
+  })
+
+  test('renders beside the comments textarea when it differs from the submitted original', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ trackStatus: 'S', pages: [submittedPage(), emptyPage] })),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const indicator = await screen.findByTestId('original-value-comments')
+    expect(indicator).toHaveAccessibleName('Comments differs from the originally submitted value')
+    expect(indicator).toHaveAccessibleDescription(
+      'Original Submission Value: what the mill actually reported',
+    )
+  })
+
+  test('renders in the read-only view too — visibility is a status gate, not a permission one', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ trackStatus: 'S', editable: false, pages: [submittedPage(), emptyPage] }),
+        ),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^view$/i })[0])
+
+    expect(await screen.findByTestId('original-value-comments')).toBeInTheDocument()
+  })
+
+  test('no indicator at Draft, however far the comment has diverged', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({
+            trackStatus: 'D',
+            pages: [{ ...submittedPage(), originalValues: null }, emptyPage],
+          }),
+        ),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    await screen.findByRole('heading', { name: /^Edit Page —/ })
+    expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+  })
+
+  test('reverting the comment to exactly the submitted text clears the indicator', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(doc({ trackStatus: 'S', pages: [submittedPage(), emptyPage] })),
+      ),
+    )
+    renderSchedule8()
+    await screen.findByText(/Page # 1/)
+    await userEvent.click(screen.getAllByRole('button', { name: /^edit$/i })[0])
+
+    const textarea = await screen.findByLabelText(
+      /If you have any additional comments, please enter them here:/,
+    )
+    expect(await screen.findByTestId('original-value-comments')).toBeInTheDocument()
+
+    // Paste rather than type: these editors re-render every field per keystroke, so typing a
+    // 31-character comment is what pushes this suite past its timeout.
+    await userEvent.clear(textarea)
+    await userEvent.click(textarea)
+    await userEvent.paste('what the mill actually reported')
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+    })
+  })
+})
+
 import useMillYear from '@/context/millYear/useMillYear'
 
 const StaleRaceHarness = () => {

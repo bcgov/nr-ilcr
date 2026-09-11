@@ -531,6 +531,7 @@ const Schedule7a: FC = () => {
                       }
                       onChange={(key, value) => setRowField(bridge, key, value)}
                       onGroup={(key) => groupRowField(bridge, key)}
+                      originals={bridge.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7A.xhtml:1237).
                         Saving is a page-level action covering every bridge at once, so a per-row

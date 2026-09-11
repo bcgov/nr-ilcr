@@ -1,4 +1,6 @@
-import type { FC } from 'react'
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
+import type { OriginalValues } from '@/interfaces/OriginalValue'
+import type { FC, ReactNode } from 'react'
 import type Schedule5Response from '@/interfaces/Schedule5Response'
 import type {
   Camp,
@@ -198,9 +200,35 @@ const AmountCell: FC<{
   readonly invalidText?: string
   readonly onChange?: (value: string) => void
   readonly onBlur?: () => void
-}> = ({ inputId, label, value, readOnly, invalidText, onChange, onBlur }) =>
-  readOnly ? (
-    <TableCell className="schedule-5__num">{value}</TableCell>
+  // The Licensee's submitted values for THIS category (Story 16.2, BR-04), and which of its two
+  // keys this cell is. Null at Draft.
+  readonly originals?: OriginalValues | null
+  readonly originalField?: 'volume' | 'cost'
+}> = ({
+  inputId,
+  label,
+  value,
+  readOnly,
+  invalidText,
+  onChange,
+  onBlur,
+  originals,
+  originalField,
+}) => {
+  const indicator =
+    originalField === undefined ? null : (
+      <OriginalValueIndicator
+        originals={originals}
+        field={originalField}
+        current={value}
+        label={label}
+      />
+    )
+  return readOnly ? (
+    <TableCell className="schedule-5__num">
+      {value}
+      {indicator}
+    </TableCell>
   ) : (
     <TableCell className="schedule-5__num">
       <TextInput
@@ -214,8 +242,10 @@ const AmountCell: FC<{
         invalid={Boolean(invalidText)}
         invalidText={invalidText}
       />
+      {indicator}
     </TableCell>
   )
+}
 
 /** An empty cell for a column this row genuinely does not have (Recoveries' volume and $/m³). */
 const AbsentCell: FC = () => <TableCell className="schedule-5__num" />
@@ -274,6 +304,8 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.volume`]}
           onChange={(value) => onChange(row.key, 'volume', value)}
           onBlur={() => onBlur(row.key, 'volume')}
+          originals={served?.originalValues}
+          originalField="volume"
         />
       ) : (
         <AbsentCell />
@@ -290,6 +322,8 @@ const CategoryGridRow: FC<{
           invalidText={errors[`${row.key}.cost`]}
           onChange={(value) => onChange(row.key, 'cost', value)}
           onBlur={() => onBlur(row.key, 'cost')}
+          originals={served?.originalValues}
+          originalField="cost"
         />
       )}
       {row.hasVolume ? (
@@ -417,6 +451,30 @@ const CategoryGrid: FC<{
 )
 
 /** The five descriptors, in legacy order and with legacy labels and unit suffixes. */
+/**
+ * The stored form of a Yes/No flag. The form holds `'true'`/`'false'`; the served original is the
+ * stored `'Y'`/`'N'`, and an unset flag has no stored form at all.
+ */
+const storedFlag = (value: string): string => {
+  if (value === 'true') {
+    return 'Y'
+  }
+  return value === 'false' ? 'N' : ''
+}
+
+/**
+ * Whether any entered figure is mid-keystroke and unusable (a lone `-`, say). Checked across the
+ * WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
+ * volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
+ */
+const hasUnusableEntry = (form: CampFormValues): boolean =>
+  isUnusableStrictEntry(form.associatedCampVolume) ||
+  CATEGORY_KEYS.some(
+    (key) =>
+      isUnusableStrictEntry(form.categories[key].volume) ||
+      isUnusableStrictEntry(form.categories[key].cost),
+  )
+
 const DescriptorFields: FC<{
   readonly values: CampFormValues
   readonly readOnly: boolean
@@ -425,6 +483,8 @@ const DescriptorFields: FC<{
   readonly onFieldBlur: (field: keyof CampFormValues) => void
   readonly onIsolatedCampChange: (value: string) => void
   readonly onCampVolumeChange: (value: string) => void
+  /** The Licensee's submitted camp attributes (Story 16.2, BR-04). Null at Draft. */
+  readonly originals?: OriginalValues | null
 }> = ({
   values,
   readOnly,
@@ -433,69 +493,170 @@ const DescriptorFields: FC<{
   onFieldBlur,
   onIsolatedCampChange,
   onCampVolumeChange,
+  originals,
 }) => (
   <div className="schedule-5__descriptors">
-    <TextInput
-      id="camp-name"
-      labelText="Camp Name"
-      maxLength={CAMP_NAME_MAX_LENGTH}
-      value={values.campName}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('campName', event.target.value)}
-      onBlur={() => onFieldBlur('campName')}
-      invalid={Boolean(errors.campName)}
-      invalidText={errors.campName}
-    />
-    <TextInput
-      id="road-distance"
-      labelText="Road Distance to Operating Area (km)"
-      value={values.roadDistanceToOperatingArea}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('roadDistanceToOperatingArea', event.target.value)}
-      onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
-      invalid={Boolean(errors.roadDistanceToOperatingArea)}
-      invalidText={errors.roadDistanceToOperatingArea}
-    />
-    <TextInput
-      id="size-of-camp"
-      labelText="Size of Camp (number of persons)"
-      value={values.sizeOfCamp}
-      readOnly={readOnly}
-      onChange={(event) => onFieldChange('sizeOfCamp', event.target.value)}
-      onBlur={() => onFieldBlur('sizeOfCamp')}
-      invalid={Boolean(errors.sizeOfCamp)}
-      invalidText={errors.sizeOfCamp}
-    />
-    <TextInput
-      id="associated-camp-volume"
-      labelText="Associated Camp Volume (m³)"
-      value={values.associatedCampVolume}
-      readOnly={readOnly}
-      onChange={(event) => onCampVolumeChange(event.target.value)}
-      onBlur={() => onFieldBlur('associatedCampVolume')}
-      invalid={Boolean(errors.associatedCampVolume)}
-      invalidText={errors.associatedCampVolume}
-    />
-    <Select
-      id="isolated-camp"
-      labelText="Isolated Camp"
-      value={values.isolatedCamp}
-      disabled={readOnly}
-      onChange={(event) => onIsolatedCampChange(event.target.value)}
-      // A change IS this control's commit, so it reports immediately — but blur is still needed:
-      // tabbing THROUGH the empty option fires no change at all, and without this the required
-      // field would stay silent until Save while every text field beside it reports on blur.
-      onBlur={() => onFieldBlur('isolatedCamp')}
-      invalid={Boolean(errors.isolatedCamp)}
-      invalidText={errors.isolatedCamp}
-    >
-      {/* The empty option exists so a stored null has something to render as. */}
-      <SelectItem value="" text="" />
-      <SelectItem value="false" text="No" />
-      <SelectItem value="true" text="Yes" />
-    </Select>
+    <div className="schedule-5__field">
+      <TextInput
+        id="camp-name"
+        labelText="Camp Name"
+        maxLength={CAMP_NAME_MAX_LENGTH}
+        value={values.campName}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('campName', event.target.value)}
+        onBlur={() => onFieldBlur('campName')}
+        invalid={Boolean(errors.campName)}
+        invalidText={errors.campName}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="campName"
+        current={values.campName}
+        numeric={false}
+        label="Camp Name"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="road-distance"
+        labelText="Road Distance to Operating Area (km)"
+        value={values.roadDistanceToOperatingArea}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('roadDistanceToOperatingArea', event.target.value)}
+        onBlur={() => onFieldBlur('roadDistanceToOperatingArea')}
+        invalid={Boolean(errors.roadDistanceToOperatingArea)}
+        invalidText={errors.roadDistanceToOperatingArea}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="roadDistanceToOperatingArea"
+        current={values.roadDistanceToOperatingArea}
+        numeric={true}
+        label="Road Distance to Operating Area (km)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="size-of-camp"
+        labelText="Size of Camp (number of persons)"
+        value={values.sizeOfCamp}
+        readOnly={readOnly}
+        onChange={(event) => onFieldChange('sizeOfCamp', event.target.value)}
+        onBlur={() => onFieldBlur('sizeOfCamp')}
+        invalid={Boolean(errors.sizeOfCamp)}
+        invalidText={errors.sizeOfCamp}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="sizeOfCamp"
+        current={values.sizeOfCamp}
+        numeric={true}
+        label="Size of Camp (number of persons)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <TextInput
+        id="associated-camp-volume"
+        labelText="Associated Camp Volume (m³)"
+        value={values.associatedCampVolume}
+        readOnly={readOnly}
+        onChange={(event) => onCampVolumeChange(event.target.value)}
+        onBlur={() => onFieldBlur('associatedCampVolume')}
+        invalid={Boolean(errors.associatedCampVolume)}
+        invalidText={errors.associatedCampVolume}
+      />
+      <OriginalValueIndicator
+        originals={originals}
+        field="associatedCampVolume"
+        current={values.associatedCampVolume}
+        numeric={true}
+        label="Associated Camp Volume (m³)"
+      />
+    </div>
+    <div className="schedule-5__field">
+      <Select
+        id="isolated-camp"
+        labelText="Isolated Camp"
+        value={values.isolatedCamp}
+        disabled={readOnly}
+        onChange={(event) => onIsolatedCampChange(event.target.value)}
+        // A change IS this control's commit, so it reports immediately — but blur is still needed:
+        // tabbing THROUGH the empty option fires no change at all, and without this the required
+        // field would stay silent until Save while every text field beside it reports on blur.
+        onBlur={() => onFieldBlur('isolatedCamp')}
+        invalid={Boolean(errors.isolatedCamp)}
+        invalidText={errors.isolatedCamp}
+      >
+        {/* The empty option exists so a stored null has something to render as. */}
+        <SelectItem value="" text="" />
+        <SelectItem value="false" text="No" />
+        <SelectItem value="true" text="Yes" />
+      </Select>
+      {/* The form holds 'true'/'false'; the served original is the stored 'Y'/'N', so this cell
+          compares the two through the same shared rule rather than by text. */}
+      <OriginalValueIndicator
+        originals={originals}
+        field="isolatedCamp"
+        current={storedFlag(values.isolatedCamp)}
+        numeric={false}
+        label="Isolated Camp"
+      />
+    </div>
   </div>
 )
+
+/**
+ * The page's three pre-document states — no mill/year context, still loading, or a failed load —
+ * as one element, or null when the document should render. Extracted from the component so its
+ * body carries one branch here instead of three; the `!data` guard stays in the component, where
+ * it still narrows `data` for the rest of the render.
+ */
+const loadState = ({
+  header,
+  contextMissing,
+  isLoading,
+  errorDetail,
+}: {
+  readonly header: ReactNode
+  readonly contextMissing: boolean
+  readonly isLoading: boolean
+  readonly errorDetail: string | undefined
+}): ReactNode | null => {
+  if (contextMissing) {
+    return (
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Mill and Reporting Year required',
+          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
+        }}
+      />
+    )
+  }
+  if (isLoading) {
+    return (
+      <PageState header={header}>
+        <Column sm={4} md={8} lg={16}>
+          <LoadingScreen label="Loading Schedule 5" />
+        </Column>
+      </PageState>
+    )
+  }
+  if (errorDetail) {
+    return (
+      <PageState
+        header={header}
+        notification={{
+          kind: 'error',
+          title: 'Unable to load Schedule 5',
+          subtitle: errorDetail,
+        }}
+      />
+    )
+  }
+  return null
+}
 
 const Schedule5: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -737,17 +898,8 @@ const Schedule5: FC = () => {
   }
 
   const commitEntry = () => {
-    // The WHOLE form, not one half: BR-03 propagates the Associated Camp Volume into all eleven
-    // volume-bearing categories, so a single field's blur can legitimately move every rate (#291).
     const invalid = Object.keys(validateCamp(form, otherCampNames)).length > 0
-    const unusable =
-      isUnusableStrictEntry(form.associatedCampVolume) ||
-      CATEGORY_KEYS.some(
-        (key) =>
-          isUnusableStrictEntry(form.categories[key].volume) ||
-          isUnusableStrictEntry(form.categories[key].cost),
-      )
-    if (!invalid && !unusable) {
+    if (!invalid && !hasUnusableEntry(form)) {
       setCommitted(form)
     }
   }
@@ -1127,38 +1279,12 @@ const Schedule5: FC = () => {
     )
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 5" />
-        </Column>
-      </PageState>
-    )
-  }
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Unable to load Schedule 5',
-          subtitle: errorDetail,
-        }}
-      />
-    )
+  // The three pre-document states, resolved together (see `loadState`). Kept as one branch here
+  // rather than three so this component's body stays under the cognitive-complexity budget; the
+  // `!data` guard stays put, because it is what narrows `data` for everything below.
+  const loading = loadState({ header, contextMissing, isLoading, errorDetail })
+  if (loading !== null) {
+    return loading
   }
   if (!data) {
     return null
@@ -1292,6 +1418,8 @@ const Schedule5: FC = () => {
         onFieldBlur={commitOnBlur}
         onIsolatedCampChange={handleIsolatedCampChange}
         onCampVolumeChange={handleCampVolumeChange}
+        // The new-camp panel has no stored camp, so nothing was submitted for it to differ from.
+        originals={panelMode === 'new' ? null : servedCamp?.originalValues}
       />
 
       <CategoryGrid

@@ -399,6 +399,7 @@ const Schedule9: FC = () => {
                       servedCostPerUnit={record.id in rowForms ? undefined : record.costPerUnit}
                       onChange={(key, value) => setRowField(record, key, value)}
                       onMask={(key) => maskRowField(record, key)}
+                      originals={record.originalValues}
                     />
                     <div className="schedule-9__panel-actions">
                       <Button

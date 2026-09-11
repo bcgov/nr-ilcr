@@ -7,6 +7,7 @@
 // value that arrived as 3.000 or 147000.00 reaches this code as 3 and 147000 — display must go
 // through the shared fixed-decimal formatters, never String(value).
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -72,6 +73,9 @@ export interface SubGrade {
   readonly total: number | null
   // Absent when length is zero or blank — render blank, not 0.00.
   readonly costPerLength: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /** Additional-stabilizing attributes and costs. There is no deduction leg on this side. */
@@ -87,6 +91,9 @@ export interface Stabilizing {
   readonly otherTransfer: number | null
   readonly total: number | null
   readonly costPerLength: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**
@@ -100,6 +107,9 @@ export interface MaterialComposition {
   readonly finePct: number | null
   readonly organicPct: number | null
   readonly totalPct: number
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**
@@ -127,6 +137,9 @@ export interface RoadDetail {
   readonly overlandVolume: number | null
   readonly comments: string | null
   readonly revisionCount: number | null
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /**
@@ -152,6 +165,9 @@ export interface ConstructionPage {
   readonly roadDetailCount: number
   readonly revisionCount: number | null
   readonly roadDetails: readonly RoadDetail[]
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 /** One outstanding Check Status item. `message.text` is the fully composed line, ready to render. */

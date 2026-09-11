@@ -1501,3 +1501,115 @@ describe('stale context', () => {
     expect(screen.getByText('FRESH PAGE')).toBeInTheDocument()
   })
 })
+
+/**
+ * The road detail's comments indicator (Story 16.2 AC7, added in review of PR #452).
+ *
+ * The road detail renders its comments through the shared `CommentsTextArea` rather than through
+ * `RoadDetailFields`' own `indicator()` helper, which is how it came to be the one served key with
+ * no indicator beside it — `Schedule10DocumentAssembler` has put `comments` in the detail's
+ * originals from the start.
+ */
+describe('the road detail comments original-value indicator', () => {
+  const submittedRoad = () =>
+    roadDetail({
+      roadName: 'Mainline A Revised',
+      comments: 'the ministry corrected this',
+      detailedEngineeringCostInd: 'Y',
+      originalValues: {
+        roadName: { value: 'Mainline A', tooltip: 'Original Submission Value: Mainline A' },
+        detailedEngineeringCostInd: { value: 'N', tooltip: 'Original Submission Value: No' },
+        comments: {
+          value: 'what the mill actually reported',
+          tooltip: 'Original Submission Value: what the mill actually reported',
+        },
+      },
+    })
+
+  const submittedDoc = (over: Partial<Schedule10Response> = {}) =>
+    doc({
+      trackStatus: 'S',
+      pages: [page({ roadDetails: [submittedRoad()] })],
+      ...over,
+    })
+
+  test('renders beside the comments textarea when it differs from the submitted original', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const indicator = await screen.findByTestId('original-value-comments')
+    expect(indicator).toHaveAccessibleName('Comments differs from the originally submitted value')
+    expect(indicator).toHaveAccessibleDescription(
+      'Original Submission Value: what the mill actually reported',
+    )
+  })
+
+  test('renders in the read-only view too — visibility is a status gate, not a permission one', async () => {
+    server.use(getHandler(submittedDoc({ editable: false })))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'View' }))
+
+    // AC6 pinned cell 3: an ILCR_SUBMITTER is read-only on a Submitted report and still sees every
+    // indicator. The View panel renders its fields as text through `readOnlyField`, which the first
+    // cut of this wiring left without indicators altogether — so this asserts a plain field, not
+    // only comments.
+    expect(await screen.findByTestId('original-value-roadName')).toBeInTheDocument()
+    expect(screen.getByTestId('original-value-comments')).toBeInTheDocument()
+    expect(screen.getByTestId('original-value-detailedEngineeringCostInd')).toBeInTheDocument()
+  })
+
+  test('the engineering-costs selector carries one in the edit panel too', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const indicator = await screen.findByTestId('original-value-detailedEngineeringCostInd')
+    // `YES_NO` on the wire, the `Y`/`N` code in the form — so the tooltip reads "No" while the
+    // comparison is against the stored code.
+    expect(indicator).toHaveAccessibleDescription('Original Submission Value: No')
+  })
+
+  test('no indicator at Draft, however far the comment has diverged', async () => {
+    server.use(
+      getHandler(
+        doc({
+          trackStatus: 'D',
+          pages: [
+            page({
+              roadDetails: [
+                roadDetail({ comments: 'the ministry corrected this', originalValues: null }),
+              ],
+            }),
+          ],
+        }),
+      ),
+    )
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    await screen.findByLabelText('Road Name')
+    expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+  })
+
+  test('reverting the comment to exactly the submitted text clears the indicator', async () => {
+    server.use(getHandler(submittedDoc()))
+    renderSchedule10('/schedule-10?pageId=8900')
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    const textarea = await screen.findByLabelText(
+      /If you have any comments, please enter them here:/,
+    )
+    expect(await screen.findByTestId('original-value-comments')).toBeInTheDocument()
+
+    // Paste rather than type: this editor re-renders ~30 fields per keystroke, so typing the
+    // 31-character comment is what pushes the suite past its timeout.
+    await userEvent.clear(textarea)
+    await userEvent.click(textarea)
+    await userEvent.paste('what the mill actually reported')
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('original-value-comments')).not.toBeInTheDocument()
+    })
+  })
+})

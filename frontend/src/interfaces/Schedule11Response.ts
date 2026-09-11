@@ -4,6 +4,7 @@
 // (AD-5). Cost totals are widened to `number` because the backend sums them as `Long` (a footer sum
 // across enough locations exceeds 2.147e9; do not assume 32-bit).
 
+import type { OriginalValues } from '@/interfaces/OriginalValue'
 import type { MessageInfo } from './Schedule1Response'
 
 export type { MessageInfo }
@@ -24,6 +25,9 @@ export interface SilvicultureLocation {
   readonly costPerNetArea: number | null
   readonly comments: string | null
   readonly revisionCount: number
+  // The Licensee's submitted values for this object's own fields, once the track has left Draft
+  // (Story 16.2, BR-04). Absent/null at Draft, which is what suppresses every indicator.
+  readonly originalValues?: OriginalValues | null
 }
 
 // Footer totals (BR-08). Any field with no contributors is null (omitted), NEVER zero — null-not-zero

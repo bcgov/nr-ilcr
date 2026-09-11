@@ -1,3 +1,4 @@
+import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { FC } from 'react'
 import type Schedule8Response from '@/interfaces/Schedule8Response'
 import type { Page, Sample, Schedule8CheckStatusResponse } from '@/interfaces/Schedule8Response'
@@ -530,6 +531,18 @@ const Schedule8: FC = () => {
     ? tsaNumbers
     : [...tsaNumbers, { code: 'TFL', description: 'TFL' }]
 
+  // Legacy rendered twelve indicators on a page (TreeToTruckReportDO.java:528-561). Every form key
+  // here already matches the served document's, so the key is the field.
+  const pageIndicator = (field: keyof PageForm, label: string) => (
+    <OriginalValueIndicator
+      originals={editId === null ? null : panelPage?.originalValues}
+      field={field}
+      current={form[field]}
+      numeric={false}
+      label={label}
+    />
+  )
+
   const textField = (
     field: keyof PageForm,
     label: string,
@@ -546,6 +559,7 @@ const Schedule8: FC = () => {
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{shown}</span>
+          {pageIndicator(field, label)}
         </div>
       )
     }
@@ -555,18 +569,21 @@ const Schedule8: FC = () => {
           setForm((prev) => ({ ...prev, [field]: opts.format!(event.target.value) }))
       : setField(field)
     return (
-      <TextInput
-        id={`page-${field}`}
-        labelText={label}
-        maxLength={opts.maxLength}
-        disabled={opts.disabled}
-        // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
-        // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
-        value={opts.format ? opts.format(form[field]) : form[field]}
-        onChange={onChange}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        <TextInput
+          id={`page-${field}`}
+          labelText={label}
+          maxLength={opts.maxLength}
+          disabled={opts.disabled}
+          // Format the shown value too (not just onChange), so a seeded value (e.g. a stored phone with
+          // no dashes) displays formatted on open — phoneInput is idempotent, so this is a no-op once typed.
+          value={opts.format ? opts.format(form[field]) : form[field]}
+          onChange={onChange}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {pageIndicator(field, label)}
+      </div>
     )
   }
 
@@ -585,6 +602,7 @@ const Schedule8: FC = () => {
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">{label}</span>
           <span>{selected?.description || current || '—'}</span>
+          {pageIndicator(field, label)}
         </div>
       )
     }
@@ -597,19 +615,22 @@ const Schedule8: FC = () => {
         ? [...items, { code: current, description: current }]
         : items
     return (
-      <CodeComboBox
-        id={`page-${field}`}
-        className={opts.className}
-        titleText={label}
-        items={itemList}
-        selectedCode={current}
-        onSelect={(code) =>
-          opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
-        }
-        disabled={opts.disabled}
-        invalid={Boolean(errors[field])}
-        invalidText={errors[field]}
-      />
+      <div className="schedule-8__field">
+        <CodeComboBox
+          id={`page-${field}`}
+          className={opts.className}
+          titleText={label}
+          items={itemList}
+          selectedCode={current}
+          onSelect={(code) =>
+            opts.onChange ? opts.onChange(code) : setForm((prev) => ({ ...prev, [field]: code }))
+          }
+          disabled={opts.disabled}
+          invalid={Boolean(errors[field])}
+          invalidText={errors[field]}
+        />
+        {pageIndicator(field, label)}
+      </div>
     )
   }
 
@@ -739,21 +760,28 @@ const Schedule8: FC = () => {
         )}
       </div>
 
+      {/* Comments is the twelfth of the page's indicators (`TreeToTruckReportDO.java:528-561`), and
+          the only one that does not come through `textField` — it renders as a CommentsTextArea,
+          so its indicator is placed here by hand rather than by that helper (PR #452 review). */}
       {readOnly ? (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">
             If you have any additional comments, please enter them here:
           </span>
           <span>{form.comments || '—'}</span>
+          {pageIndicator('comments', 'Comments')}
         </div>
       ) : (
-        <CommentsTextArea
-          id="page-comments"
-          labelText="If you have any additional comments, please enter them here:"
-          maxCount={3500}
-          value={form.comments}
-          onChange={setComments}
-        />
+        <div className="schedule-8__field">
+          <CommentsTextArea
+            id="page-comments"
+            labelText="If you have any additional comments, please enter them here:"
+            maxCount={3500}
+            value={form.comments}
+            onChange={setComments}
+          />
+          {pageIndicator('comments', 'Comments')}
+        </div>
       )}
 
       {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —

@@ -1004,3 +1004,82 @@ describe('Schedule 11 column sorting (legacy p:column sortBy parity)', () => {
     expect(header('Location')).toHaveAttribute('aria-sort', 'ascending')
   })
 })
+
+/**
+ * Schedule 11's original-value indicators (Story 16.2), and the two fields that deliberately carry
+ * none. Both omissions were queried in review of PR #452, so they are pinned here rather than left
+ * to a code comment — a later reader "completing" the set would introduce a false indicator on
+ * every row, which is the opposite of the audit evidence this feature exists to give.
+ *
+ * `schedule11.xhtml` draws six indicator buttons. Five are reproduced. The sixth, on the Enhanced
+ * control, cannot fire in legacy either: `BASIC_SILVICULTURE_REPORT_S_VW` does not select
+ * `ENHANCED_IND`, so no submitted value for it exists (story finding F4 / deviation D5). Comments is
+ * not one of the six at all — legacy persists `commentsOriginalVal` but declares no accessor and
+ * draws no button (AC7).
+ */
+describe('Schedule 11 original-value indicators', () => {
+  const corrected: SilvicultureLocation = {
+    ...northRidge,
+    location: 'North Ridge Revised',
+    enhancedIndicator: true,
+    comments: 'the ministry corrected this',
+    originalValues: {
+      location: { value: 'North Ridge', tooltip: 'Original Submission Value: North Ridge' },
+      netArea: { value: '118', tooltip: 'Original Submission Value: 118.0' },
+      actualCost: { value: '24000', tooltip: 'Original Submission Value: 24,000' },
+    },
+  }
+
+  const openEdit = async () => {
+    server.use(
+      http.get(URL, () => HttpResponse.json(doc({ trackStatus: 'S', locations: [corrected] }))),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+    )
+    render(<Schedule11 />)
+    await userEvent.click(await screen.findByRole('button', { name: /^edit$/i }))
+    return screen.getByLabelText('Edit Location').closest('tr') as HTMLElement
+  }
+
+  test('renders them on the corrected fields, naming the field and describing the original', async () => {
+    const row = await openEdit()
+
+    const location = within(row).getByTestId('original-value-location')
+    expect(location).toHaveAccessibleName('Location differs from the originally submitted value')
+    expect(location).toHaveAccessibleDescription('Original Submission Value: North Ridge')
+    expect(within(row).getByTestId('original-value-netArea')).toBeInTheDocument()
+    expect(within(row).getByTestId('original-value-actualCost')).toBeInTheDocument()
+  })
+
+  test('Enhanced carries NO indicator — legacy draws one but it can never fire (F4/D5)', async () => {
+    const row = await openEdit()
+
+    // The control is there and has been corrected (false → true); the indicator is still absent,
+    // because no submitted value for ENHANCED_IND can exist. Rendering one would take the
+    // "added since submission" branch and flag every row of every submitted report.
+    expect(within(row).getByRole('combobox', { name: 'Edit Enhanced' })).toBeInTheDocument()
+    expect(within(row).queryByTestId('original-value-enhancedIndicator')).not.toBeInTheDocument()
+  })
+
+  test('Comments carries NO indicator — legacy declares none for this schedule (AC7)', async () => {
+    const row = await openEdit()
+
+    expect(within(row).getByLabelText('Edit Comments')).toHaveValue('the ministry corrected this')
+    expect(within(row).queryByTestId('original-value-comments')).not.toBeInTheDocument()
+  })
+
+  test('no indicator anywhere at Draft', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json(
+          doc({ trackStatus: 'D', locations: [{ ...corrected, originalValues: null }] }),
+        ),
+      ),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+    )
+    render(<Schedule11 />)
+    await userEvent.click(await screen.findByRole('button', { name: /^edit$/i }))
+
+    expect(screen.queryByTestId('original-value-location')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('original-value-netArea')).not.toBeInTheDocument()
+  })
+})

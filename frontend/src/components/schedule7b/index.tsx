@@ -517,6 +517,7 @@ const Schedule7b: FC = () => {
                       }
                       onChange={(key, value) => setRowField(culvert, key, value)}
                       onMask={(key) => maskRowField(culvert, key)}
+                      originals={culvert.originalValues}
                     />
                     {/* Delete is the ONLY per-row control in legacy (schedule7B.xhtml:526-540). Saving
                         is a page-level action covering every culvert at once, so a per-row Save/Cancel
