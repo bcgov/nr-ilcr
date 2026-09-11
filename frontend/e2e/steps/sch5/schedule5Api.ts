@@ -28,6 +28,8 @@ export interface Camp {
   associatedCampVolume: number | null;
   /** Typed because S20's precondition asserts it is absent — the field Check Status complains about. */
   roadDistanceToOperatingArea: number | null;
+  /** S24/S25's field: check-status-tested but NOT required at save, so it can be absent in a stored camp. */
+  sizeOfCamp: number | null;
   campSubTotal: CampAmount;
   campTotal: CampAmount;
   accessExpenseTotal: CampAmount;

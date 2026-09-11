@@ -154,6 +154,10 @@ DECLARE
     -- camp in a single scenario is not workable -- returning from a sub-page leaves the camp panel
     -- open and dirty, so the next navigation raises a discard confirm, which is S10/S11's subject.
     t_anchor(22050, 2023, 'D'),  -- S23 invalid cost, the ACCESS half
+    -- 22051/2023 added 2026-09-11 for S24's GREEN companion (the panel-gate pin). It first shared
+    -- S24's own anchor and the two raced: both seed a camp of the same name, so the loser 409'd and
+    -- its cleanup then deleted the winner's camp mid-run. Dedication is per SCENARIO, always.
+    t_anchor(22051, 2023, 'D'),  -- S24 green: Check Status is gated by the open panel
     t_anchor(16050, 2023, 'S')   -- S19 read-only: Submitted, so the schedule is not editable
   );
 BEGIN

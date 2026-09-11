@@ -156,6 +156,18 @@ export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch5Anchor = { key: { millId: 10050
 export const CHECK_UNSAVED_FIX_ANCHOR: Sch5Anchor = { key: { millId: 12050, year: 2023 }, mill: MILL_987 };
 
 /**
+ * S24's GREEN companion — the panel gate that makes the two BR-11 scenarios red.
+ *
+ * Its own anchor, and it learned that the hard way: it first shared `check-unsaved-violation` with
+ * S24 and, because both seed a camp of the same name, the pair raced under `fullyParallel` — the
+ * loser's POST answered 409 and its cleanup then deleted the WINNER's camp mid-run, so S24 failed
+ * against an empty Existing Camps table while an empty schedule vacuously reported "requirements
+ * met". Exactly the collision the fixture header's dedication rule exists to prevent, reproduced by
+ * ignoring it. Minted 2026-09-11 in sch5's own 2023 range.
+ */
+export const CHECK_PANEL_GATE_ANCHOR: Sch5Anchor = { key: { millId: 22051, year: 2023 }, mill: MILL_20172 };
+
+/**
  * S15 — VALIDATE-ONLY. Nothing is ever saved here: every scenario proves an entry is REJECTED, so the
  * anchor must be one no scenario creates on. Deliberately not any mutating key above — a validate-only
  * assertion sharing a happy-path anchor is the classic way a "nothing was written" claim goes green
@@ -225,6 +237,7 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'subpage-cost-access (S23)', anchor: SUBPAGE_COST_ACCESS_ANCHOR },
   { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
+  { name: 'check-panel-gate (S24 green)', anchor: CHECK_PANEL_GATE_ANCHOR },
   { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
   { name: 'required-field (S12)', anchor: REQUIRED_FIELD_ANCHOR },
 ];
@@ -638,6 +651,55 @@ export const CHECK_MISSING_MESSAGE =
 
 /** What S20's second arm types into the field Check Status complained about. */
 export const CHECK_MISSING_FIX_DISTANCE = '12.5';
+
+// ---------------------------------------------------------------------------------------------------
+// S24 / S25 — BR-11: does Check Status judge the SCREEN or the last SAVED document?
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The field both slices use, and it is the only sound choice.
+ *
+ * `Size of Camp` is (a) actively tested by Check Status and (b) NOT required at save — so a camp
+ * stores cleanly without it and only Check Status objects, which is the state both arms need. The
+ * source Gherkin's own note records that it first used a category COST and had to be corrected:
+ * the twelve camp/access expense amounts are NOT check-status conditions (legacy's are commented
+ * out, and `Schedule5Service.evaluateCamp` tests only the four descriptors plus the four sub-list
+ * conditions). Do not substitute an expense amount here.
+ */
+export const UNSAVED_CHECK_FIELD = 'Size of Camp';
+
+/** S25's baseline: complete for Check Status EXCEPT `sizeOfCamp`, so exactly one finding is emitted. */
+export const SIZE_MISSING_BASELINE = {
+  campName: 'North Camp',
+  roadDistanceToOperatingArea: 12.5,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * The single finding a camp missing only `sizeOfCamp` produces. MEASURED 2026-09-11 through
+ * `POST /check-status` (outcome ISSUES, one camp, one message).
+ */
+export const SIZE_MISSING_MESSAGE =
+  'Camp Report Name : North Camp - Size of Camp: Value Required';
+
+/** The stored size S24's camp keeps throughout — its edit is never saved, so this must not move. */
+export const UNSAVED_CHECK_STORED_SIZE = 40;
+
+/** What S25 types on screen without saving. Valid per `SIZE_OF_CAMP` (1..999). */
+export const UNSAVED_CHECK_SUPPLIED_SIZE = '40';
 
 // ---------------------------------------------------------------------------------------------------
 // S21 / S22 / S23 — the expense sub-pages' own validation.

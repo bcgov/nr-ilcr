@@ -7,23 +7,75 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 
-**As of 2026-09-10**, this UC has **no Divergence and no Bug/Regression entries**. Twenty-three slices
-are authored (S01–S23) and all are green. The pattern has held throughout: every time the app and the
-legacy-derived Gherkin disagreed, the **Gherkin** turned out to be wrong about legacy — SPEC-2 (the
-copied camp's name), SPEC-3 (the per-camp "met" line, now confirmed three times) and SPEC-4 (the
-sub-page add-form's required attribute). Each was settled by reading the legacy source rather than by
-trusting either document.
+**As of 2026-09-11 the UC is COMPLETE: all 25 slices are authored.** 23 are green; **S24 and S25 are
+deliberately RED** and track DIV-1 below. No Bug/Regression entries.
 
-That clean record comes with a caveat worth stating plainly: **the two slices still unauthored are the
-two most likely to produce a divergence.** S24/S25 are the BR-12 "Check Status includes unsaved edits"
-pair, where schedules 1, 2, 4 and 11 all carry an open `@discovered-divergence` (issue #359). So "no
-divergences" describes what has been looked at, not a verdict on Schedule 5 as a whole.
+**One divergence, and it arrived exactly where it was predicted.** Every earlier entry here was a
+SPEC gap — each time the app and the legacy-derived Gherkin disagreed, the **Gherkin** was wrong about
+legacy: SPEC-2 (the copied camp's name), SPEC-3 (the per-camp "met" line, confirmed three times) and
+SPEC-4 (the sub-page add-form's required attribute). All were settled by reading legacy source rather
+than trusting either document. The single genuine app divergence is **DIV-1**, the BR-11 pair that
+sch1, sch2, sch4 and sch11 were already known to fail — and the earlier editions of this file said to
+expect it here. It is a fifth instance of one app-wide defect (#359), not a new one.
+
+**What makes Schedule 5's instance worth reading rather than skimming:** it does not fail the way the
+other four do. They answer Check Status wrongly; Schedule 5 refuses to answer at all. That is the
+safer direction — an incomplete schedule can never look ready here — but it is still a change from
+legacy, and it is a workflow cost the other four do not impose. DIV-1 evidences it and leaves the
+trade to BA/QA.
 
 ---
 
 ## Divergence (app behaves differently from the legacy-derived spec)
 
-*None found in S01–S23.* The re-grounded happy path matched the source Gherkin in every respect that
+- **DIV-1 — OPEN: Check Status cannot judge what is on screen. Schedule 5 does not give a WRONG
+  answer like its siblings — it gives NO answer.** Tracked upstream as the app-wide
+  **bcgov/nr-ilcr#359**; this is the Schedule 5 instance and it presents differently from the other
+  four.
+  - **What this means in plain language.** A reporter edits a required value, then asks Check Status
+    whether the schedule is ready. On Schedules 1, 2, 4 and 11 they get an answer about the
+    last-SAVED version, so it can be confidently wrong. On Schedule 5 they get no answer at all: the
+    Check Status button is greyed out for as long as an unsaved edit could exist.
+  - **Why the state is unreachable here, precisely.** Three facts compose:
+    1. the button carries `disabled={!editable || saving || panelOpen}` (`index.tsx:1419`);
+    2. all four descriptors Check Status tests — camp name, road distance, size of camp, associated
+       camp volume — live INSIDE the camp panel, so editing one means the panel is open;
+    3. closing the panel to re-enable the button raises the discard confirm and throws the edit away.
+    So "an unsaved edit plus a clickable Check Status" is not a reachable screen state.
+  - **Expected vs actual.** Expected (legacy, and BR-11): the check includes what is on screen.
+    Actual: the check cannot be run at all until the camp is saved.
+  - **It IS a divergence from legacy, which is why the tests stay red.** Legacy's Check Status was a
+    full JSF postback (`ajax="false"`) and the camp panels shared its form via `ui:include`, so
+    `UPDATE_MODEL_VALUES` applied every on-screen value to the managed bean BEFORE the action ran
+    (`schedule5.xhtml:40,257`; `Schedule5MB.java:321`). Legacy answered, and answered about the
+    screen. The rewrite's `POST /api/v1/schedule5/check-status` carries **no request body at all**,
+    so the endpoint cannot see the screen even in principle; disabling the button is what stops it
+    answering wrongly.
+  - **Which direction it fails in, because this matters for triage: the SAFE one.** An incomplete
+    Schedule 5 can never be made to look ready, which is the actual harm #359 does elsewhere. What is
+    lost is workflow, not correctness — the reporter must save before they can check, and legacy did
+    not make them. Whether that trade is acceptable is a Ministry/BA call. **This entry does not
+    adjudicate it.**
+  - **How caught.** Authoring S24/S25 and probing the endpoint: `POST /check-status` takes no body,
+    and the page object's own guard ("Check Status is disabled while a camp panel is open — close the
+    panel first") fires at exactly the step where legacy would have answered. The red is therefore
+    self-describing rather than cryptic.
+  - **Both arms are red and both are needed.** S24 is the false-GREEN arm (an unsaved violation goes
+    unreported) and S25 the false-RED arm (a correction keeps being reported). If #359 is fixed by
+    giving the endpoint the screen's values, BOTH must go green — one alone means the fix is
+    half-done.
+  - **A GREEN companion pins the mechanism** (`check-status-unsaved.feature`, `@p2`). If a future
+    change enables Check Status while a panel is open WITHOUT teaching the endpoint to read the
+    screen, Schedule 5 would stop being the safe outlier and would start producing #359's
+    confidently-wrong verdict. That scenario fails the moment it happens, which the two red ones
+    cannot detect — they are already red.
+  - **Fifth instance of one defect, not a fifth defect.** Schedules 1, 2, 4 and 11 carry it; Schedule
+    6 is the only correct implementation. One fix turns them all green.
+  - **Status:** OPEN — reproduced, evidenced, not adjudicated. Found 2026-09-11.
+
+### Everything else that was checked, and found clean
+
+*Nothing else in S01–S25.* The re-grounded happy path matched the source Gherkin in every respect that
 was checkable: the panel title (`New Camp Details`), the five descriptor fields starting blank,
 BR-03's propagation into exactly eleven volume fields, the four recomputed totals, and the success
 message.
@@ -148,20 +200,20 @@ logged here, because in both the difference is mechanism rather than behaviour:
     amounts, which reads as an app defect.
   - **Status:** CLOSED as verified 2026-09-10 — no defect in the seed; the gate was extended.
 
-- **GAP-2 — OPEN (narrowed 2026-09-10): only S24–S25 remain unauthored.**
-  - **Progress.** S01–S23 are now authored and green. **23 of 25 slices (92%).** Originally raised
-    covering S02–S25.
-  - **What this means.** Both remaining slices have a dedicated, verified anchor reserved and named
-    for them (`CHECK_UNSAVED_VIOLATION_ANCHOR` 10050/2023 and `CHECK_UNSAVED_FIX_ANCHOR` 12050/2023),
-    and `preflight/sch5-anchors.setup.ts` proves all 24 resolve with no camps at rest plus both guard
-    responses on every run. What is missing is the `.feature` / step work itself.
-  - **The two left are the two most likely to find something.** S24/S25 are the BR-12 "Check Status
-    includes unsaved edits" pair — see the watch item below. Everything mechanical is done; what
-    remains is the part that needs adjudication.
-  - **Useful to know before authoring them.** Check Status is DISABLED while a camp panel is open
-    (index.tsx:1419), which is itself the shape of the app-wide divergence: the modern check reads the
-    database, so it cannot see the screen. Whatever S24/S25 end up asserting has to be written against
-    that gate rather than around it.
+- **GAP-2 — RESOLVED 2026-09-11: every slice is authored. 25 of 25.**
+  - **Final state.** S01–S23 green; S24/S25 authored as deliberately-red `@discovered-divergence`
+    scenarios tracking DIV-1, plus a green companion pinning the mechanism behind them. Originally
+    raised on 2026-09-09 covering S02–S25, when only S01 existed.
+  - **The watch item below was right.** It predicted Schedule 5 would reproduce the BR-12/#359 family
+    and that this would be a fifth instance of one defect rather than a new one. It did — though not
+    in the form expected: the prediction assumed a wrong VERDICT, and what Schedule 5 actually does is
+    refuse to answer. See DIV-1.
+  - **25 anchors are now pinned, not 22.** Three were minted after the original fan-out, each for the
+    same structural reason — a scenario that writes cannot share a key under `fullyParallel`:
+    17052/2023 (S12's saving arm), 22050/2023 (S23's ACCESS half) and 22051/2023 (S24's green
+    companion). The last one was minted only after it was tried the other way and the two scenarios
+    raced; the write-up is in the fixture.
+  - **Status:** RESOLVED 2026-09-11.
 
 - **GAP-4 — OPEN: the per-camp "requirements met" message is never exercised, and no slice in the
   catalogue can exercise it.**

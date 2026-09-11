@@ -396,6 +396,9 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- pages of one camp is not workable -- returning from a sub-page leaves the camp panel open and
 -- dirty, so the next navigation raises a discard confirm (S10/S11's subject, not S23's).
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 22050, 'D', 'D', 'E2E_SEED');
+-- 22051/2023 added 2026-09-11 for S24's GREEN panel-gate companion. Sharing S24's anchor raced:
+-- both seed a camp of the same name, so the loser 409'd and its cleanup deleted the winner's camp.
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 22051, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------

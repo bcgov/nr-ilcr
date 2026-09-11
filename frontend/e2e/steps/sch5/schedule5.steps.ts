@@ -38,6 +38,11 @@ import {
   GUARD_MESSAGES,
   CHECK_MISSING_BASELINE,
   CHECK_MISSING_FIX_DISTANCE,
+  CHECK_UNSAVED_VIOLATION_ANCHOR,
+  CHECK_UNSAVED_FIX_ANCHOR,
+  CHECK_PANEL_GATE_ANCHOR,
+  SIZE_MISSING_BASELINE,
+  UNSAVED_CHECK_STORED_SIZE,
   SUB_PAGE_HOST_CAMP,
   READ_ONLY_ANCHOR,
   VIEW_CAMP_DERIVED,
@@ -81,6 +86,9 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   'camp-desc-blank': CAMP_DESC_BLANK_ANCHOR,
   'subpage-cost': SUBPAGE_COST_ANCHOR,
   'subpage-cost-access': SUBPAGE_COST_ACCESS_ANCHOR,
+  'check-unsaved-violation': CHECK_UNSAVED_VIOLATION_ANCHOR,
+  'check-unsaved-fix': CHECK_UNSAVED_FIX_ANCHOR,
+  'check-panel-gate': CHECK_PANEL_GATE_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -712,6 +720,77 @@ When('I save the camp', async ({ schedule5Page }) => {
 
 Then('{string} is listed in the Existing Camps table', async ({ schedule5Page }, campName) => {
   await expect(schedule5Page.existingCampRow(campName)).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------------
+// S24 / S25 — BR-11: Check Status and unsaved edits
+// ---------------------------------------------------------------------------------------------------
+
+/** S25's precondition: complete for Check Status except `sizeOfCamp`, so exactly one finding fires. */
+Given(
+  'a camp named {string} already exists with no size of camp',
+  async ({ request, world, schedule5Cleanup }, campName) => {
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    const created = await createCamp(request, world.scheduleKey!, {
+      ...SIZE_MISSING_BASELINE,
+      campName,
+    });
+    expect(
+      created.sizeOfCamp ?? null,
+      'the S25 precondition must store with NO size of camp',
+    ).toBeNull();
+  },
+);
+
+/**
+ * Check Status must be UNAVAILABLE, not merely unhelpful.
+ *
+ * This pins the mechanism that makes Schedule 5's instance of the BR-11 family present differently
+ * from every other schedule's: the button carries `!editable || saving || panelOpen`
+ * (index.tsx:1419), so while any camp panel is open it cannot be clicked at all. Since the four
+ * check-status descriptors live INSIDE that panel, an unsaved edit and a clickable Check Status
+ * cannot coexist — and closing the panel discards the edit. Asserted as a GREEN scenario so the
+ * behaviour behind the two red ones is itself regression-pinned.
+ */
+Then('Schedule 5 Check Status is unavailable', async ({ schedule5Page }) => {
+  await expect(
+    schedule5Page.checkStatusButton,
+    'Check Status must be disabled while a camp panel is open (index.tsx:1419)',
+  ).toBeDisabled();
+});
+
+/** The other side of the same pin — without it, "unavailable" could pass on a missing button. */
+Then('the Schedule 5 Check Status button is enabled', async ({ schedule5Page }) => {
+  await expect(schedule5Page.checkStatusButton).toBeEnabled();
+});
+
+/**
+ * The stored camp is untouched — the half of S24/S25 that is TRUE today and must stay true.
+ *
+ * Whatever the verdict ends up being, running Check Status is a read: it must never flush the
+ * panel's edits. Read back through the API rather than off the screen, which still shows what was
+ * typed.
+ */
+Then(
+  '{string} still holds its stored size of camp',
+  async ({ request, world }, campName) => {
+    const camp = await findCampByName(request, world.scheduleKey!, campName);
+    expect(camp, `"${campName}" should still exist on the anchor`).toBeDefined();
+    expect(
+      camp?.sizeOfCamp,
+      'Check Status must not persist anything — the edit was never saved',
+    ).toBe(UNSAVED_CHECK_STORED_SIZE);
+  },
+);
+
+/** S25's mirror: the field was absent when stored and must STILL be absent after the check. */
+Then('{string} still has no stored size of camp', async ({ request, world }, campName) => {
+  const camp = await findCampByName(request, world.scheduleKey!, campName);
+  expect(camp, `"${campName}" should still exist on the anchor`).toBeDefined();
+  expect(
+    camp?.sizeOfCamp ?? null,
+    'the on-screen correction must not have been persisted by Check Status',
+  ).toBeNull();
 });
 
 // ---------------------------------------------------------------------------------------------------
