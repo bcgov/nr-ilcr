@@ -1,0 +1,67 @@
+@use '@carbon/react/scss/spacing' as *;
+@use '@carbon/react/scss/theme' as *;
+
+// Data Extract. Control heights (48px fields and buttons) come from the global Carbon overrides in
+// styles/_overrides.scss and are deliberately NOT restated here — including for the two
+// FilterableMultiSelects, which carry `.cds--list-box` and so already read the app-wide height
+// token. Unlike Dropdown, Carbon declares no hardcoded block-size on the multi-select root, so this
+// page needs no central pin of its own. What is left below is layout.
+.data-extract {
+  // Legacy laid the screen out as two stacked p:panels, "Select Report Data" above "Selected Report
+  // Data Summary", each with its own heading and its own button beneath. Same shape here.
+  &__panel {
+    margin-block-end: $spacing-07;
+    border: 1px solid $border-subtle;
+    padding: $spacing-05;
+  }
+
+  &__panel-heading {
+    margin: 0 0 $spacing-05;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  // The four pickers on one responsive row, bottom-aligned so each control sits on the same
+  // baseline rather than each label's — the sibling report screens' idiom.
+  &__fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-05;
+    align-items: flex-end;
+  }
+
+  // Fixed rather than a floor: Carbon gives `.cds--form-item` `flex: 1 1 auto`, so inside a flex row
+  // the fields GROW to fill the line and a min-inline-size can never bind. Sized against the longest
+  // string each control has to show closed — "Select Schedules" and a mill's "number - name" label.
+  &__fields > * {
+    flex: 0 0 auto;
+    inline-size: 16rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $spacing-05;
+    margin-block-start: $spacing-06;
+  }
+
+  // Label/value pairs, the label column sized so the four values line up with each other.
+  &__summary-row {
+    display: flex;
+    gap: $spacing-05;
+    margin-block-end: $spacing-03;
+  }
+
+  &__summary-label {
+    flex: 0 0 auto;
+    inline-size: 12rem;
+    font-weight: 600;
+  }
+
+  // The mill and schedule echoes can run long (every mill, every schedule), so the value wraps
+  // within the row rather than pushing the panel wider than the page.
+  &__summary-value {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}

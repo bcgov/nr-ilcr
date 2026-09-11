@@ -47,6 +47,9 @@ const SUBORDINATE: Record<string, string> = {
   'schedule-8__subheading': '1rem',
   'schedule-10__detail-heading': '1rem',
   'schedule-5-sub-page__panel-heading': '1rem',
+  // The two p:panel headings the extract page reproduces ("Select Report Data" / "Selected Report
+  // Data Summary") — panel headings, so the same 1rem tier as their siblings above.
+  'data-extract__panel-heading': '1rem',
   // One tier lower again — 0.875rem, matching CSP's Invoice subsection heading.
   'schedule-10__detail-subheading': '0.875rem',
 }
