@@ -79,12 +79,15 @@ describe('Schedule 1 — original-value indicators', () => {
 
     const indicator = await waitFor(() => screen.getByTestId('original-value-volume'))
 
-    // The accessible name names the field AND the submitted value, so a screen-reader user does not
-    // have to infer which cell changed from its position in the table. Never colour alone (NFR1).
-    expect(indicator).toHaveAttribute(
-      'aria-label',
-      'Standing Tree to Loaded Truck volume: Original Submission Value: 60,000',
+    // The COMPUTED accessible name — not the raw `aria-label` attribute, which is what an earlier
+    // revision of this test asserted. Carbon's Tooltip `label` prop overrode that attribute with
+    // `aria-labelledby`, so the button really announced only the submitted value and the assertion
+    // passed anyway; the indicator is now built with `description` instead (review of #452).
+    expect(indicator).toHaveAccessibleName(
+      'Standing Tree to Loaded Truck volume differs from the originally submitted value',
     )
+    // The submitted value follows the name as the description, so both reach the screen reader.
+    expect(indicator).toHaveAccessibleDescription('Original Submission Value: 60,000')
     // A real focusable control, so the tooltip is reachable without a pointer.
     expect(indicator.tagName).toBe('BUTTON')
   })
@@ -96,9 +99,8 @@ describe('Schedule 1 — original-value indicators', () => {
     await waitFor(() => expect(screen.getByTestId('original-value-cost')).toBeInTheDocument())
     // Legacy gave the comments textarea an indicator as well, icon and tooltip only
     // (schedule1.xhtml:774-785).
-    expect(screen.getByTestId('original-value-comments')).toHaveAttribute(
-      'aria-label',
-      'Comments: Original Submission Value: what the mill actually reported',
+    expect(screen.getByTestId('original-value-comments')).toHaveAccessibleDescription(
+      'Original Submission Value: what the mill actually reported',
     )
   })
 
@@ -201,9 +203,11 @@ describe('Schedule 1 — original-value indicators', () => {
 
     const indicator = await waitFor(() => screen.getByTestId('original-value-cost'))
 
-    expect(indicator).toHaveAttribute(
-      'aria-label',
-      'Standing Tree to Loaded Truck cost: No value was originally submitted by the Licensee',
+    expect(indicator).toHaveAccessibleName(
+      'Standing Tree to Loaded Truck cost differs from the originally submitted value',
+    )
+    expect(indicator).toHaveAccessibleDescription(
+      'No value was originally submitted by the Licensee',
     )
   })
 })

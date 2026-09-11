@@ -760,21 +760,28 @@ const Schedule8: FC = () => {
         )}
       </div>
 
+      {/* Comments is the twelfth of the page's indicators (`TreeToTruckReportDO.java:528-561`), and
+          the only one that does not come through `textField` — it renders as a CommentsTextArea,
+          so its indicator is placed here by hand rather than by that helper (PR #452 review). */}
       {readOnly ? (
         <div className="schedule-8__field">
           <span className="schedule-8__field-label">
             If you have any additional comments, please enter them here:
           </span>
           <span>{form.comments || '—'}</span>
+          {pageIndicator('comments', 'Comments')}
         </div>
       ) : (
-        <CommentsTextArea
-          id="page-comments"
-          labelText="If you have any additional comments, please enter them here:"
-          maxCount={3500}
-          value={form.comments}
-          onChange={setComments}
-        />
+        <div className="schedule-8__field">
+          <CommentsTextArea
+            id="page-comments"
+            labelText="If you have any additional comments, please enter them here:"
+            maxCount={3500}
+            value={form.comments}
+            onChange={setComments}
+          />
+          {pageIndicator('comments', 'Comments')}
+        </div>
       )}
 
       {/* Save feedback shown in the panel (next to Save) so it's visible where the user is acting —

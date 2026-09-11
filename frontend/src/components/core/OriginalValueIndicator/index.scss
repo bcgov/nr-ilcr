@@ -7,6 +7,12 @@
 .original-value-indicator {
   display: inline-flex;
   align-items: center;
+  // Most of the field wrappers that host this button are column flex containers
+  // (`.schedule-8__field`, `.schedule-10__field`, `.schedule-10__comments`), whose default
+  // `align-items: stretch` would blow a 16px icon trigger out to the full width of the field — and
+  // with it the focus ring below, which would then outline the whole field rather than the control
+  // the user has actually tabbed to. Hug the icon instead (review of #452).
+  align-self: flex-start;
   padding: 0;
   margin-inline-start: 0.25rem;
   border: 0;

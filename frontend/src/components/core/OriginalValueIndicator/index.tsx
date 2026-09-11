@@ -63,17 +63,23 @@ const OriginalValueIndicator: FC<OriginalValueIndicatorProps> = ({
     return null
   }
 
-  // The tooltip text is the API's, verbatim (AD-8) — "Original Submission Value: 60,000". The label
-  // is prefixed only for the accessible name, so a screen-reader user knows WHICH field changed
-  // without having to infer it from position in the table.
+  // The tooltip text is the API's, verbatim (AD-8) — "Original Submission Value: 60,000".
   const text = tooltip ?? ADDED_SINCE_SUBMISSION
 
+  // `description`, NOT `label` — the two are not interchangeable here (found in review of #452).
+  // Carbon's `label` renders the tooltip through `aria-labelledby`, which REPLACES the trigger's own
+  // accessible name: the button then announces only "Original Submission Value: 60,000", and a
+  // screen-reader user has to infer which of a row's thirty fields it belongs to from position
+  // alone — the very thing the accessible name is here to prevent. `description` renders the same
+  // popover text through `aria-describedby` instead, so the field's own name is announced first and
+  // the submitted value follows it. The visible tooltip is identical either way, so the API's text
+  // still reaches the screen verbatim.
   return (
-    <Tooltip label={text} align="top">
+    <Tooltip description={text} align="top">
       <button
         type="button"
         className="original-value-indicator"
-        aria-label={`${label}: ${text}`}
+        aria-label={`${label} differs from the originally submitted value`}
         data-testid={`original-value-${field}`}
       >
         <ArrowsHorizontal />

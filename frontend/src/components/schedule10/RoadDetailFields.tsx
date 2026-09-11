@@ -124,16 +124,33 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
     })
   }
 
-  const readOnlyField = (label: string, value: string): ReactNode => (
+  /**
+   * A stored value shown as text, in the panel's View mode.
+   *
+   * It carries the indicator too, and must: `readOnly` here is `panelMode === 'view'`, which is the
+   * mode an ILCR_SUBMITTER gets on a Submitted report (Story 16.1's matrix). Original-value
+   * visibility is a STATUS gate, never a permission one (Story 16.2 AC6, pinned cell 3), so leaving
+   * the indicator to the editable branch alone — as the first cut of this wiring did — hid every
+   * road-detail original from the one role most likely to be auditing it (review of PR #452).
+   *
+   * `field` is nullable only for a value with no submitted counterpart to compare against.
+   */
+  const readOnlyField = (
+    field: keyof RoadDetailFormValues | null,
+    label: string,
+    value: string,
+    numericCompare = true,
+  ): ReactNode => (
     <Field>
       <span className="schedule-10__field-label">{label}</span>
       <span className="schedule-10__field-value">{value === '' ? '—' : value}</span>
+      {field !== null && indicator(field, label, numericCompare)}
     </Field>
   )
 
   const text = (key: keyof RoadDetailFormValues, label: string, maxLength?: number): ReactNode =>
     readOnly ? (
-      readOnlyField(label, form[key])
+      readOnlyField(key, label, form[key], false)
     ) : (
       <Field>
         <TextInput
@@ -155,7 +172,7 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   const numeric = (key: MaskedField, label: string, unit?: string): ReactNode => {
     const labelWithUnit = unit ? `${label} (${unit})` : label
     return readOnly ? (
-      readOnlyField(labelWithUnit, form[key])
+      readOnlyField(key, labelWithUnit, form[key])
     ) : (
       <Field>
         <CommaNumberInput
@@ -182,7 +199,9 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
   ): ReactNode => {
     if (readOnly) {
       const stored = form[key]
-      return readOnlyField(label, stored === '' ? '' : describe(options, stored))
+      // The indicator compares the stored CODE (`form[key]`), exactly as the editable branch does —
+      // the description shown here is a lookup of it, not the value the snapshot holds.
+      return readOnlyField(key, label, stored === '' ? '' : describe(options, stored), false)
     }
     return (
       <Field>
@@ -279,7 +298,12 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
 
       <div className="schedule-10__fields">
         {readOnly ? (
-          readOnlyField('Includes Detailed Engineering Costs', engineeringCostsValue)
+          readOnlyField(
+            'detailedEngineeringCostInd',
+            'Includes Detailed Engineering Costs',
+            engineeringCostsValue,
+            false,
+          )
         ) : (
           <Field className="schedule-10__field--compact">
             <Select
@@ -292,6 +316,10 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
               <SelectItem value="N" text="No" />
               <SelectItem value="Y" text="Yes" />
             </Select>
+            {/* The assembler serves this key (`YES_NO` format) and the first cut of the wiring
+                rendered no indicator for it in either mode (review of PR #452). Text comparison:
+                the form holds the `Y`/`N` code. */}
+            {indicator('detailedEngineeringCostInd', 'Includes Detailed Engineering Costs', false)}
           </Field>
         )}
       </div>
@@ -317,19 +345,25 @@ const RoadDetailFields: FC<RoadDetailFieldsProps> = ({
               If you have any comments, please enter them here:
             </span>
             <p className="schedule-10__field-value">{form.comments === '' ? '—' : form.comments}</p>
+            {indicator('comments', 'Comments', false)}
           </>
         ) : (
-          <CommentsTextArea
-            id={id('comments')}
-            labelText="If you have any comments, please enter them here:"
-            rows={5}
-            maxCount={COMMENTS_MAX}
-            value={form.comments}
-            disabled={disabled}
-            invalid={Boolean(errors.comments)}
-            invalidText={errors.comments ?? ''}
-            onChange={(event) => onChange('comments', event.target.value)}
-          />
+          <>
+            <CommentsTextArea
+              id={id('comments')}
+              labelText="If you have any comments, please enter them here:"
+              rows={5}
+              maxCount={COMMENTS_MAX}
+              value={form.comments}
+              disabled={disabled}
+              invalid={Boolean(errors.comments)}
+              invalidText={errors.comments ?? ''}
+              onChange={(event) => onChange('comments', event.target.value)}
+            />
+            {/* The road detail's comments carry an indicator like its other fields — text, so the
+                comparison is `equals` rather than by rounded value (PR #452 review). */}
+            {indicator('comments', 'Comments', false)}
+          </>
         )}
       </div>
 
