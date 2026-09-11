@@ -369,7 +369,9 @@ const Schedule1: FC = () => {
   const fieldErrors = editable ? validateSchedule1(form) : {}
 
   // The display-only mirror of every figure that moves with entry, fed by the COMMITTED values so the
-  // read-only cells track data entry the way legacy did. Null outside Draft / in view mode, where
+  // read-only cells track data entry the way legacy did. Null whenever the document is NOT editable
+  // for this caller — since Story 16.1 that is the role×status matrix, not Draft alone, so an
+  // administrator correcting at Submitted or Verified DOES get the mirror — or in view mode, where
   // there is no entry and the document's own server-computed figures are rendered as-is (#291 AC7).
   const derived = editable ? deriveSchedule1(data, enteredFromForm(committed)) : null
 

@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -14,6 +24,8 @@ vi.mock('@tanstack/react-router', () => ({
 import Schedule9 from '@/components/schedule9'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import type ContractualWorkRecordRequest from '@/interfaces/Schedule9Request'
 import type { ContractualWorkRecord } from '@/interfaces/Schedule9Response'
 
@@ -499,5 +511,395 @@ describe('Schedule 9 action icons (Story 30.3 / #312 Overall 6)', () => {
     await user.click(toggle)
     expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Add Record' }).querySelector('svg')).not.toBeNull()
+  })
+})
+
+// -------------------------------------------------------------------------------------------------
+// Story 16.3 — the ministry-correction journey on Schedule 9.
+//
+// Two things make these arms load-bearing rather than decorative:
+//
+// 1. Every arm DECLARES its acting role (`renderAsAdmin` / `renderAsSubmitter`). The suite's own
+//    `renderPage` goes through `render`, which leaves the identity unseeded — and `findMockUser(null)`
+//    falls through to `MOCK_USERS[0]`, the admin. That silent fallback ran the e2e suite as the wrong
+//    role for a month, which is the reason this story exists.
+//
+// 2. The MSW handlers COMPUTE `editable` from the 16.1 matrix over the request's own
+//    `X-Mock-Groups` header, instead of hardcoding it. So the role declaration actually drives the
+//    outcome: swap `renderAsAdmin` for `renderAsSubmitter` in the save arm and the server answers
+//    read-only and the arm fails. With a hardcoded flag it would have passed either way, proving
+//    only "a page given editable:true allows correction" — never "an admin at Submitted may correct".
+//
+// Editability stays server-authoritative throughout (AD-9): the page reads `data.editable` and never
+// the role or the track. Every user-facing string is asserted VERBATIM against
+// `backend/src/main/resources/messages.properties` (AD-8).
+// -------------------------------------------------------------------------------------------------
+
+describe('Schedule9 — Story 16.3: correcting a Submitted track', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill
+  // still owns the data. Anything else — a missing row, an unknown role — is read-only.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes the falsification check
+  // trivial (flip the admin entry to ['D'] and every admin-at-Submitted arm below must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:11-17), so this is the same signal the real
+   * mock backend gates on — not something the test asserts about itself.
+   *
+   * The throw is a tripwire for a future api-service that stops sending the header; it is NOT the
+   * identity guard. It cannot fire today, because `findMockUser(null)` falls back to `MOCK_USERS[0]`
+   * and the header is always populated — which is precisely why an arm that lost its `renderAsAdmin`
+   * would still be served as an admin. That is what `sentRole` below exists to catch.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /**
+   * The identity the LAST request of the arm actually carried, recorded by every handler below and
+   * asserted IN THE TEST BODY. Deliberately not an `expect` inside an MSW resolver: a throw there
+   * surfaces as a request failure and gets misattributed to the component.
+   *
+   * This is HALF the identity claim. On its own it cannot catch a dropped `renderAsAdmin`, because
+   * the fallback identity IS the admin — `render()` and `renderAsAdmin()` put the same header on the
+   * wire, so the wire cannot tell them apart. `declaredRole()` supplies the other half: it reports
+   * what THIS test seeded, and is null when nothing did. `expectActingAs` asserts both together.
+   */
+  let sentRole: string | null = null
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * A Schedule 9 document — Submitted unless overridden — whose `editable` is answered per the
+   * matrix for whoever is asking. Used for the read AND for every write echo, so an echo cannot
+   * quietly hand back a wider flag than the matrix allows.
+   *
+   * The header is a COMMA-JOINED role list (`roles.join(',')`), and the server unions the permitted
+   * statuses across every role the caller holds (`ScheduleEditability.forCaller`). Unreachable today
+   * — a mock user holds exactly one ILCR role — but keying on the raw header would encode the wrong
+   * rule, and an unrecognised key collapsing to read-only is the one outcome that lets a read-only
+   * arm pass for the wrong reason.
+   */
+  const matrixDoc = (request: Request, over: Record<string, unknown> = {}) => {
+    const body = doc({ trackStatus: 'S', ...over })
+    sentRole = actingRole(request)
+    const permitted = new Set(sentRole.split(',').flatMap((role) => EDITABLE_STATUSES[role] ?? []))
+    return { ...body, editable: permitted.has(String(body.trackStatus)) }
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking. */
+  const matrixGet = (over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => HttpResponse.json(matrixDoc(request, over)))
+
+  // Rendered through the role-declaring helpers, otherwise identical to `renderPage`: the same
+  // explicit working context, because these scenarios assert page content, not the mill/year guard.
+  const schedule9Page = () => (
+    <MillYearProvider initial={{ millId: DEFAULT_MILL_ID, year: DEFAULT_YEAR }}>
+      <Schedule9 />
+    </MillYearProvider>
+  )
+  const renderPageAsAdmin = () => renderAsAdmin(schedule9Page())
+  const renderPageAsSubmitter = () => renderAsSubmitter(schedule9Page())
+
+  const SAVED = 'Data saved successfully'
+  const DELETED = 'Data deleted successfully'
+  const CONFIRM_DELETE_MSG = 'This will delete the current record. Do you want to continue?'
+  const REQUIREMENTS_MET = 'All requirements for this schedule have been met'
+
+  // The exact top-level key set `buildBody` puts on the wire for a per-record Save. Asserted as a set
+  // (not a subset) because that is what makes the "a correction cannot move the status" claim
+  // checkable from the client side: `trackStatus` is rendered NOWHERE on any schedule page (the
+  // tombstone shows the working-context mill status, not the document's track), so there is no DOM
+  // proxy for it. What IS provable here is structural — the request carries no status field at all,
+  // and no transition endpoint is even registered, so strict MSW would fail the test if one were
+  // called. Epics 17-18 own transitions; none exists today.
+  const SAVE_BODY_KEYS = [
+    'biogeoclimaticZone',
+    'comments',
+    'contractorId',
+    'contractualItemCode',
+    'cost',
+    'itemDescription',
+    'numberOfUnits',
+    'revisionCount',
+    'sideSlopePct',
+    'sourceCode',
+    'sourceDescription',
+    'unitCode',
+    'unitDescription',
+  ]
+
+  // Cost is masked on blur and is one of ~13 inputs mounted PER ROW, so `user.type` here is
+  // O(rows x chars) and has timed out CI. A single change event is equivalent for these arms.
+  const setCost = (id: number, value: string) =>
+    fireEvent.change(recordPanel(id).getByLabelText('Cost'), { target: { value } })
+
+  /** The read-only shape for one record row, plus the page-level actions. */
+  const expectReadOnly = (id: number) => {
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeDisabled()
+    }
+    const panel = recordPanel(id)
+    expect(panel.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(panel.getByRole('button', { name: 'Delete' })).toBeDisabled()
+    expect(panel.getByLabelText('Company ID')).toBeDisabled()
+    expect(panel.getByLabelText('Cost')).toBeDisabled()
+    expect(panel.getByLabelText('Comments')).toBeDisabled()
+  }
+
+  /**
+   * Both halves of an arm's identity claim: what this test DECLARED (`renderAs*` seeded it) and what
+   * the request CARRIED (`X-Mock-Groups`). Together they say "this arm acts as X" in a way that a
+   * forgotten role declaration cannot satisfy — the declaration is observable even where the wire is
+   * ambiguous.
+   */
+  const expectActingAs = (role: IlcrRole, header: string) => {
+    expect(declaredRole()).toBe(role)
+    expect(sentRole).toBe(header)
+  }
+
+  /** The correctable shape: the same controls, live. */
+  const expectEditable = (id: number) => {
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+    for (const button of screen.getAllByRole('button', { name: 'Check Status' })) {
+      expect(button).toBeEnabled()
+    }
+    const panel = recordPanel(id)
+    expect(panel.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(panel.getByRole('button', { name: 'Delete' })).toBeEnabled()
+    expect(panel.getByLabelText('Company ID')).toBeEnabled()
+    expect(panel.getByLabelText('Cost')).toBeEnabled()
+    expect(panel.getByLabelText('Comments')).toBeEnabled()
+  }
+
+  test('admin at Submitted corrects a record and saves (CHK-010 S01)', async () => {
+    let putId = ''
+    let body: Record<string, unknown> | null = null
+    server.use(
+      matrixGet(),
+      http.put(`${RECORDS_URL}/:id`, async ({ request, params }) => {
+        putId = String(params.id)
+        body = (await request.json()) as Record<string, unknown>
+        // The echo is STILL Submitted, and still editable for this actor per the matrix — a
+        // correction is not a transition. There is exactly one status writer in the whole backend
+        // (the year-open INSERT, ReportingYearRepository:139) and no transition endpoint at all.
+        return HttpResponse.json(
+          matrixDoc(request, {
+            records: [{ ...record108, cost: 7777, costPerUnit: 622.16, revisionCount: 1 }],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: SAVED },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+
+    // The controls are LIVE at Submitted for this actor — the capability Story 16.1 granted.
+    expect(recordPanel(9101).getByLabelText('Cost')).toBeEnabled()
+    expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(recordPanel(9101).getByRole('button', { name: 'Delete' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+
+    setCost(9101, '7777')
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Save' }))
+
+    // SUC-001, verbatim from the API — never composed client-side (AD-8).
+    expect(await screen.findByText(SAVED, { normalizer: verbatim })).toBeInTheDocument()
+    // The correction was issued AS the admin — not as whoever MOCK_USERS[0] happens to be. This is
+    // the PUT's own header (its resolver recorded last), so the write, not just the read, was the
+    // administrator's.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(putId).toBe('9101')
+    expect(body).toMatchObject({ cost: 7777, revisionCount: 0 })
+    // No status field on the request: the client structurally cannot ask for a transition.
+    expect(Object.keys(body ?? {}).sort()).toEqual(SAVE_BODY_KEYS)
+
+    // Still editable after the 'S' echo — the page reads the server's flag, not the track (AD-9).
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('7,777')
+    expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  test('submitter at Submitted has every control disabled (S13/S17)', async () => {
+    // Same handler as the admin arm above — only the declared identity differs, and the server
+    // answers differently because of it.
+    server.use(matrixGet())
+    const user = userEvent.setup()
+    renderPageAsSubmitter()
+    await settle()
+    await openRecord(user, 9101)
+    // The read-only answer was served to a SUBMITTER: without this the arm would pass just as well
+    // under the admin fallback, and the negative case would be asserting nothing about identity.
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+    expectReadOnly(9101)
+  })
+
+  test('admin at Draft is read-only — the capability 16.1 deliberately removed', async () => {
+    // ADMIN edits at Submitted and Verified and is read-only at DRAFT: the matrix is bidirectional,
+    // and without this arm a gate widened to "admin edits everywhere" would pass unnoticed.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expectReadOnly(9101)
+  })
+
+  test('submitter at Draft CAN still edit — the discriminator for the two arms above', async () => {
+    // Without this, both read-only arms would also pass against a degenerate always-false handler
+    // (or a matrix helper that silently resolved no role at all).
+    server.use(matrixGet({ trackStatus: 'D' }))
+    const user = userEvent.setup()
+    renderPageAsSubmitter()
+    await settle()
+    await openRecord(user, 9101)
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+    expectEditable(9101)
+  })
+
+  // The rest of the admin row, and the cells 16.1 pinned as fail-closed. `trackStatus: 'V'` is served
+  // ZERO times anywhere in the repo, so narrowing the backend matrix from ['S','V'] to ['S'] would
+  // leave every one of the twelve suites green — half the admin capability with no evidence at all.
+  test.each([
+    ['V', true, 'the Verified half of the admin row'],
+    ['O', false, 'an unknown status fails closed'],
+    [null, false, 'an absent track fails closed'],
+  ])('admin at trackStatus %s is editable=%s — %s', async (trackStatus, expectedEditable) => {
+    server.use(matrixGet({ trackStatus }))
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    if (expectedEditable) {
+      expectEditable(9101)
+    } else {
+      expectReadOnly(9101)
+    }
+  })
+
+  test('admin at Submitted deletes behind the verbatim confirm (S06)', async () => {
+    let deletedId = ''
+    server.use(
+      matrixGet(),
+      http.delete(`${RECORDS_URL}/:id`, ({ request, params }) => {
+        deletedId = String(params.id)
+        return HttpResponse.json(
+          matrixDoc(request, {
+            records: [],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: DELETED },
+          }),
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Delete' }))
+
+    // Asserted through the SHARED core/ConfirmDeleteModal as it stands (user ruling 2026-09-11):
+    // header "Confirmation", answers Yes/No, `confirmDeleteMsg` verbatim.
+    const modal = within(await screen.findByRole('presentation'))
+    expect(screen.getByText('Confirmation')).toBeInTheDocument()
+    expect(screen.getByText(CONFIRM_DELETE_MSG, { normalizer: verbatim })).toBeInTheDocument()
+    await user.click(modal.getByRole('button', { name: 'Yes' }))
+
+    expect(await screen.findByText(DELETED, { normalizer: verbatim })).toBeInTheDocument()
+    // The DELETE's own header (its resolver recorded last): the removal was the administrator's.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(deletedId).toBe('9101')
+  })
+
+  test('admin at Submitted cancels the confirm and NO delete is issued (S07)', async () => {
+    let deleteCalled = false
+    server.use(
+      matrixGet(),
+      http.delete(`${RECORDS_URL}/:id`, ({ request }) => {
+        deleteCalled = true
+        return HttpResponse.json(matrixDoc(request, { records: [] }))
+      }),
+    )
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+    await user.click(recordPanel(9101).getByRole('button', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('presentation')).getByRole('button', { name: 'No' }),
+    )
+
+    expect(deleteCalled).toBe(false)
+    // Only the GET ran, and it ran as the admin — the document WAS correctable, so the cancel is
+    // what stopped the delete, not a read-only gate.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    // The record survives untouched and the row is still editable: cancel is a no-op, not a reload.
+    expect(
+      screen.getByRole('button', { name: 'Contractual Work Report Id: 9101' }),
+    ).toBeInTheDocument()
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('5,000')
+    expect(screen.queryByText(DELETED)).not.toBeInTheDocument()
+  })
+
+  test('Check Status runs at Submitted and mutates nothing (S02)', async () => {
+    // Read-only is asserted as "one POST, and the document was never re-fetched or written": a
+    // stable GET count is a real signal here because the write paths DO re-GET/echo, and no PUT or
+    // DELETE handler is registered, so strict MSW (onUnhandledRequest: 'error') fails the test if
+    // Check Status touched either.
+    let getCount = 0
+    let postCount = 0
+    server.use(
+      http.get(URL, ({ request }) => {
+        getCount += 1
+        return HttpResponse.json(matrixDoc(request))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        postCount += 1
+        // Recorded the same way as every other handler: Check Status returns no document, so it
+        // cannot go through `matrixDoc`.
+        sentRole = actingRole(request)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          requirementsMetMessage: { key: 'scheduleRequirementsMetMsg', text: REQUIREMENTS_MET },
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPageAsAdmin()
+    await settle()
+    await openRecord(user, 9101)
+
+    // Enabled here BECAUSE the matrix makes this actor editable at 'S'. Check Status is read-only at
+    // any status, but the button follows legacy in disabling alongside the write controls when the
+    // caller cannot edit (index.tsx:296-298) — legacy did the same on 26 of 26 buttons across 15
+    // pages. Parity, not a bug; the two read-only arms above assert the disabled side of it.
+    const checkStatus = screen.getAllByRole('button', { name: 'Check Status' })
+    expect(checkStatus[0]).toBeEnabled()
+    await user.click(checkStatus[0])
+
+    expect(await screen.findByText(REQUIREMENTS_MET, { normalizer: verbatim })).toBeInTheDocument()
+    // The POST's own header (its resolver recorded last): Check Status ran as the administrator.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(postCount).toBe(1)
+    expect(getCount).toBe(1)
+    // The document on screen is untouched and still editable.
+    expect(recordPanel(9101).getByLabelText('Cost')).toHaveValue('5,000')
+    expect(recordPanel(9101).getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 })

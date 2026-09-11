@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
 import { vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  fireEvent,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -17,6 +27,8 @@ window.HTMLElement.prototype.scrollIntoView = vi.fn()
 import Schedule11 from '@/components/schedule11'
 import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 import type SilvicultureLocationRequest from '@/interfaces/Schedule11Request'
 import type { SilvicultureLocation } from '@/interfaces/Schedule11Response'
 
@@ -1082,4 +1094,483 @@ describe('Schedule 11 original-value indicators', () => {
     expect(screen.queryByTestId('original-value-location')).not.toBeInTheDocument()
     expect(screen.queryByTestId('original-value-netArea')).not.toBeInTheDocument()
   })
+})
+
+// -------------------------------------------------------------------------------------------------
+// Story 16.3 — the ministry correction journey on the SILVICULTURE track.
+//
+// Story 16.1 shipped a server-side role×status editability matrix: a submitter edits only at Draft,
+// an administrator edits at Submitted and Verified and is deliberately READ-ONLY at Draft. The page
+// learns all of that from the ONE server-computed `editable` boolean and never derives it from the
+// status or the acting role (AD-9). Nothing proved the Submitted half of that: every pre-existing
+// `'S'` fixture in this file pairs it with `editable: false`, so no test in the suite ever saved,
+// deleted or checked status while a correction was actually permitted.
+//
+// These arms therefore do NOT hardcode `editable`. The MSW GET (and every write echo) COMPUTES it
+// from the 16.1 matrix over the acting role the request actually carried in `X-Mock-Groups`, the
+// same way Schedule 1's Story 16.3 block does. That is what makes the role declaration
+// load-bearing rather than decorative: the admin-at-Submitted arm and the submitter-at-Submitted
+// arm below are served by the SAME handler over the SAME document and differ only in who is
+// asking, so a broken identity helper shows up as the two arms agreeing.
+//
+// Schedule 11 is the track that most needed its own evidence. It is the BASIC SILVICULTURE track,
+// not the Schedules 1–10 track, and the two are independent by design: legacy's
+// `disableUserInputSchedule11()` is a verbatim twin of `disableUserInput()` differing only in the
+// getter it reads (`MILL_SILVICULTUR_STATUS_CODE` — the truncated legacy spelling — versus
+// `ILCR_MILL_REPORT_STATUS_CODE`). On this document `trackStatus` is therefore the SILVICULTURE
+// code, not the 1–10 code (`Schedule11Response.java:7-11`), so the matrix below is applied to it as
+// this page's own status and to nothing else.
+//
+// Schedule 11 also expresses read-only DIFFERENTLY from its eleven siblings, and a future reader
+// will assume otherwise. There is no shared `ScheduleActions` bar to disable: "Save" and "Delete"
+// are per-row controls inside an inline editor, and when the document is not editable the page
+// HIDES the whole action column (`index.tsx:538`, `:1087`, `:1113`), drops its column count from 10
+// to 9 (`:872`), drops the Add panel entirely (`:965`) and never mounts the delete-confirm Modal at
+// all (`:1121`). These arms assert that real behaviour rather than the disabled-button shape the
+// other suites assert.
+//
+// Every user-facing string is asserted VERBATIM against `backend/src/main/resources/messages.properties`
+// (AD-8).
+// -------------------------------------------------------------------------------------------------
+
+describe('Schedule 11 ministry correction at Submitted (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status — here, per SILVICULTURE track
+  // status. Submitter edits at Draft only; admin edits at Submitted and Verified and is
+  // DELIBERATELY read-only at Draft while the mill still owns the data. Anything else — a dead `O`,
+  // a null status, an unknown role — is read-only.
+  //
+  // Reproduced rather than imported because the real rule lives in Java: this is the wire contract
+  // the frontend is entitled to assume, and stating it makes falsification trivial. Each row is
+  // load-bearing and was checked: `ILCR_ADMIN: ['D']` fails all nine admin arms; narrowing it to
+  // `['S']` fails the Verified case alone (the hole that existed while no suite served `'V'`); and
+  // `ILCR_SUBMITTER: []` fails the submitter-at-Draft discriminator alone.
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:11-17), so this is the same signal the real
+   * mock backend gates on — not something the test asserts about itself.
+   *
+   * The throw is a belt-and-braces guard only, and MUST NOT be mistaken for the identity check:
+   * `mockUserGroups()` calls `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` —
+   * the ADMIN — so the header is ALWAYS sent and this branch can never fire.
+   *
+   * Nor is `sentRole` alone the guard. It records what the request CARRIED, and a declared admin and
+   * the `MOCK_USERS[0]` fallback admin carry exactly the same header — so an arm that lost its
+   * `renderAsAdmin` would still be served, and still asserted, as an administrator. What guards the
+   * DECLARATION is `declaredRole()` (test-utils): it reports what this test itself seeded, and null
+   * when nothing did. `expectActingAs` below asserts both halves, in the test BODY — an assertion
+   * thrown inside an MSW resolver surfaces as a request failure and gets misattributed, so neither
+   * can live here.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  // The identity the last editability-bearing request actually carried.
+  let sentRole: string | null = null
+  beforeEach(() => {
+    sentRole = null
+  })
+
+  /**
+   * Both halves of the identity claim every arm's name makes: the role this test DECLARED, and the
+   * role the request CARRIED. Neither is redundant — see `actingRole` above for why the wire half
+   * cannot distinguish a declared admin from the silent `MOCK_USERS[0]` fallback, and the
+   * declaration half cannot tell you what was actually sent.
+   */
+  const expectActingAs = (role: IlcrRole, header: string) => {
+    expect(declaredRole()).toBe(role)
+    expect(sentRole).toBe(header)
+  }
+
+  /**
+   * A Schedule 11 document — Submitted on its own silviculture track unless overridden — whose
+   * `editable` is COMPUTED by the matrix for whoever asked. Extends the suite's `doc()` builder; the
+   * computed flag always wins, so no test can quietly hand itself the answer.
+   *
+   * The matrix is applied to `trackStatus` and ONLY to `trackStatus`, which on this response is the
+   * silviculture code. Write echoes go through it too, so a saved document cannot smuggle an
+   * editability the matrix would not grant.
+   */
+  const matrixDoc = (request: Request, over: Record<string, unknown> = {}) => {
+    const body = doc({ trackStatus: 'S', ...over })
+    const header = actingRole(request)
+    sentRole = header
+    // `api-service` sends `roles.join(',')` and `ScheduleEditability.forCaller` UNIONS the permitted
+    // statuses across every role the caller holds (ScheduleEditability.java:45-46, :84-90). Keying
+    // on the raw header instead would encode the wrong rule — and legacy's "read only the first
+    // role" bug is exactly what the union replaced. Unknown roles contribute nothing (fail-closed,
+    // AD-7), so an unrecognised header is read-only rather than accidentally privileged.
+    const permitted = new Set(
+      header.split(',').flatMap((role) => EDITABLE_STATUSES[role.trim()] ?? []),
+    )
+    return { ...body, editable: permitted.has(String(body.trackStatus)) }
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking. */
+  const matrixGet = (over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => HttpResponse.json(matrixDoc(request, over)))
+
+  const SAVED = { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' }
+  const DELETED = { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' }
+  const CONFIRM = 'This will delete the current record. Do you want to continue?'
+
+  // The header's action column is this page's read-only tell, so ask about it directly.
+  const actionsHeader = () => screen.queryByRole('columnheader', { name: 'Actions' })
+
+  /** Schedule 11's read-only shape — hidden column, no Add panel, no confirm modal (see above). */
+  const expectReadOnly = (row: HTMLElement) => {
+    // Values render as text, not controls.
+    expect(within(row).getByText('ICHdw1')).toBeInTheDocument()
+    expect(within(row).queryByRole('textbox')).not.toBeInTheDocument()
+    // The Actions column is GONE, not disabled: 9 columns, not 10. Scoped to THIS table (its
+    // aria-label), like the row-scoped cell count below — a document-wide count would let any future
+    // table elsewhere on the page fail these editability arms for an unrelated reason, with an error
+    // message pointing at editability.
+    expect(actionsHeader()).not.toBeInTheDocument()
+    expect(
+      within(screen.getByRole('table', { name: 'Silviculture Locations' })).getAllByRole(
+        'columnheader',
+      ),
+    ).toHaveLength(9)
+    expect(within(row).getAllByRole('cell')).toHaveLength(9)
+    expect(screen.queryByRole('button', { name: /^add$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument()
+    // Zero delete-named buttons anywhere: the row's, AND the confirm Modal's primary — the Modal is
+    // `editable`-gated, so there is no route to a DELETE even by reaching past a control.
+    expect(screen.queryAllByRole('button', { name: /^delete$/i })).toHaveLength(0)
+    expect(screen.queryByText(CONFIRM)).not.toBeInTheDocument()
+    // Check Status is the one control that stays rendered; it is disabled (S20/legacy parity).
+    expect(screen.getByRole('button', { name: /check status/i })).toBeDisabled()
+  }
+
+  test('admin at Submitted corrects a location and saves — PUT issued, SUC-001 verbatim', async () => {
+    let captured: SilvicultureLocationRequest | null = null
+    server.use(
+      matrixGet(),
+      http.put(`${LOCATIONS_URL}/9001`, async ({ request }) => {
+        captured = (await request.json()) as SilvicultureLocationRequest
+        // The echo is still Submitted — no transition endpoint exists (Epics 17–18 own that) and a
+        // correction is not one — and its `editable` is recomputed by the same matrix.
+        return HttpResponse.json(
+          matrixDoc(request, {
+            locations: [{ ...northRidge, actualCost: 31000, totalCost: 41000, revisionCount: 5 }],
+            message: SAVED,
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    // Live write surface for an administrator at Submitted — the capability 16.1 granted and
+    // nothing asserted until now. The server said so because the request carried ILCR_ADMIN; the
+    // same handler answers the submitter arm below read-only.
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }))
+    const editRow = screen.getByLabelText('Edit Location').closest('tr') as HTMLElement
+    // This arm declared administrator AND the server was asked as one. Drop the `renderAsAdmin` and
+    // the declaration half fails, even though the fallback would still send an admin header.
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(actionsHeader()).toBeInTheDocument()
+    const actualCost = within(editRow).getByLabelText('Edit Actual Cost ($)')
+    expect(actualCost).toBeEnabled()
+    // fireEvent.change, not user.type: this page mounts an editor per row, so per-character typing
+    // is O(rows × chars) and has timed out CI before. One change event is the same state write.
+    fireEvent.change(actualCost, { target: { value: '31000' } })
+    await user.click(within(editRow).getByRole('button', { name: /^save$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(captured).not.toBeNull()
+    expect(captured!.actualCost).toBe(31000)
+    expect(captured!.revisionCount).toBe(4)
+
+    // "Saving must not move the status" is not assertable from the DOM: the document's track status
+    // is rendered NOWHERE on any schedule page (the tombstone carries the working context's mill
+    // status, not this document's). Three proxies stand in for it.
+    //
+    // (a) STRUCTURAL — the request body's exact top-level key set. It carries entered fields and the
+    // optimistic-lock token only, so the client cannot express a status change even if it wanted to.
+    expect(Object.keys(captured!).sort()).toEqual([
+      'actualCost',
+      'biogeoclimaticCatalogueId',
+      'comments',
+      'enhancedIndicator',
+      'location',
+      'netArea',
+      'plannedCost',
+      'revisionCount',
+    ])
+    // (b) MSW is strict (`onUnhandledRequest: 'error'`), so any call to a transition endpoint —
+    // there is none in the backend — would have failed this test rather than passing silently.
+    // (c) BEHAVIOURAL — the Submitted echo leaves the page editable, which also proves the page does
+    // not re-derive editability from the status it was just handed (AD-9).
+    const savedRow = screen.getByText('North Ridge').closest('tr') as HTMLElement
+    expect(within(savedRow).getByRole('button', { name: /^edit$/i })).toBeEnabled()
+    expect(actionsHeader()).toBeInTheDocument()
+  })
+
+  test('admin at Submitted can add a location — the POST path is live too', async () => {
+    let captured: SilvicultureLocationRequest | null = null
+    server.use(
+      matrixGet({ locations: [], totals: {} }),
+      http.get(BEC_URL, () => HttpResponse.json([{ id: 321, label: 'ICHdw1' }])),
+      http.post(LOCATIONS_URL, async ({ request }) => {
+        captured = (await request.json()) as SilvicultureLocationRequest
+        return HttpResponse.json(matrixDoc(request, { message: SAVED }))
+      }),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    // The Add panel is `editable`-gated as a whole (index.tsx:965), so its very presence at
+    // Submitted is part of the correction capability the matrix granted this actor.
+    fireEvent.change(await screen.findByLabelText('Location'), { target: { value: 'South Bench' } })
+    await user.click(screen.getByRole('combobox', { name: /^Enhanced$/i }))
+    await user.click(await screen.findByRole('option', { name: 'No' }))
+    await pickBec(user, /^Biogeo\/Subzone\/Variant$/i, 'ICH', 'ICHdw1')
+    fireEvent.change(screen.getByLabelText('NAR(ha)'), { target: { value: '12.5' } })
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(captured).not.toBeNull()
+    expect(captured!.location).toBe('South Bench')
+    // The add body carries no `revisionCount` (create has no token to echo) and, again, no status.
+    expect(Object.keys(captured!).sort()).toEqual([
+      'actualCost',
+      'biogeoclimaticCatalogueId',
+      'comments',
+      'enhancedIndicator',
+      'location',
+      'netArea',
+      'plannedCost',
+    ])
+  })
+
+  test('submitter at Submitted is read-only — the action column is HIDDEN, not disabled', async () => {
+    // The SAME handler and the SAME Submitted document as the admin arm above. Only the acting
+    // identity differs, and the matrix answers read-only for it. That is the whole point of
+    // computing the flag: swap `renderAsSubmitter` for `renderAsAdmin` here and this arm fails.
+    server.use(matrixGet())
+    renderAsSubmitter(<Schedule11 />)
+
+    const row = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+    expectReadOnly(row)
+  })
+
+  test('admin at DRAFT is read-only — the capability 16.1 deliberately removed', async () => {
+    // The bidirectional half of the matrix: an administrator may correct a Submitted or Verified
+    // track and may NOT edit a Draft one, which is the licensee's to complete. Without this arm a
+    // gate widened to "admin can always edit" would pass every other test in the file.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsAdmin(<Schedule11 />)
+
+    const row = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expectReadOnly(row)
+  })
+
+  test('submitter at DRAFT still edits — the discriminator the read-only arms need', async () => {
+    // Without this arm every editable path in this block is an ADMIN path, so a `matrixGet` that
+    // answered read-only to EVERYONE — a typo in the submitter key, a resolver that lost the union —
+    // would satisfy both read-only arms above and be invisible. Eleven sibling suites carry the same
+    // discriminator for the same reason. It is also the licensee half of the hand-off chain: Draft
+    // is the one status the mill owns, and the administrator is read-only there.
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsSubmitter(<Schedule11 />)
+
+    const row = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+    expectActingAs(ILCR_ROLES.submitter, 'ILCR_SUBMITTER')
+    expect(actionsHeader()).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: /^edit$/i })).toBeEnabled()
+    expect(within(row).getByRole('button', { name: /^delete$/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+  })
+
+  test('admin at Submitted deletes behind the verbatim confirm — DELETE issued on confirm', async () => {
+    const del = vi.fn()
+    server.use(
+      matrixGet(),
+      http.delete(`${LOCATIONS_URL}/9001`, ({ request }) => {
+        del()
+        return HttpResponse.json(
+          matrixDoc(request, { locations: [], totals: {}, message: DELETED }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    // The row Delete opens the confirm; the always-mounted modal carries its own Delete primary, so
+    // the row's is the first.
+    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const dialog = await screen.findByRole('dialog')
+    // Verbatim, per the user ruling that the duplicated confirm modals are not to be touched:
+    // assert the message where it stands (index.tsx:53).
+    expect(within(dialog).getByText(CONFIRM)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    await waitFor(() => expect(del).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText('North Ridge')).not.toBeInTheDocument()
+  })
+
+  test('admin at Submitted cancels the delete — NO DELETE issued, document untouched', async () => {
+    // The pre-existing AC4 cancel arm (line ~464) runs at Draft; the ministry-correction shape of it
+    // is the one that matters, because Submitted is where an accidental confirm destroys data the
+    // licensee already filed.
+    const del = vi.fn()
+    server.use(
+      matrixGet(),
+      http.delete(`${LOCATIONS_URL}/9001`, ({ request }) => {
+        del()
+        return HttpResponse.json(matrixDoc(request, { locations: [], totals: {} }))
+      }),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    await user.click(screen.getAllByRole('button', { name: /^delete$/i })[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: /^cancel$/i }))
+
+    expect(del).not.toHaveBeenCalled()
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    expect(screen.queryByText(/successfully/i)).not.toBeInTheDocument()
+    // Row and its values survive untouched.
+    const row = screen.getByText('North Ridge').closest('tr') as HTMLElement
+    expect(within(row).getByText('25,000')).toBeInTheDocument()
+    expect(actionsHeader()).toBeInTheDocument()
+  })
+
+  test('Check Status is available at Submitted and mutates nothing', async () => {
+    let gets = 0
+    let posts = 0
+    server.use(
+      http.get(URL, ({ request }) => {
+        gets += 1
+        return HttpResponse.json(matrixDoc(request))
+      }),
+      http.post(CHECK_URL, () => {
+        posts += 1
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          // Schedule 11's met key is `scheduleRequirementsMetMsg` (Schedule11Service.java:68),
+          // read from this service rather than assumed: the met-message key is NOT uniform. It
+          // varies by LEVEL, not by schedule — Schedule 4 emits BOTH, `locationRequirementsMetMsg`
+          // for a per-location result and `scheduleRequirementsMetMsg` for the schedule-level one.
+          // Schedule 11's check is schedule-level, so it is the schedule-level key.
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+          message: { key: 'checkStatusMessage', text: 'Status has been checked' },
+        })
+      }),
+    )
+    renderAsAdmin(<Schedule11 />)
+    const user = userEvent.setup()
+
+    await screen.findByText('North Ridge')
+    await waitFor(() => expect(gets).toBe(1))
+    expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+    const button = screen.getByRole('button', { name: /check status/i })
+    // Enabled because the matrix made this document editable for this actor — the page reads only
+    // the flag, never the role or the status itself (AD-9).
+    expect(button).toBeEnabled()
+    await user.click(button)
+
+    expect(await screen.findByText('Status has been checked')).toBeInTheDocument()
+    expect(screen.getByText('All requirements for this schedule have been met')).toBeInTheDocument()
+    // Read-only: exactly one POST, and NO re-GET. A stable GET count is a real "nothing ran" signal
+    // here because the confirmed-delete path does re-read, so a mutation would move this number.
+    // Strict MSW covers the rest: an unhandled PUT/POST/DELETE to /locations would error the test.
+    expect(posts).toBe(1)
+    expect(gets).toBe(1)
+    // Document unchanged in the DOM, and still editable.
+    const row = screen.getByText('North Ridge').closest('tr') as HTMLElement
+    expect(within(row).getByText('25,000')).toBeInTheDocument()
+    expect(actionsHeader()).toBeInTheDocument()
+  })
+
+  test.each([
+    ['Submitted silviculture track while 1–10 is Draft', 'S', 'D', true],
+    ['Draft silviculture track while 1–10 is Submitted', 'D', 'S', false],
+  ])(
+    'editability follows the SILVICULTURE track, not the 1–10 track: %s',
+    async (_label, silvicultureStatus, otherTrackStatus, expectEditable) => {
+      // TRACK AWARENESS, and no more than that — the claim is deliberately narrow, because this is
+      // the client and the client cannot see the other track.
+      //
+      // WHAT THIS SHOWS: the page reads the ONE status field it is given, and that field is the
+      // silviculture track's — `trackStatus` on this response is `MILL_SILVICULTUR_STATUS_CODE`
+      // (`Schedule11Response.java:7-11`), never `ILCR_MILL_REPORT_STATUS_CODE`. Editability follows
+      // it in both directions.
+      //
+      // WHAT IT DOES NOT SHOW: `millReportStatus` below is NOT a field of `Schedule11Response` and
+      // this suite's own handler cannot read it, so its presence is inert by construction — a
+      // tautology of the double, not evidence. It is served only to state the intent in code: a
+      // reader who later adds a real 1–10 field must not wire this page to it.
+      //
+      // WHERE THE REAL CROSS-TRACK PROOF LIVES: the backend's opposing-track fixtures. `R__50` /
+      // `R__51` give each mill one track's status under test and `'D'` on the other — mill 735 is
+      // 1–10 `'D'` with silviculture `'S'`, mill 736 is 1–10 `'D'` with silviculture `'V'` — so a
+      // gate reading the wrong column fails there. Story 16.4's e2e covers it end to end.
+      server.use(matrixGet({ trackStatus: silvicultureStatus, millReportStatus: otherTrackStatus }))
+      renderAsAdmin(<Schedule11 />)
+
+      const row = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      if (expectEditable) {
+        expect(actionsHeader()).toBeInTheDocument()
+        expect(within(row).getByRole('button', { name: /^edit$/i })).toBeEnabled()
+        expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+      } else {
+        expectReadOnly(row)
+      }
+    },
+  )
+
+  // ---- C: the silviculture statuses nothing else in the frontend ever serves -----------------
+  //
+  // `ILCR_ADMIN: ['S', 'V']` is pinned in twelve suites and `'V'` was served ZERO times repo-wide,
+  // so narrowing the backend matrix to `{'S'}` alone would have left every frontend suite green.
+  // These three cases close that hole on this page's own track, and pin the fail-closed edges the
+  // backend documents (ScheduleEditability.java:42-46): a dead `'O'` passes through read-only, and a
+  // null status row — legacy renders "Not Initiated" — is read-only rather than accidentally open.
+  test.each<[string, string | null, boolean]>([
+    ['Verified (V) — an admin may still correct a signed-off report', 'V', true],
+    ['Opened (O) — the dead legacy status passes through read-only (A-8)', 'O', false],
+    ['no status row (null) — legacy renders "Not Initiated"; fail closed', null, false],
+  ])(
+    'admin editability across the full silviculture status column: %s',
+    async (_label, trackStatus, expectEditable) => {
+      server.use(matrixGet({ trackStatus }))
+      renderAsAdmin(<Schedule11 />)
+
+      const row = (await screen.findByText('North Ridge')).closest('tr') as HTMLElement
+      expectActingAs(ILCR_ROLES.admin, 'ILCR_ADMIN')
+      if (expectEditable) {
+        expect(actionsHeader()).toBeInTheDocument()
+        expect(within(row).getByRole('button', { name: /^edit$/i })).toBeEnabled()
+        expect(screen.getByRole('button', { name: /check status/i })).toBeEnabled()
+      } else {
+        expectReadOnly(row)
+      }
+    },
+  )
 })

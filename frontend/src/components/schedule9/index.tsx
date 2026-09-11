@@ -295,7 +295,9 @@ const Schedule9: FC = () => {
 
   // Schedule 9 has no page-level Save (per-record writes); Check Status is the only page-level action,
   // rendered above and below the list. Check Status is read-only and permitted at any status, but the
-  // button follows legacy in disabling alongside the write controls outside Draft.
+  // button follows legacy in disabling alongside the write controls whenever the caller may not edit
+  // (the role×status matrix since Story 16.1, not Draft alone). Legacy disabled it on 26 of 26
+  // buttons across 15 pages on exactly that condition.
   const checkStatusButton = (key: string) => (
     <Column key={key} sm={4} md={8} lg={16} className="schedule-9__actions">
       <Button
@@ -320,7 +322,8 @@ const Schedule9: FC = () => {
           checkResult={checkResult}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing —
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing —
             a read-only reporter can still see which actions exist (S30). */}
         <Column sm={4} md={8} lg={16} className="schedule-9__actions">
           <Button

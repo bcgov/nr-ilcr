@@ -415,7 +415,8 @@ const Schedule7a: FC = () => {
   }
 
   const { editable, bridges, codeLists } = data
-  // Legacy disabled Check Status outside Draft alongside every write control, even though the
+  // Legacy disabled Check Status alongside every write control whenever the report was not
+  // editable by the caller — its rule was role×status, not Draft alone, even though the
   // endpoint itself is read-only and permitted at any status.
   const controlsDisabled = !editable || saving
 
@@ -453,7 +454,8 @@ const Schedule7a: FC = () => {
           rowMessages={checkResult?.bridgeMessages}
         />
 
-        {/* Write controls stay rendered and go disabled outside Draft rather than disappearing —
+        {/* Write controls stay rendered and go disabled whenever the caller may not edit (the
+            role×status matrix since Story 16.1, not Draft alone) rather than disappearing —
             legacy bound `disabled` on all 32 of them and never removed a control, so a read-only
             reporter can still see which actions exist. */}
         <Column sm={4} md={8} lg={16} className="schedule-7a__actions">
