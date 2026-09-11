@@ -368,6 +368,43 @@ export class Schedule5Page {
     return this.subPageList(listHeader).getByRole('textbox', { name: 'Description' });
   }
 
+  // ---- sub-page validation (S21 / S22 / S23) --------------------------------------------------------
+
+  /**
+   * The inline error under an ADD-FORM field.
+   *
+   * Reuses `errorFor`, which walks up to the enclosing `.cds--form-item` — so it is scoped to the one
+   * field without depending on an id, and works identically for the descriptor fields on the main
+   * page and the add-form fields here.
+   */
+  subPageAddFieldError(field: 'Description' | 'Cost $'): Locator {
+    return this.errorFor(this.subPageField(field));
+  }
+
+  /**
+   * A GRID row's Description or Cost input, by row index.
+   *
+   * Addressed by the app's own stable ids (`sub-page-row-description-0`) rather than by accessible
+   * name: both grid inputs are `hideLabel` with the labels `Description` / `Cost $`, and the ADD form
+   * carries `Description: ` / `Cost $: ` — close enough that a name-based locator has to lean on the
+   * trailing colon to tell a grid cell from the add form. The id says which row as well as which
+   * field, which is what these scenarios actually need.
+   */
+  subPageRowInput(index: number, field: 'description' | 'cost'): Locator {
+    return this.page.locator(`#sub-page-row-${field}-${index}`);
+  }
+
+  subPageRowError(index: number, field: 'description' | 'cost'): Locator {
+    return this.errorFor(this.subPageRowInput(index, field));
+  }
+
+  /** Every data row currently in a sub-page list — the count is how "the row is not added" is proved. */
+  subPageRows(listHeader: string): Locator {
+    return this.subPageList(listHeader).getByRole('row').filter({
+      has: this.page.getByRole('textbox', { name: 'Description', exact: true }),
+    });
+  }
+
   /** Every Schedule 5 confirm is a Carbon Modal with Yes/No; the heading is what distinguishes them. */
   async confirmModal(heading: string): Promise<void> {
     const modal = this.page.getByRole('presentation').filter({ hasText: heading });

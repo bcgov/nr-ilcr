@@ -129,8 +129,27 @@ export const CHECK_MISSING_ANCHOR: Sch5Anchor = { key: { millId: 25052, year: 20
 export const ACCESS_DESC_BLANK_ANCHOR: Sch5Anchor = { key: { millId: 25053, year: 2022 }, mill: MILL_9174 };
 /** S22 — Other CAMP expense description blank, blocked at sub-page save. */
 export const CAMP_DESC_BLANK_ANCHOR: Sch5Anchor = { key: { millId: 25054, year: 2022 }, mill: MILL_9175 };
-/** S23 — Invalid cost on the Other Camp/Access Expense sub-page. */
+/** S23 — Invalid cost on the Other CAMP Expense sub-page (the ±9,999,999 band). */
 export const SUBPAGE_COST_ANCHOR: Sch5Anchor = { key: { millId: 9050, year: 2023 }, mill: MILL_760 };
+
+/**
+ * S23 — the Other ACCESS Expense half (the ±99,999,999 band), on its OWN anchor.
+ *
+ * ONE SLICE, TWO ANCHORS — the same construction S08 needs, for a different reason. S23 has to
+ * exercise both sub-pages because the two bands are the whole point, and a single scenario visiting
+ * both pages of one camp is not workable: returning from a sub-page leaves the camp panel open and
+ * DIRTY (its Other-expense figures have moved underneath it), so the next navigation raises a
+ * discard confirm — "Switch camp report" on Edit, "Leave camp report" on a sub-page link. Answering
+ * those is S10/S11's subject and would make S23 partly about confirms. Two single-page scenarios say
+ * what S23 means with no confirm in either, and they parallelise.
+ *
+ * Minted 2026-09-10 in sch5's own 2023 range, so it collides with nobody — the same reasoning that
+ * added 17052/2023 for S12.
+ */
+export const SUBPAGE_COST_ACCESS_ANCHOR: Sch5Anchor = {
+  key: { millId: 22050, year: 2023 },
+  mill: MILL_20171,
+};
 /** S24 — Check Status includes unsaved edits: a violation entered but not saved (BR-12 family). */
 export const CHECK_UNSAVED_VIOLATION_ANCHOR: Sch5Anchor = { key: { millId: 10050, year: 2023 }, mill: MILL_2121 };
 /** S25 — Check Status includes unsaved edits: a correction not yet saved clears the error. */
@@ -203,6 +222,7 @@ export const EDITABLE_DRAFT_ANCHORS: ReadonlyArray<{ name: string; anchor: Sch5A
   { name: 'access-desc-blank (S21)', anchor: ACCESS_DESC_BLANK_ANCHOR },
   { name: 'camp-desc-blank (S22)', anchor: CAMP_DESC_BLANK_ANCHOR },
   { name: 'subpage-cost (S23)', anchor: SUBPAGE_COST_ANCHOR },
+  { name: 'subpage-cost-access (S23)', anchor: SUBPAGE_COST_ACCESS_ANCHOR },
   { name: 'check-unsaved-violation (S24)', anchor: CHECK_UNSAVED_VIOLATION_ANCHOR },
   { name: 'check-unsaved-fix (S25)', anchor: CHECK_UNSAVED_FIX_ANCHOR },
   { name: 'validation (S15)', anchor: VALIDATION_ANCHOR },
@@ -565,6 +585,100 @@ export const VALIDATION_MESSAGES = {
 
 /** S13's duplicate is typed in a DIFFERENT CASE — BR-02 is case-insensitive. */
 export const DUPLICATE_NAME_UPPERCASE = 'NORTH CAMP';
+
+// ---------------------------------------------------------------------------------------------------
+// S20 — Check Status finds missing required values.
+// ---------------------------------------------------------------------------------------------------
+
+/** The camp S20 seeds with one required field deliberately absent. */
+export const CHECK_MISSING_CAMP_NAME = 'North Camp';
+
+/**
+ * S20's baseline: S02's camp MINUS `roadDistanceToOperatingArea`.
+ *
+ * Exactly ONE field is omitted, on purpose. Check Status emits one line per missing field in a fixed
+ * order, so a camp missing three fields would produce three lines and the assertion would no longer
+ * be about the field the slice names. Road Distance is also the field the source Gherkin picks.
+ *
+ * Note it is still SAVEABLE: only Camp Name and Isolated Camp are required to save (S12 proves that),
+ * while Check Status tests a DIFFERENT set — camp name, road distance, size of camp, associated camp
+ * volume and the four sub-list conditions (`Schedule5Service.evaluateCamp`). That asymmetry is what
+ * makes this slice possible at all: the camp stores happily and only Check Status objects.
+ */
+export const CHECK_MISSING_BASELINE = {
+  campName: CHECK_MISSING_CAMP_NAME,
+  sizeOfCamp: 40,
+  associatedCampVolume: 5000,
+  isolatedCamp: true,
+  cateringAndFood: { volume: 5000, cost: 1000 },
+  wagesAndBenefits: { volume: 5000, cost: 2000 },
+  depreciationLease: { volume: 5000, cost: 500 },
+  generalCampExpenses: { volume: 5000, cost: 300 },
+  otherCampExpenses: { volume: 5000 },
+  recoveries: { cost: 0 },
+  crewTransportation: { volume: 5000, cost: 700 },
+  equipAndSuppliesLand: { volume: 5000, cost: 400 },
+  equipAndSuppliesRail: { volume: 5000, cost: 0 },
+  equipAndSuppliesAir: { volume: 5000, cost: 0 },
+  equipAndSuppliesWater: { volume: 5000, cost: 0 },
+  otherAccessExpenses: { volume: 5000 },
+} as const;
+
+/**
+ * The composed Check Status finding, byte-for-byte.
+ *
+ * `Schedule5CheckStatusResolver.composedValueRequired` builds
+ * `"Camp Report Name : " + campName + segment + ": " + text`, where the segment carries a LEADING
+ * space and NO trailing one (`:40-50`) — so there is no space before the final colon. Schedule 6's
+ * equivalent segments carry both, which is exactly the one-byte trap the resolver's own comment warns
+ * about. MEASURED against the running app on 2026-09-10, not transcribed.
+ */
+export const CHECK_MISSING_MESSAGE =
+  `Camp Report Name : ${CHECK_MISSING_CAMP_NAME} - Road Distance to Operating Area: Value Required`;
+
+/** What S20's second arm types into the field Check Status complained about. */
+export const CHECK_MISSING_FIX_DISTANCE = '12.5';
+
+// ---------------------------------------------------------------------------------------------------
+// S21 / S22 / S23 — the expense sub-pages' own validation.
+//
+// THE TWO PAGES ARE NOT SYMMETRIC, and every difference below is a separately verified legacy fact
+// rather than an inconsistency in the rewrite (`components/schedule5SubPage/validation.ts` carries
+// the source line for each):
+//   * COST BAND is per PAGE, not per control — every Camp cost input carries `costSize="7"`
+//     (±9,999,999); neither Access input carries one, so Access gets the ILCRCostValidator default
+//     (±99,999,999).
+//   * REQUIRED TIMING on a GRID row's description differs — the Access grid input carries
+//     `<f:ajax event="change">` so it reports immediately; the Camp grid input does not, so its check
+//     is deferred to Save. That timing IS the S21/S22 distinction.
+//   * BOTH ADD-FORMS require a description. The source Gherkin says the Camp one does not; it does.
+//     See SPEC-4.
+// ---------------------------------------------------------------------------------------------------
+
+export const SUB_PAGE_MESSAGES = {
+  /**
+   * FLD-001's sub-page twin, RESOLVED by observation. Both S21 and S22 carry this as `[UNKNOWN]` —
+   * legacy set no custom `requiredMessage`, so its text was whatever the JSF runtime default happened
+   * to be and could not be recovered from source. The rewrite states it: `Value Required`, the same
+   * `missingRequiredFieldMsg` bundle string Check Status uses.
+   */
+  descriptionRequired: 'Value Required',
+  /** The Other CAMP page's band — `costSize="7"` on every cost input there. */
+  campCostRange: 'Entered cost must be between -9,999,999 and 9,999,999.',
+  /** The Other ACCESS page's band — no `costSize`, so the validator default applies. */
+  accessCostRange: 'Entered cost must be between -99,999,999 and 99,999,999.',
+} as const;
+
+/** The camp S21/S22/S23 open a sub-page on. Created by each scenario's own Given. */
+export const SUB_PAGE_HOST_CAMP = 'North Camp';
+
+/** S23's rejected costs — each one step outside its own page's band, and inside the other's. */
+export const SUB_PAGE_INVALID_COSTS = {
+  /** Rejected on the Camp page (>9,999,999); would be ACCEPTED on the Access page. */
+  camp: '15000000',
+  /** Rejected on the Access page (>99,999,999). */
+  access: '150000000',
+} as const;
 
 // ---------------------------------------------------------------------------------------------------
 // S16 / S17 / S18 — the three EF2 guards, and S19 — the read-only render.

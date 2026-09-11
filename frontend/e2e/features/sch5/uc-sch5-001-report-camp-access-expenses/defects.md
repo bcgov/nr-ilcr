@@ -7,21 +7,23 @@
 > **BA/QA own triage.** Nothing here is adjudicated, assigned a ticket, or CLOSED by the authoring
 > agent. `OPEN` means "found and evidenced", not "agreed".
 
-**As of 2026-09-10**, this UC has **no Divergence and no Bug/Regression entries**. Nineteen slices are
-authored (S01–S19) and all are green: where the app and the legacy-derived Gherkin disagreed, the
-Gherkin turned out to be wrong about legacy — see SPEC-2, which was settled by reading the legacy
-source rather than by trusting either document.
+**As of 2026-09-10**, this UC has **no Divergence and no Bug/Regression entries**. Twenty-three slices
+are authored (S01–S23) and all are green. The pattern has held throughout: every time the app and the
+legacy-derived Gherkin disagreed, the **Gherkin** turned out to be wrong about legacy — SPEC-2 (the
+copied camp's name), SPEC-3 (the per-camp "met" line, now confirmed three times) and SPEC-4 (the
+sub-page add-form's required attribute). Each was settled by reading the legacy source rather than by
+trusting either document.
 
-That clean record comes with a caveat worth stating plainly: **the six slices still unauthored include
-the two most likely to produce a divergence.** S24/S25 are the BR-12 "Check Status includes unsaved
-edits" pair, where schedules 1, 2, 4 and 11 all carry an open `@discovered-divergence` (issue #359).
-So "no divergences" describes what has been looked at, not a verdict on Schedule 5 as a whole.
+That clean record comes with a caveat worth stating plainly: **the two slices still unauthored are the
+two most likely to produce a divergence.** S24/S25 are the BR-12 "Check Status includes unsaved edits"
+pair, where schedules 1, 2, 4 and 11 all carry an open `@discovered-divergence` (issue #359). So "no
+divergences" describes what has been looked at, not a verdict on Schedule 5 as a whole.
 
 ---
 
 ## Divergence (app behaves differently from the legacy-derived spec)
 
-*None found in S01–S19.* The re-grounded happy path matched the source Gherkin in every respect that
+*None found in S01–S23.* The re-grounded happy path matched the source Gherkin in every respect that
 was checkable: the panel title (`New Camp Details`), the five descriptor fields starting blank,
 BR-03's propagation into exactly eleven volume fields, the four recomputed totals, and the success
 message.
@@ -146,19 +148,39 @@ logged here, because in both the difference is mechanism rather than behaviour:
     amounts, which reads as an app defect.
   - **Status:** CLOSED as verified 2026-09-10 — no defect in the seed; the gate was extended.
 
-- **GAP-2 — OPEN (narrowed 2026-09-10): S20–S25 are anchored and preflighted, but not yet authored.**
-  - **Progress.** S01–S19 are now authored and green. **19 of 25 slices (76%).** Originally raised
+- **GAP-2 — OPEN (narrowed 2026-09-10): only S24–S25 remain unauthored.**
+  - **Progress.** S01–S23 are now authored and green. **23 of 25 slices (92%).** Originally raised
     covering S02–S25.
-  - **What this means.** Every remaining slice has a dedicated, verified anchor reserved and named
-    for it (`fixtures/sch5/schedule5-test-data.ts`, one export per slice), and `preflight/sch5-anchors.setup.ts`
-    proves all 22 resolve with no camps at rest plus both guard responses on every run. What is missing
-    is the `.feature` / step / page-object work itself.
-  - **Sizing note for planning.** The six remaining are all mutating scenarios with anchors already
-    allocated: S20 (`check-missing`), S21 (`access-desc-blank`), S22 (`camp-desc-blank`),
-    S23 (`subpage-cost`), S24 (`check-unsaved-violation`) and S25 (`check-unsaved-fix`). The two
-    sub-page description cases (S21/S22) and the sub-page cost case (S23) should re-use the S04/S05
-    page-object work; S20 re-uses S06's Check Status path.
-  - **Watch item, restated because it is now imminent.** S24/S25 are the BR-12 pair below.
+  - **What this means.** Both remaining slices have a dedicated, verified anchor reserved and named
+    for them (`CHECK_UNSAVED_VIOLATION_ANCHOR` 10050/2023 and `CHECK_UNSAVED_FIX_ANCHOR` 12050/2023),
+    and `preflight/sch5-anchors.setup.ts` proves all 24 resolve with no camps at rest plus both guard
+    responses on every run. What is missing is the `.feature` / step work itself.
+  - **The two left are the two most likely to find something.** S24/S25 are the BR-12 "Check Status
+    includes unsaved edits" pair — see the watch item below. Everything mechanical is done; what
+    remains is the part that needs adjudication.
+  - **Useful to know before authoring them.** Check Status is DISABLED while a camp panel is open
+    (index.tsx:1419), which is itself the shape of the app-wide divergence: the modern check reads the
+    database, so it cannot see the screen. Whatever S24/S25 end up asserting has to be written against
+    that gate rather than around it.
+
+- **GAP-4 — OPEN: the per-camp "requirements met" message is never exercised, and no slice in the
+  catalogue can exercise it.**
+  - **What this means in plain language.** When Check Status passes for the whole schedule, the app
+    shows one banner. When it fails, it lists what is missing per camp — and any camp that is itself
+    complete gets its own "All requirements for <camp> have been met." line. That per-camp line only
+    ever appears in the second case: schedule failing, one camp passing.
+  - **Why no test covers it.** S06 has one complete camp, so the schedule passes and the line is
+    suppressed (that is SPEC-3). S20 has one incomplete camp, and once it is fixed the schedule
+    passes — so the line is suppressed there too. Reaching it needs TWO camps on one anchor, one
+    complete and one not, and **no slice in the 25-slice catalogue describes that state.**
+  - **Why it is worth recording rather than quietly adding.** The message is real, live and
+    user-facing (`campRequirementsMetMsg`), and it is pinned in the fixtures precisely so S06 and S20
+    can assert its ABSENCE. An assertion that a string never appears is only as good as the knowledge
+    that it CAN appear. Silently widening S20 to two camps would cover it while making S20 about
+    something its own title does not describe.
+  - **Suggested fix:** a new slice, not an edit to an existing one. It needs one anchor and one extra
+    camp. Raised 2026-09-10.
+  - **Status:** OPEN — BA/QA's call whether the catalogue gains a slice.
   - **Watch item.** S24/S25 are the BR-12 "Check Status includes unsaved edits" pair. Schedules 1, 2, 4
     and 11 all carry an OPEN `@discovered-divergence` there (issue #359 — Check Status judges the SAVED
     document and ignores the screen). Expect Schedule 5 to reproduce it; if it does, that is a fifth
@@ -244,7 +266,45 @@ logged here, because in both the difference is mechanism rather than behaviour:
     repo — three documents, one correction. **Or**, if the Ministry actually wants the per-camp
     confirmation, that is a product change to raise against the app, not a test fix. That call is
     BA/QA's, not the suite's.
-  - **Status:** OPEN — spec correction owed (or a product decision). Found 2026-09-09.
+  - **CONFIRMED A THIRD TIME 2026-09-10, by S20.** S20's second arm scripts the same per-camp line
+    (`SUC-005`) after the missing value is supplied. It does not appear: once the only camp passes,
+    the SCHEDULE passes, so the pass branch returns the banner with `camps: []`. Probed directly —
+    `POST /check-status` answered `outcome: MET`, one message, `camps: []`. So the correction is owed
+    on **S06, S20, `UC-SCH5-001-detailed.md:151` and the epic AC** — four documents, one root cause.
+  - **A knock-on worth its own entry:** because the per-camp line is unreachable from both S06 and
+    S20, nothing in the catalogue exercises it at all. See GAP-4.
+  - **Status:** OPEN — spec correction owed (or a product decision). Found 2026-09-09, confirmed
+    twice since.
+
+- **SPEC-4 — OPEN: S22 is built on a premise that is false in BOTH systems. The Other Camp add-form
+  DOES require a description.**
+  - **What's wrong.** `UC-SCH5-001-S22.feature` scripts "a source-confirmed asymmetry — the
+    add-form's description field has no `required="true"`, unlike the Access Expenses equivalent, so
+    Add succeeds and Save is what blocks it". Its first scenario therefore expects a blank-description
+    row to LAND IN THE GRID and be rejected later, at Save.
+  - **Expected vs actual.** Expected: Add succeeds, a blank row appears, Save rejects it. Actual: Add
+    is rejected immediately with `Value Required`, exactly as on the Access page, and no row is
+    created. The blank row is unreachable by that route.
+  - **The app matches legacy; the slice does not.** Both add-forms carry `required="true"` —
+    `schedule5CampExpenses.xhtml:39` and `schedule5AccessExpenses.xhtml:32`. The rewrite reproduces
+    that (`validateAddForm` requires a description for both `kind`s) and its own source already flags
+    the discrepancy against the committed AC3 as deviation (A)
+    (`components/schedule5SubPage/validation.ts:113-116`).
+  - **There IS a real S21/S22 asymmetry — it is just in a different control.** The GRID row's
+    description input differs: the Access one carries `<f:ajax event="change">` (:63) so a cleared
+    description reports immediately, and the Camp one does not (:64-67), so its check is deferred to
+    Save. That is the behaviour S22's TITLE describes ("Blocked at Sub-Page Save") and it is
+    genuinely there. The slice names the wrong control, not the wrong behaviour.
+  - **How caught.** Reading `validation.ts` before authoring, then confirming in the browser: the
+    Camp add-form rejects a blank description identically to the Access one, and the deferred check
+    fires only when a STORED row's description is cleared in the grid.
+  - **How the test was re-grounded.** S22 now asserts both halves: the add-form rejection (so the
+    corrected premise is itself pinned) AND the real deferred-to-Save path via the grid row,
+    including the negative — no error on change — that distinguishes it from S21.
+  - **Fix:** correct S22 in the `ilcr-bmad` planning repo, and AC3 with it. Note this is the same
+    deviation (A) that also mis-records the cost bands — though the Gherkin gets the BANDS right
+    (S23's header note matches the source exactly), so only the required-attribute half is wrong here.
+  - **Status:** OPEN — spec correction owed on S22 and AC3. Found 2026-09-10.
 
 ---
 

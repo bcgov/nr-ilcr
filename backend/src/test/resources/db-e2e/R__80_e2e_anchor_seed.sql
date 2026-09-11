@@ -392,6 +392,10 @@ INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_RE
 -- 17052/2023 added 2026-09-09: S12's second arm corrects the blank field and SAVES, so it cannot share
 -- the validate-only anchor (13050/2023) with S15 under fullyParallel.
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 17052, 'D', 'D', 'E2E_SEED');
+-- 22050/2023 added 2026-09-10: S23 needs one anchor PER SUB-PAGE. A single scenario visiting both
+-- pages of one camp is not workable -- returning from a sub-page leaves the camp panel open and
+-- dirty, so the next navigation raises a discard confirm (S10/S11's subject, not S23's).
+INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 22050, 'D', 'D', 'E2E_SEED');
 INSERT INTO THE.ILCR_MILL_REPORT_STATUS (REPORT_YEAR, ILCR_MILL_ID, ILCR_MILL_REPORT_STATUS_CODE, MILL_SILVICULTUR_STATUS_CODE, ENTRY_USERID) VALUES (2023, 16050, 'S', 'D', 'E2E_SEED');
 
 -- ----------------------------------------------------------------------------

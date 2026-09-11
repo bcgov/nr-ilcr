@@ -1,6 +1,11 @@
 import { Given, When, Then, expect } from '../fixtures';
 import {
   ADD_ANCHOR,
+  ACCESS_DESC_BLANK_ANCHOR,
+  CAMP_DESC_BLANK_ANCHOR,
+  CHECK_MISSING_ANCHOR,
+  SUBPAGE_COST_ANCHOR,
+  SUBPAGE_COST_ACCESS_ANCHOR,
   CHECK_MET_ANCHOR,
   DELETE_ANCHOR,
   CAMP_SWITCH_ANCHOR,
@@ -31,6 +36,9 @@ import {
   VOLUME_BEARING_CATEGORY_LABELS,
   GUARDS,
   GUARD_MESSAGES,
+  CHECK_MISSING_BASELINE,
+  CHECK_MISSING_FIX_DISTANCE,
+  SUB_PAGE_HOST_CAMP,
   READ_ONLY_ANCHOR,
   VIEW_CAMP_DERIVED,
   VIEW_CAMP_DISPLAY,
@@ -39,7 +47,9 @@ import {
   millOptionText,
   type Sch5Anchor,
 } from '../../fixtures/sch5/schedule5-test-data';
-import { createCamp, findCampByName, getSchedule5 } from './schedule5Api';
+import { createCamp, findCampByName, getSchedule5, getSubPageRows } from './schedule5Api';
+import type { APIRequestContext } from '@playwright/test';
+import type { ScheduleKey } from '../../fixtures/sch5/schedule5-test-data';
 
 /**
  * UC-SCH5-001 (Schedule 5 — Report Camp and Access Expenses) steps.
@@ -66,6 +76,11 @@ const ANCHORS: Record<string, Sch5Anchor> = {
   validation: VALIDATION_ANCHOR,
   'duplicate-name': DUPLICATE_NAME_ANCHOR,
   'copy-duplicate': COPY_DUPLICATE_ANCHOR,
+  'check-missing': CHECK_MISSING_ANCHOR,
+  'access-desc-blank': ACCESS_DESC_BLANK_ANCHOR,
+  'camp-desc-blank': CAMP_DESC_BLANK_ANCHOR,
+  'subpage-cost': SUBPAGE_COST_ANCHOR,
+  'subpage-cost-access': SUBPAGE_COST_ACCESS_ANCHOR,
 };
 
 /** Resolve the sub-page vocabulary a feature uses ("camp"/"access") to its verbatim app strings. */
@@ -74,6 +89,27 @@ function subPage(key: string): (typeof SUB_PAGES)[keyof typeof SUB_PAGES] {
   expect(def, `unknown Schedule 5 sub-page "${key}" — known: ${Object.keys(SUB_PAGES).join(', ')}`)
     .toBeTruthy();
   return def;
+}
+
+/**
+ * The STORED descriptions of a sub-page's rows, in served order.
+ *
+ * Resolves the feature's "camp"/"access" vocabulary to the camp id and the REST path, so the
+ * scenarios never carry either. A null description reads as `''` — the write path deliberately sends
+ * a blank as `null` (`toRowRequest`), and a test asserting the round-trip should not have to care
+ * which of the two the column happens to hold.
+ */
+async function subPageRowDescriptions(
+  request: APIRequestContext,
+  key: ScheduleKey,
+  pageKey: string,
+): Promise<string[]> {
+  const camp = await findCampByName(request, key, SUB_PAGE_HOST_CAMP);
+  expect(camp, `the sub-page host camp "${SUB_PAGE_HOST_CAMP}" is missing from the anchor`).toBeDefined();
+  const path =
+    subPage(pageKey).sub === 'CAMP' ? 'other-camp-expenses' : 'other-access-expenses';
+  const rows = await getSubPageRows(request, key, camp!.campId, path);
+  return rows.map((r) => r.description ?? '');
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -677,6 +713,131 @@ When('I save the camp', async ({ schedule5Page }) => {
 Then('{string} is listed in the Existing Camps table', async ({ schedule5Page }, campName) => {
   await expect(schedule5Page.existingCampRow(campName)).toBeVisible();
 });
+
+// ---------------------------------------------------------------------------------------------------
+// S20 — Check Status finds missing required values
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * A camp that SAVES but does not PASS Check Status.
+ *
+ * The two rule sets are deliberately different, and this slice only exists because of the gap: only
+ * Camp Name and Isolated Camp are required to save, while Check Status additionally tests road
+ * distance, size of camp, associated camp volume and the four sub-list conditions
+ * (`Schedule5Service.evaluateCamp`). So the camp stores cleanly with its road distance absent, and
+ * only Check Status objects — which is exactly the state a licensee reaches by saving early.
+ */
+Given(
+  'a camp named {string} already exists with no road distance',
+  async ({ request, world, schedule5Cleanup }, campName) => {
+    schedule5Cleanup.push({ key: world.scheduleKey!, campName });
+    const created = await createCamp(request, world.scheduleKey!, {
+      ...CHECK_MISSING_BASELINE,
+      campName,
+    });
+    // Nullish rather than strictly null: the serializer OMITS an absent field rather than sending
+    // `null`, so the served camp has no `roadDistanceToOperatingArea` key at all. Both spellings
+    // mean "absent", which is the only thing this precondition cares about.
+    expect(
+      created.roadDistanceToOperatingArea ?? null,
+      'the S20 precondition must store with NO road distance — that is the whole slice',
+    ).toBeNull();
+  },
+);
+
+When('I fill in the missing road distance and save', async ({ schedule5Page }) => {
+  await schedule5Page.fillDescriptor(
+    'Road Distance to Operating Area',
+    CHECK_MISSING_FIX_DISTANCE,
+  );
+  await schedule5Page.save();
+});
+
+// ---------------------------------------------------------------------------------------------------
+// S21 / S22 / S23 — the expense sub-pages' own validation
+// ---------------------------------------------------------------------------------------------------
+
+/** Type into the add form WITHOUT clicking Add — so a scenario can leave one field deliberately blank. */
+When(
+  'I enter the sub-page description {string} and cost {string}',
+  async ({ schedule5Page }, description, cost) => {
+    await schedule5Page.subPageField('Description').fill(description);
+    await schedule5Page.subPageField('Cost $').fill(cost);
+  },
+);
+
+When('I click the sub-page Add button', async ({ schedule5Page }) => {
+  await schedule5Page.subPageAddButton.click();
+});
+
+Then(
+  'the sub-page {string} field shows the error {string}',
+  async ({ schedule5Page }, field, message) => {
+    await expect(
+      schedule5Page.subPageAddFieldError(field as 'Description' | 'Cost $'),
+    ).toHaveText(message);
+  },
+);
+
+/**
+ * Prove the rejected Add added nothing.
+ *
+ * The inline error alone only shows the form complained. Add COMMITS to the server when it succeeds
+ * (`handleAdd` -> `save`), so "the row is not added" is a claim about the stored list, and a row
+ * count is the way to check it that does not depend on knowing the row's description — which for a
+ * blank-description rejection there is none of.
+ */
+Then('the {string} list holds {int} rows', async ({ schedule5Page }, key, count) => {
+  await expect(schedule5Page.subPageRows(subPage(key).listHeader)).toHaveCount(count);
+});
+
+/** Clear a stored row's description in the GRID — the S21/S22 timing difference lives here. */
+When('I clear the first sub-page row description', async ({ schedule5Page }) => {
+  await schedule5Page.subPageRowInput(0, 'description').fill('');
+});
+
+When(
+  'I set the first sub-page row description to {string}',
+  async ({ schedule5Page }, value) => {
+    await schedule5Page.subPageRowInput(0, 'description').fill(value);
+  },
+);
+
+Then(
+  'the first sub-page row description shows the error {string}',
+  async ({ schedule5Page }, message) => {
+    await expect(schedule5Page.subPageRowError(0, 'description')).toHaveText(message);
+  },
+);
+
+/**
+ * The CAMP page's grid defers its required check to Save, so nothing may appear on change.
+ *
+ * This is the assertion that makes S22 different from S21 rather than a second copy of it. It is a
+ * negative, so it is worth saying why it is not vacuous: the identical action on the ACCESS page
+ * (S21) DOES raise the error immediately, and that scenario asserts it — the pair only means
+ * something because both halves are checked.
+ */
+Then('the first sub-page row description shows no error', async ({ schedule5Page }) => {
+  await expect(schedule5Page.subPageRowError(0, 'description')).toHaveCount(0);
+});
+
+/**
+ * The sub-page's stored row list, read back through the API.
+ *
+ * A blocked Save is a claim about the DATABASE, and the grid still shows whatever was typed — so the
+ * screen cannot answer it. This reads the camp's served sub-page rows instead.
+ */
+Then(
+  'the stored {string} rows are exactly {string}',
+  async ({ request, world }, key, expected) => {
+    const descriptions = await subPageRowDescriptions(request, world.scheduleKey!, key);
+    expect(
+      descriptions,
+      `the ${key} sub-page's STORED rows should be [${expected}] — a blocked save must not persist`,
+    ).toEqual(expected === '' ? [] : expected.split('|'));
+  },
+);
 
 // ---------------------------------------------------------------------------------------------------
 // S16 / S17 / S18 — the EF2 guards  |  S19 — the read-only render

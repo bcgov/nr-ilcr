@@ -15,11 +15,17 @@ the app's real write path (`schedule5/api/Schedule5Api.java` GET/POST/PUT/DELETE
 > `_bmad-output/planning-artifacts/requirements/use-cases/UC-SCH5-001/` (the detailed UC, slice catalog
 > and technical sidecar).
 
-**STATUS: S01–S19 AUTHORED AND GREEN; S20–S25 ANCHORED BUT NOT YET AUTHORED.** This file is
-deliberately published at 19/25 rather than held back, so the ledger reflects reality rather than an
-intention. Every remaining slice has a dedicated, verified anchor reserved and named for it, and
-preflight proves all 23 resolve on every run — so the `deferred` rows below are waiting on authoring
-effort, not on a blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
+**STATUS: S01–S23 AUTHORED AND GREEN; ONLY S24–S25 REMAIN.** This file is deliberately published at
+23/25 rather than held back, so the ledger reflects reality rather than an intention. Both remaining
+slices have a dedicated, verified anchor reserved and named for them, and preflight proves all 24
+resolve on every run — so the two `deferred` rows below are waiting on authoring effort, not on a
+blocker (defects.md GAP-1 resolved, GAP-2 tracks the remainder).
+
+**S20–S23 added 2026-09-10.** S20 as `check-status-missing.feature`, and S21/S22/S23 together as
+`sub-page-validation.feature` — the three belong in one file because they are the same asymmetry seen
+three ways, and reading any one of them alone invites the conclusion that the other page behaves the
+same. It does not: the cost BAND differs per page, the required-check TIMING differs per page, and
+the add-form behaves identically on both despite the source Gherkin saying otherwise (SPEC-4).
 
 **S16–S19 added 2026-09-10** as one `render-states.feature`, following the per-domain convention
 (sch1/sch2/sch3/sch4/sch11 all group their guard and read-only slices in a file of that name). Three
@@ -50,7 +56,7 @@ any other fixture pins is ≤ 2021, **"year ≥ 2022 belongs to sch5" is a struc
 than a convention: a cross-domain collision is not expressible in the new range. 16050/2022 is left
 empty ON PURPOSE as S18's 404 fixture and is registered in `DELIBERATELY_ABSENT`.
 
-**Anchor inventory (23 pinned, all verified through the API):** 22 empty editable Drafts (21 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). 17052/2023 was added on 2026-09-09 when S12 turned out to need a mutating anchor of its own: its second arm corrects the blank field and SAVES, and a writer cannot share a key under `fullyParallel`.
+**Anchor inventory (24 pinned, all verified through the API):** 23 empty editable Drafts (22 mutating + 1 validate-only), 1 Submitted document for S19's read-only render, and 2 guards that need no capacity — 25051/2017 (closed mill → 409) and 16050/2022 (absent → 404). Two were minted after the original fan-out, each for the same structural reason — a scenario that writes cannot share a key under `fullyParallel`: **17052/2023** on 2026-09-09 for S12, whose second arm corrects the blank field and SAVES; and **22050/2023** on 2026-09-10 for S23's ACCESS half, because visiting both sub-pages of one camp in a single scenario runs into the dirty-panel confirm (see the note below).
 
 **The read-only anchor is the one exception to "empty at rest", and preflight states it as such.** Every other anchor must hold no camps; 16050/2023 must hold exactly one, the seeded `E2E View Camp`. Both are asserted, with messages that distinguish the two ways it can go wrong — zero camps means the patch was never applied, two or more means S19's "a single View button" is no longer unambiguous.
 
@@ -65,7 +71,7 @@ through the API (`happy-path.feature`); S02 reopen-and-edit with a `revisionCoun
 (`copy.feature`); S04/S05 the Other Camp and Other Access expense sub-pages, the second through the
 CFM-004 save-first confirm from an unsaved camp (`sub-page.feature`); S06 Check Status on a passing
 schedule, asserting the per-camp line is ABSENT (`check-status.feature`, SPEC-3); S07 delete behind the
-CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`); S16/S17/S18 the three EF2 guards and S19 the read-only render, all in `render-states.feature`.
+CFM-001 confirm with an API read-back proving the row really went (`delete.feature`); S08 BR-02's per-mill-year scoping across two anchors, re-reading the first to prove the camp was ADDED and not moved (`same-name.feature`); S09 BR-04's subtracting category against the client-side mirror, never saving (`recoveries.feature`); S10/S11 the two discard confirms, each proving the discard never reached the database (`discard-confirm.feature`); S12/S13/S14 the three camp-name rules, resolving FLD-001's `[UNKNOWN]` and re-grounding S14 per SPEC-2 (`name-validation.feature`); S15 five numeric validators as one outline (`numeric-validation.feature`); S16/S17/S18 the three EF2 guards and S19 the read-only render, all in `render-states.feature`; S20 Check Status naming a missing field and falling silent once it is supplied (`check-status-missing.feature`); S21/S22/S23 the two sub-pages' required-timing and cost-band asymmetries (`sub-page-validation.feature`).
 
 ## Slice ledger
 
@@ -90,14 +96,14 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | S17 | Selected Mill Not Active for the Reporting Year | Exception | **covered** | `render-states.feature` `@p1 @S17` — GREEN. 409 detail asserted verbatim |
 | S18 | No Schedule 5 Record Found for Mill/Year | Exception | **covered** | `render-states.feature` `@p1 @S18` — GREEN. 404; absence IS the fixture |
 | S19 | Schedule Not Editable — Report Not in Draft (Read-Only View) | Exception | **covered** | `render-states.feature` `@p1 @S19 @STA-001 @BR-06` — GREEN. Needed a SEEDED camp — see GAP-3 |
-| S20 | Check Status Finds Missing Required Values | Exception | deferred | as S02 |
-| S21 | Other Access Expense Description Left Blank | Exception | deferred | validate-only; FLD `[UNKNOWN]` as S12 |
-| S22 | Other Camp Expense Added With Blank Description, Blocked at Sub-Page Save | Exception | deferred | as S21 |
-| S23 | Invalid Cost Entered on Other Camp/Access Expense Sub-Page | Exception | deferred | validate-only |
+| S20 | Check Status Finds Missing Required Values | Exception | **covered** | `check-status-missing.feature` `@p1 @S20 @FLD-003` — GREEN. Third confirmation of SPEC-3 |
+| S21 | Other Access Expense Description Left Blank | Exception | **covered** | `sub-page-validation.feature` `@p1 @S21 @FLD-001` — GREEN. RESOLVES the sub-page `[UNKNOWN]` |
+| S22 | Other Camp Expense Added With Blank Description, Blocked at Sub-Page Save | Exception | **covered** | `sub-page-validation.feature` `@p1 @S22 @FLD-001` — GREEN, re-grounded per SPEC-4 |
+| S23 | Invalid Cost Entered on Other Camp/Access Expense Sub-Page | Exception | **covered** | `sub-page-validation.feature` `@p1 @S23 @FLD-002` — GREEN, TWO scenarios (one per page/band) |
 | S24 | Check Status includes unsaved edits — a violation entered but not saved is reported | Alternative | deferred | BR-12 family; sch1/sch2/sch4/sch11 all carry a `@discovered-divergence` here — expect the same |
 | S25 | Check Status includes unsaved edits — a correction made but not saved clears the error | Alternative | deferred | as S24 |
 
-**Coverage: 19 / 25 slices (76%). P0: 1 / 1 authored.**
+**Coverage: 23 / 25 slices (92%). P0: 1 / 1 authored.**
 
 > **Every `deferred` row above is reserved, not blocked.** Each has a dedicated anchor exported from
 > `fixtures/sch5/schedule5-test-data.ts` with a JSDoc line naming its slice — `EDIT_ANCHOR` (S02),
@@ -107,8 +113,9 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 > validate-only so shared), `DUPLICATE_NAME_ANCHOR` (S13), `COPY_DUPLICATE_ANCHOR` (S14),
 > `CLOSED_MILL_ANCHOR` (S17, 409), `NO_SCHEDULE_ANCHOR` (S18, 404), `READ_ONLY_ANCHOR` (S19, Submitted),
 > `CHECK_MISSING_ANCHOR` (S20), `ACCESS_DESC_BLANK_ANCHOR` (S21), `CAMP_DESC_BLANK_ANCHOR` (S22),
-> `SUBPAGE_COST_ANCHOR` (S23), `CHECK_UNSAVED_VIOLATION_ANCHOR` (S24), `CHECK_UNSAVED_FIX_ANCHOR` (S25).
-> S16 needs none — it is the no-context guard. `preflight/sch5-anchors.setup.ts` verifies all 22 plus
+> `SUBPAGE_COST_ANCHOR` + `SUBPAGE_COST_ACCESS_ANCHOR` (S23, two by construction),
+> `CHECK_UNSAVED_VIOLATION_ANCHOR` (S24), `CHECK_UNSAVED_FIX_ANCHOR` (S25).
+> S16 needs none — it is the no-context guard. `preflight/sch5-anchors.setup.ts` verifies all 23 plus
 > both guard responses on every run, so a drifted anchor fails fast with one message instead of
 > surfacing as a confusing red inside a scenario.
 
@@ -132,6 +139,22 @@ CFM-001 confirm with an API read-back proving the row really went (`delete.featu
 | Panel redisplays with recalculated values after save | S01 | **deferred** | the API read-back proves persistence, which is the stronger claim; re-render fidelity rides S02's reopen |
 
 ## Notes
+
+- **S23 needed a second anchor, and the reason is worth knowing before authoring S24/S25.**
+  Returning from an expense sub-page leaves the camp panel OPEN and DIRTY — the sub-page write moves
+  the camp's Other-expense figures underneath a panel still holding the snapshot it was seeded with —
+  so the next navigation raises a discard confirm ("Switch camp report" on Edit, "Leave camp report"
+  on a sub-page link). A sub-page Save does **not** clear it. S04 does not hit this because it never
+  visits a second sub-page. Rather than answer confirms inside a slice about cost bands, S23 is two
+  single-page scenarios and `22050/2023` was minted for the second — the same move S12 needed.
+
+- **S20's second arm is the third confirmation of SPEC-3, and it changes what the slice can assert.**
+  The source scripts "All requirements for North Camp have been met." after the missing value is
+  supplied. Once the only camp passes, the SCHEDULE passes, and the pass branch returns the schedule
+  banner with `camps: []` — the per-camp loop is in the `else` branch. So the per-camp "met" line is
+  reachable ONLY when the schedule fails and some individual camp passes, and **no slice in the
+  catalogue puts the system in that state.** `campMet` is therefore still an un-exercised message;
+  that is a genuine residual gap, recorded here rather than papered over by bending S20.
 
 - **S19's two read-only mechanisms are different, and both are asserted.** It would be easy to write
   one "the panel is read-only" step and think the slice covered. Schedule 5 does it two ways at once:

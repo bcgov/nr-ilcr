@@ -150,6 +150,10 @@ DECLARE
     t_anchor(12050, 2023, 'D'),  -- S25 check status clears on unsaved correction
     t_anchor(13050, 2023, 'D'),  -- S15 validate-only (nothing is ever saved here)
     t_anchor(17052, 2023, 'D'),  -- S12 required-field: its recovery arm DOES save
+    -- 22050/2023 added 2026-09-10: S23 needs one anchor PER SUB-PAGE. Visiting both pages of one
+    -- camp in a single scenario is not workable -- returning from a sub-page leaves the camp panel
+    -- open and dirty, so the next navigation raises a discard confirm, which is S10/S11's subject.
+    t_anchor(22050, 2023, 'D'),  -- S23 invalid cost, the ACCESS half
     t_anchor(16050, 2023, 'S')   -- S19 read-only: Submitted, so the schedule is not editable
   );
 BEGIN

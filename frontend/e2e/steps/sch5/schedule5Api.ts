@@ -26,6 +26,8 @@ export interface Camp {
   campName: string;
   revisionCount: number;
   associatedCampVolume: number | null;
+  /** Typed because S20's precondition asserts it is absent — the field Check Status complains about. */
+  roadDistanceToOperatingArea: number | null;
   campSubTotal: CampAmount;
   campTotal: CampAmount;
   accessExpenseTotal: CampAmount;
@@ -96,6 +98,41 @@ export async function findCampByName(
 ): Promise<Camp | undefined> {
   const doc = await getSchedule5(request, key);
   return doc.camps.find((c) => c.campName?.toUpperCase() === campName.toUpperCase());
+}
+
+/** One stored row of an Other Camp / Other Access expense list. */
+export interface SubPageRow {
+  rowId: number;
+  description: string | null;
+  cost: number | null;
+}
+
+interface SubPageDoc {
+  rows: SubPageRow[];
+}
+
+/**
+ * The STORED rows of one camp's expense sub-page, through the app's own GET.
+ *
+ * Needed because S21/S22/S23 all make claims about what did or did not reach the database, and the
+ * grid on screen keeps showing whatever was typed after a blocked save — so the screen cannot
+ * distinguish "rejected" from "accepted and re-rendered". The route mirrors the UI's own search
+ * param: `sub=CAMP` reads `other-camp-expenses`, `sub=ACCESS` reads `other-access-expenses`.
+ */
+export async function getSubPageRows(
+  request: APIRequestContext,
+  key: ScheduleKey,
+  campId: number,
+  path: 'other-camp-expenses' | 'other-access-expenses',
+): Promise<SubPageRow[]> {
+  const res = await request.get(
+    `/api/v1/schedule5/camps/${campId}/${path}?millId=${key.millId}&year=${key.year}`,
+  );
+  await expect(
+    res,
+    `GET ${path} for camp ${campId} on ${key.millId}/${key.year} -> HTTP ${res.status()}`,
+  ).toBeOK();
+  return ((await res.json()) as SubPageDoc).rows;
 }
 
 /**
