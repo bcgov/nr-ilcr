@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.dataextract;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -97,6 +98,8 @@ class DataExtractAuthorizationIT extends AbstractOracleIT {
   void admin_passesTheGate() throws Exception {
     // 501, not 200: the validation gate is this story's deliverable and the CSV generator is the
     // next story's. What matters here is that the request is NOT refused by authorization.
-    submitAs(jwtWithGroups(List.of("ILCR_ADMIN"))).andExpect(status().isNotImplemented());
+    submitAs(jwtWithGroups(List.of("ILCR_ADMIN")))
+        .andExpect(status().isNotImplemented())
+        .andExpect(jsonPath("$.detail").value("The Data Extract is not yet available."));
   }
 }

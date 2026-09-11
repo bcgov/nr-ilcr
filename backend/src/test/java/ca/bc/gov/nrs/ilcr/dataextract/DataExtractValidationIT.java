@@ -49,6 +49,7 @@ class DataExtractValidationIT extends AbstractOracleIT {
       "Please select at least one Schedule for extracting.";
   private static final String YEAR_RANGE =
       "The end reporting year must be greater or equal to start year.";
+  private static final String NOT_YET_AVAILABLE = "The Data Extract is not yet available.";
 
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
@@ -167,7 +168,11 @@ class DataExtractValidationIT extends AbstractOracleIT {
     // validation message" rather than against a success body this story does not pin.
     submit(body("2021", "2021", ONE_MILL, ONE_SCHEDULE))
         .andExpect(status().isNotImplemented())
-        .andExpect(jsonPath("$.messages").doesNotExist());
+        .andExpect(jsonPath("$.messages").doesNotExist())
+        // The seam's text, verbatim. The handler resolves a BusinessException key with the key as
+        // its own default, so without this a mistyped key would ship `detail: "dataExtractUnav…"`
+        // and every status-only assertion would stay green (21.1 review P8).
+        .andExpect(jsonPath("$.detail").value(NOT_YET_AVAILABLE));
   }
 
   @Test
@@ -175,7 +180,33 @@ class DataExtractValidationIT extends AbstractOracleIT {
   void validSelection_isNotRejected() throws Exception {
     submit(body("2020", "2021", "[514,516]", "[\"Schedule 1\",\"Schedule 7\"]"))
         .andExpect(status().isNotImplemented())
-        .andExpect(jsonPath("$.messages").doesNotExist());
+        .andExpect(jsonPath("$.messages").doesNotExist())
+        .andExpect(jsonPath("$.detail").value(NOT_YET_AVAILABLE));
+  }
+
+  @Test
+  @DisplayName("an EMPTY-STRING year — what the page sends after Clear — is the required message")
+  void emptyStringYear_isRequired() throws Exception {
+    // The frontend pins `startYear: ''` on the wire for a cleared picker (DataExtract.test.tsx),
+    // and
+    // until this test no backend fixture ever sent that exact value — only null, omitted, or
+    // non-numeric (21.1 review P9).
+    submit(body("", "", ONE_MILL, ONE_SCHEDULE))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.messages[*].text", contains(START_REQUIRED, END_REQUIRED)));
+  }
+
+  @Test
+  @DisplayName("an all-digit year too large for an int is 'not an open period', never 'required'")
+  void overflowYear_isNotOpenRatherThanRequired() throws Exception {
+    // ReportYearGuard's ruling for the single-year report endpoints, applied here too (21.1 review
+    // P6): a number the caller demonstrably typed is a bad selection, not a missing one. It passes
+    // the accumulating gate and is refused by the openness guard after it.
+    submit(body("99999999999", "2021", ONE_MILL, ONE_SCHEDULE))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath("$.detail", containsString("Report Year is not an open reporting period.")))
+        .andExpect(jsonPath("$.detail", org.hamcrest.Matchers.not(containsString(START_REQUIRED))));
   }
 
   @Test
@@ -270,6 +301,10 @@ class DataExtractValidationIT extends AbstractOracleIT {
     submit(body("1999", "1999", ONE_MILL, ONE_SCHEDULE))
         .andExpect(status().isBadRequest())
         .andExpect(
-            jsonPath("$.detail", containsString("Report Year is not an open reporting period.")));
+            jsonPath("$.detail", containsString("Report Year is not an open reporting period.")))
+        // A single BusinessException, so NO `messages` array — the frontend's fallback-to-`detail`
+        // path is what renders this one. Pinned so a later change to how BusinessException renders
+        // cannot silently alter which frontend branch fires (21.1 review P8).
+        .andExpect(jsonPath("$.messages").doesNotExist());
   }
 }

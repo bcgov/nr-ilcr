@@ -1,5 +1,5 @@
 import type { FC } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Column, FilterableMultiSelect, Grid, Select, SelectItem } from '@carbon/react'
 import { Reset } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
@@ -32,7 +32,16 @@ const EXTRACT_FAILED = 'Unable to generate the data extract.'
  */
 const SELECT_ALL = { isSelectAll: true, label: 'Select all' } as const
 
-type PickerItem = { readonly label: string; readonly isSelectAll?: boolean }
+/**
+ * A menu row. Mill rows carry their `millId` so a selection round-trips by IDENTITY, not by display
+ * string: `MILL_NUMBER` and `MILL_NAME` are both nullable with no uniqueness constraint, so two
+ * rows can share a label, and keying on the label would tick and submit both.
+ */
+type PickerItem = {
+  readonly label: string
+  readonly millId?: number
+  readonly isSelectAll?: boolean
+}
 
 const itemLabel = (item: PickerItem | null) => item?.label ?? ''
 
@@ -88,6 +97,25 @@ const DataExtract: FC = () => {
    * region below is mounted for the life of the page and this string feeds it.
    */
   const [status, setStatus] = useState('')
+  /**
+   * Whether the page is still mounted, for the submit's late callbacks. The two load effects carry
+   * their own `active` flag; the submit is started from a click, not an effect, so it reads this.
+   */
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  /**
+   * One banner per DISTINCT load failure. Both lookups can fail with the same problem `detail` (one
+   * gateway answering for both), and the banners are keyed by their text.
+   */
+  const addLoadError = (text: string) =>
+    setLoadErrors((current) => (current.includes(text) ? current : [...current, text]))
 
   useEffect(() => {
     let active = true
@@ -100,7 +128,7 @@ const DataExtract: FC = () => {
       })
       .catch((cause: unknown) => {
         if (active) {
-          setLoadErrors((current) => [...current, extractDetail(cause) || MILLS_FAILED])
+          addLoadError(extractDetail(cause) || MILLS_FAILED)
         }
       })
     return () => {
@@ -128,7 +156,7 @@ const DataExtract: FC = () => {
       })
       .catch((cause: unknown) => {
         if (active) {
-          setLoadErrors((current) => [...current, extractDetail(cause) || YEARS_FAILED])
+          addLoadError(extractDetail(cause) || YEARS_FAILED)
         }
       })
     return () => {
@@ -138,7 +166,7 @@ const DataExtract: FC = () => {
 
   const millItems: PickerItem[] = [
     SELECT_ALL,
-    ...mills.map((mill) => ({ label: millOptionLabel(mill) })),
+    ...mills.map((mill) => ({ label: millOptionLabel(mill), millId: mill.millId })),
   ]
   const scheduleItems: PickerItem[] = [
     SELECT_ALL,
@@ -177,8 +205,8 @@ const DataExtract: FC = () => {
   }
 
   const changeMills = (items: readonly PickerItem[]) => {
-    const labels = new Set(items.map((item) => item.label))
-    setSelectedMills(mills.filter((mill) => labels.has(millOptionLabel(mill))))
+    const ids = new Set(items.map((item) => item.millId))
+    setSelectedMills(mills.filter((mill) => ids.has(mill.millId)))
     changed()
   }
 
@@ -205,6 +233,10 @@ const DataExtract: FC = () => {
   const generate = () => {
     // Submitted unconditionally, empty selection included. The server owns every check and reports
     // them together; refusing here would hide the response this screen exists to show.
+    //
+    // While the request is in flight every control is disabled (see `busy` below) — legacy blocked
+    // the whole panel with <p:blockUI trigger="generateBtn"> (extractData.xhtml:160) — so the
+    // messages that come back always describe the selection still on screen.
     setBusy(true)
     setMessages([])
     setStatus('Generating the data extract.')
@@ -219,14 +251,26 @@ const DataExtract: FC = () => {
         }),
       )
       .then(() => {
-        setStatus('The data extract has been generated.')
+        // No success copy here (recorded deviation (C)): the CSV story owns what — if anything — is
+        // said when a file is produced. Legacy's own SUC-001 was never visible. Silence, not an
+        // invented sentence.
+        if (mountedRef.current) {
+          setStatus('')
+        }
       })
       .catch((cause: unknown) => {
+        if (!mountedRef.current) {
+          return
+        }
         const texts = extractMessages(cause, EXTRACT_FAILED)
         setMessages(texts)
         setStatus(`The data extract could not be generated. ${texts.join(' ')}`)
       })
-      .finally(() => setBusy(false))
+      .finally(() => {
+        if (mountedRef.current) {
+          setBusy(false)
+        }
+      })
   }
 
   const summaryRow = (label: string, value: string) => (
@@ -281,6 +325,7 @@ const DataExtract: FC = () => {
                 id="data-extract-start-year"
                 labelText="Start Year:"
                 value={startYear}
+                disabled={busy}
                 onChange={(event) => changeStartYear(event.target.value)}
               >
                 {/* Legacy's own no-selection item (xhtml:43). It stays selectable, which is what
@@ -300,6 +345,7 @@ const DataExtract: FC = () => {
                 id="data-extract-end-year"
                 labelText="End Year:"
                 value={endYear}
+                disabled={busy}
                 onChange={(event) => changeEndYear(event.target.value)}
               >
                 <SelectItem value="" text="End Year" />
@@ -320,9 +366,10 @@ const DataExtract: FC = () => {
                 itemToString={itemLabel}
                 selectedItems={millItems.filter(
                   (item) =>
-                    item.isSelectAll !== true &&
-                    selectedMillsInOptionOrder.some((mill) => millOptionLabel(mill) === item.label),
+                    item.millId !== undefined &&
+                    selectedMillsInOptionOrder.some((mill) => mill.millId === item.millId),
                 )}
+                disabled={busy}
                 // Carbon's default hoists selected options to the top of the menu on reopen, which
                 // would destroy the mill-number ordering above.
                 selectionFeedback="fixed"
@@ -340,6 +387,7 @@ const DataExtract: FC = () => {
                 selectedItems={scheduleItems.filter(
                   (item) => item.isSelectAll !== true && selectedSchedules.includes(item.label),
                 )}
+                disabled={busy}
                 selectionFeedback="fixed"
                 sortItems={keepServerOrder}
                 filterItems={filterByPrefix}

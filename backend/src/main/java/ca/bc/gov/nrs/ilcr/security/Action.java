@@ -59,11 +59,14 @@ public enum Action {
    * ADMIN-only: a SUBMITTER hitting the extract API is denied 403.
    *
    * <p>Deliberately NOT {@link #GENERATE_MILL_REPORTS}, even though both live in the Generate
-   * Reports area. Legacy derived each page's WebADE action from its view id, so the extract page
-   * carried its own {@code extractData} action, separate from the {@code generateReports} action
-   * that rendered the submenu around it — a distinction the rebuild keeps rather than collapses. It
-   * also matters on its own terms: this action releases every selected mill's cost and volume data
-   * in one file, which is a wider capability than viewing one ministry report.
+   * Reports area. Legacy derived each page's WebADE action from its view id ({@code
+   * AuthorizationPhaseListener.getAuthKey}, so on submit the key was {@code extractData/Generate
+   * Report}), separate from the {@code generateReports} action that rendered the submenu around it
+   * — a distinction the rebuild keeps rather than collapses. The menu item itself ({@code
+   * menu.xhtml:39}) carried no per-item {@code rendered} action of its own, unlike its two report
+   * siblings; the page's own action rests on the view-id derivation alone (D2, ratified). It also
+   * matters on its own terms: this action releases every selected mill's cost and volume data in
+   * one file, which is a wider capability than viewing one ministry report.
    */
   GENERATE_DATA_EXTRACT
 }

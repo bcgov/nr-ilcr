@@ -77,10 +77,17 @@ class DataExtractControllerAuthorizationTest {
   @Test
   @DisplayName("The guard string is not vacuously satisfiable — a wrong action fails the assertion")
   void theGuardAssertionHasATeeth() {
-    // The positive control the 22-3 review asked for: prove the assertion above can fail. A guard
-    // naming any other action must NOT equal the expected string.
-    assertThat("@permissions.hasPermission(authentication, 'GENERATE_MILL_REPORTS')")
-        .isNotEqualTo(EXPECTED_GUARD);
+    // The positive control the 22-3 review asked for: prove the assertion above can fail. Read the
+    // REFLECTED guard off the controller — not a literal — and show it is distinguishable from the
+    // reports-area action the constant could most plausibly be swapped to. (The first version of
+    // this test compared two string literals to each other and could never fail; 21.1 review P7.)
+    for (Method method : declaredMethods("generate")) {
+      PreAuthorize preAuthorize = method.getAnnotation(PreAuthorize.class);
+      assertThat(preAuthorize).isNotNull();
+      assertThat(preAuthorize.value())
+          .isNotEqualTo("@permissions.hasPermission(authentication, 'GENERATE_MILL_REPORTS')")
+          .contains("'GENERATE_DATA_EXTRACT'");
+    }
   }
 
   @Test

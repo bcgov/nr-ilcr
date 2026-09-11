@@ -1,4 +1,5 @@
 import type MillSummary from '@/interfaces/MillSummary'
+import type DataExtractRequest from '@/interfaces/DataExtractRequest'
 
 /**
  * Rule placement for the Data Extract page (AD-6).
@@ -25,6 +26,12 @@ const isBlank = (value: string | null | undefined): boolean =>
   value === null || value === undefined || value.trim() === ''
 
 /**
+ * The last-resort name for a mill with neither number nor name. Shared by the option label and the
+ * summary echo so the two can never disagree about which mills are selected.
+ */
+const millFallbackName = (mill: MillSummary): string => `Mill ${String(mill.millId)}`
+
+/**
  * The mill's number, or null when it has none.
  *
  * Whitespace-only counts as none. `MILL_NUMBER` is nullable with no non-blank constraint, and `??`
@@ -47,7 +54,7 @@ export const millOptionLabel = (mill: MillSummary): string => {
   const label = parts
     .filter((part): part is string => part !== null && part !== undefined)
     .join(' - ')
-  return label === '' ? `Mill ${String(mill.millId)}` : label
+  return label === '' ? millFallbackName(mill) : label
 }
 
 /**
@@ -67,14 +74,12 @@ export const matchesPrefix = (label: string, query: string): boolean =>
  * The summary echo for the mills: their NUMBERS, comma-space separated (legacy
  * `printSelectedMills`, `ExtractDataMB.java:201-211` — ids in the model, numbers on screen).
  *
- * A mill with no number contributes nothing rather than an empty slot, so the echo never shows a
- * stray ", ,". Legacy would have thrown on that row instead.
+ * A mill with no number echoes under the same last-resort name its option carries, so a selection
+ * of only such a mill never reads as "nothing selected" while the request carries its id (recorded
+ * deviation (J)). Legacy called `getMillNumber().toString()` on that row and would have thrown.
  */
 export const millNumberEcho = (mills: readonly MillSummary[]): string =>
-  mills
-    .map(millNumberOrNull)
-    .filter((number): number is string => number !== null)
-    .join(', ')
+  mills.map((mill) => millNumberOrNull(mill) ?? millFallbackName(mill)).join(', ')
 
 /** The selection as the page holds it, before it becomes a request. */
 export type ExtractSelection = {
@@ -82,14 +87,6 @@ export type ExtractSelection = {
   readonly endYear: string
   readonly mills: readonly MillSummary[]
   readonly schedules: readonly string[]
-}
-
-/** The pinned request body (AD-12). */
-export type DataExtractRequest = {
-  readonly startYear: string
-  readonly endYear: string
-  readonly millIds: number[]
-  readonly schedules: string[]
 }
 
 /**

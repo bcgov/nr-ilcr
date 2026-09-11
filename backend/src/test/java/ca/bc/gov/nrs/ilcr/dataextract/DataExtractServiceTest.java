@@ -169,4 +169,77 @@ class DataExtractServiceTest {
     assertThatThrownBy(() -> service.generate(request(" 2020 ", "2021", ONE_MILL, ONE_SCHEDULE)))
         .isInstanceOf(DataExtractUnavailableException.class);
   }
+
+  @Test
+  @DisplayName("an all-digit year too large for an int was SUPPLIED — not required, not compared")
+  void overflowYear_isSuppliedNotMissing() {
+    // The ruling ReportYearGuard makes for the single-year report endpoints (its SUPPLIED_NUMBER
+    // pattern): a caller who typed 99999999999 chose a year, just not an open one. Reporting
+    // "Start Year: Value is required." for it would contradict the guard this service reuses two
+    // lines later (21.1 review P6). No range verdict either — there is nothing to compare.
+    assertThatThrownBy(
+            () -> service.generate(request("99999999999", "2021", ONE_MILL, ONE_SCHEDULE)))
+        .isNotInstanceOf(MultiMessageException.class)
+        .isInstanceOf(DataExtractUnavailableException.class);
+
+    // ...and the openness guard, not the gate, is what answers for it.
+    verify(reportYearGuard).requireOpenYear("99999999999");
+  }
+
+  @Test
+  @DisplayName(
+      "an overflow year still accumulates with the OTHER failures, and adds none of its own")
+  void overflowYear_doesNotJoinTheAccumulatedSet() {
+    MultiMessageException thrown =
+        catchThrowableOfType(
+            MultiMessageException.class,
+            () -> service.generate(request("99999999999", null, List.of(), ONE_SCHEDULE)));
+
+    assertThat(thrown.getMessageKeys())
+        .containsExactly("javax.faces.component.UIInput.REQUIRED", "extractMillsNotSelectedMsg");
+    assertThat(thrown.getMessageArgs(0)).containsExactly("End Year");
+    verify(reportYearGuard, never()).requireOpenYear(anyString());
+  }
+
+  @Test
+  @DisplayName("the validated selection is DISTINCT and stripped of unusable entries (D-R2)")
+  void validatedSelection_isDistinctAndUsable() {
+    // Legacy's checkbox menu could never send a repeat or an empty entry, so there is no message
+    // for either and none is invented: they are simply collapsed before the generator sees them.
+    DataExtractService.ValidatedSelection selection =
+        service.validate(
+            request(
+                "2020",
+                "2021",
+                Arrays.asList(514L, 514L, null, 516L),
+                Arrays.asList("Schedule 7", "", "Schedule 7", "Schedule 1")));
+
+    assertThat(selection.millIds()).containsExactly(514L, 516L);
+    assertThat(selection.schedules()).containsExactly("Schedule 7", "Schedule 1");
+  }
+
+  @Test
+  @DisplayName("an unknown schedule label passes the gate — membership is the generator's concern")
+  void unknownScheduleLabel_isNotRejected() {
+    // D-R2 (2026-09-11): legacy had no membership check; an unknown name matched no builder and
+    // was ignored. The gate asks only whether SOMETHING usable was selected.
+    DataExtractService.ValidatedSelection selection =
+        service.validate(request("2020", "2021", ONE_MILL, List.of("Schedule 12")));
+
+    assertThat(selection.schedules()).containsExactly("Schedule 12");
+  }
+
+  @Test
+  @DisplayName("the 501 seam carries the bundle key and status the handler resolves")
+  void unavailableException_carriesKeyAndStatus() {
+    // GlobalExceptionHandler resolves BusinessException keys with the key itself as the default, so
+    // a mistyped key ships the raw key as `detail` and nothing else fails. Pin both halves here;
+    // the
+    // ITs pin the resolved text.
+    DataExtractUnavailableException seam = new DataExtractUnavailableException();
+
+    assertThat(seam.getStatus()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
+    assertThat(seam.getMessageKey()).isEqualTo("dataExtractUnavailableMsg");
+    assertThat(seam.getMessageArgs()).isNull();
+  }
 }

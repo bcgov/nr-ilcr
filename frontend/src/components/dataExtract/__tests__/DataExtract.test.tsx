@@ -306,6 +306,67 @@ describe('Data Extract — Selected Report Data Summary (AC3)', () => {
     expect(summaryValue('Mills')).not.toContain('AAA Milling')
   })
 
+  test('a mill with no number echoes under its option name, so the summary matches the request', async () => {
+    // Recorded deviation (J): legacy called getMillNumber().toString() on this row and would have
+    // thrown. Dropping the row from the echo instead — the first cut — made a selection of only this
+    // mill read as "nothing selected" while the request carried its id (21.1 review P3).
+    const bodies: unknown[] = []
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, async ({ request }) => {
+        bodies.push(await request.json())
+        return new HttpResponse(null, { status: 501 })
+      }),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+    const listbox = await openPicker(user, /Mills/i)
+    await pick(user, listbox, 'Mill 9003')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => {
+      expect(summaryValue('Mills')).toBe('Mill 9003')
+    })
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect((bodies[0] as { millIds: number[] }).millIds).toEqual([9003])
+  })
+
+  test('two mills sharing a label are selected by IDENTITY — ticking one does not tick both', async () => {
+    // MILL_NUMBER and MILL_NAME are nullable with no uniqueness constraint, so two rows can render
+    // the same "<number> - <name>". The round trip goes by millId, not by display string
+    // (21.1 review P2).
+    const twins = [
+      { millId: 7001, millNumber: '700', millName: 'Twin Milling', millStatusCode: 'ACT' },
+      { millId: 7002, millNumber: '700', millName: 'Twin Milling', millStatusCode: 'ACT' },
+    ]
+    const bodies: unknown[] = []
+    server.use(
+      ...lists(twins),
+      http.post(EXTRACT, async ({ request }) => {
+        bodies.push(await request.json())
+        return new HttpResponse(null, { status: 501 })
+      }),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+    const listbox = await openPicker(user, /Mills/i)
+    const [first] = within(listbox).getAllByRole('option', { name: '700 - Twin Milling' })
+    await user.click(first)
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => {
+      expect(summaryValue('Mills')).toBe('700')
+    })
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+    await waitFor(() => {
+      expect(bodies).toHaveLength(1)
+    })
+    expect((bodies[0] as { millIds: number[] }).millIds).toEqual([7001])
+  })
+
   test('echoes the RAW checked schedule names, never the detail-expanded list', async () => {
     server.use(...lists())
     await renderPage()
@@ -580,6 +641,103 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     })
   })
 
+  test('a 501 from the not-yet-built generator renders its server text as a banner', async () => {
+    // The only non-400 the endpoint answers today. Until this test, nothing asserted what the page
+    // does with it: the banner, the fallback text, or the live region (21.1 review P9).
+    server.use(
+      ...lists(),
+      http.post(
+        EXTRACT,
+        () =>
+          new HttpResponse(
+            JSON.stringify({ status: 501, detail: 'The Data Extract is not yet available.' }),
+            { status: 501, headers: { 'Content-Type': 'application/problem+json' } },
+          ),
+      ),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    const banner = await screen.findByTestId('data-extract-message')
+    expect(banner).toHaveTextContent('Cannot generate')
+    expect(banner).toHaveTextContent('The Data Extract is not yet available.')
+    // Server text, not the client's last-resort fallback.
+    expect(screen.queryByText('Unable to generate the data extract.')).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
+      'The Data Extract is not yet available.',
+    )
+  })
+
+  test('a rejection with no problem body falls back to the client generic', async () => {
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => new HttpResponse(null, { status: 502 })),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    expect(await screen.findByText('Unable to generate the data extract.')).toBeInTheDocument()
+  })
+
+  test('every control is locked while a submit is in flight, and released after', async () => {
+    // Legacy blocked the whole panel with <p:blockUI trigger="generateBtn"> (extractData.xhtml:160).
+    // Without the lock, a picker changed mid-request would clear the messages and the late 400
+    // would then describe a selection no longer on screen (21.1 review P1). The `.finally` release
+    // is asserted too — a stranded lock was the HIGH class of the 7.3 review.
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, async () => {
+        await gate
+        return problem400([{ key: 'extractMillsNotSelectedMsg', text: MILLS_NOT_SELECTED }])
+      }),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    const generate = screen.getByRole('button', { name: 'Generate Report' })
+    const clearButton = screen.getByRole('button', { name: 'Clear' })
+    const controls = () => [
+      screen.getByLabelText('Start Year:'),
+      screen.getByLabelText('End Year:'),
+      screen.getByRole('combobox', { name: /Mills/i }),
+      screen.getByRole('combobox', { name: /Schedules/i }),
+    ]
+    // Positive control: everything is live before the click.
+    for (const control of [...controls(), generate, clearButton]) {
+      expect(control).toBeEnabled()
+    }
+
+    await user.click(generate)
+
+    await waitFor(() => {
+      expect(generate).toBeDisabled()
+    })
+    for (const control of [...controls(), clearButton]) {
+      expect(control).toBeDisabled()
+    }
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
+      'Generating the data extract.',
+    )
+
+    release()
+
+    expect(await screen.findByText(MILLS_NOT_SELECTED)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(generate).toBeEnabled()
+    })
+    for (const control of [...controls(), clearButton]) {
+      expect(control).toBeEnabled()
+    }
+  })
+
   test('a page-lifetime live region announces the submit outcome', async () => {
     server.use(
       ...lists(),
@@ -623,6 +781,61 @@ describe('Data Extract — list load failures', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Start Year:')).toHaveValue('2021')
     })
+  })
+
+  test('a failed reporting-years list surfaces the server detail and leaves the mills usable', async () => {
+    // The twin of the mills case above; until this test only one of the two load paths was covered
+    // (21.1 review P9).
+    server.use(
+      http.get(MILLS, () => HttpResponse.json(MILLS_THREE)),
+      http.get(
+        YEARS,
+        () =>
+          new HttpResponse(JSON.stringify({ status: 500, detail: 'Years unavailable.' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/problem+json' },
+          }),
+      ),
+    )
+    render(<DataExtract />)
+    const user = userEvent.setup()
+
+    expect(await screen.findByText('Years unavailable.')).toBeInTheDocument()
+    // Both year pickers stay on their placeholder — no year is invented.
+    expect(screen.getByLabelText('Start Year:')).toHaveValue('')
+    expect(screen.getByLabelText('End Year:')).toHaveValue('')
+    // The other list still loaded.
+    const listbox = await openPicker(user, /Mills/i)
+    expect(within(listbox).getByRole('option', { name: '514 - AAA Milling' })).toBeInTheDocument()
+  })
+
+  test('a failure with no problem body falls back to the client generic for that list', async () => {
+    server.use(
+      http.get(MILLS, () => HttpResponse.json(MILLS_THREE)),
+      http.get(YEARS, () => new HttpResponse(null, { status: 503 })),
+    )
+    render(<DataExtract />)
+
+    expect(await screen.findByText('Unable to load the reporting years.')).toBeInTheDocument()
+  })
+
+  test('both lists failing with the SAME detail render ONE banner, not two', async () => {
+    // One gateway answering for both lookups produces identical problem bodies; the banners are
+    // keyed by their text, so the second must not duplicate the first (21.1 review P4).
+    const outage = () =>
+      new HttpResponse(JSON.stringify({ status: 502, detail: 'Upstream unavailable.' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/problem+json' },
+      })
+    server.use(http.get(MILLS, outage), http.get(YEARS, outage))
+    render(<DataExtract />)
+
+    expect(await screen.findByText('Upstream unavailable.')).toBeInTheDocument()
+    // Settle: give the second failure every chance to land before counting.
+    await waitFor(() => {
+      expect(screen.getAllByText('Upstream unavailable.')).toHaveLength(1)
+    })
+    expect(screen.getAllByText('Upstream unavailable.')).toHaveLength(1)
   })
 
   test('no opened reporting year leaves both year pickers empty rather than defaulted', async () => {

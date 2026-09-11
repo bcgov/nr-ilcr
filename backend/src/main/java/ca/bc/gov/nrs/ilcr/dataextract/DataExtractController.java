@@ -13,9 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
  * holds no business rules — the selection gate belongs to {@link DataExtractService}.
  *
  * <p>Gated on the extract's OWN capability rather than the reports area's. Legacy derived this
- * page's WebADE action from its view id, giving it an {@code extractData} action distinct from the
- * {@code generateReports} action that rendered the submenu, so the rebuild gives it its own action
- * too. Authorization names the capability, never the control or the menu (AD-7).
+ * page's WebADE action from its view id (the postback key was {@code extractData/Generate Report}),
+ * distinct from the {@code generateReports} action that rendered the submenu — the menu item itself
+ * carried no action of its own — so the rebuild gives the page its own action too (D2).
+ * Authorization names the capability, never the control or the menu (AD-7).
  *
  * <p>No {@code MessageSource} is wired in: every response this endpoint produces today is an error,
  * and {@code GlobalExceptionHandler} resolves those keys itself. The story that adds the CSV adds

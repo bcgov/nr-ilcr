@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,16 @@ public class DataExtractService {
 
   private static final String LABEL_END_YEAR = "End Year";
 
+  /**
+   * An all-digit value, optionally signed — a year that WAS supplied, whatever its magnitude. The
+   * same ruling {@link ReportYearGuard} makes for the single-year report endpoints: {@code
+   * 99999999999} overflows an int and so fails {@code Integer.valueOf} exactly like {@code
+   * "not-a-year"}, but the caller demonstrably typed a number, and answering "Value is required"
+   * for it is the confusion that guard's two-message split exists to prevent. Such a value skips
+   * the required message and the range check here and is refused by the guard after the gate.
+   */
+  private static final Pattern SUPPLIED_NUMBER = Pattern.compile("[+-]?\\d+");
+
   private final ReportYearGuard reportYearGuard;
 
   /**
@@ -81,31 +92,36 @@ public class DataExtractService {
    * It needs two parseable years, so it is mutually exclusive with the two required-year messages
    * and can never join them — treating a blank year as zero would invent a range failure legacy
    * never reported (its own {@code parseInt} was unguarded and threw instead).
+   *
+   * @return the selection the generator will consume: both years as ints, both lists distinct and
+   *     stripped of unusable entries — the "validated parameter object" the CSV story builds on
    */
-  private void validate(DataExtractRequest request) {
+  ValidatedSelection validate(DataExtractRequest request) {
     List<String> keys = new ArrayList<>();
     List<Object[]> arguments = new ArrayList<>();
 
-    Integer startYear = parseYear(request.startYear());
-    Integer endYear = parseYear(request.endYear());
+    YearValue startYear = parseYear(request.startYear());
+    YearValue endYear = parseYear(request.endYear());
 
-    if (startYear == null) {
+    if (startYear.missing()) {
       keys.add(MSG_FIELD_REQUIRED);
       arguments.add(new Object[] {LABEL_START_YEAR});
     }
-    if (endYear == null) {
+    if (endYear.missing()) {
       keys.add(MSG_FIELD_REQUIRED);
       arguments.add(new Object[] {LABEL_END_YEAR});
     }
-    if (nothingSelected(request.millIds())) {
+    List<Long> millIds = distinctUsable(request.millIds());
+    if (millIds.isEmpty()) {
       keys.add(MSG_MILLS_NOT_SELECTED);
       arguments.add(null);
     }
-    if (nothingSelected(request.schedules())) {
+    List<String> schedules = distinctUsable(request.schedules());
+    if (schedules.isEmpty()) {
       keys.add(MSG_SCHEDULES_NOT_SELECTED);
       arguments.add(null);
     }
-    if (startYear != null && endYear != null && startYear > endYear) {
+    if (startYear.year() != null && endYear.year() != null && startYear.year() > endYear.year()) {
       keys.add(MSG_YEAR_RANGE);
       arguments.add(null);
     }
@@ -119,32 +135,46 @@ public class DataExtractService {
     // above. Unreachable through the UI — both pickers list opened periods only — but a plain JSON
     // body has no such guarantee, and without this an unopened year would reach the generator and
     // surface as an unhandled error, reading as a system fault rather than a bad selection.
-    reportYearGuard.requireOpenYear(request.startYear());
-    reportYearGuard.requireOpenYear(request.endYear());
+    //
+    // Deliberately NOT accumulating (review D-R1, 2026-09-11): the guard reports the FIRST unopened
+    // year only, with the shipped "Report Year" text that names neither picker. Legacy had no
+    // server-side openness check at all — its dropdown of opened periods was the whole guard — so
+    // the minimal addition is the legacy-closest one. Recorded as deviation (I).
+    int start = reportYearGuard.requireOpenYear(request.startYear());
+    int end = reportYearGuard.requireOpenYear(request.endYear());
+    return new ValidatedSelection(start, end, millIds, schedules);
   }
 
   /**
    * Absent, blank and non-numeric all collapse to "no year was chosen" — the legacy control was a
-   * dropdown of opened periods, so anything that is not a year means nothing was picked.
+   * dropdown of opened periods, so anything that is not a year means nothing was picked. An
+   * all-digit value too large for an int is the one exception: it WAS supplied, so it is neither
+   * missing nor comparable, and is left for the openness guard to refuse.
    */
-  private static Integer parseYear(String value) {
+  private static YearValue parseYear(String value) {
     if (value == null || value.isBlank()) {
-      return null;
+      return YearValue.MISSING;
     }
+    String supplied = value.trim();
     try {
-      return Integer.valueOf(value.trim());
+      return new YearValue(Integer.valueOf(supplied), false);
     } catch (NumberFormatException e) {
-      return null;
+      return SUPPLIED_NUMBER.matcher(supplied).matches() ? YearValue.SUPPLIED : YearValue.MISSING;
     }
   }
 
   /**
-   * Whether a picker carries no usable selection. Null and empty are the obvious cases; a list
-   * holding only nulls or blank strings is counted as empty too, so a client sending {@code [""]}
-   * cannot slip an empty selection past the gate and reach the generator with nothing to extract.
+   * The usable entries of a picker's selection, in first-seen order and without repeats. Null and
+   * blank entries are dropped, so a client sending {@code [""]} cannot slip an empty selection past
+   * the gate and reach the generator with nothing to extract; repeats are collapsed so a doubled id
+   * cannot double the rows the generator produces (review D-R2 — legacy's checkbox menu could send
+   * neither, so no message exists for either and none is invented).
    */
-  private static boolean nothingSelected(Collection<?> selection) {
-    return selection == null || selection.stream().noneMatch(DataExtractService::isUsable);
+  private static <T> List<T> distinctUsable(Collection<T> selection) {
+    if (selection == null) {
+      return List.of();
+    }
+    return selection.stream().filter(DataExtractService::isUsable).distinct().toList();
   }
 
   private static boolean isUsable(Object value) {
@@ -153,4 +183,27 @@ public class DataExtractService {
     }
     return !(value instanceof CharSequence text) || !text.toString().isBlank();
   }
+
+  /**
+   * A parsed year picker value: {@code year} when comparable, else whether the field was blank
+   * ({@code missing}) or held a number too large to compare (supplied but not missing).
+   */
+  private record YearValue(Integer year, boolean missing) {
+    static final YearValue MISSING = new YearValue(null, true);
+    static final YearValue SUPPLIED = new YearValue(null, false);
+  }
+
+  /**
+   * A selection that passed the whole gate, in the shape the generator consumes. Pinned here so the
+   * CSV story extends this record rather than re-reading the raw request.
+   *
+   * @param startYear the opened start reporting year
+   * @param endYear the opened end reporting year, {@code >= startYear}
+   * @param millIds the distinct selected mill ids, in request order
+   * @param schedules the distinct selected picker labels, in request order — membership in the
+   *     eleven names is the generator's concern: an unknown label matches no schedule and is
+   *     ignored, as legacy's builder lookup would have done (review D-R2)
+   */
+  record ValidatedSelection(
+      int startYear, int endYear, List<Long> millIds, List<String> schedules) {}
 }
