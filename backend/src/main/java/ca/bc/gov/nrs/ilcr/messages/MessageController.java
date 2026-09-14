@@ -47,11 +47,16 @@ public class MessageController implements MessageApi {
    * static confirmation sentence, not admin data; {@code MAINTAIN_MILLS} still guards the import
    * itself.
    *
+   * <p>{@code dataExtractedSuccesfullyInfoMsg} is the Data Extract's success line. The request that
+   * succeeds answers with the CSV file itself, so there is no JSON body to carry the sentence on;
+   * legacy queued it after streaming and never rendered it at all. Same gate as the others: a
+   * static sentence, not admin data, and both roles hold {@code VIEW_SCHEDULE}.
+   *
    * <p>Add a key only when a client must render it with no request behind it. If a request DOES
    * produce the text, put it on that response instead.
    */
   private static final Set<String> CLIENT_RENDERABLE_KEYS =
-      Set.of("sch5.copy.msg", "confirmImportMill");
+      Set.of("sch5.copy.msg", "confirmImportMill", "dataExtractedSuccesfullyInfoMsg");
 
   private final MessageSource messageSource;
 

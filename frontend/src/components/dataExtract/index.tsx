@@ -5,8 +5,10 @@ import { Reset } from '@carbon/icons-react'
 import apiService from '@/service/api-service'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import { extractDetail, extractMessages } from '@/utils/error'
+import { extractDetail } from '@/utils/error'
+import { extractBlobMessages, triggerDownload } from '@/utils/download'
 import type MillSummary from '@/interfaces/MillSummary'
+import type { MessageInfo } from '@/interfaces/Schedule1Response'
 import type ReportingYear from '@/interfaces/ReportingYear'
 import {
   buildExtractRequest,
@@ -21,10 +23,41 @@ const api = () => apiService.getAxiosInstance()
 const MILLS_PATH = '/v1/mills'
 const YEARS_PATH = '/v1/reporting-years'
 const EXTRACT_PATH = '/v1/reports/data-extract'
+const MESSAGES_PATH = '/v1/messages'
 
 const MILLS_FAILED = 'Unable to load the mills.'
 const YEARS_FAILED = 'Unable to load the reporting years.'
 const EXTRACT_FAILED = 'Unable to generate the data extract.'
+
+/**
+ * SUC-001. Legacy queued this sentence after it had already streamed the file, so RENDER_RESPONSE
+ * never ran and no user ever saw it; the rebuild shows it. Its text comes from the server bundle
+ * through the allowlisted messages endpoint, never from a literal here — a page hardcoding a server
+ * string is a recorded defect on this project. The misspelled key is legacy's own.
+ */
+const SUCCESS_KEY = 'dataExtractedSuccesfullyInfoMsg'
+
+/**
+ * The one permitted client literal, and only as the last resort: it mirrors a bundle key that DOES
+ * exist, and is reached solely when the lookup itself fails. A generated file with a silent page
+ * would be worse than a mirrored sentence.
+ */
+const SUCCESS_FALLBACK = 'Data extraction successfully.'
+
+/**
+ * `dataExtract<yyyyMMdd>.csv`, built HERE from the browser clock rather than parsed off the
+ * response's `Content-Disposition` — the idiom both shipped download pages already follow. The
+ * backend derives the identical name from the same rule on its own clock (pinned to Pacific time,
+ * as legacy's server was), so the two agree except for a request that crosses local midnight.
+ */
+const extractFilename = (now: Date): string => {
+  const parts = [
+    String(now.getFullYear()),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ]
+  return `dataExtract${parts.join('')}.csv`
+}
 
 /**
  * The select-all row. Carbon recognises it by the presence of the `isSelectAll` key, lifts it out of
@@ -91,6 +124,13 @@ const DataExtract: FC = () => {
   const [loadErrors, setLoadErrors] = useState<readonly string[]>([])
   const [messages, setMessages] = useState<readonly string[]>([])
   const [busy, setBusy] = useState(false)
+  /**
+   * Whether the last submit produced a file. Separate from `successText`, which is the sentence to
+   * show and is fetched once on mount: the banner must appear only after a download, not because
+   * the lookup resolved.
+   */
+  const [generated, setGenerated] = useState(false)
+  const [successText, setSuccessText] = useState(SUCCESS_FALLBACK)
   /**
    * The polite live-region text for a submit outcome. A separate channel from `messages`, which
    * paints the visible banners: a freshly mounted notification is not reliably announced, so the
@@ -164,6 +204,25 @@ const DataExtract: FC = () => {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    api()
+      .get<MessageInfo>(MESSAGES_PATH, { params: { key: SUCCESS_KEY } })
+      .then((response) => {
+        if (active && response.data.text) {
+          setSuccessText(response.data.text)
+        }
+      })
+      .catch(() => {
+        // Deliberately silent, and NOT a load-error banner: the page is fully usable without this
+        // sentence, and the state already holds the mirrored fallback. Announcing a failed lookup
+        // for a confirmation the administrator has not yet earned would be noise.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const millItems: PickerItem[] = [
     SELECT_ALL,
     ...mills.map((mill) => ({ label: millOptionLabel(mill), millId: mill.millId })),
@@ -192,6 +251,9 @@ const DataExtract: FC = () => {
   const changed = () => {
     setMessages([])
     setStatus('')
+    // The success banner describes a file built from a selection that has now moved, so it goes the
+    // same way the refusals do. The downloaded file is untouched — only the claim on screen goes.
+    setGenerated(false)
   }
 
   const changeStartYear = (value: string) => {
@@ -239,6 +301,7 @@ const DataExtract: FC = () => {
     // messages that come back always describe the selection still on screen.
     setBusy(true)
     setMessages([])
+    setGenerated(false)
     setStatus('Generating the data extract.')
     api()
       .post(
@@ -249,20 +312,29 @@ const DataExtract: FC = () => {
           mills: selectedMillsInOptionOrder,
           schedules: selectedSchedulesInOptionOrder,
         }),
+        // A success IS the file. An error body arrives as a Blob for the same reason, which is why
+        // the catch below reads it through extractBlobMessages rather than extractMessages.
+        { responseType: 'blob' },
       )
-      .then(() => {
-        // No success copy here (recorded deviation (C)): the CSV story owns what — if anything — is
-        // said when a file is produced. Legacy's own SUC-001 was never visible. Silence, not an
-        // invented sentence.
-        if (mountedRef.current) {
-          setStatus('')
-        }
-      })
-      .catch((cause: unknown) => {
+      .then((response) => {
+        // A page the administrator has already left must not have a file dropped on it, the same
+        // call the Print Schedules download makes when its context has moved on.
         if (!mountedRef.current) {
           return
         }
-        const texts = extractMessages(cause, EXTRACT_FAILED)
+        // Saved INSIDE .then, not deferred past it: `busy` releases in .finally, so deferring the
+        // download would drop the panel lock while the file was still being handed to the browser.
+        triggerDownload(response.data as Blob, extractFilename(new Date()))
+        setGenerated(true)
+        setStatus(`The data extract has been generated. ${successText}`)
+      })
+      .catch(async (cause: unknown) => {
+        // Every refusal, not just the first: the 400 gate reports all of them together, and that
+        // accumulation is the whole point of the screen.
+        const texts = await extractBlobMessages(cause, EXTRACT_FAILED)
+        if (!mountedRef.current) {
+          return
+        }
         setMessages(texts)
         setStatus(`The data extract could not be generated. ${texts.join(' ')}`)
       })
@@ -289,6 +361,16 @@ const DataExtract: FC = () => {
         {loadErrors.map((message) => (
           <NotificationColumn key={message} kind="error" title="Error" subtitle={message} />
         ))}
+        {generated && (
+          // Severity carried by BOTH the kind and the title word, never colour alone — and the
+          // title is a word, not a restatement of the sentence below it.
+          <NotificationColumn
+            kind="success"
+            title="Generated"
+            subtitle={successText}
+            testId="data-extract-success"
+          />
+        )}
         {messages.map((message) => (
           // One banner per message, each a direct child of the page Grid because NotificationColumn
           // IS a Column. Keys are safe: extractMessages deduplicates.

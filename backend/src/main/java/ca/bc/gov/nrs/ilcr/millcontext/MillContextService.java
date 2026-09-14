@@ -6,6 +6,7 @@ import ca.bc.gov.nrs.ilcr.exception.FieldValuesRequiredException;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.StatusDates;
 import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository.TrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillYearTrackCodes;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.ReportingYear;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatus;
 import ca.bc.gov.nrs.ilcr.millcontext.dto.TrackStatusCodes;
@@ -452,5 +453,38 @@ public class MillContextService {
     return repository
         .findTrackStatusCodes(millId, year)
         .map(codes -> new TrackStatusCodes(codes.schedules1To10Code(), codes.schedule11Code()));
+  }
+
+  /**
+   * BOTH tracks' status codes for MANY mills across a year range in one read — the bulk shape for
+   * the Data Extract, whose "Data Verified" line is a verdict over every (mill, year) pair in the
+   * selection at once. Same owner, same columns as {@link #findTrackStatusCodes(long, int)}; only
+   * the fan-out differs. A pair with no status row is absent from the result.
+   *
+   * @param millIds the mills to read; an empty list reads nothing
+   * @param fromYear the first reporting year, inclusive
+   * @param toYear the last reporting year, inclusive
+   * @return the rows found, mill id then year ascending
+   */
+  public List<MillYearTrackCodes> findTrackStatusCodes(
+      List<Long> millIds, int fromYear, int toYear) {
+    if (millIds == null || millIds.isEmpty()) {
+      return List.of();
+    }
+    return repository.findTrackStatusCodes(millIds, fromYear, toYear);
+  }
+
+  /**
+   * The display description of a report-status code ({@code Draft}, {@code Submitted}, {@code
+   * Verified}, {@code Opened}) from the shared code table, or empty for an unknown code.
+   *
+   * @param code the one-letter status code
+   * @return the description, or empty
+   */
+  public Optional<String> findStatusDescription(String code) {
+    if (code == null) {
+      return Optional.empty();
+    }
+    return repository.findStatusDescription(code);
   }
 }

@@ -162,6 +162,25 @@ sense against this directory, `mvn clean` before believing it.
    | Editability matrix (16.1) | **734–736**     | `R__50`; the admin-write positive arm         |
    | Editability matrix, per-schedule | **737–746** | `R__51`; the admin-write arm on Schedules 1/2/3/4/6/7A/7B/8/9/10 |
    | Mill administration       | **750–756**     | `R__75`; 750/756 have NO status xref, 752 carries the one active assignment |
+   | Data Extract CSV          | **760–762**     | `R__60`; summaries `1300–1399`, cost-report details `9000–9099`. **Report year 2020 only** — see below |
+
+   **Data Extract CSV (`R__60`, UC-EXT-001)** — three mills whose two status tracks disagree in the
+   three ways the "Data Verified" rule has to tell apart: `760` is `V`/`V`, `761` is `V`/`D` and
+   `762` is `S`/`V`, so a selection naming Schedules 1–10 and one also naming Schedule 11 reach
+   different verdicts on the same mills. `760` carries a Schedule 1 **and** a Schedule 3 summary;
+   `761` carries a Schedule 1 and a Schedule 2 summary and deliberately **no** Schedule 3, which is
+   the `*** NO SCHEDULE 3 ***` sentinel case; `762` carries no schedule data at all, so a
+   whole-schedule no-data marker is reachable while other mills in the same selection still have
+   rows. Mill NUMBERs are out of mill-id order on purpose (7620/7600/7610), because the title block
+   renders numbers while section rows are ordered by id.
+
+   **Every row in `R__60` is report year 2020, and that is load-bearing.** `MillReportStatusIT`
+   asserts the 2021 `ILCR_MILL_REPORT_STATUS` rows are exactly five *and* names them in order
+   (`contains(514, 730, 731, 732, 733)`), so a 2021 row here would fail two assertions in another
+   area. The second year of a multi-year extract selection is therefore a year with no status row and
+   no data — which is itself three of the cases under test: the verbatim `** NO STATUS **` cell, a
+   missing status row forcing `Data Verified: No`, and the combined Schedule 1+2 layout emitting no
+   mini-table header for a year with no rows.
 
    **Mill administration (`R__75`, UC-MILL-001)** — the maintain-mills surface needs four shapes this
    snapshot could not otherwise supply. `750` and `756` are ministry mills with **no**

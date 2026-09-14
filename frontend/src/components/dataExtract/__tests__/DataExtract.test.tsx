@@ -3,6 +3,20 @@ import { render, screen, waitFor, within } from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 import DataExtract from '@/components/dataExtract'
+import { triggerDownload } from '@/utils/download'
+import type * as DownloadUtil from '@/utils/download'
+
+// Keep the real extractBlobMessages — the blob error path is one of the things under test here, and
+// mocking it would make the accumulating-400-through-a-Blob assertion vacuous. Spy only on the
+// download side effect, which jsdom cannot perform.
+vi.mock('@/utils/download', async (importOriginal) => ({
+  ...(await importOriginal<typeof DownloadUtil>()),
+  triggerDownload: vi.fn(),
+}))
+
+beforeEach(() => {
+  vi.mocked(triggerDownload).mockReset()
+})
 
 // jsdom lacks scrollIntoView; Carbon's list-box components call it on the highlighted option
 // whenever a menu opens. Same shim as the Home suite.
@@ -11,6 +25,7 @@ window.HTMLElement.prototype.scrollIntoView = () => {}
 const MILLS = 'http://localhost:3000/api/v1/mills'
 const YEARS = 'http://localhost:3000/api/v1/reporting-years'
 const EXTRACT = 'http://localhost:3000/api/v1/reports/data-extract'
+const MESSAGES = 'http://localhost:3000/api/v1/messages'
 
 // The ids are deliberately NOT in the same order as the mill numbers, so an assertion on the
 // rendered order proves the page preserves the SERVER's ordering rather than accidentally agreeing
@@ -36,9 +51,36 @@ const problem400 = (messages: { key: string; text: string }[]) =>
     { status: 400, headers: { 'Content-Type': 'application/problem+json' } },
   )
 
+/**
+ * A successful extract: the CSV file itself.
+ *
+ * `arrayBuffer`, not a `Blob` body — this MSW build coerces a Blob to its string form, so a Blob
+ * fixture would deliver the twelve bytes of "[object Blob]" and every download assertion would pass
+ * on nothing (the same trap the Print Schedules suite documents).
+ */
+const csvResponse = (body = '"ILCR"\n"*** END OF REPORT ***"\n') =>
+  HttpResponse.arrayBuffer(new TextEncoder().encode(body).buffer as ArrayBuffer, {
+    headers: { 'Content-Type': 'application/csv; charset=UTF-8' },
+  })
+
+/** The allowlisted SUC-001 lookup. Deliberately NOT the bundle's real text — see the test below. */
+const SERVER_SUCCESS_TEXT = 'Server-owned extraction confirmation.'
+
+const messageStub = (text: string | null = SERVER_SUCCESS_TEXT) =>
+  http.get(MESSAGES, ({ request }) => {
+    const key = new URL(request.url).searchParams.get('key')
+    if (key !== 'dataExtractedSuccesfullyInfoMsg') {
+      return new HttpResponse(null, { status: 404 })
+    }
+    return text === null
+      ? new HttpResponse(null, { status: 500 })
+      : HttpResponse.json({ key, text })
+  })
+
 const lists = (mills: unknown[] = MILLS_THREE, years: unknown[] = YEARS_THREE) => [
   http.get(MILLS, () => HttpResponse.json(mills)),
   http.get(YEARS, () => HttpResponse.json(years)),
+  messageStub(),
 ]
 
 /** The Selected Report Data Summary row for a label, as rendered text. */
@@ -315,7 +357,7 @@ describe('Data Extract — Selected Report Data Summary (AC3)', () => {
       ...lists(),
       http.post(EXTRACT, async ({ request }) => {
         bodies.push(await request.json())
-        return new HttpResponse(null, { status: 501 })
+        return csvResponse()
       }),
     )
     await renderPage()
@@ -347,7 +389,7 @@ describe('Data Extract — Selected Report Data Summary (AC3)', () => {
       ...lists(twins),
       http.post(EXTRACT, async ({ request }) => {
         bodies.push(await request.json())
-        return new HttpResponse(null, { status: 501 })
+        return csvResponse()
       }),
     )
     await renderPage()
@@ -611,7 +653,7 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
       ...lists(),
       http.post(EXTRACT, async ({ request }) => {
         bodies.push(await request.json())
-        return new HttpResponse(null, { status: 501 })
+        return csvResponse()
       }),
     )
     await renderPage()
@@ -641,17 +683,103 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     })
   })
 
-  test('a 501 from the not-yet-built generator renders its server text as a banner', async () => {
-    // The only non-400 the endpoint answers today. Until this test, nothing asserted what the page
-    // does with it: the banner, the fallback text, or the live region (21.1 review P9).
+  test('downloads the body as dataExtract<yyyyMMdd>.csv and confirms with the server sentence', async () => {
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    await waitFor(() => {
+      expect(vi.mocked(triggerDownload)).toHaveBeenCalledTimes(1)
+    })
+    const [blob, filename] = vi.mocked(triggerDownload).mock.calls[0]
+    expect(blob).toBeInstanceOf(Blob)
+    // Matched by shape, not against a frozen literal: the name carries today's date, and fake timers
+    // were abandoned on this project. The eight digits are what the contract actually pins.
+    expect(filename).toMatch(/^dataExtract\d{8}\.csv$/)
+    // And it agrees with the browser clock the page read it from.
+    const today = new Date()
+    const expected = `${String(today.getFullYear())}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+    expect(filename).toBe(`dataExtract${expected}.csv`)
+
+    const banner = await screen.findByTestId('data-extract-success')
+    expect(banner).toHaveTextContent('Generated')
+    expect(banner).toHaveTextContent(SERVER_SUCCESS_TEXT)
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
+      `The data extract has been generated. ${SERVER_SUCCESS_TEXT}`,
+    )
+  })
+
+  test('renders SUC-001 from the server bundle, never a client literal', async () => {
+    // The proof, not a tautology: the stub serves text that is NOT the bundle's real sentence, so a
+    // page that hardcoded "Data extraction successfully." would render the wrong string and fail.
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    expect(await screen.findByText(SERVER_SUCCESS_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText('Data extraction successfully.')).not.toBeInTheDocument()
+  })
+
+  test('falls back to the mirrored literal only when the message lookup itself fails', async () => {
+    server.use(
+      http.get(MILLS, () => HttpResponse.json(MILLS_THREE)),
+      http.get(YEARS, () => HttpResponse.json(YEARS_THREE)),
+      messageStub(null),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    expect(await screen.findByText('Data extraction successfully.')).toBeInTheDocument()
+    // A failed lookup for a not-yet-earned confirmation is not itself an error worth a banner.
+    expect(screen.queryByText(/Unable to load/)).not.toBeInTheDocument()
+  })
+
+  test('the success banner clears on any selection change', async () => {
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+    expect(await screen.findByTestId('data-extract-success')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Start Year:'), '2020')
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('data-extract-success')).not.toBeInTheDocument()
+    })
+    // The live region is cleared too — a stale announcement outlives a stale banner otherwise.
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toBeEmptyDOMElement()
+  })
+
+  test('a 500 blob body renders its detail and saves no file', async () => {
     server.use(
       ...lists(),
       http.post(
         EXTRACT,
         () =>
           new HttpResponse(
-            JSON.stringify({ status: 501, detail: 'The Data Extract is not yet available.' }),
-            { status: 501, headers: { 'Content-Type': 'application/problem+json' } },
+            JSON.stringify({
+              status: 500,
+              detail:
+                'ILCR has found an unhandled error/exception. Please refer to application log files.',
+            }),
+            { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
           ),
       ),
     )
@@ -662,12 +790,75 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
 
     const banner = await screen.findByTestId('data-extract-message')
     expect(banner).toHaveTextContent('Cannot generate')
-    expect(banner).toHaveTextContent('The Data Extract is not yet available.')
+    expect(banner).toHaveTextContent(
+      'ILCR has found an unhandled error/exception. Please refer to application log files.',
+    )
+    expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('data-extract-success')).not.toBeInTheDocument()
     // Server text, not the client's last-resort fallback.
     expect(screen.queryByText('Unable to generate the data extract.')).not.toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
-      'The Data Extract is not yet available.',
+  })
+
+  test('a 400 blob body still renders EVERY message, not just its detail', async () => {
+    // The extractBlobMessages proof. extractBlobDetail would have collapsed these four refusals to
+    // the single joined `detail`, silently undoing the whole point of the accumulating gate.
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () =>
+        problem400([
+          { key: 'startYear', text: START_REQUIRED },
+          { key: 'endYear', text: END_REQUIRED },
+          { key: 'mills', text: MILLS_NOT_SELECTED },
+          { key: 'schedules', text: SCHEDULES_NOT_SELECTED },
+        ]),
+      ),
     )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('data-extract-message')).toHaveLength(4)
+    })
+    for (const text of [START_REQUIRED, END_REQUIRED, MILLS_NOT_SELECTED, SCHEDULES_NOT_SELECTED]) {
+      expect(screen.getByText(text)).toBeInTheDocument()
+    }
+    expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
+  })
+
+  test('the busy lock holds until the download has been handed over', async () => {
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, async () => {
+        await held
+        return csvResponse()
+      }),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+    const generate = screen.getByRole('button', { name: 'Generate Report' })
+
+    await user.click(generate)
+
+    // Every control is disabled while the request is in flight — legacy blocked the whole panel.
+    await waitFor(() => {
+      expect(generate).toBeDisabled()
+    })
+    expect(screen.getByRole('button', { name: /Clear/ })).toBeDisabled()
+    expect(vi.mocked(triggerDownload)).not.toHaveBeenCalled()
+
+    release?.()
+
+    await waitFor(() => {
+      expect(generate).toBeEnabled()
+    })
+    // The lock outlived the save, rather than the save outliving the lock.
+    expect(vi.mocked(triggerDownload)).toHaveBeenCalledTimes(1)
   })
 
   test('a rejection with no problem body falls back to the client generic', async () => {
@@ -764,6 +955,7 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
 describe('Data Extract — list load failures', () => {
   test('a failed mill list surfaces the server detail and leaves the page usable', async () => {
     server.use(
+      messageStub(),
       http.get(YEARS, () => HttpResponse.json(YEARS_THREE)),
       http.get(
         MILLS,
@@ -787,6 +979,7 @@ describe('Data Extract — list load failures', () => {
     // The twin of the mills case above; until this test only one of the two load paths was covered
     // (21.1 review P9).
     server.use(
+      messageStub(),
       http.get(MILLS, () => HttpResponse.json(MILLS_THREE)),
       http.get(
         YEARS,
@@ -811,6 +1004,7 @@ describe('Data Extract — list load failures', () => {
 
   test('a failure with no problem body falls back to the client generic for that list', async () => {
     server.use(
+      messageStub(),
       http.get(MILLS, () => HttpResponse.json(MILLS_THREE)),
       http.get(YEARS, () => new HttpResponse(null, { status: 503 })),
     )
@@ -827,7 +1021,7 @@ describe('Data Extract — list load failures', () => {
         status: 502,
         headers: { 'Content-Type': 'application/problem+json' },
       })
-    server.use(http.get(MILLS, outage), http.get(YEARS, outage))
+    server.use(messageStub(), http.get(MILLS, outage), http.get(YEARS, outage))
     render(<DataExtract />)
 
     expect(await screen.findByText('Upstream unavailable.')).toBeInTheDocument()

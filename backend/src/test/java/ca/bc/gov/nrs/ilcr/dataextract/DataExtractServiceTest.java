@@ -3,30 +3,40 @@ package ca.bc.gov.nrs.ilcr.dataextract;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import ca.bc.gov.nrs.ilcr.dataextract.csv.DataExtractGenerator;
 import ca.bc.gov.nrs.ilcr.dataextract.dto.DataExtractRequest;
 import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
+import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
 import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
+import ca.bc.gov.nrs.ilcr.reporting.SpoolFailedException;
+import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 /**
- * Unit tests for the accumulation itself — the part of the gate that has no database in it.
+ * Unit tests for the accumulation itself — the part of the gate that has no database in it — and
+ * for the seam onto the generator.
  *
- * <p>The ITs prove the wire shape; these prove the two properties that are easy to break without
- * failing a wire assertion: that the accumulator collects rather than short-circuits, and that each
- * key travels with its OWN arguments. The second matters because the two blank-year messages share
- * one bundle key and differ only by their label argument — an off-by-one in the argument list would
+ * <p>The ITs prove the wire shape; these prove the properties that are easy to break without
+ * failing a wire assertion: that the accumulator collects rather than short-circuits, that each key
+ * travels with its OWN arguments, and that a valid selection reaches the generator as ints and
+ * distinct lists. The argument property matters because the two blank-year messages share one
+ * bundle key and differ only by their label argument — an off-by-one in the argument list would
  * render "Start Year" twice and still look like a plausible response.
  */
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +44,7 @@ import org.springframework.http.HttpStatus;
 class DataExtractServiceTest {
 
   @Mock private ReportYearGuard reportYearGuard;
+  @Mock private DataExtractGenerator generator;
 
   @InjectMocks private DataExtractService service;
 
@@ -45,15 +56,28 @@ class DataExtractServiceTest {
   private static final List<Long> ONE_MILL = List.of(514L);
   private static final List<String> ONE_SCHEDULE = List.of("Schedule 1");
 
+  private void yearsOpen() {
+    when(reportYearGuard.requireOpenYear(anyString()))
+        .thenAnswer(invocation -> Integer.parseInt(invocation.getArgument(0, String.class).trim()));
+  }
+
   @Test
-  @DisplayName("a valid selection reaches the generator seam, not a rejection")
-  void validSelection_reachesTheGeneratorSeam() {
-    assertThatThrownBy(() -> service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE)))
-        .isInstanceOf(DataExtractUnavailableException.class);
+  @DisplayName("a valid selection reaches the generator as ints, and its file comes back")
+  void validSelection_reachesTheGenerator() {
+    yearsOpen();
+    SpooledFile file = mock(SpooledFile.class);
+    when(generator.generate(any())).thenReturn(file);
+
+    assertThat(service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE))).isSameAs(file);
 
     // The openness guard runs on BOTH years, and only after the gate passed.
     verify(reportYearGuard).requireOpenYear("2020");
     verify(reportYearGuard).requireOpenYear("2021");
+    ArgumentCaptor<ValidatedSelection> selection =
+        ArgumentCaptor.forClass(ValidatedSelection.class);
+    verify(generator).generate(selection.capture());
+    assertThat(selection.getValue())
+        .isEqualTo(new ValidatedSelection(2020, 2021, ONE_MILL, ONE_SCHEDULE));
   }
 
   @Test
@@ -65,6 +89,7 @@ class DataExtractServiceTest {
         .isInstanceOf(MultiMessageException.class);
 
     verify(reportYearGuard, never()).requireOpenYear(anyString());
+    verify(generator, never()).generate(any());
   }
 
   @Test
@@ -111,8 +136,9 @@ class DataExtractServiceTest {
   @Test
   @DisplayName("start == end passes; only start > end is a range failure")
   void startEqualToEnd_isNotARangeFailure() {
-    assertThatThrownBy(() -> service.generate(request("2021", "2021", ONE_MILL, ONE_SCHEDULE)))
-        .isInstanceOf(DataExtractUnavailableException.class);
+    yearsOpen();
+    service.generate(request("2021", "2021", ONE_MILL, ONE_SCHEDULE));
+    verify(generator).generate(new ValidatedSelection(2021, 2021, ONE_MILL, ONE_SCHEDULE));
 
     MultiMessageException inverted =
         catchThrowableOfType(
@@ -166,8 +192,9 @@ class DataExtractServiceTest {
   @Test
   @DisplayName("a surrounding-whitespace year is still a year")
   void whitespacePaddedYear_parses() {
-    assertThatThrownBy(() -> service.generate(request(" 2020 ", "2021", ONE_MILL, ONE_SCHEDULE)))
-        .isInstanceOf(DataExtractUnavailableException.class);
+    yearsOpen();
+    service.generate(request(" 2020 ", "2021", ONE_MILL, ONE_SCHEDULE));
+    verify(generator).generate(new ValidatedSelection(2020, 2021, ONE_MILL, ONE_SCHEDULE));
   }
 
   @Test
@@ -177,13 +204,16 @@ class DataExtractServiceTest {
     // pattern): a caller who typed 99999999999 chose a year, just not an open one. Reporting
     // "Start Year: Value is required." for it would contradict the guard this service reuses two
     // lines later (21.1 review P6). No range verdict either — there is nothing to compare.
+    when(reportYearGuard.requireOpenYear("99999999999")).thenThrow(new ScheduleNotFoundException());
+
     assertThatThrownBy(
             () -> service.generate(request("99999999999", "2021", ONE_MILL, ONE_SCHEDULE)))
         .isNotInstanceOf(MultiMessageException.class)
-        .isInstanceOf(DataExtractUnavailableException.class);
+        .isInstanceOf(ScheduleNotFoundException.class);
 
     // ...and the openness guard, not the gate, is what answers for it.
     verify(reportYearGuard).requireOpenYear("99999999999");
+    verify(generator, never()).generate(any());
   }
 
   @Test
@@ -204,9 +234,10 @@ class DataExtractServiceTest {
   @Test
   @DisplayName("the validated selection is DISTINCT and stripped of unusable entries (D-R2)")
   void validatedSelection_isDistinctAndUsable() {
+    yearsOpen();
     // Legacy's checkbox menu could never send a repeat or an empty entry, so there is no message
     // for either and none is invented: they are simply collapsed before the generator sees them.
-    DataExtractService.ValidatedSelection selection =
+    ValidatedSelection selection =
         service.validate(
             request(
                 "2020",
@@ -221,25 +252,54 @@ class DataExtractServiceTest {
   @Test
   @DisplayName("an unknown schedule label passes the gate — membership is the generator's concern")
   void unknownScheduleLabel_isNotRejected() {
+    yearsOpen();
     // D-R2 (2026-09-11): legacy had no membership check; an unknown name matched no builder and
     // was ignored. The gate asks only whether SOMETHING usable was selected.
-    DataExtractService.ValidatedSelection selection =
+    ValidatedSelection selection =
         service.validate(request("2020", "2021", ONE_MILL, List.of("Schedule 12")));
 
     assertThat(selection.schedules()).containsExactly("Schedule 12");
   }
 
   @Test
-  @DisplayName("the 501 seam carries the bundle key and status the handler resolves")
-  void unavailableException_carriesKeyAndStatus() {
-    // GlobalExceptionHandler resolves BusinessException keys with the key itself as the default, so
-    // a mistyped key ships the raw key as `detail` and nothing else fails. Pin both halves here;
-    // the
-    // ITs pin the resolved text.
-    DataExtractUnavailableException seam = new DataExtractUnavailableException();
+  @DisplayName("a generator failure becomes the one 500, carrying legacy's undefinedError key")
+  void generatorFailure_becomesTheGenerationException() {
+    yearsOpen();
+    SpoolFailedException spool = new SpoolFailedException("disk full", null);
+    when(generator.generate(any())).thenThrow(spool);
 
-    assertThat(seam.getStatus()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
-    assertThat(seam.getMessageKey()).isEqualTo("dataExtractUnavailableMsg");
-    assertThat(seam.getMessageArgs()).isNull();
+    DataExtractGenerationException thrown =
+        catchThrowableOfType(
+            DataExtractGenerationException.class,
+            () -> service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE)));
+
+    assertThat(thrown.getStatus()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    assertThat(thrown.getMessageKey()).isEqualTo("undefinedError");
+    assertThat(thrown.getCause()).isSameAs(spool);
+  }
+
+  @Test
+  @DisplayName("an owner's business exception is NOT surfaced as a statement about the extract")
+  void ownerBusinessException_isWrappedNotPropagated() {
+    yearsOpen();
+    // A 404 from a schedule read describes that schedule's screen, not the extract. Letting it
+    // through would tell the administrator the EXTRACT was not found.
+    when(generator.generate(any())).thenThrow(new ScheduleNotFoundException());
+
+    assertThatThrownBy(() -> service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE)))
+        .isInstanceOf(DataExtractGenerationException.class)
+        .hasCauseInstanceOf(ScheduleNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("the generator's own generation exception passes through unwrapped")
+  void generationException_passesThrough() {
+    yearsOpen();
+    DataExtractGenerationException original =
+        new DataExtractGenerationException("Building the data extract failed", null);
+    when(generator.generate(any())).thenThrow(original);
+
+    assertThatThrownBy(() -> service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE)))
+        .isSameAs(original);
   }
 }
