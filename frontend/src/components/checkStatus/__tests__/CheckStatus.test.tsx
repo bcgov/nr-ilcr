@@ -8,7 +8,14 @@ import MillYearProvider from '@/context/millYear/MillYearProvider'
 import useMillYear from '@/context/millYear/useMillYear'
 import { MOCK_USER_STORAGE_KEY } from '@/context/auth/mockUsers'
 import { ERR_MILL_YEAR_NOT_SELECTED } from '@/components/core/ScheduleLoadState'
-import CheckStatus, { HINT_NOT_DRAFT, HINT_NOT_SUBMITTER } from '../index'
+import CheckStatus, {
+  HINT_NOT_ADMIN,
+  HINT_NOT_DRAFT,
+  HINT_NOT_DRAFT_11,
+  HINT_NOT_SUBMITTED,
+  HINT_NOT_SUBMITTED_11,
+  HINT_NOT_SUBMITTER,
+} from '../index'
 import { LOAD_FAILED } from '../useCheckStatusSweep'
 import { SCHEDULE_TITLES } from '../verdicts'
 import {
@@ -104,6 +111,10 @@ const asSubmitter = () => window.localStorage.setItem(MOCK_USER_STORAGE_KEY, 'su
 const region1To10 = () => screen.getByRole('region', { name: 'Schedules 1–10' })
 const region11 = () => screen.getByRole('region', { name: 'Schedule 11' })
 const submitButtons = () => screen.getAllByRole('button', { name: 'Submit' })
+const verifiedButtons = () => screen.getAllByRole('button', { name: 'Verified' })
+/** The two Schedules 1–10 bars (above and below that region) — everything outside the Schedule 11 region. */
+const submitButtons1To10 = () => submitButtons().filter((b) => !region11().contains(b))
+const verifiedButtons1To10 = () => verifiedButtons().filter((b) => !region11().contains(b))
 
 /** The accordion item (its `<li>`) whose heading button carries the given legacy title. */
 const item = (title: string): HTMLElement => {
@@ -158,7 +169,7 @@ describe('Check Status page (Story 15.2)', () => {
         const params = new URL(request.url).searchParams
         expect(params.get('millId')).toBe('13050')
         expect(params.get('year')).toBe('2017')
-        return HttpResponse.json(sweep())
+        return HttpResponse.json(sweep({ statusCode11: 'D' }))
       }),
     )
     render(<CheckStatus />)
@@ -193,12 +204,26 @@ describe('Check Status page (Story 15.2)', () => {
     // Schedule 11's "Status has been checked" is not this page's to show (deviation L).
     expect(screen.queryByText(SCH11_CHECKED_TEXT)).not.toBeInTheDocument()
 
-    // D1: submitter at Draft → both bars enabled, no hint wired.
+    // D1: submitter with both tracks in Draft → all three Submits enabled, no hint wired. Legacy's
+    // three rows: two for Schedules 1–10 (above/below that region), one inside the Schedule 11 tab.
     const buttons = submitButtons()
-    expect(buttons).toHaveLength(2)
+    expect(buttons).toHaveLength(3)
     for (const button of buttons) {
       expect(button).toBeEnabled()
       expect(button).not.toHaveAttribute('aria-describedby')
+    }
+    expect(submitButtons1To10()).toHaveLength(2)
+    expect(within(region1To10()).queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument()
+    expect(
+      within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' }),
+    ).toBeEnabled()
+    // Verified beside every Submit, greyed for the licensee regardless of status (legacy
+    // canUserVerifyReport: Submitted AND not the licensee).
+    const verified = verifiedButtons()
+    expect(verified).toHaveLength(3)
+    for (const button of verified) {
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_ADMIN)
     }
   })
 
@@ -207,10 +232,19 @@ describe('Check Status page (Story 15.2)', () => {
     render(<CheckStatus />)
 
     expect((await screen.findAllByText(MET_TEXT)).length).toBe(12)
+    expect(submitButtons()).toHaveLength(3)
     for (const button of submitButtons()) {
       expect(button).toBeDisabled()
       expect(hintFor(button)).toHaveTextContent(HINT_NOT_SUBMITTER)
     }
+    // Admin, but nothing is Submitted → Verified greyed with the status hint, per track.
+    for (const button of verifiedButtons1To10()) {
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_SUBMITTED)
+    }
+    const verified11 = within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Verified' })
+    expect(verified11).toBeDisabled()
+    expect(hintFor(verified11)).toHaveTextContent(HINT_NOT_SUBMITTED_11)
   })
 
   // ---- S02: the correct-and-re-check loop is a remount ----------------------------------------
@@ -562,7 +596,7 @@ describe('Check Status page (Story 15.2)', () => {
 
   // ---- Degenerate payloads: nothing invented -----------------------------------------------------
 
-  test('degenerate payloads: a section with nothing to say renders its heading and no lines', async () => {
+  test('degenerate payloads: a verdict with nothing to say falls through to the shared "Status checked" line, as on every schedule page', async () => {
     server.use(
       http.get(SWEEP_URL, () =>
         HttpResponse.json(
@@ -590,24 +624,25 @@ describe('Check Status page (Story 15.2)', () => {
     render(<CheckStatus />)
     await screen.findAllByText(MET_TEXT)
 
-    expect(linesIn(item(SCHEDULE_TITLES['9']))).toHaveLength(0)
-    expect(linesIn(item(SCHEDULE_TITLES['6']))).toHaveLength(0)
-    expect(
-      screen.queryByText('This schedule has outstanding requirements.'),
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('Status checked')).not.toBeInTheDocument()
+    for (const code of ['9', '6'] as const) {
+      const lines = linesIn(item(SCHEDULE_TITLES[code]))
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toHaveTextContent('Status checked')
+      expect(lines[0]).toHaveTextContent('This schedule has outstanding requirements.')
+      expect(lines[0]).toHaveClass('cds--inline-notification--warning')
+    }
     expect(screen.getAllByText(MET_TEXT)).toHaveLength(10) // positive control
   })
 
   // ---- S11 / S14 / S15: the Submit gate --------------------------------------------------------
 
-  test('S11: submitter at Submitted → Submit disabled in both bars, hint in the DOM and resolvable', async () => {
+  test('S11: submitter at Submitted → Submit disabled in both 1–10 bars, hint in the DOM and resolvable', async () => {
     asSubmitter()
     server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep({ statusCode1To10: 'S' }))))
     render(<CheckStatus />)
     await screen.findAllByText(MET_TEXT)
 
-    const buttons = submitButtons()
+    const buttons = submitButtons1To10()
     expect(buttons).toHaveLength(2)
     for (const button of buttons) {
       expect(button).toBeDisabled()
@@ -617,6 +652,10 @@ describe('Check Status page (Story 15.2)', () => {
     }
     // The two hints are distinct elements — no duplicate id.
     expect(hintFor(buttons[0])).not.toBe(hintFor(buttons[1]))
+    // Schedule 11's own Submit reads ITS track (status absent here) and its own hint.
+    const submit11 = within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Submit' })
+    expect(submit11).toBeDisabled()
+    expect(hintFor(submit11)).toHaveTextContent(HINT_NOT_DRAFT_11)
   })
 
   test('S11: submitter with the 1–10 statusCode absent → Submit disabled', async () => {
@@ -624,7 +663,7 @@ describe('Check Status page (Story 15.2)', () => {
     server.use(http.get(SWEEP_URL, () => HttpResponse.json(sweep({ statusCode1To10: null }))))
     render(<CheckStatus />)
     await screen.findAllByText(MET_TEXT)
-    for (const button of submitButtons()) {
+    for (const button of submitButtons1To10()) {
       expect(button).toBeDisabled()
       expect(hintFor(button)).toHaveTextContent(HINT_NOT_DRAFT)
     }
@@ -644,7 +683,7 @@ describe('Check Status page (Story 15.2)', () => {
     render(<CheckStatus />)
     await screen.findByText(SCH1_CROSS_CHECK_TEXT)
     const buttons = submitButtons()
-    expect(buttons).toHaveLength(2)
+    expect(buttons).toHaveLength(3)
     for (const button of buttons) {
       expect(button).toBeDisabled()
       expect(hintFor(button)).toHaveTextContent(HINT_NOT_SUBMITTER)
@@ -662,12 +701,13 @@ describe('Check Status page (Story 15.2)', () => {
     )
     render(<CheckStatus />)
     await screen.findByText(SCH1_CROSS_CHECK_TEXT)
-    for (const button of submitButtons()) {
+    expect(submitButtons1To10()).toHaveLength(2)
+    for (const button of submitButtons1To10()) {
       expect(button).toBeEnabled()
     }
   })
 
-  test('S15: 1–10 Submitted and Schedule 11 Draft → Submit disabled; Schedule 11 shows its verdict, its status line, and no action row', async () => {
+  test('S15: 1–10 Submitted and Schedule 11 Draft → the 1–10 Submits are disabled while Schedule 11’s own Submit is enabled; each track reads only its own status', async () => {
     asSubmitter()
     server.use(
       millContextWithBothTracks('S', 'D'),
@@ -682,17 +722,107 @@ describe('Check Status page (Story 15.2)', () => {
       await screen.findByText('Sch 1-10 - Status: Submitted - Date: 2017-01-01'),
     ).toBeInTheDocument()
     expect(await screen.findByText('Sch 11 - Status: Draft - Date: 2017-02-02')).toBeInTheDocument()
-    for (const button of submitButtons()) {
+    for (const button of submitButtons1To10()) {
       expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_DRAFT)
     }
-    const eleven = region11()
+    const eleven = item(SCHEDULE_TITLES['11'])
     expect(within(eleven).getByText(MET_TEXT)).toBeInTheDocument()
-    expect(within(eleven).queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument()
-    // Nothing from Epics 17/18 anywhere.
-    for (const label of ['Verified', 'Set to Draft', 'Set to Submit']) {
+    // Legacy placed the Schedule 11 row INSIDE its tab, under the result (checkStatus.xhtml:152-183).
+    const submit11 = within(eleven).getByRole('button', { name: 'Submit' })
+    expect(submit11).toBeEnabled()
+    expect(submit11).not.toHaveAttribute('aria-describedby')
+    // Verified is greyed for the licensee on both tracks.
+    for (const button of verifiedButtons()) {
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_ADMIN)
+    }
+    // The admin reversals are not rendered for the licensee at any status (legacy `rendered=`).
+    for (const label of ['Set to Draft', 'Set to Submit']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
     }
-    expect(submitButtons()).toHaveLength(2) // positive control for the "no Schedule 11 Submit" claim
+    expect(submitButtons()).toHaveLength(3) // positive control
+  })
+
+  test('Verified gate: admin with both tracks Submitted → all three Verified enabled and every Submit greyed; the 1–10 pair and the Schedule 11 one read their own track', async () => {
+    server.use(
+      millContextWithBothTracks('S', 'D'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'D' })),
+      ),
+    )
+    render(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    // 1–10 Submitted → its two Verified enabled, no hint.
+    const verified1To10 = verifiedButtons1To10()
+    expect(verified1To10).toHaveLength(2)
+    for (const button of verified1To10) {
+      expect(button).toBeEnabled()
+      expect(button).not.toHaveAttribute('aria-describedby')
+    }
+    // Schedule 11 still Draft → its Verified greyed with its own status hint.
+    const verified11 = within(item(SCHEDULE_TITLES['11'])).getByRole('button', { name: 'Verified' })
+    expect(verified11).toBeDisabled()
+    expect(hintFor(verified11)).toHaveTextContent(HINT_NOT_SUBMITTED_11)
+    // An admin never submits, whatever the status.
+    for (const button of submitButtons()) {
+      expect(button).toBeDisabled()
+      expect(hintFor(button)).toHaveTextContent(HINT_NOT_SUBMITTER)
+    }
+    // Every hint id is unique across the six buttons.
+    const ids = [...submitButtons(), ...verifiedButtons()]
+      .map((b) => b.getAttribute('aria-describedby'))
+      .filter((id): id is string => id !== null)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  test('admin reversals: Set to Draft renders only while a track is Submitted, Set to Submit only while Verified, each on its own track, in legacy button order', async () => {
+    server.use(
+      millContextWithBothTracks('S', 'V'),
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'S', statusCode11: 'V' })),
+      ),
+    )
+    render(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+
+    // 1–10 Submitted → both 1–10 bars: Set to Draft (enabled), Submit (greyed), Verified (enabled).
+    const setToDraft = screen.getAllByRole('button', { name: 'Set to Draft' })
+    expect(setToDraft).toHaveLength(2)
+    for (const button of setToDraft) {
+      expect(button).toBeEnabled()
+      expect(region11().contains(button)).toBe(false)
+    }
+    expect(within(region1To10()).queryByRole('button', { name: 'Set to Submit' })).toBeNull()
+    // Schedule 11 Verified → its bar: Set to Submit (enabled), Submit (greyed), Verified (greyed).
+    const bar11 = item(SCHEDULE_TITLES['11'])
+    const setToSubmit = within(bar11).getByRole('button', { name: 'Set to Submit' })
+    expect(setToSubmit).toBeEnabled()
+    expect(within(bar11).queryByRole('button', { name: 'Set to Draft' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Set to Submit' })).toHaveLength(1)
+    expect(within(bar11).getByRole('button', { name: 'Submit' })).toBeDisabled()
+    expect(within(bar11).getByRole('button', { name: 'Verified' })).toBeDisabled()
+    // Legacy order inside a row: the reversal, then Submit, then Verified (checkStatus.xhtml:37-62).
+    const rowButtons = within(bar11)
+      .getAllByRole('button')
+      .filter((b) => b.closest('.check-status__actions') !== null)
+      .map((b) => b.textContent)
+    expect(rowButtons).toEqual(['Set to Submit', 'Submit', 'Verified'])
+  })
+
+  test('admin reversals: neither renders for an admin while a track is Draft, nor for the licensee at any status', async () => {
+    server.use(
+      http.get(SWEEP_URL, () =>
+        HttpResponse.json(sweep({ statusCode1To10: 'D', statusCode11: 'D' })),
+      ),
+    )
+    render(<CheckStatus />)
+    await screen.findAllByText(MET_TEXT)
+    for (const label of ['Set to Draft', 'Set to Submit']) {
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    }
+    expect(submitButtons()).toHaveLength(3) // positive control: the bars are there
   })
 
   // ---- Stale context ---------------------------------------------------------------------------
