@@ -32,9 +32,7 @@ import CodeComboBox from '@/components/core/CodeComboBox'
 import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   GENERAL_COMMENTS_MAX_LENGTH,
@@ -55,7 +53,6 @@ import './index.scss'
 // rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's empty substitute list (schedule6.xhtml:459-464) sets no emptyMessage, so PrimeFaces
 // rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
 const EMPTY_LIST = 'No records found.'
@@ -574,16 +571,17 @@ const Schedule6: FC = () => {
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
   // state and is re-seeded on every context change with the rest of the document.
-  const { data, setData, form, setForm, errorDetail, isLoading } =
-    useScheduleDocument<Schedule6Response>({
-      path: SCHEDULE6_PATH,
-      millId,
-      year,
-      contextMissing,
-      seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
-      mapLoadError,
-      onReset: resetTransient,
-    })
+  const { data, setData, form, setForm, loadState } = useScheduleDocument<Schedule6Response>({
+    path: SCHEDULE6_PATH,
+    scheduleName: 'Schedule 6',
+    header: PAGE_HEADER,
+    millId,
+    year,
+    contextMissing,
+    seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
+    mapLoadError,
+    onReset: resetTransient,
+  })
 
   const query = `?millId=${String(millId)}&year=${String(year)}`
   const generalComments = form.generalComments ?? ''
@@ -839,37 +837,7 @@ const Schedule6: FC = () => {
       })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 6" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 6', subtitle: errorDetail }}
-      />
-    )
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

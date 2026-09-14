@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { getDefaultNormalizer, render, screen, waitFor, within } from '@/test-utils'
+import {
+  declaredRole,
+  getDefaultNormalizer,
+  render,
+  renderAsAdmin,
+  renderAsSubmitter,
+  screen,
+  waitFor,
+  within,
+} from '@/test-utils'
 import userEvent from '@testing-library/user-event'
 import { server } from '@/test-setup'
 
@@ -17,6 +26,8 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { DEFAULT_MILL_ID, DEFAULT_YEAR } from '@/context/millYear/millYearDefaults'
 import type BridgeRequest from '@/interfaces/Schedule7aRequest'
 import type { Bridge } from '@/interfaces/Schedule7aResponse'
+import type { IlcrRole } from '@/context/auth/mockUsers'
+import { ILCR_ROLES } from '@/context/auth/mockUsers'
 
 const URL = 'http://localhost:3000/api/v1/schedule7a'
 const BRIDGES_URL = `${URL}/bridges`
@@ -1222,5 +1233,502 @@ describe('Schedule 7A action icons (Story 30.3 / #312 Overall 6)', () => {
     await user.click(toggle)
     expect(screen.getByRole('button', { name: 'Close' }).querySelector('svg')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Add Report' }).querySelector('svg')).not.toBeNull()
+  })
+})
+
+// ---- Story 16.3: the ministry correction journey at Submitted ------------------------------------
+//
+// Story 16.1 shipped the role×status editability matrix: ILCR_SUBMITTER may edit only at Draft, while
+// ILCR_ADMIN may edit at Submitted and Verified and is deliberately READ-ONLY at Draft. This page
+// learns all of it from ONE server-computed boolean — `controlsDisabled = !editable || saving`
+// (index.tsx:420) — and never derives it from `trackStatus` or from the client's role (AD-9).
+//
+// Every pre-16.3 `'S'` test in this file pairs it with `editable: false` (the submitter read-only
+// case), so nothing here could tell a correct gate from a widened one and the ministry-correction
+// journey was unverified. These arms close that, and they make the acting identity LOAD-BEARING
+// rather than decorative in two separate ways:
+//
+//   1. the MSW handlers COMPUTE `editable` from the 16.1 matrix over the `X-Mock-Groups` header the
+//      request actually carried, so `renderAsAdmin` versus `renderAsSubmitter` genuinely changes what
+//      the server answers — swap the declaration on any arm and that arm fails; and
+//   2. every arm additionally asserts, in its own body, WHICH role the request carried. That second
+//      check is what catches a FORGOTTEN declaration, the defect this story exists to prevent: a
+//      missing `renderAsAdmin` does not produce a missing header, because `api-service` builds the
+//      header from `findMockUser(localStorage…)` which falls back to `MOCK_USERS[0]` — the ADMIN
+//      (api-service.ts:11-17, mockUsers.ts:38). So an admin arm that lost its declaration would
+//      otherwise still pass on the silent fallback that ran the e2e suite as the wrong role for a
+//      month (Story 16.1 completion notes).
+describe('Schedule 7A ministry correction at Submitted (Story 16.3)', () => {
+  // The PINNED 16.1 matrix (`ScheduleEditability`), per track status. Submitter edits at Draft only;
+  // admin edits at Submitted and Verified and is DELIBERATELY read-only at Draft while the mill
+  // still owns the data. Every other cell — `O`, no track at all, an unrecognised role — fails
+  // CLOSED.
+  //
+  // Reproduced here rather than imported because the real rule lives in Java: this is the wire
+  // contract the frontend is entitled to assume, and stating it makes falsification trivial (flip
+  // the admin entry to ['D'] and every admin-at-Submitted arm below must fail; narrow it to ['S']
+  // and the Verified arm must fail).
+  const EDITABLE_STATUSES: Record<string, readonly string[]> = {
+    ILCR_ADMIN: ['S', 'V'],
+    ILCR_SUBMITTER: ['D'],
+  }
+
+  // The role each request actually carried, captured by the handlers and asserted in the test BODY.
+  // Deliberately NOT asserted inside the resolver: an expect() that throws in an MSW resolver is
+  // reported as a failed REQUEST, so the failure is misattributed to the page's error handling
+  // instead of naming the identity as the cause.
+  let sentRole: string | null = null
+  let writeRole: string | null = null
+
+  beforeEach(() => {
+    sentRole = null
+    writeRole = null
+  })
+
+  /**
+   * The acting role as the request actually carried it. `api-service` mirrors the selected mock
+   * user's roles onto `X-Mock-Groups` (api-service.ts:13), so this is the same signal the real mock
+   * backend gates on — not something the test asserts about itself. The throw is a belt-and-braces
+   * on a malformed harness; it is NOT the identity guard (see the header note), because the header
+   * is always sent.
+   */
+  const actingRole = (request: Request): string => {
+    const header = request.headers.get('X-Mock-Groups')
+    if (!header) {
+      throw new Error('request carried no X-Mock-Groups header — the acting identity was not sent')
+    }
+    return header
+  }
+
+  /**
+   * The matrix decision for one request, mirroring `ScheduleEditability.forCaller`: the header is
+   * `roles.join(',')` (api-service.ts:13) and the server UNIONS the permitted statuses across every
+   * role the caller holds. A mock user holds exactly one role today, so the split is unreachable —
+   * but keying on the raw header would encode the wrong rule. An unrecognised role contributes
+   * nothing, so anything off the matrix fails closed.
+   */
+  const editableFor = (request: Request, trackStatus: unknown): boolean => {
+    const permitted = new Set(
+      actingRole(request)
+        .split(',')
+        .flatMap((role) => EDITABLE_STATUSES[role] ?? []),
+    )
+    return permitted.has(String(trackStatus))
+  }
+
+  /**
+   * A Submitted Schedule 7A document whose `editable` is COMPUTED from the matrix for whoever asked,
+   * overriding the `editable: true` the suite's own `doc()` builder defaults to. Used for the write
+   * echoes too, so "the page is still correctable after the save" is also role-driven.
+   */
+  const matrixDoc = (request: Request, over: Record<string, unknown> = {}) => {
+    const body = doc({ trackStatus: 'S', ...over })
+    return { ...body, editable: editableFor(request, body.trackStatus) }
+  }
+
+  /** GET that answers `editable` per the matrix for whoever is asking, recording who that was. */
+  const matrixGet = (over: Record<string, unknown> = {}) =>
+    http.get(URL, ({ request }) => {
+      sentRole = actingRole(request)
+      return HttpResponse.json(matrixDoc(request, over))
+    })
+
+  // Cost entry via click+clear+paste, never `user.type`: Schedule 7A mounts a full 27-field editor for
+  // every visible bridge, so a per-character type is O(rows × chars) and has timed this suite out on
+  // CI. Paste is a real interaction firing one input event, so the component's own onChange and
+  // validation still run.
+  const pasteInto = async (
+    user: ReturnType<typeof userEvent.setup>,
+    input: HTMLElement,
+    value: string,
+  ) => {
+    await user.click(input)
+    await user.clear(input)
+    await user.paste(value)
+  }
+
+  /**
+   * The acting identity, asserted BOTH ways — and it takes both.
+   *
+   * The wire header alone cannot catch a FORGOTTEN declaration: `api-service` builds
+   * `X-Mock-Groups` from `findMockUser(localStorage…)`, which falls back to `MOCK_USERS[0]` — the
+   * ADMIN (api-service.ts:11-17, mockUsers.ts:38) — so an admin arm that lost its `renderAsAdmin`
+   * sends a header byte-identical to a declared admin's. (Verified: dropping `renderAsAdmin` from
+   * all six admin arms below left every one of them green on the header check alone.)
+   *
+   * So assert the DECLARATION too, via the harness's own `declaredRole()`: it returns the role this
+   * test seeded and `null` when nothing did, which is the only available signal separating a
+   * declaration from the silent fallback that ran the e2e suite as the wrong role for a month
+   * (Story 16.1 completion notes).
+   */
+  const expectActingAs = (role: IlcrRole) => {
+    // (1) the role was DECLARED, not inherited. `declaredRole()` reports what THIS test seeded and
+    // null when nothing did, so the storage key stays the harness's own business.
+    expect(declaredRole()).toBe(role)
+    // (2) ...and that identity is what the REQUEST carried, so it is not merely local bookkeeping:
+    // this is the same signal the mock backend itself gates on.
+    expect(sentRole).toBe(role)
+  }
+
+  /** The write surface of one bridge row plus the page-level bars, as one list. */
+  const writeControls = () => [
+    screen.getByRole('button', { name: 'Add' }),
+    bridgePanel(7001).getByRole('button', { name: 'Delete' }),
+    ...screen.getAllByRole('button', { name: 'Save' }),
+    // Legacy disabled Check Status alongside every write control outside Draft, even though the
+    // endpoint itself is read-only and permitted at any status (spec deviation 5).
+    ...screen.getAllByRole('button', { name: 'Check Status' }),
+  ]
+
+  /** Every entry field of one bridge row, spanning all four widget kinds the editor renders. */
+  const entryFields = () => [
+    bridgePanel(7001).getByLabelText('Name/Location of Bridge'),
+    bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)'),
+    bridgePanel(7001).getByLabelText('Other Costs ($)'),
+    bridgePanel(7001).getByLabelText('Length (m)'),
+    bridgePanel(7001).getByRole('combobox', { name: /New\/Used/i }),
+    bridgePanel(7001).getByRole('combobox', { name: /Load Rating/i }),
+    bridgePanel(7001).getByLabelText('Comments'),
+  ]
+
+  /** The read-only shape: the schedule still SHOWS, but nothing on it can be operated. */
+  const expectReadOnly = () => {
+    for (const control of [...entryFields(), ...writeControls()]) {
+      expect(control).toBeDisabled()
+    }
+    // A locked screen, not a suppressed one — legacy bound `disabled` and never removed a control.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    // The confirm modal mounts only while a delete is pending, so there is no route past the
+    // disabled button to a DELETE.
+    expect(
+      screen.queryByText('This will delete the current record. Do you want to continue?'),
+    ).not.toBeInTheDocument()
+  }
+
+  /** The editable shape: every field and every action live for this actor at this status. */
+  const expectCorrectable = () => {
+    for (const control of [...entryFields(), ...writeControls()]) {
+      expect(control).toBeEnabled()
+    }
+  }
+
+  test('admin at Submitted corrects a bridge and saves it — SUC-001 verbatim, status unmoved', async () => {
+    let captured: SaveAllBody | null = null
+    let putCalls = 0
+    // The echo is the corrected bridge over a track that is STILL 'S'. Saving cannot move status:
+    // the backend has exactly one status writer (the year-open INSERT, ReportingYearRepository:139)
+    // and no transition endpoint at all (Epics 17-18 own that).
+    const corrected: Bridge = {
+      ...northFork,
+      sitePlanCost: 2000,
+      grandTotal: 13000,
+      revisionCount: 4,
+    }
+    server.use(
+      matrixGet(),
+      http.put(BRIDGES_URL, async ({ request }) => {
+        putCalls += 1
+        writeRole = actingRole(request)
+        captured = (await request.json()) as SaveAllBody
+        return HttpResponse.json(
+          matrixDoc(request, {
+            bridges: [corrected],
+            message: { key: 'dataSavedSuccesfullyInfoMsg', text: 'Data saved successfully' },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    // The whole point of 16.1's admin row: at Submitted the write surface is LIVE for this actor.
+    expectCorrectable()
+    // ...and it is live because an ADMIN asked. A forgotten `renderAsAdmin` would still have sent a
+    // header (the MOCK_USERS[0] fallback), so this is the check that names the identity.
+    expectActingAs(ILCR_ROLES.admin)
+
+    await pasteInto(user, bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)'), '2000')
+    await savePage(user)
+
+    // SUC-001 verbatim (`dataSavedSuccesfullyInfoMsg`, messages.properties:173), rendered from the
+    // API's own `message.text` and never a client literal (AD-8).
+    expect(await screen.findByText('Data saved successfully')).toBeInTheDocument()
+    expect(putCalls).toBe(1)
+    // The correction was issued AS the admin, not merely fetched as one.
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    expect(entryFor(captured, 7001)).toMatchObject({ sitePlanCost: 2000, revisionCount: 3 })
+
+    // "The save does not move status" is NOT assertable from the DOM: `trackStatus` is rendered
+    // nowhere on any schedule page (the tombstone carries the working context's mill/year, not the
+    // document's track). So it is asserted by three proxies instead:
+    //   (a) the request body's exact top-level key set — the client structurally cannot ASK for a
+    //       transition, because the only thing it sends is the bridge batch;
+    const body = captured as unknown as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['bridges'])
+    //       nor can any per-bridge entry smuggle one in;
+    const entry = entryFor(captured, 7001) as unknown as Record<string, unknown>
+    expect(Object.keys(entry)).not.toContain('trackStatus')
+    expect(Object.keys(entry)).not.toContain('editable')
+    //   (b) MSW is strict (`onUnhandledRequest: 'error'`), so a call to any transition endpoint that
+    //       a future change introduced would fail this test rather than pass quietly; and
+    //   (c) the echo is still Submitted, and the matrix still answers editable for this actor over
+    //       it, so the page stays correctable on applying it — which doubles as the AD-9 assertion:
+    //       a page deriving read-only from `trackStatus` would have locked itself here.
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('2,000')
+    expectCorrectable()
+  })
+
+  // The negative arm. Same track, same screen, the SAME handler — only the acting identity differs,
+  // and the matrix answers `editable: false`, so the entire surface is dead. Without this, a widened
+  // gate letting the licensee edit a Submitted report would pass the arm above unnoticed.
+  test('submitter at Submitted is read-only — no entry, Save, Check Status or Delete', async () => {
+    // Counters rather than throwing resolvers: a throw inside an MSW resolver surfaces as a failed
+    // REQUEST (and is misattributed to the page's error handling), whereas a count asserted in the
+    // body says plainly that no write left the client. The clicks below are what make it meaningful.
+    let writes = 0
+    server.use(
+      matrixGet(),
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsSubmitter(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectReadOnly()
+    expectActingAs(ILCR_ROLES.submitter)
+
+    // Clicking through the dead controls issues nothing: the disabled attribute is the gate, and the
+    // handlers above would have counted anything that slipped past it.
+    await savePage(user)
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    expect(writes).toBe(0)
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+  })
+
+  // The other direction of the same matrix, and the one nothing covered: 16.1 deliberately REMOVED
+  // the administrator's edit rights at Draft, because the mill still owns its Draft data. Assert that
+  // capability is gone, not merely that the administrator has rights somewhere.
+  test('admin at Draft is read-only — the capability 16.1 removed', async () => {
+    let writes = 0
+    server.use(
+      matrixGet({ trackStatus: 'D' }),
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectReadOnly()
+    expectActingAs(ILCR_ROLES.admin)
+
+    await savePage(user)
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    expect(writes).toBe(0)
+    expect(screen.queryByText('Data saved successfully')).not.toBeInTheDocument()
+  })
+
+  // Guards the two read-only arms above against a degenerate handler — or a broken identity helper —
+  // that simply answered `editable: false` to everything. The matrix DISCRIMINATES; it is not
+  // uniformly closed outside the admin's own row.
+  test('submitter at Draft still edits — the matrix discriminates, it is not uniformly closed', async () => {
+    server.use(matrixGet({ trackStatus: 'D' }))
+    renderAsSubmitter(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    expectCorrectable()
+    expectActingAs(ILCR_ROLES.submitter)
+  })
+
+  // The rest of the admin row, and the cells that must fail closed. `'V'` is served NOWHERE else in
+  // this repo's frontend tests, so without this arm the backend matrix could be narrowed from
+  // {S,V} to {S} — losing the Verified correction outright — and every suite would stay green.
+  // No mutation handler is registered on purpose: MSW is strict (`onUnhandledRequest: 'error'`), so
+  // a write escaping any of these three states fails the test as an unhandled request.
+  test.each([
+    ['V', 'correctable — Verified, the second half of the admin row', true],
+    ['O', 'read-only — Open is off the matrix entirely, so it fails closed', false],
+    [null, 'read-only — no track at all (a year with no report row) fails closed', false],
+  ])('admin at trackStatus %s is %s', async (trackStatus, _expectation, correctable) => {
+    server.use(matrixGet({ trackStatus }))
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    if (correctable) {
+      expectCorrectable()
+    } else {
+      expectReadOnly()
+    }
+    expectActingAs(ILCR_ROLES.admin)
+  })
+
+  // Delete per the matrix, both paths, for THIS actor and status. The confirm itself is untouched
+  // (user ruling 2026-09-11) and asserted where it stands: Schedule 7A is one of only four pages on
+  // the SHARED `core/ConfirmDeleteModal`, so it already shows legacy's header "Confirmation" and
+  // Yes/No answers around the verbatim `confirmDeleteMsg` (messages.properties:202).
+  test('admin at Submitted deletes behind the verbatim confirm', async () => {
+    let deleteCalls = 0
+    let deleteUrl = ''
+    server.use(
+      matrixGet(),
+      http.delete(`${BRIDGES_URL}/7001`, ({ request }) => {
+        deleteCalls += 1
+        deleteUrl = request.url
+        writeRole = actingRole(request)
+        return HttpResponse.json(
+          matrixDoc(request, {
+            bridges: [],
+            message: { key: 'dataDeletedSuccesfullyInfoMsg', text: 'Data deleted successfully' },
+          }),
+        )
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    const modal = await deleteModal()
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    expect(
+      screen.getByText('This will delete the current record. Do you want to continue?', {
+        normalizer: verbatim,
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(modal.getByRole('button', { name: 'Yes' }))
+    await waitFor(() => {
+      expect(deleteCalls).toBe(1)
+    })
+    // DEL-001 verbatim (`dataDeletedSuccesfullyInfoMsg`, messages.properties:174).
+    expect(await screen.findByText('Data deleted successfully')).toBeInTheDocument()
+    expect(screen.getByText('No bridge reports have been added.')).toBeInTheDocument()
+    expectActingAs(ILCR_ROLES.admin)
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    // Scoped to the working context, like every other write on this page.
+    expect(deleteUrl).toContain(`millId=${String(DEFAULT_MILL_ID)}`)
+    expect(deleteUrl).toContain(`year=${String(DEFAULT_YEAR)}`)
+  })
+
+  test('admin at Submitted cancelling the confirm issues NO delete and leaves the bridge alone', async () => {
+    let deleteCalls = 0
+    server.use(
+      matrixGet(),
+      http.delete(`${BRIDGES_URL}/7001`, ({ request }) => {
+        deleteCalls += 1
+        return HttpResponse.json(matrixDoc(request, { bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    await user.click(bridgePanel(7001).getByRole('button', { name: 'Delete' }))
+    const modal = await deleteModal()
+    expect(await screen.findByText('Confirmation')).toBeInTheDocument()
+    await user.click(modal.getByRole('button', { name: 'No' }))
+
+    expect(deleteCalls).toBe(0)
+    expectActingAs(ILCR_ROLES.admin)
+    expect(screen.queryByText('Confirmation')).not.toBeInTheDocument()
+    // The document is untouched: the row, its values and the served totals all still stand, and no
+    // success banner was raised.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('1,000')
+    expect(screen.queryByText('Data deleted successfully')).not.toBeInTheDocument()
+    expect(screen.queryByText('No bridge reports have been added.')).not.toBeInTheDocument()
+    // And the schedule is still correctable — cancelling a delete must not lock the page.
+    expect(bridgePanel(7001).getByRole('button', { name: 'Delete' })).toBeEnabled()
+  })
+
+  // Check Status is available to the correcting administrator and mutates nothing. Legacy gated the
+  // BUTTON on edit rights (26 of 26), so at Submitted-and-editable it is live rather than dead.
+  test('admin at Submitted can run Check Status, and it changes nothing', async () => {
+    let checkCalls = 0
+    let getCalls = 0
+    let writes = 0
+    server.use(
+      http.get(URL, ({ request }) => {
+        getCalls += 1
+        sentRole = actingRole(request)
+        return HttpResponse.json(matrixDoc(request))
+      }),
+      http.post(CHECK_URL, ({ request }) => {
+        checkCalls += 1
+        writeRole = actingRole(request)
+        return HttpResponse.json({
+          requirementsMet: true,
+          errors: [],
+          // Empty on an all-pass result: the API sends the schedule-wide message alone, because
+          // legacy emitted its per-bridge lines only when the schedule as a whole failed.
+          bridgeMessages: [],
+          requirementsMetMessage: {
+            key: 'scheduleRequirementsMetMsg',
+            text: 'All requirements for this schedule have been met',
+          },
+        })
+      }),
+      // Counted, not thrown: the count is asserted in the body below, so "Check Status mutated
+      // nothing" is a real assertion rather than a request failure attributed elsewhere.
+      http.put(BRIDGES_URL, () => {
+        writes += 1
+        return HttpResponse.json(doc())
+      }),
+      http.delete(`${BRIDGES_URL}/7001`, () => {
+        writes += 1
+        return HttpResponse.json(doc({ bridges: [] }))
+      }),
+    )
+    renderAsAdmin(<Schedule7a />)
+    const user = userEvent.setup()
+    await openBridge(user, 1)
+
+    const buttons = screen.getAllByRole('button', { name: 'Check Status' })
+    for (const button of buttons) {
+      expect(button).toBeEnabled()
+    }
+    const getsBefore = getCalls
+    await user.click(buttons[0])
+
+    // SUC-002 verbatim (`scheduleRequirementsMetMsg`, messages.properties:184 — no trailing period).
+    expect(
+      await screen.findByText('All requirements for this schedule have been met'),
+    ).toBeInTheDocument()
+    expect(checkCalls).toBe(1)
+    expectActingAs(ILCR_ROLES.admin)
+    expect(writeRole).toBe(ILCR_ROLES.admin)
+    // Exactly one POST, no write of any kind, and no re-GET: the check applies no document, so a
+    // stable GET count is the real "nothing else ran" signal (the confirmed-delete path, by
+    // contrast, re-renders from its own echo).
+    expect(writes).toBe(0)
+    expect(getCalls).toBe(getsBefore)
+    // The document is exactly as served.
+    expect(bridgePanel(7001).getByLabelText('Name/Location of Bridge')).toHaveValue(
+      'North Fork Bridge',
+    )
+    expect(bridgePanel(7001).getByLabelText('Site Plan / Gen. Arr. ($)')).toHaveValue('1,000')
+    expect(bridgePanel(7001).getByLabelText('Comments')).toHaveValue('Spans the north fork')
+    // Still editable afterwards — a read-only check must not leave the page locked.
+    expectCorrectable()
   })
 })

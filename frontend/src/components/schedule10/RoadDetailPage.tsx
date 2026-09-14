@@ -79,8 +79,8 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
         <Button kind="primary" disabled={controlsDisabled} renderIcon={Add} onClick={onOpenNew}>
           Add Road
         </Button>
-        {/* Back is never disabled, including outside Draft — a read-only reporter must be able to
-            leave the level. */}
+        {/* Back is never disabled, including for a caller who may not edit — a read-only reporter
+            must be able to leave the level. */}
         <Button kind="secondary" renderIcon={ArrowLeft} onClick={onBack}>
           Back
         </Button>
@@ -162,7 +162,8 @@ const RoadDetailPage: FC<RoadDetailPageProps> = ({
               }
             />
             <div className="schedule-10__panel-actions">
-              {/* AC11 and deviation 7: rendered and disabled outside Draft, never removed. */}
+              {/* AC11 and deviation 7: rendered and disabled whenever the caller may not edit (the
+                  role×status matrix since Story 16.1, not Draft alone), never removed. */}
               <Button
                 kind="primary"
                 disabled={controlsDisabled || readOnly}
