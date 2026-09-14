@@ -1698,6 +1698,10 @@ describe('Schedule8 correction at Submitted (Story 16.3)', () => {
       return HttpResponse.json({ ...body, editable: matrixEditable(request, body.trackStatus) })
     })
 
+  // millYearNotSelectedErrorMsg (messages.properties:9) WITHOUT its bundle trailing space — the
+  // server raises it with one, and the arm below appends it back.
+  const MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
+
   // millNotActiveForCurrentYearMsg (messages.properties:10), verbatim.
   const MILL_NOT_ACTIVE =
     'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.'
@@ -2033,7 +2037,7 @@ describe('Schedule8 correction at Submitted (Story 16.3)', () => {
     }
   })
 
-  test('a closed mill surfaces the API detail verbatim and renders no form', async () => {
+  test('a closed mill renders its own titled context state, not the generic load failure', async () => {
     // The page's load-error branch puts `extractDetail(error)` on screen (index.tsx:185, :393-402).
     // The suite's only other load-error test feeds a detail-less 500 and asserts the generic client
     // fallback, so nothing proved the API's own sentence reaches the screen — and the closed-mill
@@ -2046,9 +2050,31 @@ describe('Schedule8 correction at Submitted (Story 16.3)', () => {
     // to pair it with — the arm still states who was acting rather than inheriting the fallback.
     expect(declaredRole()).toBe(ILCR_ROLES.admin)
     expect(await screen.findByText(MILL_NOT_ACTIVE)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 8" satisfied the assertion
+    // above while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 8')).not.toBeInTheDocument()
     // No form behind the guard: not the page list, not the write control, not Check Status.
     expect(screen.queryByText(/Page # 1/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /add new page/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /check status/i })).not.toBeInTheDocument()
+  })
+
+  test('a SERVER-raised mill/year requirement lands on the same titled state as the client guard', async () => {
+    // `MillYearNotSelectedException`'s bundle text (messages.properties:9) ends in a real trailing
+    // space, so this is also the trim-compare's page-level arm: without it the sentence falls into
+    // "Unable to load Schedule 8" even though the client-only branch titles the identical condition.
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({ detail: `${MILL_YEAR_NOT_SELECTED} ` }, { status: 409 }),
+      ),
+    )
+    renderAsAdminAt()
+
+    expect(await screen.findByText('Mill and Reporting Year required')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 8')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add new page/i })).not.toBeInTheDocument()
   })
 })

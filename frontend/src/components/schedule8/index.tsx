@@ -40,7 +40,7 @@ import { extractDetail } from '@/utils/error'
 import { blankToNull } from '@/utils/forms'
 import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import CodeComboBox from '@/components/core/CodeComboBox'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -58,7 +58,6 @@ import './index.scss'
 
 // Client-only chrome (no request behind it). All success/error text comes from the API
 // message.text / ProblemDetail.detail — never hardcoded (AD-8).
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 
 type PanelMode = 'closed' | 'new' | 'edit' | 'copy' | 'view'
@@ -384,30 +383,20 @@ const Schedule8: FC = () => {
     </div>
   )
 
-  if (contextMissing) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Mill and Reporting Year required"
-        subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-      />,
-    )
-  }
-  if (isLoading) {
-    return shell(<LoadingScreen label="Loading Schedule 8" />)
-  }
-  if (errorDetail) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Unable to load Schedule 8"
-        subtitle={errorDetail}
-      />,
-    )
+  // The non-content states come from the shared helper rather than from three local branches, so
+  // Schedule 8 gets the SAME framing as its siblings for the two context guards: a mill closed for
+  // the reporting year (ERR-002) and a server-raised mill/year requirement each render as their own
+  // titled state with the form suppressed, instead of falling into "Unable to load Schedule 8" —
+  // which framed a context the operator has to change on the Home Page as a load failure.
+  const loadState = renderScheduleLoadState({
+    header,
+    scheduleName: 'Schedule 8',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
   if (!data) return null
 
