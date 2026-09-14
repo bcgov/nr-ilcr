@@ -1661,6 +1661,12 @@ describe('Schedule4 ministry correction at Submitted (Story 16.3)', () => {
     // stated, so this arm cannot quietly become a role-less render either.
     expect(declaredRole()).toBe(ILCR_ROLES.admin)
     expect(await screen.findByText(MILL_NOT_ACTIVE)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 4" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 4')).not.toBeInTheDocument()
     // No form: the guard shell carries neither action bar, so there is nothing to correct with.
     expect(screen.queryByRole('button', { name: /add new location/i })).not.toBeInTheDocument()
     expect(screen.queryAllByRole('button', { name: /check status/i })).toHaveLength(0)

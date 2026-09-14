@@ -30,9 +30,8 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
@@ -44,7 +43,6 @@ import './index.scss'
 // Client-side chrome (a suppression with no request / a browser alert / a confirm dialog), so the
 // verbatim text lives here. SUC/WRN/FLD strings come from the API `message`/`warnings`/`detail`
 // (AD-8) — never hardcoded. Shared strings reuse Schedule 1's exact wording.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_S111 = 'Annual Rent (Forest Act, S111) is recorded as an Unacceptable Cost.'
 // ALT-001, legacy-verbatim and identical to Schedule 1's: both sub-pages require a saved parent.
 const ALT_SAVE_BEFORE_SUB_PAGE = 'The schedule has to be saved before opening other costs'
@@ -300,36 +298,20 @@ const Schedule3: FC = () => {
     <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
   )
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 3" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 3', subtitle: errorDetail }}
-      />
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 3" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: header,
+    scheduleName: 'Schedule 3',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {

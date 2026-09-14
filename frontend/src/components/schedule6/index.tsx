@@ -32,9 +32,8 @@ import CodeComboBox from '@/components/core/CodeComboBox'
 import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   GENERAL_COMMENTS_MAX_LENGTH,
@@ -55,7 +54,6 @@ import './index.scss'
 // rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's empty substitute list (schedule6.xhtml:459-464) sets no emptyMessage, so PrimeFaces
 // rendered its default "No records found." — reproduced verbatim rather than inventing a literal.
 const EMPTY_LIST = 'No records found.'
@@ -839,36 +837,20 @@ const Schedule6: FC = () => {
       })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 6" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 6', subtitle: errorDetail }}
-      />
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 6" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: PAGE_HEADER,
+    scheduleName: 'Schedule 6',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {

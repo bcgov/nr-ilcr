@@ -29,7 +29,7 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
@@ -43,7 +43,6 @@ import './index.scss'
 // are client-side chrome (a suppression with no request / a Carbon Modal / a confirm Modal), so
 // their verbatim text lives here. SUC-001/SUC-002 come from the API `message.text` (AD-8) — never
 // hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const ALT_SAVE_BEFORE_OTHER_COSTS = 'The schedule has to be saved before opening other costs'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const CONFIRM_NAVIGATION = 'Any unsaved data will be lost. Are you sure you would like to continue?'
@@ -309,55 +308,20 @@ const Schedule1: FC = () => {
 
   const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
 
-  if (contextMissing) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Mill and Reporting Year required"
-              subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <LoadingScreen label="Loading Schedule 1" />
-          </Column>
-        </Grid>
-      </div>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <div className="app-page">
-        {header}
-        <Grid fullWidth className="app-page__body">
-          <Column sm={4} md={8} lg={16}>
-            <InlineNotification
-              kind="error"
-              lowContrast
-              hideCloseButton
-              title="Unable to load Schedule 1"
-              subtitle={errorDetail}
-            />
-          </Column>
-        </Grid>
-      </div>
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 1" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: header,
+    scheduleName: 'Schedule 1',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {

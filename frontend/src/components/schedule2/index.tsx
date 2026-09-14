@@ -28,9 +28,8 @@ import { isScheduleSaved } from '@/utils/schedule'
 import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import { validateSchedule2 } from './validation'
@@ -39,7 +38,6 @@ import './index.scss'
 // ERR-001 (mill/year not selected) and the confirm-delete text are client-side chrome (a suppression
 // with no request / a confirm dialog), so their verbatim text lives here. Success/error text comes
 // from the API `message.text` / ProblemDetail.detail — never hardcoded.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const COMMENTS_MAX = 3500
 
@@ -220,36 +218,20 @@ const Schedule2: FC = () => {
     })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 2" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 2', subtitle: errorDetail }}
-      />
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 2" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: PAGE_HEADER,
+    scheduleName: 'Schedule 2',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {

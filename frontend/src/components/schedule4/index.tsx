@@ -38,7 +38,7 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { getRouteApi } from '@tanstack/react-router'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
@@ -56,7 +56,6 @@ import './index.scss'
 
 // Client-only chrome (no request behind it), verbatim from the legacy bundle. All success/error text
 // comes from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8).
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 // WRN-001, {0} = source location name.
 const copyWarning = (name: string): string =>
@@ -612,41 +611,20 @@ const Schedule4: FC = () => {
   )
   const header = renderHeader()
 
-  const shell = (body: React.ReactNode) => (
-    <div className="app-page schedule-page">
-      {header}
-      <Grid fullWidth className="app-page__body">
-        <Column sm={4} md={8} lg={16}>
-          {body}
-        </Column>
-      </Grid>
-    </div>
-  )
-
-  if (contextMissing) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Mill and Reporting Year required"
-        subtitle={ERR_MILL_YEAR_NOT_SELECTED}
-      />,
-    )
-  }
-  if (isLoading) {
-    return shell(<LoadingScreen label="Loading Schedule 4" />)
-  }
-  if (errorDetail) {
-    return shell(
-      <InlineNotification
-        kind="error"
-        lowContrast
-        hideCloseButton
-        title="Unable to load Schedule 4"
-        subtitle={errorDetail}
-      />,
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 4" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: header,
+    scheduleName: 'Schedule 4',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
   if (!data) return null
 

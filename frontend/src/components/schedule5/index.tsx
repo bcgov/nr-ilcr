@@ -1,6 +1,6 @@
 import OriginalValueIndicator from '@/components/core/OriginalValueIndicator'
 import type { OriginalValues } from '@/interfaces/OriginalValue'
-import type { FC, ReactNode } from 'react'
+import type { FC } from 'react'
 import type Schedule5Response from '@/interfaces/Schedule5Response'
 import type {
   Camp,
@@ -38,9 +38,8 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { numStr, numStrGroup, parseDecimalInput, roundCost } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
-import PageState from '@/components/core/PageState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   CAMP_NAME_MAX_LENGTH,
@@ -66,7 +65,6 @@ import './index.scss'
 // request is issued. Every success/error/warning string comes from the API and renders verbatim
 // (AD-8); the copy warning in particular is now resolved from the bundle over HTTP rather than
 // hardcoded, which is why there is no copy literal here.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 // Legacy's p:dataTable (schedule5.xhtml:51) sets no emptyMessage, so PrimeFaces rendered its
 // generic default, "No records found." — a DELIBERATE departure from that verbatim text, ruled by
 // the Ministry on PR #370 (2026-08-27): "Display a blank page. If possible, have a message such as
@@ -604,59 +602,6 @@ const DescriptorFields: FC<{
     </div>
   </div>
 )
-
-/**
- * The page's three pre-document states — no mill/year context, still loading, or a failed load —
- * as one element, or null when the document should render. Extracted from the component so its
- * body carries one branch here instead of three; the `!data` guard stays in the component, where
- * it still narrows `data` for the rest of the render.
- */
-const loadState = ({
-  header,
-  contextMissing,
-  isLoading,
-  errorDetail,
-}: {
-  readonly header: ReactNode
-  readonly contextMissing: boolean
-  readonly isLoading: boolean
-  readonly errorDetail: string | undefined
-}): ReactNode | null => {
-  if (contextMissing) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-  if (isLoading) {
-    return (
-      <PageState header={header}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 5" />
-        </Column>
-      </PageState>
-    )
-  }
-  if (errorDetail) {
-    return (
-      <PageState
-        header={header}
-        notification={{
-          kind: 'error',
-          title: 'Unable to load Schedule 5',
-          subtitle: errorDetail,
-        }}
-      />
-    )
-  }
-  return null
-}
 
 const Schedule5: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
@@ -1279,10 +1224,18 @@ const Schedule5: FC = () => {
     )
   }
 
-  // The three pre-document states, resolved together (see `loadState`). Kept as one branch here
-  // rather than three so this component's body stays under the cognitive-complexity budget; the
-  // `!data` guard stays put, because it is what narrows `data` for everything below.
-  const loading = loadState({ header, contextMissing, isLoading, errorDetail })
+  // The three pre-document states, resolved together by the shared helper — which also gives a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement their own
+  // titled states instead of the generic "Unable to load Schedule 5". Kept as one branch here rather
+  // than three so this component's body stays under the cognitive-complexity budget; the `!data`
+  // guard stays put, because it is what narrows `data` for everything below.
+  const loading = renderScheduleLoadState({
+    header,
+    scheduleName: 'Schedule 5',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
   if (loading !== null) {
     return loading
   }

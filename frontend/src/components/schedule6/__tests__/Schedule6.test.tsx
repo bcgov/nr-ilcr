@@ -1128,20 +1128,31 @@ describe('Schedule 6 page (Story 8.3)', () => {
     expect(screen.queryByRole('button', { name: /^add$/i })).not.toBeInTheDocument()
   })
 
+  // The third column is the notification TITLE, added on the #464 review round. The verbatim detail
+  // was already asserted, but all three states used to share one heading — so a closed mill read as
+  // "Unable to load Schedule 6", a load failure, rather than as the context the operator has to change
+  // on the Home Page. Only the 404 is a failure; the other two are context guards with their own
+  // titles, and the pairing below is what holds them apart.
   test.each([
-    [400, 'Please Select Mill and Reporting Year in the Home Page. '],
+    [
+      400,
+      'Please Select Mill and Reporting Year in the Home Page. ',
+      'Mill and Reporting Year required',
+    ],
     [
       409,
       'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.',
+      'Mill not active for Reporting Year',
     ],
-    [404, 'Schedule not found.'],
+    [404, 'Schedule not found.', 'Unable to load Schedule 6'],
   ])(
-    'guard state %i renders the API detail verbatim and suppresses content (AC7 / S06–S08)',
-    async (status, detail) => {
+    'guard state %i renders the API detail verbatim under its own title and suppresses content (AC7 / S06–S08)',
+    async (status, detail, title) => {
       server.use(http.get(URL, () => problemBody(status, detail)))
       render(<Schedule6 />)
 
       expect(await screen.findByText(detail, { normalizer: verbatim })).toBeInTheDocument()
+      expect(screen.getByText(title)).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /^add$/i })).not.toBeInTheDocument()
       expect(screen.queryByRole('region', { name: 'Totals' })).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /check status/i })).not.toBeInTheDocument()

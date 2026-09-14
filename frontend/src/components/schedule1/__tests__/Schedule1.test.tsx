@@ -668,6 +668,12 @@ describe('Schedule1 editable page', () => {
     render(<Schedule1 />)
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 1" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 1')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 

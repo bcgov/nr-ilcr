@@ -1028,6 +1028,12 @@ describe('Schedule 5 guards (AC10, AC11)', () => {
     render(<Schedule5 />)
 
     expect(await screen.findByText(MILL_CLOSED)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 5" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 5')).not.toBeInTheDocument()
     expect(screen.queryByRole('table', { name: 'Existing Camps' })).not.toBeInTheDocument()
   })
 

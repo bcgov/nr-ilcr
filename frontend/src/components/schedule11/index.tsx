@@ -34,8 +34,7 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { numStr, numStrFixed } from '@/utils/number'
-import LoadingScreen from '@/components/core/LoadingScreen'
-import PageState from '@/components/core/PageState'
+import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   validateLocation,
@@ -49,7 +48,6 @@ import './index.scss'
 // rendered from the API `message.text` / ProblemDetail.detail — never hardcoded (AD-8). The
 // context-missing literal has no trailing space (sibling convention); the SERVER's ERR-001 (with its
 // real trailing space) still renders verbatim when a request returns it.
-const ERR_MILL_YEAR_NOT_SELECTED = 'Please Select Mill and Reporting Year in the Home Page.'
 const CONFIRM_DELETE = 'This will delete the current record. Do you want to continue?'
 const SCHEDULE11_PATH = '/v1/schedule11'
 const BEC_CATALOGUE_PATH = '/v1/schedule11/biogeoclimatic-catalogue'
@@ -832,36 +830,20 @@ const Schedule11: FC = () => {
       })
   }
 
-  if (contextMissing) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{
-          kind: 'error',
-          title: 'Mill and Reporting Year required',
-          subtitle: ERR_MILL_YEAR_NOT_SELECTED,
-        }}
-      />
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <PageState header={PAGE_HEADER}>
-        <Column sm={4} md={8} lg={16}>
-          <LoadingScreen label="Loading Schedule 11" />
-        </Column>
-      </PageState>
-    )
-  }
-
-  if (errorDetail) {
-    return (
-      <PageState
-        header={PAGE_HEADER}
-        notification={{ kind: 'error', title: 'Unable to load Schedule 11', subtitle: errorDetail }}
-      />
-    )
+  // The non-content states come from the shared helper rather than from local branches, so a mill
+  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
+  // their own titled state with the form suppressed, instead of falling into
+  // "Unable to load Schedule 11" — a load-failure framing for a context the operator changes on the
+  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
+  const loadState = renderScheduleLoadState({
+    header: PAGE_HEADER,
+    scheduleName: 'Schedule 11',
+    contextMissing,
+    isLoading,
+    errorDetail,
+  })
+  if (loadState) {
+    return loadState
   }
 
   if (!data) {

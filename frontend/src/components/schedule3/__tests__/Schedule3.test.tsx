@@ -646,13 +646,19 @@ describe('Schedule3 Save / Delete (AC4/AC5)', () => {
 })
 
 describe('Schedule3 context / load guards (AC3)', () => {
-  test('409 mill-closed shows verbatim ERR-003, form suppressed', async () => {
+  test('409 mill-closed shows verbatim ERR-003 under its own title, form suppressed', async () => {
     const detail =
       'This Mill is not active for the current Reporting Year. Please select another mill from the Home Page.'
     server.use(problemHandler(409, detail))
     render(<Schedule3 />)
 
     expect(await screen.findByText(detail)).toBeInTheDocument()
+    // The FRAMING, not just the pass-through (#464 review): a mill closed for the reporting year is
+    // a context the operator changes on the Home Page, not a load failure, so it carries its own
+    // title. Passing the detail through under "Unable to load Schedule 3" satisfied the assertion above
+    // while still showing the wrong state — this pair is what separates them.
+    expect(screen.getByText('Mill not active for Reporting Year')).toBeInTheDocument()
+    expect(screen.queryByText('Unable to load Schedule 3')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
