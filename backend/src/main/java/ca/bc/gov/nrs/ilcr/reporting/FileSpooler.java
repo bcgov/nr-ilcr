@@ -101,9 +101,11 @@ public class FileSpooler {
     } catch (IOException e) {
       delete(file);
       throw new SpoolFailedException("Failed to spool the generated file to disk", e);
-    } catch (RuntimeException e) {
+    } catch (RuntimeException | Error e) {
       // Includes whatever the writer raises for its own generation failure — the failure this whole
-      // class exists to keep in front of the response commit.
+      // class exists to keep in front of the response commit — and an Error such as
+      // OutOfMemoryError, which a wide extract can raise mid-write and which would otherwise leave
+      // the partial file behind on the shared swap volume.
       delete(file);
       throw e;
     }

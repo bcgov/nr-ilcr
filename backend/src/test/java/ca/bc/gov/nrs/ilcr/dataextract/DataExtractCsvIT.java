@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.dataextract.csv.DataExtractGenerator;
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextRepository;
 import ca.bc.gov.nrs.ilcr.schedule1.Schedule1Service;
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
 import ca.bc.gov.nrs.ilcr.support.AbstractOracleIT;
@@ -35,8 +36,11 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -57,9 +61,11 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * substring happened to appear somewhere else in the file.
  *
  * <p>Fixtures are {@code R__60_data_extract_fixtures.sql}: mills 760 (Verified on both tracks, with
- * a Schedule 3), 761 (Verified on Schedules 1–10 only, with NO Schedule 3) and 762 (Submitted, with
- * no schedule data at all), every row in report year 2020. Year 2021 is deliberately empty of
- * fixtures — see that file's header for why the second year of a range carries nothing.
+ * a Schedule 3 and one seeded row for each of Schedules 1 Other, 3 sub-pages, 4, 5, 8 and 10), 761
+ * (Verified on Schedules 1–10 only, Draft on silviculture, with NO Schedule 3 and one silviculture
+ * location) and 762 (Submitted, whose only schedule row is an EMPTY Schedule 1 summary), every row
+ * in report year 2020. Year 2021 is deliberately empty of fixtures — see that file's header for why
+ * the second year of a range carries nothing.
  */
 @TestPropertySource(properties = "ilcr.security.enabled=true")
 @DisplayName("Data Extract CSV — the generated file")
@@ -81,6 +87,28 @@ class DataExtractCsvIT extends AbstractOracleIT {
           .jwt(j -> j.claim("cognito:groups", List.of("ILCR_ADMIN")))
           .authorities(j -> CONVERTER.convert(j).getAuthorities());
 
+  /**
+   * Where the spooler writes, pinned for THIS class. {@code FileSpooler} honours {@code
+   * ilcr.reporting.spool-directory} and falls back to {@code java.io.tmpdir} only when that is
+   * blank, so a before/after listing of the JVM temp directory would pass vacuously under any
+   * configured directory (code review finding). A directory of this class's own also keeps the
+   * listing clear of whatever other suites leave in the shared temp directory.
+   */
+  private static final Path SPOOL_DIRECTORY = createSpoolDirectory();
+
+  private static Path createSpoolDirectory() {
+    try {
+      return Files.createTempDirectory("ilcr-data-extract-it");
+    } catch (IOException e) {
+      throw new IllegalStateException("Could not create the IT spool directory", e);
+    }
+  }
+
+  @DynamicPropertySource
+  static void spoolDirectory(DynamicPropertyRegistry registry) {
+    registry.add("ilcr.reporting.spool-directory", SPOOL_DIRECTORY::toString);
+  }
+
   @MockitoBean private JwtDecoder jwtDecoder;
 
   /**
@@ -88,6 +116,17 @@ class DataExtractCsvIT extends AbstractOracleIT {
    * against the fixtures, and only that one stubs it to throw.
    */
   @MockitoSpyBean private Schedule1Service schedule1Service;
+
+  /**
+   * The status-code lookup the generator itself resolves STATUS cells through, so an expected
+   * description is read from {@code THE.ILCR_MILL_REPORT_STATUS_CODE} rather than retyped here.
+   */
+  @Autowired private MillContextRepository millContextRepository;
+
+  /** The description for a report-status code, as the generator's STATUS cell renders it. */
+  private String statusOf(String code) {
+    return millContextRepository.findStatusDescription(code).orElseThrow();
+  }
 
   /** The spool directory's files, so a leftover partial file is detectable. */
   private static Set<Path> spoolFiles(Path directory) throws IOException {
@@ -133,6 +172,9 @@ class DataExtractCsvIT extends AbstractOracleIT {
    */
   private static List<String> rows(MvcResult result) {
     String body = text(result);
+    // The UTF-8 byte-order mark is asserted once, then dropped so the first row compares as text.
+    assertThat(body).startsWith("\uFEFF");
+    body = body.substring(1);
     // The file ends with a line terminator, so the trailing empty element is not a row.
     return Arrays.asList(body.substring(0, body.length() - 1).split("\n", -1));
   }
@@ -157,6 +199,28 @@ class DataExtractCsvIT extends AbstractOracleIT {
   /** The index of the first row whose single cell is {@code title}, or -1. */
   private static int sectionAt(List<String> rows, String title) {
     return rows.indexOf("\"" + title + "\"");
+  }
+
+  /** The header cells of the section titled {@code title}, asserting the section is present. */
+  private static List<String> headerOf(List<String> rows, String title) {
+    int at = sectionAt(rows, title);
+    assertThat(at).as("section %s", title).isPositive();
+    return cells(rows.get(at + 1));
+  }
+
+  /** The cells of the {@code n}th body row (1-based) of the section titled {@code title}. */
+  private static List<String> bodyRow(List<String> rows, String title, int n) {
+    return cells(rows.get(sectionAt(rows, title) + 1 + n));
+  }
+
+  /**
+   * The position of a named header cell, so a wide row is asserted by column NAME. Counting to
+   * column 17 of a 58-column row is where a test would silently pin the wrong cell.
+   */
+  private static int column(List<String> header, String name) {
+    int index = header.indexOf(name);
+    assertThat(index).as("header cell %s", name).isNotNegative();
+    return index;
   }
 
   @Nested
@@ -346,6 +410,14 @@ class DataExtractCsvIT extends AbstractOracleIT {
       int schedule2 = sectionAt(rows, "**** Schedule 2 ****");
       assertThat(rows.subList(schedule2, rows.size()))
           .noneMatch(row -> row.contains(NO_SCHEDULE_3));
+
+      // 761 has a Schedule 2 figure and no Schedule 3, so its Schedule 2 row is the PER-RECORD
+      // marker (recorded deviation (Q)), with the main-track status description in its third cell.
+      // 760 has no Schedule 2 at all and contributes no row (legacy's checkEmpty), so that marker
+      // is the section's only body row and the next row is the blank that closes the section.
+      assertThat(cells(rows.get(schedule2 + 2)))
+          .containsExactly("7610", "2020", mill761.get(2), "761", NO_DATA_FOUND);
+      assertThat(rows.get(schedule2 + 3)).isEqualTo("\" \"");
     }
 
     @Test
@@ -390,6 +462,348 @@ class DataExtractCsvIT extends AbstractOracleIT {
       // rather than refused, exactly as legacy's dispatch matched no builder for it.
       assertThat(sectionAt(rows, "**** Schedule 1 ****")).isPositive();
       assertThat(rows).noneMatch(row -> row.contains("Schedule 12"));
+    }
+  }
+
+  @Nested
+  @DisplayName("Schedule 1's own rules")
+  class ScheduleOneRules {
+
+    @Test
+    @DisplayName("every record empty gives ONE whole-schedule marker, not a per-record one")
+    void allEmptyGivesOneWholeScheduleMarker() throws Exception {
+      // 762's Schedule 1 summary has no detail rows, so findStoredSchedule1 finds a record whose
+      // every figure is null. Legacy branched the WHOLE section on that (Schedule1Extract.java:38,
+      // isEmptyAllSchedule): the body is the five-cell whole-schedule marker, and NOT the
+      // four-leading-cell per-record marker an empty pair gets once some other pair has figures.
+      List<String> rows = rows(extract(body(2020, 2020, "[762]", "[\"Schedule 1\"]")));
+      int title = sectionAt(rows, "**** Schedule 1 ****");
+
+      assertThat(title).isPositive();
+      assertThat(cells(rows.get(title + 1)).get(0)).isEqualTo("MILL_NUMBER");
+      assertThat(cells(rows.get(title + 2)))
+          .containsExactly("7620", "2020 - 2020", "-", "-", NO_DATA_FOUND);
+      // Exactly one body row: what follows is the blank that opens the Other Costs section.
+      assertThat(rows.get(title + 3)).isEqualTo("\" \"");
+      assertThat(rows.get(title + 4)).isEqualTo("\"**** Schedule 1 - Other Costs ****\"");
+    }
+
+    @Test
+    @DisplayName("Other Costs lists the itemized row with the SHARED volume, then a Total: row")
+    void otherCostsRowsThenTotal() throws Exception {
+      // 760 has a shared item-19 volume of 5000 and one itemized item-19 row of 3000. Every
+      // itemized row shows the shared volume (the owner stamps no per-row volume), and the Total:
+      // row formats the summed VOLUME to two decimals but the summed COST to none — legacy's
+      // inversion, kept by Schedule1OtherSection.
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 1\"]")));
+      String title = "**** Schedule 1 - Other Costs ****";
+
+      assertThat(headerOf(rows, title)).startsWith("MILL_NUMBER").endsWith("CPU_$/M3");
+      assertThat(bodyRow(rows, title, 1))
+          .containsExactly(
+              "7600", "2020", statusOf("V"), "760", "Extract Other Cost", "5,000", "3,000", "0.60");
+      assertThat(bodyRow(rows, title, 2))
+          .containsExactly("", "", "", "", "Total:", "5,000.00", "3,000", "0.60");
+    }
+
+    @Test
+    @DisplayName("rows walk mills by ID ascending while the title keeps the request's order")
+    void rowsAreByMillIdWhateverTheRequestOrder() throws Exception {
+      // Legacy's pair walk sorted by mill id, then year; its title line listed the mills as
+      // selected. Posting [761, 760] separates the two orders so a walk that followed the request
+      // order — or a title that sorted — would each be caught on its own.
+      List<String> rows = rows(extract(body(2020, 2020, "[761,760]", "[\"Schedule 1\"]")));
+      int schedule1 = sectionAt(rows, "**** Schedule 1 ****");
+
+      assertThat(rows.get(4)).isEqualTo("\"Included Mills: 7610, 7600\"");
+      assertThat(cells(rows.get(schedule1 + 2)).get(0)).isEqualTo("7600");
+      assertThat(cells(rows.get(schedule1 + 3)).get(0)).isEqualTo("7610");
+    }
+  }
+
+  @Nested
+  @DisplayName("the schedule walks, against seeded figures")
+  class ScheduleWalks {
+
+    @Test
+    @DisplayName("Schedule 3: the main row and both sub-page walks render the seeded figures")
+    void scheduleThree() throws Exception {
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 3\"]")));
+
+      String main = "**** Schedule 3 ****";
+      List<String> header = headerOf(rows, main);
+      assertThat(header).startsWith("MILL_NUMBER").endsWith("COMMENTS");
+      List<String> row = bodyRow(rows, main, 1);
+      assertThat(row).hasSize(header.size());
+      assertThat(row.get(0)).isEqualTo("7600");
+      // The seeded item-118 PO&P timber volume, and the item-29 Annual Rents harvest figure.
+      assertThat(row.get(column(header, "PO&P_M3"))).isEqualTo("7,500");
+      assertThat(row.get(column(header, "RENTS_TOTAL_$"))).isEqualTo("1,000");
+
+      // Other Acceptable: one TOT + PO&P group, crown derived as their difference. The legacy
+      // title says "Other Costs", not "Acceptable" — kept.
+      String accept = "**** Schedule 3 - Other Costs ****";
+      assertThat(headerOf(rows, accept)).startsWith("MILL_NUMBER").endsWith("CROWN_$");
+      assertThat(bodyRow(rows, accept, 1))
+          .containsExactly(
+              "7600", "2020", statusOf("V"), "760", "Consulting Fees", "800", "300", "500");
+      assertThat(bodyRow(rows, accept, 2))
+          .containsExactly("", "", "", "", "Total:", "800", "300", "500");
+
+      // Included Unacceptable: legacy's fixed Annual Rents row first, then the item-38 row, then
+      // a Total: that includes the rents; CROWN_$ copies TOTAL_$ on every row, as legacy wrote it.
+      String unaccept = "**** Schedule 3 - Unacceptable Costs ****";
+      assertThat(headerOf(rows, unaccept)).startsWith("MILL_NUMBER").endsWith("CROWN_$");
+      assertThat(bodyRow(rows, unaccept, 1))
+          .containsExactly(
+              "7600",
+              "2020",
+              statusOf("V"),
+              "760",
+              "Annual Rents (Forest Act, S111)",
+              "1,000",
+              "1,000");
+      assertThat(bodyRow(rows, unaccept, 2))
+          .containsExactly("7600", "2020", statusOf("V"), "760", "Penalty Fees", "250", "250");
+      assertThat(bodyRow(rows, unaccept, 3))
+          .containsExactly("", "", "", "", "Total:", "1,250", "1,250");
+    }
+
+    @Test
+    @DisplayName("Schedule 4: the location row and its Towing sub-page render the seeded figures")
+    void scheduleFour() throws Exception {
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 4\"]")));
+
+      String main = "**** Schedule 4 ****";
+      List<String> header = headerOf(rows, main);
+      assertThat(header).startsWith("MILL_NUMBER").endsWith("COMMENTS").hasSize(58);
+      List<String> location = bodyRow(rows, main, 1);
+      assertThat(location).hasSize(58);
+      assertThat(location.get(0)).isEqualTo("7600");
+      assertThat(location.get(column(header, "LOCATION"))).isEqualTo("Extract Dump");
+      // The fixed category 40 on the primary report; every $/m3 here is the Excel-formula form.
+      assertThat(location.get(column(header, "LAKESIDE_M3"))).isEqualTo("2,000");
+      assertThat(location.get(column(header, "LAKESIDE_$"))).isEqualTo("100,000");
+      assertThat(location.get(column(header, "LAKESIDE_$/M3"))).isEqualTo("=\"50.00\"");
+      // The TOW_TOT_* block is summed from the location's OWN Towing rows — one row here.
+      assertThat(location.get(column(header, "TOW_TOT_KM"))).isEqualTo("30");
+      assertThat(location.get(column(header, "TOW_TOT_M3"))).isEqualTo("100");
+      assertThat(location.get(column(header, "TOW_TOT_$"))).isEqualTo("3,000");
+      assertThat(location.get(column(header, "TOW_TOT_$/M3"))).isEqualTo("=\"30.00\"");
+
+      String towing = "**** Schedule 4 - Towing ****";
+      assertThat(headerOf(rows, towing)).startsWith("MILL_NUMBER").endsWith("CPU_$/M3");
+      assertThat(bodyRow(rows, towing, 1))
+          .containsExactly(
+              "7600",
+              "2020",
+              statusOf("V"),
+              "760",
+              "Extract Dump",
+              "Extract Towing",
+              "30",
+              "100",
+              "3,000",
+              "=\"30.00\"");
+      // The Total: row's CPU is the plain two-decimal form, not the formula — legacy's own mix.
+      assertThat(bodyRow(rows, towing, 2))
+          .containsExactly("", "", "", "", "", "Total:", "30", "100", "3,000", "30.00");
+      // A sub-page with no rows for the location gets the per-LOCATION marker, not the
+      // whole-schedule one: the location exists, its Rehaul list is what is empty.
+      assertThat(bodyRow(rows, "**** Schedule 4 - Rehaul ****", 1))
+          .containsExactly("7600", "2020", statusOf("V"), "760", "Extract Dump", NO_DATA_FOUND);
+    }
+
+    @Test
+    @DisplayName("Schedule 5: the camp row and Camp Expenses render, and Camp precedes Access")
+    void scheduleFive() throws Exception {
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 5\"]")));
+
+      String main = "**** Schedule 5 ****";
+      List<String> header = headerOf(rows, main);
+      assertThat(header).startsWith("MILL_NUMBER").endsWith("COMMENTS");
+      List<String> camp = bodyRow(rows, main, 1);
+      assertThat(camp).hasSize(header.size());
+      assertThat(camp.get(0)).isEqualTo("7600");
+      assertThat(camp.get(column(header, "CAMP_NAME"))).isEqualTo("Extract Camp");
+      assertThat(camp.get(column(header, "ROAD_DIST_KM"))).isEqualTo("12");
+      assertThat(camp.get(column(header, "CAMP_SIZE_PERS"))).isEqualTo("20");
+      assertThat(camp.get(column(header, "ASSOC_CAMP_VOL_M3"))).isEqualTo("10,000");
+      assertThat(camp.get(column(header, "ISOLATED_CAMP"))).isEqualTo("No");
+      // The one fixed category (56 catering) and the sub-page aggregate the item-62 row feeds.
+      assertThat(camp.get(column(header, "CATERER_M3"))).isEqualTo("10,000");
+      assertThat(camp.get(column(header, "CATERER_$"))).isEqualTo("50,000");
+      assertThat(camp.get(column(header, "CATERER_$/M3"))).isEqualTo("5.00");
+      assertThat(camp.get(column(header, "OTH_EXP_M3"))).isEqualTo("4,000");
+      assertThat(camp.get(column(header, "OTH_EXP_$"))).isEqualTo("2,000");
+
+      String campExpenses = "**** Schedule 5 - Camp Expenses ****";
+      String accessExpenses = "**** Schedule 5 - Access Expenses ****";
+      assertThat(headerOf(rows, campExpenses)).startsWith("MILL_NUMBER").endsWith("CPU_$/M3");
+      // The row's volume is the item-141 amount STAMPED at read, never a stored per-row value.
+      assertThat(bodyRow(rows, campExpenses, 1))
+          .containsExactly(
+              "7600",
+              "2020",
+              statusOf("V"),
+              "760",
+              "Extract Camp",
+              "Extract Kitchen",
+              "4,000",
+              "2,000",
+              "0.50");
+      assertThat(bodyRow(rows, campExpenses, 2))
+          .containsExactly("", "", "", "", "", "Total:", "4,000", "2,000", "0.50");
+      // Legacy DISPATCH order: Camp before Access — although its title line, reproduced on row 6,
+      // lists Access first. The two orders are asserted together so neither can be "fixed" to
+      // match the other.
+      assertThat(sectionAt(rows, campExpenses)).isLessThan(sectionAt(rows, accessExpenses));
+      assertThat(rows.get(6))
+          .isEqualTo("\"Schedules: Schedule 5, Schedule 5 Access, Schedule 5 Camp\"");
+      // No item-68 row: the Access section carries this camp's per-CAMP marker.
+      assertThat(bodyRow(rows, accessExpenses, 1))
+          .containsExactly("7600", "2020", statusOf("V"), "760", "Extract Camp", NO_DATA_FOUND);
+    }
+
+    @Test
+    @DisplayName("Schedule 8: the page row and its sample row render the seeded figures")
+    void scheduleEight() throws Exception {
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 8\"]")));
+
+      String main = "**** Schedule 8 ****";
+      assertThat(headerOf(rows, main)).startsWith("MILL_NUMBER").endsWith("COMMENTS").hasSize(17);
+      // PAGE_NO is legacy's page title with its double space and its " - " for a null cutting
+      // permit; S_BLOCK is the stored TSB code, too short to lose its first two characters; the
+      // null TFL and cutting permit are the null marker.
+      assertThat(bodyRow(rows, main, 1))
+          .containsExactly(
+              "7600",
+              "2020",
+              statusOf("V"),
+              "760",
+              "Page # 1  -TSA: TSA5 -CP:  - ",
+              "Extract Div",
+              "Extract Contact",
+              "2505550100",
+              "R1",
+              "TSA5",
+              "-",
+              "B",
+              "L760",
+              "-",
+              "SC1",
+              "BZ1",
+              "Extract page");
+
+      String samples = "**** Schedule 8 - TTT ****";
+      List<String> header = headerOf(rows, samples);
+      assertThat(header).startsWith("MILL_NUMBER").endsWith("COMMENTS").hasSize(41);
+      List<String> sample = bodyRow(rows, samples, 1);
+      assertThat(sample).hasSize(41);
+      assertThat(sample.get(0)).isEqualTo("7600");
+      assertThat(sample.get(column(header, "PAGE_NO"))).isEqualTo("Sample # 1 - EXC1");
+      assertThat(sample.get(column(header, "CONTRACT_ID"))).isEqualTo("EXC1");
+      assertThat(sample.get(column(header, "CUT_BLOCK"))).isEqualTo("CB7");
+      assertThat(sample.get(column(header, "SY_GROUNDBASE_%"))).isEqualTo("60");
+      assertThat(sample.get(column(header, "SY_GRAPPLE_%"))).isEqualTo("40");
+      assertThat(sample.get(column(header, "TOTAL_%"))).isEqualTo("100");
+      // The legacy enum LABELS, not the stored Y/N indicators.
+      assertThat(sample.get(column(header, "HELI_DIR"))).isEqualTo("Uphill");
+      assertThat(sample.get(column(header, "HELI_DUMP"))).isEqualTo("Land Dump");
+      assertThat(sample.get(column(header, "CONIF_M3"))).isEqualTo("700");
+      assertThat(sample.get(column(header, "DECID_M3"))).isEqualTo("300");
+      assertThat(sample.get(column(header, "ACTUAL_M3"))).isEqualTo("1,000");
+      // No rate rows: additions roll up to 0, so the deductions gate is open and final = original.
+      assertThat(sample.get(column(header, "ORIG_TTT_RATE"))).isEqualTo("25");
+      assertThat(sample.get(column(header, "ADDITIONS"))).isEqualTo("0");
+      assertThat(sample.get(column(header, "DEDUCTIONS"))).isEqualTo("0");
+      assertThat(sample.get(column(header, "FINAL_TTT_RATE"))).isEqualTo("25");
+    }
+
+    @Test
+    @DisplayName("Schedule 10: page rows, a detail row, then the no-road-data page's marker LAST")
+    void scheduleTen() throws Exception {
+      List<String> rows = rows(extract(body(2020, 2020, "[760]", "[\"Schedule 10\"]")));
+
+      String main = "**** Schedule 10 ****";
+      List<String> header = headerOf(rows, main);
+      // Legacy's PERIOD header carries a literal trailing tab, and it is matched by name here.
+      assertThat(header).startsWith("MILL_NUMBER").endsWith("ROAD_GROUP").hasSize(12);
+      List<String> first = bodyRow(rows, main, 1);
+      assertThat(first.get(0)).isEqualTo("7600");
+      assertThat(first.get(column(header, "PAGE_NO"))).startsWith("Page 1, Period: 2020-06");
+      assertThat(first.get(column(header, "DIVISION"))).isEqualTo("Extract Div");
+      assertThat(first.get(column(header, "PERIOD\t"))).isEqualTo("2020-06");
+      assertThat(first.get(column(header, "REGION"))).isEqualTo("RNI");
+      assertThat(first.get(column(header, "TSA_TFL"))).isEqualTo("01");
+      assertThat(first.get(column(header, "S_BLOCK"))).isEqualTo("01A");
+      assertThat(first.get(column(header, "TFL"))).isEqualTo("-");
+      // Road Group is DERIVED on read: TSA 01 + TSB 01A is legacy's "11".
+      assertThat(first.get(column(header, "ROAD_GROUP"))).isEqualTo("11");
+      assertThat(bodyRow(rows, main, 2).get(column(header, "DIVISION"))).isEqualTo("Extract Empty");
+
+      String road = "**** Schedule 10 - Road Data ****";
+      List<String> roadHeader = headerOf(rows, road);
+      assertThat(roadHeader).startsWith("MILL_NUMBER").endsWith("COMMENTS").hasSize(58);
+      List<String> detail = bodyRow(rows, road, 1);
+      assertThat(detail).hasSize(58);
+      assertThat(detail.get(0)).isEqualTo("7600");
+      assertThat(detail.get(column(roadHeader, "PAGE_NO"))).startsWith("Page 1,");
+      assertThat(detail.get(column(roadHeader, "ROAD_NAME"))).isEqualTo("Extract Mainline");
+      assertThat(detail.get(column(roadHeader, "ROAD_TYPE"))).isEqualTo("P");
+      assertThat(detail.get(column(roadHeader, "BIOGEO_SUBZONE_VARIANT"))).isEqualTo("ICHdw1");
+      assertThat(detail.get(column(roadHeader, "SLOPE_%"))).isEqualTo("25");
+      assertThat(detail.get(column(roadHeader, "ENG_COST_IND"))).isEqualTo("NO");
+      assertThat(detail.get(column(roadHeader, "COMMENTS"))).isEqualTo("Extract road comment");
+      // The Ministry-removed columns keep header and position and carry the null marker.
+      assertThat(detail.get(column(roadHeader, "MOISTURE"))).isEqualTo("-");
+      assertThat(detail.get(column(roadHeader, "RSMS_CLASS"))).isEqualTo("-");
+      assertThat(detail.get(column(roadHeader, "BOULDER_%"))).isEqualTo("-");
+      // Legacy collected the no-road-data pages and appended them AFTER every detail row, so the
+      // second page's marker follows the first page's detail although the pages list in id order.
+      List<String> marker = bodyRow(rows, road, 2);
+      assertThat(marker).hasSize(12);
+      assertThat(marker.get(0)).isEqualTo("7600");
+      assertThat(marker.get(column(roadHeader, "PAGE_NO"))).startsWith("Page 2, Period: 2020-07");
+      assertThat(marker.get(11)).isEqualTo(NO_DATA_FOUND);
+      // And nothing else: the row after the marker is the blank that closes the section.
+      assertThat(rows.get(sectionAt(rows, road) + 4)).isEqualTo("\" \"");
+    }
+
+    @Test
+    @DisplayName("Schedule 11: the STATUS cell is the SILVICULTURE track's description")
+    void scheduleEleven() throws Exception {
+      // 761 is V on Schedules 1-10 and D on silviculture. Every other section's STATUS cell reads
+      // the main track; this one must read the silviculture track — so the two descriptions are
+      // first proven different, or the assertion could pass with the wrong track wired in.
+      assertThat(statusOf("D")).isNotEqualTo(statusOf("V"));
+      List<String> rows = rows(extract(body(2020, 2020, "[761]", "[\"Schedule 11\"]")));
+
+      String title = "**** Schedule 11 ****";
+      assertThat(headerOf(rows, title)).startsWith("MILL_NUMBER").endsWith("COMMENTS").hasSize(13);
+      // Areas use #,###,##0 and money #,###,##0.00; a null comment is the null marker.
+      assertThat(bodyRow(rows, title, 1))
+          .containsExactly(
+              "7610",
+              "2020",
+              statusOf("D"),
+              "761",
+              "Extract Block",
+              "ICHdw1",
+              "N",
+              "100",
+              "5,000.00",
+              "2,500.00",
+              "7,500.00",
+              "75.00",
+              "-");
+      // The FINAL total row sits one column further right than an intermediate one — six leading
+      // blanks — legacy's misalignment kept verbatim.
+      assertThat(bodyRow(rows, title, 2))
+          .containsExactly(
+              "", "", "", "", "", "", "Total:", "100", "5,000.00", "2,500.00", "7,500.00", "75.00");
+      // The same Draft code that fills the STATUS cell also fails Data Verified for this selection.
+      assertThat(cells(rows.get(5)).get(0)).isEqualTo("Data Verified: No");
     }
   }
 
@@ -482,7 +896,9 @@ class DataExtractCsvIT extends AbstractOracleIT {
       // The whole-file-or-no-file contract's other half. Asserted on the spool DIRECTORY, because
       // the failure mode this guards against is a partial file surviving on a read-only-root pod
       // whose writable volume then fills up — invisible to any assertion on the response alone.
-      Path spoolDirectory = Path.of(System.getProperty("java.io.tmpdir"));
+      // The directory listed is the one the class pins through ilcr.reporting.spool-directory —
+      // listing java.io.tmpdir would compare a directory the spooler never writes to.
+      Path spoolDirectory = SPOOL_DIRECTORY;
       Set<Path> before = spoolFiles(spoolDirectory);
 
       when(schedule1Service.findStoredSchedule1(anyLong(), anyInt(), any()))

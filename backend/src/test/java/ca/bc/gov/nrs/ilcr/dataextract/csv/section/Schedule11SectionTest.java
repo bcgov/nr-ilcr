@@ -284,6 +284,57 @@ class Schedule11SectionTest {
     }
   }
 
+  /**
+   * Legacy {@code sumBigDecimalAreas} adds the areas at full precision and rounds the SUM once, to
+   * one place ({@code HALF_UP}); the area cell then prints {@code #,###,##0} under DecimalFormat's
+   * {@code HALF_EVEN}. The nearby cost helper, {@code sumBigDecimalCosts}, rounds EVERY term first,
+   * and that is the substitution this fixture is built to catch.
+   */
+  @Nested
+  @DisplayName("the NAR_HA total sums at full precision and rounds once")
+  class AreaTotalRoundsOnce {
+
+    /** Where the final total's label lands: six blanks in ({@code Schedule11Extract.java:70}). */
+    private static final int FINAL_TOTAL_LABEL = 6;
+
+    @Test
+    @DisplayName("100.75 + 99.75 ha totals 200, not the 201 that rounding each term first gives")
+    void areaTotal_isSumThenRoundNotRoundThenSum() {
+      // Production: 100.75 + 99.75 = 200.50 -> setScale(1, HALF_UP) = 200.5 -> area() HALF_EVEN
+      // -> 200 (even neighbour). Rounding each term first, to one place (100.8 + 99.8 = 200.6) or
+      // to a whole number as sumCosts does (101 + 100 = 201), prints "201" either way, so a swap
+      // to a per-term helper fails here. Skipping the one-place step (raw 200.50 -> "200") is the
+      // one alternative this cell cannot see; no fixture separates it, because HALF_UP to one
+      // place only moves a figure whose hundredths are exactly 5, and HALF_EVEN then lands on the
+      // same whole number either way.
+      //
+      // The costs are Integer (SilvicultureLocation.actualCost / plannedCost), so sumCosts's
+      // per-term whole rounding cannot be discriminated on the money cells; they are asserted
+      // only so the CPU's numerator is pinned: 2,010 + 2,000 = 4,010, and 4,010 / 200.5 = 20.00
+      // exactly, where 4,010 / 200.6 = 19.990… -> "19.99". So the CPU cell catches the swap too.
+      SilvicultureLocation first =
+          location("Block 50", false, "SBSmc2", "100.75", 2010, 0, 2010, "19.95", null);
+      SilvicultureLocation second =
+          location("Block 51", false, "SBSmc2", "99.75", 0, 2000, 2000, "20.05", null);
+
+      List<String[]> rows = section.rows(List.of(new Entry(CTX, response(List.of(first, second)))));
+
+      assertThat(rows).hasSize(3);
+      // The rows' own area cells: 100.75 -> "101" and 99.75 -> "100" under HALF_EVEN, so the
+      // displayed cells add to 201 while the total below them reads 200. Legacy's file did the
+      // same; the total is not the sum of the printed cells.
+      assertThat(rows.get(0)[7]).isEqualTo("101");
+      assertThat(rows.get(1)[7]).isEqualTo("100");
+      String[] finalTotal = rows.get(2);
+      assertThat(finalTotal[FINAL_TOTAL_LABEL]).isEqualTo("Total:");
+      assertThat(finalTotal[FINAL_TOTAL_LABEL + 1]).isEqualTo("200");
+      assertThat(finalTotal[FINAL_TOTAL_LABEL + 2]).isEqualTo("2,010.00");
+      assertThat(finalTotal[FINAL_TOTAL_LABEL + 3]).isEqualTo("2,000.00");
+      assertThat(finalTotal[FINAL_TOTAL_LABEL + 4]).isEqualTo("4,010.00");
+      assertThat(finalTotal[FINAL_TOTAL_LABEL + 5]).isEqualTo("20.00");
+    }
+  }
+
   @Nested
   @DisplayName("entries without locations")
   class EntriesWithoutLocations {

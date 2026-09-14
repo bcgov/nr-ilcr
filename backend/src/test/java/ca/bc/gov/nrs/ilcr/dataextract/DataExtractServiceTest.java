@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,12 +14,15 @@ import static org.mockito.Mockito.when;
 import ca.bc.gov.nrs.ilcr.dataextract.csv.DataExtractGenerator;
 import ca.bc.gov.nrs.ilcr.dataextract.dto.DataExtractRequest;
 import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
 import ca.bc.gov.nrs.ilcr.millcontext.ScheduleNotFoundException;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
 import ca.bc.gov.nrs.ilcr.reporting.SpoolFailedException;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,8 +49,22 @@ class DataExtractServiceTest {
 
   @Mock private ReportYearGuard reportYearGuard;
   @Mock private DataExtractGenerator generator;
+  @Mock private MillContextService millContextService;
 
   @InjectMocks private DataExtractService service;
+
+  @BeforeEach
+  void knownMills() {
+    // Every id these tests select is a mill the administrator's picker could offer; the
+    // unknown-id refusal has its own test below. Lenient because the tests that never pass the
+    // mill check (an empty selection) never consult the list.
+    lenient()
+        .when(millContextService.listMills(true, null))
+        .thenReturn(
+            List.of(
+                new MillSummary(514L, "514", "AAA Milling", "ACT"),
+                new MillSummary(516L, "516", "Closed Milling", "CLS")));
+  }
 
   private static DataExtractRequest request(
       String startYear, String endYear, List<Long> millIds, List<String> schedules) {
@@ -250,15 +268,46 @@ class DataExtractServiceTest {
   }
 
   @Test
-  @DisplayName("an unknown schedule label passes the gate — membership is the generator's concern")
-  void unknownScheduleLabel_isNotRejected() {
+  @DisplayName(
+      "an unknown label MIXED with a real one passes the gate — dropped later, not refused")
+  void unknownScheduleLabelAmongRealOnes_isNotRejected() {
     yearsOpen();
     // D-R2 (2026-09-11): legacy had no membership check; an unknown name matched no builder and
-    // was ignored. The gate asks only whether SOMETHING usable was selected.
+    // was ignored. The gate asks whether something EXTRACTABLE was selected, and here it was.
     ValidatedSelection selection =
-        service.validate(request("2020", "2021", ONE_MILL, List.of("Schedule 12")));
+        service.validate(request("2020", "2021", ONE_MILL, List.of("Schedule 1", "Schedule 12")));
 
-    assertThat(selection.schedules()).containsExactly("Schedule 12");
+    assertThat(selection.schedules()).containsExactly("Schedule 1", "Schedule 12");
+  }
+
+  @Test
+  @DisplayName("a list of ONLY unknown labels is no selection, and earns legacy's own message")
+  void onlyUnknownScheduleLabels_isRejectedAsNothingSelected() {
+    // No yearsOpen(): the gate refuses before the openness guard is ever consulted.
+    // Code review 2026-09-14: without this the generator answered a title block with no sections
+    // and the page announced success. Legacy's picker could not send it; a JSON body can.
+    MultiMessageException thrown =
+        catchThrowableOfType(
+            MultiMessageException.class,
+            () -> service.validate(request("2020", "2021", ONE_MILL, List.of("Schedule 12"))));
+
+    assertThat(thrown.getMessageKeys()).containsExactly("extractSchedulesNotSelectedMsg");
+  }
+
+  @Test
+  @DisplayName("a mill id the picker could not have offered is refused, accumulated with the rest")
+  void unknownMillId_isRejected() {
+    // No yearsOpen(): the gate refuses before the openness guard is ever consulted.
+    // Code review 2026-09-14: legacy NPE'd on an unknown mill's number; a shell row reading
+    // "Mill 999999" with "** NO STATUS **" cells would instead pass for real, unverified data.
+    MultiMessageException thrown =
+        catchThrowableOfType(
+            MultiMessageException.class,
+            () -> service.validate(request("2020", "2021", List.of(999999L), List.of())));
+
+    // Accumulated, in screen order: the unknown mill, then the empty schedule list.
+    assertThat(thrown.getMessageKeys())
+        .containsExactly("extractMillsUnknownMsg", "extractSchedulesNotSelectedMsg");
   }
 
   @Test
@@ -296,7 +345,7 @@ class DataExtractServiceTest {
   void generationException_passesThrough() {
     yearsOpen();
     DataExtractGenerationException original =
-        new DataExtractGenerationException("Building the data extract failed", null);
+        new DataExtractGenerationException(new IllegalStateException("upstream"));
     when(generator.generate(any())).thenThrow(original);
 
     assertThatThrownBy(() -> service.generate(request("2020", "2021", ONE_MILL, ONE_SCHEDULE)))

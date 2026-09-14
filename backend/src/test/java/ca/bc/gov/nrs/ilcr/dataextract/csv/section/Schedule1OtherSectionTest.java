@@ -117,11 +117,26 @@ class Schedule1OtherSectionTest {
     }
 
     @Test
-    @DisplayName("a null description renders the null marker")
-    void nullDescription_rendersTheNullMarker() {
-      List<String[]> rows = section.rows(CTX, document("1000", row(null, 500, null)));
+    @DisplayName("a row with no description is dropped, as legacy's filtered list dropped it")
+    void blankDescription_isFilteredOut() {
+      // Legacy iterated getOtherCostListFiltered() (Schedule1DO.java:180-188), which kept only
+      // rows whose description was non-empty, and decided the marker on THAT list. So a pair whose
+      // only rows are blank-described gets the per-record marker, and a blank row is never summed
+      // into Total:.
+      List<String[]> onlyBlank =
+          section.rows(CTX, document("1000", row(null, 500, null), row("", 300, null)));
 
-      assertThat(rows.get(0)[4]).isEqualTo("-");
+      assertThat(onlyBlank).hasSize(1);
+      assertThat(onlyBlank.get(0)[4]).isEqualTo("*** NO DATA FOUND ***");
+
+      List<String[]> mixed =
+          section.rows(CTX, document("1000", row(null, 500, null), row("Fuel", 300, null)));
+
+      // One itemized row (Fuel) and the total — the blank row contributes to neither.
+      assertThat(mixed).hasSize(2);
+      assertThat(mixed.get(0)[4]).isEqualTo("Fuel");
+      assertThat(mixed.get(1)[4]).isEqualTo("Total:");
+      assertThat(mixed.get(1)[6]).isEqualTo("300");
     }
   }
 
@@ -180,6 +195,34 @@ class Schedule1OtherSectionTest {
       // The CPU cell divides sumBig2DecimalCosts by sumBig2DecimalCosts — the unrounded 1234.40,
       // not the whole 1234 the volume cell shows — so 1000.00 / 1234.40 = 0.81.
       assertThat(rows.get(1)[7]).isEqualTo("0.81");
+    }
+
+    @Test
+    @DisplayName("the CPU's divisor is the 2-dp volume sum, not the whole-rounded one shown")
+    void totalRow_cpuDivisorIsTheTwoDecimalSumNotTheDisplayedWholeSum() {
+      // Costs are Integer (OtherCostRow.cost), so sumCosts and sumCostsTwoDecimals agree on every
+      // cost sum; the only term that can carry a fraction is the shared VOLUME, repeated once per
+      // row. So the discrimination is on volumes. Three described rows (the section drops a blank
+      // description) at a shared 100.40 and costs 400 + 300 + 300 = 1000:
+      //   sumCosts(volumes)            = 100 + 100 + 100        = 300     (each term whole-rounded)
+      //   sumCostsTwoDecimals(volumes) = 100.40 + 100.40 + 100.40 = 301.20 (each term 2-dp)
+      //   CPU = 1000.00 / 301.20 = 3.32005312…  -> twoDecimals -> "3.32"
+      // Dividing by the whole-rounded 300 instead gives 3.3333… -> "3.33", so a swap of the two
+      // helpers on either operand of the CPU fails here. The volume cell above the CPU shows the
+      // whole-rounded 300 dressed as "300.00", so the file's own total and its CPU disagree, as
+      // legacy's did (Schedule1OtherExtract.java:85-92).
+      OtherCostsDocument document =
+          document(
+              "100.40",
+              row("Camp water", 400, null),
+              row("Fuel", 300, null),
+              row("Freight", 300, null));
+
+      List<String[]> rows = section.rows(CTX, document);
+
+      assertThat(rows).hasSize(4);
+      assertThat(rows.get(0)[5]).isEqualTo("100"); // each row's shared volume, whole
+      assertThat(rows.get(3)).containsExactly("", "", "", "", "Total:", "300.00", "1,000", "3.32");
     }
 
     @Test

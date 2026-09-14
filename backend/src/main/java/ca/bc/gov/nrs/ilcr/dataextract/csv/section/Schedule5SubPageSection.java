@@ -2,6 +2,7 @@ package ca.bc.gov.nrs.ilcr.dataextract.csv.section;
 
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.NO_DATA_FOUND;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.NULL_VALUE;
+import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.defuse;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.divideNoRounding;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.nullOnly;
 import static ca.bc.gov.nrs.ilcr.dataextract.csv.ExtractFormat.sumCosts;
@@ -85,7 +86,7 @@ public final class Schedule5SubPageSection implements SectionBuilder {
       rows.add(
           ctx.with(
               campName,
-              kind == Kind.CAMP ? item.description() : text(item.description()),
+              kind == Kind.CAMP ? defuse(item.description()) : text(item.description()),
               whole(item.volume()),
               whole(item.cost()),
               twoDecimals(item.costPerVolume())));

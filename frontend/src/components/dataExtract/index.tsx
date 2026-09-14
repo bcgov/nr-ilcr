@@ -45,19 +45,24 @@ const SUCCESS_KEY = 'dataExtractedSuccesfullyInfoMsg'
 const SUCCESS_FALLBACK = 'Data extraction successfully.'
 
 /**
- * `dataExtract<yyyyMMdd>.csv`, built HERE from the browser clock rather than parsed off the
- * response's `Content-Disposition` — the idiom both shipped download pages already follow. The
- * backend derives the identical name from the same rule on its own clock (pinned to Pacific time,
- * as legacy's server was), so the two agree except for a request that crosses local midnight.
+ * `dataExtract<yyyyMMdd>.csv`, built HERE rather than parsed off the response's
+ * `Content-Disposition` — the idiom both shipped download pages already follow. The backend derives
+ * the same name on a clock pinned to Pacific time, so the date is taken in that zone here too: an
+ * administrator in Ottawa or on a UTC laptop would otherwise save a differently dated file for
+ * several hours of every day, not only across midnight. `en-CA` puts the parts in y-m-d order.
  */
-const extractFilename = (now: Date): string => {
-  const parts = [
-    String(now.getFullYear()),
-    String(now.getMonth() + 1).padStart(2, '0'),
-    String(now.getDate()).padStart(2, '0'),
-  ]
-  return `dataExtract${parts.join('')}.csv`
-}
+const PACIFIC_DATE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Vancouver',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+const extractFilename = (now: Date): string =>
+  `dataExtract${PACIFIC_DATE.format(now).replaceAll('-', '')}.csv`
+
+const SAVE_FAILED =
+  'The data extract was generated but could not be saved by this browser. Please try again.'
 
 /**
  * The select-all row. Carbon recognises it by the presence of the `isSelectAll` key, lifts it out of
@@ -324,7 +329,15 @@ const DataExtract: FC = () => {
         }
         // Saved INSIDE .then, not deferred past it: `busy` releases in .finally, so deferring the
         // download would drop the panel lock while the file was still being handed to the browser.
-        triggerDownload(response.data as Blob, extractFilename(new Date()))
+        // A save the browser refuses (a blocked object URL) is not a failed BUILD, so it gets its
+        // own sentence rather than falling into the catch and blaming the server for a file it made.
+        try {
+          triggerDownload(response.data as Blob, extractFilename(new Date()))
+        } catch {
+          setMessages([SAVE_FAILED])
+          setStatus(SAVE_FAILED)
+          return
+        }
         setGenerated(true)
         setStatus(`The data extract has been generated. ${successText}`)
       })

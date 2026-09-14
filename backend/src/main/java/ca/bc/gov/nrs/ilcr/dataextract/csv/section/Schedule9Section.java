@@ -69,7 +69,8 @@ public final class Schedule9Section implements SectionBuilder {
     if (item == null) {
       return NULL_VALUE;
     }
-    return item.description() + " - " + item.code();
+    // A code with no description in the code table would otherwise print the literal "null".
+    return (item.description() == null ? "" : item.description()) + " - " + item.code();
   }
 
   private static String codeOf(CodeDescriptionDto dto) {

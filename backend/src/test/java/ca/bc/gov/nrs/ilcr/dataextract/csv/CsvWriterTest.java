@@ -24,9 +24,14 @@ class CsvWriterTest {
 
   private final ByteArrayOutputStream out = new ByteArrayOutputStream();
 
-  /** The bytes written so far, decoded as UTF-8 — what a reader of the file would see. */
+  /**
+   * The bytes written so far, decoded as UTF-8 and with the byte-order mark removed — what a reader
+   * of the file sees after the first three bytes, which have their own test below.
+   */
   private String written() {
-    return out.toString(StandardCharsets.UTF_8);
+    String text = out.toString(StandardCharsets.UTF_8);
+    assertThat(text).startsWith(CsvWriter.BOM);
+    return text.substring(CsvWriter.BOM.length());
   }
 
   @Nested
@@ -168,6 +173,23 @@ class CsvWriterTest {
     }
 
     @Test
+    @DisplayName("the file opens with the three-byte UTF-8 mark, once, before any row")
+    void opensWithTheByteOrderMark() throws IOException {
+      // Excel on Windows — the reader this file is for — opens a BOM-less CSV as the local ANSI
+      // page and garbles every accented name. Asserted on the BYTES, and asserted to be there
+      // exactly once so a second writer or a reopen cannot double it.
+      try (CsvWriter csv = new CsvWriter(out)) {
+        csv.writeRow("a");
+      }
+
+      byte[] bytes = out.toByteArray();
+      assertThat(bytes[0] & 0xFF).isEqualTo(0xEF);
+      assertThat(bytes[1] & 0xFF).isEqualTo(0xBB);
+      assertThat(bytes[2] & 0xFF).isEqualTo(0xBF);
+      assertThat(out.toString(StandardCharsets.UTF_8).indexOf(CsvWriter.BOM, 1)).isEqualTo(-1);
+    }
+
+    @Test
     @DisplayName("the body is genuine UTF-8")
     void writesUtf8() throws IOException {
       // The recorded deviation: legacy declared UTF-8 in its content type and then wrote the
@@ -177,7 +199,8 @@ class CsvWriterTest {
         csv.writeRow("m³");
       }
 
-      assertThat(out.toByteArray()).isEqualTo("\"m³\"\n".getBytes(StandardCharsets.UTF_8));
+      assertThat(out.toByteArray())
+          .isEqualTo((CsvWriter.BOM + "\"m³\"\n").getBytes(StandardCharsets.UTF_8));
     }
 
     @Test

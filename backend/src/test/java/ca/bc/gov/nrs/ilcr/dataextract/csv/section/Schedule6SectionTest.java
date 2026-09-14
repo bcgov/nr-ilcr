@@ -157,6 +157,29 @@ class Schedule6SectionTest {
     }
 
     @Test
+    @DisplayName("an EMPTY comment stays empty — sanitize() alone, no null-or-empty guard")
+    void emptyComment_staysEmptyRatherThanTheMarker() {
+      // Schedule6Extract guarded the comment on null ALONE and then ran the character replacer,
+      // so an empty string passed straight through as an empty cell. The shared text() helper
+      // would turn "" into "-"; that is the swap this pins. (A null comment IS the marker —
+      // rendersTflRow above.)
+      RoadRecord record = road("29", null, "A", "5", null, null, null, "");
+
+      assertThat(section.row(ctx, record, CODE_LISTS)[11]).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a comment's &nbsp; is removed outright, not kept and not turned into a space")
+    void nbspInComment_isRemoved() {
+      // replaceCharsForExtractFormat's third rule: the HTML non-breaking-space entity is deleted,
+      // so the two words close up ("ab"), where a raw write would keep the entity and a
+      // space-substitution would give "a b".
+      RoadRecord record = road("29", null, "A", "5", null, null, null, "a&nbsp;b");
+
+      assertThat(section.row(ctx, record, CODE_LISTS)[11]).isEqualTo("ab");
+    }
+
+    @Test
     @DisplayName("a null $/m3 renders as =\"-\", the marker inside the formula quotes")
     void rendersNullCostPerVolumeInsideTheFormulaQuotes() {
       // Legacy wrapped the null marker in the formula quotes along with everything else, so the

@@ -134,6 +134,27 @@ class Schedule7bSectionTest {
     }
 
     @Test
+    @DisplayName("LENGTH_M is grouped and whole-rounded; SPAN, RISE and PIECES are raw toString")
+    void lengthIsFormattedWhileSpanRiseAndPiecesAreRaw() {
+      // Schedule7bExtract wrote length through the ###,###,##0 formatter and the other three
+      // measurements through String.valueOf. The fixture puts a thousands-crossing value in every
+      // one of the four cells so the two helpers cannot be swapped unnoticed: 1234.6 m rounds
+      // (HALF_EVEN) to 1,235 WITH a separator, while 1200 mm span, 1500 mm rise and 1200 pieces
+      // print bare — "1200", not "1,200". A formatter on the piece count, or a raw toString on
+      // the length ("1234.6"), fails here.
+      Culvert culvert =
+          new Culvert(
+              1L, 1, "R", 1200, 1500, new BigDecimal("1234.6"), 1200, null, null, null, null, 1);
+
+      String[] row = section.row(ctx, culvert, CODES);
+
+      assertThat(row[5]).isEqualTo("1200"); // SPAN_MM
+      assertThat(row[6]).isEqualTo("1500"); // RISE_MM
+      assertThat(row[7]).isEqualTo("1,235"); // LENGTH_M
+      assertThat(row[8]).isEqualTo("1200"); // NO_OF_PIECES
+    }
+
+    @Test
     @DisplayName("every absent value is the null marker, an empty comment included")
     void rendersAbsentValuesAsNullMarker() {
       String[] row = section.row(ctx, culvertOfType("R"), CODES);

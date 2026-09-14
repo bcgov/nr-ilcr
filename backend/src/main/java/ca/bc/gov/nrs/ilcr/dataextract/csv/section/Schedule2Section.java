@@ -73,6 +73,10 @@ public final class Schedule2Section implements SectionBuilder {
       return Optional.empty();
     }
     if (!hasSchedule3) {
+      // Recorded deviation (Q): legacy paired Schedule 2 with Schedule 1 and 3 by list INDEX and
+      // either misaligned the figures or dropped the row with no marker. A pair with a Schedule 2
+      // and no Schedule 3 gets the per-record marker here, so a legacy sample WILL differ on this
+      // row — the parity check must read it as (Q), not as a defect.
       return Optional.of(ctx.noDataRow());
     }
     return Optional.of(

@@ -326,6 +326,41 @@ class Schedule4SectionTest {
     }
 
     @Test
+    @DisplayName("Truck Barge/Ferry is gated the same way: a distance alone leaves all four bare")
+    void truckBargeWithADistanceOnly_isSuppressedIncludingTheDistanceItself() {
+      // The report IS matched (code 47, distance 12) and still contributes nothing. Had reported()
+      // gated Crew Barge alone, TRUCK_BARGE_KM would read "12" and the $/m3 would be the
+      // formatter-wrapped ="-" rather than the bare dash of a withheld block
+      // (Schedule4Extract.java:69-80, :153).
+      Location location =
+          location("Dump", null, List.of(distance(47, "12", null, null, null)), List.of());
+
+      String[] row = section.row(CTX, location);
+
+      assertThat(cell(row, "TRUCK_BARGE_KM")).isEqualTo("-");
+      assertThat(cell(row, "TRUCK_BARGE_M3")).isEqualTo("-");
+      assertThat(cell(row, "TRUCK_BARGE_$")).isEqualTo("-");
+      assertThat(cell(row, "TRUCK_BARGE_$/M3")).isEqualTo("-");
+    }
+
+    @Test
+    @DisplayName("Rail Haul is gated the same way: a distance alone leaves all four bare")
+    void railHaulWithADistanceOnly_isSuppressedIncludingTheDistanceItself() {
+      // Same gate, third block (code 52, Schedule4Extract.java:190). blockWithAVolumeButNoCost
+      // above shows the SAME code reporting once a volume is present, so the two together pin
+      // that the gate is on cost-or-volume and not on the distance.
+      Location location =
+          location("Dump", null, List.of(distance(52, "40", null, null, null)), List.of());
+
+      String[] row = section.row(CTX, location);
+
+      assertThat(cell(row, "RAIL_HAUL_KM")).isEqualTo("-");
+      assertThat(cell(row, "RAIL_HAUL_M3")).isEqualTo("-");
+      assertThat(cell(row, "RAIL_HAUL_$")).isEqualTo("-");
+      assertThat(cell(row, "RAIL_HAUL_$/M3")).isEqualTo("-");
+    }
+
+    @Test
     @DisplayName("an absent block is bare-dashed the same way, on all three blocks")
     void absentBlocks_areBareDashedOnAllThree() {
       String[] row = section.row(CTX, location("Dump", null, List.of(), List.of()));

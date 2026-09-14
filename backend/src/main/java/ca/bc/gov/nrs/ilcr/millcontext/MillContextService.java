@@ -471,8 +471,21 @@ public class MillContextService {
     if (millIds == null || millIds.isEmpty()) {
       return List.of();
     }
-    return repository.findTrackStatusCodes(millIds, fromYear, toYear);
+    if (millIds.size() <= IN_LIST_LIMIT) {
+      return repository.findTrackStatusCodes(millIds, fromYear, toYear);
+    }
+    // Oracle refuses an IN list longer than 1000 expressions (ORA-01795). A select-all over a mill
+    // table that has grown past that would otherwise fail the very first read of an extract.
+    List<MillYearTrackCodes> rows = new ArrayList<>();
+    for (int from = 0; from < millIds.size(); from += IN_LIST_LIMIT) {
+      List<Long> chunk = millIds.subList(from, Math.min(from + IN_LIST_LIMIT, millIds.size()));
+      rows.addAll(repository.findTrackStatusCodes(chunk, fromYear, toYear));
+    }
+    return rows;
   }
+
+  /** Oracle's hard limit on the expressions in one {@code IN (...)} list. */
+  private static final int IN_LIST_LIMIT = 1000;
 
   /**
    * The display description of a report-status code ({@code Draft}, {@code Submitted}, {@code

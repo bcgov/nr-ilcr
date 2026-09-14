@@ -341,6 +341,40 @@ class Schedule1SectionTest {
     }
 
     @Test
+    @DisplayName("silviculture Actual Spent alone makes the record non-empty")
+    void silvicultureActualSpentAlone_isNotEmpty() {
+      // Legacy checkEmpty walked all four silviculture blocks, not only the total: a cost on
+      // Actual Spent with nothing else anywhere is an entered figure. A guard that consulted
+      // silv.total() alone would call this record empty and emit the marker over real data.
+      SilvicultureBlock silv = new SilvicultureBlock(li(1, null, 5_000, null), null, null, null);
+      Schedule1Response response = response(null, List.of(), silv, null, null, null);
+
+      assertThat(Schedule1Section.isEmpty(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("silviculture Accrued Less Actual alone makes the record non-empty")
+    void silvicultureAccruedLessActualAlone_isNotEmpty() {
+      // The second block, and this time the figure is the $/m3 alone — hasFigure is an OR over
+      // volume, cost and perUnit, so any one of the three counts.
+      SilvicultureBlock silv = new SilvicultureBlock(null, li(2, null, null, "3.00"), null, null);
+      Schedule1Response response = response(null, List.of(), silv, null, null, null);
+
+      assertThat(Schedule1Section.isEmpty(response)).isFalse();
+    }
+
+    @Test
+    @DisplayName("silviculture Less Admin alone makes the record non-empty")
+    void silvicultureLessAdminAlone_isNotEmpty() {
+      // The third block (item 139), whose cost half is Schedule 3-derived and whose volume half
+      // is the licensee's own entry — a volume alone is enough.
+      SilvicultureBlock silv = new SilvicultureBlock(null, null, li(139, "3000", null, null), null);
+      Schedule1Response response = response(null, List.of(), silv, null, null, null);
+
+      assertThat(Schedule1Section.isEmpty(response)).isFalse();
+    }
+
+    @Test
     @DisplayName("the shared Other-Costs volume makes the record non-empty")
     void sharedOtherCostsVolume_isNotEmpty() {
       OtherCostsSummary other = new OtherCostsSummary(new BigDecimal("10"), null, null, 0);

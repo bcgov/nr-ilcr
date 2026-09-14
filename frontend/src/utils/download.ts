@@ -89,13 +89,6 @@ export async function assertCompletePdf(blob: Blob): Promise<void> {
 }
 
 /**
- * The RFC 7807 {@code detail} from an axios error whose response body is a {@link Blob}. When a
- * request uses {@code responseType: 'blob'}, a SUCCESS is the file but an ERROR body (the
- * {@code application/problem+json} the backend returns for 400/404/409) also arrives as a Blob, so it
- * must be read and parsed rather than accessed as an object. Falls back to the plain-object
- * {@link extractDetail} for non-blob errors.
- */
-/**
  * Every per-field message from an error whose response body is a {@link Blob} — the accumulating
  * refusal list, not just the single `detail`.
  *
@@ -126,6 +119,13 @@ export async function extractBlobMessages(error: unknown, fallback: string): Pro
   return extractMessages(error, fallback)
 }
 
+/**
+ * The RFC 7807 {@code detail} from an axios error whose response body is a {@link Blob}. When a
+ * request uses {@code responseType: 'blob'}, a SUCCESS is the file but an ERROR body (the
+ * {@code application/problem+json} the backend returns for 400/404/409) also arrives as a Blob, so it
+ * must be read and parsed rather than accessed as an object. Falls back to the plain-object
+ * {@link extractDetail} for non-blob errors.
+ */
 export async function extractBlobDetail(error: unknown): Promise<string | undefined> {
   // Not an axios error at all: the stream guard above throws this AFTER a 200, so it reaches the
   // same error branches and needs its message carried through them.

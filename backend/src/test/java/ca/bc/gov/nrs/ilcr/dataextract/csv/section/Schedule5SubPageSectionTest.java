@@ -245,6 +245,41 @@ class Schedule5SubPageSectionTest {
     }
   }
 
+  /**
+   * The Total row's three sums use two different legacy helpers, and the fixture here is chosen so
+   * that swapping them is visible. Kind is irrelevant to the total row, so Camp stands for both.
+   */
+  @Nested
+  @DisplayName("the Total row's CPU divides the 2-dp sums, not the whole-rounded ones it shows")
+  class TotalRowCpu {
+
+    private final Schedule5SubPageSection section = new Schedule5SubPageSection(Kind.CAMP);
+
+    @Test
+    @DisplayName("fractional volumes: the visible VOL_M3 total is whole-rounded, the CPU is not")
+    void cpu_dividesTwoDecimalSumsWhileTheVisibleTotalsAreWholeRounded() {
+      // Cost is Integer (SubPageRow.cost, COST NUMBER(8,0)), so no cost can carry a fraction and
+      // sumCosts / sumCostsTwoDecimals agree on the cost sum; VOLUME is BigDecimal, so the
+      // discrimination is on volumes. Two rows at 100.40 m3 and 300 dollars each:
+      //   sumCosts(volumes)            = 100 + 100       = 200     (each term whole-rounded)
+      //   sumCostsTwoDecimals(volumes) = 100.40 + 100.40 = 200.80  (each term 2-dp)
+      //   sumCosts(costs)              = 300 + 300       = 600
+      //   CPU = 600.00 / 200.80 = 2.98804780…  -> twoDecimals -> "2.99"
+      // Dividing by the whole-rounded 200 gives exactly 3.00, so using sumCosts for the CPU's
+      // divisor fails here. The visible VOL_M3 total is that whole-rounded 200 and the visible
+      // COST_$ total the whole-rounded 600 (Schedule5CampExtract's sumBigDecimalCosts), so the
+      // file's own totals do not reproduce its CPU — legacy's arithmetic, kept.
+      List<SubPageRow> items =
+          List.of(item("Propane", "100.40", 300, "2.99"), item("Water", "100.40", 300, "2.99"));
+
+      List<String[]> rows = section.rows(CTX, camp(CAMP), document(items));
+
+      assertThat(rows).hasSize(3);
+      assertThat(rows.get(0)[6]).isEqualTo("100"); // the row's own volume, whole
+      assertThat(rows.get(2)).containsExactly("", "", "", "", "", "Total:", "200", "600", "2.99");
+    }
+  }
+
   private static List<SubPageRow> twoItems() {
     return List.of(
         item(WHITESPACE_DESCRIPTION, "1000.40", 5000, "5.00"),

@@ -91,8 +91,10 @@ public class SpooledFile implements AutoCloseable {
    *
    * <p>Deletion rides on the stream's {@code close()}, which the converter always calls — on a
    * completed write and on a client disconnect alike. A response that never opens the stream at all
-   * leaves the file for the spool directory's own reaping; {@link #close()} stays available for the
-   * paths that never reach a response.
+   * (a client gone between the build finishing and the converter starting) leaves the file behind:
+   * NOTHING in the application sweeps the spool directory today, so such a file lives until the pod
+   * is replaced or someone reaps it by hand. {@link #close()} stays available for the paths that
+   * never reach a response.
    */
   public Resource asResource() {
     return new FileSystemResource(file) {

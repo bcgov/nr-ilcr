@@ -10,7 +10,15 @@
 -- 750-756 (R__75), so 757+ is the real high-water mark; clear of the db-e2e anchor seed's mills
 -- (13, 9050-25054) too. PK bands: ILCR_REPORT_SUMMARY 1300-1399, ILCR_COST_REPORT_DETAIL 9000-9099,
 -- both previously unclaimed (the highest summary in this directory is 1203 plus e2e's 3001-3199; the
--- highest detail is 8984 plus e2e's 4001-4499).
+-- highest detail is 8984 plus e2e's 4001-4499; ILCR_COST_REPORT_DETAIL_SEQ was restarted at 10000 by
+-- V20260818, so a runtime-drawn detail id cannot land in this band either).
+--
+-- The per-report tables the schedule walks read from get ONE shared band, 6600-6699, verified free of
+-- any 66xx literal in db/ and db-e2e/ before it was claimed, and every sequence those tables draw from
+-- starts at 9000 or above: TRANSPORTATION_REPORT 6600-6609, CAMP_REPORT 6610-6619,
+-- TREE_TO_TRUCK_REPORT 6620-6629, TREE_TO_TRUCK_DETAIL_REPORT 6630-6639, ROAD_CONSTRUCTION_REPRT
+-- 6640-6649, ROAD_CONSTRUCTION_REPRT_DTL 6650-6659, BASIC_SILVICULTURE_REPORT 6660-6669. Recorded
+-- in db/README.md beside the summary and detail bands.
 --
 -- ============================================================================================
 -- EVERY ROW HERE IS REPORT YEAR 2020. NOTHING TOUCHES 2021, AND THAT IS LOAD-BEARING.
@@ -35,16 +43,26 @@
 -- The three mills, each earning its place:
 --   760  Verified on BOTH tracks, with a Schedule 1 AND a Schedule 3 summary. The Data Verified
 --        "Yes" arm, and the only mill whose Schedule 1 row can show real Schedule-3-derived cells.
+--        It is also the ONE mill that carries a row for every schedule whose extract walk the
+--        generator dispatches by hand -- Schedule 1 Other Costs, the two Schedule 3 sub-pages,
+--        Schedule 4 with a Towing row, Schedule 5 with a Camp Expenses row, Schedule 8 with a
+--        sample, and Schedule 10 with one detailed page and one page with no road data -- so each
+--        of those walks is executed against real figures at least once (code review 2026-09-14).
 --   761  Verified on Schedules 1-10 but DRAFT on silviculture, with a Schedule 1 and a Schedule 2
---        summary but deliberately NO Schedule 3. Two jobs: it is the "*** NO SCHEDULE 3 ***"
+--        summary but deliberately NO Schedule 3. Three jobs: it is the "*** NO SCHEDULE 3 ***"
 --        sentinel case (the sentinel fills the Schedule-3-derived cells of a Schedule 1 row whose
---        pair has no Schedule 3 summary, and appears nowhere else), and its track disagreement is
+--        pair has no Schedule 3 summary, and appears nowhere else); its track disagreement is
 --        what proves Data Verified ANDs the two tracks instead of ORing them: a selection naming
---        both kinds of schedule must read "No" for this mill even though its main track is V.
---   762  SUBMITTED on Schedules 1-10, Verified on silviculture, and carries NO schedule data at all.
---        The second Data Verified "No" arm (a non-V code rather than a missing row), and the mill
---        that makes a whole-schedule "*** NO DATA FOUND ***" marker reachable while other mills in
---        the same selection still carry rows.
+--        both kinds of schedule must read "No" for this mill even though its main track is V; and
+--        its ONE silviculture location is what proves the Schedule 11 STATUS cell reads the
+--        SILVICULTURE track's description ("Draft") and not the main track's ("Verified").
+--   762  SUBMITTED on Schedules 1-10, Verified on silviculture, and carries NO schedule figures at
+--        all -- its only schedule row is a Schedule 1 summary with NO detail rows, which is legacy's
+--        "every record empty" case (Schedule1Extract.java:38, isEmptyAllSchedule): ONE five-cell
+--        whole-schedule marker, not a per-record one. Also the second Data Verified "No" arm (a
+--        non-V code rather than a missing row), and the mill that makes a whole-schedule
+--        "*** NO DATA FOUND ***" marker reachable while other mills in the same selection still
+--        carry rows.
 --
 -- Mill NUMBERs are deliberately NOT in mill-id order (7620, 7600, 7610). The title block's
 -- "Included Mills:" line and the MILL_NUMBER column both render the NUMBER while section rows are
@@ -121,3 +139,100 @@ INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT
 -- mini-table shows.
 INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
   VALUES (9030, 1311, 25, 3000, 777000, NULL, 'SEED');
+
+-- ============================================================================================
+-- Added 2026-09-14 (Story 21.2 code review): the walks below had no fixture row anywhere, so
+-- their builders had never run against the database. Every row is mill 760/761/762, REPORT_YEAR
+-- 2020, and every figure is chosen so the formatted cell is hand-checkable in DataExtractCsvIT.
+-- ============================================================================================
+
+-- Mill 762/2020: a Schedule 1 summary with NO detail rows. findStoredSchedule1 finds it, every
+-- figure is null, so Schedule1Section.isEmpty is true for the only pair -> the section body is
+-- exactly one whole-schedule marker (legacy's all-empty branch), never a per-record marker.
+INSERT INTO THE.ILCR_REPORT_SUMMARY (ILCR_REPORT_SUMMARY_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, ENTRY_USERID)
+  VALUES (1320, 2020, 762, '1', 'SEED');
+
+-- Mill 760's Schedule 1 Other Costs (V6 shape): item 19 with a NULL description is the SHARED
+-- volume row; an item-19 row WITH a description is an itemized cost and carries the same volume.
+-- 3000 / 5000 -> CPU 0.60; the Total: row shows the volume to two decimals (5,000.00) and the cost
+-- to none (3,000), legacy's inverted formatting kept by Schedule1OtherSection.
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9003, 1300, 19, 5000, NULL, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9004, 1300, 19, 5000, 3000, 'Extract Other Cost', 'SEED');
+
+-- Mill 760's Schedule 3 sub-pages on summary 1301 (V19 shape). Other Acceptable is a TOT + PO&P
+-- PAIR of item-124 rows sharing a description and a SCH3_2_{TOT|POP}_GRP{n} COMMENTS key:
+-- 800 / 300 -> derived CROWN 500. Included Unacceptable is one item-38 row (250), and the section's
+-- fixed first row reads the item-29 Annual Rents harvest figure (1,000), so its Total: is 1,250.
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, COMMENTS, ENTRY_USERID)
+  VALUES (9011, 1301, 124, NULL, 800, 'Consulting Fees', 'SCH3_2_TOT_GRP1', 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, COMMENTS, ENTRY_USERID)
+  VALUES (9012, 1301, 124, NULL, 300, 'Consulting Fees', 'SCH3_2_POP_GRP1', 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9013, 1301, 38, NULL, 250, 'Penalty Fees', 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9014, 1301, 29, NULL, 1000, NULL, 'SEED');
+
+-- Mill 760's Schedule 4 (V13/V15 shape): a location is a FAMILY of TRANSPORTATION_REPORT rows
+-- sharing LOCATION_DESCRIPTION. 6600 is the primary (DISTANCE NULL) carrying the fixed category 40
+-- (2000 m3 / 100,000 -> ="50.00"); 6601 is the Towing sub-page row -- its own report with its own
+-- DISTANCE 30 and one item-43 detail with ITEM_DESCRIPTION (100 m3 / 3,000 -> ="30.00"). The main
+-- row's TOW_TOT_* cells are summed from that one row, so both sections show the same figures.
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (6600, 2020, 760, '4', 'Extract Dump', NULL, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9040, 6600, 40, 2000, 100000, NULL, 'SEED');
+INSERT INTO THE.TRANSPORTATION_REPORT (TRANSPORTATION_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION_DESCRIPTION, DISTANCE, TRANSPORTATION_CYCLE_TIME, ENTRY_USERID)
+  VALUES (6601, 2020, 760, '4', 'Extract Dump', 30, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, TRANSPORTATION_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9041, 6601, 43, 100, 3000, 'Extract Towing', 'SEED');
+
+-- Mill 760's Schedule 5 (V34 shape; CAMP_REPORT's audit quartet and REVISION_COUNT are NOT NULL
+-- with no defaults). One camp, volume 10000, one fixed category (56 catering: 10,000 m3 / 50,000
+-- -> 5.00) and the Camp Expenses sub-page: item 141 holds the volume every item-62 row is STAMPED
+-- with at read (4000, never stored per row), and one item-62 row of 2,000 -> CPU 0.50. No item-68
+-- row, so the Access Expenses section shows this camp's per-camp marker -- and its position AFTER
+-- Camp Expenses is legacy's dispatch order, which the title line lists the other way round.
+INSERT INTO THE.CAMP_REPORT (CAMP_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CAMP_NAME, DISTANCE_TO_OPERATING_AREA, CAMP_SIZE_CAPACITY, ASSOCIATED_CAMP_VOLUME, ISOLATED_CAMP_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (6610, 2020, 760, '5', 'Extract Camp', 12, 20, 10000, 'N', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID)
+  VALUES (9050, 6610, 56, 10000, 50000, 0, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, REVISION_COUNT, ENTRY_USERID)
+  VALUES (9051, 6610, 141, 4000, NULL, 0, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, CAMP_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, REVISION_COUNT, ENTRY_USERID)
+  VALUES (9052, 6610, 62, NULL, 2000, 'Extract Kitchen', 0, 'SEED');
+
+-- Mill 760's Schedule 8 (V22 shape, codes from V22's code tables): one TSA-located page with one
+-- sample and NO rate rows, so ADDITIONS and DEDUCTIONS roll up to 0 and FINAL_TTT_RATE equals the
+-- 25.00 original (rendered whole: 25). 60 + 40 = TOTAL_% 100; 700 + 300 = ACTUAL_M3 1,000.
+-- CUTTING_PERMIT_NUMBER is left NULL so legacy's " - " page-title placeholder is exercised.
+INSERT INTO THE.TREE_TO_TRUCK_REPORT (TREE_TO_TRUCK_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, ILCR_SUPPORT_CENTRE_CODE, ILCR_FOREST_REGION_CODE, BEC_ZONE_CODE, TSA_NUMBER, TSB_NUMBER_CODE, HARVEST_LICENSE_NUMBER, DIVISION_LOCATION, CONTACT_NAME, CONTACT_PHONE_NUMBER, COMMENTS, REVISION_COUNT, ENTRY_USERID)
+  VALUES (6620, 2020, 760, '8', 'SC1', 'R1', 'BZ1', 'TSA5', 'B', 'L760', 'Extract Div', 'Extract Contact', '2505550100', 'Extract page', 0, 'SEED');
+INSERT INTO THE.TREE_TO_TRUCK_DETAIL_REPORT (TREE_TO_TRUCK_DETAIL_REPORT_ID, TREE_TO_TRUCK_REPORT_ID, CONTRACTOR_ID, CUT_BLOCK, GROUND_BASE_PCT, GRAPPLE_PCT, SKYLINE_PCT, HIGHLEAD_PCT, HELICOPTER_PCT, OTHER_SKIDDING_PCT, ILCR_SKID_TYPE_CODE, CONIFEROUS_VOLUME, DECIDUOUS_VOLUME, ORIGINAL_TREE_TO_TRUCK_RATE, WATER_DUMP_DESTINATION_IND, UPHILL_DIRECTION_IND, REVISION_COUNT, ENTRY_USERID)
+  VALUES (6630, 6620, 'EXC1', 'CB7', 60, 40, 0, 0, 0, 0, 'ST1', 700, 300, 25.00, 'N', 'Y', 0, 'SEED');
+
+-- Mill 760's Schedule 10 (V20260817 shape; audit quartet and REVISION_COUNT NOT NULL, five
+-- classification FKs ENABLED, so every code below is one V20260817 seeds). Page 6640 is TSA '01' +
+-- TSB '01A', whose derived Road Group legacy pins to "11", and carries ONE road detail; page 6641
+-- has NO detail. Legacy's Road Data builder collected the no-detail pages and appended them AFTER
+-- every detail row of the section, so 6641's marker must follow 6640's detail row even though the
+-- pages themselves are listed in id order. CONSTRUCTION_DIVISION_NAME is VARCHAR2(20).
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CONSTRUCTION_DATE, CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE, TSB_NUMBER_CODE, TSA_NUMBER, TFL_NUMBER_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (6640, 2020, 760, '10', DATE '2020-06-15', '2020-06', 'Extract Div', 'RNI', '01A', '01', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT (ROAD_CONSTRUCTION_REPRT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, CONSTRUCTION_DATE, CONSTRUCTION_PERIOD, CONSTRUCTION_DIVISION_NAME, ILCR_FOREST_REGION_CODE, TSB_NUMBER_CODE, TSA_NUMBER, TFL_NUMBER_CODE, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (6641, 2020, 760, '10', DATE '2020-07-15', '2020-07', 'Extract Empty', 'RNI', '01A', '01', NULL, 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+INSERT INTO THE.ROAD_CONSTRUCTION_REPRT_DTL (ROAD_CONSTRUCTION_REPRT_DTL_ID, ROAD_CONSTRUCTION_REPRT_ID, ROAD_NAME, SIDE_SLOPE_PCT, BOULDER_AREA_PCT, ILCR_ROAD_LIFETIME_CODE, ILCR_SOIL_MOISTURE_CODE, RIPPABLE_ROCK_PCT, RELATIVE_SOIL_MOISTUR_RGM_CODE, SOLID_ROCK_PCT, COARSE_MATERIAL_PCT, BECBIOGEO_CATALOGUE_ID, FINE_MATERIAL_PCT, ORGANIC_MATERIAL_PCT, SUB_GRADE_LENGTH, DETAIL_ENGINEERING_COST_IND, ILCR_ROAD_BALLAST_METHOD_CODE, SUB_GRADE_SURFACE_WIDTH, ILCR_ROAD_BALLAST_MATERL_CODE, REL_SOIL_MOIST_RGM_CLS_CODE, COMMENTS, REVISION_COUNT, ENTRY_USERID, ENTRY_TIMESTAMP, UPDATE_USERID, UPDATE_TIMESTAMP)
+  VALUES (6650, 6640, 'Extract Mainline', 25, NULL, 'P', 'SM1', 20, 'ASM1', 10, 30, 8801, 25, 15, 2.500, 'N', 'C', 6.5, 'GR', NULL, 'Extract road comment', 0, 'SEED', SYSDATE, 'SEED', SYSDATE);
+
+-- Mill 761/2020's ONE silviculture location (V20 shape: the cost children hang off
+-- BASIC_SILVICULTURE_REPORT_ID with a NULL summary; item 24 = Actual, 23 = Planned). 5000 + 2500 =
+-- 7,500.00 over 100 ha -> 75.00. The mill is V on the main track and D on silviculture, so this
+-- row's STATUS cell can only read "Draft" if the Schedule 11 walk builds its context from the
+-- silviculture code -- a main-track read would print "Verified" and fail the assertion.
+INSERT INTO THE.BASIC_SILVICULTURE_REPORT (BASIC_SILVICULTURE_REPORT_ID, REPORT_YEAR, ILCR_MILL_ID, ILCR_CATEGORY_ID, LOCATION, BECBIOGEOCLIMATIC_CATALOGUE_ID, REFORESTED_NET_AREA, ENHANCED_IND, COMMENTS, REVISION_COUNT, ENTRY_USERID)
+  VALUES (6660, 2020, 761, '11', 'Extract Block', 8801, 100, 'N', NULL, 0, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, BASIC_SILVICULTURE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9060, NULL, 6660, 24, NULL, 5000, NULL, 'SEED');
+INSERT INTO THE.ILCR_COST_REPORT_DETAIL (ILCR_COST_REPORT_DETAIL_ID, ILCR_REPORT_SUMMARY_ID, BASIC_SILVICULTURE_REPORT_ID, ILCR_REPORT_COST_ITEM_ID, VOLUME, COST, ITEM_DESCRIPTION, ENTRY_USERID)
+  VALUES (9061, NULL, 6660, 23, NULL, 2500, NULL, 'SEED');

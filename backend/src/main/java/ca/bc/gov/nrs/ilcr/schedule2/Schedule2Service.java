@@ -289,6 +289,22 @@ public class Schedule2Service {
   }
 
   /**
+   * Whether a Schedule 2 summary row EXISTS for the mill/year — distinct from whether it holds any
+   * figures. {@link #getSchedule2} never 404s and serves an empty document for an unsaved pair, so
+   * a caller that must tell "saved but blank" from "never saved" (the Data Extract's combined
+   * layout renders the former as a row of dashes and omits the latter, as legacy iterated its DAO
+   * records) cannot get that from the document. The first consumer creates the minimal read.
+   *
+   * @param millId the mill id
+   * @param year the reporting year
+   * @return true when a category-2 summary row is stored
+   */
+  @Transactional(readOnly = true)
+  public boolean hasSchedule2(long millId, int year) {
+    return repository.findSummary(millId, year).isPresent();
+  }
+
+  /**
    * The assembly itself, deliberately free of {@code @Transactional} so the in-process callers
    * ({@link #saveSchedule2}, {@link #checkStatus}) reach it directly instead of self-invoking the
    * annotated entry point. A {@code this} call bypasses the Spring proxy, so the annotation was

@@ -28,8 +28,20 @@ public final class CsvWriter implements AutoCloseable {
 
   private final Writer out;
 
-  public CsvWriter(OutputStream out) {
+  /**
+   * The UTF-8 byte-order mark, written once before the first row.
+   *
+   * <p>The stated reader is Excel on Windows, which opens a CSV with no BOM as the local ANSI code
+   * page and shows every accented name and {@code m³} as mojibake. Legacy's platform-default bytes
+   * happened to match that assumption; a genuine UTF-8 body (recorded deviation) needs the mark to
+   * be read as such. Every other reader ignores it. Recorded alongside the charset deviation so the
+   * legacy comparison skips these three bytes.
+   */
+  static final String BOM = "\uFEFF";
+
+  public CsvWriter(OutputStream out) throws IOException {
     this.out = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+    this.out.write(BOM);
   }
 
   /** Write one row. Every non-null cell is quoted; a null cell is an empty field. */

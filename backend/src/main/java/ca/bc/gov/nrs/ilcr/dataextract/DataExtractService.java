@@ -1,14 +1,19 @@
 package ca.bc.gov.nrs.ilcr.dataextract;
 
 import ca.bc.gov.nrs.ilcr.dataextract.csv.DataExtractGenerator;
+import ca.bc.gov.nrs.ilcr.dataextract.csv.ScheduleSelection;
 import ca.bc.gov.nrs.ilcr.dataextract.dto.DataExtractRequest;
 import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
 import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -37,6 +42,8 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class DataExtractService {
 
+  private static final Logger log = LoggerFactory.getLogger(DataExtractService.class);
+
   /**
    * The JSF framework required-field template, resolved with a field label. Both year messages
    * share this one key and differ only by their argument, which is why each key is raised with its
@@ -45,6 +52,7 @@ public class DataExtractService {
   private static final String MSG_FIELD_REQUIRED = "javax.faces.component.UIInput.REQUIRED";
 
   private static final String MSG_MILLS_NOT_SELECTED = "extractMillsNotSelectedMsg";
+  private static final String MSG_MILLS_UNKNOWN = "extractMillsUnknownMsg";
   private static final String MSG_SCHEDULES_NOT_SELECTED = "extractSchedulesNotSelectedMsg";
   private static final String MSG_YEAR_RANGE = "extractReportingYearsNotMetMsg";
 
@@ -69,6 +77,7 @@ public class DataExtractService {
 
   private final ReportYearGuard reportYearGuard;
   private final DataExtractGenerator generator;
+  private final MillContextService millContextService;
 
   /**
    * Creates the extract service.
@@ -76,10 +85,16 @@ public class DataExtractService {
    * @param reportYearGuard the shared opened-period check, reused rather than re-querying the year
    *     list
    * @param generator builds the CSV from a validated selection
+   * @param millContextService the administrator's mill list, so an id no picker could have offered
+   *     is refused at the gate rather than shelled out as a row
    */
-  public DataExtractService(ReportYearGuard reportYearGuard, DataExtractGenerator generator) {
+  public DataExtractService(
+      ReportYearGuard reportYearGuard,
+      DataExtractGenerator generator,
+      MillContextService millContextService) {
     this.reportYearGuard = reportYearGuard;
     this.generator = generator;
+    this.millContextService = millContextService;
   }
 
   /**
@@ -103,7 +118,18 @@ public class DataExtractService {
     } catch (DataExtractGenerationException e) {
       throw e;
     } catch (RuntimeException e) {
-      throw new DataExtractGenerationException("Building the data extract failed", e);
+      // Logged HERE, with the stack, because the global handler logs a BusinessException by status
+      // and key alone — the user is told to consult the logs, so the logs must hold the cause. The
+      // selection is named by counts only (AD-11); the exception message may name a directory or a
+      // schedule, never a figure.
+      log.warn(
+          "Data extract build failed for {} mill(s), years {}-{}: {}",
+          request.millIds() == null ? 0 : request.millIds().size(),
+          request.startYear(),
+          request.endYear(),
+          e.toString(),
+          e);
+      throw new DataExtractGenerationException(e);
     }
   }
 
@@ -139,8 +165,20 @@ public class DataExtractService {
       keys.add(MSG_MILLS_NOT_SELECTED);
       arguments.add(null);
     }
+    if (!millIds.isEmpty() && !allKnown(millIds)) {
+      // The picker cannot send an id that is not a mill, but a plain JSON body can. Legacy failed
+      // loudly on one (an NPE on the unknown mill's number); a shell row labelled "Mill <id>" with
+      // "** NO STATUS **" cells would instead read as real, unverified data. No legacy text exists
+      // for this, so the key is this application's own.
+      keys.add(MSG_MILLS_UNKNOWN);
+      arguments.add(null);
+    }
     List<String> schedules = distinctUsable(request.schedules());
-    if (schedules.isEmpty()) {
+    if (schedules.isEmpty() || ScheduleSelection.of(schedules).numbers().isEmpty()) {
+      // A list of ONLY unrecognised labels is, to the generator, no selection at all: it would
+      // answer a title block with no sections and the page would announce success. Unknown labels
+      // MIXED with real ones are still dropped silently (the ruled behaviour for a mixed list);
+      // only the case that leaves nothing to extract earns legacy's own message.
       keys.add(MSG_SCHEDULES_NOT_SELECTED);
       arguments.add(null);
     }
@@ -166,6 +204,15 @@ public class DataExtractService {
     int start = reportYearGuard.requireOpenYear(request.startYear());
     int end = reportYearGuard.requireOpenYear(request.endYear());
     return new ValidatedSelection(start, end, millIds, schedules);
+  }
+
+  /** Whether every selected id names a mill the administrator's own picker could have offered. */
+  private boolean allKnown(List<Long> millIds) {
+    java.util.Set<Long> known = new java.util.HashSet<>();
+    for (MillSummary mill : millContextService.listMills(true, null)) {
+      known.add(mill.millId());
+    }
+    return known.containsAll(millIds);
   }
 
   /**

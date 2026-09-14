@@ -45,6 +45,7 @@ import ca.bc.gov.nrs.ilcr.schedule3.dto.Schedule3Response;
 import ca.bc.gov.nrs.ilcr.schedule4.Schedule4Service;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Location;
 import ca.bc.gov.nrs.ilcr.schedule4.dto.Schedule4Response;
+import ca.bc.gov.nrs.ilcr.schedule5.CampNotFoundException;
 import ca.bc.gov.nrs.ilcr.schedule5.Schedule5Service;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Camp;
 import ca.bc.gov.nrs.ilcr.schedule5.dto.Schedule5Response;
@@ -372,6 +373,19 @@ public class DataExtractGenerator {
     }
 
     private void writeSchedule(CsvWriter csv, int schedule) throws IOException {
+      long started = System.nanoTime();
+      dispatch(csv, schedule);
+      // INFO, per schedule, so the cost of a wide selection is visible in production before anyone
+      // has to decide what a reasonable cap is. Counts and labels only (AD-11).
+      log.info(
+          "Data extract schedule {} written for {} mill(s) x {} year(s) in {} ms",
+          schedule,
+          mills.size(),
+          selection.endYear() - selection.startYear() + 1,
+          (System.nanoTime() - started) / 1_000_000);
+    }
+
+    private void dispatch(CsvWriter csv, int schedule) throws IOException {
       switch (schedule) {
         case 1 -> writeSchedule1(csv);
         case 2 -> writeSchedule2(csv);
@@ -466,16 +480,24 @@ public class DataExtractGenerator {
             }
             RowContext ctx = context(mill, year);
             main.add(schedule3.row(ctx, s3.get()));
+            // The child reads re-resolve the summary that findSchedule3 just returned. The build is
+            // not a transaction and can run for minutes, so a licensee deleting the schedule in
+            // between must cost that pair its sub-tables — the per-record marker — and not the
+            // whole extract.
             accept.addAll(
                 schedule3Accept.rows(
                     ctx,
-                    schedule3Service.getOtherAcceptableDocument(
-                        mill.millId(), year, EditableStatuses.NONE)));
+                    orNull(
+                        () ->
+                            schedule3Service.getOtherAcceptableDocument(
+                                mill.millId(), year, EditableStatuses.NONE))));
             unaccept.addAll(
                 schedule3Unaccept.rows(
                     ctx,
-                    schedule3Service.getUnacceptableDocument(
-                        mill.millId(), year, EditableStatuses.NONE)));
+                    orNull(
+                        () ->
+                            schedule3Service.getUnacceptableDocument(
+                                mill.millId(), year, EditableStatuses.NONE))));
           });
       writeSection(csv, schedule3, main);
       writeSection(csv, schedule3Accept, accept);
@@ -530,26 +552,32 @@ public class DataExtractGenerator {
             RowContext ctx = context(mill, year);
             for (Camp c : s5.camps()) {
               main.add(schedule5.row(ctx, c));
+              // getSubPage re-resolves the camp that getSchedule5 just listed; a camp deleted in
+              // between costs its two sub-tables the per-camp marker, not the extract.
               camp.addAll(
                   schedule5Camp.rows(
                       ctx,
                       c,
-                      schedule5Service.getSubPage(
-                          mill.millId(),
-                          year,
-                          c.campId(),
-                          Schedule5Service.SubPage.CAMP,
-                          EditableStatuses.NONE)));
+                      orNull(
+                          () ->
+                              schedule5Service.getSubPage(
+                                  mill.millId(),
+                                  year,
+                                  c.campId(),
+                                  Schedule5Service.SubPage.CAMP,
+                                  EditableStatuses.NONE))));
               access.addAll(
                   schedule5Access.rows(
                       ctx,
                       c,
-                      schedule5Service.getSubPage(
-                          mill.millId(),
-                          year,
-                          c.campId(),
-                          Schedule5Service.SubPage.ACCESS,
-                          EditableStatuses.NONE)));
+                      orNull(
+                          () ->
+                              schedule5Service.getSubPage(
+                                  mill.millId(),
+                                  year,
+                                  c.campId(),
+                                  Schedule5Service.SubPage.ACCESS,
+                                  EditableStatuses.NONE))));
             }
           });
       writeSection(csv, schedule5, main);
@@ -737,9 +765,11 @@ public class DataExtractGenerator {
           if (r1.isPresent()) {
             s1.add(new CombinedSchedule1And2Section.Schedule1Entry(year, ctx, r1.get()));
           }
-          Schedule2Response r2 =
-              schedule2Service.getSchedule2(mill.millId(), year, EditableStatuses.NONE);
-          if (r2 != null && !Schedule2Section.isEmpty(r2)) {
+          // Existence, not emptiness: legacy iterated every stored Schedule 2 record and a saved
+          // but blank one printed a row of dashes. The document alone cannot tell the two apart.
+          if (schedule2Service.hasSchedule2(mill.millId(), year)) {
+            Schedule2Response r2 =
+                schedule2Service.getSchedule2(mill.millId(), year, EditableStatuses.NONE);
             s2.add(new CombinedSchedule1And2Section.Schedule2Entry(year, ctx, r2));
           }
         }
@@ -766,8 +796,24 @@ public class DataExtractGenerator {
     private void forEachPair(PairVisitor visitor) {
       for (MillSummary mill : millsByIdAscending()) {
         for (int year = selection.startYear(); year <= selection.endYear(); year++) {
+          // Ids and years only, never a figure (AD-11).
+          log.debug("Data extract reading mill {} year {}", mill.millId(), year);
           visitor.visit(mill, year);
         }
+      }
+    }
+
+    /**
+     * A child read that may legitimately find its parent gone: the build spans many short
+     * transactions, so a summary or camp listed a moment ago can have been deleted since. Absence
+     * becomes {@code null}, which every sub-table builder renders as its per-record marker; any
+     * other failure still propagates and fails the extract as it should.
+     */
+    private static <T> T orNull(java.util.function.Supplier<T> read) {
+      try {
+        return read.get();
+      } catch (ScheduleNotFoundException | CampNotFoundException e) {
+        return null;
       }
     }
 

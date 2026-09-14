@@ -17,19 +17,18 @@ import org.springframework.http.HttpStatus;
  * full-page {@code error.xhtml} with a second message, anything else stayed inline with this one. A
  * spool-first REST endpoint has exactly one pre-commit failure path, so both collapse here.
  *
- * <p>The message names the stage only. Never the mills, the years or a row (AD-11).
+ * <p>Nothing here names a mill, a year or a row (AD-11).
  */
 public class DataExtractGenerationException extends BusinessException {
 
   /**
-   * Wraps a build failure.
+   * Wraps a build failure. The cause is kept for whoever catches this; the diagnostic log line is
+   * written by the service before it throws, because the global handler logs only status and key.
    *
-   * @param stage what was being done when the build failed, for the log — never selection data
    * @param cause the failure
    */
-  public DataExtractGenerationException(String stage, Throwable cause) {
+  public DataExtractGenerationException(Throwable cause) {
     super(HttpStatus.INTERNAL_SERVER_ERROR, "undefinedError");
     initCause(cause);
-    addSuppressed(new IllegalStateException(stage));
   }
 }

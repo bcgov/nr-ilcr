@@ -47,8 +47,16 @@ public final class Schedule1OtherSection implements SectionBuilder {
 
   /** The rows for one (mill, year): one per itemized cost plus the total, or the marker. */
   public List<String[]> rows(RowContext ctx, OtherCostsDocument document) {
+    // Legacy iterated getOtherCostListFiltered() (Schedule1DO.java:180-188), which drops any row
+    // whose description is null or empty, and decided the per-record marker on the FILTERED list —
+    // so a pair holding only blank-description rows got the marker, and no blank row was ever
+    // summed into Total:. The owner serves every stored row; the filter belongs here.
     List<OtherCostRow> items =
-        document == null || document.rows() == null ? List.of() : document.rows();
+        document == null || document.rows() == null
+            ? List.of()
+            : document.rows().stream()
+                .filter(r -> r.description() != null && !r.description().isEmpty())
+                .toList();
     if (items.isEmpty()) {
       return List.<String[]>of(ctx.noDataRow());
     }

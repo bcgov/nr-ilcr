@@ -124,7 +124,9 @@ public final class Schedule4Section implements SectionBuilder {
     CategoryAmount railHaul = reported(categories.get(RAIL_HAUL));
 
     return ctx.with(
-        location.name(),
+        // Legacy wrote the name with no guard at all, so a null is an empty field — kept; the
+        // formula guard is the one thing added, and only to a non-null name.
+        location.name() == null ? null : ExtractFormat.defuse(location.name()),
         volume(categories.get(LAKESIDE_DRY_DUMP)),
         cost(categories.get(LAKESIDE_DRY_DUMP)),
         perUnit(categories.get(LAKESIDE_DRY_DUMP)),
@@ -184,7 +186,9 @@ public final class Schedule4Section implements SectionBuilder {
     Map<Integer, CategoryAmount> byCode = new HashMap<>();
     if (categories != null) {
       for (CategoryAmount category : categories) {
-        byCode.put(category.code(), category);
+        if (category != null) {
+          byCode.put(category.code(), category);
+        }
       }
     }
     return byCode;

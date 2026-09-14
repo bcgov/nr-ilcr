@@ -701,9 +701,18 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     // Matched by shape, not against a frozen literal: the name carries today's date, and fake timers
     // were abandoned on this project. The eight digits are what the contract actually pins.
     expect(filename).toMatch(/^dataExtract\d{8}\.csv$/)
-    // And it agrees with the browser clock the page read it from.
-    const today = new Date()
-    const expected = `${String(today.getFullYear())}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+    // And it agrees with today's date IN PACIFIC TIME, not the runner's local clock. The backend
+    // names the file on a clock pinned to America/Vancouver, and the page matches it; a local-clock
+    // expectation here would go red for several hours of every day on a UTC CI runner (and pass by
+    // coincidence on a Vancouver laptop). `en-CA` yields y-m-d, so stripping the dashes is yyyyMMdd.
+    const expected = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Vancouver',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .format(new Date())
+      .replaceAll('-', '')
     expect(filename).toBe(`dataExtract${expected}.csv`)
 
     const banner = await screen.findByTestId('data-extract-success')
@@ -765,6 +774,77 @@ describe('Data Extract — accumulating validation (AC5, AC6)', () => {
     })
     // The live region is cleared too — a stale announcement outlives a stale banner otherwise.
     expect(screen.getByRole('status', { name: 'Data extract status' })).toBeEmptyDOMElement()
+  })
+
+  test('a re-submit refused with a 400 removes the standing success banner', async () => {
+    // The selection-change path above is not the only way a success banner goes stale: an
+    // administrator can re-submit the SAME selection and be refused (a mill closed, a year locked
+    // between the two clicks). `generate` resets `generated` at submit start, so the "Generated"
+    // claim never sits above a "Cannot generate" list describing the very same selection.
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    const generate = screen.getByRole('button', { name: 'Generate Report' })
+    await user.click(generate)
+    expect(await screen.findByTestId('data-extract-success')).toBeInTheDocument()
+    // The banner lands in `.then`; the lock releases in `.finally` a tick later. A click on a
+    // still-disabled button is a no-op, which would make the assertions below pass vacuously.
+    await waitFor(() => {
+      expect(generate).toBeEnabled()
+    })
+
+    // Swap the handler between clicks; the most recent server.use wins for the same route.
+    server.use(
+      http.post(EXTRACT, () =>
+        problem400([{ key: 'extractMillsNotSelectedMsg', text: MILLS_NOT_SELECTED }]),
+      ),
+    )
+    await user.click(generate)
+
+    expect(await screen.findByText(MILLS_NOT_SELECTED)).toBeInTheDocument()
+    expect(screen.queryByTestId('data-extract-success')).toBeNull()
+    // One save, from the first click only — the refusal handed nothing to the browser.
+    expect(vi.mocked(triggerDownload)).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
+      `The data extract could not be generated. ${MILLS_NOT_SELECTED}`,
+    )
+  })
+
+  test('a save the browser refuses after a 200 gets its own sentence, not the server blame', async () => {
+    // A blocked object URL or a throwing synthetic click is not a failed BUILD: the server made
+    // the file. Blaming it with "Unable to generate" would send the administrator chasing a backend
+    // fault that does not exist, and a success banner would claim a file that never reached disk.
+    vi.mocked(triggerDownload).mockImplementationOnce(() => {
+      throw new Error('SecurityError: blob: URLs are blocked')
+    })
+    server.use(
+      ...lists(),
+      http.post(EXTRACT, () => csvResponse()),
+    )
+    await renderPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: 'Generate Report' }))
+
+    const banner = await screen.findByTestId('data-extract-message')
+    expect(banner).toHaveTextContent(
+      'The data extract was generated but could not be saved by this browser. Please try again.',
+    )
+    expect(vi.mocked(triggerDownload)).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('data-extract-success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unable to generate the data extract.')).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Data extract status' })).toHaveTextContent(
+      'The data extract was generated but could not be saved by this browser. Please try again.',
+    )
+    // The `.finally` release still runs — the throw was caught inside `.then`, not left to strand
+    // the panel lock.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Generate Report' })).toBeEnabled()
+    })
   })
 
   test('a 500 blob body renders its detail and saves no file', async () => {

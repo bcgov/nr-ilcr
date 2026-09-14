@@ -225,6 +225,77 @@ class ExtractFormatTest {
   }
 
   @Nested
+  @DisplayName("defusing spreadsheet formulas in user-entered text")
+  class Defuse {
+
+    @Test
+    @DisplayName("a leading =, +, @, tab or carriage return gains an apostrophe")
+    void formulaTriggersGainApostrophe() {
+      // The extract is opened in a spreadsheet by an administrator, and a licensee-typed comment
+      // beginning with one of these would be EVALUATED there, not shown. Recorded deviation from
+      // legacy, which shared the exposure. The apostrophe is the spreadsheet convention for "text"
+      // and is invisible in the cell.
+      assertThat(ExtractFormat.defuse("=SUM(A1)")).isEqualTo("'=SUM(A1)");
+      assertThat(ExtractFormat.defuse("+1")).isEqualTo("'+1");
+      assertThat(ExtractFormat.defuse("@cmd")).isEqualTo("'@cmd");
+      assertThat(ExtractFormat.defuse("\tx")).isEqualTo("'\tx");
+      assertThat(ExtractFormat.defuse("\rx")).isEqualTo("'\rx");
+    }
+
+    @Test
+    @DisplayName("a leading minus is defused only when arithmetic could follow it")
+    void minusIsDefusedOnlyWhenArithmeticFollows() {
+      // -1+1 and -(2) are formulas to a spreadsheet; "- see note" is a dash-led comment, ordinary
+      // legacy data that must reach the file untouched.
+      assertThat(ExtractFormat.defuse("-1+1")).isEqualTo("'-1+1");
+      assertThat(ExtractFormat.defuse("-(2)")).isEqualTo("'-(2)");
+      assertThat(ExtractFormat.defuse("- see note")).isEqualTo("- see note");
+    }
+
+    @Test
+    @DisplayName("plain text, the empty string and null pass through unchanged")
+    void harmlessValuesAreUnchanged() {
+      assertThat(ExtractFormat.defuse("plain")).isEqualTo("plain");
+      assertThat(ExtractFormat.defuse("")).isEmpty();
+      assertThat(ExtractFormat.defuse(null)).isNull();
+    }
+
+    @Test
+    @DisplayName("the null marker never gains an apostrophe")
+    void nullMarkerIsNeverDefused() {
+      // A bare "-" is legacy's SHOW_WHEN_NULL_VALUE and appears in thousands of cells; the minus
+      // rule requires a second character, so the marker can never trip it — directly or through
+      // the text helpers that substitute it for an absent value.
+      assertThat(ExtractFormat.defuse(ExtractFormat.NULL_VALUE)).isEqualTo("-");
+      assertThat(ExtractFormat.text(null)).isEqualTo("-");
+      assertThat(ExtractFormat.raw("")).isEqualTo("-");
+      assertThat(ExtractFormat.nullOnly(null)).isEqualTo("-");
+    }
+
+    @Test
+    @DisplayName("every text helper defuses; the formula cell keeps its leading =")
+    void textHelpersDefuse_formulaDoesNot() {
+      // Applied by the text helpers ONLY: formula()'s leading = is the point of that cell, and the
+      // numeric formatters' leading - is a sign, so neither goes through defuse.
+      assertThat(ExtractFormat.text("=x")).isEqualTo("'=x");
+      assertThat(ExtractFormat.raw("=x")).isEqualTo("'=x");
+      assertThat(ExtractFormat.nullOnly("=x")).isEqualTo("'=x");
+      assertThat(ExtractFormat.textTrimmed("=x")).isEqualTo("'=x");
+      assertThat(ExtractFormat.formula(new BigDecimal("1"))).startsWith("=\"");
+      assertThat(ExtractFormat.whole(decimal("-1"))).isEqualTo("-1");
+    }
+
+    @Test
+    @DisplayName("text() sanitises BEFORE defusing, so a tab-led value is already harmless")
+    void textSanitisesBeforeDefusing() {
+      // Order matters and is pinned: sanitize turns the leading tab into two spaces, and a
+      // space-led cell is not a formula, so text() adds no apostrophe where raw() would.
+      assertThat(ExtractFormat.text("\tx")).isEqualTo("  x");
+      assertThat(ExtractFormat.raw("\tx")).isEqualTo("'\tx");
+    }
+  }
+
+  @Nested
   @DisplayName("summing")
   class Summing {
 

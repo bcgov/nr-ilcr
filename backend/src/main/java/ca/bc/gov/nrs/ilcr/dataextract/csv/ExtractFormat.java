@@ -83,7 +83,7 @@ public final class ExtractFormat {
     if (value == null || value.isEmpty()) {
       return NULL_VALUE;
     }
-    return sanitize(value);
+    return defuse(sanitize(value));
   }
 
   /** Free text as legacy sanitised it, with a blank-after-trim also treated as absent. */
@@ -91,7 +91,7 @@ public final class ExtractFormat {
     if (value == null || value.trim().isEmpty()) {
       return NULL_VALUE;
     }
-    return sanitize(value);
+    return defuse(sanitize(value));
   }
 
   /** Legacy {@code replaceCharsForExtractFormat} — note it never strips {@code \r}. */
@@ -101,7 +101,7 @@ public final class ExtractFormat {
 
   /** Text written RAW, as legacy did for a few cells; null or empty is the null marker. */
   public static String raw(String value) {
-    return value == null || value.isEmpty() ? NULL_VALUE : value;
+    return value == null || value.isEmpty() ? NULL_VALUE : defuse(value);
   }
 
   /**
@@ -112,7 +112,43 @@ public final class ExtractFormat {
    * are each correct for their own cells, and legacy applied both.
    */
   public static String nullOnly(String value) {
-    return value == null ? NULL_VALUE : value;
+    return value == null ? NULL_VALUE : defuse(value);
+  }
+
+  /**
+   * Stops a user-entered cell from being read as a spreadsheet formula.
+   *
+   * <p>The extract exists to be opened in a spreadsheet — it emits its own {@code ="…"} cells — so
+   * a licensee-typed comment, camp or location name beginning with {@code =}, {@code +}, {@code @},
+   * a tab or a carriage return would be EVALUATED on the administrator's workstation, not shown.
+   * Legacy shared the exposure; this is an untrusted-input-to-privileged-reader path and is closed
+   * here rather than reproduced (recorded deviation). A leading apostrophe is the spreadsheet
+   * convention for "this is text" and is invisible in the cell itself.
+   *
+   * <p>A leading minus is defused only when what follows could be arithmetic ({@code -1+1} is a
+   * formula; {@code - see note} is prose). The null marker {@code -} never passes through here, and
+   * a dash-led comment is ordinary legacy data that must not gain an apostrophe.
+   *
+   * <p>Applied by the text helpers ONLY — never by {@link #formula}, whose leading {@code =} is the
+   * point, and never by the numeric formatters, whose leading {@code -} is a sign.
+   */
+  public static String defuse(String value) {
+    if (value == null || value.isEmpty()) {
+      return value;
+    }
+    char first = value.charAt(0);
+    boolean trigger =
+        first == '=' || first == '+' || first == '@' || first == '\t' || first == '\r';
+    if (!trigger && first == '-' && value.length() > 1) {
+      char second = value.charAt(1);
+      trigger =
+          Character.isDigit(second)
+              || second == '='
+              || second == '+'
+              || second == '-'
+              || second == '(';
+    }
+    return trigger ? "'" + value : value;
   }
 
   /**
