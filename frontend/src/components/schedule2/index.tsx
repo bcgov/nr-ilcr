@@ -28,7 +28,6 @@ import { isScheduleSaved } from '@/utils/schedule'
 import { enteredNum } from '@/utils/derivedMath'
 import { deriveSchedule2 } from './derived'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleActions from '@/components/core/ScheduleActions'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
@@ -106,9 +105,11 @@ const Schedule2: FC = () => {
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule2Response>({
       path: '/v1/schedule2',
+      scheduleName: 'Schedule 2',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -218,21 +219,7 @@ const Schedule2: FC = () => {
     })
   }
 
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 2" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 2',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

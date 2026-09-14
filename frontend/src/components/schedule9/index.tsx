@@ -16,7 +16,6 @@ import { clearFieldError } from '@/utils/forms'
 import { groupFixedInput } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ContractualWorkFields from './ContractualWorkFields'
 import type { MaskedField, RecordErrors, RecordFormValues } from './validation'
@@ -116,8 +115,10 @@ const Schedule9: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule9Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule9Response>({
     path: SCHEDULE9_PATH,
+    scheduleName: 'Schedule 9',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -265,16 +266,7 @@ const Schedule9: FC = () => {
     )
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 9',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

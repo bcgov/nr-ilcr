@@ -15,7 +15,6 @@ import { groupInput, numStr, numStrGroup } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import BridgeFields from './BridgeFields'
 import {
@@ -177,8 +176,10 @@ const Schedule7a: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7aResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7aResponse>({
     path: SCHEDULE7A_PATH,
+    scheduleName: 'Schedule 7A',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -399,16 +400,7 @@ const Schedule7a: FC = () => {
     )
   }
 
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7A',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

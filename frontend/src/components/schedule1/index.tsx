@@ -29,7 +29,6 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
@@ -123,6 +122,8 @@ function buildRequest(doc: Schedule1Response, form: FieldValues): Schedule1Reque
   }
 }
 
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
+
 const Schedule1: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = useNavigate()
@@ -149,9 +150,11 @@ const Schedule1: FC = () => {
   const [confirmNavOpen, setConfirmNavOpen] = useState(false)
   const [otherCostsBlockedOpen, setOtherCostsBlockedOpen] = useState(false)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule1Response>({
       path: '/v1/schedule1',
+      scheduleName: 'Schedule 1',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -306,23 +309,7 @@ const Schedule1: FC = () => {
     navigate({ to: '/schedule-1/other-costs' })
   }
 
-  const header = <ScheduleTombstone title="Schedule 1" subtitle="Average Cost of Logging" />
-
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 1" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: header,
-    scheduleName: 'Schedule 1',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -621,7 +608,7 @@ const Schedule1: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from the GET (WRN-001 crown pre-fill). Verbatim text from the API (AD-8). */}
         {(data.warnings ?? []).map((w, i) => (

@@ -34,7 +34,6 @@ import useMillYear from '@/context/millYear/useMillYear'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { extractDetail } from '@/utils/error'
 import { numStr, numStrFixed } from '@/utils/number'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
   validateLocation,
@@ -617,8 +616,10 @@ const Schedule11: FC = () => {
     setConfirmDeleteId(null)
   }, [])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule11Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule11Response>({
     path: SCHEDULE11_PATH,
+    scheduleName: 'Schedule 11',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -830,21 +831,7 @@ const Schedule11: FC = () => {
       })
   }
 
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 11" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 11',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

@@ -38,7 +38,6 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { numStr, numStrGroup, parseDecimalInput, roundCost } from '@/utils/number'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
@@ -603,6 +602,8 @@ const DescriptorFields: FC<{
   </div>
 )
 
+const PAGE_HEADER = <ScheduleTombstone title="Schedule 5" subtitle="Camp and Access Expense" />
+
 const Schedule5: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = scheduleRoute.useNavigate()
@@ -689,8 +690,10 @@ const Schedule5: FC = () => {
     // so without this every control gated on `saving` stays dead in the new context until a remount.
   }, [resetHookBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule5Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule5Response>({
     path: SCHEDULE5_PATH,
+    scheduleName: 'Schedule 5',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -1190,8 +1193,6 @@ const Schedule5: FC = () => {
     }
   }
 
-  const header = <ScheduleTombstone title="Schedule 5" subtitle="Camp and Access Expense" />
-
   // The expense sub-pages render INSTEAD of the camp list, as an early return driven by the search
   // params. Not a second route file: this keeps browser Back stepping from a sub-page to the list,
   // needs no nav entry (sub-pages are not in ROUTES), and reuses the already-loaded context.
@@ -1224,21 +1225,9 @@ const Schedule5: FC = () => {
     )
   }
 
-  // The three pre-document states, resolved together by the shared helper — which also gives a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement their own
-  // titled states instead of the generic "Unable to load Schedule 5". Kept as one branch here rather
-  // than three so this component's body stays under the cognitive-complexity budget; the `!data`
-  // guard stays put, because it is what narrows `data` for everything below.
-  const loading = renderScheduleLoadState({
-    header,
-    scheduleName: 'Schedule 5',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loading !== null) {
-    return loading
-  }
+  // One branch rather than three, to keep this component's body under the cognitive-complexity
+  // budget; the `!data` guard stays put, because it is what narrows `data` for everything below.
+  if (loadState) return loadState
   if (!data) {
     return null
   }
@@ -1431,7 +1420,7 @@ const Schedule5: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {actionMessage && (
           <NotificationColumn kind="success" title="Success" subtitle={actionMessage} />

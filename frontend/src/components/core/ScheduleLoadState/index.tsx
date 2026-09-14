@@ -47,6 +47,17 @@ type ScheduleLoadStateOptions = {
  *
  * A plain function rather than a component because each of these is an EARLY RETURN from the page —
  * the work area must not render alongside them.
+ *
+ * ALL TWELVE schedule pages go through here (PR #464 review rounds) — eleven of them via
+ * {@code useScheduleDocument}, which owns the very state these branches read and returns the element
+ * as its {@code loadState}; Schedule 8 calls this directly because it still hand-rolls its own load.
+ * The reason the guards are worth centralising at all is that the two CONTEXT states are not
+ * failures. A mill closed for the
+ * reporting year and a server-raised mill/year requirement are conditions the operator resolves on
+ * the Home Page, so each carries its own title; a page that hand-rolled `if (errorDetail)` showed
+ * them under "Unable to load <schedule>" instead, which reads as the app being broken. Only the last
+ * branch is a genuine failure. Adding a page's guards here rather than locally is what keeps that
+ * distinction from drifting apart again, one schedule at a time.
  */
 export const renderScheduleLoadState = ({
   header,

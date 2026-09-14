@@ -30,7 +30,6 @@ import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { fmtCurrency, fmtNumber, groupInput, numStrGroup, toNum } from '@/utils/number'
 import { isScheduleSaved } from '@/utils/schedule'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ScheduleActions from '@/components/core/ScheduleActions'
@@ -112,6 +111,10 @@ function buildRequest(doc: Schedule3Response, form: FieldValues): Schedule3Reque
 const mapLoadErrorDetail = (detail: string | undefined): string =>
   detail || 'Unable to load Schedule 3.'
 
+const PAGE_HEADER = (
+  <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
+)
+
 const Schedule3: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
   const navigate = useNavigate()
@@ -140,9 +143,11 @@ const Schedule3: FC = () => {
   // The sub-page a "Leave Schedule 3" confirm is pending for (null = modal closed).
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
 
-  const { data, setData, form, setForm, setField, errorDetail, isLoading } =
+  const { data, setData, form, setForm, setField, loadState } =
     useScheduleDocument<Schedule3Response>({
       path: '/v1/schedule3',
+      scheduleName: 'Schedule 3',
+      header: PAGE_HEADER,
       millId,
       year,
       contextMissing,
@@ -294,25 +299,7 @@ const Schedule3: FC = () => {
     navigate({ to: route })
   }
 
-  const header = (
-    <ScheduleTombstone title="Schedule 3" subtitle="Forest Management Administration Costs" />
-  )
-
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 3" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: header,
-    scheduleName: 'Schedule 3',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
@@ -533,7 +520,7 @@ const Schedule3: FC = () => {
 
   return (
     <div className="app-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {/* Advisory warnings from a mutation echo (BR-09 crown push). Verbatim text (AD-8). */}
         {saveWarnings.map((w) => (

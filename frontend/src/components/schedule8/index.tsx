@@ -383,11 +383,6 @@ const Schedule8: FC = () => {
     </div>
   )
 
-  // The non-content states come from the shared helper rather than from three local branches, so
-  // Schedule 8 gets the SAME framing as its siblings for the two context guards: a mill closed for
-  // the reporting year (ERR-002) and a server-raised mill/year requirement each render as their own
-  // titled state with the form suppressed, instead of falling into "Unable to load Schedule 8" —
-  // which framed a context the operator has to change on the Home Page as a load failure.
   const loadState = renderScheduleLoadState({
     header,
     scheduleName: 'Schedule 8',

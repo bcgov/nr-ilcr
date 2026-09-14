@@ -38,7 +38,6 @@ import { useScheduleContextGuard } from '@/hooks/useScheduleContextGuard'
 import { useScheduleDocument } from '@/hooks/useScheduleDocument'
 import { useScheduleMutations } from '@/hooks/useScheduleMutations'
 import { getRouteApi } from '@tanstack/react-router'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import CommaNumberInput from '@/components/core/CommaNumberInput'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import ConfirmNavigationModal from '@/components/core/ConfirmNavigationModal'
@@ -239,6 +238,12 @@ const CategoryRow: FC<{
   )
 }
 
+const SCH4_BASE = 'Special Log Transportation Systems'
+const renderHeader = (trail: string[] = [SCH4_BASE]) => (
+  <ScheduleTombstone title="Schedule 4" subtitle={trail} />
+)
+const PAGE_HEADER = renderHeader()
+
 const Schedule4: FC = () => {
   const { millId, year, contextMissing, isCurrent } = useScheduleContextGuard()
 
@@ -319,8 +324,10 @@ const Schedule4: FC = () => {
   // Shared load-on-context-change concern (Schedule 1/2 idiom): owns data/errorDetail/isLoading,
   // resets on mill/year change, and ignores a stale response. Schedule 4's writable state is the
   // on-demand location panel (not a flat form), so seedForm is unused here.
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule4Response>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule4Response>({
     path: '/v1/schedule4',
+    scheduleName: 'Schedule 4',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -605,27 +612,7 @@ const Schedule4: FC = () => {
     }
   }
 
-  const SCH4_BASE = 'Special Log Transportation Systems'
-  const renderHeader = (trail: string[] = [SCH4_BASE]) => (
-    <ScheduleTombstone title="Schedule 4" subtitle={trail} />
-  )
-  const header = renderHeader()
-
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 4" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: header,
-    scheduleName: 'Schedule 4',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
   if (!data) return null
 
   const editable = data.editable
@@ -935,7 +922,7 @@ const Schedule4: FC = () => {
 
   return (
     <div className="app-page schedule-page">
-      {header}
+      {PAGE_HEADER}
       <Grid fullWidth className="app-page__body">
         {saveMessage && (
           <Column sm={4} md={8} lg={16}>

@@ -32,7 +32,6 @@ import CodeComboBox from '@/components/core/CodeComboBox'
 import { supplyBlocksFor } from '@/utils/codes'
 import { extractDetail } from '@/utils/error'
 import { groupFixedInput, groupInput, numStrGroup } from '@/utils/number'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import NotificationColumn from '@/components/core/NotificationColumn'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import {
@@ -572,16 +571,17 @@ const Schedule6: FC = () => {
 
   // The general comment is the one field the DOCUMENT seeds directly, so it rides the hook's form
   // state and is re-seeded on every context change with the rest of the document.
-  const { data, setData, form, setForm, errorDetail, isLoading } =
-    useScheduleDocument<Schedule6Response>({
-      path: SCHEDULE6_PATH,
-      millId,
-      year,
-      contextMissing,
-      seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
-      mapLoadError,
-      onReset: resetTransient,
-    })
+  const { data, setData, form, setForm, loadState } = useScheduleDocument<Schedule6Response>({
+    path: SCHEDULE6_PATH,
+    scheduleName: 'Schedule 6',
+    header: PAGE_HEADER,
+    millId,
+    year,
+    contextMissing,
+    seedForm: (doc) => ({ generalComments: doc.generalComments ?? '' }),
+    mapLoadError,
+    onReset: resetTransient,
+  })
 
   const query = `?millId=${String(millId)}&year=${String(year)}`
   const generalComments = form.generalComments ?? ''
@@ -837,21 +837,7 @@ const Schedule6: FC = () => {
       })
   }
 
-  // The non-content states come from the shared helper rather than from local branches, so a mill
-  // closed for the reporting year (ERR-002) and a server-raised mill/year requirement each render as
-  // their own titled state with the form suppressed, instead of falling into
-  // "Unable to load Schedule 6" — a load-failure framing for a context the operator changes on the
-  // Home Page. Adopted across all twelve schedules on the PR #464 review round.
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 6',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null

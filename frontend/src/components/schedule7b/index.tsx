@@ -16,7 +16,6 @@ import { groupFixedInput, numStrFixed } from '@/utils/number'
 import ConfirmDeleteModal from '@/components/core/ConfirmDeleteModal'
 import SaveCheckActions from '@/components/core/SaveCheckActions'
 import ScheduleBanners from '@/components/core/ScheduleBanners'
-import { renderScheduleLoadState } from '@/components/core/ScheduleLoadState'
 import ScheduleTombstone from '@/components/core/ScheduleTombstone'
 import CulvertFields from './CulvertFields'
 import {
@@ -149,8 +148,10 @@ const Schedule7b: FC = () => {
     setPage(1)
   }, [resetBanners])
 
-  const { data, setData, errorDetail, isLoading } = useScheduleDocument<Schedule7bResponse>({
+  const { data, setData, loadState } = useScheduleDocument<Schedule7bResponse>({
     path: SCHEDULE7B_PATH,
+    scheduleName: 'Schedule 7B',
+    header: PAGE_HEADER,
     millId,
     year,
     contextMissing,
@@ -373,16 +374,7 @@ const Schedule7b: FC = () => {
   // The load-error branch covers the three context guards AND the action-key denial: ERR-003 /
   // ERR-004 / ERR-002 and the 403 all arrive as a ProblemDetail, and each renders its verbatim
   // `detail` with the work area suppressed (S11-S13, S30).
-  const loadState = renderScheduleLoadState({
-    header: PAGE_HEADER,
-    scheduleName: 'Schedule 7B',
-    contextMissing,
-    isLoading,
-    errorDetail,
-  })
-  if (loadState) {
-    return loadState
-  }
+  if (loadState) return loadState
 
   if (!data) {
     return null
