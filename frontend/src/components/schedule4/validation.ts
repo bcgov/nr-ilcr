@@ -4,6 +4,7 @@
 // the legacy cost-item names (Constants.REPORT_COST_ITEMS).
 
 import { isBlank, rangeError } from './fieldRange'
+import { subPageDefByCode } from './subPageDefs'
 
 export interface CategoryDef {
   code: number
@@ -32,6 +33,17 @@ export const DISTANCE_CATEGORIES: CategoryDef[] = [
 ]
 
 export const ALL_CATEGORIES: CategoryDef[] = [...FIXED_CATEGORIES, ...DISTANCE_CATEGORIES]
+
+/**
+ * The legacy cost-item name for a Schedule 4 code — the twelve category codes above plus the three
+ * list sub-pages — so a Check Status issue, which carries only the code and the bare "Value Required",
+ * can name the field the way legacy did ("Location : <name> - Lakeside Dry Dump (Cost $): Value
+ * Required", Schedule4MB.java:688). Undefined for a code the tables lack: callers fall back to the
+ * bare text rather than inventing a label.
+ */
+export function labelFor(code: number): string | undefined {
+  return ALL_CATEGORIES.find((def) => def.code === code)?.label ?? subPageDefByCode(code)?.label
+}
 
 const VOLUME = { min: 0, max: 9_999_999 }
 const COST = { min: -99_999_999, max: 99_999_999 }
