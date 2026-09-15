@@ -1017,38 +1017,41 @@ public class Schedule8Service {
   private Map<String, OriginalValue> sampleOriginals(
       String trackStatus, Schedule8Repository.SampleSnapshotRow sample) {
     OriginalValues.Builder builder = originalValues.forTrack(trackStatus);
-    if (sample == null) {
-      // Guarded once here rather than once per field: repeating the null check on all nineteen
-      // fields said the same thing nineteen times and pushed this method past the
-      // cognitive-complexity limit. The result is identical, because the builder already ignores a
-      // null submitted value. An EMPTY map is the right answer for a sample with nothing on file —
-      // it tells the page to evaluate the added-since-submission branch for every field, which a
-      // null map (the Draft answer) would not.
-      return builder.build();
-    }
+    // Substituted rather than short-circuited, so the per-field puts below still run for a sample
+    // with no 'S' snapshot. They must: a written key with an empty value is what carries legacy's
+    // bare "Original Submission Value: " and lets the page flag a field filled in since submission,
+    // whereas an OMITTED key now means "this field has no indicator wiring" and renders nothing.
+    // Guarding once here rather than repeating a null check on all nineteen fields also keeps this
+    // method under the cognitive-complexity limit.
+    Schedule8Repository.SampleSnapshotRow submitted =
+        sample == null ? Schedule8Repository.SampleSnapshotRow.nothingOnFile(0) : sample;
     return builder
-        .put("contractId", sample.contractId(), OriginalValueFormat.TEXT)
-        .put("cutBlock", sample.cutBlock(), OriginalValueFormat.TEXT)
-        .put("groundBasePct", sample.groundBasePct(), OriginalValueFormat.PERCENTAGE)
-        .put("grapplePct", sample.grapplePct(), OriginalValueFormat.PERCENTAGE)
-        .put("skylinePct", sample.skylinePct(), OriginalValueFormat.PERCENTAGE)
-        .put("highleadPct", sample.highleadPct(), OriginalValueFormat.PERCENTAGE)
-        .put("helicopterPct", sample.helicopterPct(), OriginalValueFormat.PERCENTAGE)
-        .put("otherSkiddingPct", sample.otherSkiddingPct(), OriginalValueFormat.PERCENTAGE)
-        .put("skylineSlopeDistance", sample.skylineSlopeDistance(), OriginalValueFormat.WHOLE)
-        .put("skylineSupportNumber", sample.skylineSupportNumber(), OriginalValueFormat.WHOLE)
-        .put("supportAvgDistance", sample.supportAverageDistance(), OriginalValueFormat.ONE_DECIMAL)
-        .put("distance", sample.distance(), OriginalValueFormat.ONE_DECIMAL)
-        .put("cycleTime", sample.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
-        .put("uphillDirection", sample.uphillDirectionInd(), OriginalValueFormat.UPHILL_DIRECTION)
+        .put("contractId", submitted.contractId(), OriginalValueFormat.TEXT)
+        .put("cutBlock", submitted.cutBlock(), OriginalValueFormat.TEXT)
+        .put("groundBasePct", submitted.groundBasePct(), OriginalValueFormat.PERCENTAGE)
+        .put("grapplePct", submitted.grapplePct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylinePct", submitted.skylinePct(), OriginalValueFormat.PERCENTAGE)
+        .put("highleadPct", submitted.highleadPct(), OriginalValueFormat.PERCENTAGE)
+        .put("helicopterPct", submitted.helicopterPct(), OriginalValueFormat.PERCENTAGE)
+        .put("otherSkiddingPct", submitted.otherSkiddingPct(), OriginalValueFormat.PERCENTAGE)
+        .put("skylineSlopeDistance", submitted.skylineSlopeDistance(), OriginalValueFormat.WHOLE)
+        .put("skylineSupportNumber", submitted.skylineSupportNumber(), OriginalValueFormat.WHOLE)
+        .put(
+            "supportAvgDistance",
+            submitted.supportAverageDistance(),
+            OriginalValueFormat.ONE_DECIMAL)
+        .put("distance", submitted.distance(), OriginalValueFormat.ONE_DECIMAL)
+        .put("cycleTime", submitted.cycleTime(), OriginalValueFormat.ONE_DECIMAL)
+        .put(
+            "uphillDirection", submitted.uphillDirectionInd(), OriginalValueFormat.UPHILL_DIRECTION)
         .put(
             "waterDumpDestination",
-            sample.waterDumpDestinationInd(),
+            submitted.waterDumpDestinationInd(),
             OriginalValueFormat.WATER_DUMP)
-        .put("skidTypeCode", sample.skidTypeCode(), OriginalValueFormat.TEXT)
-        .put("coniferousVolume", sample.coniferousVolume(), OriginalValueFormat.WHOLE)
-        .put("deciduousVolume", sample.deciduousVolume(), OriginalValueFormat.WHOLE)
-        .put("originalRate", sample.originalRate(), OriginalValueFormat.TWO_DECIMAL)
+        .put("skidTypeCode", submitted.skidTypeCode(), OriginalValueFormat.TEXT)
+        .put("coniferousVolume", submitted.coniferousVolume(), OriginalValueFormat.WHOLE)
+        .put("deciduousVolume", submitted.deciduousVolume(), OriginalValueFormat.WHOLE)
+        .put("originalRate", submitted.originalRate(), OriginalValueFormat.TWO_DECIMAL)
         .build();
   }
 

@@ -1,6 +1,7 @@
 package ca.bc.gov.nrs.ilcr.schedule4;
 
 import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.assertAllNothingOnFile;
+import static ca.bc.gov.nrs.ilcr.support.OriginalValuesFixture.nothingOnFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -355,6 +357,36 @@ class Schedule4ServiceTest {
     assertOriginal(distance, "volume", "450", "450");
     assertOriginal(distance, "cost", "22000", "22,000");
     assertOriginal(distance, "distance", "110.5", "110.5");
+  }
+
+  @Test
+  @DisplayName("a distance category with no snapshot still carries a distance key, so it can flag")
+  void originalValues_distanceCategory_noSnapshot_stillCarriesTheKey() {
+    // REGRESSION GUARD for the two meanings of a null distance row. `isDistance` says whether the
+    // field EXISTS on this category; a null row says only that nothing was submitted for it. If
+    // both collapse into an omitted key, a distance entered since submission stops being flagged —
+    // and an omitted key now means "no indicator wiring", so nothing renders at all.
+    stubSubmittedFamily();
+    when(repository.findTransportationSnapshots(MILL, YEAR)).thenReturn(List.of());
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L))).thenReturn(List.of());
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+    assertEquals(nothingOnFile(), categoryByCode(a, 47).originalValues().get("distance"));
+  }
+
+  @Test
+  @DisplayName("a non-distance category has no distance key at all — it has no such field")
+  void originalValues_fixedCategory_carriesNoDistanceKey() {
+    // The other half of the same split: legacy renders no distance indicator on a fixed category,
+    // so the key must stay ABSENT here even though every offered field is now written.
+    stubSubmittedFamily();
+    when(repository.findTransportationSnapshots(MILL, YEAR)).thenReturn(List.of());
+    when(costSnapshots.findByTransportationReports(List.of(7001L, 7011L))).thenReturn(List.of());
+
+    Location a = service.getSchedule4(MILL, YEAR, CallerRights.SUBMITTER).locations().get(0);
+
+    assertEquals(Set.of("volume", "cost"), categoryByCode(a, 40).originalValues().keySet());
   }
 
   @Test
