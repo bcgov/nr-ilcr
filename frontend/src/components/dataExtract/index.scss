@@ -33,9 +33,17 @@
   // Fixed rather than a floor: Carbon gives `.cds--form-item` `flex: 1 1 auto`, so inside a flex row
   // the fields GROW to fill the line and a min-inline-size can never bind. Sized against the longest
   // string each control has to show closed — "Select Schedules" and a mill's "number - name" label.
+  //
+  // Capped at `100%` so the desktop size is a CEILING, not a floor (PR #470 review, paulushcgcj).
+  // The page column is `sm={4}`, and 16rem plus the panel's `$spacing-05` padding and the row's gap
+  // can exceed that column on a phone — and `flex: 0 0 auto` forbids shrinking, so the overflow went
+  // sideways instead of wrapping. `min(16rem, 100%)` resolves against the flex container, so the
+  // field is never wider than the column it sits in while desktop stays exactly as it was. Same
+  // idiom as `schedule7a/index.scss:152` and `:295`. `flex: 0 0 auto` stays: it is what stops the
+  // fields growing, which is a different problem from this one.
   &__fields > * {
     flex: 0 0 auto;
-    inline-size: 16rem;
+    inline-size: min(16rem, 100%);
   }
 
   &__actions {
