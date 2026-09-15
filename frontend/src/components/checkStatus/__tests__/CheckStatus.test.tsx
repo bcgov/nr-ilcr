@@ -321,18 +321,19 @@ describe('Check Status page (Story 15.2)', () => {
   // ---- S06 and the other error states: verbatim detail, nothing else ----------------------------
 
   test.each([
-    ['S06 404', 404, NOT_FOUND],
-    ['409 closed mill', 409, NOT_ACTIVE],
-    ['403 out of scope', 403, FORBIDDEN],
-    ['500 with a detail', 500, 'Schedule 5 could not be evaluated.'],
+    ['S06 404', 404, NOT_FOUND, 'Unable to load Check Status'],
+    ['409 closed mill', 409, NOT_ACTIVE, 'Mill not active for Reporting Year'],
+    ['403 out of scope', 403, FORBIDDEN, 'Unable to load Check Status'],
+    ['500 with a detail', 500, 'Schedule 5 could not be evaluated.', 'Unable to load Check Status'],
   ])(
     '%s: the ProblemDetail detail renders verbatim; no sections and no action bar',
-    async (_label, status, detail) => {
+    async (_label, status, detail, title) => {
       server.use(http.get(SWEEP_URL, () => problem(status, detail)))
       render(<CheckStatus />)
 
       expect(await screen.findByText(detail)).toBeInTheDocument()
-      expect(screen.getByText('Unable to load Check Status')).toBeInTheDocument()
+      // The closed-mill 409 takes the shared renderer's own titled state (PR #464); the rest are load failures.
+      expect(screen.getByText(title)).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument()
       expect(screen.queryByRole('region', { name: 'Schedules 1–10' })).not.toBeInTheDocument()
       expect(screen.queryByText(MET_TEXT)).not.toBeInTheDocument()
