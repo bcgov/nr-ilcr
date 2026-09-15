@@ -67,7 +67,7 @@ class ReportControllerTest {
             reportService,
             printService,
             new ReportYearGuard(millContextService),
-            new PdfSpooler(spoolDirectory.toString()));
+            new PdfSpooler(new FileSpooler(spoolDirectory.toString())));
   }
 
   /** The bytes a stubbed export writes, standing in for a real Jasper PDF. */

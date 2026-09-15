@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   assertCompletePdf,
   extractBlobDetail,
+  extractBlobMessages,
   triggerDownload,
   TruncatedPdfError,
 } from './download'
@@ -113,5 +114,77 @@ describe('extractBlobDetail', () => {
     expect(await extractBlobDetail({ response: { data: { detail: 'plain detail' } } })).toBe(
       'plain detail',
     )
+  })
+})
+
+describe('extractBlobMessages', () => {
+  const FALLBACK = 'Unable to generate the data extract.'
+
+  const problemBlob = (body: unknown) =>
+    new Blob([JSON.stringify(body)], { type: 'application/problem+json' })
+
+  it('returns EVERY distinct message text from a Blob body, in server order', async () => {
+    // The reason this function exists: extractBlobDetail would collapse these to the single joined
+    // `detail`, undoing the accumulating gate. The repeated text proves the dedup is inherited from
+    // extractMessages rather than reimplemented here — one copy survives, in first-seen position.
+    const blob = problemBlob({
+      status: 400,
+      detail: 'Start Year: Value is required.; Please select at least one Mill for extracting.',
+      messages: [
+        { key: 'startYear', text: 'Start Year: Value is required.' },
+        { key: 'mills', text: 'Please select at least one Mill for extracting.' },
+        { key: 'mills-again', text: 'Please select at least one Mill for extracting.' },
+        { key: 'schedules', text: 'Please select at least one Schedule for extracting.' },
+      ],
+    })
+    expect(await extractBlobMessages({ response: { data: blob } }, FALLBACK)).toEqual([
+      'Start Year: Value is required.',
+      'Please select at least one Mill for extracting.',
+      'Please select at least one Schedule for extracting.',
+    ])
+  })
+
+  it('returns [detail] when the Blob body carries no messages array', async () => {
+    const blob = problemBlob({ status: 500, detail: 'Something was rejected.' })
+    expect(await extractBlobMessages({ response: { data: blob } }, FALLBACK)).toEqual([
+      'Something was rejected.',
+    ])
+  })
+
+  it('returns [fallback] when the Blob body is not JSON', async () => {
+    // A 502 HTML page from a gateway arrives as a Blob too; it is not evidence of any refusal, so
+    // the caller's own last-resort sentence is what goes on screen — the same thing extractMessages
+    // does with a response that carried no problem body.
+    const html = new Blob(['<html>bad gateway</html>'])
+    expect(await extractBlobMessages({ response: { data: html } }, FALLBACK)).toEqual([FALLBACK])
+  })
+
+  it('surfaces the truncated-stream message, which arrives as a bare Error after a 200', async () => {
+    expect(
+      await extractBlobMessages(new TruncatedPdfError('did not download completely'), FALLBACK),
+    ).toEqual(['did not download completely'])
+  })
+
+  it('defers to extractMessages for a non-blob axios-shaped error', async () => {
+    // The blob path is an ADAPTER over extractMessages, not a second implementation: a plain-object
+    // body has to give exactly what the non-blob pages get, dedup and detail precedence included.
+    const plain = {
+      response: {
+        data: {
+          status: 400,
+          detail: 'joined detail',
+          messages: [
+            { key: 'a', text: 'first' },
+            { key: 'b', text: 'second' },
+            { key: 'c', text: 'first' },
+          ],
+        },
+      },
+    }
+    expect(await extractBlobMessages(plain, FALLBACK)).toEqual(['first', 'second'])
+    const detailOnly = { response: { data: { detail: 'only detail' } } }
+    expect(await extractBlobMessages(detailOnly, FALLBACK)).toEqual(['only detail'])
+    // No response at all (a network failure) is the fallback, by the same deferral.
+    expect(await extractBlobMessages(new Error('Network Error'), FALLBACK)).toEqual([FALLBACK])
   })
 })

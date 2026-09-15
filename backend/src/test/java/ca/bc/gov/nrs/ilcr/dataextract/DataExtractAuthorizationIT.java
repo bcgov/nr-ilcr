@@ -1,8 +1,10 @@
 package ca.bc.gov.nrs.ilcr.dataextract;
 
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import ca.bc.gov.nrs.ilcr.security.CognitoGroupsJwtAuthenticationConverter;
@@ -94,12 +96,11 @@ class DataExtractAuthorizationIT extends AbstractOracleIT {
   }
 
   @Test
-  @DisplayName("ILCR_ADMIN passes the gate and reaches the (not yet built) generator")
+  @DisplayName("ILCR_ADMIN passes the gate and receives the CSV attachment")
   void admin_passesTheGate() throws Exception {
-    // 501, not 200: the validation gate is this story's deliverable and the CSV generator is the
-    // next story's. What matters here is that the request is NOT refused by authorization.
     submitAs(jwtWithGroups(List.of("ILCR_ADMIN")))
-        .andExpect(status().isNotImplemented())
-        .andExpect(jsonPath("$.detail").value("The Data Extract is not yet available."));
+        .andExpect(status().isOk())
+        .andExpect(content().contentType("application/csv;charset=UTF-8"))
+        .andExpect(header().string("Content-Disposition", startsWith("attachment; filename=\"")));
   }
 }

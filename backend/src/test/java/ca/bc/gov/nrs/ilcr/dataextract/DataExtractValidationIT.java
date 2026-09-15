@@ -2,9 +2,11 @@ package ca.bc.gov.nrs.ilcr.dataextract;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,7 +51,7 @@ class DataExtractValidationIT extends AbstractOracleIT {
       "Please select at least one Schedule for extracting.";
   private static final String YEAR_RANGE =
       "The end reporting year must be greater or equal to start year.";
-  private static final String NOT_YET_AVAILABLE = "The Data Extract is not yet available.";
+  private static final String CSV_UTF8 = "application/csv;charset=UTF-8";
 
   private static final CognitoGroupsJwtAuthenticationConverter CONVERTER =
       new CognitoGroupsJwtAuthenticationConverter();
@@ -164,24 +166,27 @@ class DataExtractValidationIT extends AbstractOracleIT {
   @DisplayName("start == end is ACCEPTED — a single-year extract, never a range error")
   void startEqualsEnd_isAccepted() throws Exception {
     // Legacy rejects only start > end (ExtractDataMB.java:231), so a one-year extract is valid.
-    // The generator itself is not built yet, so "accepted" is asserted as "not a 400 and carries no
-    // validation message" rather than against a success body this story does not pin.
+    // The CSV's content is pinned by DataExtractCsvIT; here only the acceptance and the title
+    // block's year lines are asserted.
     submit(body("2021", "2021", ONE_MILL, ONE_SCHEDULE))
-        .andExpect(status().isNotImplemented())
-        .andExpect(jsonPath("$.messages").doesNotExist())
-        // The seam's text, verbatim. The handler resolves a BusinessException key with the key as
-        // its own default, so without this a mistyped key would ship `detail: "dataExtractUnav…"`
-        // and every status-only assertion would stay green (21.1 review P8).
-        .andExpect(jsonPath("$.detail").value(NOT_YET_AVAILABLE));
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(CSV_UTF8))
+        .andExpect(content().string(containsString("\"Start Year: 2021\"\n\"End Year: 2021\"\n")));
   }
 
   @Test
-  @DisplayName("a fully valid multi-year selection is not rejected either")
+  @DisplayName("a fully valid multi-year selection is accepted and downloads as an attachment")
   void validSelection_isNotRejected() throws Exception {
     submit(body("2020", "2021", "[514,516]", "[\"Schedule 1\",\"Schedule 7\"]"))
-        .andExpect(status().isNotImplemented())
-        .andExpect(jsonPath("$.messages").doesNotExist())
-        .andExpect(jsonPath("$.detail").value(NOT_YET_AVAILABLE));
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(CSV_UTF8))
+        .andExpect(
+            header()
+                .string(
+                    "Content-Disposition",
+                    matchesPattern("attachment; filename=\"dataExtract\\d{8}\\.csv\"")))
+        .andExpect(header().exists("Content-Length"))
+        .andExpect(content().string(containsString("\"**** End ****\"\n")));
   }
 
   @Test
@@ -284,9 +289,7 @@ class DataExtractValidationIT extends AbstractOracleIT {
         .andExpect(status().isBadRequest())
         // problem+json, never a CSV body or a download disposition.
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-        .andExpect(
-            org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
-                .doesNotExist("Content-Disposition"));
+        .andExpect(header().doesNotExist("Content-Disposition"));
   }
 
   @Test

@@ -55,7 +55,7 @@ class PdfSpoolerTest {
         .when(report)
         .writeTo(any());
 
-    ExportedPdf pdf = new PdfSpooler(tempDir.toString()).spool(report);
+    SpooledFile pdf = new PdfSpooler(new FileSpooler(tempDir.toString())).spool(report);
 
     assertThat(pdf.size()).isEqualTo(EXPORTED.length);
     // Consumed: the virtualizer is released as soon as the export is done, not held for the whole
@@ -72,7 +72,7 @@ class PdfSpoolerTest {
   void failedExportReleasesBoth() throws Exception {
     doThrow(new ReportGenerationException("export blew up", null)).when(report).writeTo(any());
 
-    PdfSpooler spooler = new PdfSpooler(tempDir.toString());
+    PdfSpooler spooler = new PdfSpooler(new FileSpooler(tempDir.toString()));
 
     assertThatThrownBy(() -> spooler.spool(report)).isInstanceOf(ReportGenerationException.class);
 
@@ -92,7 +92,7 @@ class PdfSpoolerTest {
     // The regression this pins: the spool file used to be acquired BEFORE the try-with-resources
     // that owns the report, so this path returned without ever closing it — leaking the fill's
     // virtualizer swap file on the very volume that had just proved unusable, once per request.
-    PdfSpooler spooler = new PdfSpooler(unusable.toString());
+    PdfSpooler spooler = new PdfSpooler(new FileSpooler(unusable.toString()));
 
     assertThatThrownBy(() -> spooler.spool(report))
         .isInstanceOf(ReportGenerationException.class)
@@ -117,7 +117,7 @@ class PdfSpoolerTest {
     // An unmounted volume or a fresh container: configured, but not there yet.
     Path missing = tempDir.resolve("not").resolve("created").resolve("yet");
 
-    ExportedPdf pdf = new PdfSpooler(missing.toString()).spool(report);
+    SpooledFile pdf = new PdfSpooler(new FileSpooler(missing.toString())).spool(report);
 
     assertThat(pdf.size()).isEqualTo(EXPORTED.length);
     assertThat(filesIn(missing)).hasSize(1);
@@ -141,7 +141,7 @@ class PdfSpoolerTest {
     Path jvmTemp = Path.of(System.getProperty("java.io.tmpdir"));
     List<Path> before = spoolsIn(jvmTemp);
 
-    ExportedPdf pdf = new PdfSpooler("   ").spool(report);
+    SpooledFile pdf = new PdfSpooler(new FileSpooler("   ")).spool(report);
 
     try (pdf) {
       assertThat(pdf.size()).isEqualTo(EXPORTED.length);

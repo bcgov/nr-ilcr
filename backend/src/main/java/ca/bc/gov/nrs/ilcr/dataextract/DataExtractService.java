@@ -1,18 +1,28 @@
 package ca.bc.gov.nrs.ilcr.dataextract;
 
+import ca.bc.gov.nrs.ilcr.dataextract.csv.DataExtractGenerator;
+import ca.bc.gov.nrs.ilcr.dataextract.csv.ScheduleSelection;
 import ca.bc.gov.nrs.ilcr.dataextract.dto.DataExtractRequest;
 import ca.bc.gov.nrs.ilcr.exception.MultiMessageException;
+import ca.bc.gov.nrs.ilcr.millcontext.MillContextService;
+import ca.bc.gov.nrs.ilcr.millcontext.dto.MillSummary;
 import ca.bc.gov.nrs.ilcr.reporting.ReportYearGuard;
+import ca.bc.gov.nrs.ilcr.reporting.SpooledFile;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Single owner of Data Extract selection validation (AD-6). The controller only delegates.
+ * Single owner of Data Extract selection validation (AD-6), and the seam between the gate and the
+ * CSV generator. The controller only delegates.
  *
  * <p>Every failing check is collected and reported TOGETHER on one 400. That is not a client
  * convenience — it is the behaviour the legacy bean was written for. {@code
@@ -24,10 +34,17 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Because that is the point of the screen, the implementation must never grow an early return, a
  * first-match ladder, or a guard that throws its own single-message rejection mid-gate. The
  * openness check below runs strictly AFTER the gate for exactly that reason.
+ *
+ * <p>Deliberately NOT {@code @Transactional}: the generator fans out over up to twelve owning
+ * schedule services per (mill, year), each opening its own short read transaction, and a
+ * class-level transaction here would hold one of the pool's five connections for the whole build.
+ * The only database touch of the gate itself is {@link ReportYearGuard}, which manages its own.
  */
 @Service
-@Transactional(readOnly = true)
+@ConditionalOnProperty(name = "ilcr.datasource.enabled", havingValue = "true")
 public class DataExtractService {
+
+  private static final Logger log = LoggerFactory.getLogger(DataExtractService.class);
 
   /**
    * The JSF framework required-field template, resolved with a field label. Both year messages
@@ -37,6 +54,7 @@ public class DataExtractService {
   private static final String MSG_FIELD_REQUIRED = "javax.faces.component.UIInput.REQUIRED";
 
   private static final String MSG_MILLS_NOT_SELECTED = "extractMillsNotSelectedMsg";
+  private static final String MSG_MILLS_UNKNOWN = "extractMillsUnknownMsg";
   private static final String MSG_SCHEDULES_NOT_SELECTED = "extractSchedulesNotSelectedMsg";
   private static final String MSG_YEAR_RANGE = "extractReportingYearsNotMetMsg";
 
@@ -60,28 +78,61 @@ public class DataExtractService {
   private static final Pattern SUPPLIED_NUMBER = Pattern.compile("[+-]?\\d+");
 
   private final ReportYearGuard reportYearGuard;
+  private final DataExtractGenerator generator;
+  private final MillContextService millContextService;
 
   /**
    * Creates the extract service.
    *
    * @param reportYearGuard the shared opened-period check, reused rather than re-querying the year
    *     list
+   * @param generator builds the CSV from a validated selection
+   * @param millContextService the administrator's mill list, so an id no picker could have offered
+   *     is refused at the gate rather than shelled out as a row
    */
-  public DataExtractService(ReportYearGuard reportYearGuard) {
+  public DataExtractService(
+      ReportYearGuard reportYearGuard,
+      DataExtractGenerator generator,
+      MillContextService millContextService) {
     this.reportYearGuard = reportYearGuard;
+    this.generator = generator;
+    this.millContextService = millContextService;
   }
 
   /**
    * Validate a selection and produce its extract.
    *
+   * <p>Anything the generator throws — an owner read, the spool, a lookup — becomes the one 500
+   * this endpoint answers with, carrying legacy's {@code undefinedError} text. Including a business
+   * exception an owner might raise for its own screen: a 404 or 409 from a schedule read is not a
+   * statement about the EXTRACT, and would mislead the administrator if it surfaced as one.
+   *
    * @param request the raw selection
+   * @return the complete CSV on disk, whose {@code close()} deletes it
    * @throws MultiMessageException 400 carrying every failing check together
-   * @throws DataExtractUnavailableException 501 — the selection is valid but the CSV writer is not
-   *     built yet
+   * @throws DataExtractGenerationException 500 — the selection is valid but the file could not be
+   *     built
    */
-  public void generate(DataExtractRequest request) {
-    validate(request);
-    throw new DataExtractUnavailableException();
+  public SpooledFile generate(DataExtractRequest request) {
+    ValidatedSelection selection = validate(request);
+    try {
+      return generator.generate(selection);
+    } catch (DataExtractGenerationException e) {
+      throw e;
+    } catch (RuntimeException e) {
+      // Logged HERE, with the stack, because the global handler logs a BusinessException by status
+      // and key alone — the user is told to consult the logs, so the logs must hold the cause. The
+      // selection is named by counts only (AD-11); the exception message may name a directory or a
+      // schedule, never a figure.
+      log.warn(
+          "Data extract build failed for {} mill(s), years {}-{}: {}",
+          request.millIds() == null ? 0 : request.millIds().size(),
+          request.startYear(),
+          request.endYear(),
+          e.toString(),
+          e);
+      throw new DataExtractGenerationException(e);
+    }
   }
 
   /**
@@ -93,8 +144,8 @@ public class DataExtractService {
    * and can never join them — treating a blank year as zero would invent a range failure legacy
    * never reported (its own {@code parseInt} was unguarded and threw instead).
    *
-   * @return the selection the generator will consume: both years as ints, both lists distinct and
-   *     stripped of unusable entries — the "validated parameter object" the CSV story builds on
+   * @return the selection the generator consumes: both years as ints, both lists distinct and
+   *     stripped of unusable entries
    */
   ValidatedSelection validate(DataExtractRequest request) {
     List<String> keys = new ArrayList<>();
@@ -116,8 +167,26 @@ public class DataExtractService {
       keys.add(MSG_MILLS_NOT_SELECTED);
       arguments.add(null);
     }
+    // The administrator's mill directory, read ONCE per request and reused. It answers two
+    // questions — whether every selected id is one the picker could have offered, and what each
+    // selected mill's number and name are — and the generator used to ask the second by re-reading
+    // the whole directory itself. An empty selection skips the read entirely: it has already earned
+    // its message above and there is nothing to resolve.
+    Map<Long, MillSummary> directory = millIds.isEmpty() ? Map.of() : millDirectory();
+    if (!millIds.isEmpty() && !directory.keySet().containsAll(millIds)) {
+      // The picker cannot send an id that is not a mill, but a plain JSON body can. Legacy failed
+      // loudly on one (an NPE on the unknown mill's number); a shell row labelled "Mill <id>" with
+      // "** NO STATUS **" cells would instead read as real, unverified data. No legacy text exists
+      // for this, so the key is this application's own.
+      keys.add(MSG_MILLS_UNKNOWN);
+      arguments.add(null);
+    }
     List<String> schedules = distinctUsable(request.schedules());
-    if (schedules.isEmpty()) {
+    if (schedules.isEmpty() || ScheduleSelection.of(schedules).numbers().isEmpty()) {
+      // A list of ONLY unrecognised labels is, to the generator, no selection at all: it would
+      // answer a title block with no sections and the page would announce success. Unknown labels
+      // MIXED with real ones are still dropped silently (the ruled behaviour for a mixed list);
+      // only the case that leaves nothing to extract earns legacy's own message.
       keys.add(MSG_SCHEDULES_NOT_SELECTED);
       arguments.add(null);
     }
@@ -136,13 +205,39 @@ public class DataExtractService {
     // body has no such guarantee, and without this an unopened year would reach the generator and
     // surface as an unhandled error, reading as a system fault rather than a bad selection.
     //
-    // Deliberately NOT accumulating (review D-R1, 2026-09-11): the guard reports the FIRST unopened
-    // year only, with the shipped "Report Year" text that names neither picker. Legacy had no
-    // server-side openness check at all — its dropdown of opened periods was the whole guard — so
-    // the minimal addition is the legacy-closest one. Recorded as deviation (I).
+    // Deliberately NOT accumulating: the guard reports the FIRST unopened year only, with the
+    // shipped "Report Year" text that names neither picker. Legacy had no server-side openness
+    // check at all — its dropdown of opened periods was the whole guard — so the minimal addition
+    // is the legacy-closest one.
     int start = reportYearGuard.requireOpenYear(request.startYear());
     int end = reportYearGuard.requireOpenYear(request.endYear());
-    return new ValidatedSelection(start, end, millIds, schedules);
+    return new ValidatedSelection(start, end, resolve(millIds, directory), schedules);
+  }
+
+  /** The administrator's full mill list, by id. Every mill, closed included (DL-22). */
+  private Map<Long, MillSummary> millDirectory() {
+    Map<Long, MillSummary> byId = new LinkedHashMap<>();
+    for (MillSummary mill : millContextService.listMills(true, null)) {
+      byId.put(mill.millId(), mill);
+    }
+    return byId;
+  }
+
+  /**
+   * The selected mills in the SELECTION's order.
+   *
+   * <p>An id the directory does not hold keeps a row shell whose number cell falls back to the id,
+   * rather than failing the whole extract as legacy's map lookup would have. Unreachable from here
+   * — the gate above refuses an unknown id with its own 400 — but the resolution and the refusal
+   * are separate concerns and the fallback is what makes this method total.
+   */
+  private static List<MillSummary> resolve(List<Long> millIds, Map<Long, MillSummary> directory) {
+    List<MillSummary> resolved = new ArrayList<>();
+    for (Long id : millIds) {
+      MillSummary mill = directory.get(id);
+      resolved.add(mill != null ? mill : new MillSummary(id, null, null, null));
+    }
+    return resolved;
   }
 
   /**
@@ -167,8 +262,8 @@ public class DataExtractService {
    * The usable entries of a picker's selection, in first-seen order and without repeats. Null and
    * blank entries are dropped, so a client sending {@code [""]} cannot slip an empty selection past
    * the gate and reach the generator with nothing to extract; repeats are collapsed so a doubled id
-   * cannot double the rows the generator produces (review D-R2 — legacy's checkbox menu could send
-   * neither, so no message exists for either and none is invented).
+   * cannot double the rows the generator produces — legacy's checkbox menu could send neither, so
+   * no message exists for either and none is invented.
    */
   private static <T> List<T> distinctUsable(Collection<T> selection) {
     if (selection == null) {
@@ -192,18 +287,4 @@ public class DataExtractService {
     static final YearValue MISSING = new YearValue(null, true);
     static final YearValue SUPPLIED = new YearValue(null, false);
   }
-
-  /**
-   * A selection that passed the whole gate, in the shape the generator consumes. Pinned here so the
-   * CSV story extends this record rather than re-reading the raw request.
-   *
-   * @param startYear the opened start reporting year
-   * @param endYear the opened end reporting year, {@code >= startYear}
-   * @param millIds the distinct selected mill ids, in request order
-   * @param schedules the distinct selected picker labels, in request order — membership in the
-   *     eleven names is the generator's concern: an unknown label matches no schedule and is
-   *     ignored, as legacy's builder lookup would have done (review D-R2)
-   */
-  record ValidatedSelection(
-      int startYear, int endYear, List<Long> millIds, List<String> schedules) {}
 }
